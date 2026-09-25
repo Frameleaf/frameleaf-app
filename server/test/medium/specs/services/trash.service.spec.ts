@@ -1,5 +1,6 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { UtilityActivityAction, UtilityActivityTool } from 'src/dtos/trash.dto.js';
 import { AssetLockReason, AssetStatus, AssetVisibility, PhysicalFileType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -8,6 +9,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TrashService } from 'src/services/trash.service.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
@@ -548,6 +550,146 @@ describe(TrashService.name, () => {
       await expect(
         sut.apply(auth, { action: TrashReviewAction.Trash, ids: [asset.id], token: review.token }),
       ).rejects.toThrow('Trash changed since this review');
+    });
+  });
+
+  describe('Large files activity (FL-47, FL-146)', () => {
+    const moveFromLargeFiles = async (sut: TrashService, auth: ReturnType<typeof factory.auth>, ids: string[]) => {
+      const review = await sut.review(auth, { action: TrashReviewAction.Trash, ids });
+      await sut.apply(auth, {
+        action: TrashReviewAction.Trash,
+        ids,
+        token: review.token,
+        source: UtilityActivityTool.LargeFiles,
+      });
+    };
+
+    it('keeps each move and undo with its items, sizes and time, newest first', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: own(), originalFileName: 'Lake.mov' });
+      await ctx.newExif({ assetId: asset.id, fileSizeInByte: 4_800_000_000 });
+
+      await moveFromLargeFiles(sut, auth, [asset.id]);
+      const review = await sut.review(auth, { action: TrashReviewAction.Restore, ids: [asset.id] });
+      await sut.apply(auth, {
+        action: TrashReviewAction.Restore,
+        ids: [asset.id],
+        token: review.token,
+        source: UtilityActivityTool.LargeFiles,
+      });
+
+      const { entries } = await sut.getUtilityActivity(auth, { tool: UtilityActivityTool.LargeFiles });
+      expect(entries.map(({ action }) => action)).toEqual([UtilityActivityAction.Restore, UtilityActivityAction.Trash]);
+      expect(entries[1]).toMatchObject({
+        itemCount: 1,
+        bytes: 4_800_000_000,
+        items: [{ assetId: asset.id, fileName: 'Lake.mov', bytes: 4_800_000_000 }],
+        unavailableCount: 0,
+      });
+      expect(Date.parse(entries[0].createdAt)).toBeGreaterThanOrEqual(Date.parse(entries[1].createdAt));
+
+      // another account never sees it
+      const { user: other } = await ctx.newUser();
+      await expect(
+        sut.getUtilityActivity(factory.auth({ user: other }), { tool: UtilityActivityTool.LargeFiles }),
+      ).resolves.toEqual({ entries: [] });
+    });
+
+    it('does not record a change made outside Large files', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: own() });
+
+      const review = await sut.review(auth, { action: TrashReviewAction.Trash, ids: [asset.id] });
+      await sut.apply(auth, { action: TrashReviewAction.Trash, ids: [asset.id], token: review.token });
+
+      await expect(sut.getUtilityActivity(auth, { tool: UtilityActivityTool.LargeFiles })).resolves.toEqual({
+        entries: [],
+      });
+    });
+
+    it('stops naming an item that was Locked afterwards, except in the unlocked session', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: own(), originalFileName: 'Private.mov' });
+      await ctx.newExif({ assetId: asset.id, fileSizeInByte: 9000 });
+      await moveFromLargeFiles(sut, auth, [asset.id]);
+
+      await ctx.database
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Detected, lockedBy: null })
+        .execute();
+
+      const ordinary = await sut.getUtilityActivity(auth, { tool: UtilityActivityTool.LargeFiles });
+      expect(ordinary.entries[0]).toMatchObject({ itemCount: 0, bytes: 0, items: [], unavailableCount: 1 });
+      expect(JSON.stringify(ordinary)).not.toContain('Private.mov');
+
+      const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+      const unlocked = await sut.getUtilityActivity(elevated, { tool: UtilityActivityTool.LargeFiles });
+      expect(unlocked.entries[0]).toMatchObject({ itemCount: 1, items: [{ fileName: 'Private.mov' }] });
+    });
+
+    it('keeps a year and at most 500 entries per owner', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const repository = new TrashRepository(ctx.database);
+      const item = { assetId: randomUUID(), fileName: 'a.mov', bytes: 1 };
+      await sql`
+        INSERT INTO immich_fork.utility_activity ("userId", tool, action, "itemCount", bytes, items, "createdAt")
+        VALUES (${user.id}::uuid, 'large-files', 'trash', 1, 1, ${JSON.stringify([item])}::text::jsonb,
+          clock_timestamp() - interval '400 days')
+      `.execute(ctx.database);
+      for (let index = 0; index < 501; index++) {
+        await repository.addUtilityActivity({
+          userId: user.id,
+          tool: UtilityActivityTool.LargeFiles,
+          action: UtilityActivityAction.Trash,
+          items: [item],
+        });
+      }
+
+      const count = await sql<{ count: string }>`
+        SELECT count(*)::text AS count FROM immich_fork.utility_activity WHERE "userId" = ${user.id}::uuid
+      `.execute(ctx.database);
+      expect(count.rows[0].count).toBe('500');
+    });
+
+    it('goes with the account, and the removed-account sweep clears what a handoff left behind', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: kept } = await ctx.newUser();
+      const repository = new TrashRepository(ctx.database);
+      const users = new UserRepository(ctx.database);
+      const item = { assetId: randomUUID(), fileName: 'a.mov', bytes: 1 };
+      const removed = randomUUID();
+      for (const userId of [user.id, kept.id, removed]) {
+        await repository.addUtilityActivity({
+          userId,
+          tool: UtilityActivityTool.LargeFiles,
+          action: UtilityActivityAction.Trash,
+          items: [item],
+        });
+      }
+      // an expired entry of the kept account
+      await sql`
+        INSERT INTO immich_fork.utility_activity ("userId", tool, action, "itemCount", bytes, items, "createdAt")
+        VALUES (${kept.id}::uuid, 'large-files', 'trash', 1, 1, ${JSON.stringify([item])}::text::jsonb,
+          clock_timestamp() - interval '400 days')
+      `.execute(ctx.database);
+
+      await users.deletePreferenceHistory(user.id);
+      const swept = await users.sweepRemovedAccountForkRows();
+      expect(swept?.utilityActivity).toBeGreaterThanOrEqual(2);
+
+      const rows = await sql<{ userId: string }>`
+        SELECT "userId"::text AS "userId" FROM immich_fork.utility_activity
+        WHERE "userId" IN (${user.id}::uuid, ${kept.id}::uuid, ${removed}::uuid)
+      `.execute(ctx.database);
+      expect(rows.rows).toEqual([{ userId: kept.id }]);
     });
   });
 });
