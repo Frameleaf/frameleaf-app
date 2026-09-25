@@ -12,7 +12,9 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { mlWorkloadLabelKey } from '$lib/frameleaf/ml-destinations';
   import {
+    gpuValues,
     measurementValues,
+    modelProfileValues,
     restorationModeLabelKey,
     restorationModelStateLabelKey,
     restorationModelStateTone,
@@ -90,6 +92,20 @@
         {/if}
       </p>
 
+      <!-- FL-110: the GPU memory each model is admitted against, as the worker reports it. -->
+      <section aria-labelledby="restoration-gpus">
+        <h4 id="restoration-gpus">{$t('admin.frameleaf_restoration_models_gpus')}</h4>
+        {#if report.gpus.length === 0}
+          <p class="muted">{$t('admin.frameleaf_restoration_models_no_gpus')}</p>
+        {:else}
+          <ul class="reasons">
+            {#each report.gpus as gpu, index (index)}
+              <li>{$t('admin.frameleaf_restoration_models_gpu', { values: gpuValues(gpu) })}</li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+
       {#if report.configurationProblems.length > 0}
         <section aria-labelledby="restoration-configuration-problems">
           <h4 id="restoration-configuration-problems">
@@ -122,6 +138,9 @@
               </header>
               <p class="muted">
                 {$t('admin.frameleaf_restoration_models_revision')} <code>{model.revision}</code>
+              </p>
+              <p class="muted">
+                {$t('admin.frameleaf_restoration_models_profile', { values: modelProfileValues(model) })}
               </p>
               {#if model.reasons.length > 0}
                 <p class="label">{$t('admin.frameleaf_restoration_models_reasons')}</p>
