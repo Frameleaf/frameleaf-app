@@ -39,7 +39,6 @@
     destination={{ kind: 'archive' }}
     downloadFileName={brandedArchiveName($t('frameleaf_archive_name_archive'))}
     enableRouting
-    syncUrl={false}
     selectAll="loaded"
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >

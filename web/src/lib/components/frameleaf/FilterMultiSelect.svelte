@@ -55,7 +55,20 @@
   const selected = $derived(condition?.[mode] ?? []);
   const activeGroups = $derived(SET_GROUPS.filter((group) => condition?.[group]?.length));
   const retainedGroups = $derived(activeGroups.filter((group) => group !== mode));
-  const matches = $derived(options.filter((option) => option.label.toLowerCase().includes(term.trim().toLowerCase())));
+  /**
+   * FL-31: "removable zero-match filter choices retained". A chosen value the list no longer offers
+   * (its facet count fell to nothing, or it is no longer readable) stays listed, checked and
+   * removable, instead of silently staying applied with no way to see or clear it here.
+   */
+  const retained = $derived(
+    selected
+      .filter((value) => options.every((option) => option.value !== value))
+      .map((value) => ({ value, label: $t('frameleaf_search_unavailable_choice'), count: 0 as number | undefined })),
+  );
+  const matches = $derived([
+    ...retained,
+    ...options.filter((option) => option.label.toLowerCase().includes(term.trim().toLowerCase())),
+  ]);
 
   const nameFor = (value: string) => options.find((option) => option.value === value)?.label ?? value;
 
