@@ -74,10 +74,11 @@
 
   // T asks for this box (V-15); take focus once it renders.
   $effect(() => {
-    if (assetViewerManager.focusRequest === 'tags' && input) {
-      assetViewerManager.focusRequest = null;
-      input.focus();
+    if (assetViewerManager.focusRequest !== 'tags' || !input) {
+      return;
     }
+    assetViewerManager.focusRequest = null;
+    input.focus();
   });
 
   const refresh = async () => {
@@ -137,25 +138,35 @@
   const onKeydown = (event: KeyboardEvent) => {
     // The box keeps its keys: nothing typed here reaches the viewer's shortcuts (MediaViewer.jsx:3293).
     event.stopPropagation();
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      open = true;
-      active = Math.min(options.length - 1, active + 1);
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      active = Math.max(0, active - 1);
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      if (options[active]) {
-        choose(options[active]);
+    switch (event.key) {
+      case 'ArrowDown': {
+        event.preventDefault();
+        open = true;
+        active = Math.min(options.length - 1, active + 1);
+        break;
       }
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      if (open || query) {
-        open = false;
-        query = '';
-      } else {
-        input?.blur();
+      case 'ArrowUp': {
+        event.preventDefault();
+        active = Math.max(0, active - 1);
+        break;
+      }
+      case 'Enter': {
+        event.preventDefault();
+        const option = options.at(active);
+        if (option) {
+          choose(option);
+        }
+        break;
+      }
+      case 'Escape': {
+        event.preventDefault();
+        if (open || query) {
+          open = false;
+          query = '';
+        } else {
+          input?.blur();
+        }
+        break;
       }
     }
   };
@@ -206,7 +217,7 @@
           aria-expanded={open && options.length > 0}
           aria-controls={listId}
           aria-autocomplete="list"
-          aria-activedescendant={open && options[active] ? `${listId}-${active}` : undefined}
+          aria-activedescendant={open && options.at(active) ? `${listId}-${active}` : undefined}
           placeholder={$t('frameleaf_info_add_tag')}
           disabled={isSaving}
           onfocus={() => {

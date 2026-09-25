@@ -234,10 +234,11 @@
     {
       shortcut: { key: ' ' },
       onShortcut: (event) => {
-        if (!isControlTarget(event.target)) {
-          event.preventDefault();
-          onPlaySlideshow();
+        if (isControlTarget(event.target)) {
+          return;
         }
+        event.preventDefault();
+        onPlaySlideshow();
       },
     },
     { shortcut: { key: 'c', ctrl: true }, onShortcut: onCopyShortcut, preventDefault: false },
