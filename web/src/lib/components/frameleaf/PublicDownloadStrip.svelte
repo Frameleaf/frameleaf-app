@@ -31,7 +31,8 @@
   const total = $derived(counted.reduce((sum, [, download]) => sum + download.count, 0));
   const doneCount = $derived(counted.reduce((sum, [, download]) => sum + done(download), 0));
 
-  const phase = $derived(preparing.length > 0 ? 'preparing' : ready ? 'ready' : failed ? 'error' : null);
+  // A ready part leads: its Save is what the person can do now, even while later parts prepare.
+  const phase = $derived(ready ? 'ready' : preparing.length > 0 ? 'preparing' : failed ? 'error' : null);
 
   const errorText = (error: unknown) => {
     if (error instanceof EmptyDownloadError) {
@@ -59,7 +60,7 @@
     />
     <div class="pv-job-copy">
       <strong>
-        {#if phase === 'preparing' && !ready}
+        {#if phase === 'preparing'}
           {total > 0
             ? $t('frameleaf_public_archive_preparing', { values: { done: doneCount, total } })
             : $t('frameleaf_public_archive_planning')}
@@ -84,9 +85,11 @@
         {$t('frameleaf_public_save_archive')}
       </Button>
     {/if}
-    {#if phase === 'preparing'}
+    {#if preparing.length > 0}
       <Button onclick={cancel}>{$t('cancel')}</Button>
-    {:else if phase === 'error' && failed}
+    {/if}
+    {#if failed}
+      <!-- A failed part keeps its Retry beside a ready part. -->
       <Button onclick={() => downloadManager.retry(failed[0])}>{$t('retry')}</Button>
       <Button onclick={() => downloadManager.remove(failed[0])}>{$t('dismiss')}</Button>
     {/if}
