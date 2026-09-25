@@ -120,7 +120,8 @@ function createUploadStore() {
     uploadAssets.update((value) => {
       const errors = value.filter((item) => item.state === UploadState.ERROR).length;
       if (errors > 0) {
-        stats.update((current) => ({ ...current, errors: current.errors - errors }));
+        // The dismissed files leave the batch, so "Uploading N of M" counts only what remains.
+        stats.update((current) => ({ ...current, errors: current.errors - errors, total: current.total - errors }));
       }
       return value.filter((item) => item.state !== UploadState.ERROR);
     });
