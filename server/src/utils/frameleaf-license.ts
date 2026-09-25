@@ -78,6 +78,11 @@ const decodeJson = (part: string): unknown => JSON.parse(Buffer.from(part, 'base
  * `kid`, a bad signature or a tampered payload, another audience, another instance (`iid`), another
  * account (`sub`, when this server knows its account), another key binding (`cnf.jkt`), a future
  * `nbf`, and an `exp` in the past (a new certificate must be current; a stored one ages into grace).
+ *
+ * Binding: the instance id (`iid`) is what binds a certificate to this server and is always
+ * required. `cnf.jkt` (the identity key thumbprint) is optional: it is checked only when both the
+ * certificate carries it and this server has a key, because an offline certificate may be issued
+ * before the server has linked, and a key rotation must not invalidate a licence.
  */
 export const verifyLicenseCertificate = (
   jws: string,
