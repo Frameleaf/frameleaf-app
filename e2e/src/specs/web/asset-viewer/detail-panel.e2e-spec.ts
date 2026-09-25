@@ -1,9 +1,15 @@
-import { AssetMediaResponseDto, LoginResponseDto, SharedLinkType } from '@immich/sdk';
+import {
+  AssetMediaResponseDto,
+  getAssetInfo,
+  LoginResponseDto,
+  SharedLinkType,
+  updateMyPreferences,
+} from '@immich/sdk';
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import type { Socket } from 'socket.io-client';
-import { testAssetDir, utils } from 'src/utils.js';
+import { asBearerAuth, testAssetDir, utils } from 'src/utils.js';
 
 test.describe('Detail Panel', () => {
   let admin: LoginResponseDto;
@@ -30,7 +36,7 @@ test.describe('Detail Panel', () => {
     await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
     await page.waitForSelector('#immich-asset-viewer');
 
-    await expect(page.getByRole('button', { name: 'Information (I)' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Information', exact: true })).toBeVisible();
     await page.keyboard.press('i');
     await expect(page.locator('#detail-panel')).toBeVisible();
     await page.keyboard.press('i');
@@ -75,7 +81,7 @@ test.describe('Detail Panel', () => {
     await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
     await page.waitForSelector('#immich-asset-viewer');
 
-    await expect(page.getByRole('button', { name: 'Information (I)' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Information', exact: true })).toHaveCount(0);
     await page.keyboard.press('i');
     await expect(page.locator('#detail-panel')).toHaveCount(0);
     await page.keyboard.press('i');
@@ -91,7 +97,7 @@ test.describe('Detail Panel', () => {
     await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
 
     const textarea = page.getByRole('textbox', { name: 'Add a description' });
-    await page.getByRole('button', { name: 'Information (I)' }).click();
+    await page.getByRole('button', { name: 'Information', exact: true }).click();
     await expect(textarea).toBeVisible();
     await expect(textarea).not.toBeDisabled();
   });
@@ -101,14 +107,14 @@ test.describe('Detail Panel', () => {
     await page.goto(`/photos/${asset.id}`);
     await page.waitForSelector('#immich-asset-viewer');
 
-    await page.getByRole('button', { name: 'Information (I)' }).click();
+    await page.getByRole('button', { name: 'Information', exact: true }).click();
     const textarea = page.getByRole('textbox', { name: 'Add a description' });
     await textarea.fill('new description');
     await expect(textarea).toHaveValue('new description');
 
-    await page.getByRole('button', { name: 'Information (I)' }).click();
+    await page.getByRole('button', { name: 'Information', exact: true }).click();
     await expect(textarea).not.toBeVisible();
-    await page.getByRole('button', { name: 'Information (I)' }).click();
+    await page.getByRole('button', { name: 'Information', exact: true }).click();
     await expect(textarea).toBeVisible();
 
     await utils.waitForWebsocketEvent({ event: 'assetUpdate', id: asset.id });
@@ -123,7 +129,7 @@ test.describe('Detail Panel', () => {
       await page.goto(`/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      await page.getByRole('button', { name: 'Information (I)' }).click();
+      await page.getByRole('button', { name: 'Information', exact: true }).click();
       const details = page.getByTestId('frameleaf-info-details');
 
       await expect(details.getByText('Filename', { exact: true })).toBeVisible();
@@ -139,7 +145,7 @@ test.describe('Detail Panel', () => {
       await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      await page.getByRole('button', { name: 'Information (I)' }).click();
+      await page.getByRole('button', { name: 'Information', exact: true }).click();
       const details = page.getByTestId('frameleaf-info-details');
 
       await expect(details.getByText('Filename', { exact: true })).toBeVisible();
@@ -148,16 +154,84 @@ test.describe('Detail Panel', () => {
     });
   });
 
+  // FL-36: the information panel's inline edits (V-24, V-25, V-27).
+  test.describe('Inline edits', () => {
+    test('names the place and moves the pin from the Edit location dialog', async ({ context, page }) => {
+      const located = await utils.createAsset(admin.accessToken);
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto(`/photos/${located.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+      await page.getByRole('button', { name: 'Information', exact: true }).click();
+      await page.getByTestId('frameleaf-info-location').getByRole('button').first().click();
+
+      const dialog = page.getByRole('dialog', { name: 'Edit location' });
+      await dialog.getByLabel('City', { exact: true }).fill('Banff');
+      await dialog.getByLabel('Country', { exact: true }).fill('Canada');
+      await dialog.getByLabel('Latitude', { exact: true }).fill('51.1784');
+      await dialog.getByLabel('Longitude', { exact: true }).fill('-115.5708');
+      await dialog.getByRole('button', { name: 'Save' }).click();
+      await expect(dialog).toHaveCount(0);
+
+      await expect
+        .poll(
+          async () => (await getAssetInfo({ id: located.id }, { headers: asBearerAuth(admin.accessToken) })).exifInfo,
+        )
+        .toMatchObject({ city: 'Banff', country: 'Canada', latitude: 51.1784, longitude: -115.5708 });
+      await expect(page.getByTestId('frameleaf-info-location')).toContainText('Banff');
+    });
+
+    test('adds, creates and removes tags in place, and T opens the tag box', async ({ context, page }) => {
+      const tagged = await utils.createAsset(admin.accessToken);
+      await updateMyPreferences(
+        { userPreferencesUpdateDto: { tags: { enabled: true } } },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto(`/photos/${tagged.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+
+      await page.keyboard.press('t');
+      const box = page.getByRole('combobox', { name: 'Add a tag' });
+      await expect(box).toBeFocused();
+      const section = page.getByTestId('detail-panel-tags');
+      await expect(section.getByText('No tags yet.')).toBeVisible();
+
+      await box.fill('Trips');
+      await page.getByRole('option', { name: 'Create “Trips”' }).click();
+      await expect(section.getByRole('link', { name: 'Trips' })).toBeVisible();
+
+      await section.getByRole('button', { name: 'Remove tag Trips' }).click();
+      await expect(section.getByText('No tags yet.')).toBeVisible();
+    });
+
+    test("names the owner of a partner's item", async ({ context, page }) => {
+      const partner = await utils.userSetup(admin.accessToken, {
+        email: 'owner-line@immich.cloud',
+        name: 'Avery Partner',
+        password: 'password',
+      });
+      const partnerAsset = await utils.createAsset(partner.accessToken);
+      await utils.createPartner(partner.accessToken, admin.userId);
+
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto(`/photos/${partnerAsset.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+      await page.getByRole('button', { name: 'Information', exact: true }).click();
+      await expect(page.getByTestId('detail-panel-owner')).toHaveText('Owned by Avery Partner');
+    });
+  });
+
   test.describe('Date editor', () => {
     test('displays inferred asset timezone', async ({ context, page }) => {
       const test = {
         filepath: 'metadata/dates/datetimeoriginal-gps.jpg',
         expected: {
-          dateTime: '2025-12-01T11:30',
+          date: '2025-12-01',
+          time: '11:30',
           // Test with a timezone which is NOT the first among timezones with the same offset
           // This is to check that the editor does not simply fall back to the first available timezone with that offset
           // America/Denver (-07:00) is not the first among timezones with offset -07:00
-          timeZoneWithOffset: 'America/Denver (-07:00)',
+          timeZone: 'America/Denver',
         },
       };
 
@@ -175,14 +249,43 @@ test.describe('Detail Panel', () => {
       await page.goto(`/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      await page.getByRole('button', { name: 'Information (I)' }).click();
+      await page.getByRole('button', { name: 'Information', exact: true }).click();
       await page.getByTestId('detail-panel-edit-date-button').click();
       await page.waitForSelector('[role="dialog"]');
 
-      const datetime = page.locator('#datetime');
-      await expect(datetime).toHaveValue(test.expected.dateTime);
-      const timezone = page.getByRole('combobox', { name: 'Timezone' });
-      await expect(timezone).toHaveValue(test.expected.timeZoneWithOffset);
+      // V-23: the template's "Edit date and time" dialog: date, time, and a time zone that keeps the current one
+      const dialog = page.getByRole('dialog', { name: 'Edit date and time' });
+      await expect(dialog.getByLabel('Date', { exact: true })).toHaveValue(test.expected.date);
+      await expect(dialog.getByLabel('Time', { exact: true })).toHaveValue(test.expected.time);
+      const timeZone = dialog.getByLabel('Time zone', { exact: true });
+      await expect(timeZone).toHaveValue('');
+      await expect(timeZone.locator('option').first()).toHaveText('Keep the current time zone');
+      await expect(timeZone.locator(`option[value="${test.expected.timeZone}"]`)).toHaveCount(1);
+      await expect(dialog.getByText(/^Capture time becomes /)).toBeVisible();
+    });
+
+    test('saves a new capture time from the dialog', async ({ context, page }) => {
+      const asset = await utils.createAsset(admin.accessToken);
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto(`/photos/${asset.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+      await page.getByRole('button', { name: 'Information', exact: true }).click();
+      await page.getByTestId('detail-panel-edit-date-button').click();
+
+      const dialog = page.getByRole('dialog', { name: 'Edit date and time' });
+      await dialog.getByLabel('Date', { exact: true }).fill('2024-03-05');
+      await dialog.getByLabel('Time', { exact: true }).fill('09:15');
+      await dialog.getByLabel('Time zone', { exact: true }).selectOption('UTC');
+      await dialog.getByRole('button', { name: 'Save' }).click();
+      await expect(dialog).toHaveCount(0);
+
+      await expect
+        .poll(
+          async () =>
+            (await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) })).exifInfo
+              ?.dateTimeOriginal,
+        )
+        .toMatch(/^2024-03-05T09:15:00/);
     });
 
     // FL-83 (ported from abe5d9e470, b832bb19bd, 6b68cfbfe2): a failed lock keeps everything behind the
@@ -203,9 +306,9 @@ test.describe('Detail Panel', () => {
       expect(unlocked.ok()).toBe(true);
       await page.goto(`/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
-      await page.getByRole('button', { name: 'Information (I)' }).click();
+      await page.getByRole('button', { name: 'Information', exact: true }).click();
       await page.getByTestId('detail-panel-edit-date-button').click();
-      await expect(page.locator('#datetime')).toBeVisible();
+      await expect(page.locator('input[type="date"]')).toBeVisible();
       // The open date modal hides the rest of the page from the accessibility tree, top bar included.
       const lock = page.getByRole('button', { name: 'Hide Locked content', includeHidden: true }).first();
       await expect(lock).toBeAttached();
@@ -240,7 +343,7 @@ test.describe('Detail Panel', () => {
       const shield = page.locator('dialog.session-lock-shield[open]');
       await expect(shield).toHaveCount(1);
       await expect.poll(() => attempts).toBe(1);
-      await expect(page.locator('#datetime')).toBeHidden();
+      await expect(page.locator('input[type="date"]')).toBeHidden();
       await expect
         .poll(() => page.evaluate(() => sessionStorage.getItem('frameleaf:session-lock-pending')))
         .toBe('true');
@@ -250,7 +353,7 @@ test.describe('Detail Panel', () => {
       await expect.poll(() => lockStatuses).toContain(204);
       await expect(page).toHaveURL(/\/photos(?:\?|$)/);
       await expect(shield).toHaveCount(0);
-      await expect(page.locator('#datetime')).toHaveCount(0);
+      await expect(page.locator('input[type="date"]')).toHaveCount(0);
       await expect(nativeDialog).toHaveCount(0);
       await expect.poll(() => page.evaluate(() => sessionStorage.getItem('frameleaf:session-lock-pending'))).toBeNull();
     });
