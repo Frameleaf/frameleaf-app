@@ -34,6 +34,10 @@
      */
     buttonClass?: string | undefined;
     hideContent?: boolean;
+    /** See ContextMenu: caps the menu at `window height - menuMaxHeightInset` pixels, scrolling inside. */
+    menuMaxHeightInset?: number;
+    /** See ContextMenu: keeps the menu's bottom edge this many pixels above the window's bottom. */
+    menuBottomInset?: number;
     children?: Snippet;
     offset?: {
       x: number;
@@ -51,6 +55,8 @@
     variant = 'ghost',
     buttonClass = undefined,
     hideContent = false,
+    menuMaxHeightInset = undefined,
+    menuBottomInset = undefined,
     children,
     offset,
     ...restProps
@@ -195,6 +201,8 @@
         bind:menuElement={menuContainer}
         id={menuId}
         isVisible={isOpen}
+        maxHeightInset={menuMaxHeightInset}
+        bottomInset={menuBottomInset}
         x={contextMenuPosition.x - (offset?.x ?? 0)}
         y={contextMenuPosition.y + (offset?.y ?? 0)}
       >

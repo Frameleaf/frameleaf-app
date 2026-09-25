@@ -368,6 +368,42 @@ describe(SharedLinkService.name, () => {
       });
     });
 
+    it('should turn off downloads when an update hides the metadata', async () => {
+      const sharedLink = SharedLinkFactory.create({ showExif: true, allowDownload: true });
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.update(authStub.user1, sharedLink.id, { showMetadata: false, allowDownload: true });
+
+      expect(mocks.sharedLink.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: sharedLink.id, showExif: false, allowDownload: false }),
+      );
+    });
+
+    it('should keep downloads off when the link already hides the metadata', async () => {
+      const sharedLink = SharedLinkFactory.create({ showExif: false, allowDownload: false });
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.update(authStub.user1, sharedLink.id, { allowDownload: true });
+
+      expect(mocks.sharedLink.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: sharedLink.id, allowDownload: false }),
+      );
+    });
+
+    it('should allow downloads when an update shows the metadata again', async () => {
+      const sharedLink = SharedLinkFactory.create({ showExif: false, allowDownload: false });
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.update(authStub.user1, sharedLink.id, { showMetadata: true, allowDownload: true });
+
+      expect(mocks.sharedLink.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: sharedLink.id, showExif: true, allowDownload: true }),
+      );
+    });
+
     it('should refetch an updated shared link with hidden content filters', async () => {
       const auth = { ...authStub.user1, hideNsfwAssets: true };
       const sharedLink = SharedLinkFactory.create();

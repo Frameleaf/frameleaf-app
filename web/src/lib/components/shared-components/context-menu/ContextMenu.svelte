@@ -14,6 +14,16 @@
     ariaActiveDescendant?: string | undefined;
     menuScrollView?: HTMLDivElement | undefined;
     menuElement?: HTMLUListElement | undefined;
+    /**
+     * Keeps the menu at most `window height - maxHeightInset` pixels tall, scrolling inside, so it stays
+     * clear of chrome along the bottom edge (e.g. the viewer footer).
+     */
+    maxHeightInset?: number | undefined;
+    /**
+     * Keeps the menu's bottom edge at least this many pixels above the bottom of the window, whatever
+     * its height or where it opens (e.g. clear of a footer that paints over it).
+     */
+    bottomInset?: number | undefined;
     onClose?: (() => void) | undefined;
     children?: Snippet;
   }
@@ -29,6 +39,8 @@
     ariaActiveDescendant = undefined,
     menuScrollView = $bindable(),
     menuElement = $bindable(),
+    maxHeightInset = undefined,
+    bottomInset = undefined,
     onClose = undefined,
     children,
   }: Props = $props();
@@ -45,10 +57,13 @@
     const directionWidth = layoutDirection === 'left' ? rect.width : 0;
 
     const margin = 8;
+    const heightCap = maxHeightInset === undefined ? Infinity : Math.max(0, windowInnerHeight - maxHeightInset);
+    // The lowest the menu may reach: the window's bottom, or `bottomInset` above it.
+    const bottomLimit = windowInnerHeight - (bottomInset ?? 0);
 
     const left = Math.max(margin, Math.min(windowInnerWidth - rect.width - margin, x - directionWidth));
-    const top = Math.max(margin, Math.min(windowInnerHeight - menuElement.clientHeight, y));
-    const maxHeight = windowInnerHeight - top - margin;
+    const top = Math.max(margin, Math.min(bottomLimit - Math.min(menuElement.clientHeight, heightCap), y));
+    const maxHeight = Math.max(0, Math.min(bottomLimit - top - margin, heightCap));
 
     const needScrollBar = menuElement.clientHeight > maxHeight;
 
