@@ -274,6 +274,16 @@ describe(StudioExportService.name, () => {
       expect(repository.createWithRender).not.toHaveBeenCalled();
     });
 
+    it('refuses Dolby Vision output while the Dolby tools rights are blocked (FL-86)', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      const dolby = { ...(dto as object), color: 'dolby-vision' } as never;
+      await expect(sut.create(auth(), PROJECT, dolby)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'studio_export_rights_blocked', resource: 'tool:dolby-portal' }),
+      });
+      expect(studio.authorizeRevision).not.toHaveBeenCalled();
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
     it('hides a Locked export on request-key replay after the session locks', async () => {
       const version = versionRow({ privacy: { lockReason: AssetLockReason.Marked } });
       operations.getByRequestKey.mockResolvedValue(operation());
