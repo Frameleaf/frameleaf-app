@@ -9,6 +9,8 @@ import {
   mapUserConfig,
   readFrameleafCloudConfig,
 } from 'src/dtos/config.dto.js';
+import { MlWorkload } from 'src/enum.js';
+import { cloudModelFor } from 'src/utils/frameleaf-cloud.js';
 import { getKeysDeep } from 'src/utils/misc.js';
 
 const PUBLIC_PROPERTIES = [
@@ -98,9 +100,34 @@ describe('Frameleaf Cloud local-only models (FL-146)', () => {
     expect(AdminConfigSchema.safeParse(withModel('cloud', 'qwen3.5-9b@1')).success).toBe(true);
   });
 
-  it('reads a stored configuration that names it for the cloud back as the defaults', () => {
-    expect(readFrameleafCloudConfig(withModel('cloud', 'Qwen/Qwen2.5-VL-3B-Instruct').frameleafCloud)).toEqual(
-      defaults.frameleafCloud,
+  it('resets only the local-only model entry of a stored configuration, keeping the rest, and warns', () => {
+    const stored = withModel('cloud', 'Qwen/Qwen2.5-VL-3B-Instruct').frameleafCloud;
+    stored.cloudMl.enabled = true;
+    stored.cloudMl.routing.upscale = 'both';
+    stored.cloudMl.models.upscale = 'realesrgan-x4plus@1';
+    stored.cloudMl.autoDescribe = { enabled: true, dailyBudgetUsd: 7.5 };
+    const warn = vi.fn();
+
+    const read = readFrameleafCloudConfig(stored, warn);
+
+    expect(read.cloudMl).toEqual({
+      ...stored.cloudMl,
+      models: { ...stored.cloudMl.models, descriptions: 'qwen3.5-9b@1' },
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toMatch(/Qwen2\.5-VL-3B-Instruct runs on this server only/);
+  });
+
+  it('gives cloud descriptions their own licensed default, never the local description model', () => {
+    expect(defaults.frameleafCloud.cloudMl.models.descriptions).toBe('qwen3.5-9b@1');
+    expect(defaults.frameleafCloud.cloudMl.models.descriptions).not.toBe(
+      defaults.machineLearning.imageDescription.modelName,
     );
+    expect(cloudModelFor(MlWorkload.Enrichment, '')).toBe('qwen3.5-9b@1');
+    expect(cloudModelFor(MlWorkload.Enrichment, defaults.machineLearning.imageDescription.modelName)).toBe(
+      'qwen3.5-9b@1',
+    );
+    expect(cloudModelFor(MlWorkload.Enrichment, 'qwen3.5-27b@1')).toBe('qwen3.5-27b@1');
+    expect(cloudModelFor(MlWorkload.Upscale, null)).toBeNull();
   });
 });

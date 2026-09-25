@@ -7,7 +7,6 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import z from 'zod';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
-import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import type { MlContainerReport } from 'src/utils/hardware-check.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import {
@@ -33,6 +32,7 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { CLOUD_DESCRIPTION_DEFAULT_MODEL, type CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 // Restoration's selection registry and inference types live with the rest of restoration's
 // rules; that module only needs this one's types, so the import cycle is inert at load time.
 import {
@@ -260,6 +260,11 @@ export type MlSelection = {
   kind: MlDestinationKind;
   workload: MlWorkload;
   endpoint: MlEndpoint;
+  /**
+   * FL-146: the catalogue model a Frameleaf Cloud job names (the routed choice or the licensed
+   * default); null for this server and home-network workers, which use the local settings.
+   */
+  cloudModelId?: string | null;
   record: (usage: MlUsage) => void;
 };
 
@@ -693,13 +698,17 @@ export class MachineLearningRepository implements RestorationInference {
       acceleration !== MachineLearningHardwareAcceleration.Cuda &&
       !!fallbackModelName &&
       isFlorenceImageDescriptionModel(fallbackModelName);
+    // A Frameleaf Cloud job names only its cloud model, never the local description setting (FL-146).
+    if (selection.kind === MlDestinationKind.FrameleafCloud) {
+      const body = await this.predict<ImageDescriptionResponse>(
+        selection,
+        { imagePath },
+        buildRequest(selection.cloudModelId ?? CLOUD_DESCRIPTION_DEFAULT_MODEL),
+      );
+      return body[ModelTask.IMAGE_DESCRIPTION];
+    }
     const candidateModels: string[] = [modelName];
-    if (
-      selection.kind !== MlDestinationKind.FrameleafCloud &&
-      fallbackModelName &&
-      fallbackModelName !== modelName &&
-      !florenceUnavailable
-    ) {
+    if (fallbackModelName && fallbackModelName !== modelName && !florenceUnavailable) {
       candidateModels.push(fallbackModelName);
     }
 

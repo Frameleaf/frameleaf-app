@@ -37,7 +37,7 @@ import {
   VideoContainer,
   VideoContainerSchema,
 } from 'src/enum.js';
-import { isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
+import { CLOUD_DESCRIPTION_DEFAULT_MODEL, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 
 const { Admin, User, Public } = ConfigVisibility;
 
@@ -189,7 +189,14 @@ const frameleafCloudDefaults = {
     },
     startWith: 'local' as 'local' | 'cloud',
     // The model slider's saved position per kind of work; empty = the heaviest that runs well here.
-    models: { descriptions: '', upscale: '', restoration: '', studio: '', interpolation: '' },
+    // Descriptions start at the licensed cloud default (FL-146), never the local Qwen2.5-VL-3B.
+    models: {
+      descriptions: CLOUD_DESCRIPTION_DEFAULT_MODEL,
+      upscale: '',
+      restoration: '',
+      studio: '',
+      interpolation: '',
+    },
     autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
     faces: { enabled: false as const },
   },
@@ -527,11 +534,33 @@ const AdminConfigFrameleafCloudSchema = z
 /**
  * A stored Frameleaf Cloud configuration read back over the defaults, so a value saved before a
  * field existed (or in an older shape) still yields a complete configuration. Unknown keys are dropped.
+ * A model entry naming a local-only model for work allowed on the cloud (FL-146) is reset to its
+ * default on its own, with a warning; enabled, routing and budgets are kept. Only a configuration
+ * that is still invalid after that falls back to the defaults.
  */
-export const readFrameleafCloudConfig = (value: unknown): SystemConfig['frameleafCloud'] => {
-  const merged = defaultsDeep({}, value ?? {}, frameleafCloudDefaults);
+export const readFrameleafCloudConfig = (
+  value: unknown,
+  warn: (message: string) => void = () => {},
+): SystemConfig['frameleafCloud'] => {
+  const merged = defaultsDeep({}, value ?? {}, frameleafCloudDefaults) as SystemConfig['frameleafCloud'];
+  const cloudMl = merged.cloudMl;
+  if (cloudMl?.models && cloudMl.routing) {
+    for (const workload of CLOUD_ROUTED_WORKLOADS) {
+      const model = cloudMl.models[workload];
+      if (cloudMl.routing[workload] !== 'local' && isLocalOnlyModel(model)) {
+        cloudMl.models[workload] = frameleafCloudDefaults.cloudMl.models[workload];
+        warn(
+          `Frameleaf Cloud: ${model} runs on this server only; the ${workload} model was reset to ${cloudMl.models[workload] || 'the default'}`,
+        );
+      }
+    }
+  }
   const parsed = AdminConfigFrameleafCloudSchema.safeParse(merged);
-  return parsed.success ? parsed.data : cloneDeep(frameleafCloudDefaults);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  warn(`Frameleaf Cloud settings could not be read and were reset to the defaults: ${parsed.error.message}`);
+  return cloneDeep(frameleafCloudDefaults);
 };
 
 // Admin-controlled but unbounded strings flow into background-job log lines
