@@ -222,6 +222,15 @@ export class StudioExportService {
     }
 
     const destination = dto.destination as unknown as StudioDestination;
+    // Studio exports render at home: this server or a worker on the home network (owner prototype
+    // effd05ffb7, Studio.jsx ExportDialog). Frameleaf Cloud takes restoration and smooth-motion jobs,
+    // each confirmed on its own, never a Studio export.
+    if (destination === StudioDestination.FrameleafCloud) {
+      throw new BadRequestException({
+        message: 'Studio exports render on this server or another computer on your home network.',
+        code: 'studio_export_local_only',
+      });
+    }
     // FL-86: Dolby Vision needs the administrator-installed Dolby tools: their rights (approved by
     // the owner, FL-146) and a render worker qualified with them (FL-145), which none is yet.
     if (dto.color === 'dolby-vision') {

@@ -3419,6 +3419,10 @@ export type AssetEditActionItemResponseDto = {
     parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | StabilizeParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type AssetEditsOriginalVideoDto = {
+    /** FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged */
+    colorPolicy?: AssetEditsColorPolicy;
+    /** Why, in plain words, for the person editing */
+    colorReason?: string;
     /** Duration of the original in milliseconds */
     durationMs: number;
     /** Displayed height of the original, after its rotation */
@@ -8848,9 +8852,24 @@ export type StudioProjectHistoryResponseDto = {
     items: StudioProjectRevisionDto[];
     total: number;
 };
+export type StudioCommandEnvelopeDto = {
+    /** Published command id (studio/frameleaf-studio-commands.json) */
+    id: string;
+    idempotencyKey: string;
+    /** Epoch milliseconds */
+    issuedAt: number;
+    /** Command payload; graph-shaped values pass through unread */
+    payload: {
+        [key: string]: any;
+    };
+    /** The head revision the command was issued against */
+    revision: number;
+};
 export type StudioProjectSaveDto = {
     /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
     clientId: string;
+    /** The canonical commands the engine applied to produce this document (FL-92). Each is checked against the catalogue and the head, and the revision summary is counted from them. */
+    commands?: StudioCommandEnvelopeDto[];
     envelope: StudioProjectEnvelopeDto;
     /** The head this document was built on */
     expectedRevision: number;
@@ -20258,6 +20277,11 @@ export enum VideoEditVersionStatus {
 }
 export enum VideoEditExportProfile {
     Master = "master"
+}
+export enum AssetEditsColorPolicy {
+    Preserve = "preserve",
+    ToneMap = "tone-map",
+    Unsupported = "unsupported"
 }
 export enum EnrichmentStaleReason {
     SourceChanged = "source-changed",
