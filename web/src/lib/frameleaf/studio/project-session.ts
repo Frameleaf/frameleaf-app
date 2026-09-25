@@ -312,6 +312,8 @@ type Draft = {
    * moved head is judged against: `state.project.revision` may already show someone else's save.
    */
   baseRevision: number;
+  /** The graph is the editor's own (its last stage came from the editor with a base revision). */
+  fromEditor: boolean;
 };
 
 const defaultTimer = (callback: () => void, ms: number): CancelTimer => {
@@ -361,6 +363,13 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
 
   let projectId: string | null = options.projectId;
   let draft: Draft | null = null;
+  /**
+   * Revisions this session stored from the editor's own graph, as base → stored revision. The editor
+   * keeps editing from what it staged, so its later graphs build on each of these; a draft that
+   * arrives before the editor has heard of the save is taken forward along this chain instead of
+   * meeting a false conflict. Cleared whenever the project is read again.
+   */
+  const editorSaves = new Map<number, number>();
   let debounce: CancelTimer | null = null;
   let renew: CancelTimer | null = null;
   let retry: CancelTimer | null = null;
@@ -478,6 +487,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     if (gen !== generation) {
       return;
     }
+    editorSaves.clear();
     projectId = detail.id;
     emit({
       project: {
@@ -667,6 +677,9 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           applyLease(result.lease);
         }
         retryMs = STUDIO_SAVE_RETRY_MS;
+        if (current.fromEditor) {
+          editorSaves.set(current.baseRevision, result.revision);
+        }
         // A newer stage while this one was in flight keeps its own draft and gets its own save.
         if (draft === current) {
           draft = null;
@@ -805,6 +818,17 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     }
   };
 
+  const followEditorSaves = (base: number | undefined): number => {
+    if (base === undefined) {
+      return Infinity;
+    }
+    let revision = base;
+    while (editorSaves.has(revision)) {
+      revision = editorSaves.get(revision) as number;
+    }
+    return revision;
+  };
+
   const session: StudioProjectSession = {
     get state() {
       return state;
@@ -841,9 +865,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         // A different document is a different request; the key is assigned when it is sent.
         requestKey: null,
         // Later edits share the first unsaved edit's base, even while that one is in flight. A graph
-        // loaded from an older revision keeps that older base, so it can never claim a newer head
-        // (ponytail: an edit racing the editor's own just-saved revision is a false conflict, not a loss).
-        baseRevision: Math.min(draft?.baseRevision ?? state.project.revision, baseRevision ?? Infinity),
+        // loaded from an older revision keeps that older base, so it can never claim a newer head; the
+        // editor's own saves it has not heard of yet carry it forward.
+        baseRevision: Math.min(draft?.baseRevision ?? state.project.revision, followEditorSaves(baseRevision)),
+        fromEditor: baseRevision !== undefined,
       };
       if (keepsDraft) {
         emit({ project: { ...state.project, graph } });

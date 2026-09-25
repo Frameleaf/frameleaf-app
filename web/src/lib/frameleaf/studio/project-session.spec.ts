@@ -588,6 +588,46 @@ describe('studio project session', () => {
       expect(api.save).toHaveBeenCalledTimes(1);
     });
 
+    it('carries an editor edit over its own save the editor has not heard of yet', async () => {
+      api.save.mockResolvedValueOnce(saved(4)).mockResolvedValueOnce(saved(5));
+      const session = create();
+      await session.open();
+      session.stage({ step: 1 }, ['editor.save'], [], 3);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(last()).toMatchObject({ status: 'saved', project: { revision: 4 } });
+
+      // The next edit lands before the editor sees revision 4: it still reports base 3.
+      session.stage({ step: 2 }, ['editor.save'], [], 3);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 4 }));
+      expect(last()).toMatchObject({ status: 'saved', project: { revision: 5 } });
+    });
+
+    it('never carries an editor edit over a save that was not the editor’s own graph', async () => {
+      api.save.mockResolvedValueOnce(saved(4)).mockResolvedValueOnce(saved(5));
+      const session = create();
+      await session.open();
+      // A canonical command stored by the host: the editor has not loaded it.
+      session.stage({ command: true }, ['clip.add']);
+      await timers.fire((timer) => timer.ms === 1500);
+      session.stage({ editor: true }, ['editor.save'], [], 3);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 3 }));
+    });
+
+    it('forgets the editor’s own saves once the project is read again', async () => {
+      api.save.mockResolvedValueOnce(saved(4)).mockResolvedValueOnce(saved(6));
+      const session = create();
+      await session.open();
+      session.stage({ step: 1 }, ['editor.save'], [], 3);
+      await timers.fire((timer) => timer.ms === 1500);
+      api.get.mockResolvedValue(detail({ revision: 5 }));
+      await session.reload();
+      session.stage({ stale: true }, ['editor.save'], [], 3);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 3 }));
+    });
+
     it('sends an edit from an editor still showing an older revision against that revision', async () => {
       api.save.mockResolvedValueOnce(saved(5));
       api.get.mockResolvedValue(detail({ revision: 4 }));
