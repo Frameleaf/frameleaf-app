@@ -122,6 +122,29 @@ describe(NotificationService.name, () => {
     });
   });
 
+  describe('onJobError (FL-71)', () => {
+    beforeEach(() => {
+      mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+    });
+
+    it.each([
+      { name: JobName.NotifyUserSignup, data: { id: 'user-1', password: 'hunter2-secret' } },
+      { name: JobName.SendMail, data: { to: 'a@b.c', subject: 's', html: 'hunter2-secret', text: 'hunter2-secret' } },
+    ] as const)('never logs the data of a $name job, which carries a password', async (job) => {
+      await sut.onJobError({ job, error: new Error('smtp down') });
+
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), '[redacted]');
+      expect(JSON.stringify(mocks.logger.error.mock.calls)).not.toContain('hunter2-secret');
+    });
+
+    it('still logs the data of other jobs', async () => {
+      const job = { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } as const;
+      await sut.onJobError({ job, error: new Error('Input file is missing') });
+
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), JSON.stringify(job.data));
+    });
+  });
+
   describe('onAssetHide', () => {
     it('should send connected clients an event', () => {
       sut.onAssetHide({ assetId: 'asset-id', userId: 'user-id' });
