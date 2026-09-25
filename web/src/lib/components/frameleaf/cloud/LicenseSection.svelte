@@ -132,7 +132,8 @@
           ['remoteAccess', $t('frameleaf_license_entitlement_remote'), license.entitlements.remoteAccess],
           ['cloudBackup', $t('frameleaf_license_entitlement_backup'), license.entitlements.cloudBackup],
           ['cloudMl', $t('frameleaf_license_entitlement_processing'), license.entitlements.cloudMl],
-          ['supporter', $t('frameleaf_license_entitlement_supporter'), license.entitlements.supporter],
+          // an active key for one person makes its holder a supporter too
+          ['supporter', $t('frameleaf_license_entitlement_supporter'), license.entitlements.supporter || !!personal],
         ] as const)
       : [],
   );
