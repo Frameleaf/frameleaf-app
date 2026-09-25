@@ -14,7 +14,7 @@
 <h3 align="center">Високопродуктивне рішення для управління фото та відео на власному хостингу</h3>
 <br/>
 <a href="https://immich.app">
-<img src="/design/immich-screenshots.png" title="Головний скріншот">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="Головний скріншот">
 </a>
 <br/>
 

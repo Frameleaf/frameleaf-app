@@ -32,6 +32,9 @@ importers:
       happy-dom:
         specifier: 20.11.8
         version: 20.11.8
+      playwright-core:
+        specifier: 1.62.1
+        version: 1.62.1
 
 packages:
   '@babel/code-frame@7.29.7':
@@ -921,6 +924,14 @@ packages:
       }
     engines: { node: '>=12' }
 
+  playwright-core@1.62.1:
+    resolution:
+      {
+        integrity: sha512-wPYSwEBJY9GHraISXqyqtx0na0LpO3XEX7jNDhntbex7tzUS7kLnZsOlFruFJB4Hi/rhDMjXGqHewDZ68nYZVw==,
+      }
+    engines: { node: '>=20' }
+    hasBin: true
+
   postcss@8.5.28:
     resolution:
       {
@@ -1514,6 +1525,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.7: {}
+
+  playwright-core@1.62.1: {}
 
   postcss@8.5.28:
     dependencies:
