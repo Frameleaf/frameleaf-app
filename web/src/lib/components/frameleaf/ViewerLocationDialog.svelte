@@ -8,14 +8,19 @@
    * The map is the production MapLibre map rather than the template's drawn one (the recorded "MapLibre
    * kept" deviation of the Map screen). Saving writes the coordinates and any place name the owner
    * changed through `updateAsset`; a typed place name is kept over reverse geocoding, and moving the
-   * pin without touching the place lets geocoding name the new spot. The server cannot remove an item's
-   * coordinates, so once an item has them both are required (the template also allows leaving both
-   * empty, which here only applies to an item that has none yet).
+   * pin without touching the place lets geocoding name the new spot.
+   *
+   * Remove location (owner decision, FL-146, 2026-09-25): "Remove location", or emptying both
+   * coordinates as the template allows, sends null coordinates (FL-51). The server clears the
+   * coordinates and place names of the item and of its Live Photo video, rewrites their metadata
+   * files and keeps the removal locked. It is confirmed first with the Frameleaf danger confirmation,
+   * the prototype's pattern for destructive changes (MediaViewer.jsx:1866-1890).
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import type Map from '$lib/components/shared-components/map/Map.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
-  import { locationDraft, locationPatch, parseCoordinate } from '$lib/frameleaf/viewer-location';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { isLocationRemoval, locationDraft, locationPatch, parseCoordinate } from '$lib/frameleaf/viewer-location';
   import { geolocationManager } from '$lib/managers/geolocation.manager.svelte';
   import { delay } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -86,18 +91,33 @@
     place(Math.max(-90, Math.min(90, baseLat + move[0])), Math.max(-180, Math.min(180, baseLon + move[1])));
   };
 
+  /** Removing a location cannot be undone here: the owner confirms it, and Keep returns to the dialog. */
+  const confirmRemoval = () =>
+    confirmFrameleaf({
+      title: $t('frameleaf_info_remove_location_title'),
+      prompt: asset.livePhotoVideoId
+        ? $t('frameleaf_info_remove_location_prompt_live')
+        : $t('frameleaf_info_remove_location_prompt'),
+      confirmText: $t('frameleaf_info_remove_location'),
+      cancelText: $t('frameleaf_viewer_delete_keep'),
+      danger: true,
+    });
+
   const save = async () => {
-    if (patch === 'invalid') {
+    if (patch === 'invalid' || saving) {
       return;
     }
     if (!patch) {
       open = false;
       return;
     }
+    if (isLocationRemoval(patch) && !(await confirmRemoval())) {
+      return;
+    }
     saving = true;
     try {
       updated = await updateAsset({ id: asset.id, updateAssetDto: patch });
-      // The DTO now also takes null (location removal, FL-51); this dialog only ever sends numbers.
+      // A removal sends null coordinates; only a real point becomes the next dialog's starting point.
       if (typeof patch.latitude === 'number' && typeof patch.longitude === 'number') {
         geolocationManager.onSelected({ lat: patch.latitude, lng: patch.longitude });
       }
@@ -146,7 +166,7 @@
       </div>
       {#if invalid}
         <p class="mv-form-error" role="alert">
-          {initial.latitude ? $t('frameleaf_info_coordinates_required') : $t('frameleaf_info_coordinates_invalid')}
+          {$t('frameleaf_info_coordinates_invalid')}
         </p>
       {/if}
     </div>
@@ -198,6 +218,20 @@
     </div>
   </form>
   {#snippet actions()}
+    {#if initial.latitude}
+      <button
+        type="button"
+        class="button remove"
+        disabled={saving}
+        onclick={() => {
+          latitude = '';
+          longitude = '';
+          void save();
+        }}
+      >
+        {$t('frameleaf_info_remove_location')}
+      </button>
+    {/if}
     <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
     <button type="submit" form="fl-viewer-location-form" class="button primary" disabled={invalid || saving}>
       {$t('save')}
@@ -206,6 +240,13 @@
 </Dialog>
 
 <style>
+  /* A secondary destructive action sits apart at the start of the footer, in the danger colour; its
+     confirmation carries the filled danger button (ConfirmDialog, the prototype's .button.danger). */
+  .remove {
+    margin-inline-end: auto;
+    color: var(--fl-danger);
+  }
+
   .mv-location-grid {
     display: grid;
     grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
