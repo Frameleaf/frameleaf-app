@@ -23,13 +23,25 @@
   let {
     user,
     mode,
+    hasPin = false,
     onClose,
   }: {
     user: UserAdminResponseDto;
     /** `set` writes a new PIN; `clear` removes whatever PIN the account has. */
     mode: 'set' | 'clear';
+    /** Whether the account has a PIN now: setting one is then "Change PIN" (CC-30). */
+    hasPin?: boolean;
     onClose: () => void;
   } = $props();
+
+  // The template names the dialog and its action after the action (`AccountsLibraries.jsx` 1416-1434, 2285).
+  const label = $derived(
+    mode === 'clear'
+      ? $t('frameleaf_users_pin_reset')
+      : hasPin
+        ? $t('frameleaf_users_pin_change')
+        : $t('frameleaf_users_pin_set'),
+  );
 
   let open = $state(true);
   let pinCode = $state('');
@@ -69,17 +81,11 @@
   };
 </script>
 
-<Dialog
-  title={mode === 'clear'
-    ? $t('frameleaf_users_pin_clear_title', { values: { name: user.name } })
-    : $t('frameleaf_users_pin_set_title', { values: { name: user.name } })}
-  closeLabel={$t('close')}
-  bind:open
->
+<Dialog title={label} closeLabel={$t('close')} bind:open>
   <form onsubmit={submit}>
     <p id={hintId}>
       {mode === 'clear'
-        ? $t('frameleaf_users_pin_clear_description', { values: { name: user.name } })
+        ? $t('frameleaf_users_pin_reset_description', { values: { name: user.name } })
         : $t('frameleaf_users_pin_set_description', { values: { name: user.name } })}
     </p>
 
@@ -111,7 +117,7 @@
     <footer>
       <Button type="button" disabled={working} onclick={() => (open = false)}>{$t('cancel')}</Button>
       <Button type="submit" variant="primary" disabled={!valid || working}>
-        {mode === 'clear' ? $t('frameleaf_users_pin_clear') : $t('frameleaf_users_pin_set')}
+        {label}
       </Button>
     </footer>
   </form>

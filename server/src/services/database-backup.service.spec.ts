@@ -3,9 +3,10 @@ import { DateTime } from 'luxon';
 import { Duplex, PassThrough, Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { ImmichWorker, JobStatus, StorageFolder } from 'src/enum.js';
+import { ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
-import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import { AutoMocked, ServiceMocks, automock, getMocks, mockDuplex, mockSpawn } from 'test/utils.js';
 
@@ -1042,6 +1043,81 @@ describe(DatabaseBackupService.name, () => {
       expect(mocks.user.hasAdmin).toHaveBeenCalled();
       expect(maintenanceHealthRepositoryMock.checkApiHealth).toHaveBeenCalled();
       expect(mocks.process.spawnDuplexStream).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe('restore verification (FL-71 CC-9)', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = new Date('2026-09-24T12:00:00.000Z');
+
+    it('is due at once while either part has never been proved', () => {
+      expect(restoreVerificationDue({}, now)).toEqual({ dueAt: null, overdue: true });
+      expect(restoreVerificationDue({ metadataVerifiedAt: now.toISOString() }, now)).toEqual({
+        dueAt: null,
+        overdue: true,
+      });
+    });
+
+    it('is due 90 days after the older of the two tests', () => {
+      const recent = new Date(now.getTime() - 10 * day).toISOString();
+      const older = new Date(now.getTime() - 80 * day).toISOString();
+      expect(restoreVerificationDue({ metadataVerifiedAt: recent, originalsVerifiedAt: older }, now)).toEqual({
+        dueAt: new Date(now.getTime() + 10 * day).toISOString(),
+        overdue: false,
+      });
+      const stale = new Date(now.getTime() - 91 * day).toISOString();
+      expect(restoreVerificationDue({ metadataVerifiedAt: recent, originalsVerifiedAt: stale }, now).overdue).toBe(
+        true,
+      );
+    });
+
+    it('reports the record with the administrator who made it', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        metadataVerifiedAt: '2026-09-20T10:00:00.000Z',
+        originalsVerifiedAt: null,
+        verifiedBy: 'admin-id',
+      });
+      mocks.user.get.mockResolvedValue({ id: 'admin-id', name: 'Ada' } as never);
+
+      await expect(sut.getRestoreVerification()).resolves.toEqual({
+        metadataVerifiedAt: '2026-09-20T10:00:00.000Z',
+        originalsVerifiedAt: null,
+        verifiedBy: { id: 'admin-id', name: 'Ada' },
+        overdue: true,
+        dueAt: null,
+        intervalDays: 90,
+      });
+    });
+
+    it('records the tested parts now and keeps the untested part', async () => {
+      mocks.database.withLock.mockImplementation((_lock, fn) => fn());
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.BackupRestoreVerification
+            ? { metadataVerifiedAt: '2026-01-01T00:00:00.000Z' }
+            : null) as never,
+        ),
+      );
+      mocks.user.get.mockResolvedValue(undefined as never);
+
+      await sut.recordRestoreVerification(authStub.admin, { metadata: false, originals: true });
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.BackupRestoreVerification, {
+        metadataVerifiedAt: '2026-01-01T00:00:00.000Z',
+        originalsVerifiedAt: expect.any(String),
+        verifiedBy: authStub.admin.user.id,
+      });
+      // FL-71 (CC-10): the review lands in the change history as "Reviewed: Recovery readiness".
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfigHistory, {
+        entries: [
+          expect.objectContaining({
+            kind: 'review',
+            title: 'Reviewed: Recovery readiness',
+            actorId: authStub.admin.user.id,
+            changes: [],
+          }),
+        ],
+      });
     });
   });
 });

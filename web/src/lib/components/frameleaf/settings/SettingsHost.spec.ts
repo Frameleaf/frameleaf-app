@@ -30,6 +30,8 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
   },
 }));
 vi.mock('$lib/frameleaf/system-config-draft.svelte', () => ({ getSystemConfigDraft: () => undefined }));
+const serverConfig = vi.hoisted(() => ({ value: { serverName: '' } }));
+vi.mock('$lib/managers/server-config-manager.svelte', () => ({ serverConfigManager: serverConfig }));
 vi.mock('$lib/components/frameleaf/analytics/AnalyticsArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
@@ -42,10 +44,22 @@ vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => (
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
   getAdminConfigHistory: vi.fn().mockResolvedValue({ entries: [] }),
+  getMyPreferenceHistory: vi.fn().mockResolvedValue({
+    entries: [
+      {
+        id: 'pref-1',
+        createdAt: '2026-09-24T10:00:00.000Z',
+        deviceLabel: 'iOS · Mobile',
+        changes: [{ path: 'tags.enabled', before: 'false', after: 'true' }],
+        omittedChanges: 0,
+      },
+    ],
+  }),
   getAnalyticsScopes: vi.fn().mockResolvedValue({
     scopes: [
       { kind: 'host', value: 'all', label: '', libraryId: null, removed: false, userId: null },
       { kind: 'account', value: 'user:ada', label: 'Ada', libraryId: null, removed: false, userId: 'ada' },
+      { kind: 'library', value: 'library:l1', label: 'Archive', libraryId: 'l1', removed: false, userId: 'ada' },
     ],
   }),
 }));
@@ -247,11 +261,34 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=trash&section=contents', expect.any(Object));
   });
 
+  it('names the server as its administrator set it, and falls back to its address (CC-4, CommandCenter.jsx:657)', () => {
+    open('/user-settings?area=storage');
+    serverConfig.value.serverName = 'Home archive';
+    const { unmount } = render(SettingsHost, { sections });
+    expect(document.querySelector('.cc-context')).toHaveTextContent('Home archive');
+    unmount();
+
+    serverConfig.value.serverName = '  ';
+    render(SettingsHost, { sections });
+    expect(document.querySelector('.cc-context')).toHaveTextContent('localhost');
+  });
+
   it('keeps the Viewing scope when moving between areas', async () => {
     open('/user-settings?area=storage&scope=user%3Aada');
     render(SettingsHost, { sections });
     await userEvent.click(screen.getByRole('button', { name: 'Library analytics' }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=analytics&scope=user%3Aada', expect.any(Object));
+  });
+
+  it('notes that queues filter by account when a library is the Viewing scope (CommandCenter.jsx:772-779)', async () => {
+    open('/user-settings?area=processing&section=queues&scope=library%3Al1');
+    render(SettingsHost, { sections });
+
+    expect(
+      await screen.findByText(
+        'Job and utility queues are filtered by account. This view includes all libraries owned by Ada.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('opens a section an older isOpen link names, and a bare key as the account section', async () => {
@@ -281,12 +318,21 @@ describe('the Command Center (FL-71)', () => {
       'Access & security',
       'Notifications',
       'Your preferences',
+      'Change history',
     ]);
     // A server area falls back to the first area the account may open.
     expect(screen.getByRole('button', { name: 'Import & protection' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: /Database backups/ })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Account or library scope' })).toBeNull();
     expect(screen.getByText('Ada’s library')).toBeInTheDocument();
+  });
+
+  it('shows an account without administration its own preference history (FL-71 CC-10)', async () => {
+    open('/user-settings?area=history', false);
+    render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
+
+    expect(await screen.findByText('1 preference changed')).toBeInTheDocument();
+    expect(screen.getByText('Ada · iOS · Mobile')).toBeInTheDocument();
   });
 
   it('searches areas, sections and utility tools, and clears an empty search', async () => {

@@ -166,6 +166,38 @@ describe('/admin/users', () => {
     });
   });
 
+  describe('GET /admin/users/:id/pin-code (FL-76)', () => {
+    it('says whether a PIN is set, never the PIN', async () => {
+      const before = await request(app)
+        .get(`/admin/users/${nonAdmin.userId}/pin-code`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(before.status).toBe(200);
+      expect(before.body).toEqual({ pinCode: false });
+
+      await request(app)
+        .put(`/admin/users/${nonAdmin.userId}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ pinCode: '123456' });
+
+      const after = await request(app)
+        .get(`/admin/users/${nonAdmin.userId}/pin-code`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(after.body).toEqual({ pinCode: true });
+
+      await request(app)
+        .put(`/admin/users/${nonAdmin.userId}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ pinCode: null });
+    });
+
+    it('is for administrators only', async () => {
+      const { status } = await request(app)
+        .get(`/admin/users/${nonAdmin.userId}/pin-code`)
+        .set('Authorization', `Bearer ${nonAdmin.accessToken}`);
+      expect(status).toBe(403);
+    });
+  });
+
   describe('PUT /admin/users/:id/preferences', () => {
     it('should update memories enabled', async () => {
       const before = await getUserPreferencesAdmin({ id: admin.userId }, { headers: asBearerAuth(admin.accessToken) });

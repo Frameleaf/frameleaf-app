@@ -25,10 +25,14 @@ test.describe.skip('Integrity', () => {
     // FL-71: integrity checks are the Command Center's Maintenance → Integrity checks section.
     await page.goto('/user-settings?area=maintenance&section=integrity');
 
-    // FL-81: each check is the prototype's card (`Maintenance.jsx:449-491`) with its findings count.
-    const count = page.getByRole('article', { name: 'Untracked Files' }).getByText(/\d+ findings?/);
+    // FL-81: each check is the prototype's card (`Maintenance.jsx:449-491`): "Last run … · n findings".
+    const count = page.getByRole('article', { name: 'Untracked Files' }).getByText(/Last run .* · \d+ findings?/);
+    const findings = async () => {
+      const text = await count.textContent();
+      return Number(text?.match(/(\d+) findings?/)?.[1]);
+    };
 
-    const previousCount = Number.parseInt((await count.textContent()) ?? '');
+    const previousCount = await findings();
 
     await utils.mkFolder(`/data/upload/${admin.userId}`);
     await utils.putTextFile('untracked', `/data/upload/${admin.userId}/untracked1.png`);
@@ -38,6 +42,6 @@ test.describe.skip('Integrity', () => {
     await checkButton.click();
     await expect(checkButton).toBeEnabled();
 
-    await expect(count).toContainText((previousCount + 1).toString());
+    await expect.poll(findings).toBe(previousCount + 1);
   });
 });

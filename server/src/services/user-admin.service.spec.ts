@@ -724,4 +724,26 @@ describe(UserAdminService.name, () => {
       });
     });
   });
+
+  describe('getPinCodeState (FL-76 CC-30)', () => {
+    it('says whether the account has a PIN, and nothing else', async () => {
+      mocks.user.hasPinCode.mockResolvedValue(true);
+
+      await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toStrictEqual({ pinCode: true });
+      expect(mocks.user.hasPinCode).toHaveBeenCalledWith('user-1');
+      expect(mocks.user.getForPinCode).not.toHaveBeenCalled();
+    });
+
+    it('says so when the account has no PIN', async () => {
+      mocks.user.hasPinCode.mockResolvedValue(false);
+
+      await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toStrictEqual({ pinCode: false });
+    });
+
+    it('throws for an unknown account', async () => {
+      mocks.user.hasPinCode.mockResolvedValue(undefined);
+
+      await expect(sut.getPinCodeState(authStub.admin, 'user-1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
 });

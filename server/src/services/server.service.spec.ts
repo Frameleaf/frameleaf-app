@@ -193,11 +193,18 @@ describe(ServerService.name, () => {
   });
 
   describe('getSystemConfig', () => {
+    it('reports the server name an administrator set (FL-71 CC-4)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ server: { name: 'Home archive' } });
+
+      await expect(sut.getSystemConfig()).resolves.toEqual(expect.objectContaining({ serverName: 'Home archive' }));
+    });
+
     it('should respond the server configuration', async () => {
       const result = await sut.getSystemConfig();
       const { defaultImageDescriptionRawPromptTemplate, ...rest } = result;
       expect(rest).toEqual({
         loginPageMessage: '',
+        serverName: '',
         oauthButtonText: 'Login with OAuth',
         oauthAccountManagementUrl: '',
         trashDays: 30,

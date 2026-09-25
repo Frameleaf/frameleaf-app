@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   filterMaintenanceReportItems,
   MAINTENANCE_REPORT_QUERY_MAX_LENGTH,
+  maintenanceReportFileName,
+  maintenanceReportText,
   normalizeMaintenanceReportQuery,
   summarizeMaintenanceReportFilter,
 } from '$lib/frameleaf/maintenance-report';
@@ -42,5 +44,37 @@ describe('Frameleaf maintenance report filter', () => {
   it('summarizes whether the filter narrowed the result set', () => {
     expect(summarizeMaintenanceReportFilter(3, 3)).toEqual({ filtered: 3, total: 3, isFiltered: false });
     expect(summarizeMaintenanceReportFilter(1, 3)).toEqual({ filtered: 1, total: 3, isFiltered: true });
+  });
+});
+
+describe('maintenanceReportText (FL-81 CC-23, maintenance-data.mjs:657-674)', () => {
+  it('writes a heading, the last run, the findings count and one path per line', () => {
+    expect(
+      maintenanceReportText({
+        title: 'Untracked Files',
+        lastRunAt: '2026-09-20T10:15:00.000Z',
+        paths: ['/data/upload/a.jpg', '/data/upload/b.jpg'],
+      }),
+    ).toBe(
+      [
+        'Frameleaf integrity report · Untracked Files',
+        'Last run: 2026-09-20T10:15:00.000Z',
+        'Findings: 2',
+        '',
+        '/data/upload/a.jpg',
+        '/data/upload/b.jpg',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('says when the check never ran', () => {
+    expect(maintenanceReportText({ title: 'Missing Files', lastRunAt: null, paths: [] })).toContain('Last run: never');
+  });
+
+  it('names the file after the check and the moment', () => {
+    expect(maintenanceReportFileName('missing_file', new Date('2026-09-24T17:40:05.123Z'))).toBe(
+      'frameleaf-integrity-missing_file-2026-09-24-17-40-05.txt',
+    );
   });
 });

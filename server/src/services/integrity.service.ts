@@ -17,6 +17,7 @@ import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
+  IntegrityCheckRunsResponseDto,
   IntegrityGetReportDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
@@ -141,6 +142,51 @@ export class IntegrityService extends BaseService {
     return this.integrityRepository.getIntegrityReportSummary();
   }
 
+  /**
+   * FL-81 (CC-21): when each check last completed a full run, for "Last run …" in Maintenance. The
+   * untracked and missing checks complete when the last of their batches finishes; the checksum
+   * check when a pass has covered every asset (a pass stopped by its time or percentage limit
+   * continues from its checkpoint and is not a completed run yet).
+   */
+  async getIntegrityCheckRuns(): Promise<IntegrityCheckRunsResponseDto> {
+    const runs = (await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckRuns)) ?? {};
+    return {
+      [IntegrityReport.ChecksumFail]: runs[IntegrityReport.ChecksumFail]?.lastRunAt ?? null,
+      [IntegrityReport.MissingFile]: runs[IntegrityReport.MissingFile]?.lastRunAt ?? null,
+      [IntegrityReport.UntrackedFile]: runs[IntegrityReport.UntrackedFile]?.lastRunAt ?? null,
+    };
+  }
+
+  /** A full (not refresh-only) run of `type` begins; its batches carry the returned id. */
+  private async startCheckRun(type: IntegrityReport): Promise<string> {
+    const runId = this.cryptoRepository.randomUUID();
+    await this.systemMetadataRepository.startIntegrityRun(type, {
+      runId,
+      startedAt: new Date().toISOString(),
+      batches: null,
+      done: 0,
+    });
+    return runId;
+  }
+
+  /**
+   * Progress of a run: every batch queued (`batches`) or one batch finished. Whichever update sees
+   * all batches finished completes the run, however the batches and the queueing interleave.
+   */
+  private async progressCheckRun(
+    type: IntegrityReport,
+    runId: string | undefined,
+    progress: { batches?: number; finished?: number },
+  ) {
+    if (!runId) {
+      return;
+    }
+    const run = await this.systemMetadataRepository.updateIntegrityRun(type, runId, progress);
+    if (run && run.batches !== null && run.done >= run.batches) {
+      await this.systemMetadataRepository.completeIntegrityRun(type, runId, new Date());
+    }
+  }
+
   getIntegrityReport(dto: IntegrityGetReportDto): Promise<IntegrityReportResponseDto> {
     return this.integrityRepository.getIntegrityReport({ cursor: dto.cursor, limit: dto.limit ?? 100 }, dto.type);
   }
@@ -228,6 +274,7 @@ export class IntegrityService extends BaseService {
     }
 
     this.logger.log(`Scanning for untracked files...`);
+    const runId = await this.startCheckRun(IntegrityReport.UntrackedFile);
 
     const assetPaths = this.storageRepository.walk({
       pathsToCrawl: [StorageFolder.EncodedVideo, StorageFolder.Library, StorageFolder.Upload].map((folder) =>
@@ -254,12 +301,14 @@ export class IntegrityService extends BaseService {
     }
 
     let total = 0;
+    let batches = 0;
     for await (const [batchType, batchPaths] of paths()) {
       await this.jobRepository.queue({
         name: JobName.IntegrityUntrackedFiles,
         data: {
           type: batchType,
           paths: batchPaths,
+          runId,
         },
       });
 
@@ -267,13 +316,21 @@ export class IntegrityService extends BaseService {
       total += count;
 
       this.logger.log(`Queued untracked check of ${count} file(s) (${total} so far)`);
+      batches++;
     }
 
+    await this.progressCheckRun(IntegrityReport.UntrackedFile, runId, { batches });
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.IntegrityUntrackedFiles, queue: QueueName.IntegrityCheck })
-  async handleUntrackedFiles({ type, paths }: IIntegrityUntrackedFilesJob): Promise<JobStatus> {
+  async handleUntrackedFiles({ runId, ...job }: IIntegrityUntrackedFilesJob): Promise<JobStatus> {
+    const status = await this.checkUntrackedFiles(job);
+    await this.progressCheckRun(IntegrityReport.UntrackedFile, runId, { finished: 1 });
+    return status;
+  }
+
+  private async checkUntrackedFiles({ type, paths }: Omit<IIntegrityUntrackedFilesJob, 'runId'>): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${paths.length} files to check if they are untracked.`);
 
     const untrackedFiles = new Set<string>(paths);
@@ -393,27 +450,38 @@ export class IntegrityService extends BaseService {
     }
 
     this.logger.log(`Scanning for missing files...`);
+    const runId = await this.startCheckRun(IntegrityReport.MissingFile);
 
     const assetPaths = this.integrityRepository.streamAssetPathsForMissingFiles();
 
     let total = 0;
+    let batches = 0;
     for await (const batchPaths of batched(assetPaths, JOBS_LIBRARY_PAGINATION_SIZE)) {
       await this.jobRepository.queue({
         name: JobName.IntegrityMissingFiles,
         data: {
           items: batchPaths,
+          runId,
         },
       });
+      batches++;
 
       total += batchPaths.length;
       this.logger.log(`Queued missing check of ${batchPaths.length} file(s) (${total} so far)`);
     }
 
+    await this.progressCheckRun(IntegrityReport.MissingFile, runId, { batches });
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.IntegrityMissingFiles, queue: QueueName.IntegrityCheck })
-  async handleMissingFiles({ items }: IIntegrityMissingFilesJob): Promise<JobStatus> {
+  async handleMissingFiles({ runId, ...job }: IIntegrityMissingFilesJob): Promise<JobStatus> {
+    const status = await this.checkMissingFiles(job);
+    await this.progressCheckRun(IntegrityReport.MissingFile, runId, { finished: 1 });
+    return status;
+  }
+
+  private async checkMissingFiles({ items }: Omit<IIntegrityMissingFilesJob, 'runId'>): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${items.length} files to check if they are missing.`);
 
     const results = await Promise.all(
@@ -654,6 +722,10 @@ export class IntegrityService extends BaseService {
       this.logger.log(`Finished checksum job, will continue from ${lastCreatedAt.toISOString()}.`);
     } else {
       this.logger.log(`Finished checksum job, covered all assets.`);
+      // A pass that reached the last asset is a completed run (FL-81); one stopped by its limits
+      // continues from the checkpoint next time and completes then.
+      const runId = await this.startCheckRun(IntegrityReport.ChecksumFail);
+      await this.systemMetadataRepository.completeIntegrityRun(IntegrityReport.ChecksumFail, runId, new Date());
     }
 
     return JobStatus.Success;

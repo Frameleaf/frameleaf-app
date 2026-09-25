@@ -14,6 +14,9 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 
+/** A queue job as bullmq has it, before the Job manager's account and worker are added (FL-71). */
+export type QueueJobRow = Omit<QueueJobResponseDto, 'account' | 'worker'> & { status: QueueJobStatus };
+
 type JobMapItem = {
   jobName: JobName;
   queueName: QueueName;
@@ -458,6 +461,14 @@ export class JobRepository {
     return this.getQueue(name).clean(0, 1000, type);
   }
 
+  /**
+   * FL-71 "Retry failed" (`JobsManager.jsx` 715-727): every failed job of the queue goes back to
+   * waiting (or paused, when the queue is paused) with its saved data, in batches of 1,000.
+   */
+  retryFailed(name: QueueName) {
+    return this.getQueue(name).retryJobs({ state: 'failed', count: 1000 });
+  }
+
   getJobCounts(name: QueueName): Promise<JobCounts> {
     return this.getQueue(name).getJobCounts(
       'active',
@@ -535,11 +546,25 @@ export class JobRepository {
     }
   }
 
-  async searchJobs(name: QueueName, dto: QueueJobSearchDto): Promise<QueueJobResponseDto[]> {
-    const jobs = await this.getQueue(name).getJobs(dto.status ?? Object.values(QueueJobStatus), 0, 1000);
+  async searchJobs(name: QueueName, dto: QueueJobSearchDto, limit = 1000): Promise<QueueJobRow[]> {
+    const jobs = await this.getQueue(name).getJobs(dto.status ?? Object.values(QueueJobStatus), 0, limit - 1);
+    const only = dto.status?.length === 1 ? dto.status[0] : undefined;
     return jobs.map((job) => {
-      const { id, name, timestamp, data, attemptsMade, failedReason } = job;
+      const { id, name, timestamp, data, attemptsMade, failedReason, finishedOn, processedOn, delay } = job;
+      // FL-71: the status decides whether the job's worker is where it ran or where it will run.
+      const status =
+        only ??
+        (finishedOn
+          ? failedReason
+            ? QueueJobStatus.Failed
+            : QueueJobStatus.Complete
+          : processedOn
+            ? QueueJobStatus.Active
+            : delay > 0 && timestamp + delay > Date.now()
+              ? QueueJobStatus.Delayed
+              : QueueJobStatus.Waiting);
       return {
+        status,
         id,
         name: name as JobName,
         timestamp,

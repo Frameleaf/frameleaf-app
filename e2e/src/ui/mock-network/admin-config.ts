@@ -381,6 +381,7 @@ export const adminConfigDefaults = {
     },
   },
   server: {
+    name: '',
     externalDomain: '',
     loginPageMessage: '',
     publicUsers: true,

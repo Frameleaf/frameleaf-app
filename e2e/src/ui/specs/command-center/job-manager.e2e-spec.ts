@@ -40,10 +40,52 @@ const setupQueueMocks = async (context: BrowserContext) => {
     updates: [] as Array<{ name: string; isPaused: boolean }>,
     jobs: [] as string[],
     commands: [] as Array<{ name: string; command: string }>,
+    retries: [] as string[],
+    ownerQueries: [] as string[],
   };
 
   await context.route('**/api/queues', (route) => route.fulfill({ json: queues }));
-  await context.route('**/api/queues/*/jobs*', (route) => route.fulfill({ json: [] }));
+  // FL-71: a failed job names its account and worker (JobsManager.jsx 758-796).
+  await context.route('**/api/queues/*/jobs*', (route, request) => {
+    const url = new URL(request.url());
+    const failed = url.pathname.includes('faceDetection') && url.searchParams.getAll('status').includes('failed');
+    return route.fulfill({
+      json: failed
+        ? [
+            {
+              id: 'job-1',
+              name: 'AssetDetectFaces',
+              timestamp: Date.UTC(2026, 8, 23, 10),
+              data: { id: faker.string.uuid() },
+              attemptsMade: 3,
+              failedReason: 'Machine learning is unreachable',
+              account: { id: faker.string.uuid(), name: 'Ada Lovelace' },
+              worker: { kind: 'runpod', name: 'Studio pod' },
+            },
+          ]
+        : [],
+    });
+  });
+  // FL-71 (J-1): the Account filter's accounts and one account's counts.
+  await context.route('**/api/admin/users*', (route) =>
+    route.fulfill({ json: [{ id: 'a0000000-0000-4000-8000-000000000001', name: 'Grace Hopper', email: 'g@x.test' }] }),
+  );
+  await context.route('**/api/queues/*/statistics*', (route, request) => {
+    requests.ownerQueries.push(new URL(request.url()).searchParams.get('ownerId') ?? '');
+    return route.fulfill({
+      json: { active: 0, completed: 0, delayed: 0, failed: 0, paused: 0, waiting: 0, truncated: false },
+    });
+  });
+  await context.route('**/api/queues/*/jobs/retry-failed', async (route, request) => {
+    const name = new URL(request.url()).pathname.split('/').at(-3)!;
+    requests.retries.push(name);
+    const queue = queues.find((item) => item.name === name);
+    const count = queue?.statistics.failed ?? 0;
+    if (queue) {
+      queue.statistics.failed = 0;
+    }
+    return route.fulfill({ json: { count } });
+  });
   await context.route('**/api/queues/*', async (route, request) => {
     const name = new URL(request.url()).pathname.split('/').at(-1)!;
     const queue = queues.find((item) => item.name === name);
@@ -93,7 +135,7 @@ test.describe('Job manager', () => {
   test('shows the header, metrics and queues, and pauses and resumes a queue through its review', async ({ page }) => {
     await page.goto(jobManager);
 
-    await expect(page.getByText('PROCESSING', { exact: true })).toBeVisible();
+    await expect(page.locator('.jobs-manager').getByText('Compute & jobs', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: 'Queues & jobs' })).toBeVisible();
     for (const action of ['Concurrency', 'Enrichment tasks', 'Create job']) {
       await expect(page.getByRole('button', { name: action, exact: true })).toBeVisible();
@@ -135,6 +177,35 @@ test.describe('Job manager', () => {
     await confirm.click();
 
     await expect.poll(() => requests.commands).toEqual([{ name: 'faceDetection', command: 'clear-failed' }]);
+  });
+
+  test("names a failed job's account and worker, and retries failed jobs through the review", async ({ page }) => {
+    await page.goto(`${jobManager}&queue=face-detection&tab=failed`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Face detection' })).toBeVisible();
+
+    const table = page.getByRole('table');
+    await expect(table.getByRole('columnheader', { name: 'Account' })).toBeVisible();
+    await expect(table.getByRole('columnheader', { name: 'Worker' })).toBeVisible();
+    await expect(table.getByText('Ada Lovelace')).toBeVisible();
+    await expect(table.getByText('RunPod')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Retry failed', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Retry failed jobs' });
+    await expect(review.getByText(/Put failed jobs back in the queue/)).toBeVisible();
+    await review.getByRole('button', { name: 'Retry failed jobs' }).click();
+
+    await expect.poll(() => requests.retries).toEqual(['faceDetection']);
+  });
+
+  test("narrows a queue to one account's work with the Account filter", async ({ page }) => {
+    await page.goto(`${jobManager}&queue=face-detection&tab=failed`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Face detection' })).toBeVisible();
+
+    await page.getByRole('combobox', { name: 'Account filter' }).selectOption({ label: 'Grace Hopper' });
+
+    await expect.poll(() => requests.ownerQueries).toContain('a0000000-0000-4000-8000-000000000001');
+    await expect(page.getByText(/Counts and job details: Grace Hopper\./)).toBeVisible();
+    await expect(page.getByRole('tab', { name: /Failed\s*0/ })).toBeVisible();
   });
 
   test('edits queue concurrency in the settings draft', async ({ page }) => {
