@@ -290,7 +290,7 @@
   <FixMatchPanel {person} {onOpenAsset} onChanged={onFacesChanged} close={() => (fixOpen = false)} />
 {/if}
 {#if historyOpen}
-  <CorrectionHistoryPanel {person} close={() => (historyOpen = false)} />
+  <CorrectionHistoryPanel {person} {onOpenAsset} onChanged={onFacesChanged} close={() => (historyOpen = false)} />
 {/if}
 
 <style>
