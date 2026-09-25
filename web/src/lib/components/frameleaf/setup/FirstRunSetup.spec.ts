@@ -62,4 +62,13 @@ describe('FirstRunSetup (FL-176)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Use a local account instead' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Create the admin account' })).toBeInTheDocument());
   });
+
+  it('offers a way out to a signed-in admin, but not at the sign-in gate', () => {
+    const state = createSetup('existing');
+    const { unmount } = render(FirstRunSetup, { initial: { ...state, step: 2, reached: 2 }, authenticated: true });
+    expect(screen.getByRole('link', { name: 'Sign out' })).toHaveAttribute('href', '/auth/logout');
+    unmount();
+    render(FirstRunSetup, { initial: state, authenticated: false });
+    expect(screen.queryByRole('link', { name: 'Sign out' })).toBeNull();
+  });
 });
