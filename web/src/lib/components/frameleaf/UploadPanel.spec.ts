@@ -96,6 +96,33 @@ describe('UploadPanel', () => {
     expect(screen.getByText(en.frameleaf_transfer_upload_complete)).toBeInTheDocument();
   });
 
+  it('styles a failed row as an error (M4: the status attribute is a name, not the numeric state)', () => {
+    uploadAssetsStore.addItem({ id: 'failed', file: makeFile('failed.jpg') });
+    uploadAssetsStore.addItem({ id: 'done', file: makeFile('done.jpg') });
+    uploadAssetsStore.updateItem('failed', { state: UploadState.ERROR, error: 'nope' });
+    uploadAssetsStore.updateItem('done', { state: UploadState.DONE });
+
+    const { container } = render(UploadPanel);
+
+    const failed = container.querySelector('.fl-row[data-status="error"]');
+    expect(failed).toHaveTextContent('failed.jpg');
+    expect(container.querySelector('.fl-row[data-status="done"]')).toHaveTextContent('done.jpg');
+  });
+
+  it('drops dismissed failures from the batch total (M5)', async () => {
+    uploadAssetsStore.addItem({ id: 'going', file: makeFile('going.jpg') });
+    uploadAssetsStore.addItem({ id: 'failed', file: makeFile('failed.jpg') });
+    uploadAssetsStore.updateItem('failed', { state: UploadState.ERROR, error: 'nope' });
+    uploadAssetsStore.track('error');
+    uploadAssetsStore.markStarted('going');
+
+    render(UploadPanel);
+    expect(screen.getByText('Uploading 2 of 2')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_transfer_dismiss_errors }));
+
+    expect(screen.getByText('Uploading 1 of 1')).toBeInTheDocument();
+  });
+
   it('does not offer Dismiss errors for duplicates alone', () => {
     uploadAssetsStore.addItem({ id: 'same', file: makeFile('same.jpg') });
     uploadAssetsStore.updateItem('same', { state: UploadState.DUPLICATED, assetId: 'asset-1' });
