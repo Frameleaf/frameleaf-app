@@ -10,13 +10,13 @@ const IntegrityReportSummaryResponseSchema = z
   })
   .meta({ id: 'IntegrityReportSummaryResponseDto' });
 
-/** FL-81 (CC-21, `Maintenance.jsx` 467): when each check last ran in full; null when it never has. */
+/** FL-81 (CC-21, `Maintenance.jsx` 467): when each check last completed a full run; null when none is recorded. */
 const lastRunAt = z.string().meta({ format: 'date-time' }).nullable();
 const IntegrityCheckRunsResponseSchema = z
   .object({
-    [IntegrityReport.ChecksumFail]: lastRunAt.describe('When the checksum check last ran'),
-    [IntegrityReport.MissingFile]: lastRunAt.describe('When the missing-file check last ran'),
-    [IntegrityReport.UntrackedFile]: lastRunAt.describe('When the untracked-file check last ran'),
+    [IntegrityReport.ChecksumFail]: lastRunAt.describe('When the checksum check last completed a full pass'),
+    [IntegrityReport.MissingFile]: lastRunAt.describe('When the missing-file check last completed'),
+    [IntegrityReport.UntrackedFile]: lastRunAt.describe('When the untracked-file check last completed'),
   })
   .meta({ id: 'IntegrityCheckRunsResponseDto' });
 

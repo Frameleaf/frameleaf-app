@@ -1,4 +1,4 @@
-import { LoginResponseDto, QueueCommand, QueueName, updateConfig } from '@immich/sdk';
+import { LoginResponseDto, QueueCommand, QueueName, getQueue, updateConfig } from '@immich/sdk';
 import { cpSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -218,13 +218,35 @@ describe('/jobs', () => {
   });
 
   describe('POST /queues/:name/jobs/retry-failed (FL-71)', () => {
-    it('retries failed jobs for an administrator and reports how many', async () => {
+    let failed = 0;
+
+    beforeAll(async () => {
+      // A file that is not an image: its thumbnail job fails.
+      await utils.createAsset(admin.accessToken, {
+        assetData: { bytes: Buffer.from('not an image'), filename: 'broken.jpg' },
+      });
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+      const queue = await getQueue(
+        { name: QueueName.ThumbnailGeneration },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+      failed = queue.statistics.failed;
+    });
+
+    it('lists the failed job with the account that owns its asset and the server as its worker', async () => {
+      expect(failed).toBeGreaterThan(0);
       const { status, body } = await request(app)
-        .post(`/queues/${QueueName.ThumbnailGeneration}/jobs/retry-failed`)
+        .get(`/queues/${QueueName.ThumbnailGeneration}/jobs`)
+        .query({ status: ['failed'] })
         .set('Authorization', `Bearer ${admin.accessToken}`);
 
       expect(status).toBe(200);
-      expect(body).toEqual({ count: expect.any(Number) });
+      expect(body.length).toBeGreaterThan(0);
+      for (const job of body) {
+        expect(job.account).toEqual({ id: admin.userId, name: expect.any(String) });
+        expect(job.worker).toEqual({ kind: 'server', name: null });
+      }
     });
 
     it('is for administrators only', async () => {
@@ -236,15 +258,14 @@ describe('/jobs', () => {
       expect(status).toBe(403);
     });
 
-    it('names the account and worker of a listed job', async () => {
+    it('puts every failed job back in the queue and reports how many', async () => {
+      expect(failed).toBeGreaterThan(0);
       const { status, body } = await request(app)
-        .get(`/queues/${QueueName.ThumbnailGeneration}/jobs`)
+        .post(`/queues/${QueueName.ThumbnailGeneration}/jobs/retry-failed`)
         .set('Authorization', `Bearer ${admin.accessToken}`);
 
       expect(status).toBe(200);
-      for (const job of body) {
-        expect(job.worker).toEqual({ kind: 'server', name: null });
-      }
+      expect(body).toEqual({ count: failed });
     });
   });
 });

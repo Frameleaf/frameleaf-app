@@ -59,7 +59,7 @@ describe('MaintenanceIntegrityPanel (FL-81 CC-21/22)', () => {
     expect(screen.getByRole('button', { name: 'Running…' })).toBeDisabled();
   });
 
-  it('reads "Last run …" or "Never run" per check, with its findings (Maintenance.jsx:466-469)', () => {
+  it('reads "Last run …" or "No completed run recorded" per check, with its findings (Maintenance.jsx:466-469)', () => {
     render(MaintenanceIntegrityPanel, {
       ...props(),
       integrityReport: { untracked_file: 2, missing_file: 0, checksum_mismatch: 1 },
@@ -69,12 +69,14 @@ describe('MaintenanceIntegrityPanel (FL-81 CC-21/22)', () => {
     const untracked = screen.getByRole('article', { name: 'Untracked Files' });
     expect(untracked).toHaveTextContent(/Last run .*2026.* · 2 findings/);
     const missing = screen.getByRole('article', { name: 'Missing Files' });
-    expect(missing).toHaveTextContent('Never run');
+    expect(missing).toHaveTextContent('No completed run recorded');
     expect(missing).not.toHaveTextContent('findings');
-    expect(missing).toHaveTextContent('Not run yet');
+    expect(missing).toHaveTextContent('Not recorded');
     expect(missing).not.toHaveTextContent('No issues');
     // A check with findings from before runs were recorded still reads its findings.
-    expect(screen.getByRole('article', { name: 'Checksum Mismatch' })).toHaveTextContent('Never run · 1 finding');
+    expect(screen.getByRole('article', { name: 'Checksum Mismatch' })).toHaveTextContent(
+      'No completed run recorded · 1 finding',
+    );
   });
 
   it('reads "0 findings" after a clean run', () => {

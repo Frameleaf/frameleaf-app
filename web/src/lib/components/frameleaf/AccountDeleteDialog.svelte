@@ -81,8 +81,9 @@
 
     <footer>
       <Button type="button" disabled={working} onclick={() => (open = false)}>{$t('cancel')}</Button>
-      <Button type="submit" variant="primary" disabled={!valid || working}>
-        {$t('frameleaf_users_delete')}
+      <!-- The template's danger confirm (AccountsLibraries.jsx:724-729); the force path keeps its own label. -->
+      <Button type="submit" variant="danger" disabled={!valid || working}>
+        {force ? $t('frameleaf_users_delete_confirm_force') : $t('frameleaf_users_delete')}
       </Button>
     </footer>
   </form>
