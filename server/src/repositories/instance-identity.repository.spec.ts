@@ -149,6 +149,33 @@ describe(InstanceIdentityRepository.name, () => {
       await expect(access(join(dir, 'instance-key.next.pem'))).rejects.toThrow();
     });
 
+    it('discards a next key a crash left half written and keeps the current key (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      await writeFile(join(dir, 'instance-key.next.pem'), newPem().slice(0, 40), { mode: 0o600 });
+
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+      expect(again.kid).toBe(identity.kid);
+      expect(again.candidate).toBeUndefined();
+      await expect(access(join(dir, 'instance-key.next.pem'))).rejects.toThrow();
+      await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
+      await expect(access(join(dir, 'instance-key.candidate.json'))).rejects.toThrow();
+      await expect(new InstanceIdentityRepository().loadOrCreate(dir, identity)).resolves.toMatchObject({
+        kid: identity.kid,
+      });
+    });
+
+    it('discards a candidate key that does not parse, with its sidecar (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      await writeFile(join(dir, CANDIDATE_KEY_FILE), newPem().slice(0, 40), { mode: 0o600 });
+      await writeFile(join(dir, 'instance-key.candidate.json'), '{}', { mode: 0o600 });
+
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+      expect(again.kid).toBe(identity.kid);
+      expect(again.candidate).toBeUndefined();
+      await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
+      await expect(access(join(dir, 'instance-key.candidate.json'))).rejects.toThrow();
+    });
+
     it('falls back to a 0600 copy when the file system cannot hard-link (EPERM)', async () => {
       const repository = new InstanceIdentityRepository();
       const identity = await repository.loadOrCreate(dir, null);
