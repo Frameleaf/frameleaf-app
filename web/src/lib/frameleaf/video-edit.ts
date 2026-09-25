@@ -153,8 +153,8 @@ const normalizeRanges = (items: unknown, start: number, end: number): VideoSpeed
     .filter(isObject)
     .slice(0, MAX_SPEED_RANGES)
     .flatMap((item) => {
-      const from = clamp(finite(item.start, Number.NaN), start, end);
-      const to = clamp(finite(item.end, Number.NaN), start, end);
+      const from = clamp(finite(item.start, NaN), start, end);
+      const to = clamp(finite(item.end, NaN), start, end);
       if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) {
         return [];
       }
@@ -189,7 +189,7 @@ export function normalizeVideoEdit(candidate: unknown, duration: number): VideoE
   const develop = Object.fromEntries(DEVELOP_KEYS.map((key) => [key, clampParam(key, value[key])])) as DevelopValues;
   return {
     ...develop,
-    rotation: ((Math.round(finite(value.rotation, 0) / 90) * 90) % 360 + 360) % 360 as VideoEdit['rotation'],
+    rotation: ((((Math.round(finite(value.rotation, 0) / 90) * 90) % 360) + 360) % 360) as VideoEdit['rotation'],
     crop: choice(value.crop, ASPECT_IDS, 'Original'),
     cropRect: normalizeRect(value.cropRect),
     straighten: round(clamp(finite(value.straighten, 0), -45, 45), 1),
@@ -224,7 +224,8 @@ const canonical = (value: unknown): unknown => {
   }
   return value;
 };
-export const sameVideoEdit = (a: VideoEdit, b: VideoEdit) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+export const sameVideoEdit = (a: VideoEdit, b: VideoEdit) =>
+  JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
 /* Timeline ------------------------------------------------------------ */
 
@@ -363,8 +364,9 @@ const developChanged = (edit: VideoEdit) =>
  */
 export function toVideoEdits(edit: VideoEdit, source: VideoSource): AssetEditActionItemDto[] {
   const edits: AssetEditActionItemDto[] = [];
-  const push = (action: AssetEditAction, parameters: AssetEditActionItemDto['parameters']) =>
+  const push = (action: AssetEditAction, parameters: AssetEditActionItemDto['parameters']) => {
     edits.push({ action, parameters });
+  };
   const duration = secondsOf(source);
 
   if (!isFullRect(edit.cropRect)) {
@@ -418,7 +420,7 @@ export function toVideoEdits(edit: VideoEdit, source: VideoSource): AssetEditAct
     push(AssetEditAction.Trim, {
       startMs: ms(edit.start),
       endMs: Math.max(ms(edit.start) + 1, ms(edit.end)),
-      ...(edit.trim === 'fast' ? { mode: VideoTrimMode.Fast } : {}),
+      ...(edit.trim === 'fast' && { mode: VideoTrimMode.Fast }),
     });
   }
 
@@ -489,7 +491,8 @@ export function fromVideoEdits(
         break;
       }
       case AssetEditAction.Rotate: {
-        edit.rotation = (((Math.round(numberOf(parameters, 'angle', 0) / 90) * 90) % 360) + 360) % 360 as VideoEdit['rotation'];
+        edit.rotation = ((((Math.round(numberOf(parameters, 'angle', 0) / 90) * 90) % 360) + 360) %
+          360) as VideoEdit['rotation'];
         break;
       }
       case AssetEditAction.Straighten: {
@@ -582,11 +585,15 @@ export function fromVideoEdits(
 /** Copy adjustments / Paste adjustments: the develop sliders and the look (`develop.mjs` pickSettings). */
 export type VideoSettings = Pick<VideoEdit, DevelopKey | 'preset' | 'presetStrength'>;
 export const pickVideoSettings = (edit: VideoEdit): VideoSettings =>
-  Object.fromEntries([...DEVELOP_KEYS, 'preset', 'presetStrength'].map((key) => [key, edit[key as keyof VideoEdit]])) as VideoSettings;
+  Object.fromEntries(
+    [...DEVELOP_KEYS, 'preset', 'presetStrength'].map((key) => [key, edit[key as keyof VideoEdit]]),
+  ) as VideoSettings;
 
 /** A change to Adjust or Presets replaces adjustments written by the earlier editor. */
 export const touchesDevelop = (patch: Partial<VideoEdit>) =>
-  Object.keys(patch).some((key) => (DEVELOP_KEYS as readonly string[]).includes(key) || key === 'preset' || key === 'presetStrength');
+  Object.keys(patch).some(
+    (key) => (DEVELOP_KEYS as readonly string[]).includes(key) || key === 'preset' || key === 'presetStrength',
+  );
 
 /** The label key of the look, for the strength slider. */
 export const lookLabel = (preset: DevelopLookId) => presetFor(preset).label;
@@ -599,10 +606,7 @@ const HISTORY_LIMIT = 100;
 export const createVideoDraft = (edit: VideoEdit): VideoDraft => ({ edit, undo: [], redo: [] });
 
 export function changeVideoDraft(draft: VideoDraft, patch: Partial<VideoEdit>, duration: number): VideoDraft {
-  const next = normalizeVideoEdit(
-    { ...draft.edit, ...patch, ...(touchesDevelop(patch) ? { legacy: [] } : {}) },
-    duration,
-  );
+  const next = normalizeVideoEdit({ ...draft.edit, ...patch, ...(touchesDevelop(patch) && { legacy: [] }) }, duration);
   if (sameVideoEdit(next, draft.edit)) {
     return draft;
   }
