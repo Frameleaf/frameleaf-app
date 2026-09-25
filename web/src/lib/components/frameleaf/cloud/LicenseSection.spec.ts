@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import LicenseSection from './LicenseSection.svelte';
 import PlanSection from './PlanSection.svelte';
 
@@ -122,6 +123,13 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
 
   beforeEach(() => {
     vi.clearAllMocks();
+    authManager.setUser({
+      id: 'admin-1',
+      name: 'Admin',
+      email: 'a@example.test',
+      isAdmin: true,
+      license: null,
+    } as never);
     sdkMock.getCloudStatus.mockResolvedValue(cloudStatus);
     sdkMock.getLicenseProducts.mockResolvedValue(products());
   });

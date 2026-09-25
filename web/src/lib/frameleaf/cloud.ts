@@ -22,6 +22,15 @@ export const formatUsd = (amount: number, digits?: number) =>
   }).format(amount);
 
 /** A plan price after the licensed-server discount (plans only, never AI credit). */
+/**
+ * FL-156: why plan prices are 20 % lower for this viewer, or null. An activated server key (the
+ * server's supporter entitlement) or the viewer's own individual supporter key counts; the server
+ * reason wins when both apply. AI credit is never discounted, whatever this says.
+ */
+export type LicensedDiscount = 'server' | 'personal' | null;
+export const licensedDiscount = (input: { serverLicensed: boolean; personalKey: boolean }): LicensedDiscount =>
+  input.serverLicensed ? 'server' : input.personalKey ? 'personal' : null;
+
 export const cloudPlanPrice = (price: number, licensed: boolean) =>
   licensed ? Math.round(price * (1 - LICENSED_DISCOUNT) * 100) / 100 : price;
 

@@ -95,3 +95,12 @@ describe('Frameleaf Cloud helpers', () => {
     });
   });
 });
+
+describe('licensedDiscount (FL-156)', () => {
+  it('counts an activated server key or the viewer’s own supporter key, server first', async () => {
+    const { licensedDiscount } = await import('$lib/frameleaf/cloud');
+    expect(licensedDiscount({ serverLicensed: true, personalKey: true })).toBe('server');
+    expect(licensedDiscount({ serverLicensed: false, personalKey: true })).toBe('personal');
+    expect(licensedDiscount({ serverLicensed: false, personalKey: false })).toBeNull();
+  });
+});

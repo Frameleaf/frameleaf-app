@@ -122,6 +122,16 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     expect(screen.getByLabelText('Regular price $6')).toBeInTheDocument();
   });
 
+  it('gives the discount for a personal supporter key and says so without calling the server licensed', async () => {
+    authManager.setUser(
+      user({ license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T00:00:00.000Z' } }),
+    );
+    render(BuyScreen);
+    expect(await screen.findByText('$4.80')).toBeInTheDocument();
+    expect(screen.getByText(/Your supporter key takes 20% off plan prices/)).toBeInTheDocument();
+    expect(screen.queryByText(/This server is licensed/)).not.toBeInTheDocument();
+  });
+
   it('refuses an upstream or mistyped key and never contacts the upstream licence server', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     render(BuyScreen, { pendingKey: 'IMCL-0KEY-AAAA-BBBB' });
