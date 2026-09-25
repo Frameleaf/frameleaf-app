@@ -16,11 +16,13 @@ import { execFileSync } from 'node:child_process';
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { packageAttribution } from './attribution.mjs';
 import { main as engine } from './engine.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const workspace = path.join(root, 'studio/engine');
 const config = path.join(root, 'studio/adapters/web/vite.config.mjs');
+const output = path.join(root, 'web/static/studio-engine');
 
 const present = (location) => lstat(location).then(() => true, () => false);
 
@@ -32,6 +34,12 @@ export async function main(args) {
   assert.ok(await present(vp), 'Install the engine lockfile first: npm --prefix studio/engine ci --ignore-scripts');
   const vpArgs = command === 'build' ? ['build', '--config', config] : ['test', 'run', '--config', config];
   execFileSync(vp, vpArgs, { cwd: workspace, stdio: 'inherit' });
+  if (command === 'build') {
+    // The licences travel with the code: every installed package's notice files and the reviewed
+    // artifact notices (attribution/), audited against the trusted inputs, next to notices/.
+    const audit = await packageAttribution(path.join(root, 'studio'), output, workspace);
+    console.log(`Attribution: ${audit.noticeCount} notices, ${audit.resourceCount} resources`);
+  }
   // The vendored snapshot stays byte-identical to the pinned archive.
   await engine(['verify']);
 }

@@ -9,8 +9,8 @@
    * out; nothing falls back to another project's sites. The Immich project's resources stay listed under "Built on Immich", as the
    * attribution requires.
    */
+  import AcknowledgementsList from '$lib/components/frameleaf/AcknowledgementsList.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
   import { type ServerAboutResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
@@ -103,9 +103,9 @@
     },
   ]);
 
-  // Name, what Frameleaf uses it for, and its licence; versions come from this server. Freecut is
-  // Studio's editor (owner decision 2026-09-25): it ships at the revision pinned in
-  // studio/freecut-provenance.json, so that is its version, and it links to its authors' project.
+  // Name, what Frameleaf uses it for, and its licence; versions come from this server. Everything
+  // else Frameleaf credits (Studio's Freecut editor, models, voices, fonts, assets) follows in the
+  // acknowledgements list, with its licence text.
   const notices: { name: string; role: string; licence: string; version?: string; href?: string }[] = $derived(
     [
       { name: 'Immich', role: $t('frameleaf_help_notice_immich'), licence: 'AGPL-3.0', version: info.version },
@@ -123,13 +123,6 @@
         role: $t('frameleaf_help_notice_metadata'),
         licence: 'Artistic / GPL',
         version: info.exiftool,
-      },
-      {
-        name: 'Freecut',
-        role: $t('frameleaf_help_notice_studio'),
-        licence: 'MIT',
-        version: pinnedFreecutRevision.slice(0, 7),
-        href: 'https://github.com/walterlow/freecut',
       },
     ].filter((notice) => notice.version),
   );
@@ -190,6 +183,7 @@
           </tbody>
         </table>
         <p class="help-credit">{$t('frameleaf_help_notice_freecut_credit')}</p>
+        <AcknowledgementsList />
       </details>
     </li>
   </ul>
