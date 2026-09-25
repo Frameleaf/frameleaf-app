@@ -1584,3 +1584,12 @@
   grid-column: 2 / -1;
   min-width: 0;
 }
+
+/* FL-176: Sign in with Frameleaf isn't available on this server yet. */
+.frs-choice .frs-unavailable {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--fl-warning);
+  font-size: var(--fl-font-small);
+  font-weight: 600;
+}

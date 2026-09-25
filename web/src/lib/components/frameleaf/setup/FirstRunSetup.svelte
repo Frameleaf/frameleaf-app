@@ -72,6 +72,7 @@
     getFrameleafSetupLibrary,
     getFrameleafSetupStorage,
     getHardwareCheck,
+    getPublicConfig,
     getSummary,
     HardwareBackend,
     login,
@@ -180,9 +181,28 @@
     users = usersResult.status === 'fulfilled' ? usersResult.value : [];
   };
 
+  /**
+   * Whether this server can offer Sign in with Frameleaf (FL-158). Until Frameleaf Cloud is
+   * reachable a brand-new server can't, so the local account becomes the default and the Frameleaf
+   * card says why it's unavailable.
+   */
+  let frameleafAvailable = $state<boolean | null>(null);
+
   onMount(() => {
     if (signedIn) {
       void loadServerData();
+    }
+    if (setup.flow === 'new') {
+      Promise.resolve()
+        .then(() => getPublicConfig())
+        .then((config) => (frameleafAvailable = config.frameleaf?.signInAvailable === true))
+        .catch(() => (frameleafAvailable = false));
+    }
+  });
+
+  $effect(() => {
+    if (frameleafAvailable === false && setup.choices.signIn === 'frameleaf' && !setup.choices.linked) {
+      choose({ signIn: 'local' });
     }
   });
 
@@ -386,7 +406,7 @@
     recommendedSteps.has(current.id) || (current.id === 'account' && existing && !linked && choices.signIn === 'local'),
   );
   const isRecommendedChoice = $derived(
-    (current.id === 'sign-in-choice' && choices.signIn === 'frameleaf') ||
+    (current.id === 'sign-in-choice' && choices.signIn === (frameleafAvailable === false ? 'local' : 'frameleaf')) ||
       (current.id === 'library-check' && choices.layout === KEEP_LAYOUT) ||
       (current.id === 'account' && existing) ||
       (current.id === 'processing' && choices.processing === 'local' && choices.model === 'balanced') ||
@@ -690,8 +710,12 @@
                     onchange={() => choose({ signIn: 'frameleaf' })}
                     icon="frameleaf"
                     title={$t('frameleaf_setup_choice_frameleaf')}
-                    recommended
+                    recommended={frameleafAvailable !== false}
+                    disabled={frameleafAvailable === false}
                   >
+                    {#if frameleafAvailable === false}
+                      <strong class="frs-unavailable">{$t('frameleaf_setup_choice_frameleaf_unavailable')}</strong>
+                    {/if}
                     <ul class="frs-ticks">
                       <li>{$t('frameleaf_setup_choice_frameleaf_remote')}</li>
                       <li>{$t('frameleaf_setup_choice_frameleaf_anywhere')}</li>
@@ -710,6 +734,7 @@
                     }}
                     icon={mdiServerOutline}
                     title={$t('frameleaf_setup_choice_local')}
+                    recommended={frameleafAvailable === false}
                   >
                     <ul class="frs-ticks">
                       <li>{$t('frameleaf_setup_choice_local_stored')}</li>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '$i18n/en.json';
@@ -54,10 +54,15 @@ describe('FirstRunSetup (FL-176)', () => {
   });
 
   it('says when Frameleaf Cloud is not reachable and offers a local account', async () => {
-    sdkMock.getPublicConfig.mockResolvedValue({ frameleaf: { signInAvailable: false } } as never);
+    // Sign-in is offered, but the hand-over to Frameleaf fails: setup says so and falls back.
+    sdkMock.getPublicConfig.mockResolvedValue({ frameleaf: { signInAvailable: true } } as never);
+    sdkMock.startFrameleafSignIn.mockRejectedValue(new Error('unreachable'));
     const state = createSetup('new');
     const account = flowSteps('new').findIndex((entry) => entry.id === 'account');
     render(FirstRunSetup, { initial: { ...state, step: account, reached: account }, authenticated: false });
+    const signIn = await screen.findByRole('button', { name: /Sign in with Frameleaf/ });
+    await waitFor(() => expect(signIn).toBeEnabled());
+    await fireEvent.click(signIn);
     expect(await screen.findByText("Frameleaf Cloud isn't reachable yet")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Use a local account instead' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Create the admin account' })).toBeInTheDocument());
@@ -70,5 +75,34 @@ describe('FirstRunSetup (FL-176)', () => {
     unmount();
     render(FirstRunSetup, { initial: state, authenticated: false });
     expect(screen.queryByRole('link', { name: 'Sign out' })).toBeNull();
+  });
+
+  describe('how you will sign in (N3)', () => {
+    const choiceStep = () => {
+      const state = createSetup('new');
+      const step = flowSteps('new').findIndex((entry) => entry.id === 'sign-in-choice');
+      return { ...state, step, reached: step };
+    };
+    const card = (name: string) => screen.getByText(name).closest('label')!;
+
+    it('defaults to a local account and says why when Sign in with Frameleaf is unavailable', async () => {
+      sdkMock.getPublicConfig.mockResolvedValue({ frameleaf: { signInAvailable: false } } as never);
+      render(FirstRunSetup, { initial: choiceStep(), authenticated: false });
+      expect(await screen.findByText(/Unavailable on this server for now/)).toBeInTheDocument();
+      await waitFor(() => expect(within(card('Local account only')).getByRole('radio')).toBeChecked());
+      expect(within(card('Frameleaf account')).getByRole('radio')).toBeDisabled();
+      expect(within(card('Frameleaf account')).queryByText('Recommended')).toBeNull();
+      expect(within(card('Local account only')).getByText('Recommended')).toBeInTheDocument();
+    });
+
+    it('keeps Frameleaf recommended and chosen when sign-in is available', async () => {
+      sdkMock.getPublicConfig.mockResolvedValue({ frameleaf: { signInAvailable: true } } as never);
+      render(FirstRunSetup, { initial: choiceStep(), authenticated: false });
+      await waitFor(() => expect(sdkMock.getPublicConfig).toHaveBeenCalled());
+      expect(within(card('Frameleaf account')).getByRole('radio')).toBeChecked();
+      expect(within(card('Frameleaf account')).getByRole('radio')).toBeEnabled();
+      expect(within(card('Frameleaf account')).getByText('Recommended')).toBeInTheDocument();
+      expect(screen.queryByText(/Unavailable on this server for now/)).toBeNull();
+    });
   });
 });
