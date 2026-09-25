@@ -1528,16 +1528,50 @@ export class PersonRepository {
     });
   }
 
-  /** Marks a decision undone; false when it already was. */
-  async setFaceCorrectionUndone(id: string): Promise<boolean> {
-    return this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx, 'Face corrections');
-      const { numAffectedRows } = await sql`
-        UPDATE immich_fork.face_correction SET "undoneAt" = clock_timestamp()
-        WHERE id = ${id}::uuid AND "undoneAt" IS NULL
-      `.execute(tx);
-      return (numAffectedRows ?? 0n) > 0n;
-    });
+  /**
+   * Undoes one decision in a single transaction (FL-57 with FL-38): the history entry is marked
+   * undone and the face is put back (restored, or given `personGroupId`) only while the face is
+   * still at `expectedRevision` (its `updateId` when the undo was checked). A face another view
+   * changed meanwhile is left alone and nothing is marked undone.
+   */
+  async undoFaceCorrection(
+    id: string,
+    face: { id: string; expectedRevision: string },
+    change: { restore: true } | { personGroupId: string | null },
+  ): Promise<'undone' | 'already-undone' | 'face-changed'> {
+    const faceChanged = new Error('face-changed');
+    try {
+      return await this.db.transaction().execute(async (tx) => {
+        await this.lockForkWrites(tx, 'Face corrections');
+        const { numAffectedRows } = await sql`
+          UPDATE immich_fork.face_correction SET "undoneAt" = clock_timestamp()
+          WHERE id = ${id}::uuid AND "undoneAt" IS NULL
+        `.execute(tx);
+        if ((numAffectedRows ?? 0n) === 0n) {
+          return 'already-undone' as const;
+        }
+        const result = await tx
+          .updateTable('asset_face')
+          .set(
+            'restore' in change
+              ? { deletedAt: null, correctedAt: sql`clock_timestamp()` }
+              : { personGroupId: change.personGroupId, correctedAt: sql`clock_timestamp()` },
+          )
+          .where('asset_face.id', '=', face.id)
+          .where('asset_face.updateId', '=', face.expectedRevision)
+          .executeTakeFirst();
+        if (Number(result.numUpdatedRows) === 0) {
+          // rolls the history update back with it
+          throw faceChanged;
+        }
+        return 'undone' as const;
+      });
+    } catch (error) {
+      if (error === faceChanged) {
+        return 'face-changed';
+      }
+      throw error;
+    }
   }
 
   /**
@@ -1599,15 +1633,6 @@ export class PersonRepository {
       .limit(1)
       .executeTakeFirst();
     return !!row;
-  }
-
-  /** Restores a face that was taken off with "not a face of anyone" (a soft delete). */
-  async restoreAssetFace(id: string): Promise<void> {
-    await this.db
-      .updateTable('asset_face')
-      .set({ deletedAt: null, correctedAt: sql`clock_timestamp()` })
-      .where('asset_face.id', '=', id)
-      .execute();
   }
 
   /** Sets a face's person as an explicit decision (FL-57), or clears it (`null`). */

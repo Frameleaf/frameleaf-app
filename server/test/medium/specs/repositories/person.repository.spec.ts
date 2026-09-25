@@ -341,8 +341,41 @@ describe(PersonRepository.name, () => {
       });
       await expect(sut.getFaceCorrection(other.id, oldest.id)).resolves.toBeUndefined();
 
-      await expect(sut.setFaceCorrectionUndone(oldest.id)).resolves.toBe(true);
-      await expect(sut.setFaceCorrectionUndone(oldest.id)).resolves.toBe(false);
+      // undo writes the face at the revision it was checked at, together with the history entry
+      const revisionOf = async (id: string) =>
+        (await ctx.database.selectFrom('asset_face').select('updateId').where('id', '=', id).executeTakeFirstOrThrow())
+          .updateId;
+      const checked = await revisionOf(faces[0].id);
+      // another view corrects the face first: the undo leaves it alone and nothing is marked undone
+      await ctx.database.updateTable('asset_face').set({ boundingBoxX1: 1 }).where('id', '=', faces[0].id).execute();
+      await expect(
+        sut.undoFaceCorrection(oldest.id, { id: faces[0].id, expectedRevision: checked }, { personGroupId: null }),
+      ).resolves.toBe('face-changed');
+      await expect(sut.getFaceCorrection(user.id, oldest.id)).resolves.toEqual(
+        expect.objectContaining({ undoneAt: null }),
+      );
+      await expect(
+        ctx.database.selectFrom('asset_face').select('personGroupId').where('id', '=', faces[0].id).executeTakeFirst(),
+      ).resolves.toEqual({ personGroupId: to.personGroupId });
+
+      const current = await revisionOf(faces[0].id);
+      await expect(
+        sut.undoFaceCorrection(
+          oldest.id,
+          { id: faces[0].id, expectedRevision: current },
+          { personGroupId: from.personGroupId },
+        ),
+      ).resolves.toBe('undone');
+      await expect(
+        ctx.database.selectFrom('asset_face').select('personGroupId').where('id', '=', faces[0].id).executeTakeFirst(),
+      ).resolves.toEqual({ personGroupId: from.personGroupId });
+      await expect(
+        sut.undoFaceCorrection(
+          oldest.id,
+          { id: faces[0].id, expectedRevision: await revisionOf(faces[0].id) },
+          { personGroupId: from.personGroupId },
+        ),
+      ).resolves.toBe('already-undone');
     });
 
     it('offers the decisions about a face that no longer exists, newest first, to the face that replaces it', async () => {
