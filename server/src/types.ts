@@ -1,3 +1,4 @@
+import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
 import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
@@ -816,6 +817,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafInstance]: FrameleafInstanceIdentity;
   [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
+  [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;

@@ -490,6 +490,8 @@ export enum SystemMetadataKey {
   FrameleafServiceDiscovery = 'frameleaf-service-discovery',
   /** FL-159: the last AI Wallet balance read from Frameleaf Cloud (USD display). */
   FrameleafMlWallet = 'frameleaf-ml-wallet',
+  /** FL-159: the last Hardware & GPU check of the server and ML containers. */
+  HardwareCheck = 'hardware-check',
   /**
    * FL-159: set by migration 2100000000620 when it removed destinations of the previous cloud
    * provider, so administrators are told once, in plain language, what changed.
