@@ -81,8 +81,10 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   image: ['image'],
   'integrity-checks': ['integrityChecks'],
   'external-library': ['library'],
-  logging: ['logging'],
-  'machine-learning': ['machineLearning'],
+  // FL-71: "Logs & diagnostics" also holds the local analytics settings; the search models page
+  // holds Ask Search, which is its own top-level group.
+  logging: ['logging', 'analytics'],
+  'machine-learning': ['machineLearning', 'localFeatures'],
   location: ['map', 'reverseGeocoding'],
   metadata: ['metadata'],
   'nightly-tasks': ['nightlyTasks'],

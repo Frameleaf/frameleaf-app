@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetFileType, AssetLockReason, MemoryType, PetObservationState } from 'src/enum.js';
+import { AssetFileType, AssetLockReason, MemoryShowLessKind, MemoryType, PetObservationState } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -222,6 +222,8 @@ describe(MemoryService.name, () => {
         createdAt: expect.any(Date),
         updatedAt: expect.any(Date),
         isSaved: false,
+        isHidden: false,
+        title: null,
         memoryAt: dto.memoryAt,
         ownerId: user.id,
         assets: [],
@@ -477,6 +479,54 @@ describe(MemoryService.name, () => {
       const memories = await sut.search(factory.auth({ user }), {});
 
       expect(memories[0].assets.map(({ id }) => id)).toContain(petPhoto.id);
+    });
+  });
+
+  // FL-62 review: hiding, restoring or reading one memory never brings back an item the search leaves out.
+  describe('single-memory reads', () => {
+    const memoryWithTwoPhotos = async (ctx: ReturnType<typeof setup>['ctx'], isHidden: boolean) => {
+      const { user } = await ctx.newUser();
+      const { memory } = await ctx.newMemory({ ownerId: user.id });
+      const { asset: petPhoto } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: otherPhoto } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: petPhoto.id });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: otherPhoto.id });
+      const pet = await ctx.database
+        .insertInto('pet')
+        .values({ ownerId: user.id, name: 'Biscuit', isHidden })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await ctx.database.insertInto('pet_observation').values({ petId: pet.id, assetId: petPhoto.id }).execute();
+      return { user, memory, petPhoto, otherPhoto, pet };
+    };
+
+    it('hides and restores a memory without the photo of a pet the owner hid', async () => {
+      const { sut, ctx } = setup();
+      const { user, memory, otherPhoto } = await memoryWithTwoPhotos(ctx, true);
+      const auth = factory.auth({ user });
+
+      const hidden = await sut.update(auth, memory.id, { isHidden: true });
+      const restored = await sut.update(auth, memory.id, { isHidden: false });
+      const read = await sut.get(auth, memory.id);
+
+      for (const result of [hidden, restored, read]) {
+        expect(result.assets.map(({ id }) => id)).toEqual([otherPhoto.id]);
+      }
+    });
+
+    it('leaves out the photos of a pet the owner asked to see less of', async () => {
+      const { sut, ctx } = setup();
+      const { user, memory, otherPhoto, pet } = await memoryWithTwoPhotos(ctx, false);
+      const auth = factory.auth({ user });
+      await sut.addShowLess(auth, { kind: MemoryShowLessKind.Pet, value: pet.id });
+
+      const restored = await sut.update(auth, memory.id, { isHidden: false, title: 'Our walk' });
+      const read = await sut.get(auth, memory.id);
+      const [byId] = await sut.search(auth, { id: memory.id });
+
+      for (const result of [restored, read, byId]) {
+        expect(result.assets.map(({ id }) => id)).toEqual([otherPhoto.id]);
+      }
     });
   });
 

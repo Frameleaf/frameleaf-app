@@ -19,18 +19,18 @@ test("reconciles all 3,520 paths without accepting dirty source", () => {
   const report = buildReconciliation({ currentMain, root: repository });
   assert.deepEqual(report.summary, {
     alreadyRepresented: 164,
-    epicRoutingReferences: 44,
+    epicRoutingReferences: 49,
     mainBlobAbsent: 3164,
     mainBlobDifferent: 192,
     mainBlobIdentical: 164,
     pathCount: 3520,
-    pathsWithEpicRouting: 36,
+    pathsWithEpicRouting: 40,
     preservedOnlyUnaccepted: 3356,
-    uniqueEpicRoutingIds: 17,
-    withSourceBackedRouting: 1917,
-    withoutExactRouting: 1603,
+    uniqueEpicRoutingIds: 20,
+    withSourceBackedRouting: 1925,
+    withoutExactRouting: 1595,
     withoutExactRoutingLocalEvidence: 1,
-    withoutExactRoutingUnreviewedLocalChange: 1602,
+    withoutExactRoutingUnreviewedLocalChange: 1594,
   });
   assert.ok(
     report.entries.every(({ disposition }) =>
@@ -45,9 +45,9 @@ test("reconciles all 3,520 paths without accepting dirty source", () => {
         .filter(({ issueType }) => issueType === "epic")
         .map(({ planId }) => ({ filePath, planId })),
   );
-  assert.equal(epicRouting.length, 44);
-  assert.equal(new Set(epicRouting.map(({ filePath }) => filePath)).size, 36);
-  assert.equal(new Set(epicRouting.map(({ planId }) => planId)).size, 17);
+  assert.equal(epicRouting.length, 49);
+  assert.equal(new Set(epicRouting.map(({ filePath }) => filePath)).size, 40);
+  assert.equal(new Set(epicRouting.map(({ planId }) => planId)).size, 20);
   assert.ok(
     report.entries.every(({ sourceBackedRouting }) =>
       sourceBackedRouting.every(({ issueType }) =>
@@ -155,8 +155,8 @@ test("documents FL-25 acceptance separately from FL-26 ownership", () => {
     {
       61407624: {
         sourceSha256:
-          "2b159525f794f753b1abb55ec8fb15794d8739303a48946f751ac782a49a9096",
-        version: 5,
+          "7bedfc6608e125f5ffe821a41307903098f51ba9a1ad1e2a30ce3d5566889707",
+        version: 7,
       },
       61407916: {
         sourceSha256:

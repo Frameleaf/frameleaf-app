@@ -1,9 +1,13 @@
 import {
   addMemoryAssets,
+  addMemoryShowLess,
   deleteMemory,
+  getMemoryShowLess,
   memoriesStatistics,
+  MemoryShowLessKind,
   removeMemoryAssets,
   searchMemories,
+  updateMemory,
   type MemoryResponseDto,
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
@@ -24,6 +28,9 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   deleteMemory: vi.fn().mockResolvedValue(undefined),
   searchMemories: vi.fn().mockResolvedValue([]),
   memoriesStatistics: vi.fn().mockResolvedValue({ total: 0 }),
+  updateMemory: vi.fn(),
+  addMemoryShowLess: vi.fn().mockResolvedValue(undefined),
+  getMemoryShowLess: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('@immich/ui', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/ui')>()),
@@ -153,5 +160,44 @@ describe('memoryManager: a memory emptied by removal', () => {
     vi.mocked(searchMemories).mockResolvedValueOnce([empty]);
     await expect(memoryManager.loadMemory('memory-empty')).resolves.toBeUndefined();
     expect(memoryManager.memories.map(({ id }) => id)).toEqual(['memory-2']);
+  });
+});
+
+describe('memoryManager curation (FL-62)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const curated = () =>
+    ({
+      id: 'memory-9',
+      title: null,
+      isSaved: false,
+      memoryAt: '2020-01-01T00:00:00.000Z',
+      assets: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    }) as unknown as MemoryResponseDto;
+
+  it('saves the owner title and item order and plays the items in that order', async () => {
+    memoryManager.memories = [curated()];
+    vi.mocked(updateMemory).mockResolvedValueOnce({ ...curated(), title: 'Our summer' });
+
+    await memoryManager.updateCuration('memory-9', { title: 'Our summer', assetOrder: ['c', 'a'] });
+
+    expect(updateMemory).toHaveBeenCalledWith({
+      id: 'memory-9',
+      memoryUpdateDto: { title: 'Our summer', assetOrder: ['c', 'a'] },
+    });
+    expect(memoryManager.memories[0].title).toBe('Our summer');
+    expect(memoryManager.memories[0].assets.map(({ id }) => id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('asks the server for less of something and reloads the index it filters', async () => {
+    memoryManager.memories = [curated()];
+
+    await memoryManager.addShowLess({ kind: MemoryShowLessKind.Date, value: '09-25' });
+
+    expect(addMemoryShowLess).toHaveBeenCalledWith({ memoryShowLessDto: { kind: 'date', value: '09-25' } });
+    expect(getMemoryShowLess).toHaveBeenCalled();
+    expect(searchMemories).toHaveBeenCalled();
   });
 });

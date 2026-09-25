@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { isUndefined, omitBy } from 'lodash-es';
+import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -267,10 +267,12 @@ export class AssetService extends BaseService {
       { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
       isUndefined,
     );
+    // FL-51: null coordinates remove the location (the geolocation utility's "Remove location")
+    const clearLocation = latitude === null && longitude === null;
     const exifDto = omitBy(
       {
-        latitude,
-        longitude,
+        latitude: clearLocation ? undefined : (latitude ?? undefined),
+        longitude: clearLocation ? undefined : (longitude ?? undefined),
         rating,
         description,
         dateTimeOriginal,
@@ -280,9 +282,15 @@ export class AssetService extends BaseService {
 
     // FL-36 (V-24): moving items releases their typed place names, as a single edit does
     // (`updateExif`), so reverse geocoding names the new spot instead of keeping the old place.
-    const moved = latitude !== undefined || longitude !== undefined;
+    const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
     if (Object.keys(exifDto).length > 0) {
       await this.assetRepository.updateAllExif(ids, exifDto, moved ? [...placeProperties] : []);
+    }
+
+    // FL-51: a Live Photo's paired video carries the same location, so it goes with the photo's
+    const locationVideoIds = clearLocation ? await this.getLivePhotoVideoIds(ids) : [];
+    if (clearLocation) {
+      await this.assetRepository.clearLocation([...ids, ...locationVideoIds]);
     }
 
     const extractedTimeZone = extractTimeZone(dateTimeOriginal);
@@ -314,7 +322,20 @@ export class AssetService extends BaseService {
     // and every album read hides it from everyone but its owner's elevated session, so it is back in
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
-    await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+    await this.jobRepository.queueAll(
+      [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
+    );
+  }
+
+  /** FL-51: the paired videos of these Live Photos that are not already among them. */
+  private async getLivePhotoVideoIds(ids: string[]): Promise<string[]> {
+    const assets = await this.assetRepository.getByIds(ids);
+    const named = new Set(ids);
+    return [
+      ...new Set(
+        assets.map(({ livePhotoVideoId }) => livePhotoVideoId).filter((id): id is string => !!id && !named.has(id)),
+      ),
+    ];
   }
 
   /**
@@ -819,39 +840,56 @@ export class AssetService extends BaseService {
     id: string;
     description?: string;
     dateTimeOriginal?: string;
-    latitude?: number;
-    longitude?: number;
+    latitude?: number | null;
+    longitude?: number | null;
     rating?: number | null;
     city?: string | null;
     state?: string | null;
     country?: string | null;
   }) {
     const { id, description, dateTimeOriginal, latitude, longitude, rating } = dto;
+    // FL-51: null coordinates remove the location, and with it any typed place names
+    const clearLocation = latitude === null && longitude === null;
     // FL-36 (V-24): a typed place name is stored as typed (an empty one clears it) and locked, so
     // reverse geocoding keeps it; moving the item without naming its place lets geocoding name it again.
-    const place = omitBy(
-      {
-        city: this.placeName(dto.city),
-        state: this.placeName(dto.state),
-        country: this.placeName(dto.country),
-      },
-      isUndefined,
-    );
+    const place = clearLocation
+      ? {}
+      : omitBy(
+          {
+            city: this.placeName(dto.city),
+            state: this.placeName(dto.state),
+            country: this.placeName(dto.country),
+          },
+          isUndefined,
+        );
     const writes = omitBy(
       {
         description,
         dateTimeOriginal,
         timeZone: extractTimeZone(dateTimeOriginal)?.name,
-        latitude,
-        longitude,
+        latitude: clearLocation ? undefined : (latitude ?? undefined),
+        longitude: clearLocation ? undefined : (longitude ?? undefined),
         rating,
         ...place,
       },
       isUndefined,
     );
 
-    if (latitude !== undefined && Object.keys(place).length === 0) {
+    const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
+    if (moved && Object.keys(place).length === 0) {
       await this.assetRepository.unlockProperties(id, [...placeProperties]);
+    }
+
+    if (clearLocation) {
+      // FL-51: the Live Photo's paired video loses its location with the photo
+      const videoIds = await this.getLivePhotoVideoIds([id]);
+      await this.assetRepository.clearLocation([id, ...videoIds]);
+      if (Object.keys(writes).length === 0) {
+        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+      }
+      for (const videoId of videoIds) {
+        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id: videoId } });
+      }
     }
 
     if (Object.keys(writes).length > 0) {

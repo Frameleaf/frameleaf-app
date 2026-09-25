@@ -391,6 +391,35 @@ describe(AssetService.name, () => {
       );
     });
 
+    it("removes a Live Photo's location from its paired video too (FL-51)", async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getByIds.mockResolvedValue([{ id: asset.id, livePhotoVideoId: 'motion-1' }] as never);
+
+      await sut.update(authStub.admin, asset.id, { latitude: null, longitude: null });
+
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith([asset.id, 'motion-1']);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: asset.id } });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: 'motion-1' } });
+    });
+
+    it('removes typed place names with the location instead of storing them (FL-51, FL-36)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getByIds.mockResolvedValue([{ id: asset.id, livePhotoVideoId: null }] as never);
+
+      await sut.update(authStub.admin, asset.id, { latitude: null, longitude: null, city: 'Paris' });
+
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: asset.id } });
+    });
+
     it('should update the exif rating', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -646,6 +675,27 @@ describe(AssetService.name, () => {
       });
     });
 
+    it('removes the location for null coordinates and rewrites the sidecars (FL-51)', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      mocks.asset.getByIds.mockResolvedValue([
+        { id: 'asset-1', livePhotoVideoId: 'motion-1' },
+        { id: 'asset-2', livePhotoVideoId: null },
+      ] as never);
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], latitude: null, longitude: null });
+
+      // the Live Photo's paired video loses its location with the photo
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['asset-1', 'asset-2', 'motion-1']);
+      expect(mocks.asset.updateAllExif).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SidecarWrite, data: { id: 'asset-1' } },
+        { name: JobName.SidecarWrite, data: { id: 'asset-2' } },
+        { name: JobName.SidecarWrite, data: { id: 'motion-1' } },
+      ]);
+    });
+
     it('should keep album membership when assets are locked (FL-32, FL-34)', async () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
@@ -773,6 +823,16 @@ describe(AssetService.name, () => {
         { latitude: 35.68, longitude: 139.69 },
         ['city', 'state', 'country'],
       );
+    });
+
+    it('does not release place names on a bulk location removal, which clears them (FL-51, FL-36)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getByIds.mockResolvedValue([{ id: 'asset-1', livePhotoVideoId: null }] as never);
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], latitude: null, longitude: null, rating: 2 });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { rating: 2 }, []);
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['asset-1']);
     });
 
     it('keeps typed place names when a bulk change does not move the items (FL-36, V-24)', async () => {

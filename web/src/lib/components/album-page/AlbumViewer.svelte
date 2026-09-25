@@ -15,6 +15,7 @@
   import { downloadArchive, ignoreCancelledDownload, navigateToAsset } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
+  import { toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
   /**
@@ -52,10 +53,18 @@
     }
     // Only a link that allows uploads takes dropped files; the server refuses the rest anyway.
     if (sharedLink.allowUpload) {
-      handlePromiseError(fileUploadHandler({ files: value.files, albumId: album.id }));
+      handlePromiseError(fileUploadHandler({ files: value.files, albumId: album.id }).then(announceUploads));
     }
     dragAndDropFilesStore.set({ isDragging: false, files: [] });
   });
+
+  /** FL-56 (`PublicViewer.jsx` handleFiles): "N items added to this share." */
+  const announceUploads = (uploaded: (string | undefined)[]) => {
+    const count = uploaded.filter(Boolean).length;
+    if (count > 0) {
+      toastManager.success($t('frameleaf_public_added', { values: { count } }));
+    }
+  };
 
   const setSelecting = (next: boolean) => {
     selectMode = next;
@@ -100,7 +109,7 @@
   {selecting}
   {selectedCount}
   onSelectingChange={setSelecting}
-  onUpload={() => void openFileUploadDialog({ albumId: album.id })}
+  onUpload={() => handlePromiseError(openFileUploadDialog({ albumId: album.id }).then(announceUploads))}
   onDownloadAll={() => handlePromiseError(handleDownloadAlbum(album))}
   onDownloadSelected={downloadSelected}
   onSendCopy={() => void sendCopiesWithFeedback([...librarySession.selection])}

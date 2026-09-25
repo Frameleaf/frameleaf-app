@@ -851,10 +851,12 @@ describe(PhysicalDeduplicationService.name, () => {
       ] as never);
       // The admin owns the retained asset; Jamie's copy is neither shared nor in a partner library.
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['master-1']));
+      mocks.storage.checkFileExists.mockResolvedValue(true);
 
       const { plan } = await sut.getPreview(authStub.admin);
 
       expect(mocks.user.getList).toHaveBeenCalledWith({ withDeleted: true });
+      expect(plan?.retained[0].fileAvailable).toBe(true);
       expect(plan).toEqual(
         expect.objectContaining({
           masterUserName: 'Taylor',
@@ -869,6 +871,35 @@ describe(PhysicalDeduplicationService.name, () => {
         new Set(['master-1', 'copy-1']),
         undefined,
       );
+    });
+
+    it('marks a retained original that is no longer on disk (FL-71 UT-24)', async () => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      const retained = {
+        assetId: 'master-1',
+        ownerId: 'master-user',
+        originalFileName: 'a.jpg',
+        originalPath: '/gone.jpg',
+        type: 'IMAGE',
+        sizeInBytes: 1,
+        checksum: 'aa',
+        referencesBefore: 1,
+        referencesAfter: 1,
+      };
+      mockConfig(
+        mocks,
+        { enabled: true, masterUserId: 'master-user' },
+        { ...lastDryRun, retained: [retained], copies: [], copiesTruncated: false },
+      );
+      mocks.job.getJobCounts.mockResolvedValue(counts);
+      mocks.user.getList.mockResolvedValue([{ id: 'master-user', name: 'Taylor' }] as never);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['master-1']));
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+
+      const { plan } = await sut.getPreview(authStub.admin);
+
+      expect(mocks.storage.checkFileExists).toHaveBeenCalledWith('/gone.jpg');
+      expect(plan?.retained).toEqual([expect.objectContaining({ assetId: 'master-1', fileAvailable: false })]);
     });
 
     it("never names another user's Locked asset in the plan rows (FL-34)", async () => {

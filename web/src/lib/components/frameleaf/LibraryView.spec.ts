@@ -1,4 +1,4 @@
-import { AssetVisibility } from '@immich/sdk';
+import { AssetOrder, AssetVisibility } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
@@ -17,6 +17,15 @@ vi.mock('$app/navigation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$app/navigation')>()),
   goto: navigation.goto,
 }));
+
+const mediaQueries = vi.hoisted(() => ({
+  pointerCoarse: false,
+  maxMd: false,
+  isFullSidebar: true,
+  reducedMotion: false,
+  wideInspector: true,
+}));
+vi.mock('$lib/stores/media-query-manager.svelte', () => ({ mediaQueryManager: mediaQueries }));
 
 const infoPanel = createRawSnippet(() => ({ render: () => '<p data-testid="work-panel">details</p>' }));
 
@@ -132,6 +141,70 @@ describe('LibraryView', () => {
       librarySession.setLayout('work');
       await tick();
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+    });
+  });
+
+  describe('Work on a tablet and the Locked view (FL-31, T-20)', () => {
+    afterEach(() => {
+      mediaQueries.wideInspector = true;
+    });
+
+    it('does not open Work’s panel by itself at 1000px and below, but the toolbar still shows it', async () => {
+      mediaQueries.wideInspector = false;
+      render(LibraryView, {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        noSelectionBar: true,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.setLayout('work');
+      await tick();
+      expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+    });
+
+    it('offers only the Timeline in the Locked view, whatever this device last chose', async () => {
+      render(LibraryView, {
+        options: { visibility: AssetVisibility.Locked },
+        syncUrl: false,
+        noSelectionBar: true,
+        bulkContext: { locked: true },
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.setLayout('work');
+      await tick();
+      expect(screen.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'timeline');
+      const layouts = screen.getByTestId('frameleaf-layout-switch');
+      expect(layouts.querySelectorAll('button')).toHaveLength(1);
+      expect(screen.getByRole('button', { name: 'frameleaf_library_layout_timeline' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    });
+  });
+
+  describe('an album’s shared order and the viewer’s own sort (FL-31)', () => {
+    afterEach(() => localStorage.removeItem('frameleaf.albumViewSort'));
+
+    it('starts from the shared order and keeps a new choice for this viewer only', async () => {
+      render(LibraryView, {
+        options: { albumId: 'album-1', order: AssetOrder.Asc },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        noSelectionBar: true,
+      });
+      const sort = await screen.findByRole('combobox', { name: 'frameleaf_library_sort' });
+      expect(sort).toHaveValue('captured-asc');
+      const sessionSort = librarySession.state.sort;
+
+      await fireEvent.change(sort, { target: { value: 'filename' } });
+      expect(sort).toHaveValue('filename');
+      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort') ?? '{}')).toEqual({ 'album-1': 'filename' });
+      // the library's own sort and the album's shared order are untouched
+      expect(librarySession.state.sort).toBe(sessionSort);
+      expect(sdkMock.updateAlbumInfo).not.toHaveBeenCalled();
     });
   });
 

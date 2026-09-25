@@ -264,6 +264,32 @@ describe('SearchPalette', () => {
     await waitFor(() => expect(within(scopes).getByRole('radio', { name: /Library/ })).toHaveTextContent('7'));
   });
 
+  it('never lets a late count for an older search overwrite the newer one (FL-31)', async () => {
+    let answerOld!: (value: { total: number; capped: boolean }) => void;
+    sdkMock.searchSmartStatistics.mockImplementation(({ smartSearchDto }) =>
+      smartSearchDto.query === 'dogs'
+        ? (new Promise((resolve) => (answerOld = resolve)) as never)
+        : (Promise.resolve({ total: 3, capped: false }) as never),
+    );
+    const { input } = setup();
+    await type(input, 'dogs');
+    await waitFor(() =>
+      expect(sdkMock.searchSmartStatistics).toHaveBeenCalledWith(
+        expect.objectContaining({ smartSearchDto: expect.objectContaining({ query: 'dogs' }) }),
+        expect.anything(),
+      ),
+    );
+    await type(input, 'cats');
+    const scopes = screen.getByRole('radiogroup', { name: 'Search scope' });
+    await waitFor(() => expect(within(scopes).getByRole('radio', { name: /Library/ })).toHaveTextContent('3'));
+
+    // the aborted request for "dogs" answers last; its count is dropped
+    answerOld({ total: 999, capped: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(within(scopes).getByRole('radio', { name: /Library/ })).not.toHaveTextContent('999');
+    expect(within(scopes).getByRole('radio', { name: /Library/ })).toHaveTextContent('3');
+  });
+
   it('saves the compiled search, with ids and no typed names, to the account preferences', async () => {
     const { input } = setup();
     await waitFor(() => expect(sdkMock.getMyPreferences).toHaveBeenCalled());

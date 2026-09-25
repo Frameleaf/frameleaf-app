@@ -9,6 +9,7 @@
   import MaintenanceRestoreConfirmDialog from '$lib/components/frameleaf/MaintenanceRestoreConfirmDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { BackupFileStatus } from '$lib/constants';
+  import { backupFileVersion } from '$lib/frameleaf/maintenance-page';
   import { handleDeleteDatabaseBackup, handleDownloadDatabaseBackup } from '$lib/services/database-backups.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getBytesWithUnit } from '$lib/utils/byte-units';
@@ -40,7 +41,7 @@
   const when = $derived(backupDateTime?.toLocaleString(DateTime.DATETIME_MED) ?? $t('unknown_date'));
   const relativeTime = $derived(backupDateTime?.toRelative({ locale: $locale }));
 
-  const version = $derived(filename.match(/-v(.*)-/)?.[1]);
+  const version = $derived(backupFileVersion(filename));
 
   const status = $derived.by(() => {
     if (!version) {
@@ -117,6 +118,8 @@
   {filename}
   date={backupDateTime?.toLocaleString(DateTime.DATETIME_MED)}
   {size}
+  {version}
+  {expectedVersion}
   bind:open={restoreConfirmOpen}
   onClose={() => (restoreConfirmOpen = false)}
 />

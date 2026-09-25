@@ -1164,6 +1164,24 @@
   position: absolute;
   inset: 28px;
 }
+/* FL-115: the video under restoration, so "Use current frame" reads its playhead. */
+.ed-restore-source {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  border-radius: var(--fl-radius-card);
+}
+.ed-restore-hint {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  color: var(--fl-viewer-muted);
+  font-size: var(--fl-font-micro);
+}
 
 /* Responsive --------------------------------------------------------- */
 @media (max-width: 1000px) {

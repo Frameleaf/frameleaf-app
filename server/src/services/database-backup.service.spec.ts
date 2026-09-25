@@ -768,6 +768,23 @@ describe(DatabaseBackupService.name, () => {
       });
     });
 
+    it('refuses a backup from a newer server before changing anything (FL-81)', async () => {
+      await expect(
+        sut.restoreDatabaseBackup('immich-db-backup-20260101T000000-v999.0.0-pg14.19.sql.gz'),
+      ).rejects.toThrow('This backup was made by a newer server (v999.0.0)');
+
+      expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalled();
+      expect(mocks.storage.createWriteStream).not.toHaveBeenCalled();
+    });
+
+    it('restores a backup from an older server (FL-81)', async () => {
+      mocks.user.hasAdmin.mockResolvedValue(true);
+
+      await expect(
+        sut.restoreDatabaseBackup('immich-db-backup-20260101T000000-v2.5.0-pg14.19.sql.gz'),
+      ).resolves.toBeUndefined();
+    });
+
     it('should fail to restore invalid backup', async () => {
       await expect(sut.restoreDatabaseBackup('filename')).rejects.toThrowErrorMatchingInlineSnapshot(
         `[Error: Invalid backup file format!]`,
