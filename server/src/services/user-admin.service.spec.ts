@@ -146,6 +146,18 @@ describe(UserAdminService.name, () => {
 
       expect(mocks.user.create).not.toHaveBeenCalled();
     });
+
+    it('should reject a duplicate storage label (FL-76)', async () => {
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.getByStorageLabel.mockResolvedValue(userStub.user1);
+
+      await expect(
+        sut.create(authStub.admin, { email: 'new@example.com', name: 'New', password: 'password', storageLabel: 'label' }),
+      ).rejects.toThrow('Storage label already in use by another account');
+
+      expect(mocks.user.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('update', () => {

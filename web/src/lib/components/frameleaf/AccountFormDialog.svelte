@@ -25,7 +25,7 @@
   import { handleCreateUserAdmin, handleUpdateUserAdmin } from '$lib/services/user-admin.service';
   import { userInteraction } from '$lib/stores/user.svelte';
   import { ByteUnit, convertFromBytes, convertToBytes } from '$lib/utils/byte-units';
-  import { UserAvatarColor, type UserAdminResponseDto } from '@immich/sdk';
+  import { getUserAdmin, UserAvatarColor, type UserAdminResponseDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
 
   let {
@@ -57,6 +57,8 @@
   let password = $state('');
   let passwordConfirm = $state('');
   let pinCode = $state('');
+  /** FL-76: the account changed elsewhere (another administrator or tab) since the form opened. */
+  let stale = $state(false);
 
   const colors = Object.values(UserAvatarColor);
   const editing = $derived(!!user);
@@ -103,6 +105,13 @@
     working = true;
     try {
       if (user) {
+        // FL-76: an edit is a whole-form update, so a change made meanwhile (a role, a quota, a
+        // label) would be overwritten silently; check the account first and say so instead.
+        const latest = await getUserAdmin({ id: user.id }).catch(() => undefined);
+        if (latest && latest.updatedAt !== user.updatedAt) {
+          stale = true;
+          return;
+        }
         const success = await handleUpdateUserAdmin(user, {
           name,
           email,
@@ -251,9 +260,13 @@
       </label>
     {/if}
 
+    {#if stale}
+      <p class="stale" role="alert">{$t('frameleaf_users_edit_stale')}</p>
+    {/if}
+
     <footer>
       <Button type="button" disabled={working} onclick={() => (open = false)}>{$t('cancel')}</Button>
-      <Button type="submit" variant="primary" disabled={!valid || working}>
+      <Button type="submit" variant="primary" disabled={!valid || working || stale}>
         {editing ? $t('frameleaf_users_save') : $t('frameleaf_users_create')}
       </Button>
     </footer>
@@ -261,6 +274,14 @@
 </Dialog>
 
 <style>
+  .stale {
+    margin: 0.75rem 0 0;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--fl-warning);
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
+  }
   form {
     margin-top: 0.75rem;
     min-width: min(32rem, 100%);

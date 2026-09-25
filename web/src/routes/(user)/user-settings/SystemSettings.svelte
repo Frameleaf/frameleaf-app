@@ -312,8 +312,8 @@
     {
       admin: true,
       component: NewVersionCheckSettings,
-      title: $t('admin.version_check_settings'),
-      subtitle: $t('admin.version_check_settings_description'),
+      title: $t('frameleaf_cc_section_versions'),
+      subtitle: $t('frameleaf_cc_section_versions_description'),
       key: 'version-check',
       icon: mdiUpdate,
     },
