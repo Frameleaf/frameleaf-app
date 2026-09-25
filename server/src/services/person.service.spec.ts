@@ -352,7 +352,31 @@ describe(PersonService.name, () => {
     it("names the photo of the owner's featured face", async () => {
       const { auth, person } = setup({});
       await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ featuredAssetId: 'asset-1' });
-      expect(mocks.person.getFeaturedAsset).toHaveBeenCalledWith('face-1');
+      // only a photo the person's owner owns (the repository filters on it)
+      expect(mocks.person.getFeaturedAsset).toHaveBeenCalledWith('face-1', person.ownerId);
+    });
+
+    it("names no photo when the featured face is on another account's photo", async () => {
+      // a person group spans a cluster's accounts; the owner-filtered read finds nothing
+      const { auth, person } = setup(undefined);
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ featuredAssetId: null });
+      expect(mocks.person.getFeaturedAsset).toHaveBeenCalledWith('face-1', person.ownerId);
+    });
+
+    it('names no photo the session hides as NSFW, as the thumbnail does', async () => {
+      const { person } = setup({});
+      const auth = { ...AuthFactory.create(), hideNsfwAssets: true };
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set());
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ featuredAssetId: null });
+      expect(mocks.access.person.checkFaceOwnerAccess).toHaveBeenCalledWith(
+        auth.user.id,
+        new Set(['face-1']),
+        auth.hiddenContent ?? true,
+      );
+
+      mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set(['face-1']));
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ featuredAssetId: 'asset-1' });
     });
 
     it('names an archived photo too', async () => {
