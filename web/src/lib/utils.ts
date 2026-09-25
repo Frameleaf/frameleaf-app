@@ -291,7 +291,11 @@ export const downloadUrl = (url: string, filename: string) => {
   anchor.click();
   anchor.remove();
 
-  URL.revokeObjectURL(url);
+  // Safari starts reading the file after the click returns, so the object URL outlives it for a
+  // moment, as the prototype does (UploadPanel.jsx:503).
+  if (url.startsWith('blob:')) {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 };
 
 export const downloadUrlPost = (url: string, assetIds: string[], archiveName: string) => {
