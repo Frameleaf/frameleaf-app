@@ -64,7 +64,9 @@ const CloudMlStatusResponseSchema = z
 const CloudMlModelSchema = z
   .object({
     id: z.string(),
-    workload: MlWorkloadSchema.nullable().describe('The workload this model serves, or null for one this server does not know'),
+    workload: MlWorkloadSchema.nullable().describe(
+      'The workload this model serves, or null for one this server does not know',
+    ),
     name: z.string(),
     description: z.string(),
     fingerprint: z.string(),
@@ -105,9 +107,26 @@ const CloudMlConsentHistoryResponseSchema = z
   .object({ records: z.array(CloudMlConsentRecordSchema) })
   .meta({ id: 'CloudMlConsentHistoryResponseDto' });
 
+const CloudMlSettlementSchema = z
+  .object({
+    cloudJobId: z.string().describe('The job id Frameleaf Cloud settled'),
+    workload: MlWorkloadSchema,
+    jobName: z.string().nullable().describe('The server job that sent the work, when recorded'),
+    succeeded: z.boolean().describe('The request finished successfully'),
+    costUsd: z.number().meta({ format: 'double' }).describe('The settled charge, USD'),
+    credits: z.number().meta({ format: 'double' }).nullable().describe('Credits the charge used, when reported'),
+    finishedAt: z.string(),
+  })
+  .meta({ id: 'CloudMlSettlementDto' });
+
+const CloudMlSettlementsResponseSchema = z
+  .object({ items: z.array(CloudMlSettlementSchema).describe('Settled charges, newest first (at most 50)') })
+  .meta({ id: 'CloudMlSettlementsResponseDto' });
+
 export class CloudMlStatusResponseDto extends createZodDto(CloudMlStatusResponseSchema) {}
 export class CloudMlWalletDto extends createZodDto(CloudMlWalletSchema) {}
 export class CloudMlCatalogResponseDto extends createZodDto(CloudMlCatalogResponseSchema) {}
 export class CloudMlModelDto extends createZodDto(CloudMlModelSchema) {}
 export class CloudMlDestinationCreateDto extends createZodDto(CloudMlDestinationCreateSchema) {}
 export class CloudMlConsentHistoryResponseDto extends createZodDto(CloudMlConsentHistoryResponseSchema) {}
+export class CloudMlSettlementsResponseDto extends createZodDto(CloudMlSettlementsResponseSchema) {}

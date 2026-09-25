@@ -4,6 +4,7 @@ import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
   CloudMlDestinationCreateDto,
+  CloudMlSettlementsResponseDto,
   CloudMlStatusResponseDto,
   CloudMlWalletDto,
 } from 'src/dtos/cloud-ml.dto.js';
@@ -82,6 +83,19 @@ export class CloudMlAdminController {
   })
   getConsentHistory(): Promise<CloudMlConsentHistoryResponseDto> {
     return this.service.getConsentHistory();
+  }
+
+  @Get('settlements')
+  @Authenticated({ permission: Permission.AdminCloudMlRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudMlSettlements',
+    summary: 'List settled Frameleaf Cloud charges',
+    description:
+      'The charges Frameleaf Cloud settled for this server, newest first, as recorded against the jobs that incurred them.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getSettlements(): Promise<CloudMlSettlementsResponseDto> {
+    return this.service.getSettlements();
   }
 
   @Post('usage')

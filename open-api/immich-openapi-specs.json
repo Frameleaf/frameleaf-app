@@ -531,6 +531,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/ml/settlements": {
+      "get": {
+        "description": "The charges Frameleaf Cloud settled for this server, newest first, as recorded against the jobs that incurred them.",
+        "operationId": "getCloudMlSettlements",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlSettlementsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List settled Frameleaf Cloud charges",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/ml/usage": {
       "post": {
         "description": "Reads settled charges from Frameleaf Cloud and records them against the jobs that incurred them.",
@@ -47066,6 +47113,65 @@
           "priceUsd",
           "pricingUnit",
           "workload"
+        ],
+        "type": "object"
+      },
+      "CloudMlSettlementDto": {
+        "properties": {
+          "cloudJobId": {
+            "description": "The job id Frameleaf Cloud settled",
+            "type": "string"
+          },
+          "costUsd": {
+            "description": "The settled charge, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "credits": {
+            "description": "Credits the charge used, when reported",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "finishedAt": {
+            "type": "string"
+          },
+          "jobName": {
+            "description": "The server job that sent the work, when recorded",
+            "nullable": true,
+            "type": "string"
+          },
+          "succeeded": {
+            "description": "The request finished successfully",
+            "type": "boolean"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "cloudJobId",
+          "costUsd",
+          "credits",
+          "finishedAt",
+          "jobName",
+          "succeeded",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "CloudMlSettlementsResponseDto": {
+        "properties": {
+          "items": {
+            "description": "Settled charges, newest first (at most 50)",
+            "items": {
+              "$ref": "#/components/schemas/CloudMlSettlementDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },

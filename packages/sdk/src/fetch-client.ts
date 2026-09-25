@@ -212,6 +212,24 @@ export type CloudMlDestinationCreateDto = {
     /** The workloads Frameleaf Cloud may run; faces, search and text recognition are refused */
     workloads: MlWorkload[];
 };
+export type CloudMlSettlementDto = {
+    /** The job id Frameleaf Cloud settled */
+    cloudJobId: string;
+    /** The settled charge, USD */
+    costUsd: number;
+    /** Credits the charge used, when reported */
+    credits: number | null;
+    finishedAt: string;
+    /** The server job that sent the work, when recorded */
+    jobName: string | null;
+    /** The request finished successfully */
+    succeeded: boolean;
+    workload: MlWorkload;
+};
+export type CloudMlSettlementsResponseDto = {
+    /** Settled charges, newest first (at most 50) */
+    items: CloudMlSettlementDto[];
+};
 export type AdminConfigDatabaseBackupDto = {
     /** Cron expression */
     cronExpression: string;
@@ -9598,6 +9616,17 @@ export function createCloudMlDestination({ cloudMlDestinationCreateDto }: {
         method: "POST",
         body: cloudMlDestinationCreateDto
     })));
+}
+/**
+ * List settled Frameleaf Cloud charges
+ */
+export function getCloudMlSettlements(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlSettlementsResponseDto;
+    }>("/admin/cloud/ml/settlements", {
+        ...opts
+    }));
 }
 /**
  * Apply Frameleaf Cloud settlements
