@@ -339,7 +339,7 @@
       <input
         bind:this={fileInput}
         type="file"
-        accept=".json,.lic,.jwt,application/json,text/plain"
+        accept=".json,.lic,application/json"
         hidden
         onchange={(event) => {
           void installFile(event.currentTarget.files?.[0]);
