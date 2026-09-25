@@ -158,6 +158,17 @@ describe(FrameleafAuthService.name, () => {
       await expect(sut.authorize({ redirectUri: 'https://evil.test/steal' })).rejects.toThrow('not registered');
     });
 
+    it('is unavailable when the stored issuer is not on the configured cloud', async () => {
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        ...linkRecord(),
+        oidc: { ...linkRecord().oidc, issuer: 'https://id.elsewhere.test' },
+      });
+      await expect(sut.authorize({ redirectUri: 'https://photos.example.test/auth/login' })).rejects.toThrow(
+        'not available',
+      );
+      expect(cloud.requests).toHaveLength(0);
+    });
+
     it('is unavailable when the server is not linked', async () => {
       metadata.delete(SystemMetadataKey.FrameleafCloudLink);
       await expect(sut.authorize({ redirectUri: 'https://photos.example.test/auth/login' })).rejects.toThrow(
