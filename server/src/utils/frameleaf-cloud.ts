@@ -84,7 +84,12 @@ export const walletResponseSchema = walletSchema.extend({
     .url({ protocol: /^https$/ })
     .nullable()
     .default(null),
+  /** Automatic top-up with the payment method saved on the account (§2.5: $25 when below $5). */
+  autoTopUp: z.boolean().default(false),
 });
+
+/** `PATCH /v2/wallet`: the wallet settings a linked server may change for its account. */
+export type CloudWalletSettings = { dailyCapUsd?: number; autoTopUp?: boolean };
 export type CloudWallet = z.infer<typeof walletResponseSchema>;
 
 export const catalogSchema = z.object({
@@ -137,6 +142,11 @@ export const usageSchema = z.object({
         settledUsd: z.number().min(0),
         credits: z.number().nullable().default(null),
         settledAt: z.string(),
+        // What the settlement is made of (metered GPU time, start fees per worker), when reported.
+        modelId: z.string().max(200).nullable().default(null),
+        gpuSeconds: z.number().min(0).nullable().default(null),
+        workers: z.number().int().min(1).max(64).nullable().default(null),
+        estimateUsd: z.number().min(0).nullable().default(null),
       }),
     )
     .max(1000),

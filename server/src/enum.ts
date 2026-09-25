@@ -864,6 +864,7 @@ export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [
  * Studio AI, interpolation and Studio render. Faces are refused by policy (biometric law), and search
  * embeddings and OCR stay on this network.
  */
+// Studio exports render at home only (this server or a home-network worker); never on the cloud.
 export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Enrichment,
   MlWorkload.Upscale,
@@ -871,7 +872,6 @@ export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.RestorationCreative,
   MlWorkload.StudioAi,
   MlWorkload.Interpolation,
-  MlWorkload.StudioRender,
 ];
 
 /** The workloads only the separate restoration worker serves (FL-114, FL-72). */

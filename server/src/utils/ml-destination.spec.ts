@@ -449,10 +449,13 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
       workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [
         MlWorkload.Upscale,
         MlWorkload.Interpolation,
-        MlWorkload.StudioRender,
         MlWorkload.StudioAi,
       ]),
     ).toBeNull();
+    // Studio exports render at home only (§2.7).
+    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.StudioRender])).toMatch(
+      /studio-render stays/,
+    );
   });
 
   it('refuses restoration on a row saved before FL-72 that also allows library analysis', () => {
