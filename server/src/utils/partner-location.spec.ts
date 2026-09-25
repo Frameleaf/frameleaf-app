@@ -304,7 +304,7 @@ describe('partner location policy', () => {
 
       const hidden = await getLocationHiddenOwnerIdsForView({ viewerId: viewer.id, albumIds: ['album-1'], repository });
 
-      expect(repository.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith(['album-1']);
+      expect(repository.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith(['album-1'], viewer.id);
       expect(hidden).toEqual(new Set([hidingFromViewer.id, hidingFromAlbumOwner.id]));
     });
 
