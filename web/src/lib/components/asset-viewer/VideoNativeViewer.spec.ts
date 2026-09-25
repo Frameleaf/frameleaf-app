@@ -1,4 +1,4 @@
-import { AssetMediaSize, AssetTypeEnum } from '@immich/sdk';
+import { AssetMediaSize, AssetTypeEnum, AssetVisibility } from '@immich/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import Hls from 'hls.js';
@@ -6,11 +6,13 @@ import type { Component, ComponentProps } from 'svelte';
 import { get } from 'svelte/store';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import TestWrapper from '$lib/components/TestWrapper.svelte';
+import { clearMediaSession } from '$lib/frameleaf/media-session';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { mediaCapabilitiesManager } from '$lib/managers/media-capabilities-manager.svelte';
 import { videoQuality } from '$lib/stores/preferences.store';
+import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -355,4 +357,92 @@ describe('VideoNativeViewer component', () => {
     fetchMock.mockRestore();
     vi.mocked(mediaCapabilitiesManager.efficientLevels).mockRestore();
   });
+
+  // FL-36: media keys and the lock screen control the open video, never for a Locked one.
+  describe('Media Session', () => {
+    const handlers = new Map<string, (() => void) | null>();
+    const session = {
+      metadata: null as unknown,
+      playbackState: 'none',
+      setActionHandler: vi.fn((action: string, handler: (() => void) | null) => handlers.set(action, handler)),
+    };
+
+    beforeEach(() => {
+      handlers.clear();
+      Object.defineProperty(navigator, 'mediaSession', { value: session, configurable: true });
+      vi.stubGlobal(
+        'MediaMetadata',
+        class {
+          constructor(public init: MediaMetadataInit) {}
+        },
+      );
+    });
+
+    afterEach(() => {
+      clearMediaSession();
+      Reflect.deleteProperty(navigator, 'mediaSession');
+      vi.stubGlobal('MediaMetadata', undefined);
+      slideshowStore.slideshowState.set(SlideshowState.None);
+    });
+
+    it('publishes the open video and clears it on close', async () => {
+      const props = videoProps();
+      const viewer = renderViewer(props);
+
+      await waitFor(() =>
+        expect((session.metadata as { init?: MediaMetadataInit } | null)?.init?.title).toBe(
+          props.asset.originalFileName,
+        ),
+      );
+      expect(handlers.get('nexttrack')).toBeTypeOf('function');
+
+      viewer.unmount();
+      expect(session.metadata).toBeNull();
+    });
+
+    it('never publishes a Locked video', async () => {
+      const props = videoProps();
+      props.asset = { ...props.asset, visibility: AssetVisibility.Locked };
+      renderViewer(props);
+
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+      expect(session.metadata).toBeNull();
+      expect([...handlers.values()].filter(Boolean)).toHaveLength(0);
+    });
+
+    it('pauses and resumes the video with the slideshow', async () => {
+      const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+      const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      renderViewer(videoProps());
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+      pause.mockClear();
+
+      slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await waitFor(() => expect(play).toHaveBeenCalled());
+      play.mockRestore();
+    });
+
+    // MediaViewer.jsx:422-460: the open settings hold the video without pausing the slideshow.
+    it('holds the video while the slideshow settings are open', async () => {
+      const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+      const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      renderViewer(videoProps());
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+      pause.mockClear();
+
+      slideshowStore.openSettings();
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+
+      await slideshowStore.closeSettings({ restoreFocus: false });
+      await waitFor(() => expect(play).toHaveBeenCalled());
+      play.mockRestore();
+    });
+  });
 });
+
+const viewerVideo = () => document.querySelector('video');
