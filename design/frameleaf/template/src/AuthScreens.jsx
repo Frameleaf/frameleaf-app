@@ -28,6 +28,24 @@ import {
   validateEmail,
   validateProductKey,
 } from "./system-data.mjs";
+import { useCloudState } from "./CloudJobDialog";
+import {
+  cloudPlans,
+  formatUsd,
+  loadCloudState,
+  saveCloudState,
+  walletAvailable,
+  walletPacks,
+  WALLET_FEES_NOTE,
+} from "./frameleaf-cloud-data.mjs";
+import {
+  SAMPLE_USER_CODE,
+  activatePlan,
+  linkAccount,
+  planById,
+  unlinkAccount,
+} from "./cloud-account.mjs";
+import { addCredit } from "./cloud-jobs.mjs";
 import "./system.css";
 import "./auth.css";
 
@@ -244,6 +262,8 @@ export function Login({
   users,
   oauthProvider = "Authentik",
   error: externalError = "",
+  via: initialVia = "lan",
+  relayUrl = "https://r.k3v9q2m7x4a8d1fh.frameleaf-direct.net",
 }) {
   const ids = useId();
   const later = useTimer();
@@ -255,6 +275,12 @@ export function Login({
   const [forgot, setForgot] = useState(false);
   const [server, setServer] = useState(serverUrl);
   const [editServer, setEditServer] = useState(false);
+  // Simulated arrival: "relay" is a visitor coming through Frameleaf remote access.
+  const [via, setVia] = useState(initialVia === "relay" ? "relay" : "lan");
+  const [sameNetwork, setSameNetwork] = useState(true);
+  const relay = via === "relay";
+  const cloud = useCloudState();
+  const showFrameleafLocally = cloud.signIn?.showOnLocalLogin !== false;
 
   const submit = (event) => {
     event.preventDefault();
@@ -290,9 +316,119 @@ export function Login({
       });
     }, 800);
   };
+  const frameleaf = () => {
+    if (busy) return;
+    setBusy("frameleaf");
+    later(() => {
+      setBusy(false);
+      onDone?.({ method: "frameleaf", via, remember, server: relay ? relayUrl : server });
+    }, 900);
+  };
+  const frameleafButton = (
+    <Button
+      className="auth-oauth auth-frameleaf"
+      type="button"
+      onClick={frameleaf}
+      disabled={Boolean(busy)}
+      autoFocus={relay}
+    >
+      <img src="/brand/frameleaf-symbol.svg" alt="" width="18" height="18" />
+      {busy === "frameleaf" ? "Opening frameleaf.cloud…" : "Sign in with Frameleaf"}
+    </Button>
+  );
+  const demoSwitch = (
+    <button
+      type="button"
+      className="auth-link auth-demo-switch"
+      onClick={() => {
+        setVia(relay ? "lan" : "relay");
+        setSameNetwork(true);
+        setError("");
+      }}
+    >
+      {relay ? "Preview: sign-in on the local network" : "Preview: arriving through remote access"}
+    </button>
+  );
   const shown = error || externalError;
+  if (relay)
+    return (
+      <AuthShell
+        hero={HERO}
+        theme={theme}
+        setTheme={setTheme}
+        footer={
+          <>
+            <BuiltOn />
+            {demoSwitch}
+          </>
+        }
+      >
+        <div className="auth-heading">
+          <h1>Welcome back</h1>
+          <p>Sign in to your photo library.</p>
+        </div>
+        {sameNetwork && (
+          <div className="auth-lan" role="status">
+            <Icon name="mdiLanConnect" size={18} />
+            <div>
+              <strong>You're on the same network as this server</strong>
+              <span>
+                The local address is faster and keeps your photos off the internet.
+              </span>
+            </div>
+            <div className="auth-lan-actions">
+              <Button
+                type="button"
+                primary
+                onClick={() => {
+                  setServer(serverUrl);
+                  setVia("lan");
+                }}
+              >
+                Continue on {new URL(serverUrl).host}
+              </Button>
+              <button type="button" className="auth-link" onClick={() => setSameNetwork(false)}>
+                Stay on remote access
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="auth-card auth-form">
+          <InfoNote>
+            You're reaching this server through Frameleaf remote access. Sign in
+            with the Frameleaf account your administrator linked to your
+            member profile. Passwords stay on the local network.
+          </InfoNote>
+          {shown && <ErrorNote id={`${ids}-error`}>{shown}</ErrorNote>}
+          {frameleafButton}
+          <label className="auth-check">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(event) => setRemember(event.target.checked)}
+            />
+            Keep me signed in
+          </label>
+        </div>
+        <div className="auth-server">
+          <Icon name="mdiEarth" size={16} />
+          <span>Remote access</span>
+          <code>{new URL(relayUrl).host}</code>
+        </div>
+      </AuthShell>
+    );
   return (
-    <AuthShell hero={HERO} theme={theme} setTheme={setTheme} footer={<BuiltOn />}>
+    <AuthShell
+      hero={HERO}
+      theme={theme}
+      setTheme={setTheme}
+      footer={
+        <>
+          <BuiltOn />
+          {demoSwitch}
+        </>
+      }
+    >
       <div className="auth-heading">
         <h1>Welcome back</h1>
         <p>Sign in to your photo library.</p>
@@ -349,21 +485,28 @@ export function Login({
             temporary password from Users, then sign in and choose your own.
           </InfoNote>
         )}
-        <Button primary className="auth-submit" type="submit" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
+        <Button primary className="auth-submit" type="submit" disabled={Boolean(busy)}>
+          {busy === true ? "Signing in…" : "Sign in"}
         </Button>
         <div className="auth-divider" aria-hidden="true">
           or
         </div>
+        {showFrameleafLocally && frameleafButton}
         <Button
           className="auth-oauth"
           type="button"
           icon="mdiShieldAccountOutline"
           onClick={oauth}
-          disabled={busy}
+          disabled={Boolean(busy)}
         >
           Continue with {oauthProvider}
         </Button>
+        {showFrameleafLocally && (
+          <p className="auth-note auth-frameleaf-note">
+            A Frameleaf account is optional here. It's needed only for remote
+            access and Frameleaf Cloud features.
+          </p>
+        )}
       </form>
       <div className="auth-server">
         <Icon name="mdiServerOutline" size={16} />
@@ -821,6 +964,9 @@ export function Onboarding({ onDone, onCancel, theme, setTheme, user, storage })
   const patternInput = useRef(null);
   const [state, setState] = useState(() => loadOnboarding(storage));
   const [reached, setReached] = useState(state.step);
+  const cloud = useCloudState();
+  const [linking, setLinking] = useState(false);
+  const linkLater = useTimer();
   const last = onboardingSteps.length - 1;
   const index = clamp(state.step, 0, last);
   const step = onboardingSteps[index];
@@ -1070,6 +1216,140 @@ export function Onboarding({ onDone, onCancel, theme, setTheme, user, storage })
           )}
         </div>
       );
+    if (step.id === "frameleaf-account") {
+      const linked = cloud.link.status === "linked";
+      return (
+        <div className="ob-cloud">
+          <p>
+            Frameleaf works fully without an account. Link one only if you want
+            the optional online services. Everyone keeps signing in to this
+            server the way they do today.
+          </p>
+          <ul className="ob-list">
+            <li>
+              <strong>Remote access</strong> — reach this server away from home
+              without opening ports.
+            </li>
+            <li>
+              <strong>Cloud backup</strong> — an encrypted copy of your library
+              in a bucket that belongs to this server alone.
+            </li>
+            <li>
+              <strong>Frameleaf Cloud processing</strong> — pay-as-you-go AI
+              jobs you confirm one at a time.
+            </li>
+          </ul>
+          {linked ? (
+            <div className="auth-card ob-cloud-card">
+              <span className="buy-badge">
+                <Icon name="mdiCheckDecagramOutline" size={26} />
+              </span>
+              <div>
+                <strong>Linked to {cloud.link.account?.email ?? "your Frameleaf account"}</strong>
+                <span>This server can now use the services you turn on.</span>
+              </div>
+              <button
+                type="button"
+                className="auth-link"
+                onClick={() => {
+                  saveCloudState(unlinkAccount(loadCloudState()));
+                  chooseIn("cloud", "account", "skip");
+                }}
+              >
+                Unlink
+              </button>
+            </div>
+          ) : linking ? (
+            <div className="auth-card ob-cloud-card" role="status">
+              <span className="ob-code" aria-label={`Code ${SAMPLE_USER_CODE}`}>
+                {SAMPLE_USER_CODE}
+              </span>
+              <div>
+                <strong>Approve this server on frameleaf.cloud</strong>
+                <span>Check the code matches, then come back. Waiting for approval…</span>
+              </div>
+              <button type="button" className="auth-link" onClick={() => setLinking(false)}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="ob-cloud-actions">
+              <Button
+                className="auth-frameleaf"
+                type="button"
+                onClick={() => {
+                  setLinking(true);
+                  linkLater(() => {
+                    saveCloudState(linkAccount(loadCloudState()));
+                    chooseIn("cloud", "account", "linked");
+                    setLinking(false);
+                  }, 1600);
+                }}
+              >
+                <img src="/brand/frameleaf-symbol.svg" alt="" width="18" height="18" />
+                Link with Frameleaf
+              </Button>
+              <span className="auth-note">Optional · you can skip this and link later in Settings.</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (step.id === "plan") {
+      const linked = cloud.link.status === "linked";
+      const options = [
+        {
+          id: "self-hosted",
+          title: "Self-hosted only",
+          hint: "Free. Every feature on this server, no account needed.",
+        },
+        ...cloudPlans.map((plan) => ({
+          id: plan.id,
+          title: `${plan.title} · ${formatUsd(plan.price, 0)}/${plan.period}`,
+          hint: plan.description,
+          badge: plan.recommended ? "Best value" : null,
+          needsAccount: true,
+        })),
+        {
+          id: "supporter-key",
+          title: "I have a supporter key",
+          hint: "A one-time key adds a supporter badge. It unlocks nothing; nothing is locked.",
+        },
+      ];
+      return (
+        <>
+          <div className="ob-options" role="radiogroup" aria-label="Plan and licence">
+            {options.map((option) => (
+              <OptionRadio
+                key={option.id}
+                name={`${ids}-plan`}
+                value={option.id}
+                checked={choices.cloud.plan === option.id}
+                onChange={(value) => chooseIn("cloud", "plan", value)}
+              >
+                <span className="ob-plan">
+                  <strong>
+                    {option.title}
+                    {option.badge && <span className="buy-tag">{option.badge}</span>}
+                  </strong>
+                  <small>{option.hint}</small>
+                </span>
+              </OptionRadio>
+            ))}
+          </div>
+          {planById(choices.cloud.plan) && (
+            <InfoNote>
+              {linked
+                ? "You'll finish on frameleaf.cloud after setup; nothing is charged here. Cloud backup is set up from Settings once the plan is active."
+                : "Paid plans need a Frameleaf account. Go back a step to link one, or subscribe later from Support Frameleaf."}
+            </InfoNote>
+          )}
+          {choices.cloud.plan === "supporter-key" && (
+            <InfoNote>Enter your key on the Support Frameleaf page after setup. Keys are never put in a link.</InfoNote>
+          )}
+        </>
+      );
+    }
     if (step.id === "backup")
       return (
         <>
@@ -1178,6 +1458,20 @@ export function Onboarding({ onDone, onCancel, theme, setTheme, user, storage })
                 ? choices.storageTemplate.pattern
                 : "Keep files as uploaded",
             ],
+            [
+              "Frameleaf account",
+              cloud.link.status === "linked"
+                ? `Linked · ${cloud.link.account?.email ?? "account"}`
+                : "Not linked · self-hosted only",
+            ],
+            [
+              "Plan & licence",
+              planById(choices.cloud.plan)
+                ? `${planById(choices.cloud.plan).title} · finish on frameleaf.cloud`
+                : choices.cloud.plan === "supporter-key"
+                  ? "Supporter key · add it on Support Frameleaf"
+                  : "Self-hosted · free",
+            ],
           ].map(([label, value]) => (
             <div key={label}>
               <span>{label}</span>
@@ -1256,7 +1550,9 @@ export function Onboarding({ onDone, onCancel, theme, setTheme, user, storage })
               </span>
               {index < last ? (
                 <Button primary type="button" onClick={() => go(index + 1)}>
-                  Next
+                  {step.id === "frameleaf-account" && cloud.link.status !== "linked"
+                    ? "Skip"
+                    : "Next"}
                   <Icon name="mdiArrowRight" size={16} />
                 </Button>
               ) : (
@@ -1397,9 +1693,47 @@ export function MaintenanceSplash({
 
 // ------------------------------------------------------------------------ Buy
 
-export function Buy({ user, onDone, onCancel, onChange, theme, setTheme, storage }) {
+export function Buy({
+  user,
+  onDone,
+  onCancel,
+  onChange,
+  theme,
+  setTheme,
+  storage,
+  section = null,
+  onOpenCloudSettings,
+}) {
   const ids = useId();
   const later = useTimer();
+  const cloud = useCloudState();
+  const creditRef = useRef(null);
+  const [checkout, setCheckout] = useState(null);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudNote, setCloudNote] = useState("");
+  useEffect(() => {
+    if (section === "credit") creditRef.current?.scrollIntoView({ block: "start" });
+  }, [section]);
+  const activePlan = cloud.license.state === "active" ? planById(cloud.license.plan) : null;
+  const confirmCheckout = () => {
+    if (!checkout || cloudBusy) return;
+    setCloudBusy(true);
+    later(() => {
+      const current = loadCloudState();
+      if (checkout.kind === "plan") {
+        saveCloudState(activatePlan(current, checkout.plan.id));
+        setCloudNote(`${checkout.plan.title} is active. Remote access and cloud backup are ready to set up.`);
+      } else {
+        const linked = current.link.status === "linked" ? current : linkAccount(current);
+        saveCloudState(addCredit(linked, checkout.pack.amount));
+        setCloudNote(
+          `${formatUsd(checkout.pack.amount, 0)} of AI credit added.`,
+        );
+      }
+      setCloudBusy(false);
+      setCheckout(null);
+    }, 900);
+  };
   const [state, setState] = useState(() => loadSupporter(storage));
   const [modal, setModal] = useState(null);
   const [key, setKey] = useState("");
@@ -1461,9 +1795,10 @@ export function Buy({ user, onDone, onCancel, onChange, theme, setTheme, storage
         <div className="auth-heading">
           <h1>Support Frameleaf</h1>
           <p>
-            Frameleaf is made by a small team and funded by the people who use
-            it. A supporter key removes nothing and adds a badge that says
-            thanks.
+            Frameleaf is free to self-host and made by a small team funded by
+            the people who use it. Frameleaf Cloud adds optional online
+            services; a supporter key adds a badge that says thanks. Nothing
+            on your server is ever locked.
           </p>
         </div>
         {onCancel && (
@@ -1471,6 +1806,106 @@ export function Buy({ user, onDone, onCancel, onChange, theme, setTheme, storage
             Back
           </Button>
         )}
+      </div>
+      {cloudNote && (
+        <p className="auth-success" role="status">
+          <Icon name="mdiCheckCircleOutline" size={16} />
+          <span>{cloudNote}</span>
+        </p>
+      )}
+      <section className="buy-section" aria-labelledby={`${ids}-cloud`}>
+        <div className="buy-section-head">
+          <h2 id={`${ids}-cloud`}>Frameleaf Cloud</h2>
+          <p>Remote access and encrypted cloud backup for this server.</p>
+        </div>
+        <div className="buy-cards">
+          {cloudPlans.map((plan) => {
+            const current = activePlan?.id === plan.id;
+            return (
+              <section
+                key={plan.id}
+                className={`buy-card ${plan.recommended ? "recommended" : ""} ${current ? "current" : ""}`}
+                aria-labelledby={`${ids}-${plan.id}`}
+              >
+                <h2 id={`${ids}-${plan.id}`}>
+                  {plan.title}
+                  {current ? (
+                    <span className="buy-tag">Current plan</span>
+                  ) : (
+                    plan.recommended && <span className="buy-tag">Recommended</span>
+                  )}
+                </h2>
+                <div className="buy-price">
+                  <strong>{formatUsd(plan.price, 0)}</strong>
+                  <span>per {plan.period}</span>
+                </div>
+                <p>{plan.description}</p>
+                <ul>
+                  {plan.features.map((feature) => (
+                    <li key={feature}>
+                      <Icon name="mdiCheck" size={16} />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+                {current ? (
+                  <>
+                    <span className="auth-note">Renews {cloud.license.renewsOn}</span>
+                    {onOpenCloudSettings && (
+                      <Button type="button" icon="mdiCloudLockOutline" onClick={() => onOpenCloudSettings("cloud-backup")}>
+                        Set up cloud backup
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <Button
+                    primary={plan.recommended && !activePlan}
+                    type="button"
+                    icon="mdiOpenInNew"
+                    onClick={() => setCheckout({ kind: "plan", plan })}
+                  >
+                    {activePlan ? "Switch on frameleaf.cloud" : "Subscribe on frameleaf.cloud"}
+                  </Button>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      </section>
+      <section className="auth-card buy-credit" ref={creditRef} aria-labelledby={`${ids}-credit`}>
+        <div className="buy-credit-head">
+          <div>
+            <h2 id={`${ids}-credit`}>AI credit</h2>
+            <p>
+              Pay as you go for Frameleaf Cloud processing: restorations,
+              upscales, descriptions and Studio renders. Every job shows its
+              cost before it runs. No subscription needed.
+            </p>
+          </div>
+          <div className="buy-balance">
+            <span>Available</span>
+            <strong>{formatUsd(walletAvailable(cloud.wallet))}</strong>
+            {cloud.wallet.heldUsd > 0 && <small>{formatUsd(cloud.wallet.heldUsd)} held for running jobs</small>}
+          </div>
+        </div>
+        <div className="buy-packs" role="group" aria-label="Add AI credit">
+          {walletPacks.map((pack) => (
+            <button key={pack.id} type="button" onClick={() => setCheckout({ kind: "credit", pack })}>
+              <strong>{formatUsd(pack.amount, 0)}</strong>
+              <small>AI credit</small>
+            </button>
+          ))}
+        </div>
+        <p className="buy-note">{WALLET_FEES_NOTE}</p>
+        {onOpenCloudSettings && (
+          <button type="button" className="auth-link" onClick={() => onOpenCloudSettings("cloud-processing")}>
+            Spending cap, auto top-up and models
+          </button>
+        )}
+      </section>
+      <div className="buy-section-head">
+        <h2>Supporter key</h2>
+        <p>A one-time thank you. It adds a badge and unlocks nothing.</p>
       </div>
       {state.activated ? (
         <section className="auth-card" aria-labelledby={`${ids}-active`}>
@@ -1587,6 +2022,37 @@ export function Buy({ user, onDone, onCancel, onChange, theme, setTheme, storage
           </form>
           {keyError && !modal && <ErrorNote>{keyError}</ErrorNote>}
         </section>
+      )}
+      {checkout && (
+        <Dialog
+          title="Continue to frameleaf.cloud?"
+          close={() => setCheckout(null)}
+          actions={
+            <>
+              <Button type="button" onClick={() => setCheckout(null)}>
+                Cancel
+              </Button>
+              <Button primary type="button" icon="mdiOpenInNew" onClick={confirmCheckout} disabled={cloudBusy}>
+                {cloudBusy ? "Waiting for frameleaf.cloud…" : "Continue"}
+              </Button>
+            </>
+          }
+        >
+          <div className="auth-form">
+            <p>
+              {checkout.kind === "plan"
+                ? `${checkout.plan.title} costs ${formatUsd(checkout.plan.price, 0)} per ${checkout.plan.period}. `
+                : `Add ${formatUsd(checkout.pack.amount, 0)} of AI credit. `}
+              Checkout opens on frameleaf.cloud in a new tab. You sign in with
+              your Frameleaf account there, and payment details are entered
+              only on that site.
+            </p>
+            {cloud.link.status !== "linked" && (
+              <InfoNote>This server will be linked to the Frameleaf account you use at checkout.</InfoNote>
+            )}
+            <InfoNote>The store isn't connected in this preview. Continue to see the finished state.</InfoNote>
+          </div>
+        </Dialog>
       )}
       {product && (
         <Dialog

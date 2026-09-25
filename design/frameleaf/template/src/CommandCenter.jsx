@@ -8,7 +8,10 @@ import {
 } from "./analytics-data.mjs";
 import { PhysicalDedupManager } from "./PhysicalDedupManager";
 import { WorkerManager } from "./WorkerManager";
-import { JobsManager, RunPodManager } from "./JobsManager";
+import { HardwareCheck } from "./HardwareCheck";
+import { JobsManager } from "./JobsManager";
+import { FrameleafCloud, useCloudState } from "./FrameleafCloud";
+import { CLOUD_DESTINATION, cloudSummary } from "./frameleaf-cloud-data.mjs";
 import { AccountsLibraries, PersonalAccess } from "./AccountsLibraries";
 import { ConfigurationTransfer } from "./ConfigurationTransfer";
 import { previewStoragePath } from "./configuration-transfer.mjs";
@@ -63,9 +66,9 @@ const initialEntities = {
     },
     {
       id: "cloud",
-      name: "RunPod",
-      detail: "No active pod · only used when explicitly selected",
-      status: "Stopped",
+      name: CLOUD_DESTINATION.name,
+      detail: "Only used when explicitly selected for a job",
+      status: "Not linked",
       type: "Cloud",
     },
   ],
@@ -210,10 +213,18 @@ export function CommandCenter({
     ),
   }));
   const [changes, setChanges] = useState(saved.history || []);
-  const [entities, setEntities] = useState({
+  const [entities, setEntities] = useState(() => ({
     ...initialEntities,
     ...saved.entities,
-  });
+    // The retired GPU-provider worker row is shown as Frameleaf Cloud.
+    ...(saved.entities?.workers && {
+      workers: saved.entities.workers.map((worker) =>
+        worker.id === "cloud" && worker.name !== CLOUD_DESTINATION.name
+          ? initialEntities.workers.find((item) => item.id === "cloud")
+          : worker,
+      ),
+    }),
+  }));
   const [area, setArea] = useState(
     () =>
       areaFor(new URL(location.href).searchParams.get("settings") || startArea)
@@ -712,8 +723,7 @@ export function CommandCenter({
               !(
                 selectedSection &&
                 (["users", "libraries"].includes(area) ||
-                  (area === "processing" &&
-                    ["queues", "runpod"].includes(activeSection)))
+                  (area === "processing" && activeSection === "queues"))
               ))) && (
             <div className="cc-page-heading">
               <div>
@@ -948,11 +958,28 @@ export function CommandCenter({
                           }
                         />
                       )}
-                      {area === "processing" && section.id === "runpod" && (
-                        <RunPodManager
-                          settings={settings}
+                      {section.id === "routing" && (
+                        <FrameleafCloud
+                          section="workload-routing"
+                          onNavigate={navigate}
+                        />
+                      )}
+                      {area === "processing" && section.id === "hardware" && (
+                        <HardwareCheck onNavigate={navigate} />
+                      )}
+                      {section.module === "FrameleafCloud" && (
+                        <FrameleafCloud
+                          section={section.id}
+                          onNavigate={navigate}
                           draft={draft}
                           onSettingChange={changeSetting}
+                          fields={section.fields}
+                          errors={errors}
+                        />
+                      )}
+                      {section.id === "frameleaf-account" && (
+                        <PersonalAccess
+                          section="frameleaf"
                           onNavigate={navigate}
                         />
                       )}
@@ -1002,7 +1029,7 @@ export function CommandCenter({
                         )}
                       {(["queues", "advanced-protected-suppression"].includes(
                         section.id,
-                      )
+                      ) || section.module === "FrameleafCloud"
                         ? []
                         : section.fields
                       ).map((field) => (
@@ -1722,6 +1749,8 @@ function Overview({
   resources,
 }) {
   const report = getAnalytics({ scope, resources });
+  const [cloud] = useCloudState();
+  const glance = cloudSummary(cloud);
   return (
     <>
       <div className="cc-health-line">
@@ -1755,7 +1784,7 @@ function Overview({
             02:00 <em>19 Sep</em>
           </strong>
           <small>
-            Original-file restore drill overdue
+            Time to test restoring your photos
             <Icon name="mdiChevronRight" />
           </small>
         </button>
@@ -1794,8 +1823,8 @@ function Overview({
             <span>
               <strong>Prove your backup can restore</strong>
               <small>
-                Metadata is backed up. Original-file verification has not been
-                recorded.
+                Albums, people and edits are backed up, but restoring your
+                original photos hasn't been tested yet.
               </small>
             </span>
             <Icon name="mdiChevronRight" />
@@ -1806,9 +1835,9 @@ function Overview({
           >
             <Icon name="mdiDesktopTowerMonitor" />
             <span>
-              <strong>Check worker compatibility</strong>
+              <strong>Check what your computers can run</strong>
               <small>
-                Studio rendering and Dolby Vision remain unavailable.
+                Studio video export and Dolby Vision aren't set up yet.
               </small>
             </span>
             <Icon name="mdiChevronRight" />
@@ -1862,33 +1891,39 @@ function Overview({
             </span>
           </div>
           <p className="cc-subtle">
-            Usage includes everything on this filesystem. Physical originals and
-            logical account usage are tracked separately.
+            Counts everything on this drive. Each person's usage can add up to
+            more, because identical files are stored only once.
           </p>
         </section>
         <section className="cc-panel">
           <div className="cc-panel-title">
             <div>
-              <h2>Processing</h2>
-              <p>Illustrative workload snapshot</p>
+              <h2>Background work</h2>
+              <p>What's running right now (sample)</p>
             </div>
             <button onClick={() => navigate("processing", "queues")}>
-              Queues
+              All work
               <Icon name="mdiChevronRight" />
             </button>
           </div>
           {[
             [
-              "Thumbnail generation",
-              "3 active · 124 waiting",
+              "Making thumbnails",
+              "3 running · 124 waiting",
               "mdiImageMultipleOutline",
             ],
             [
-              "Face recognition",
-              "1 active · 42 waiting",
+              "Recognising faces",
+              "1 running · 42 waiting",
               "mdiAccountMultipleOutline",
             ],
-            ["Cloud processing", "Stopped · no active pod", "mdiCloudOutline"],
+            [
+              "Cloud processing",
+              cloud.processing.enabled
+                ? `${CLOUD_DESTINATION.name} · on`
+                : `${CLOUD_DESTINATION.name} · off`,
+              "mdiCloudOutline",
+            ],
           ].map(([title, status, icon]) => (
             <div className="cc-service-row" key={title}>
               <Icon name={icon} />
@@ -1897,7 +1932,7 @@ function Overview({
             </div>
           ))}
           <button className="cc-text-link" onClick={onActivity}>
-            Open media-operation activity <Icon name="mdiChevronRight" />
+            See all activity <Icon name="mdiChevronRight" />
           </button>
         </section>
       </div>
@@ -1905,25 +1940,26 @@ function Overview({
         <h2>System at a glance</h2>
         <div>
           {[
-            ["API & database", "Responding", "mdiServerOutline"],
-            ["ML endpoint", "Reachable", "mdiImageSearchOutline"],
+            ["Server", "Running", "mdiServerOutline"],
+            ["AI features", "Ready", "mdiImageSearchOutline"],
             [
-              "GPU Studio",
-              "Compatibility check needed",
+              "Studio video export",
+              "Needs a hardware check",
               "mdiDesktopTowerMonitor",
             ],
-            [
-              "Cloud destination",
-              settings.destination === "runpod"
-                ? "RunPod selected"
-                : "Local preferred",
-              "mdiCloudOutline",
-            ],
+            [CLOUD_DESTINATION.name, glance.text, "mdiCloudOutline"],
           ].map(([label, state, icon]) => (
             <button
               key={label}
+              className={
+                label === CLOUD_DESTINATION.name && glance.attention
+                  ? "cc-glance-attention"
+                  : undefined
+              }
               onClick={() =>
-                navigate(label === "API & database" ? "server" : "processing")
+                label === CLOUD_DESTINATION.name
+                  ? navigate("cloud")
+                  : navigate(label === "Server" ? "server" : "processing")
               }
             >
               <Icon name={icon} />
@@ -2014,7 +2050,7 @@ function SpecialPanel({
           >
             {
               {
-                workers: "Add worker",
+                workers: "Add a computer",
                 libraries: "Add source folder",
                 users: "Add account",
                 spaces: "Create Space",
@@ -2063,10 +2099,10 @@ function SpecialPanel({
       <div className="cc-queue-list">
         {[
           ["Thumbnails", 124, 3],
-          ["Metadata extraction", 0, 0],
+          ["Photo details", 0, 0],
           ["Face recognition", 42, 1],
           ["Descriptions", 18, 1],
-          ["Playback transcodes", 6, 1],
+          ["Video playback copies", 6, 1],
           ["Imports", 0, 0],
         ].map(([label, waiting, active]) => (
           <div key={label}>
@@ -2075,7 +2111,7 @@ function SpecialPanel({
               <small>
                 {pausedQueues.includes(label)
                   ? "Paused for new work"
-                  : `${active} active · ${waiting} queued`}
+                  : `${active} running · ${waiting} waiting`}
               </small>
             </span>
             <Button
@@ -2085,7 +2121,7 @@ function SpecialPanel({
                     ? previous.filter((item) => item !== label)
                     : [...previous, label],
                 );
-                setNotice("Queue preference updated.");
+                setNotice("Updated. This only affects new work.");
               }}
             >
               {pausedQueues.includes(label) ? "Resume" : "Pause"}
@@ -2261,7 +2297,7 @@ function EntityDialog({ form, close, onSave, saveError }) {
   const [type, setType] = useState(form.item?.type || options[0]);
   return (
     <Dialog
-      title={`${form.item ? "Configure" : "Add"} ${{ workers: "worker", libraries: "source folder", users: "account", spaces: "Space" }[form.kind]}`}
+      title={`${form.item ? "Configure" : "Add"} ${{ workers: "computer", libraries: "source folder", users: "account", spaces: "Space" }[form.kind]}`}
       close={close}
       actions={
         <>
@@ -2303,7 +2339,7 @@ function EntityDialog({ form, close, onSave, saveError }) {
       <label>
         {
           {
-            workers: "Endpoint and hardware notes",
+            workers: "Address and hardware notes",
             libraries: "Path and scan notes",
             users: "Email and quota notes",
             spaces: "Members and ownership notes",
@@ -2350,12 +2386,12 @@ const workflows = {
   import: {
     title: "Import Google Photos",
     stages: ["Stage", "Scan", "Reconcile"],
-    intro: "A server-staged import continues after the browser closes.",
+    intro: "The import keeps going on the server even if you close this page.",
     rows: [
       ["Source", "2 Takeout archives"],
-      ["New assets", "1,248"],
+      ["New photos and videos", "1,248"],
       ["Matched originals", "312 · restore album memberships"],
-      ["Needs review", "3 ambiguous sidecars · 2 possible Live Photo pairs"],
+      ["Needs review", "3 unclear photo details · 2 possible Live Photo pairs"],
     ],
     final: "Review complete. Resolve the flagged items before importing.",
   },
@@ -2418,7 +2454,7 @@ const workflows = {
       ],
       [
         "Integrity",
-        "Retain all asset records and dedup references while resolving",
+        "Nothing is removed from your library while you fix this",
       ],
     ],
     final: "Findings reviewed. Reconnect the source before attempting repairs.",
@@ -2439,26 +2475,26 @@ const workflows = {
     final: "Preview completed. No email was sent.",
   },
   worker: {
-    title: "Worker capability report",
-    stages: ["Endpoint", "Capabilities", "Qualification"],
-    intro: "See which editing tools this worker can run.",
+    title: "What this computer can run",
+    stages: ["Connection", "Tools", "Checks"],
+    intro: "See which editing tools this computer can run.",
     rows: [
-      ["Local ML", "Reachable · model support unverified"],
+      ["AI features", "Answering · models not checked yet"],
       ["Studio renderer", "Rendering compatibility check needed"],
       ["HDR", "HDR compatibility check needed"],
       ["Dolby Vision", "Dolby Vision tools need verification"],
     ],
-    final: "Capabilities reviewed. Complete worker setup to enable Studio.",
+    final: "Checked. Finish setting up this computer to use Studio.",
   },
   suppression: {
     title: "Hidden memory rules",
     stages: ["People", "Dates", "Review"],
-    intro: "Manage reminders without hiding assets from your own library.",
+    intro: "Choose what Memories skips; the photos stay in your library.",
     rows: [
       ["People", "No hidden people"],
       ["Dates", "No hidden date ranges"],
       ["Scope", "Memories and suggested stories only"],
-      ["Access", "Private-media permissions stay independent"],
+      ["Access", "Doesn't change who can see the photos"],
     ],
     final: "Hidden memory rules reviewed.",
   },
@@ -2622,8 +2658,17 @@ const directoryGroups = {
     "enrichment-care": "Repairs",
     "advanced-duplicate-matching": "Duplicates",
   },
+  cloud: {
+    "cloud-account": "Account",
+    "cloud-plan": "Account",
+    "cloud-license": "Account",
+    "cloud-remote": "Features",
+    "cloud-processing": "Features",
+    "cloud-backup": "Features",
+  },
   security: {
     signin: "Sign-in",
+    "frameleaf-signin": "Sign-in",
     "oauth-advanced": "Sign-in",
     "advanced-native-oauth": "Sign-in",
     privacy: "Locked content",
@@ -2653,6 +2698,7 @@ const directoryGroups = {
     "account-security": "Account",
     "email-preferences": "Account",
     "supporter-preference": "Account",
+    "frameleaf-account": "Account",
     appearance: "Library",
     "device-playback": "Library",
     "library-features": "Library",
@@ -2687,11 +2733,9 @@ function sectionGroup(area, section) {
   if (area === "processing")
     return id === "queues"
       ? "Job management"
-      : /runpod/.test(id)
-        ? "Cloud processing"
-        : /nightly|schedules/.test(id)
-          ? "Schedules & caching"
-          : "Workers & destinations";
+      : /nightly|schedules/.test(id)
+        ? "Schedules & caching"
+        : "Computers & where work runs";
   if (area === "intelligence")
     return /smart-album|travel-album|classification/.test(id)
       ? "Categories & smart albums"

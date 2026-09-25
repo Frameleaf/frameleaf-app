@@ -116,7 +116,11 @@ export function buildCommandIndex(input = {}) {
               string(section.icon) ||
               list(source.settingsAreas).find((area) => area.id === areaId)?.icon,
             subtitle: `${areaTitles.get(areaId)} · Settings`,
-            keywords: [string(section.description), areaTitles.get(areaId)],
+            keywords: [
+              string(section.description),
+              areaTitles.get(areaId),
+              ...keywordList(section.keywords),
+            ],
             payload: { kind: "settings", area: areaId, section: id },
           }),
         );

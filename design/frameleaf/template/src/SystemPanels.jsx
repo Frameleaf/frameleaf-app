@@ -14,6 +14,8 @@ import {
   unreadCount,
   versionHistory,
 } from "./system-data.mjs";
+import { useCloudState } from "./CloudJobDialog";
+import { formatUsd, walletAvailable } from "./frameleaf-cloud-data.mjs";
 import "./system.css";
 
 const SYMBOL = "/brand/frameleaf-symbol.svg";
@@ -649,8 +651,12 @@ export function AccountMenu({
   onSupport,
   onAbout,
   onSignOut,
+  onFrameleafCloud,
+  onSupportFrameleaf,
 }) {
   const [open, setOpen] = useState(false);
+  const cloud = useCloudState();
+  const cloudLinked = cloud.link.status === "linked";
   const [editing, setEditing] = useState(false);
   const button = useRef(null);
   const menu = useRef(null);
@@ -721,6 +727,39 @@ export function AccountMenu({
             </div>
             <Icon name="mdiChevronRight" size={16} />
           </button>
+          <div className="fl-menu-sep" role="separator" />
+          {onFrameleafCloud && (
+            <button
+              type="button"
+              role="menuitem"
+              className="fl-menu-item account-cloud"
+              onClick={run(onFrameleafCloud)}
+            >
+              <img src="/brand/frameleaf-symbol.svg" alt="" width="18" height="18" />
+              <div>
+                Frameleaf Cloud
+                <span>
+                  {cloudLinked
+                    ? `Linked · ${cloud.link.account?.email ?? "account"}`
+                    : "Not linked · optional"}
+                </span>
+              </div>
+              {cloudLinked && (
+                <span className="account-cloud-pill" title="AI credit available">
+                  {formatUsd(walletAvailable(cloud.wallet))}
+                </span>
+              )}
+            </button>
+          )}
+          {onSupportFrameleaf && (
+            <button type="button" role="menuitem" className="fl-menu-item" onClick={run(onSupportFrameleaf)}>
+              <Icon name="mdiHandHeartOutline" size={18} />
+              <div>
+                Support Frameleaf
+                <span>Plans, AI credit and supporter keys</span>
+              </div>
+            </button>
+          )}
           <div className="fl-menu-sep" role="separator" />
           <button type="button" role="menuitem" className="fl-menu-item" onClick={run(onAccountSettings)}>
             <Icon name="mdiCogOutline" size={18} />

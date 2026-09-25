@@ -177,3 +177,23 @@ test("the real settings catalog indexes every area and section, including mainte
   assert.ok(maintenance.some((item) => item.payload.area === "maintenance"));
   assert.equal(searchCommands(catalog, "trash")[0].payload.area, "trash");
 });
+
+test("Frameleaf Cloud sections are reachable from the palette by their plain-language keywords", () => {
+  const catalog = buildCommandIndex({ settingsAreas, settingsSections });
+  for (const section of settingsSections.cloud)
+    assert.ok(
+      catalog.some((item) => item.id === `settings:cloud/${section.id}`),
+      section.id,
+    );
+  for (const [query, section] of [
+    ["device code", "cloud-account"],
+    ["upnp", "cloud-remote"],
+    ["recovery kit", "cloud-backup"],
+  ])
+    assert.ok(
+      searchCommands(catalog, query).some(
+        (item) => item.payload.area === "cloud" && item.payload.section === section,
+      ),
+      query,
+    );
+});

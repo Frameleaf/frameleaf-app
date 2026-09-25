@@ -756,3 +756,19 @@
     opacity: 1;
   }
 }
+
+/* Frameleaf Cloud row in the account menu */
+.account-cloud img {
+  flex: none;
+}
+.account-cloud-pill {
+  margin-left: auto;
+  font-size: var(--fl-font-micro);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fl-accent);
+  background: var(--fl-accent-soft);
+  border-radius: var(--fl-radius-pill);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
