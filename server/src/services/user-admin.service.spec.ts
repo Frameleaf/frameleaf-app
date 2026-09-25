@@ -153,7 +153,12 @@ describe(UserAdminService.name, () => {
       mocks.user.getByStorageLabel.mockResolvedValue(userStub.user1);
 
       await expect(
-        sut.create(authStub.admin, { email: 'new@example.com', name: 'New', password: 'password', storageLabel: 'label' }),
+        sut.create(authStub.admin, {
+          email: 'new@example.com',
+          name: 'New',
+          password: 'password',
+          storageLabel: 'label',
+        }),
       ).rejects.toThrow('Storage label already in use by another account');
 
       expect(mocks.user.create).not.toHaveBeenCalled();

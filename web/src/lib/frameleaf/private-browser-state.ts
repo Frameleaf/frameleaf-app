@@ -47,10 +47,7 @@ const storageOrUndefined = (read: () => Storage) => {
 };
 
 export const clearPrivateBrowserState = () => {
-  for (const store of [
-    storageOrUndefined(() => localStorage),
-    storageOrUndefined(() => sessionStorage),
-  ]) {
+  for (const store of [storageOrUndefined(() => localStorage), storageOrUndefined(() => sessionStorage)]) {
     try {
       clearStore(store);
     } catch {
