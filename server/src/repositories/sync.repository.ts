@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { ExpressionBuilder, Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SyncAck } from 'src/types.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
 import {
@@ -138,6 +138,63 @@ const syncPartnerAsset = (options: HiddenContentQueryOptions) =>
     syncVisibility(),
     syncPartnerLocked(),
   ] as const;
+
+/**
+ * FL-54: whether `userId` may not see this asset's location. True when its owner hides locations from the
+ * user, or (owner default, privacy first) from the owner of an album the user reaches it through, unless
+ * the owner shares locations with the user directly. The service nulls the location fields of such rows
+ * and strips the flag, so the device keeps the row shape it expects. Mirrors
+ * `PartnerRepository.getLocationHiddenThroughAlbums`.
+ */
+const syncLocationHidden = (userId: string) => (eb: ExpressionBuilder<DB, 'asset'>) =>
+  eb
+    .and([
+      eb('asset.ownerId', '!=', userId),
+      eb.or([
+        eb.exists(
+          eb
+            .selectFrom('partner as viewer_partner')
+            .whereRef('viewer_partner.sharedById', '=', 'asset.ownerId')
+            .where('viewer_partner.sharedWithId', '=', userId)
+            .where('viewer_partner.shareLocation', '=', false),
+        ),
+        eb.and([
+          eb.exists(
+            eb
+              .selectFrom('album_asset as reached')
+              .innerJoin('album as reached_album', (join) =>
+                join.onRef('reached_album.id', '=', 'reached.albumId').on('reached_album.deletedAt', 'is', null),
+              )
+              .innerJoin('album_user as reached_member', (join) =>
+                join.onRef('reached_member.albumId', '=', 'reached.albumId').on('reached_member.userId', '=', userId),
+              )
+              .innerJoin('album_user as reached_owner', (join) =>
+                join
+                  .onRef('reached_owner.albumId', '=', 'reached.albumId')
+                  .on('reached_owner.role', '=', sql.lit(AlbumUserRole.Owner)),
+              )
+              .innerJoin('partner as owner_partner', (join) =>
+                join
+                  .onRef('owner_partner.sharedById', '=', 'asset.ownerId')
+                  .onRef('owner_partner.sharedWithId', '=', 'reached_owner.userId')
+                  .on('owner_partner.shareLocation', '=', false),
+              )
+              .whereRef('reached.assetId', '=', 'asset.id')
+              .whereRef('reached_owner.userId', '!=', 'asset.ownerId'),
+          ),
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('partner as direct_partner')
+                .whereRef('direct_partner.sharedById', '=', 'asset.ownerId')
+                .where('direct_partner.sharedWithId', '=', userId)
+                .where('direct_partner.shareLocation', '=', true),
+            ),
+          ),
+        ]),
+      ]),
+    ])
+    .as('locationHidden');
 
 @Injectable()
 export class SyncRepository {
@@ -368,6 +425,7 @@ class AlbumAssetExifSync extends BaseSync {
       .innerJoin('asset_exif', 'asset_exif.assetId', 'album_asset.assetId')
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .select(columns.syncAssetExif)
+      .select(syncLocationHidden(userId))
       .select('album_asset.updateId')
       .where('album_asset.albumId', '=', albumId)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -382,6 +440,7 @@ class AlbumAssetExifSync extends BaseSync {
       .innerJoin('album_asset', 'album_asset.assetId', 'asset_exif.assetId')
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
       .select(columns.syncAssetExif)
+      .select(syncLocationHidden(userId))
       .select('asset_exif.updateId')
       .where('album_asset.updateId', '<=', albumToAssetAck.updateId) // Ensure we only send exif updates for assets that the client already knows about
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
@@ -399,6 +458,7 @@ class AlbumAssetExifSync extends BaseSync {
       .innerJoin('asset_exif', 'asset_exif.assetId', 'album_asset.assetId')
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .select(columns.syncAssetExif)
+      .select(syncLocationHidden(userId))
       .innerJoin('album', 'album.id', 'album_asset.albumId')
       .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)

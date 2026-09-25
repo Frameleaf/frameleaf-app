@@ -624,16 +624,58 @@ select
   "asset_exif"."profileDescription",
   "asset_exif"."rating",
   "asset_exif"."fps",
+  (
+    "asset"."ownerId" != $1
+    and (
+      exists (
+        select
+        from
+          "partner" as "viewer_partner"
+        where
+          "viewer_partner"."sharedById" = "asset"."ownerId"
+          and "viewer_partner"."sharedWithId" = $2
+          and "viewer_partner"."shareLocation" = $3
+      )
+      or (
+        exists (
+          select
+          from
+            "album_asset" as "reached"
+            inner join "album" as "reached_album" on "reached_album"."id" = "reached"."albumId"
+            and "reached_album"."deletedAt" is null
+            inner join "album_user" as "reached_member" on "reached_member"."albumId" = "reached"."albumId"
+            and "reached_member"."userId" = $4
+            inner join "album_user" as "reached_owner" on "reached_owner"."albumId" = "reached"."albumId"
+            and "reached_owner"."role" = 'owner'
+            inner join "partner" as "owner_partner" on "owner_partner"."sharedById" = "asset"."ownerId"
+            and "owner_partner"."sharedWithId" = "reached_owner"."userId"
+            and "owner_partner"."shareLocation" = $5
+          where
+            "reached"."assetId" = "asset"."id"
+            and "reached_owner"."userId" != "asset"."ownerId"
+        )
+        and not exists (
+          select
+          from
+            "partner" as "direct_partner"
+          where
+            "direct_partner"."sharedById" = "asset"."ownerId"
+            and "direct_partner"."sharedWithId" = $6
+            and "direct_partner"."shareLocation" = $7
+        )
+      )
+    )
+  ) as "locationHidden",
   "album_asset"."updateId"
 from
   "album_asset" as "album_asset"
   inner join "asset_exif" on "asset_exif"."assetId" = "album_asset"."assetId"
   inner join "asset" on "asset"."id" = "album_asset"."assetId"
 where
-  "album_asset"."updateId" < $1
-  and "album_asset"."updateId" <= $2
-  and "album_asset"."updateId" > $3
-  and "album_asset"."albumId" = $4
+  "album_asset"."updateId" < $8
+  and "album_asset"."updateId" <= $9
+  and "album_asset"."updateId" > $10
+  and "album_asset"."albumId" = $11
   and not (
     case
       when "asset"."id" is null then false
@@ -684,7 +726,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5::uuid
+    or "asset"."ownerId" = $12::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -716,6 +758,48 @@ select
   "asset_exif"."profileDescription",
   "asset_exif"."rating",
   "asset_exif"."fps",
+  (
+    "asset"."ownerId" != $1
+    and (
+      exists (
+        select
+        from
+          "partner" as "viewer_partner"
+        where
+          "viewer_partner"."sharedById" = "asset"."ownerId"
+          and "viewer_partner"."sharedWithId" = $2
+          and "viewer_partner"."shareLocation" = $3
+      )
+      or (
+        exists (
+          select
+          from
+            "album_asset" as "reached"
+            inner join "album" as "reached_album" on "reached_album"."id" = "reached"."albumId"
+            and "reached_album"."deletedAt" is null
+            inner join "album_user" as "reached_member" on "reached_member"."albumId" = "reached"."albumId"
+            and "reached_member"."userId" = $4
+            inner join "album_user" as "reached_owner" on "reached_owner"."albumId" = "reached"."albumId"
+            and "reached_owner"."role" = 'owner'
+            inner join "partner" as "owner_partner" on "owner_partner"."sharedById" = "asset"."ownerId"
+            and "owner_partner"."sharedWithId" = "reached_owner"."userId"
+            and "owner_partner"."shareLocation" = $5
+          where
+            "reached"."assetId" = "asset"."id"
+            and "reached_owner"."userId" != "asset"."ownerId"
+        )
+        and not exists (
+          select
+          from
+            "partner" as "direct_partner"
+          where
+            "direct_partner"."sharedById" = "asset"."ownerId"
+            and "direct_partner"."sharedWithId" = $6
+            and "direct_partner"."shareLocation" = $7
+        )
+      )
+    )
+  ) as "locationHidden",
   "asset_exif"."updateId"
 from
   "asset_exif" as "asset_exif"
@@ -723,10 +807,10 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
   inner join "album_user" on "album_user"."albumId" = "album_asset"."albumId"
 where
-  "asset_exif"."updateId" < $1
-  and "asset_exif"."updateId" > $2
-  and "album_asset"."updateId" <= $3
-  and "album_user"."userId" = $4
+  "asset_exif"."updateId" < $8
+  and "asset_exif"."updateId" > $9
+  and "album_asset"."updateId" <= $10
+  and "album_user"."userId" = $11
   and not (
     case
       when "asset"."id" is null then false
@@ -777,7 +861,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5::uuid
+    or "asset"."ownerId" = $12::uuid
   )
 order by
   "asset_exif"."updateId" asc
@@ -809,7 +893,49 @@ select
   "asset_exif"."exposureTime",
   "asset_exif"."profileDescription",
   "asset_exif"."rating",
-  "asset_exif"."fps"
+  "asset_exif"."fps",
+  (
+    "asset"."ownerId" != $1
+    and (
+      exists (
+        select
+        from
+          "partner" as "viewer_partner"
+        where
+          "viewer_partner"."sharedById" = "asset"."ownerId"
+          and "viewer_partner"."sharedWithId" = $2
+          and "viewer_partner"."shareLocation" = $3
+      )
+      or (
+        exists (
+          select
+          from
+            "album_asset" as "reached"
+            inner join "album" as "reached_album" on "reached_album"."id" = "reached"."albumId"
+            and "reached_album"."deletedAt" is null
+            inner join "album_user" as "reached_member" on "reached_member"."albumId" = "reached"."albumId"
+            and "reached_member"."userId" = $4
+            inner join "album_user" as "reached_owner" on "reached_owner"."albumId" = "reached"."albumId"
+            and "reached_owner"."role" = 'owner'
+            inner join "partner" as "owner_partner" on "owner_partner"."sharedById" = "asset"."ownerId"
+            and "owner_partner"."sharedWithId" = "reached_owner"."userId"
+            and "owner_partner"."shareLocation" = $5
+          where
+            "reached"."assetId" = "asset"."id"
+            and "reached_owner"."userId" != "asset"."ownerId"
+        )
+        and not exists (
+          select
+          from
+            "partner" as "direct_partner"
+          where
+            "direct_partner"."sharedById" = "asset"."ownerId"
+            and "direct_partner"."sharedWithId" = $6
+            and "direct_partner"."shareLocation" = $7
+        )
+      )
+    )
+  ) as "locationHidden"
 from
   "album_asset" as "album_asset"
   inner join "asset_exif" on "asset_exif"."assetId" = "album_asset"."assetId"
@@ -817,9 +943,9 @@ from
   inner join "album" on "album"."id" = "album_asset"."albumId"
   left join "album_user" on "album_user"."albumId" = "album_asset"."albumId"
 where
-  "album_asset"."updateId" < $1
-  and "album_asset"."updateId" > $2
-  and "album_user"."userId" = $3
+  "album_asset"."updateId" < $8
+  and "album_asset"."updateId" > $9
+  and "album_user"."userId" = $10
   and not (
     case
       when "asset"."id" is null then false
@@ -870,7 +996,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $4::uuid
+    or "asset"."ownerId" = $11::uuid
   )
 order by
   "album_asset"."updateId" asc
