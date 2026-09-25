@@ -50,6 +50,7 @@ import {
   restorationChunkIdentity,
   restorationOutputPaths,
   restorationWorkDir,
+  resultExpiryAfterAbandon,
   selectRestorationDestination,
   stageOfKind,
 } from 'src/utils/restoration.js';
@@ -251,14 +252,14 @@ export class RestorationWorkerService {
    * expired; the row itself stays as history.
    */
   async sweep() {
-    const aligned = await this.restorationRepository.alignWithOperations();
+    const now = new Date();
+    const aligned = await this.restorationRepository.alignWithOperations(resultExpiryAfterAbandon(now));
     if (aligned.preview || aligned.full) {
       this.logger.log(
         `Aligned ${aligned.preview} preview and ${aligned.full} full restorations with their finished jobs`,
       );
     }
 
-    const now = new Date();
     let removed = 0;
     for (const row of await this.restorationRepository.listExpiredPreviews(now, RETENTION_BATCH)) {
       const files = [row.previewBeforePath, row.previewAfterPath].filter((file): file is string => !!file);
@@ -274,6 +275,8 @@ export class RestorationWorkerService {
         removed += files.length;
       }
     }
+    // A failed or cancelled full render keeps its chunk checkpoints for a while so a retry can
+    // resume; past that date the work folder goes. The row stays, still retryable from scratch.
     for (const row of await this.restorationRepository.listExpiredResults(now, RETENTION_BATCH)) {
       const files = [row.resultPath, row.resultPreviewPath].filter((file): file is string => !!file);
       await this.restorationRepository.update(row.id, {
@@ -285,6 +288,10 @@ export class RestorationWorkerService {
         await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
         removed += files.length;
       }
+      const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, row.ownerId, row.assetId);
+      await this.storageRepository
+        .unlinkDir(restorationWorkDir(base, row.id), { recursive: true, force: true })
+        .catch((error) => this.logger.warn(`Could not remove the work folder of restoration ${row.id}: ${error}`));
     }
     if (removed > 0) {
       this.logger.log(`Restoration retention removed ${removed} expired files`);
@@ -332,7 +339,10 @@ export class RestorationWorkerService {
     await this.restorationRepository.update(restoration.id, {
       status: statuses.running,
       error: null,
-      ...(stage === 'preview' ? { previewOperationId: operation.id } : { fullOperationId: operation.id }),
+      // A retry takes the leftovers back from retention (FL-115).
+      ...(stage === 'preview'
+        ? { previewOperationId: operation.id }
+        : { fullOperationId: operation.id, resultExpiresAt: null }),
     });
 
     const controller = new AbortController();
@@ -972,7 +982,10 @@ export class RestorationWorkerService {
       const current = await this.operationRepository.getForOwner(operation.id, operation.ownerId);
       if (current?.status === MediaOperationStatus.Cancelling) {
         await this.operationRepository.acknowledgeCancel(operation.id, claimToken, { released: true });
-        await this.restorationRepository.transition(restoration.id, [statuses.running], { status: statuses.cancelled });
+        await this.restorationRepository.transition(restoration.id, [statuses.running], {
+          status: statuses.cancelled,
+          ...this.abandonedRetention(statuses),
+        });
         this.logger.log(`Restoration ${restoration.id} cancelled by its owner`);
       } else if (current?.pauseRequestedAt && (await this.operationRepository.settlePause(operation.id, claimToken))) {
         // The owner paused it (FL-104). The restoration row stays running: resuming requeues the
@@ -1000,6 +1013,7 @@ export class RestorationWorkerService {
       await this.restorationRepository.transition(restoration.id, [statuses.running], {
         status: statuses.failed,
         error: message,
+        ...this.abandonedRetention(statuses),
       });
     } else if (outcome === 'retrying') {
       // Every job gets one automatic retry before a failure is reported (FL-104, owner decision
@@ -1012,6 +1026,11 @@ export class RestorationWorkerService {
   /* ------------------------------------------------------------------ */
   /* Helpers                                                             */
   /* ------------------------------------------------------------------ */
+
+  /** A full render that stops without a result starts its leftovers' retention clock (FL-115). */
+  private abandonedRetention(statuses: (typeof STAGE_STATUSES)[RestorationStage]) {
+    return statuses === STAGE_STATUSES.full ? { resultExpiresAt: resultExpiryAfterAbandon(new Date()) } : {};
+  }
 
   /**
    * Renew the lease and notice a cancel or a pause. False means stop: the claim is gone, or the

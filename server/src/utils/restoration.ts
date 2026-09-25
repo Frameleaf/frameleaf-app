@@ -66,6 +66,20 @@ export const RESTORATION_PREVIEW_UNREVIEWED_DAYS = 14;
 /** After a decision the preview files stay this long for comparison, then go. */
 export const RESTORATION_PREVIEW_AFTER_DECISION_DAYS = 7;
 
+/**
+ * A full render that failed or was cancelled keeps its chunk checkpoints this long so a retry can
+ * resume, then they go (FL-115 result retention, answered with the story's own decision window).
+ * A finished result is a separate version the owner keeps: it never expires on its own and only
+ * Discard removes it.
+ */
+export const RESTORATION_ABANDONED_RESULT_DAYS = RESTORATION_PREVIEW_AFTER_DECISION_DAYS;
+
+/** The full-render statuses whose leftovers expire. */
+export const EXPIRING_RESULT_STATUSES: readonly AssetRestorationStatus[] = [
+  AssetRestorationStatus.RestoreFailed,
+  AssetRestorationStatus.RestoreCancelled,
+];
+
 /** Both restoration kinds the worker claims. */
 export const RESTORATION_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.RestorationPreview,
@@ -325,6 +339,9 @@ export const previewExpiryAfterReady = (now: Date) => addDays(now, RESTORATION_P
 
 /** When the preview files of a decided restoration are removed. */
 export const previewExpiryAfterDecision = (now: Date) => addDays(now, RESTORATION_PREVIEW_AFTER_DECISION_DAYS);
+
+/** When the leftovers of a failed or cancelled full render are removed. */
+export const resultExpiryAfterAbandon = (now: Date) => addDays(now, RESTORATION_ABANDONED_RESULT_DAYS);
 
 /* ------------------------------------------------------------------ */
 /* Snapshot                                                            */

@@ -528,6 +528,47 @@ export class AssetRestorationService {
     });
   }
 
+  /**
+   * The owner's chosen playback version (FL-115). `Use for playback` is explicit and owner-only:
+   * the restored file replaces what the owner's own sessions play or view, and nobody else's — a
+   * partner, a shared space or a shared link always gets the ordinary version, because an AI result
+   * is the owner's derived data and choosing it never publishes it. Thumbnails and the original
+   * download are never replaced. While the owner has a finished result to switch to, both versions
+   * are served for revalidation rather than from a day-long cache, so a switch shows at once.
+   *
+   * `view` is what the caller serves: video playback, or a photo's preview or full-size view.
+   */
+  async getPlaybackChoice(
+    auth: AuthDto,
+    assetId: string,
+    view: 'video' | 'preview' | 'fullsize',
+  ): Promise<{ file: ImmichFileResponse | null; revalidate: boolean }> {
+    if (auth.sharedLink) {
+      return { file: null, revalidate: false };
+    }
+    await requireAccess(this.accessRepository, { auth, permission: Permission.AssetView, ids: [assetId] });
+    const sourceType = view === 'video' ? AssetRestorationSourceType.Video : AssetRestorationSourceType.Image;
+    const restored = (await this.restorationRepository.listRestoredForPlayback(assetId, auth.user.id)).filter(
+      (row) => row.sourceType === sourceType,
+    );
+    if (restored.length === 0) {
+      return { file: null, revalidate: false };
+    }
+    const current = restored.find((row) => row.isCurrent);
+    const path = current && (view === 'preview' ? current.resultPreviewPath : current.resultPath);
+    if (!path) {
+      return { file: null, revalidate: true };
+    }
+    return {
+      file: new ImmichFileResponse({
+        path,
+        contentType: mimeTypes.lookup(path),
+        cacheControl: CacheControl.PrivateWithoutCache,
+      }),
+      revalidate: true,
+    };
+  }
+
   /** Rows and files go with the asset; the original was never ours to delete. */
   @OnEvent({ name: 'AssetDelete' })
   async onAssetDelete({ assetId }: ArgOf<'AssetDelete'>) {
