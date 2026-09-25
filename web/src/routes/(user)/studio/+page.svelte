@@ -53,7 +53,8 @@
   import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
   import { getProfileImageUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { createStudioExport } from '@immich/sdk';
+  import { createStudioExport, isHttpError } from '@immich/sdk';
+  import { studioRenderRefusalFromError, studioRenderRefusalKey } from '$lib/frameleaf/studio/render-output';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';
 
@@ -447,7 +448,6 @@
         id: project.id,
         studioExportCreateDto: {
           ...choice,
-          cloudConsent: choice.cloudConsent || undefined,
           expectedRevision: revision,
           requestKey: crypto.randomUUID(),
         },
@@ -456,7 +456,13 @@
       queuedJobs += 1;
       toastManager.primary($t('frameleaf_studio_export_queued', { values: { name: project.name } }));
     } catch (error) {
-      handleError(error, $t('frameleaf_studio_export_failed'));
+      // A 409 studio_export_unsupported names why no qualified render worker can take it (FL-42).
+      const refusal = isHttpError(error) ? studioRenderRefusalFromError(error.data) : null;
+      if (refusal) {
+        toastManager.danger($t(studioRenderRefusalKey(refusal)));
+      } else {
+        handleError(error, $t('frameleaf_studio_export_failed'));
+      }
     } finally {
       exporting = false;
     }
@@ -600,6 +606,7 @@
   bind:open={videoExportOpen}
   sequenceName={project.name}
   busy={exporting}
+  {renderEvidence}
   onExport={(choice) => void onExportVideo(choice)}
 />
 
