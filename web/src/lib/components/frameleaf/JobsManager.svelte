@@ -154,6 +154,11 @@
     return false;
   };
   const truncated = $derived(owner !== 'all' && isTruncated(ownerStats));
+  /** The account whose counts `ownerStats` holds; until it is the chosen one, counts are loading. */
+  let statsOwner = $state<string>();
+  const countsLoading = $derived(owner !== 'all' && statsOwner !== owner);
+  /** A count as the page shows it: a dash while an account's counts load, never a false 0. */
+  const count = (value: number) => (countsLoading ? '—' : number(value));
 
   const flags = $derived(featureFlagsManager.value);
   const draft = getSystemConfigDraft();
@@ -188,7 +193,11 @@
     void jobsReload;
     if (account === 'all') {
       ownerStats = new Map();
+      statsOwner = undefined;
       return;
+    }
+    if (untrack(() => statsOwner) !== account) {
+      ownerStats = new Map();
     }
     const names = name ? [name] : untrack(() => rows.map((row) => row.definition.name));
     let cancelled = false;
@@ -199,9 +208,12 @@
           .catch(() => undefined),
       ),
     ).then((entries) => {
-      if (!cancelled) {
-        ownerStats = new Map(entries.filter((entry) => entry !== undefined));
+      if (cancelled) {
+      	return;
       }
+
+      ownerStats = new Map(entries.filter((entry) => entry !== undefined));
+      statsOwner = account;
     });
     return () => {
       cancelled = true;
@@ -709,13 +721,13 @@
     </div>
   </header>
 
-  <div class="jm-metrics">
+  <div class="jm-metrics" aria-busy={countsLoading}>
     {#each metrics as metric (metric.label)}
       <div class="jm-metric" class:warning={metric.warning}>
         <Icon icon={metric.icon} size="22px" aria-hidden={true} />
         <div>
           <span>{metric.label}</span>
-          <strong>{number(metric.value)}</strong>
+          <strong>{count(metric.value)}</strong>
         </div>
       </div>
     {/each}
@@ -829,8 +841,8 @@
                 </button>
               </th>
               <td>{@render queueStatus(jobQueueStatus(queue))}</td>
-              <td>{number(rowCounts.active)}</td>
-              <td>{number(rowCounts.pending)}</td>
+              <td>{count(rowCounts.active)}</td>
+              <td>{count(rowCounts.pending)}</td>
               <td>
                 <button
                   type="button"
@@ -838,7 +850,7 @@
                   disabled={!rowCounts.failed}
                   onclick={() => void open(definition.name, 'failed')}
                 >
-                  {number(rowCounts.failed)}
+                  {count(rowCounts.failed)}
                 </button>
               </td>
               <td>
@@ -984,7 +996,7 @@
           onclick={() => selectTab(item)}
         >
           {$t(`frameleaf_jobs_tab_${item}` as Translations)}
-          <span>{number(jobTabCount(item, queueCounts))}</span>
+          <span>{count(jobTabCount(item, queueCounts))}</span>
         </button>
       {/each}
     </div>

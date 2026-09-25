@@ -91,6 +91,16 @@ describe('Job manager context', () => {
       ]);
     });
 
+    it('takes more ids than the protocol has parameters for', async () => {
+      const { ctx, users } = setup();
+      const { user } = await ctx.newUser({ name: 'Ada' });
+      const ids = [...Array.from({ length: 70_000 }, () => randomUUID()), user.id];
+
+      await expect(users.getJobSubjectOwners(ids)).resolves.toEqual([
+        { subjectId: user.id, ownerId: user.id, ownerName: 'Ada' },
+      ]);
+    });
+
     it('returns nothing for no ids', async () => {
       const { users } = setup();
       await expect(users.getJobSubjectOwners([])).resolves.toEqual([]);

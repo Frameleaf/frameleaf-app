@@ -137,6 +137,8 @@ export class MlWorkloadRouteTable {
   name: 'ml_workload_accounting_jobId_jobName_startedAt_idx',
   expression: '"jobId", "jobName", "startedAt" DESC',
   where: '("jobId" IS NOT NULL)',
+  // Created by the fork migration, not the schema generator (as media-operation.table.ts does).
+  synchronize: false,
 })
 @Table('ml_workload_accounting')
 export class MlWorkloadAccountingTable {
