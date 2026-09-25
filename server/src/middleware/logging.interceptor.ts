@@ -7,13 +7,28 @@ const maxArrayLength = 100;
 const REDACTED = '********';
 
 /**
- * FL-81: request logs never carry a credential. Body fields whose name says they hold a secret
- * (passwords, PIN codes, maintenance and OAuth tokens, API keys, client secrets) are masked, and so
- * are the query values that grant access (`token` of the maintenance sign-in link, `key` / `slug` of a
- * shared link, `apiKey`, OAuth `code` and `state`).
+ * FL-81: request logs never carry a credential. Names are compared case-insensitively with `_` and
+ * `-` removed, so `access_token`, `api_key`, `private-key` and `sessionKey` all match.
+ *
+ * - Body fields and query parameters whose name says they hold a secret are masked: passwords, PIN
+ *   codes, any token (maintenance, OAuth, access, refresh), secrets, API / private / session keys
+ *   (`sessionKey` is a full session token, used by cast URLs and widgets), the OAuth PKCE
+ *   `codeVerifier`, `state` and `code`, and a shared link's `key` / `slug`.
+ * - A body field named `url` keeps only its path: the OAuth callback and link bodies carry `code=` and
+ *   `state=` in it, so its whole query string and fragment are masked.
  */
-const SECRET_FIELD = /password|pincode|token|secret|apikey|^key$|^code$/i;
-const SECRET_QUERY = new Set(['token', 'key', 'slug', 'apikey', 'code', 'state', 'password']);
+const normalize = (name: string) => name.toLowerCase().replaceAll(/[_-]/g, '');
+const SECRET_PART = /password|pincode|token|secret|apikey|privatekey|sessionkey|codeverifier/;
+const SECRET_EXACT = new Set(['key', 'code', 'state', 'slug']);
+const isSecretName = (name: string) => {
+  const normalized = normalize(name);
+  return SECRET_PART.test(normalized) || SECRET_EXACT.has(normalized);
+};
+
+const redactUrlQuery = (url: string) => {
+  const cut = url.search(/[?#]/);
+  return cut === -1 ? url : `${url.slice(0, cut)}?${REDACTED}`;
+};
 
 export const redactLogUrl = (url: string) => {
   const queryStart = url.indexOf('?');
@@ -22,8 +37,8 @@ export const redactLogUrl = (url: string) => {
   }
   const params = new URLSearchParams(url.slice(queryStart + 1));
   let changed = false;
-  for (const name of params.keys()) {
-    if (!SECRET_QUERY.has(name.toLowerCase())) {
+  for (const name of new Set(params.keys())) {
+    if (!isSecretName(name)) {
       continue;
     }
     params.set(name, REDACTED);
@@ -33,8 +48,12 @@ export const redactLogUrl = (url: string) => {
 };
 
 export const replacer = (key: string, value: unknown) => {
-  if (key && SECRET_FIELD.test(key)) {
+  if (key && isSecretName(key)) {
     return REDACTED;
+  }
+
+  if (key && normalize(key) === 'url' && typeof value === 'string') {
+    return redactUrlQuery(value);
   }
 
   if (Array.isArray(value) && value.length > maxArrayLength) {
