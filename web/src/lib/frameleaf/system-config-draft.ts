@@ -99,8 +99,26 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   'video-transcoding': ['ffmpeg'],
 });
 
+/**
+ * Settings one group spreads over several sections (FL-69): Library care's toggles sit on the
+ * template's Media health & integrity, Repair queues and Enrichment completeness pages
+ * (settings-catalog.mjs:905-977). A changed path goes to the page that shows it.
+ */
+const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
+  'libraryCare.livePhotoRepair': 'repair',
+  'libraryCare.rawRecovery': 'repair',
+  'libraryCare.duplicateReview': 'repair',
+  'libraryCare.incrementalEnrichment': 'enrichment-care',
+  'libraryCare.manualMetadata': 'enrichment-care',
+  libraryCare: 'integrity-checks',
+});
+
 /** The settings section a changed path belongs to, if any section edits it. */
 export const sectionForConfigPath = (path: string): string | undefined => {
+  const specific = Object.keys(SECTION_CONFIG_PATHS).find((prefix) => path === prefix || path.startsWith(`${prefix}.`));
+  if (specific) {
+    return SECTION_CONFIG_PATHS[specific];
+  }
   const [top] = path.split('.', 1);
   return Object.entries(SECTION_CONFIG_KEYS).find(([, keys]) => (keys as readonly string[]).includes(top))?.[0];
 };

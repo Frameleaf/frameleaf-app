@@ -304,6 +304,7 @@
           title: $t(tool.titleKey),
           description: $t(tool.descriptionKey),
           group: $t('frameleaf_cc_group_tools'),
+          icon: tool.icon,
           onSelect: () => void navigate('utilities', tool.id),
         });
       }
