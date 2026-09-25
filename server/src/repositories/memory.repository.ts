@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { type Insertable, type Kysely, type OrderByDirection, type Updateable, sql } from 'kysely';
+import {
+  type Insertable,
+  type Kysely,
+  type OrderByDirection,
+  type SelectQueryBuilder,
+  type Updateable,
+  sql,
+} from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
@@ -55,6 +62,85 @@ export type MemoryCurationRow = {
 };
 
 const hasItems = (values?: string[]): values is string[] => !!values && values.length > 0;
+
+/**
+ * FL-62: which of a memory's items any read of it may return: the viewer's hidden-content filter,
+ * never a photo of a person or pet the owner hid, and never one of a person or pet the owner asked to
+ * see less of. Search and every single-memory read (get, update, create) share it, so hiding,
+ * restoring or renaming a memory can never bring such an item back.
+ */
+const withMemoryAssetFilters = <O>(
+  qb: SelectQueryBuilder<DB, 'asset' | 'memory_asset', O>,
+  options: MemoryPrivacyOptions,
+) =>
+  withHiddenContentFilter(qb, options)
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom('asset_face')
+            .innerJoin('person', (join) =>
+              join
+                .onRef('person.personGroupId', '=', 'asset_face.personGroupId')
+                .onRef('person.ownerId', '=', 'asset.ownerId'),
+            )
+            .select((eb) => eb.val(1).as('one'))
+            .whereRef('asset_face.assetId', '=', 'asset.id')
+            .where('person.isHidden', '=', true),
+        ),
+      ),
+    )
+    // FL-62: a photo of a pet its owner hid stays out of memories, as a photo of a hidden person
+    // does. Only the owner's confirmed observations count; literals keep the parameter list
+    // unchanged.
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom('pet_observation')
+            .innerJoin('pet', (join) =>
+              join.onRef('pet.id', '=', 'pet_observation.petId').onRef('pet.ownerId', '=', 'asset.ownerId'),
+            )
+            .select('pet_observation.assetId')
+            .whereRef('pet_observation.assetId', '=', 'asset.id')
+            .where('pet_observation.state', '=', sql.lit(PetObservationState.Confirmed))
+            .where('pet.isHidden', 'is', true),
+        ),
+      ),
+    )
+    // FL-62: people and pets the owner asked to see less of leave every memory's photos.
+    .$if(hasItems(options.excludePersonIds), (qb) =>
+      qb.where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('asset_face')
+              .innerJoin('person', (join) =>
+                join
+                  .onRef('person.personGroupId', '=', 'asset_face.personGroupId')
+                  .onRef('person.ownerId', '=', 'asset.ownerId'),
+              )
+              .select((eb) => eb.val(1).as('one'))
+              .whereRef('asset_face.assetId', '=', 'asset.id')
+              .where('asset_face.personGroupId', 'in', options.excludePersonIds!),
+          ),
+        ),
+      ),
+    )
+    .$if(hasItems(options.excludePetIds), (qb) =>
+      qb.where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('pet_observation')
+              .select('pet_observation.assetId')
+              .whereRef('pet_observation.assetId', '=', 'asset.id')
+              .where('pet_observation.state', '=', PetObservationState.Confirmed)
+              .where('pet_observation.petId', 'in', options.excludePetIds!),
+          ),
+        ),
+      ),
+    );
 
 @Injectable()
 export class MemoryRepository implements IBulkAsset {
@@ -173,74 +259,7 @@ export class MemoryRepository implements IBulkAsset {
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .where(isTimelineVisible('asset'))
             .where('asset.deletedAt', 'is', null)
-            .$call((qb) => withHiddenContentFilter(qb, options))
-            .where((eb) =>
-              eb.not(
-                eb.exists(
-                  eb
-                    .selectFrom('asset_face')
-                    .innerJoin('person', (join) =>
-                      join
-                        .onRef('person.personGroupId', '=', 'asset_face.personGroupId')
-                        .onRef('person.ownerId', '=', 'asset.ownerId'),
-                    )
-                    .select((eb) => eb.val(1).as('one'))
-                    .whereRef('asset_face.assetId', '=', 'asset.id')
-                    .where('person.isHidden', '=', true),
-                ),
-              ),
-            )
-            // FL-62: a photo of a pet its owner hid stays out of memories, as a photo of a hidden person
-            // does. Only the owner's confirmed observations count; literals keep the parameter list
-            // unchanged.
-            .where((eb) =>
-              eb.not(
-                eb.exists(
-                  eb
-                    .selectFrom('pet_observation')
-                    .innerJoin('pet', (join) =>
-                      join.onRef('pet.id', '=', 'pet_observation.petId').onRef('pet.ownerId', '=', 'asset.ownerId'),
-                    )
-                    .select('pet_observation.assetId')
-                    .whereRef('pet_observation.assetId', '=', 'asset.id')
-                    .where('pet_observation.state', '=', sql.lit(PetObservationState.Confirmed))
-                    .where('pet.isHidden', 'is', true),
-                ),
-              ),
-            )
-            // FL-62: people and pets the owner asked to see less of leave every memory's photos.
-            .$if(hasItems(options.excludePersonIds), (qb) =>
-              qb.where((eb) =>
-                eb.not(
-                  eb.exists(
-                    eb
-                      .selectFrom('asset_face')
-                      .innerJoin('person', (join) =>
-                        join
-                          .onRef('person.personGroupId', '=', 'asset_face.personGroupId')
-                          .onRef('person.ownerId', '=', 'asset.ownerId'),
-                      )
-                      .select((eb) => eb.val(1).as('one'))
-                      .whereRef('asset_face.assetId', '=', 'asset.id')
-                      .where('asset_face.personGroupId', 'in', options.excludePersonIds!),
-                  ),
-                ),
-              ),
-            )
-            .$if(hasItems(options.excludePetIds), (qb) =>
-              qb.where((eb) =>
-                eb.not(
-                  eb.exists(
-                    eb
-                      .selectFrom('pet_observation')
-                      .select('pet_observation.assetId')
-                      .whereRef('pet_observation.assetId', '=', 'asset.id')
-                      .where('pet_observation.state', '=', PetObservationState.Confirmed)
-                      .where('pet_observation.petId', 'in', options.excludePetIds!),
-                  ),
-                ),
-              ),
-            )
+            .$call((qb) => withMemoryAssetFilters(qb, options))
             .orderBy('asset.fileCreatedAt', 'asc'),
         ).as('assets'),
       )
@@ -470,7 +489,7 @@ export class MemoryRepository implements IBulkAsset {
             .orderBy('asset.fileCreatedAt', 'asc')
             .where(isTimelineVisible('asset'))
             .where('asset.deletedAt', 'is', null)
-            .$call((qb) => withHiddenContentFilter(qb, options)),
+            .$call((qb) => withMemoryAssetFilters(qb, options)),
         ).as('assets'),
       )
       .where('id', '=', id)
