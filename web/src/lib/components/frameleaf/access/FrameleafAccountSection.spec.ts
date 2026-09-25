@@ -91,4 +91,20 @@ describe('FrameleafAccountSection (FL-158)', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Unlink' }));
     expect(sdkMock.unlinkFrameleafAccount).not.toHaveBeenCalled();
   });
+
+  it('leaves loading when the check fails and offers to try again', async () => {
+    sdkMock.getFrameleafAccountLink.mockRejectedValueOnce(new Error('down'));
+    sdkMock.getFrameleafAccountLink.mockResolvedValue({
+      available: false,
+      linked: false,
+      email: null,
+      linkedAt: null,
+      lastSignInAt: null,
+    });
+    render(FrameleafAccountSection);
+    expect(await screen.findByText('Your Frameleaf account could not be checked right now.')).toBeInTheDocument();
+    expect(screen.queryByText(/Checking your Frameleaf account/)).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText(/has not linked this server to Frameleaf yet/)).toBeInTheDocument();
+  });
 });
