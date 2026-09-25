@@ -2143,6 +2143,306 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/license": {
+      "delete": {
+        "description": "Removes the supporter key from this server, deactivating it with Frameleaf Cloud when reachable. A Frameleaf Cloud plan is not affected.",
+        "operationId": "removeLicenseKey",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove the licence key",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "serverLicense.delete",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "Whether this server holds a supporter key and a Frameleaf Cloud plan, their state (none, active, grace, expired, invalid), the entitlements cloud features read, and the refresh schedule.",
+        "operationId": "getLicenseStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the licence status",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "serverLicense.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/license/activate": {
+      "put": {
+        "description": "Checks the key format (FL-SXXX-XXXX-XXXX with its check symbol) and activates it with Frameleaf Cloud for this server. The key travels only in this request body and is never stored.",
+        "operationId": "activateLicense",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicenseActivateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Activate a server licence key",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "serverLicense.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/license/certificate": {
+      "put": {
+        "description": "Installs a licence file downloaded for this server’s instance ID, for servers without internet access. It is verified with the pinned Frameleaf keys before it is kept.",
+        "operationId": "installLicenseCertificate",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicenseCertificateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Install a licence file",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "serverLicense.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/license/plan": {
+      "delete": {
+        "description": "Removes the Frameleaf Cloud plan certificate from this server. The subscription itself is managed in the Frameleaf account and is not cancelled; the licence key is not affected.",
+        "operationId": "removeLicensePlan",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove the plan from this server",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "serverLicense.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/license/refresh": {
+      "post": {
+        "description": "Asks Frameleaf Cloud for current certificates now instead of waiting for the daily refresh.",
+        "operationId": "refreshLicense",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Refresh the licence now",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "serverLicense.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/maintenance": {
       "post": {
         "description": "Put Immich into or take it out of maintenance mode",
@@ -15828,6 +16128,51 @@
         "x-immich-state": "Stable"
       }
     },
+    "/license/products": {
+      "get": {
+        "description": "Bundled plan and supporter prices in US dollars, the licensed-server discount, cloud backup pricing and the store this server was deployed with. Makes no outbound call.",
+        "operationId": "getLicenseProducts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseProductsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get Support Frameleaf prices",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/live-photo/candidates": {
       "get": {
         "description": "Find separated live photos (a still image and its motion video that are not linked) that can be reassembled.",
@@ -26995,161 +27340,6 @@
         "x-immich-state": "Deprecated"
       }
     },
-    "/server/license": {
-      "delete": {
-        "description": "Delete the currently set server product key.",
-        "operationId": "deleteServerLicense",
-        "parameters": [],
-        "responses": {
-          "204": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Delete server product key",
-        "tags": [
-          "Server"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v1",
-            "state": "Added"
-          },
-          {
-            "version": "v1",
-            "state": "Beta"
-          },
-          {
-            "version": "v2",
-            "state": "Stable"
-          }
-        ],
-        "x-immich-permission": "serverLicense.delete",
-        "x-immich-state": "Stable"
-      },
-      "get": {
-        "description": "Retrieve information about whether the server currently has a product key registered.",
-        "operationId": "getServerLicense",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LicenseResponseDto"
-                }
-              }
-            },
-            "description": ""
-          },
-          "404": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Get product key",
-        "tags": [
-          "Server"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v1",
-            "state": "Added"
-          },
-          {
-            "version": "v1",
-            "state": "Beta"
-          },
-          {
-            "version": "v2",
-            "state": "Stable"
-          }
-        ],
-        "x-immich-permission": "serverLicense.read",
-        "x-immich-state": "Stable"
-      },
-      "put": {
-        "description": "Validate and set the server product key if successful.",
-        "operationId": "setServerLicense",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LicenseKeyDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LicenseResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Set server product key",
-        "tags": [
-          "Server"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v1",
-            "state": "Added"
-          },
-          {
-            "version": "v1",
-            "state": "Beta"
-          },
-          {
-            "version": "v2",
-            "state": "Stable"
-          }
-        ],
-        "x-immich-permission": "serverLicense.update",
-        "x-immich-state": "Stable"
-      }
-    },
     "/server/media-types": {
       "get": {
         "description": "Retrieve all media types supported by the server.",
@@ -36577,7 +36767,7 @@
     },
     "/users/me/license": {
       "delete": {
-        "description": "Delete the registered product key for the current user.",
+        "description": "Remove your supporter key from this server. The key stays yours to activate again.",
         "operationId": "deleteUserLicense",
         "parameters": [],
         "responses": {
@@ -36596,7 +36786,7 @@
             "api_key": []
           }
         ],
-        "summary": "Delete user product key",
+        "summary": "Remove your supporter key",
         "tags": [
           "Users"
         ],
@@ -36618,7 +36808,7 @@
         "x-immich-state": "Stable"
       },
       "get": {
-        "description": "Retrieve information about whether the current user has a registered product key.",
+        "description": "Your own Frameleaf supporter key (FL-I…), as its last four symbols and activation date. The key itself is never returned.",
         "operationId": "getUserLicense",
         "parameters": [],
         "responses": {
@@ -36644,7 +36834,7 @@
             "api_key": []
           }
         ],
-        "summary": "Retrieve user product key",
+        "summary": "Get your supporter key",
         "tags": [
           "Users"
         ],
@@ -36666,14 +36856,14 @@
         "x-immich-state": "Stable"
       },
       "put": {
-        "description": "Register a product key for the current user.",
+        "description": "Activate a personal Frameleaf supporter key (FL-IXXX-XXXX-XXXX) for your account with Frameleaf Cloud. The key travels only in this request body.",
         "operationId": "setUserLicense",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LicenseKeyDto"
+                "$ref": "#/components/schemas/LicenseActivateDto"
               }
             }
           },
@@ -36702,7 +36892,7 @@
             "api_key": []
           }
         ],
-        "summary": "Set user product key",
+        "summary": "Activate your supporter key",
         "tags": [
           "Users"
         ],
@@ -53412,26 +53602,349 @@
         ],
         "type": "object"
       },
-      "LicenseKeyDto": {
+      "LicenseActivateDto": {
         "properties": {
-          "activationKey": {
-            "description": "Activation key",
-            "type": "string"
-          },
-          "licenseKey": {
-            "description": "License key (format: /^IM(SV|CL)(-[\\dA-Za-z]{4}){8}$/)",
-            "pattern": "^IM(SV|CL)(-[\\dA-Za-z]{4}){8}$",
+          "key": {
+            "description": "A licence key, FL-KXXX-XXXX-XXXX",
+            "maxLength": 64,
+            "minLength": 1,
             "type": "string"
           }
         },
         "required": [
-          "activationKey",
-          "licenseKey"
+          "key"
+        ],
+        "type": "object"
+      },
+      "LicenseCertificateDto": {
+        "properties": {
+          "certificate": {
+            "description": "The contents of a licence file: the signed certificate, or a JSON file holding it",
+            "maxLength": 65536,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "certificate"
+        ],
+        "type": "object"
+      },
+      "LicenseEntitlementsDto": {
+        "properties": {
+          "cloudBackup": {
+            "type": "boolean"
+          },
+          "cloudMl": {
+            "type": "boolean"
+          },
+          "frameleafCloud": {
+            "type": "boolean"
+          },
+          "remoteAccess": {
+            "type": "boolean"
+          },
+          "supporter": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cloudBackup",
+          "cloudMl",
+          "frameleafCloud",
+          "remoteAccess",
+          "supporter"
+        ],
+        "type": "object"
+      },
+      "LicenseKind": {
+        "description": "server or individual supporter key, or a Frameleaf Cloud plan",
+        "enum": [
+          "server",
+          "individual",
+          "plan"
+        ],
+        "type": "string"
+      },
+      "LicenseProductDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "plan",
+              "supporter"
+            ],
+            "type": "string"
+          },
+          "period": {
+            "enum": [
+              "month",
+              "year",
+              "one-time"
+            ],
+            "type": "string"
+          },
+          "priceUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "storeUrl": {
+            "description": "Where to buy it; null when no store is configured",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "period",
+          "priceUsd",
+          "storeUrl"
+        ],
+        "type": "object"
+      },
+      "LicenseProductsResponseDto": {
+        "properties": {
+          "backup": {
+            "description": "Cloud backup is usage based, not part of a plan",
+            "properties": {
+              "minimumTb": {
+                "format": "double",
+                "type": "number"
+              },
+              "usdPerTbMonth": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "usdPerTbMonth",
+              "minimumTb"
+            ],
+            "type": "object"
+          },
+          "currency": {
+            "enum": [
+              "USD"
+            ],
+            "type": "string"
+          },
+          "licensedDiscount": {
+            "description": "Share taken off plans on a licensed server",
+            "format": "double",
+            "type": "number"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/LicenseProductDto"
+            },
+            "type": "array"
+          },
+          "storeUrl": {
+            "description": "The store this server was deployed with; null when there is none",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "backup",
+          "currency",
+          "licensedDiscount",
+          "products",
+          "storeUrl"
         ],
         "type": "object"
       },
       "LicenseResponseDto": {
         "$ref": "#/components/schemas/UserLicense"
+      },
+      "LicenseSlotDto": {
+        "properties": {
+          "activatedAt": {
+            "description": "When this server received the certificate",
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "When the certificate or its period ends; null for a lifetime key",
+            "nullable": true,
+            "type": "string"
+          },
+          "graceUntil": {
+            "nullable": true,
+            "type": "string"
+          },
+          "keyHint": {
+            "description": "Last four symbols of the key, for a key activation",
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LicenseKind"
+          },
+          "refreshedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "source": {
+            "description": "Activated by key, installed from a file, or from the account",
+            "enum": [
+              "key",
+              "file",
+              "account"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/LicenseState"
+          }
+        },
+        "required": [
+          "activatedAt",
+          "expiresAt",
+          "graceUntil",
+          "keyHint",
+          "kind",
+          "refreshedAt",
+          "source",
+          "state"
+        ],
+        "type": "object"
+      },
+      "LicenseState": {
+        "description": "none: no licence; active; grace: renewal failed and cloud features keep working until graceUntil; expired: cloud features are paused, local features are unaffected; invalid: the stored certificate no longer verifies",
+        "enum": [
+          "none",
+          "active",
+          "grace",
+          "expired",
+          "invalid"
+        ],
+        "type": "string"
+      },
+      "LicenseStatusResponseDto": {
+        "properties": {
+          "configured": {
+            "description": "Frameleaf Cloud is set up on this server (FRAMELEAF_CLOUD_URL)",
+            "type": "boolean"
+          },
+          "entitlements": {
+            "$ref": "#/components/schemas/LicenseEntitlementsDto"
+          },
+          "expiresAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "What a licence is bound to: this server’s instance ID and key thumbprint",
+            "properties": {
+              "instanceId": {
+                "nullable": true,
+                "type": "string"
+              },
+              "jkt": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "instanceId",
+              "jkt"
+            ],
+            "type": "object"
+          },
+          "graceUntil": {
+            "nullable": true,
+            "type": "string"
+          },
+          "key": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LicenseSlotDto"
+              }
+            ],
+            "description": "The supporter key held by this server",
+            "nullable": true
+          },
+          "keyHint": {
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LicenseKind"
+              }
+            ],
+            "nullable": true
+          },
+          "licensed": {
+            "description": "A supporter key or plan is active or in grace; plans then cost 20% less",
+            "type": "boolean"
+          },
+          "linked": {
+            "description": "This server is linked to a Frameleaf account",
+            "type": "boolean"
+          },
+          "offline": {
+            "description": "The licence came from a file and is not refreshed online",
+            "type": "boolean"
+          },
+          "plan": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LicenseSlotDto"
+              }
+            ],
+            "description": "The Frameleaf Cloud plan held by this server",
+            "nullable": true
+          },
+          "refresh": {
+            "description": "The daily certificate refresh",
+            "properties": {
+              "lastError": {
+                "nullable": true,
+                "type": "string"
+              },
+              "nextRefreshAt": {
+                "nullable": true,
+                "type": "string"
+              },
+              "refreshedAt": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "refreshedAt",
+              "nextRefreshAt",
+              "lastError"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "$ref": "#/components/schemas/LicenseState",
+            "description": "The overall state: the plan’s when there is one, else the key’s"
+          }
+        },
+        "required": [
+          "configured",
+          "entitlements",
+          "expiresAt",
+          "fingerprint",
+          "graceUntil",
+          "key",
+          "keyHint",
+          "kind",
+          "licensed",
+          "linked",
+          "offline",
+          "plan",
+          "refresh",
+          "state"
+        ],
+        "type": "object"
       },
       "LivePhotoCandidateDto": {
         "properties": {
@@ -67869,6 +68382,14 @@
       },
       "ServerFeaturesDto": {
         "properties": {
+          "cloudBackup": {
+            "description": "Whether the Frameleaf Cloud plan includes cloud backup (FL-156)",
+            "type": "boolean"
+          },
+          "cloudMl": {
+            "description": "Whether the Frameleaf Cloud plan includes cloud processing (FL-156)",
+            "type": "boolean"
+          },
           "configFile": {
             "description": "Whether config file is available",
             "type": "boolean"
@@ -67883,6 +68404,10 @@
           },
           "facialRecognition": {
             "description": "Whether facial recognition is enabled",
+            "type": "boolean"
+          },
+          "frameleafCloud": {
+            "description": "Whether this server is linked to Frameleaf Cloud (FL-156)",
             "type": "boolean"
           },
           "imageDescription": {
@@ -67929,6 +68454,10 @@
             "description": "Whether real-time transcoding is enabled",
             "type": "boolean"
           },
+          "remoteAccess": {
+            "description": "Whether the Frameleaf Cloud plan includes remote access (FL-156)",
+            "type": "boolean"
+          },
           "reverseGeocoding": {
             "description": "Whether reverse geocoding is enabled",
             "type": "boolean"
@@ -67945,16 +68474,23 @@
             "description": "Whether smart search is enabled",
             "type": "boolean"
           },
+          "supporter": {
+            "description": "Whether this server carries a Frameleaf supporter licence (FL-156)",
+            "type": "boolean"
+          },
           "trash": {
             "description": "Whether trash feature is enabled",
             "type": "boolean"
           }
         },
         "required": [
+          "cloudBackup",
+          "cloudMl",
           "configFile",
           "duplicateDetection",
           "email",
           "facialRecognition",
+          "frameleafCloud",
           "imageDescription",
           "importFaces",
           "map",
@@ -67966,10 +68502,12 @@
           "passwordLogin",
           "physicalDeduplication",
           "realtimeTranscoding",
+          "remoteAccess",
           "reverseGeocoding",
           "search",
           "sidecar",
           "smartSearch",
+          "supporter",
           "trash"
         ],
         "type": "object"
@@ -77977,20 +78515,22 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
           },
-          "activationKey": {
-            "description": "Activation key",
+          "keyHint": {
+            "description": "Last four symbols of the key",
             "type": "string"
           },
-          "licenseKey": {
-            "description": "License key (format: /^IM(SV|CL)(-[\\dA-Za-z]{4}){8}$/)",
-            "pattern": "^IM(SV|CL)(-[\\dA-Za-z]{4}){8}$",
+          "kind": {
+            "description": "Supporter key kind; personal keys are always individual",
+            "enum": [
+              "individual"
+            ],
             "type": "string"
           }
         },
         "required": [
           "activatedAt",
-          "activationKey",
-          "licenseKey"
+          "keyHint",
+          "kind"
         ],
         "type": "object"
       },

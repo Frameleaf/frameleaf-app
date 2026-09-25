@@ -1,8 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { render } from '@react-email/render';
-import { createElement } from 'react';
-import { LicenseEmail } from '../../dist/emails/license.email.js';
 import { EmailRepository, EmailTemplate } from '../../dist/repositories/email.repository.js';
 
 // Import the production build in native ESM: the unit-test transformer can hide bare require() calls.
@@ -54,13 +51,4 @@ test('compiled custom album invitation keeps template substitutions', async () =
   });
   assert.ok(html.includes('<strong>John</strong> invites Jane to Family trip'));
   assert.ok(text.includes('John invites Jane to Family trip'));
-});
-
-test('compiled license template renders through the alternate email layout', async () => {
-  const component = createElement(LicenseEmail);
-  const html = await render(component);
-  const text = await render(component, { plainText: true });
-  assert.match(html, /<!DOCTYPE html PUBLIC/);
-  assert.ok(html.includes('{{LICENSEKEY}}'));
-  assert.ok(text.includes('{{LICENSEKEY}}'));
 });

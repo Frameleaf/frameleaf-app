@@ -182,6 +182,11 @@ const ServerFeaturesSchema = z
     nsfwHiding: z.boolean().describe('Whether NSFW-tagged assets are hidden from non-elevated library views'),
     physicalDeduplication: z.boolean().describe('Whether physical file deduplication is enabled'),
     realtimeTranscoding: z.boolean().describe('Whether real-time transcoding is enabled'),
+    frameleafCloud: z.boolean().describe('Whether this server is linked to Frameleaf Cloud (FL-156)'),
+    remoteAccess: z.boolean().describe('Whether the Frameleaf Cloud plan includes remote access (FL-156)'),
+    cloudMl: z.boolean().describe('Whether the Frameleaf Cloud plan includes cloud processing (FL-156)'),
+    cloudBackup: z.boolean().describe('Whether the Frameleaf Cloud plan includes cloud backup (FL-156)'),
+    supporter: z.boolean().describe('Whether this server carries a Frameleaf supporter licence (FL-156)'),
   })
   .meta({ id: 'ServerFeaturesDto' });
 

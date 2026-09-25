@@ -847,8 +847,17 @@ export type FrameleafLicense = {
   refreshedAt?: string;
   nextRefreshAt?: string;
   lastRefreshError?: string;
-  /** When administrators were last told the licence entered grace or expired (deduped notices). */
-  noticeState?: 'grace' | 'expired';
+};
+
+/**
+ * FL-156: the licences held by this server, kept apart so each can be removed on its own: the
+ * supporter key's certificate (`key`) and the Frameleaf Cloud plan's (`plan`). `noticeState` is the
+ * last state administrators were told about, so grace and expiry notices are sent once.
+ */
+export type FrameleafLicenseStore = {
+  key: FrameleafLicense | null;
+  plan: FrameleafLicense | null;
+  noticeState?: 'active' | 'grace' | 'expired';
 };
 
 /** FL-159: the public half of this server's identity; the private key stays in a 0600 file. */
@@ -896,7 +905,6 @@ export type FrameleafCloudMigrationNotice = {
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
-  [SystemMetadataKey.License]: { licenseKey: string; activationKey: string; activatedAt: Date };
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.PhysicalDeduplicationMigration]: PhysicalDeduplicationMigrationState;
@@ -909,7 +917,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafInstance]: FrameleafInstanceIdentity;
   [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
-  [SystemMetadataKey.FrameleafLicense]: FrameleafLicense;
+  [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
@@ -995,7 +1003,8 @@ export type UserMetadataItem<T extends keyof UserMetadata = UserMetadataKey> = {
 
 export interface UserMetadata extends Record<UserMetadataKey, Record<string, any>> {
   [UserMetadataKey.Preferences]: DeepPartial<UserPreferences>;
-  [UserMetadataKey.License]: { licenseKey: string; activationKey: string; activatedAt: string };
+  /** FL-156: a mirror of the person's supporter key summary (`immich_fork.frameleaf_user_license`). */
+  [UserMetadataKey.License]: { kind: 'individual'; keyHint: string; activatedAt: string };
   [UserMetadataKey.Onboarding]: { isOnboarded: boolean };
 }
 

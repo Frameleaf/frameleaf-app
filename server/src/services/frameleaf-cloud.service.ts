@@ -586,7 +586,7 @@ export class FrameleafCloudService extends BaseService {
       endpoints: [],
       remoteAccess: { enabled: !!link.desired?.remoteAccess, relayConnected: false, direct: false },
       permissions: permissionsOf(link),
-      licenseKid: license?.kid ?? null,
+      licenseKid: license?.plan?.kid ?? license?.key?.kid ?? null,
     });
   }
 

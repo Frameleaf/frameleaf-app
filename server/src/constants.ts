@@ -86,6 +86,29 @@ const packageFile = join(basePath, '..', 'package.json');
 const { version } = JSON.parse(readFileSync(packageFile, 'utf8'));
 export const serverVersion = new SemVer(version);
 
+/**
+ * FL-156: the Ed25519 keys Frameleaf licence certificates are verified with: the active signing key
+ * and a spare, pinned in source so a certificate is only ever trusted if one of them signed it
+ * (instance contract, "License certificate"). A certificate signed by any other key is refused.
+ *
+ * These are placeholder public keys whose private halves were never kept: until the production keys
+ * of the Frameleaf Cloud licence service replace them (FL-145), no certificate verifies and every
+ * cloud entitlement stays off. Self-hosted features never depend on them.
+ */
+export const FRAMELEAF_LICENSE_KEYS: ReadonlyArray<{ kid: string; x: string; status: 'active' | 'spare' }> =
+  Object.freeze([
+    {
+      kid: 'siWAxYtAkYIj69LAMUbhb5ma-FKRWDWZtI479DZ0BRo',
+      x: 'p-ilbYOPlIjm12XyBzhM8lOJfKfnPMCnypNxHYVgwvc',
+      status: 'active',
+    },
+    {
+      kid: 'AzTIXdzYrPfkBjYvKjlYaeYhQvPIMY9G2ddCr0zF1rA',
+      x: 'FN_dby_dUkObZoniAoVM79EgzhXJkVugbmHs63W-C8A',
+      status: 'spare',
+    },
+  ]);
+
 export const citiesFile = 'cities500.txt';
 export const reverseGeocodeMaxDistance = 25_000;
 

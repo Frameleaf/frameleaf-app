@@ -9,7 +9,6 @@
       "connect-src": [
         "'self'",
         "blob:",
-        "https://pay.futo.org",
         "https://static.immich.cloud",
         "https://tiles.immich.cloud"
       ],
