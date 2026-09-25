@@ -113,7 +113,7 @@ test("documentation coverage joins every reproducibility contract", async () => 
     ledgerRequirements: 1199,
     ledgerSourceRows: 1219,
     sourceAnchorSha256:
-      "8431be4cd98923952fbd43fa8ae7d776564196707a62dbb22d18474bc90f118f",
+      "7722a1b0e162965b05488fb6b7429430fe12bc4a9c9b20aaaefcc140bf3aa761",
     sourceAnchors: 517,
     stories: 118,
   });
