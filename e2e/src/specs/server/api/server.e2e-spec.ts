@@ -92,12 +92,38 @@ describe('/server', () => {
     });
   });
 
+  describe('POST /server/version-check (FL-80)', () => {
+    it('requires authentication', async () => {
+      const { status } = await request(app).post('/server/version-check');
+      expect(status).toBe(401);
+    });
+
+    it('is refused to a non-administrator', async () => {
+      const { status } = await request(app)
+        .post('/server/version-check')
+        .set('Authorization', `Bearer ${nonAdmin.accessToken}`);
+      expect(status).toBe(403);
+    });
+  });
+
+  describe('GET /server/version-check (FL-80)', () => {
+    it('reads the last recorded check for any account', async () => {
+      const { status, body } = await request(app)
+        .get('/server/version-check')
+        .set('Authorization', `Bearer ${nonAdmin.accessToken}`);
+      expect(status).toBe(200);
+      expect(body).toHaveProperty('checkedAt');
+      expect(body).toHaveProperty('releaseVersion');
+    });
+  });
+
   describe('GET /server/features', () => {
     it('should respond with the server features', async () => {
       const { status, body } = await request(app).get('/server/features');
       expect(status).toBe(200);
       expect(body).toEqual({
         smartSearch: false,
+        askSearch: false,
         configFile: false,
         duplicateDetection: false,
         facialRecognition: false,

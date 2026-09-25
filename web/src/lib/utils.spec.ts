@@ -211,6 +211,15 @@ describe('utils', () => {
       expect(semverToName({ major: 3, minor: 0, patch: 0, prerelease: null })).toEqual('v3.0.0');
     });
 
+    it('uses the full pre-release identifier when the server sends it (FL-80)', () => {
+      expect(semverToName({ major: 3, minor: 3, patch: 0, prerelease: 2, prereleaseName: 'beta.2' })).toEqual(
+        'v3.3.0-beta.2',
+      );
+      expect(semverToName({ major: 3, minor: 3, patch: 0, prerelease: null, prereleaseName: 'alpha' })).toEqual(
+        'v3.3.0-alpha',
+      );
+    });
+
     it('should append release candidate if set', () => {
       expect(semverToName({ major: 3, minor: 0, patch: 0, prerelease: 0 })).toEqual('v3.0.0-rc.0');
     });

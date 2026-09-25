@@ -662,7 +662,46 @@ export class PersonService extends BaseService {
 
   async getById(auth: AuthDto, personGroupId: string): Promise<PersonResponseDto> {
     await this.requirePerson(auth, Permission.PersonRead, personGroupId);
-    return mapPerson(await this.findOrFail(auth, personGroupId));
+    return this.mapOwnPerson(auth, await this.findOrFail(auth, personGroupId));
+  }
+
+  /**
+   * FL-37: a person as their owner sees it, with the photo their featured face is in, so the
+   * featured-photo picker can mark the current one. `findOrFail` reads only the caller's own
+   * people. A person group can span a cluster's accounts, so the featured face may be on another
+   * account's photo: only a photo the person's owner owns is named (the repository filters on it),
+   * never one since trashed, hidden or moved to Locked, never a soft-deleted or invisible face, and,
+   * as for the thumbnail, never one the session's NSFW setting hides.
+   */
+  private async mapOwnPerson(auth: AuthDto, person: Person): Promise<PersonResponseDto> {
+    return { ...mapPerson(person), featuredAssetId: await this.featuredAssetId(auth, person) };
+  }
+
+  private async featuredAssetId(auth: AuthDto, person: Person): Promise<string | null> {
+    const faceId = person.faceAssetId;
+    if (!faceId) {
+      return null;
+    }
+    const asset = await this.personRepository.getFeaturedAsset(faceId, person.ownerId);
+    if (
+      !asset ||
+      asset.deletedAt ||
+      asset.visibility === AssetVisibility.Hidden ||
+      isLockedAssetRow({ visibility: asset.visibility })
+    ) {
+      return null;
+    }
+    if (auth.hideNsfwAssets) {
+      const allowed = await this.accessRepository.person.checkFaceOwnerAccess(
+        auth.user.id,
+        new Set([faceId]),
+        auth.hiddenContent ?? true,
+      );
+      if (!allowed.has(faceId)) {
+        return null;
+      }
+    }
+    return asset.id;
   }
 
   async getStatistics(auth: AuthDto, personGroupId: string): Promise<PersonStatisticsResponseDto> {
@@ -757,7 +796,7 @@ export class PersonService extends BaseService {
       await this.refreshIdentities(ownerId, { personGroupIds: [personGroupId] });
     }
 
-    return mapPerson(person);
+    return this.mapOwnPerson(auth, person);
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {

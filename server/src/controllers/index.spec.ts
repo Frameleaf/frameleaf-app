@@ -56,6 +56,7 @@ const ADMIN_ROUTES = new Set([
   'POST runpod/pods',
   'POST runpod/pods/current/start',
   'POST runpod/pods/current/stop',
+  'POST server/version-check',
   'POST system-config/image-description/defer-requeue',
   'POST system-config/image-description/requeue',
   'POST system-config/smart-albums/reevaluate',
