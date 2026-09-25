@@ -640,6 +640,9 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
       .$if(!!options.libraryId, (qb) => qb.where('asset.libraryId', '=', asUuid(options.libraryId!)))
       .$if(!!options.userIds, (qb) => qb.where('asset.ownerId', '=', anyUuid(options.userIds!)))
+      .$if(!!options.locationHiddenOwnerIds?.length, (qb) =>
+        qb.where('asset.ownerId', 'not in', options.locationHiddenOwnerIds!),
+      )
       .$if(!!options.encodedVideoPath, (qb) =>
         qb
           .innerJoin('asset_file', (join) =>
@@ -1038,6 +1041,9 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.withExif, (qb) => qb.select(selectExifInfo))
       .$if(scopeGlobally, (qb) => qb.where(ownershipPredicate))
+      .$if(!!scope.locationHiddenOwnerIds?.length, (qb) =>
+        qb.where('asset.ownerId', 'not in', scope.locationHiddenOwnerIds!),
+      )
       .where(notLockedOrOwnedBy(scope.lockedOwnerId || undefined, 'asset'))
       .$if(!!scope.lockedMotion, (qb) =>
         qb.where((eb) => eb.not(isMotionOfLockedStill(eb, scope.lockedMotion!.lockedOwnerId))),

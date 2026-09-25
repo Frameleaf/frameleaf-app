@@ -33,6 +33,7 @@ import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isLockedRow } from 'src/utils/locked.js';
+import { getLocationHiddenOwnerIdsForView } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
 
@@ -252,8 +253,17 @@ export class AlbumService extends BaseService {
     // FL-51: the map settings sheet narrows a signed-in viewer's album map. A shared link acts as the
     // link's owner, so its visitors get the album's markers unfiltered: a favorites filter would
     // otherwise tell them which items the owner has favorited.
+    // FL-54: markers are pure location, so an owner who hides their locations from the viewer contributes
+    // none; a shared link is judged as the user who created it
+    const hidden = await getLocationHiddenOwnerIdsForView({
+      viewerId: auth.sharedLink?.userId ?? auth.user.id,
+      albumIds: [id],
+      repository: this.partnerRepository,
+    });
+    const locationHidden = hidden.size > 0 ? { locationHiddenOwnerIds: [...hidden] } : {};
+
     if (auth.sharedLink) {
-      return this.mapRepository.getAlbumMapMarkers(id, this.nsfwOptions(auth));
+      return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...locationHidden });
     }
 
     // As in the prototype's filterMapAssets, "Partner items" covers every item someone else owns, so
@@ -266,7 +276,7 @@ export class AlbumService extends BaseService {
       options.onlyOwnerId = auth.user.id;
     }
 
-    return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options });
+    return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options, ...locationHidden });
   }
 
   async create(auth: AuthDto, dto: CreateAlbumDto): Promise<AlbumResponseDto> {
