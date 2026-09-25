@@ -275,14 +275,17 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getForDetectFacesJob(id: string) {
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id', 'asset.visibility'])
-      .$call(withExifInner)
-      .select((eb) => withFaces(eb, true, true))
-      .select((eb) => withFiles(eb, AssetFileType.Preview))
-      .where('asset.id', '=', id)
-      .executeTakeFirst();
+    return (
+      this.db
+        .selectFrom('asset')
+        // FL-57: the checksum tells whether a face decision was made about this original
+        .select(['asset.id', 'asset.visibility', 'asset.checksum'])
+        .$call(withExifInner)
+        .select((eb) => withFaces(eb, true, true))
+        .select((eb) => withFiles(eb, AssetFileType.Preview))
+        .where('asset.id', '=', id)
+        .executeTakeFirst()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
