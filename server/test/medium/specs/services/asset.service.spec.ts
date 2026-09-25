@@ -506,6 +506,29 @@ describe(AssetService.name, () => {
       });
     });
 
+    it('should release typed place names when the items move (FL-36, V-24)', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, city: 'Paris', country: 'France' });
+      await ctx.database
+        .updateTable('asset_exif')
+        .set({ lockedProperties: ['city', 'country', 'description'] })
+        .where('assetId', '=', asset.id)
+        .execute();
+
+      await sut.updateAll(auth, { ids: [asset.id], latitude: 35.68, longitude: 139.69 });
+
+      const { lockedProperties } = await ctx.database
+        .selectFrom('asset_exif')
+        .select('lockedProperties')
+        .where('assetId', '=', asset.id)
+        .executeTakeFirstOrThrow();
+      expect([...(lockedProperties ?? [])].sort()).toEqual(['description', 'latitude', 'longitude']);
+    });
+
     it('should relatively update assets', async () => {
       const { sut, ctx } = setup();
       ctx.getMock(JobRepository).queueAll.mockResolvedValue();

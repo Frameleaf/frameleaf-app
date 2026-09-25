@@ -186,6 +186,19 @@ class AssetViewerManager extends BaseEventManager<Events> {
     this.isShowDetailPanel = false;
   }
 
+  /**
+   * V-15: a field of the information panel that should take focus once it renders, such as the tag
+   * box for the T key (MediaViewer.jsx:803-807, `data-mv-focus="tags"`). The field clears it.
+   */
+  focusRequest = $state<'tags' | null>(null);
+
+  /** Opens the information panel and asks one of its fields to take focus. */
+  focusDetailField(field: 'tags') {
+    this.closeActivityPanel();
+    this.isShowDetailPanel = true;
+    this.focusRequest = field;
+  }
+
   openEditor() {
     this.closeActivityPanel();
     this.isShowEditor = true;
