@@ -7,7 +7,6 @@ import PurchaseContent from './PurchaseContent.svelte';
 vi.mock('$lib/utils/license-utils', () => ({
   activateProduct: vi.fn(),
   getActivationKey: vi.fn(),
-  getLicenseLink: (product: string) => `https://store.example.test/?productId=${product}`,
 }));
 
 const messages = en as Record<string, unknown>;
@@ -47,7 +46,15 @@ describe('Support Frameleaf wording (FL-157)', () => {
       screen.getByText(/access to Frameleaf Cloud, enhanced machine learning features and more/),
     ).toBeInTheDocument();
     expect(screen.getByText('Already have a key?')).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'Purchase' })).toHaveLength(2);
+    // No Frameleaf store exists yet (FL-157): the plan cards keep plan and price but link nowhere,
+    // and never to the other organisation's store.
+    expect(screen.getByText('$100')).toBeInTheDocument();
+    expect(screen.getByText('$25')).toBeInTheDocument();
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    expect(screen.queryByRole('link', { name: /purchase/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /purchase/i })).not.toBeInTheDocument();
+    expect(document.body.getHTML()).not.toContain('buy.immich.app');
+    expect(screen.getByRole('button', { name: 'Activate' })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/immich/i);
   });
 });
