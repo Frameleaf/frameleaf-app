@@ -2,8 +2,9 @@ import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { access, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CANDIDATE_KEY_FILE,
   INSTANCE_KEY_FILE,
   InstanceIdentityRepository,
   PROVEN_KEY_FILE,
@@ -12,6 +13,19 @@ import {
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 
 const decode = (part: string) => JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
+
+/** A `link()` that can fail like it does on SMB/CIFS or FUSE media mounts. */
+const fsControl = vi.hoisted(() => ({ linkError: null as string | null }));
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    link: (from: string, to: string) =>
+      fsControl.linkError
+        ? Promise.reject(Object.assign(new Error('link not supported'), { code: fsControl.linkError }))
+        : actual.link(from, to),
+  };
+});
 
 describe(InstanceIdentityRepository.name, () => {
   let dir: string;
@@ -121,13 +135,83 @@ describe(InstanceIdentityRepository.name, () => {
       await expect(access(join(dir, PROVEN_KEY_FILE))).rejects.toThrow();
     });
 
-    it('discards a new key the cloud never accepted', async () => {
+    it('keeps a new key whose registration was in flight at a crash as the candidate', async () => {
       const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
       await writeFile(join(dir, 'instance-key.next.pem'), newPem(), { mode: 0o600 });
       const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
       expect(again.kid).toBe(identity.kid);
       expect(again.retiring).toBeUndefined();
+      expect(again.candidate).toMatchObject({ keyFile: join(dir, CANDIDATE_KEY_FILE) });
       await expect(access(join(dir, 'instance-key.next.pem'))).rejects.toThrow();
+    });
+
+    it('falls back to a 0600 copy when the file system cannot hard-link (EPERM)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const before = await readFile(join(dir, INSTANCE_KEY_FILE), 'utf8');
+      fsControl.linkError = 'EPERM';
+      try {
+        const rotated = await repository.rotate(identity, () => Promise.resolve(), 24);
+        expect(rotated.kid).not.toBe(identity.kid);
+      } finally {
+        fsControl.linkError = null;
+      }
+      expect(await readFile(join(dir, RETIRING_KEY_FILE), 'utf8')).toBe(before);
+      expect((await stat(join(dir, RETIRING_KEY_FILE))).mode & 0o777).toBe(0o600);
+    });
+
+    it('keeps the new key as the candidate when the answer to its registration is lost', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const lost = Object.assign(new Error('timeout'), { lost: true });
+      await expect(
+        repository.rotate(
+          identity,
+          () => Promise.reject(lost),
+          24,
+          Date.now(),
+          (error) => !(error as typeof lost).lost,
+        ),
+      ).rejects.toThrow('timeout');
+
+      const pending = await repository.loadOrCreate(dir, identity);
+      expect(pending.kid).toBe(identity.kid);
+      expect(pending.candidate?.kid).toEqual(expect.any(String));
+
+      // the cloud turns out to hold it: the rotation is finished
+      const promoted = await repository.promoteCandidate(pending, 24);
+      expect(promoted.kid).toBe(pending.candidate!.kid);
+      expect(promoted.candidate).toBeUndefined();
+      expect(promoted.retiring).toMatchObject({ kid: identity.kid });
+      await expect(repository.loadOrCreate(dir, promoted)).resolves.toMatchObject({ kid: promoted.kid });
+    });
+
+    it('forgets a candidate after the one-day window, and when the cloud refuses it', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      await writeFile(join(dir, CANDIDATE_KEY_FILE), newPem(), { mode: 0o600 });
+      const withCandidate = await repository.loadOrCreate(dir, identity);
+      await expect(repository.discardCandidate(withCandidate)).resolves.not.toHaveProperty('candidate');
+      await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
+
+      await writeFile(join(dir, CANDIDATE_KEY_FILE), newPem(), { mode: 0o600 });
+      const later = await repository.loadOrCreate(dir, identity, Date.now() + 25 * 60 * 60 * 1000);
+      expect(later.candidate).toBeUndefined();
+      await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
+    });
+
+    it('rebuilds retiring metadata for the latest rotation, never an older one', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const first = await repository.rotate(identity, () => Promise.resolve(), 24);
+      // a second rotation whose metadata save never happened (crash after the swap)
+      const second = await repository.rotate(first, () => Promise.resolve(), 48);
+
+      const loaded = await new InstanceIdentityRepository().loadOrCreate(dir, first);
+      expect(loaded.kid).toBe(second.kid);
+      expect(loaded.retiring).toEqual(second.retiring);
+      expect(loaded.retiring?.rotationId).not.toBe(first.retiring?.rotationId);
+      expect(loaded.retiring?.kid).toBe(first.kid);
     });
   });
 });

@@ -670,6 +670,10 @@ export class FrameleafCloudService extends BaseService {
       });
     } catch (error) {
       if (this.isRevocation(error)) {
+        // a rotation whose answer was lost may have left the cloud holding the candidate key
+        if (await this.tryCandidateKey(cloudUrl, link)) {
+          return JobStatus.Failed;
+        }
         await this.revoke(cloudUrl, link, 'Frameleaf Cloud no longer recognises this server.');
         return JobStatus.Failed;
       }
@@ -878,9 +882,54 @@ export class FrameleafCloudService extends BaseService {
           });
         },
         KEY_RETIRE_HOURS,
+        Date.now(),
+        // only a refusal the cloud answered deletes the new key; a lost answer keeps it as the candidate
+        (error) =>
+          error instanceof FrameleafCloudError && error.status !== null && error.status >= 400 && error.status < 500,
       );
       this.frameleafCloudRepository.forget();
       await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, rotated);
+    });
+  }
+
+  /**
+   * The cloud refused the current key (`invalid_client`). If a rotation left a candidate key (its
+   * answer was lost), ask the cloud for a token with that key: when it is accepted the rotation is
+   * finished and the link lives on; when it is refused too, the candidate is discarded and the
+   * refusal stands. Returns whether the refusal must not be treated as a revoke (yet).
+   */
+  private async tryCandidateKey(cloudUrl: string, link: FrameleafCloudLink): Promise<boolean> {
+    const instanceId = link.instanceId;
+    if (!instanceId) {
+      return false;
+    }
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, async () => {
+      const identity = await loadInstanceIdentity(this.gatewayDeps());
+      if (!identity.candidate) {
+        return false;
+      }
+      this.frameleafCloudRepository.forget();
+      try {
+        const document = await this.discover(cloudUrl);
+        const signer = await this.instanceIdentityRepository.candidateSigner(identity);
+        await this.frameleafCloudRepository.accessToken(document, instanceId, document.api, signer);
+      } catch (error) {
+        this.frameleafCloudRepository.forget();
+        if (!this.isRevocation(error)) {
+          // no clear answer: keep the candidate (at most a day) and ask again at the next check-in
+          return true;
+        }
+        await this.systemMetadataRepository.set(
+          SystemMetadataKey.FrameleafInstance,
+          await this.instanceIdentityRepository.discardCandidate(identity),
+        );
+        return false;
+      }
+      this.frameleafCloudRepository.forget();
+      const promoted = await this.instanceIdentityRepository.promoteCandidate(identity, KEY_RETIRE_HOURS);
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, promoted);
+      this.logger.log('Frameleaf Cloud holds the new identity key after all; the key rotation is finished');
+      return true;
     });
   }
 
