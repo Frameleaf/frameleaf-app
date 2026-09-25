@@ -62,6 +62,13 @@ import {
   measureStudioGraph,
   studioReferenceKey,
 } from 'src/utils/studio-resources.js';
+import {
+  type StudioRightsCatalog,
+  checkStudioProducerRights,
+  checkStudioRights,
+  studioRightsId,
+  studioRightsUseFor,
+} from 'src/utils/studio-rights.js';
 
 /* ------------------------------------------------------------------ */
 /* Inputs                                                               */
@@ -305,6 +312,8 @@ export class StudioResourceService extends BaseService {
     }
 
     const catalog = context.catalog ?? emptyStudioResourceCatalog();
+    // FL-86: a bundled entry is loaded only when its reviewed rights admit this destination's use.
+    const rightsUse = studioRightsUseFor(context.destination);
     const imports = new Map((context.imports ?? []).map((item) => [item.id, item]));
     const generated = new Map((context.generated ?? []).map((item) => [item.id, item]));
 
@@ -331,6 +340,14 @@ export class StudioResourceService extends BaseService {
         reason,
         detail,
       });
+    };
+    /** Refuses the reference by its rights row unless the reviewed decision admits the use. */
+    const rightsAdmit = (reference: StudioResourceReference, rightsCatalog: StudioRightsCatalog) => {
+      const verdict = checkStudioRights(studioRightsId(rightsCatalog, reference.id), rightsUse);
+      if (!verdict.allowed) {
+        refuse(reference, StudioRefusalReason.RightsBlocked, verdict.detail);
+      }
+      return verdict.allowed;
     };
 
     const authorize = (
@@ -491,7 +508,7 @@ export class StudioResourceService extends BaseService {
             }
             case 'catalog': {
               const entry = catalog.audio[reference.id];
-              if (entry) {
+              if (entry && rightsAdmit(reference, 'audio')) {
                 authorize(reference, {
                   ownerId: null,
                   checksum: entry.checksum,
@@ -499,7 +516,7 @@ export class StudioResourceService extends BaseService {
                   sourceAccess: 'deployment',
                   grant: 'render',
                 });
-              } else {
+              } else if (!entry) {
                 refuse(reference, StudioRefusalReason.NotBundled, 'No bundled track with this id.');
               }
               break;
@@ -590,6 +607,9 @@ export class StudioResourceService extends BaseService {
             refuse(reference, StudioRefusalReason.NotBundled, 'Only fonts bundled with the deployment resolve.');
             break;
           }
+          if (!rightsAdmit(reference, 'font')) {
+            break;
+          }
           authorize(reference, {
             ownerId: null,
             checksum: entry.checksum,
@@ -621,6 +641,9 @@ export class StudioResourceService extends BaseService {
             refuse(reference, StudioRefusalReason.NotBundled, 'No bundled LUT with this id.');
             break;
           }
+          if (!rightsAdmit(reference, 'lut')) {
+            break;
+          }
           authorize(reference, {
             ownerId: null,
             checksum: entry.checksum,
@@ -635,6 +658,9 @@ export class StudioResourceService extends BaseService {
           const entry = catalog.models[reference.id];
           if (!entry) {
             refuse(reference, StudioRefusalReason.NotBundled, 'The model is not in the admitted-model catalogue.');
+            break;
+          }
+          if (!rightsAdmit(reference, 'model')) {
             break;
           }
           authorize(reference, {
@@ -755,6 +781,12 @@ export class StudioResourceService extends BaseService {
         }
         if (!record.checksum) {
           refuse(reference, StudioRefusalReason.ChecksumMismatch, 'The generated file has no recorded checksum.');
+          progressed = true;
+          continue;
+        }
+        const producerRights = checkStudioProducerRights(record.producer, rightsUse);
+        if (producerRights && !producerRights.allowed) {
+          refuse(reference, StudioRefusalReason.RightsBlocked, producerRights.detail);
           progressed = true;
           continue;
         }
