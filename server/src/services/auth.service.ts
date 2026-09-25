@@ -25,7 +25,6 @@ import {
   PinCodeSetupDto,
   SessionUnlockDto,
   SignUpDto,
-  mapLoginResponse,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission } from 'src/enum.js';
@@ -33,10 +32,12 @@ import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
+import { frameleafOAuthConfig, logoutTokenAudiences } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
+import { createSession } from 'src/utils/session.js';
 
 export interface LoginDetails {
   isSecure: boolean;
@@ -96,6 +97,26 @@ export type ValidateRequest = {
 };
 
 const FRAMELEAF_CALLBACK = /frameleaf-auth:\/+oauth-callback/;
+
+/** FL-158: the refusal for an email the identity provider has not verified (every provider). */
+export const UNVERIFIED_EMAIL_MESSAGE =
+  'This email address has not been verified by the sign-in provider, so it cannot be used to sign in here';
+/** FL-158: the refusal when the provider sends no `email_verified` claim at all. */
+export const MISSING_EMAIL_VERIFIED_MESSAGE =
+  'The sign-in provider did not say whether this email address is verified, so it cannot be used to find or create an account here. Ask your administrator to map the email_verified claim in the provider.';
+
+/**
+ * FL-158: whether the provider verified the profile's email. `true` and the string `"true"` (some
+ * providers send claims as strings) count; anything else, including a missing claim, does not.
+ * Returns the refusal to give, or null when the email may be used.
+ */
+export const emailVerificationProblem = (profile: { email_verified?: unknown }): string | null => {
+  const value = profile.email_verified;
+  if (value === true || value === 'true') {
+    return null;
+  }
+  return value === undefined || value === null ? MISSING_EMAIL_VERIFIED_MESSAGE : UNVERIFIED_EMAIL_MESSAGE;
+};
 const LEGACY_MOBILE_REDIRECT_PATH = /\/oauth\/mobile-redirect\/?$/;
 
 /**
@@ -168,6 +189,12 @@ export class AuthService extends BaseService {
   }
 
   async backchannelLogout(dto: OAuthBackchannelLogoutDto): Promise<void> {
+    // FL-158: a logout token for this server's Frameleaf client (`aud` = instance id) ends the
+    // sessions Sign in with Frameleaf created; any other goes to the administrator's own provider.
+    if (await this.frameleafBackchannelLogout(dto.logout_token)) {
+      return;
+    }
+
     const { oauth } = await this.getConfig({ withCache: false });
     if (!oauth.enabled) {
       throw new BadRequestException('Received backchannel logout request but OAuth is not enabled');
@@ -199,6 +226,42 @@ export class AuthService extends BaseService {
     for (const sessionId of deletedSessionIds) {
       await this.eventRepository.emit('SessionDelete', { sessionId });
     }
+  }
+
+  /** Returns whether the token was Frameleaf's (and was handled). */
+  private async frameleafBackchannelLogout(logoutToken: string): Promise<boolean> {
+    const config = await frameleafOAuthConfig(
+      {
+        configRepository: this.configRepository,
+        databaseRepository: this.databaseRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+        instanceIdentityRepository: this.instanceIdentityRepository,
+        frameleafCloudRepository: this.frameleafCloudRepository,
+      },
+      await this.getConfig({ withCache: false }),
+    );
+    if (!config || !logoutTokenAudiences(logoutToken).includes(config.clientId)) {
+      return false;
+    }
+
+    let claims;
+    try {
+      claims = await this.oauthRepository.validateLogoutToken(config, logoutToken);
+    } catch (error: Error | any) {
+      this.logger.error(`Error in Frameleaf back-channel logout: ${error.message}`);
+      throw new BadRequestException('Error backchannel logout: token validation failed');
+    }
+    if (!claims?.sub && !claims?.sid) {
+      throw new BadRequestException('Invalid logout token: it must contain either a sub or a sid claim');
+    }
+
+    const tagged = await this.frameleafAccountRepository.findSessions({ sid: claims.sid, sub: claims.sub });
+    for (const { sessionId } of tagged) {
+      await this.sessionRepository.delete(sessionId);
+      await this.eventRepository.emit('SessionDelete', { sessionId });
+    }
+    await this.frameleafAccountRepository.deleteSessions(tagged.map(({ sessionId }) => sessionId));
+    return true;
   }
 
   async changePassword(auth: AuthDto, dto: ChangePasswordDto): Promise<UserAdminResponseDto> {
@@ -429,10 +492,17 @@ export class AuthService extends BaseService {
     this.logger.debug(`Logging in with OAuth: ${JSON.stringify(profile)}`);
     let user: UserAdmin | undefined = await this.userRepository.getByOAuthId(profile.sub);
 
+    // FL-158: an email is used to find or create an account only when the provider verified it
+    const emailProblem = emailVerificationProblem(profile);
+
     // link by email
     if (!user && normalizedEmail) {
       const emailUser = await this.userRepository.getByEmail(normalizedEmail);
       if (emailUser) {
+        if (emailProblem) {
+          this.logger.warn(`OAuth login refused: ${normalizedEmail} is not verified by the provider`);
+          throw new BadRequestException(emailProblem);
+        }
         if (emailUser.oauthId) {
           this.logger.debug('OAuth login conflict: email already linked to different account');
           throw new BadRequestException('OAuth authentication failed');
@@ -459,6 +529,11 @@ export class AuthService extends BaseService {
 
       if (!normalizedEmail) {
         throw new BadRequestException('OAuth profile does not have an email address');
+      }
+
+      if (emailProblem) {
+        this.logger.warn(`OAuth registration refused: ${normalizedEmail} is not verified by the provider`);
+        throw new BadRequestException(emailProblem);
       }
 
       this.logger.log(`Registering new user: ${profile.sub}/${normalizedEmail}`);
@@ -805,20 +880,13 @@ export class AuthService extends BaseService {
     oauthSid?: string,
     oauthBearerToken?: string,
   ) {
-    const token = this.cryptoRepository.randomBytesAsText(32);
-    const hashed = this.cryptoRepository.hashSha256(token);
-
-    await this.sessionRepository.create({
-      token: hashed,
-      deviceOS: loginDetails.deviceOS,
-      deviceType: loginDetails.deviceType,
-      appVersion: loginDetails.appVersion,
-      userId: user.id,
-      oauthSid: oauthSid ?? null,
-      oauthBearerToken: oauthBearerToken ?? null,
-    });
-
-    return mapLoginResponse(user, token);
+    const { response } = await createSession(
+      { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
+      user,
+      loginDetails,
+      { sid: oauthSid, bearerToken: oauthBearerToken },
+    );
+    return response;
   }
 
   private getClaim<T>(profile: OAuthProfile, options: ClaimOptions<T>): T {

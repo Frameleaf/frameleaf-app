@@ -564,6 +564,10 @@ export type JobItem =
   // Version check
   | { name: JobName.VersionCheck; data: IBaseJob }
 
+  // Frameleaf Cloud (FL-155, FL-156)
+  | { name: JobName.FrameleafHeartbeat; data: IBaseJob }
+  | { name: JobName.FrameleafLicenseRefresh; data: IBaseJob }
+
   // OCR
   | { name: JobName.OcrQueueAll; data: IBaseJob }
   | { name: JobName.Ocr; data: IEntityJob }
@@ -757,6 +761,104 @@ export type FrameleafCloudLink = {
   lastContactAt?: string;
   revoked?: { at: string; reason: string };
   lastError?: string;
+  /** FL-155: an RFC 8628 device authorization waiting for approval. Cleared once it ends. */
+  pending?: {
+    deviceCode: string;
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete: string;
+    expiresAt: string;
+    intervalSeconds: number;
+    nextPollAt: string;
+    /** The administrator who started linking. */
+    startedBy?: string;
+  };
+  /** FL-155: how the last device authorization ended. */
+  lastLinkResult?: 'approved' | 'denied' | 'expired';
+  /** FL-155: what Frameleaf Cloud may ask this server to do. */
+  permissions?: FrameleafCloudPermissions;
+  /** FL-155: the OpenID client Frameleaf Cloud registered for this server (no secret is kept). */
+  oidc?: {
+    issuer: string;
+    clientId: string;
+    registrationEndpoint?: string;
+    scope: string;
+    roleClaim: string;
+    storageLabelClaim: string;
+  };
+  /** FL-155: service descriptors the cloud returned when the server registered. */
+  services?: Record<string, unknown>;
+  /**
+   * FL-155: desired state of cloud-connected features the cloud may change by command. Unlink and
+   * revoke set every flag false; the features that read them never turn on without a link.
+   */
+  desired?: { remoteAccess: boolean; cloudBackup: boolean };
+  /** FL-155: check-in bookkeeping. */
+  heartbeat?: {
+    nextAt?: string;
+    failures: number;
+    lastFailureAt?: string;
+    cloneSuspected?: boolean;
+    relinkRequested?: boolean;
+  };
+  /** FL-155: sha256 of headless link tokens already used, so a token never links twice. */
+  usedLinkTokens?: string[];
+};
+
+export type FrameleafCloudPermissions = {
+  allowRemoteEnable: boolean;
+  allowBackupTrigger: boolean;
+  allowEntitlementRefresh: boolean;
+};
+
+/**
+ * FL-156: the verified claims of a Frameleaf licence certificate (instance contract, "License
+ * certificate"). Dates are seconds since the epoch, as in the JWS.
+ */
+export type FrameleafLicenseClaims = {
+  iss: string;
+  aud: string;
+  sub: string;
+  iid: string;
+  cnf?: { jkt?: string };
+  lic?: { id?: string; last4?: string; kind?: string };
+  ent: string[];
+  lim?: Record<string, number>;
+  lic_exp: number | null;
+  upd?: { after?: number; url?: string };
+  grace_days?: number;
+  iat: number;
+  nbf?: number;
+  exp: number;
+  jti?: string;
+};
+
+/** FL-156: this server's licence certificate and its refresh bookkeeping. */
+export type FrameleafLicense = {
+  certificate: string;
+  /** `server` or `individual` for a supporter key, `plan` for a subscription certificate. */
+  kind: 'server' | 'individual' | 'plan';
+  /** How it arrived: activated by key, installed from an offline file, or delivered to the linked account. */
+  source: 'key' | 'file' | 'account';
+  kid: string;
+  keyHint?: string;
+  activationId?: string;
+  claims: FrameleafLicenseClaims;
+  verifiedAt: string;
+  refreshedAt?: string;
+  nextRefreshAt?: string;
+  lastRefreshError?: string;
+};
+
+/**
+ * FL-156: the licences held by this server, kept apart so each can be removed on its own: the
+ * supporter key's certificate (`key`) and the Frameleaf Cloud plan's (`plan`). `noticeState` is the
+ * last state administrators were told about, so grace and expiry notices are sent once.
+ */
+export type FrameleafLicenseStore = {
+  key: FrameleafLicense | null;
+  plan: FrameleafLicense | null;
+  noticeState?: 'active' | 'grace' | 'expired';
 };
 
 /** FL-159: the public half of this server's identity; the private key stays in a 0600 file. */
@@ -766,6 +868,13 @@ export type FrameleafInstanceIdentity = {
   publicJwk: { kty: 'OKP'; crv: 'Ed25519'; x: string };
   keyFile: string;
   createdAt: string;
+  /** FL-155: the key replaced by the last rotation; the cloud keeps accepting it until `until`. */
+  retiring?: { kid: string; keyFile: string; until: string; rotationId: string };
+  /**
+   * FL-155: a new key whose registration with the cloud may or may not have landed (the answer was
+   * lost). Kept for at most a day; tried when the cloud stops accepting the current key.
+   */
+  candidate?: { kid: string; keyFile: string; since: string };
 };
 
 /** FL-159: the cached discovery document (`/.well-known/frameleaf-services`). */
@@ -804,7 +913,6 @@ export type FrameleafCloudMigrationNotice = {
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
-  [SystemMetadataKey.License]: { licenseKey: string; activationKey: string; activatedAt: Date };
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.PhysicalDeduplicationMigration]: PhysicalDeduplicationMigrationState;
@@ -817,6 +925,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafInstance]: FrameleafInstanceIdentity;
   [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
+  [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
@@ -903,7 +1012,8 @@ export type UserMetadataItem<T extends keyof UserMetadata = UserMetadataKey> = {
 
 export interface UserMetadata extends Record<UserMetadataKey, Record<string, any>> {
   [UserMetadataKey.Preferences]: DeepPartial<UserPreferences>;
-  [UserMetadataKey.License]: { licenseKey: string; activationKey: string; activatedAt: string };
+  /** FL-156: a mirror of the person's supporter key summary (`immich_fork.frameleaf_user_license`). */
+  [UserMetadataKey.License]: { kind: 'individual'; keyHint: string; activatedAt: string };
   [UserMetadataKey.Onboarding]: { isOnboarded: boolean };
 }
 

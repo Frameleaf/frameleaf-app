@@ -34,9 +34,11 @@ import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repos
 import { ForkHandoffRepository } from 'src/repositories/fork-handoff.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
 import { ICloudAlbumRepository } from 'src/repositories/icloud-album.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
@@ -151,6 +153,8 @@ export const repositories = [
   FrameleafCloudRepository,
   FrameleafCloudMlRepository,
   FrameleafConsentRepository,
+  FrameleafUserLicenseRepository,
+  FrameleafAccountRepository,
   HardwareProbeRepository,
   InstanceIdentityRepository,
   MediaRepository,

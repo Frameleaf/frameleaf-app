@@ -105,15 +105,23 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     group: 'server',
     sections: ['workers', 'hardware', 'routing', 'queues', 'render-workers', 'nightly-tasks'],
   },
-  // FL-159 (handoff §3.1): Frameleaf Cloud, after Compute & jobs in "Your server". This branch adds
-  // Cloud processing; the account, plan, licence, remote access and backup pages join it (FL-154+).
-  { id: 'cloud', group: 'server', sections: ['cloud-processing'] },
+  // FL-154 and FL-159 (handoff §3.1): the template's Frameleaf Cloud area (settings-catalog.mjs:125-131,
+  // 1711-1799), after Compute & jobs in "Your server": Account & link, Plan, Licence and Cloud
+  // processing; remote access and backup join it with their stories. Optional: the server works fully
+  // without it.
+  {
+    id: 'cloud',
+    group: 'server',
+    sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-processing'],
+    adminOnly: true,
+  },
   // The template's Access & security holds each account's own sign-in (password, PIN, provider),
   // Locked tags & people, and devices & API keys next to the server's sign-in methods.
   {
     id: 'security',
     group: 'server',
-    sections: ['authentication'],
+    // FL-158: Sign in with Frameleaf sits beside the administrator's own provider.
+    sections: ['authentication', 'frameleaf-signin'],
     personal: ['password', 'user-pin-code-settings', 'oauth', 'suppressed-content', 'authorized-devices', 'api-keys'],
   },
   // The account's own email notifications sit with the server's email delivery, as in the template.
@@ -132,7 +140,15 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     sections: [],
     // Profile, appearance, downloads and library features, as in the template. Usage and supporter
     // status have no other home in the template yet.
-    personal: ['account', 'app-settings', 'download-settings', 'feature', 'user-usage-info', 'user-purchase-settings'],
+    personal: [
+      'account',
+      'frameleaf-account',
+      'app-settings',
+      'download-settings',
+      'feature',
+      'user-usage-info',
+      'user-purchase-settings',
+    ],
   },
   // FL-71: the old /admin/users pages; one account opens inside the section (`?user=<id>`).
   { id: 'users', group: 'server', sections: ['accounts'] },
@@ -399,6 +415,10 @@ export type DirectoryGroupId =
   | 'account'
   | 'library'
   | 'downloads'
+  | 'account_link'
+  | 'licensing'
+  | 'remote'
+  | 'cloud_services'
   | 'more';
 
 const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryGroupId>>> = {
@@ -422,8 +442,15 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     queues: 'job_management',
     'nightly-tasks': 'schedules',
   },
+  cloud: {
+    'cloud-account': 'account_link',
+    'cloud-plan': 'licensing',
+    'cloud-license': 'licensing',
+    'cloud-processing': 'cloud_services',
+  },
   security: {
     authentication: 'sign_in',
+    'frameleaf-signin': 'sign_in',
     password: 'sign_in',
     oauth: 'sign_in',
     'user-pin-code-settings': 'locked_content',
@@ -444,6 +471,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     account: 'account',
     'user-usage-info': 'account',
     'user-purchase-settings': 'account',
+    'frameleaf-account': 'account',
     'app-settings': 'library',
     feature: 'library',
     'download-settings': 'downloads',

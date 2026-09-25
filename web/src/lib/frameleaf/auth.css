@@ -1149,3 +1149,125 @@
   font: inherit;
   cursor: pointer;
 }
+/*
+ * FL-157/FL-158: the onboarding "Frameleaf account" and "Plan & licence" steps and the Sign in with
+ * Frameleaf button (design/frameleaf/template/src/auth.css, effd05ffb7).
+ */
+.auth-screen .ob-cloud {
+  display: grid;
+  gap: 14px;
+}
+.auth-screen .ob-cloud-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+}
+.auth-screen .ob-cloud-card > div {
+  display: grid;
+  gap: 2px;
+}
+.auth-screen .ob-cloud-card > div span {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.auth-screen .ob-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+  letter-spacing: 2px;
+  padding: 8px 12px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+}
+.auth-screen .ob-cloud-badge {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--fl-accent-soft);
+  color: var(--fl-accent);
+}
+.auth-screen .ob-cloud-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.auth-screen .ob-plan {
+  display: grid;
+  gap: 2px;
+}
+.auth-screen .ob-plan strong {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.auth-screen .ob-plan small {
+  color: var(--fl-muted);
+}
+.auth-screen .ob-tag {
+  font-size: var(--fl-font-micro);
+  font-weight: 600;
+  color: var(--fl-teal);
+  border: 1px solid var(--fl-teal);
+  border-radius: var(--fl-radius-pill);
+  padding: 1px 8px;
+}
+.auth-screen .auth-frameleaf {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  border-radius: var(--fl-radius-control);
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--fl-accent), transparent 55%);
+}
+.auth-screen .ob-cloud-actions .auth-frameleaf {
+  width: auto;
+  padding: 0 18px;
+}
+@media (max-width: 640px) {
+  .auth-screen .ob-cloud-card {
+    grid-template-columns: 1fr;
+  }
+}
+.auth-screen .auth-frameleaf img,
+.auth-screen .auth-frameleaf svg {
+  height: 18px;
+  width: auto;
+  flex: none;
+}
+/* FL-158: Sign in with Frameleaf on the login page (AuthScreens.jsx Login; auth.css .auth-lan). */
+.auth-screen .auth-frameleaf-note {
+  text-align: center;
+}
+.auth-screen .auth-lan {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 10px;
+  padding: 14px;
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-accent-soft);
+}
+.auth-screen .auth-lan > svg {
+  color: var(--fl-accent);
+  margin-top: 2px;
+}
+.auth-screen .auth-lan > div:first-of-type {
+  display: grid;
+  gap: 2px;
+}
+.auth-screen .auth-lan span {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.auth-screen .auth-lan-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}

@@ -9,12 +9,16 @@
   import HelpFeedbackDialog from '$lib/components/frameleaf/HelpFeedbackDialog.svelte';
   import { Route } from '$lib/route';
   import { userInteraction } from '$lib/stores/user.svelte';
-  import { getAboutInfo, getVersionHistory } from '@immich/sdk';
+  import { formatUsd } from '$lib/frameleaf/cloud';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { getAboutInfo, getCloudMlStatus, getCloudStatus, getVersionHistory } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
   import {
     mdiAccountEditOutline,
     mdiChevronDown,
     mdiChevronRight,
+    mdiCloudOutline,
     mdiCogOutline,
     mdiHandHeartOutline,
     mdiInformationOutline,
@@ -47,6 +51,34 @@
 
   let open = $state(false);
   let menu = $state<HTMLDivElement>();
+
+  /**
+   * FL-157 (SystemPanels.jsx:738-761): the Frameleaf Cloud row shows the link state and, for an
+   * administrator of a linked server, the AI credit the server last read. Read when the menu opens.
+   */
+  let cloud = $state<{ linked: boolean; account: string | null; creditUsd: number | null } | null>(null);
+  const cloudConfigured = $derived(authManager.user.isAdmin || featureFlagsManager.value.frameleafCloud);
+
+  const loadCloud = async () => {
+    if (!authManager.user.isAdmin) {
+      cloud = { linked: featureFlagsManager.value.frameleafCloud, account: null, creditUsd: null };
+      return;
+    }
+    try {
+      const status = await getCloudStatus();
+      const linked = status.state === 'linked';
+      const wallet = linked ? ((await getCloudMlStatus().catch(() => null))?.wallet ?? null) : null;
+      cloud = { linked, account: status.account?.label ?? null, creditUsd: wallet?.availableUsd ?? null };
+    } catch {
+      cloud = null;
+    }
+  };
+
+  $effect(() => {
+    if (open) {
+      void loadCloud();
+    }
+  });
 
   // S-5 (SystemPanels.jsx:677-686): the Supporter badge shows for a supporter who has not hidden it.
   const showSupporter = $derived(
@@ -188,6 +220,44 @@
 
       <hr />
 
+      {#if cloudConfigured}
+        <a
+          href={authManager.user.isAdmin
+            ? commandCenterUrl('cloud', 'cloud-account')
+            : commandCenterUrl('preferences', 'frameleaf-account')}
+          role="menuitem"
+          class="fl-item"
+          onclick={close}
+        >
+          <Icon icon={mdiCloudOutline} size="1.125em" aria-hidden={true} />
+          <span>
+            {$t('frameleaf_settings_area_cloud')}
+            <small>
+              {cloud?.linked
+                ? cloud.account
+                  ? $t('frameleaf_account_menu_cloud_linked_to', { values: { account: cloud.account } })
+                  : $t('frameleaf_account_menu_cloud_linked')
+                : $t('frameleaf_account_menu_cloud_not_linked')}
+            </small>
+          </span>
+          {#if cloud?.creditUsd !== null && cloud?.creditUsd !== undefined}
+            <span class="cloud-pill" title={$t('frameleaf_account_menu_cloud_credit')}>
+              {formatUsd(cloud.creditUsd, 2)}
+            </span>
+          {/if}
+        </a>
+      {/if}
+
+      <a href={Route.buy()} role="menuitem" class="fl-item" onclick={close}>
+        <Icon icon={mdiHandHeartOutline} size="1.125em" aria-hidden={true} />
+        <span>
+          {$t('buy')}
+          <small>{$t('frameleaf_account_menu_support_hint')}</small>
+        </span>
+      </a>
+
+      <hr />
+
       <a href={Route.userSettings()} role="menuitem" class="fl-item" onclick={close}>
         <Icon icon={mdiCogOutline} size="1.125em" aria-hidden={true} />
         <span>{$t('account_settings')}</span>
@@ -237,6 +307,16 @@
 <style>
   .fl-account {
     position: relative;
+  }
+  .cloud-pill {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-accent-soft, var(--fl-raised));
+    color: var(--fl-accent);
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
   .fl-account-button {
     display: flex;

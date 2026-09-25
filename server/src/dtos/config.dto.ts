@@ -177,6 +177,9 @@ const nsfwDetectionDefaults = {
  */
 const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studio', 'interpolation'] as const;
 const frameleafCloudDefaults = {
+  // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it; the client secret
+  // is only for a cloud that registered this server with one (private_key_jwt needs none).
+  signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, clientSecret: '' },
   cloudMl: {
     enabled: false,
     // Where each kind of work may run (§3.2): this server only until an administrator chooses.
@@ -485,6 +488,22 @@ const routedRecord = <T extends z.ZodType>(schema: T) =>
 
 const AdminConfigFrameleafCloudSchema = z
   .object({
+    signIn: z
+      .object({
+        buttonText: z.string().max(100).describe('Sign in with Frameleaf button text').meta({ visibility: Public }),
+        showOnLocalLogin: configBool
+          .describe('Show Sign in with Frameleaf on the local sign-in page too')
+          .meta({ visibility: Public }),
+        // Write-only, like oauth.clientSecret: mapAdminConfig() returns '' and saving '' keeps it.
+        // Replace or clear it through /admin/config/credentials/frameleaf-oidc-client-secret.
+        clientSecret: z.string().describe('Frameleaf client secret (write-only; empty preserves the existing secret)'),
+        clientSecretConfigured: z
+          .boolean()
+          .optional()
+          .describe('Read-only indicator that a client secret is stored. Set by the server; ignored on write.'),
+      })
+      .default(frameleafCloudDefaults.signIn)
+      .meta({ id: 'AdminConfigFrameleafSignInDto' }),
     cloudMl: z
       .object({
         enabled: configBool.describe(
@@ -1040,7 +1059,17 @@ const isVisible = (property: ConfigVisibility, visibility: ConfigVisibility) =>
 const getMeta = (schema: z.ZodType) =>
   (z.globalRegistry.get(schema) ?? {}) as { id?: string; description?: string; visibility?: ConfigVisibility };
 
-const unwrap = (schema: z.ZodType) => (schema instanceof z.ZodPipe ? (schema.def.in as z.ZodType) : schema);
+const unwrap = (schema: z.ZodType): z.ZodType => {
+  if (schema instanceof z.ZodPipe) {
+    return schema.def.in as z.ZodType;
+  }
+  // FL-158: a section with a default (the Frameleaf sections) is walked like any other, so its
+  // public properties are published and its visibility metadata is stripped
+  if (schema instanceof z.ZodDefault) {
+    return unwrap(schema.def.innerType as z.ZodType);
+  }
+  return schema;
+};
 
 const visibleSchemas = new Map<z.ZodType, Map<ConfigVisibility, z.ZodType | undefined>>();
 
@@ -1060,16 +1089,18 @@ const applyVisibilityRecursive = (
   override?: string,
 ): z.ZodType | undefined => {
   const object = unwrap(schema);
-  const { id, description, visibility: property } = getMeta(schema);
+  const { id, description, visibility: property } = { ...getMeta(object), ...getMeta(schema) };
 
-  if (!(object instanceof z.ZodObject)) {
+  // the admin schema keeps a defaulted section whole, with its default (FL-158)
+  if (!(object instanceof z.ZodObject) || (visibility === Admin && schema instanceof z.ZodDefault)) {
     return isVisible(property ?? Admin, visibility) ? schema : undefined;
   }
 
-  let cache = visibleSchemas.get(schema);
+  // keyed by the section itself, so a section shared by several defaulted fields keeps one id
+  let cache = visibleSchemas.get(object);
   if (!cache) {
     cache = new Map();
-    visibleSchemas.set(schema, cache);
+    visibleSchemas.set(object, cache);
   }
 
   if (cache.has(visibility)) {
@@ -1117,7 +1148,44 @@ const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
 
 export const AdminConfigSchema = applyVisibility(Admin)! as z.ZodType<SystemConfig>;
 const UserConfigSchema = applyVisibility(User)! as z.ZodType<DeepPartial<SystemConfig>>;
-const PublicConfigSchema = applyVisibility(Public)! as z.ZodType<DeepPartial<SystemConfig>>;
+/**
+ * FL-158: how Sign in with Frameleaf applies to this visitor, worked out per request (not stored
+ * configuration): whether it is available, whether it is the only way in (arrival through remote
+ * access), how the request arrived, and the addresses the login page offers.
+ */
+const FrameleafPublicConfigSchema = z
+  .object({
+    signInAvailable: z.boolean().describe('Whether Sign in with Frameleaf is available (the server is linked)'),
+    signInRequired: z
+      .boolean()
+      .describe('Whether this visitor arrived through remote access, where only Sign in with Frameleaf is offered'),
+    via: z
+      .enum(['lan', 'wan', 'relay'])
+      .describe('How the request arrived, as vouched for by the edge worker')
+      .meta({ id: 'FrameleafVia' })
+      .nullable()
+      .describe('How the request arrived; null when the edge worker did not vouch for it'),
+    relayHost: z.string().nullable().describe('The remote-access host shown on the login page, when known'),
+    localUrl: z
+      .string()
+      .nullable()
+      .describe('This server on the home network; given only to a remote-access visitor who is on it'),
+    sameNetwork: z.boolean().describe('Whether a remote-access visitor is on the same network as this server'),
+  })
+  .meta({ id: 'FrameleafPublicConfigDto' });
+export type FrameleafPublicConfig = z.infer<typeof FrameleafPublicConfigSchema>;
+export const FRAMELEAF_PUBLIC_DEFAULTS: FrameleafPublicConfig = Object.freeze({
+  signInAvailable: false,
+  signInRequired: false,
+  via: null,
+  relayHost: null,
+  localUrl: null,
+  sameNetwork: false,
+});
+
+const PublicConfigSchema = (applyVisibility(Public) as z.ZodObject).extend({
+  frameleaf: FrameleafPublicConfigSchema,
+}) as unknown as z.ZodType<DeepPartial<SystemConfig> & { frameleaf: FrameleafPublicConfig }>;
 
 // prevent visibility metadata from leaking to openapi spec
 // eslint-disable-next-line unicorn/no-top-level-side-effects
@@ -1173,6 +1241,14 @@ export function mapAdminConfig(config: SystemConfig): AdminConfigDto {
       clientSecret: '',
       clientSecretConfigured: config.oauth.clientSecret.length > 0,
     },
+    frameleafCloud: {
+      ...config.frameleafCloud,
+      signIn: {
+        ...config.frameleafCloud.signIn,
+        clientSecret: '',
+        clientSecretConfigured: (config.frameleafCloud.signIn?.clientSecret ?? '').length > 0,
+      },
+    },
   };
 }
 
@@ -1180,8 +1256,11 @@ export function mapUserConfig(config: SystemConfig): UserConfigDto {
   return UserConfigSchema.parse(config);
 }
 
-export function mapPublicConfig(config: SystemConfig): PublicConfigDto {
-  return PublicConfigSchema.parse(config);
+export function mapPublicConfig(
+  config: SystemConfig,
+  frameleaf: FrameleafPublicConfig = FRAMELEAF_PUBLIC_DEFAULTS,
+): PublicConfigDto {
+  return PublicConfigSchema.parse({ ...config, frameleaf });
 }
 
 export const defaults = Object.freeze<SystemConfig>({

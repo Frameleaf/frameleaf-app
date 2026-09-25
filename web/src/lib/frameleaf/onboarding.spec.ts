@@ -23,10 +23,13 @@ describe('onboarding (FL-80 ON-1)', () => {
       'server_privacy',
       'user_privacy',
       'storage_template',
+      'frameleaf_account',
+      'license',
       'backup',
       'mobile_app',
       'done',
     ]);
+    expect(onboardingStepsFor(OnboardingRole.SERVER)).toHaveLength(11);
     expect(onboardingStepsFor(OnboardingRole.USER).map(({ id }) => id)).toEqual([
       'hello',
       'language',

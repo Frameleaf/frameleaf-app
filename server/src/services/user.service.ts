@@ -10,7 +10,6 @@ import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
-import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import {
   type PreferencesAudience,
@@ -341,55 +340,6 @@ export class UserService extends BaseService {
       contentType: mimeTypes.lookup(user.profileImagePath),
       cacheControl: CacheControl.None,
     });
-  }
-
-  async getLicense(auth: AuthDto): Promise<LicenseResponseDto> {
-    const metadata = await this.userRepository.getMetadata(auth.user.id);
-
-    const license = metadata.find(
-      (item): item is UserMetadataItem<UserMetadataKey.License> => item.key === UserMetadataKey.License,
-    );
-    if (!license) {
-      throw new NotFoundException();
-    }
-    return { ...license.value, activatedAt: new Date(license.value.activatedAt) };
-  }
-
-  async deleteLicense({ user }: AuthDto): Promise<void> {
-    await this.userRepository.deleteMetadata(user.id, UserMetadataKey.License);
-  }
-
-  async setLicense(auth: AuthDto, license: LicenseKeyDto): Promise<LicenseResponseDto> {
-    if (!license.licenseKey.startsWith('IMCL-') && !license.licenseKey.startsWith('IMSV-')) {
-      throw new BadRequestException('Invalid license key');
-    }
-
-    const { licensePublicKey } = this.configRepository.getEnv();
-
-    const isClientLicenseValid = this.cryptoRepository.verifySha256(
-      license.licenseKey,
-      license.activationKey,
-      licensePublicKey.client,
-    );
-
-    const isServerLicenseValid = this.cryptoRepository.verifySha256(
-      license.licenseKey,
-      license.activationKey,
-      licensePublicKey.server,
-    );
-
-    if (!isClientLicenseValid && !isServerLicenseValid) {
-      throw new BadRequestException('Invalid license key');
-    }
-
-    const activatedAt = new Date();
-
-    await this.userRepository.upsertMetadata(auth.user.id, {
-      key: UserMetadataKey.License,
-      value: { ...license, activatedAt: activatedAt.toISOString() },
-    });
-
-    return { ...license, activatedAt };
   }
 
   async getOnboarding(auth: AuthDto): Promise<OnboardingResponseDto> {
