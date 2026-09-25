@@ -1,8 +1,11 @@
 import { expect, Locator, Page, test } from '@playwright/test';
 import { SeededRandom, selectRandom, TimelineAssetConfig } from 'src/ui/generators/timeline.js';
 import {
+  createFaceTaggerMockState,
+  createMockDetectedFace,
   createMockPeople,
   FaceCreateCapture,
+  FaceTaggerMockState,
   MockPerson,
   setupFaceTaggerMockApiRoutes,
 } from 'src/ui/mock-network/face-editor-network';
@@ -36,6 +39,7 @@ test.describe('face tagger', () => {
   const rng = new SeededRandom(777);
   let mockPeople: MockPerson[];
   let faceCreateCapture: FaceCreateCapture;
+  let faceState: FaceTaggerMockState;
 
   test.beforeAll(async () => {
     mockPeople = createMockPeople(8);
@@ -43,7 +47,8 @@ test.describe('face tagger', () => {
 
   test.beforeEach(async ({ context }) => {
     faceCreateCapture = { requests: [], people: [] };
-    await setupFaceTaggerMockApiRoutes(context, mockPeople, faceCreateCapture);
+    faceState = createFaceTaggerMockState();
+    await setupFaceTaggerMockApiRoutes(context, mockPeople, faceCreateCapture, faceState);
   });
 
   const pickAsset = () => selectRandom(fixture.assets, rng);
@@ -186,6 +191,127 @@ test.describe('face tagger', () => {
     // Escape stays inside the dialog: the viewer itself is still open.
     await expect(page.locator('#immich-asset-viewer')).toBeVisible();
 
+    expect(faceCreateCapture.requests).toHaveLength(0);
+  });
+
+  test.describe('existing faces (FL-38 corrections)', () => {
+    test.beforeEach(() => {
+      faceState.faces = [createMockDetectedFace(mockPeople[0])];
+    });
+
+    test('a detected face shows its provenance and is reassigned at the revision it was read', async ({ page }) => {
+      const dialog = await openFaceTagger(page, pickAsset());
+      const faces = dialog.getByRole('group', { name: 'Faces in this image' });
+      await expect(faces).toContainText(mockPeople[0].name);
+      await expect(faces).toContainText('Detected');
+      // detected faces can be placed with the position fields too
+      await expect(dialog.getByRole('spinbutton', { name: 'Left (%)' })).toBeEnabled();
+
+      await dialog.getByRole('button', { name: mockPeople[1].name }).click();
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+
+      await expect(dialog).toBeHidden();
+      expect(faceState.corrections).toEqual([
+        {
+          id: 'detected-face-1',
+          body: { expectedRevision: 'detected-face-1-rev-1', personId: mockPeople[1].id },
+        },
+      ]);
+    });
+
+    test('a detected face can be given a person created in the dialog', async ({ page }) => {
+      const dialog = await openFaceTagger(page, pickAsset());
+
+      await dialog.getByRole('button', { name: 'Create person' }).click();
+      await dialog.getByRole('textbox', { name: "New person's name" }).fill('Zoe Quinn');
+      await dialog.getByRole('button', { name: 'Create and assign' }).click();
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+
+      await expect(dialog).toBeHidden();
+      expect(faceCreateCapture.people).toEqual([{ name: 'Zoe Quinn' }]);
+      expect(faceState.corrections).toEqual([
+        { id: 'detected-face-1', body: { expectedRevision: 'detected-face-1-rev-1', personId: 'created-person-1' } },
+      ]);
+    });
+
+    test('a detected face moved with the keyboard is saved as a box correction on the same image', async ({ page }) => {
+      const dialog = await openFaceTagger(page, pickAsset());
+
+      await dialog.getByRole('application', { name: 'Photo face regions' }).focus();
+      await page.keyboard.press('Shift+ArrowDown');
+      await expect(dialog.getByRole('group', { name: 'Faces in this image' })).toContainText('Corrected by you');
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+
+      await expect(dialog).toBeHidden();
+      expect(faceState.corrections).toHaveLength(1);
+      expect(faceState.corrections[0].body).toEqual(
+        expect.objectContaining({
+          expectedRevision: 'detected-face-1-rev-1',
+          expectedSourceRevision: 'source-rev-1',
+          box: expect.objectContaining({ imageWidth: expect.any(Number), imageHeight: expect.any(Number) }),
+        }),
+      );
+    });
+
+    test('a conflicting save keeps the draft behind the stale banner until the latest faces load', async ({ page }) => {
+      faceState.conflictOnCorrect = true;
+      const dialog = await openFaceTagger(page, pickAsset());
+      await dialog.getByRole('button', { name: mockPeople[2].name }).click();
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+
+      await expect(dialog.getByText('Face tags changed in another view.')).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Save face tags' })).toBeDisabled();
+      await expect(dialog.getByRole('button', { name: mockPeople[2].name, pressed: true })).toBeVisible();
+
+      faceState.faces = [{ ...createMockDetectedFace(mockPeople[3]), revision: 'detected-face-1-rev-9' }];
+      const reads = faceState.faceReads;
+      await dialog.getByRole('button', { name: 'Discard changes and load latest' }).click();
+
+      await expect(dialog.getByText('Face tags changed in another view.')).toBeHidden();
+      expect(faceState.faceReads).toBeGreaterThan(reads);
+      await expect(dialog.getByRole('group', { name: 'Faces in this image' })).toContainText(mockPeople[3].name);
+    });
+
+    test('a new region drawn before the image changed is refused and kept', async ({ page }) => {
+      faceState.conflictOnCreate = true;
+      faceState.sourceRevisionAfterConflict = 'source-rev-2';
+      const dialog = await openFaceTagger(page, pickAsset());
+      await addFace(dialog);
+      await dialog.getByRole('button', { name: mockPeople[1].name }).click();
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+
+      await expect(dialog.getByText(/This image changed since you opened it/)).toBeVisible();
+      await expect(dialog.getByText('2 faces')).toBeVisible();
+      expect(faceCreateCapture.requests[0]).toEqual(
+        expect.objectContaining({ expectedSourceRevision: 'source-rev-1', personId: mockPeople[1].id }),
+      );
+    });
+  });
+
+  test('the dialog closes when the unlocked session is concealed (relock) while it is open', async ({
+    context,
+    page,
+  }) => {
+    // An elevated session: the tagger follows sessionAccess and closes once the view is concealed.
+    await context.route('**/api/auth/status', (route) =>
+      route.fulfill({
+        headers: { date: new Date().toUTCString() },
+        json: {
+          isElevated: true,
+          password: true,
+          pinCode: true,
+          pinExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        },
+      }),
+    );
+    const dialog = await openFaceTagger(page, pickAsset());
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await expect(dialog).toBeHidden();
     expect(faceCreateCapture.requests).toHaveLength(0);
   });
 });
