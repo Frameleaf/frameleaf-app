@@ -1534,6 +1534,36 @@ describe(AssetService.name, () => {
       });
     });
 
+    it('accepts a whole-clip speed with speed ranges, and refuses two whole-clip speeds (FL-113)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 10_000,
+        livePhotoVideoId: null,
+        originalPath: '/upload/video.mp4',
+        originalFileName: 'video.mp4',
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      const edits: AssetEditActionItem[] = [
+        { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+        { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 1000, endMs: 3000 } },
+      ];
+      mocks.assetEdit.replaceAll.mockResolvedValue(edits.map((edit, index) => ({ id: `edit-${index}`, ...edit })));
+      await expect(sut.editAsset(authStub.admin, 'asset-1', { edits })).resolves.toMatchObject({ assetId: 'asset-1' });
+
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [
+            { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+            { action: AssetEditAction.Speed, parameters: { rate: 4 } },
+          ],
+        }),
+      ).rejects.toThrow('Only one whole-clip speed edit is allowed');
+    });
+
     it('should reject overlapping video speed segments', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
       mocks.asset.getForEdit.mockResolvedValue({

@@ -115,6 +115,14 @@ export type VideoEdit = DevelopValues & {
   autoEnhance: boolean;
   /** Adjust and look actions from the earlier editor, kept as they are until Adjust or Presets change. */
   legacy: AssetEditActionItemDto[];
+  /**
+   * The quick editor's render options (renderer 1.1.0): straighten fills its frame, stabilize crops
+   * its edges, gain above 100% is limited. A recipe saved by the earlier editor has them off and
+   * keeps rendering as it did until that control is changed here.
+   */
+  straightenFill: boolean;
+  stabilizeCropEdges: boolean;
+  limitGain: boolean;
 };
 
 /** The original's displayed raster and length, from `getAssetEdits().originalVideo`. */
@@ -142,6 +150,9 @@ export const initialVideoEdit = (duration: number): VideoEdit => ({
   stabilize: false,
   autoEnhance: false,
   legacy: [],
+  straightenFill: true,
+  stabilizeCropEdges: true,
+  limitGain: true,
 });
 
 const LOOK_IDS: readonly string[] = Object.values(VideoDevelopPreset);
@@ -207,6 +218,9 @@ export function normalizeVideoEdit(candidate: unknown, duration: number): VideoE
     stabilize: value.stabilize === true,
     autoEnhance: value.autoEnhance === true,
     legacy: Array.isArray(value.legacy) ? (value.legacy as AssetEditActionItemDto[]) : [],
+    straightenFill: value.straightenFill !== false,
+    stabilizeCropEdges: value.stabilizeCropEdges !== false,
+    limitGain: value.limitGain !== false,
   };
 }
 
@@ -279,9 +293,11 @@ export function renderedDuration(edit: Pick<VideoEdit, 'start' | 'end' | 'speed'
 }
 
 /**
- * Where a fast trim really cuts: the renderer opens the clip at the last keyframe at or before the
- * in point and copies the trimmed length from there (`qualifyStreamCopyTrim`). Null until the
- * keyframes are known.
+ * Where a fast trim really cuts. The renderer seeks the input to the in point and copies packets
+ * (`-ss` before `-i`, `-t`, `-c copy`): the picture starts at the last keyframe at or before the in
+ * point, and `-t` is counted from the in point, so the clip still ends at the out point. Measured
+ * with ffmpeg 9 on a 2-second-GOP H.264 clip: in 5.5 s, out 12 s gives 4.0 s to 12.0 s. Null until
+ * the keyframes are known.
  */
 export function fastTrimBounds(
   keyframesMs: readonly number[] | null,
@@ -293,8 +309,7 @@ export function fastTrimBounds(
   }
   const inMs = Math.round(edit.start * 1000);
   const keyframe = keyframesMs.findLast((time) => time <= inMs) ?? 0;
-  const start = keyframe / 1000;
-  return { start, end: Math.min(duration, round(start + (edit.end - edit.start), 3)) };
+  return { start: keyframe / 1000, end: Math.min(duration, edit.end) };
 }
 
 /** `00:12.4`, the prototype's `precise` time. */
@@ -403,7 +418,10 @@ export function toVideoEdits(edit: VideoEdit, source: VideoSource): AssetEditAct
     push(AssetEditAction.Rotate, { angle: edit.rotation });
   }
   if (edit.straighten !== 0) {
-    push(AssetEditAction.Straighten, { angle: singleFlip(edit) ? -edit.straighten : edit.straighten });
+    push(AssetEditAction.Straighten, {
+      angle: singleFlip(edit) ? -edit.straighten : edit.straighten,
+      ...(edit.straightenFill && { fill: true }),
+    });
   }
   if (edit.flipH) {
     push(AssetEditAction.Mirror, { axis: MirrorAxis.Horizontal });
@@ -412,7 +430,7 @@ export function toVideoEdits(edit: VideoEdit, source: VideoSource): AssetEditAct
     push(AssetEditAction.Mirror, { axis: MirrorAxis.Vertical });
   }
   if (edit.stabilize) {
-    push(AssetEditAction.Stabilize, { enabled: true });
+    push(AssetEditAction.Stabilize, { enabled: true, ...(edit.stabilizeCropEdges && { cropEdges: true }) });
   }
   if (edit.autoEnhance) {
     push(AssetEditAction.AutoEnhance, { enabled: true });
@@ -454,7 +472,10 @@ export function toVideoEdits(edit: VideoEdit, source: VideoSource): AssetEditAct
   if (edit.volume === 0) {
     push(AssetEditAction.Audio, { muted: true });
   } else if (edit.volume !== 100) {
-    push(AssetEditAction.Audio, { volume: round(edit.volume / 100, 2) });
+    push(AssetEditAction.Audio, {
+      volume: round(edit.volume / 100, 2),
+      ...(edit.limitGain && edit.volume > 100 && { limit: true }),
+    });
   }
 
   const output = outputSize(edit, source);
@@ -516,6 +537,7 @@ export function fromVideoEdits(
       }
       case AssetEditAction.Straighten: {
         straighten = numberOf(parameters, 'angle', 0);
+        edit.straightenFill = parameters.fill === true;
         break;
       }
       case AssetEditAction.Mirror: {
@@ -528,6 +550,7 @@ export function fromVideoEdits(
       }
       case AssetEditAction.Stabilize: {
         edit.stabilize = parameters.enabled !== false;
+        edit.stabilizeCropEdges = parameters.cropEdges === true;
         break;
       }
       case AssetEditAction.AutoEnhance: {
@@ -568,6 +591,7 @@ export function fromVideoEdits(
       }
       case AssetEditAction.Audio: {
         edit.volume = parameters.muted === true ? 0 : Math.round(numberOf(parameters, 'volume', 1) * 100);
+        edit.limitGain = parameters.limit === true || numberOf(parameters, 'volume', 1) <= 1;
         break;
       }
       case AssetEditAction.TextOverlay: {
@@ -625,7 +649,14 @@ const HISTORY_LIMIT = 100;
 export const createVideoDraft = (edit: VideoEdit): VideoDraft => ({ edit, undo: [], redo: [] });
 
 export function changeVideoDraft(draft: VideoDraft, patch: Partial<VideoEdit>, duration: number): VideoDraft {
-  const next = normalizeVideoEdit({ ...draft.edit, ...patch, ...(touchesDevelop(patch) && { legacy: [] }) }, duration);
+  // Changing a control moves it to the quick editor's render options (see `straightenFill`).
+  const upgrades = {
+    ...(touchesDevelop(patch) && { legacy: [] }),
+    ...('straighten' in patch && !('straightenFill' in patch) && { straightenFill: true }),
+    ...('stabilize' in patch && !('stabilizeCropEdges' in patch) && { stabilizeCropEdges: true }),
+    ...('volume' in patch && !('limitGain' in patch) && { limitGain: true }),
+  };
+  const next = normalizeVideoEdit({ ...draft.edit, ...patch, ...upgrades }, duration);
   if (sameVideoEdit(next, draft.edit)) {
     return draft;
   }

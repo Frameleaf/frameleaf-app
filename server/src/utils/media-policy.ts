@@ -46,7 +46,9 @@ import { type OutputCadenceDecision, OutputCadenceMode, resolveSourceTimeBase } 
  * recognised and re-rendered from the original.
  */
 export const FRAMELEAF_RENDERER = 'frameleaf-ffmpeg';
-export const FRAMELEAF_RENDERER_VERSION = '1.0.0';
+// 1.1.0 (FL-113): the develop adjustment model, anchored and shadowed text, ranges over a whole-clip
+// speed, stream-copied fast trims and the opt-in straighten fill, stabilize edge crop and gain limit.
+export const FRAMELEAF_RENDERER_VERSION = '1.1.0';
 
 /** Version of the lineage document itself, so future fields can be added compatibly. */
 export const EDITED_MASTER_LINEAGE_SCHEMA_VERSION = 1;
