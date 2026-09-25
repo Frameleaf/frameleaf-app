@@ -113,4 +113,97 @@ describe('FixMatchPanel (PD-3)', () => {
       metadataSearchDto: expect.objectContaining({ page: 1 }),
     });
   });
+
+  describe('selecting faces to split off (FL-57)', () => {
+    const twoFaces = () => {
+      sdkMock.searchAssets.mockResolvedValue({
+        assets: {
+          items: [asset('one'), asset('two')],
+          nextPage: null,
+          nextCursor: null,
+          count: 2,
+          total: 2,
+          facets: [],
+        },
+      } as never);
+      sdkMock.getFaces.mockImplementation(({ id }) => Promise.resolve([face(`f-${id}`, 'ada')]));
+    };
+
+    it('moves the selected faces to anyone found with the searchable picker', async () => {
+      twoFaces();
+      const lin = personFactory.build({ id: 'lin', name: 'Lin' });
+      sdkMock.getAllPeople.mockResolvedValue({ people: [other], total: 1, hidden: 0, hasNextPage: true });
+      sdkMock.searchPerson.mockResolvedValue([lin, person]);
+      sdkMock.reassignFacesById.mockResolvedValue(lin);
+      const onChanged = vi.fn();
+      render(FixMatchPanel, { person, onChanged, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      expect(screen.getByText('2 faces selected')).toBeTruthy();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
+      const search = await screen.findByRole('searchbox', { name: 'Find a person' });
+      await fireEvent.input(search, { target: { value: 'Li' } });
+      await waitFor(() => expect(sdkMock.searchPerson).toHaveBeenCalledWith({ name: 'Li', withHidden: true }));
+      // the person the faces come from is never offered
+      expect(screen.queryByRole('button', { name: 'Ada' })).toBeNull();
+      await fireEvent.click(await screen.findByRole('button', { name: 'Lin' }));
+
+      await waitFor(() => expect(sdkMock.reassignFacesById).toHaveBeenCalledTimes(2));
+      expect(sdkMock.reassignFacesById).toHaveBeenCalledWith({ id: 'lin', faceDto: { id: 'f-one' } });
+      expect(sdkMock.reassignFacesById).toHaveBeenCalledWith({ id: 'lin', faceDto: { id: 'f-two' } });
+      expect(await screen.findByText('2 faces moved to Lin')).toBeTruthy();
+      expect(screen.queryByText('2 faces selected')).toBeNull();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+      expect(onChanged).toHaveBeenCalledOnce();
+    });
+
+    it('pages through everyone when nothing is typed', async () => {
+      twoFaces();
+      sdkMock.getAllPeople.mockResolvedValue({ people: [other], total: 60, hidden: 0, hasNextPage: true });
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
+
+      await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledWith({ withHidden: true, page: 2, size: 50 }));
+    });
+
+    it('splits the selected faces into someone new', async () => {
+      twoFaces();
+      const created = personFactory.build({ id: 'new-one', name: 'Noor' });
+      sdkMock.createPerson.mockResolvedValue(created);
+      sdkMock.reassignFacesById.mockResolvedValue(created);
+      sdkMock.searchPerson.mockResolvedValue([]);
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Someone new…' }));
+      const name = await screen.findByRole('combobox', { name: 'Name for the new person' });
+      await fireEvent.input(name, { target: { value: 'Noor' } });
+      await fireEvent.submit(name.closest('form')!);
+
+      await waitFor(() => expect(sdkMock.reassignFacesById).toHaveBeenCalledTimes(2));
+      expect(sdkMock.createPerson).toHaveBeenCalledExactlyOnceWith({ personCreateDto: { name: 'Noor' } });
+    });
+
+    it('takes the selected faces off as not a face of anyone, and keeps a failed one selected', async () => {
+      twoFaces();
+      sdkMock.deleteFace.mockResolvedValueOnce(undefined as never).mockRejectedValueOnce(new Error('offline'));
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Not a face of anyone' }));
+
+      await waitFor(() => expect(sdkMock.deleteFace).toHaveBeenCalledTimes(2));
+      expect(sdkMock.deleteFace).toHaveBeenCalledWith({ id: 'f-one', assetFaceDeleteDto: { force: false } });
+      expect(await screen.findByText('1 face taken off this person')).toBeTruthy();
+      expect(screen.getByText('1 face selected')).toBeTruthy();
+    });
+  });
 });

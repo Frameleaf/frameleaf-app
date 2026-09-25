@@ -4,10 +4,9 @@ import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetType, SourceType, UserMetadataKey } from 'src/enum.js';
+import { AssetFileType, AssetType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
 import { isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -24,7 +23,6 @@ import {
   removeUndefinedKeys,
   withFilePath,
   withHiddenContentFilter,
-  withLockedOwnerScope,
 } from 'src/utils/database.js';
 import { effectiveVisibility, isTimelineVisible } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
@@ -53,6 +51,16 @@ export interface UpdateFacesData {
   faceIds?: string[];
   ownerId?: string;
   newPersonGroupId: string;
+  /**
+   * FL-57: a person's explicit decision (a merge or a split), not recognition: stamps `correctedAt`,
+   * which keeps these faces out of a forced recognition rebuild.
+   */
+  corrected?: boolean;
+  /**
+   * FL-57: recognition's own assignment. Only a face that is still unassigned and carries no explicit
+   * decision is moved, so a recognition job started before a correction can never overwrite it.
+   */
+  onlyUndecided?: boolean;
 }
 
 export interface PersonStatistics {
@@ -81,8 +89,75 @@ export interface GetAllFacesOptions {
 
 export type UnassignFacesOptions = DeleteFacesOptions & { clusterGroupId?: string };
 
-/** FL-57: an owner's answer to a merge suggestion they did not accept. */
-export type PersonMergeVerdict = 'different' | 'later';
+/**
+ * FL-57: an owner's answer to a merge suggestion they did not accept. `different` never suggests the
+ * pair again, `later` skips it for 30 days, and `ignore` stops suggesting the person with anyone
+ * (stored as the person paired with itself).
+ */
+export type PersonMergeVerdict = 'different' | 'later' | 'ignore';
+
+/**
+ * FL-57: the kinds of manual face decisions kept in `immich_fork.face_correction`. `box-move` is
+ * written by the FL-38 face editor when it moves a face box.
+ */
+export type FaceCorrectionAction = 'reassign' | 'new-person' | 'unassign' | 'remove' | 'merge' | 'box-move';
+
+/**
+ * One manual face decision to record (FL-57). For a face decision (`faceId` set), the asset, the
+ * original's checksum and the face box (normalized to 0..1) are read from the face row as it is when
+ * the entry is written, so record the decision after the change was made.
+ */
+export interface FaceCorrectionInput {
+  /** The account whose people and history it belongs to. */
+  ownerId: string;
+  /** Who made it. */
+  actorId: string;
+  action: FaceCorrectionAction;
+  faceId?: string | null;
+  fromPersonId?: string | null;
+  toPersonId?: string | null;
+  /** The names at the time, shown when a person no longer exists (e.g. merged away). */
+  fromPersonName?: string | null;
+  toPersonName?: string | null;
+}
+
+export interface FaceCorrection {
+  id: string;
+  ownerId: string;
+  actorId: string;
+  action: FaceCorrectionAction;
+  faceId: string | null;
+  assetId: string | null;
+  assetChecksum: Buffer | null;
+  boxX1: number | null;
+  boxY1: number | null;
+  boxX2: number | null;
+  boxY2: number | null;
+  fromPersonId: string | null;
+  toPersonId: string | null;
+  fromPersonName: string | null;
+  toPersonName: string | null;
+  createdAt: Date;
+  undoneAt: Date | null;
+}
+
+/** A face that stands for a person in a merge suggestion (FL-57): on the viewer's own, visible media. */
+export interface ReferenceFace {
+  personGroupId: string;
+  faceId: string;
+  assetId: string;
+  imageWidth: number;
+  imageHeight: number;
+  boundingBoxX1: number;
+  boundingBoxY1: number;
+  boundingBoxX2: number;
+  boundingBoxY2: number;
+}
+
+const FACE_CORRECTION_COLUMNS = sql.raw(
+  `id, "ownerId", "actorId", action, "faceId", "assetId", "assetChecksum", "boxX1", "boxY1", "boxX2", "boxY2",
+   "fromPersonId", "toPersonId", "fromPersonName", "toPersonName", "createdAt", "undoneAt"`,
+);
 
 export type GetFacesOptions = WithPersonOptions & {
   isVisible?: boolean;
@@ -104,7 +179,7 @@ export type FaceBoxPixels = {
  * FL-38: one revision-checked correction of a face. `personGroupId: null` unassigns it, a box
  * moves or resizes it (in original-image pixels) and `hidden` hides or restores it.
  */
-export type FaceCorrection = {
+export type FaceCorrectionChange = {
   personGroupId?: string | null;
   box?: FaceBoxPixels;
   hidden?: boolean;
@@ -142,30 +217,50 @@ export class PersonRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
   @GenerateSql({ params: [{ oldPersonGroupId: DummyValue.UUID, newPersonGroupId: DummyValue.UUID }] })
-  async reassignFaces({ oldPersonGroupId, faceIds, ownerId, newPersonGroupId }: UpdateFacesData): Promise<number> {
+  async reassignFaces({
+    oldPersonGroupId,
+    faceIds,
+    ownerId,
+    newPersonGroupId,
+    corrected,
+    onlyUndecided,
+  }: UpdateFacesData): Promise<number> {
     const result = await this.db
       .updateTable('asset_face')
       .from('asset')
       .whereRef('asset_face.assetId', '=', 'asset.id')
-      .set({ personGroupId: newPersonGroupId })
+      .set(
+        corrected
+          ? { personGroupId: newPersonGroupId, correctedAt: sql`clock_timestamp()` }
+          : { personGroupId: newPersonGroupId },
+      )
       .$if(!!oldPersonGroupId, (qb) => qb.where('asset_face.personGroupId', '=', oldPersonGroupId!))
       .$if(!!faceIds, (qb) => qb.where('asset_face.id', 'in', faceIds!))
       .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!))
+      .$if(!!onlyUndecided, (qb) =>
+        qb.where('asset_face.personGroupId', 'is', null).where('asset_face.correctedAt', 'is', null),
+      )
       .executeTakeFirst();
 
     return Number(result.numUpdatedRows ?? 0);
   }
 
+  /**
+   * Takes recognition's assignments off faces before a forced recognition rebuild. FL-57: a face with
+   * an explicit decision (`correctedAt`: moved, split or merged by a person) keeps its person, so a
+   * rebuild re-clusters only what recognition decided on its own.
+   */
   @GenerateSql({ params: [{ sourceType: SourceType.MachineLearning, clusterGroupId: DummyValue.UUID }] })
   async unassignFaces({ sourceType, clusterGroupId }: UnassignFacesOptions): Promise<void> {
     await this.db
       .updateTable('asset_face')
-      // FL-38: a forced re-run starts clustering over, so earlier corrections no longer hold the
-      // face back from recognition (see handleRecognizeFaces)
-      .set({ personGroupId: null, correctedAt: null })
+      // FL-57: a face with an explicit decision keeps it, even through a forced rebuild (this
+      // supersedes FL-38's reset of corrections on a forced re-run)
+      .set({ personGroupId: null })
       .from('asset')
       .whereRef('asset_face.assetId', '=', 'asset.id')
       .where('asset_face.sourceType', '=', sourceType)
+      .where('asset_face.correctedAt', 'is', null)
       .$if(!!clusterGroupId, (qb) =>
         qb.innerJoin('user', 'user.id', 'asset.ownerId').where('user.clusterGroupId', '=', clusterGroupId!),
       )
@@ -227,8 +322,31 @@ export class PersonRepository {
     return Number(result.numDeletedRows);
   }
 
+  /**
+   * Removes every face of a source before a forced detection rebuild. FL-57: a face carrying an
+   * explicit decision (moved to someone, or "not a face of anyone") stays, so the decision survives the
+   * rebuild; the new detection matches it by overlap instead of adding a duplicate. A decision anchored
+   * to an original that has since been replaced (another checksum) no longer protects its face.
+   */
   async deleteFaces({ sourceType }: DeleteFacesOptions): Promise<void> {
-    await this.db.deleteFrom('asset_face').where('asset_face.sourceType', '=', sourceType).execute();
+    await this.db
+      .deleteFrom('asset_face')
+      .where('asset_face.sourceType', '=', sourceType)
+      .where((eb) =>
+        eb.not(
+          eb.and([
+            eb.or([eb('asset_face.correctedAt', 'is not', null), eb('asset_face.deletedAt', 'is not', null)]),
+            sql<boolean>`not exists (
+              select 1 from immich_fork.face_correction correction
+              inner join asset on asset.id = correction."assetId"
+              where correction."faceId" = asset_face.id
+                and correction."undoneAt" is null
+                and correction."assetChecksum" is distinct from asset.checksum
+            )`,
+          ]),
+        ),
+      )
+      .execute();
   }
 
   @GenerateSql({
@@ -408,7 +526,7 @@ export class PersonRepository {
    * the face moved on). Person and box changes stamp `correctedAt` like `reassignFace`; hiding or
    * showing a face does not, since it corrects neither identity nor position.
    */
-  async correctFace(id: string, expectedRevision: string, { personGroupId, box, hidden }: FaceCorrection) {
+  async correctFace(id: string, expectedRevision: string, { personGroupId, box, hidden }: FaceCorrectionChange) {
     const corrected = personGroupId !== undefined || box !== undefined;
     const result = await this.db
       .updateTable('asset_face')
@@ -448,7 +566,13 @@ export class PersonRepository {
   getFaceForFacialRecognitionJob(id: string) {
     return this.db
       .selectFrom('asset_face')
-      .select(['asset_face.id', 'asset_face.personGroupId', 'asset_face.sourceType', 'asset_face.correctedAt'])
+      .select([
+        'asset_face.id',
+        'asset_face.assetId',
+        'asset_face.personGroupId',
+        'asset_face.sourceType',
+        'asset_face.correctedAt',
+      ])
       .select((eb) =>
         jsonObjectFrom(
           eb
@@ -497,12 +621,9 @@ export class PersonRepository {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   async reassignFace(assetFaceId: string, newPersonGroupId: string): Promise<number> {
-    // FL-57: stamps `correctedAt` so a face a person explicitly moved between people
-    // (single reassign, or the split flow's per-face loop) shows up in that person's
-    // correction history and survives reprocessing. The bulk `reassignFaces` below is
-    // only used for a whole-person merge, which is already durable as a person-level
-    // event, so it intentionally leaves `correctedAt` alone to avoid flooding the
-    // history with every face a merge happened to move.
+    // FL-57: stamps `correctedAt`, the explicit-decision marker that keeps a face a person moved
+    // between people out of recognition rebuilds. The history itself is kept in
+    // `immich_fork.face_correction` (`recordFaceCorrections`).
     const result = await this.db
       .updateTable('asset_face')
       .set({ personGroupId: newPersonGroupId, correctedAt: sql`clock_timestamp()` })
@@ -777,7 +898,13 @@ export class PersonRepository {
     }
 
     if (embeddingsToAdd?.length) {
-      (query as any) = query.with('added_embeddings', (db) => db.insertInto('face_search').values(embeddingsToAdd));
+      // FL-57: a face kept for its explicit decision takes the new detection's embedding
+      (query as any) = query.with('added_embeddings', (db) =>
+        db
+          .insertInto('face_search')
+          .values(embeddingsToAdd)
+          .onConflict((oc) => oc.column('faceId').doUpdateSet((eb) => ({ embedding: eb.ref('excluded.embedding') }))),
+      );
     }
 
     await query.selectFrom(dummy).execute();
@@ -1016,13 +1143,18 @@ export class PersonRepository {
   @GenerateSql({ params: [DummyValue.UUID, { maxDistance: 0.5, limit: 20 }] })
   getMergeSuggestions(ownerId: string, { maxDistance, limit = 20 }: { maxDistance: number; limit?: number }) {
     // a pair the owner answered "different" is never suggested again, one deferred with "later" not for
-    // 30 days (see `setMergeVerdict`)
+    // 30 days (see `setMergeVerdict`), and a person the owner chose to ignore is not suggested at all
     const unanswered = sql<boolean>`not exists (
       select 1 from immich_fork.person_merge_verdict verdict
       where verdict."ownerId" = ${ownerId}::uuid
         and verdict."personId" = "candidates"."personId"
         and verdict."suggestionId" = "candidates"."suggestionId"
         and (verdict.verdict = 'different' or verdict."createdAt" > now() - interval '30 days')
+    ) and not exists (
+      select 1 from immich_fork.person_merge_verdict verdict
+      where verdict."ownerId" = ${ownerId}::uuid
+        and verdict.verdict = 'ignore'
+        and verdict."personId" in ("candidates"."personId", "candidates"."suggestionId")
     )`;
     return this.db
       .with('candidates', (qb) =>
@@ -1052,21 +1184,150 @@ export class PersonRepository {
   }
 
   /**
+   * FL-57: the face that stands for each person in a merge suggestion, with its complete photo. Only
+   * media the viewer may be shown qualifies: their own (never someone else's in the cluster), not in the
+   * trash, in the timeline or archive, never Locked, and not hidden by their suppression rules. The
+   * featured face is preferred when it qualifies, then the most recent photo.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  async getReferenceFaces(
+    viewerId: string,
+    personGroupIds: string[],
+    options: HiddenContentQueryOptions = {},
+  ): Promise<ReferenceFace[]> {
+    if (personGroupIds.length === 0) {
+      return [];
+    }
+
+    return this.db
+      .selectFrom('person')
+      .innerJoin('asset_face', 'asset_face.personGroupId', 'person.personGroupId')
+      .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+      .distinctOn('person.personGroupId')
+      .select([
+        'person.personGroupId',
+        'asset_face.id as faceId',
+        'asset_face.assetId',
+        'asset_face.imageWidth',
+        'asset_face.imageHeight',
+        'asset_face.boundingBoxX1',
+        'asset_face.boundingBoxY1',
+        'asset_face.boundingBoxX2',
+        'asset_face.boundingBoxY2',
+      ])
+      .where('person.ownerId', '=', viewerId)
+      .where('person.personGroupId', '=', anyUuid(personGroupIds))
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .where('asset.ownerId', '=', viewerId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Archive)])
+      .where((eb) => isNotLockedAsset(eb))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .orderBy('person.personGroupId')
+      .orderBy(sql`asset_face.id = person."faceAssetId"`, 'desc')
+      .orderBy('asset.fileCreatedAt', 'desc')
+      .execute();
+  }
+
+  /**
+   * FL-57: which of `assetIds` the viewer may still be shown as evidence (a correction history
+   * thumbnail): their own, not in the trash, in the timeline or archive, never Locked, and not hidden by
+   * their suppression rules. Anything else is "no longer available".
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  async getVisibleEvidenceAssetIds(
+    viewerId: string,
+    assetIds: string[],
+    options: HiddenContentQueryOptions = {},
+  ): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', anyUuid(assetIds))
+      .where('asset.ownerId', '=', viewerId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Archive)])
+      .where((eb) => isNotLockedAsset(eb))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .execute();
+    return new Set(rows.map(({ id }) => id));
+  }
+
+  /**
+   * FL-57: the owner's assets showing any of `personGroupIds`, a page at a time from `after`, for
+   * invalidating the generated text that named them.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], { limit: 500 }] })
+  async getAssetIdsForPeople(
+    ownerId: string,
+    personGroupIds: string[],
+    { after, limit }: { after?: string; limit: number },
+  ): Promise<string[]> {
+    if (personGroupIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.deletedAt', 'is', null)
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset_face')
+            .select('asset_face.id')
+            .whereRef('asset_face.assetId', '=', 'asset.id')
+            .where('asset_face.personGroupId', '=', anyUuid(personGroupIds)),
+        ),
+      )
+      .$if(!!after, (qb) => qb.where('asset.id', '>', after!))
+      .orderBy('asset.id')
+      .limit(limit)
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+
+  /**
    * FL-57: records an owner's answer to a merge suggestion, replacing any earlier one for the pair.
-   * `personId` must sort before `suggestionId` (the order `getMergeSuggestions` returns pairs in).
-   * Like every fork-owned writer, it refuses while the fork schema is not writable or a handoff runs.
+   * `personId` must sort before `suggestionId` (the order `getMergeSuggestions` returns pairs in); for
+   * `ignore` both are the ignored person. Each person's featured face is kept as the answer's anchor, so
+   * the answer follows its people when recognition rebuilds them (`reanchorMergeVerdicts`).
+   *
+   * An explicit "different" or "ignore" is never replaced by "later" (a stale banner in another tab):
+   * the stored answer is returned instead. Like every fork-owned writer, it refuses while the fork
+   * schema is not writable or a handoff runs.
    */
   setMergeVerdict(ownerId: string, personId: string, suggestionId: string, verdict: PersonMergeVerdict) {
     return this.db.transaction().execute(async (tx) => {
       await this.lockForkWrites(tx);
       const { rows } = await sql<{ verdict: PersonMergeVerdict; createdAt: Date }>`
-        INSERT INTO immich_fork.person_merge_verdict ("ownerId", "personId", "suggestionId", verdict)
-        VALUES (${ownerId}::uuid, ${personId}::uuid, ${suggestionId}::uuid, ${verdict})
+        INSERT INTO immich_fork.person_merge_verdict
+          ("ownerId", "personId", "suggestionId", verdict, "personFaceId", "suggestionFaceId")
+        VALUES (
+          ${ownerId}::uuid, ${personId}::uuid, ${suggestionId}::uuid, ${verdict},
+          (SELECT "faceAssetId" FROM public.person WHERE "ownerId" = ${ownerId}::uuid AND "personGroupId" = ${personId}::uuid),
+          (SELECT "faceAssetId" FROM public.person WHERE "ownerId" = ${ownerId}::uuid AND "personGroupId" = ${suggestionId}::uuid)
+        )
         ON CONFLICT ("ownerId", "personId", "suggestionId")
-        DO UPDATE SET verdict = excluded.verdict, "createdAt" = excluded."createdAt"
+        DO UPDATE SET verdict = excluded.verdict, "createdAt" = excluded."createdAt",
+          "personFaceId" = excluded."personFaceId", "suggestionFaceId" = excluded."suggestionFaceId"
+        WHERE NOT (excluded.verdict = 'later' AND immich_fork.person_merge_verdict.verdict = 'different')
         RETURNING verdict, "createdAt"
       `.execute(tx);
-      return rows[0];
+      if (rows[0]) {
+        return rows[0];
+      }
+      const stored = await sql<{ verdict: PersonMergeVerdict; createdAt: Date }>`
+        SELECT verdict, "createdAt" FROM immich_fork.person_merge_verdict
+        WHERE "ownerId" = ${ownerId}::uuid AND "personId" = ${personId}::uuid AND "suggestionId" = ${suggestionId}::uuid
+      `.execute(tx);
+      return stored.rows[0];
     });
   }
 
@@ -1083,31 +1344,98 @@ export class PersonRepository {
   }
 
   /**
-   * FL-57: drops verdicts that name a person their owner no longer has (deleted, merged away, or the
-   * owner's account removed). `ownerId` narrows it to one owner; without it every owner is checked.
+   * FL-57: keeps merge-suggestion answers with their people. An answer naming a person the owner no
+   * longer has (merged away, or rebuilt by a forced recognition run) moves to the person that now holds
+   * its anchor face. It waits while an anchor face is still unassigned (recognition has not reached
+   * it yet), and is dropped when an anchor face is gone, or when both anchors now belong to one person
+   * (the pair was merged). `ownerId` narrows it to one owner; without it every owner is checked.
+   * Returns the number of answers dropped.
    */
-  async deleteOrphanedMergeVerdicts(ownerId?: string): Promise<number> {
+  async reanchorMergeVerdicts(ownerId?: string): Promise<number> {
     return this.db.transaction().execute(async (tx) => {
       await this.lockForkWrites(tx);
-      const { numAffectedRows } = await sql`
-        DELETE FROM immich_fork.person_merge_verdict verdict
+      const { rows } = await sql<{
+        ownerId: string;
+        personId: string;
+        suggestionId: string;
+        verdict: PersonMergeVerdict;
+        createdAt: Date;
+        personFaceId: string | null;
+        suggestionFaceId: string | null;
+        personExists: boolean;
+        suggestionExists: boolean;
+        personAnchor: string | null;
+        personAnchorLive: boolean;
+        suggestionAnchor: string | null;
+        suggestionAnchorLive: boolean;
+      }>`
+        SELECT verdict."ownerId", verdict."personId", verdict."suggestionId", verdict.verdict, verdict."createdAt",
+          verdict."personFaceId", verdict."suggestionFaceId",
+          EXISTS (SELECT 1 FROM public.person p WHERE p."ownerId" = verdict."ownerId" AND p."personGroupId" = verdict."personId") AS "personExists",
+          EXISTS (SELECT 1 FROM public.person p WHERE p."ownerId" = verdict."ownerId" AND p."personGroupId" = verdict."suggestionId") AS "suggestionExists",
+          (SELECT p."personGroupId" FROM public.person p WHERE p."ownerId" = verdict."ownerId" AND p."personGroupId" = pf."personGroupId") AS "personAnchor",
+          (pf.id IS NOT NULL AND pf."deletedAt" IS NULL) AS "personAnchorLive",
+          (SELECT p."personGroupId" FROM public.person p WHERE p."ownerId" = verdict."ownerId" AND p."personGroupId" = sf."personGroupId") AS "suggestionAnchor",
+          (sf.id IS NOT NULL AND sf."deletedAt" IS NULL) AS "suggestionAnchorLive"
+        FROM immich_fork.person_merge_verdict verdict
+        LEFT JOIN public.asset_face pf ON pf.id = verdict."personFaceId"
+        LEFT JOIN public.asset_face sf ON sf.id = verdict."suggestionFaceId"
         WHERE (${ownerId ?? null}::uuid IS NULL OR verdict."ownerId" = ${ownerId ?? null}::uuid)
           AND (
-            NOT EXISTS (
-              SELECT 1 FROM public.person person
-              WHERE person."ownerId" = verdict."ownerId" AND person."personGroupId" = verdict."personId"
-            )
-            OR NOT EXISTS (
-              SELECT 1 FROM public.person person
-              WHERE person."ownerId" = verdict."ownerId" AND person."personGroupId" = verdict."suggestionId"
-            )
+            NOT EXISTS (SELECT 1 FROM public.person p WHERE p."ownerId" = verdict."ownerId" AND p."personGroupId" = verdict."personId")
+            OR NOT EXISTS (SELECT 1 FROM public.person p WHERE p."ownerId" = verdict."ownerId" AND p."personGroupId" = verdict."suggestionId")
           )
       `.execute(tx);
-      return Number(numAffectedRows ?? 0n);
+
+      let dropped = 0;
+      for (const row of rows) {
+        const resolve = (exists: boolean, id: string, anchor: string | null, live: boolean) => {
+          if (exists) {
+            return id;
+          }
+          return anchor || (live ? ('pending' as const) : ('gone' as const));
+        };
+        const first = resolve(row.personExists, row.personId, row.personAnchor, row.personAnchorLive);
+        const second = resolve(row.suggestionExists, row.suggestionId, row.suggestionAnchor, row.suggestionAnchorLive);
+        if (first === 'pending' || second === 'pending') {
+          continue;
+        }
+
+        await sql`
+          DELETE FROM immich_fork.person_merge_verdict
+          WHERE "ownerId" = ${row.ownerId}::uuid AND "personId" = ${row.personId}::uuid AND "suggestionId" = ${row.suggestionId}::uuid
+        `.execute(tx);
+        const merged = row.verdict !== 'ignore' && first === second;
+        if (first === 'gone' || second === 'gone' || merged) {
+          dropped++;
+          continue;
+        }
+
+        const [personId, suggestionId] = first < second ? [first, second] : [second, first];
+        const [personFaceId, suggestionFaceId] =
+          first < second ? [row.personFaceId, row.suggestionFaceId] : [row.suggestionFaceId, row.personFaceId];
+        await sql`
+          INSERT INTO immich_fork.person_merge_verdict
+            ("ownerId", "personId", "suggestionId", verdict, "createdAt", "personFaceId", "suggestionFaceId")
+          VALUES (${row.ownerId}::uuid, ${personId}::uuid, ${suggestionId}::uuid, ${row.verdict}, ${row.createdAt},
+            ${personFaceId}::uuid, ${suggestionFaceId}::uuid)
+          ON CONFLICT ("ownerId", "personId", "suggestionId") DO NOTHING
+        `.execute(tx);
+      }
+      return dropped;
     });
   }
 
-  private async lockForkWrites(tx: Transaction<DB>) {
+  /** FL-57: a deleted account's merge answers and correction history go with it. */
+  async deleteForkPeopleData(ownerId: string): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx);
+      await sql`DELETE FROM immich_fork.person_merge_verdict WHERE "ownerId" = ${ownerId}::uuid`.execute(tx);
+      await sql`DELETE FROM immich_fork.face_correction WHERE "ownerId" = ${ownerId}::uuid`.execute(tx);
+    });
+  }
+
+  private async lockForkWrites(tx: Transaction<DB>, what = 'Merge suggestion answers') {
     const { rows } = await sql<{ phase: ForkSchemaPhase }>`
       SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE
     `.execute(tx);
@@ -1118,31 +1446,176 @@ export class PersonRepository {
     `.execute(tx);
     const phase = rows[0]?.phase;
     if (!phase || !(isLegacyAuthoritative(phase) || isForkWriteEnabled(phase)) || handoff.rows.length > 0) {
-      throw new ConflictException('Merge suggestion answers are unavailable during database handoff');
+      throw new ConflictException(`${what} are unavailable during database handoff`);
     }
   }
 
+  /* ------------------------------------------------------------------------------------------ */
+  /* FL-57: face correction history (immich_fork.face_correction)                               */
+  /* ------------------------------------------------------------------------------------------ */
+
   /**
-   * FL-57: correction history for a person — faces explicitly moved onto them by a
-   * human (see `reassignFace` above), most recent first. Machine-learning-only
-   * assignments (never corrected) do not appear here.
-   *
-   * A person group spans every account in its cluster, so its faces sit on several owners' media.
-   * A face on Locked media is listed only for that media's owner in an elevated session
-   * (`lockedOwnerId`): nobody else learns the Locked item's id (FL-34).
+   * Records manual face decisions (see {@link FaceCorrectionInput}). A face decision copies the face's
+   * asset, the original's checksum and the normalized box from the face row now, soft-deleted or not;
+   * a face that no longer exists is skipped. Refuses (ConflictException) during a database handoff.
    */
-  @GenerateSql({ params: [DummyValue.UUID, { lockedOwnerId: DummyValue.UUID }] })
-  getCorrections(personGroupId: string, options: LockedVisibilityOptions = {}) {
-    return this.db
-      .selectFrom('asset')
-      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
-      .innerJoin('asset_face', 'asset_face.assetId', 'asset.id')
-      .select(['asset_face.id', 'asset_face.assetId', 'asset_face.correctedAt'])
+  async recordFaceCorrections(entries: FaceCorrectionInput[]): Promise<FaceCorrection[]> {
+    if (entries.length === 0) {
+      return [];
+    }
+
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx, 'Face corrections');
+      const recorded: FaceCorrection[] = [];
+      for (const entry of entries) {
+        const values = sql`
+          ${entry.ownerId}::uuid AS "ownerId", ${entry.actorId}::uuid AS "actorId", ${entry.action}::text AS action,
+          ${entry.fromPersonId ?? null}::uuid AS "fromPersonId", ${entry.toPersonId ?? null}::uuid AS "toPersonId",
+          ${entry.fromPersonName ?? null}::text AS "fromPersonName", ${entry.toPersonName ?? null}::text AS "toPersonName"`;
+        const { rows } = entry.faceId
+          ? await sql<FaceCorrection>`
+              INSERT INTO immich_fork.face_correction
+                ("ownerId", "actorId", action, "fromPersonId", "toPersonId", "fromPersonName", "toPersonName",
+                 "faceId", "assetId", "assetChecksum", "boxX1", "boxY1", "boxX2", "boxY2")
+              SELECT entry.*, face.id, face."assetId", asset.checksum,
+                CASE WHEN face."imageWidth" > 0 AND face."imageHeight" > 0 THEN face."boundingBoxX1"::float8 / face."imageWidth" END,
+                CASE WHEN face."imageWidth" > 0 AND face."imageHeight" > 0 THEN face."boundingBoxY1"::float8 / face."imageHeight" END,
+                CASE WHEN face."imageWidth" > 0 AND face."imageHeight" > 0 THEN face."boundingBoxX2"::float8 / face."imageWidth" END,
+                CASE WHEN face."imageWidth" > 0 AND face."imageHeight" > 0 THEN face."boundingBoxY2"::float8 / face."imageHeight" END
+              FROM (SELECT ${values}) entry, public.asset_face face
+              INNER JOIN public.asset asset ON asset.id = face."assetId"
+              WHERE face.id = ${entry.faceId}::uuid
+              RETURNING ${FACE_CORRECTION_COLUMNS}
+            `.execute(tx)
+          : await sql<FaceCorrection>`
+              INSERT INTO immich_fork.face_correction
+                ("ownerId", "actorId", action, "fromPersonId", "toPersonId", "fromPersonName", "toPersonName")
+              SELECT entry.* FROM (SELECT ${values}) entry
+              RETURNING ${FACE_CORRECTION_COLUMNS}
+            `.execute(tx);
+        recorded.push(...rows);
+      }
+      return recorded;
+    });
+  }
+
+  /** The owner's decisions that moved a face onto or off `personGroupId`, newest first, a page at a time. */
+  async getFaceCorrections(ownerId: string, personGroupId: string, pagination: PaginationOptions) {
+    const { rows } = await sql<FaceCorrection>`
+      SELECT ${FACE_CORRECTION_COLUMNS} FROM immich_fork.face_correction
+      WHERE "ownerId" = ${ownerId}::uuid
+        AND ("toPersonId" = ${personGroupId}::uuid OR "fromPersonId" = ${personGroupId}::uuid)
+      ORDER BY "createdAt" DESC, id DESC
+      OFFSET ${pagination.skip ?? 0} LIMIT ${pagination.take + 1}
+    `.execute(this.db);
+    return paginationHelper(rows, pagination.take);
+  }
+
+  getFaceCorrection(ownerId: string, id: string): Promise<FaceCorrection | undefined> {
+    return sql<FaceCorrection>`
+      SELECT ${FACE_CORRECTION_COLUMNS} FROM immich_fork.face_correction
+      WHERE "ownerId" = ${ownerId}::uuid AND id = ${id}::uuid
+    `
+      .execute(this.db)
+      .then(({ rows }) => rows[0]);
+  }
+
+  /** Withdraws a decision recorded ahead of a change that was then refused (FL-57 with FL-38). */
+  async deleteFaceCorrection(id: string): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx, 'Face corrections');
+      await sql`DELETE FROM immich_fork.face_correction WHERE id = ${id}::uuid`.execute(tx);
+    });
+  }
+
+  /** Marks a decision undone; false when it already was. */
+  async setFaceCorrectionUndone(id: string): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx, 'Face corrections');
+      const { numAffectedRows } = await sql`
+        UPDATE immich_fork.face_correction SET "undoneAt" = clock_timestamp()
+        WHERE id = ${id}::uuid AND "undoneAt" IS NULL
+      `.execute(tx);
+      return (numAffectedRows ?? 0n) > 0n;
+    });
+  }
+
+  /**
+   * The latest standing decision about each face of `assetId` whose face row no longer exists: what a
+   * new detection of the same face (overlapping box, same original) takes over.
+   */
+  async getOrphanedFaceCorrections(assetId: string): Promise<FaceCorrection[]> {
+    const { rows } = await sql<FaceCorrection>`
+      SELECT DISTINCT ON ("faceId") ${FACE_CORRECTION_COLUMNS} FROM immich_fork.face_correction correction
+      WHERE "assetId" = ${assetId}::uuid
+        AND "faceId" IS NOT NULL
+        AND "undoneAt" IS NULL
+        AND action NOT IN ('merge', 'box-move')
+        AND "boxX1" IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM public.asset_face face WHERE face.id = correction."faceId")
+      ORDER BY "faceId", "createdAt" DESC, id DESC
+    `.execute(this.db);
+    return rows;
+  }
+
+  /** Points every decision about a replaced face at the face that replaced it. */
+  async reanchorFaceCorrections(oldFaceId: string, newFaceId: string): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx, 'Face corrections');
+      await sql`
+        UPDATE immich_fork.face_correction SET "faceId" = ${newFaceId}::uuid WHERE "faceId" = ${oldFaceId}::uuid
+      `.execute(tx);
+    });
+  }
+
+  /** Every face of an asset, soft-deleted ones included (FL-57: undo and re-applied decisions). */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getAllFacesOfAsset(assetId: string) {
+    return this.db.selectFrom('asset_face').selectAll('asset_face').where('asset_face.assetId', '=', assetId).execute();
+  }
+
+  /**
+   * The checksum each face's standing decision was anchored to (its latest decision not undone), for
+   * the faces that have one (FL-57).
+   */
+  async getFaceDecisionChecksums(faceIds: string[]): Promise<Map<string, Buffer | null>> {
+    if (faceIds.length === 0) {
+      return new Map();
+    }
+    const { rows } = await sql<{ faceId: string; assetChecksum: Buffer | null }>`
+      SELECT DISTINCT ON ("faceId") "faceId", "assetChecksum" FROM immich_fork.face_correction
+      WHERE "faceId" = ANY(${`{${faceIds.join(',')}}`}::uuid[]) AND "undoneAt" IS NULL AND action <> 'merge'
+      ORDER BY "faceId", "createdAt" DESC, id DESC
+    `.execute(this.db);
+    return new Map(rows.map(({ faceId, assetChecksum }) => [faceId, assetChecksum]));
+  }
+
+  /** Whether a person has any face at all (FL-57: a move to a person with none is a move to someone new). */
+  async hasFaces(personGroupId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('asset_face')
+      .select('asset_face.id')
       .where('asset_face.personGroupId', '=', personGroupId)
-      .where('asset_face.deletedAt', 'is', null)
-      .where('asset_face.correctedAt', 'is not', null)
-      .orderBy('asset_face.correctedAt', 'desc')
-      .limit(200)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** Restores a face that was taken off with "not a face of anyone" (a soft delete). */
+  async restoreAssetFace(id: string): Promise<void> {
+    await this.db
+      .updateTable('asset_face')
+      .set({ deletedAt: null, correctedAt: sql`clock_timestamp()` })
+      .where('asset_face.id', '=', id)
+      .execute();
+  }
+
+  /** Sets a face's person as an explicit decision (FL-57), or clears it (`null`). */
+  async setFacePerson(id: string, personGroupId: string | null): Promise<void> {
+    await this.db
+      .updateTable('asset_face')
+      .set({ personGroupId, correctedAt: sql`clock_timestamp()` })
+      .where('asset_face.id', '=', id)
       .execute();
   }
 }

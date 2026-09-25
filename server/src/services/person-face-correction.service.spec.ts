@@ -418,6 +418,7 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
       const auth = AuthFactory.create();
       const face = AssetFaceFactory.create();
       allowFace(face.id);
+      mocks.person.getFaceById.mockResolvedValue({ ...face, person: null } as never);
 
       mocks.person.deleteFaceAtRevision.mockResolvedValue(0);
       await expect(sut.deleteFace(auth, face.id, { force: true, expectedRevision: 'older' })).rejects.toBeInstanceOf(
@@ -430,6 +431,132 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
       ).resolves.toBeUndefined();
       expect(mocks.person.deleteFaceAtRevision).toHaveBeenLastCalledWith(face.id, face.updateId, { force: true });
       expect(mocks.person.deleteAssetFace).not.toHaveBeenCalled();
+    });
+  });
+
+  // FL-57: the FL-38 correction paths write the owner's correction history and refresh generated text
+  describe('correction history of revision-checked corrections', () => {
+    const setup = () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ faceAssetId: 'another-face', name: 'Ada' });
+      const face = AssetFaceFactory.from()
+        .person({ personGroupId: person.personGroupId, ownerId: auth.user.id, name: 'Ada' })
+        .build();
+      allowFace(face.id);
+      mocks.person.getFaceForCorrection.mockResolvedValue(getForAssetFace(face));
+      mocks.person.correctFace.mockResolvedValue(1);
+      mocks.asset.getForFaces.mockResolvedValue({
+        edits: [],
+        exifImageHeight: 500,
+        exifImageWidth: 400,
+        orientation: null,
+      });
+      return { auth, face, person };
+    };
+    const from = (face: { id: string; personGroupId: string | null }) => ({
+      faceId: face.id,
+      fromPersonId: face.personGroupId,
+      fromPersonName: 'Ada',
+    });
+
+    it('records a move to another person and queues the identity refresh', async () => {
+      const { auth, face } = setup();
+      const target = PersonFactory.create({ faceAssetId: 'x', name: 'Blair' });
+      allowPerson(target.personGroupId);
+      mocks.person.getByGroupId.mockResolvedValue(target);
+      mocks.person.hasFaces.mockResolvedValue(true);
+
+      await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, personId: target.personGroupId });
+
+      expect(mocks.person.recordFaceCorrections).toHaveBeenCalledWith([
+        expect.objectContaining({
+          ...from(face),
+          action: 'reassign',
+          toPersonId: target.personGroupId,
+          toPersonName: 'Blair',
+        }),
+      ]);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.PersonIdentityRefresh,
+        data: { ownerId: auth.user.id, assetIds: [face.assetId] },
+      });
+    });
+
+    it('records a move to a person with no faces yet as someone new', async () => {
+      const { auth, face } = setup();
+      const target = PersonFactory.create({ faceAssetId: 'x', name: 'Cy' });
+      allowPerson(target.personGroupId);
+      mocks.person.getByGroupId.mockResolvedValue(target);
+      mocks.person.hasFaces.mockResolvedValue(false);
+
+      await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, personId: target.personGroupId });
+
+      expect(mocks.person.recordFaceCorrections).toHaveBeenCalledWith([
+        expect.objectContaining({ action: 'new-person', toPersonId: target.personGroupId }),
+      ]);
+    });
+
+    it('records a take-off, a hide and a moved box', async () => {
+      const { auth, face } = setup();
+
+      await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, personId: null });
+      expect(mocks.person.recordFaceCorrections).toHaveBeenLastCalledWith([
+        expect.objectContaining({ ...from(face), action: 'unassign' }),
+      ]);
+
+      await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, hidden: true });
+      expect(mocks.person.recordFaceCorrections).toHaveBeenLastCalledWith([
+        expect.objectContaining({ ...from(face), action: 'remove' }),
+      ]);
+
+      mocks.asset.getById.mockResolvedValue(getForAsset(AssetFactory.create({ width: 400, height: 500 })));
+      await sut.correctFace(auth, face.id, {
+        expectedRevision: face.updateId,
+        box: { imageWidth: 400, imageHeight: 500, x: 10, y: 10, width: 50, height: 50 },
+      });
+      expect(mocks.person.recordFaceCorrections).toHaveBeenLastCalledWith([
+        expect.objectContaining({
+          ...from(face),
+          action: 'box-move',
+          toPersonId: face.personGroupId,
+          toPersonName: 'Ada',
+        }),
+      ]);
+    });
+
+    it('records nothing when the correction is refused', async () => {
+      const { auth, face } = setup();
+      mocks.person.correctFace.mockResolvedValue(0);
+      await expect(
+        sut.correctFace(auth, face.id, { expectedRevision: face.updateId, personId: null }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.person.recordFaceCorrections).not.toHaveBeenCalled();
+    });
+
+    it('records a removal at a revision, and withdraws it when the removal is refused', async () => {
+      const auth = AuthFactory.create();
+      const face = AssetFaceFactory.create();
+      allowFace(face.id);
+      mocks.person.getFaceById.mockResolvedValue({ ...face, person: null } as never);
+      mocks.person.recordFaceCorrections.mockResolvedValue([{ id: 'correction-1' }] as never);
+
+      mocks.person.deleteFaceAtRevision.mockResolvedValue(0);
+      await expect(sut.deleteFace(auth, face.id, { force: true, expectedRevision: 'older' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(mocks.person.deleteFaceCorrection).toHaveBeenCalledWith('correction-1');
+
+      await expect(sut.deleteFace(auth, face.id, { force: false, expectedRevision: 'older' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      // a refused soft removal records nothing (the force attempt above recorded once)
+      expect(mocks.person.recordFaceCorrections).toHaveBeenCalledTimes(1);
+
+      mocks.person.deleteFaceAtRevision.mockResolvedValue(1);
+      await sut.deleteFace(auth, face.id, { force: false, expectedRevision: face.updateId });
+      expect(mocks.person.recordFaceCorrections).toHaveBeenLastCalledWith([
+        expect.objectContaining({ action: 'remove', faceId: face.id, fromPersonId: face.personGroupId }),
+      ]);
     });
   });
 
