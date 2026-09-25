@@ -5,6 +5,7 @@ import { Job, JobsOptions, Queue, Worker, type WorkerOptions } from 'bullmq';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Redis } from 'ioredis';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
+import { JOBS_NOT_RETRIED, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { ImmichWorker, JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
@@ -501,7 +502,7 @@ export class JobRepository {
     }
 
     const promises = [];
-    const itemsByQueue = {} as Record<string, (JobItem & { data: any; options: JobsOptions | undefined })[]>;
+    const itemsByQueue = {} as Record<string, { name: JobName; data: any; opts?: JobsOptions }[]>;
     for (const item of items) {
       const queueName = this.getQueueName(item.name);
       const job = {
@@ -515,7 +516,8 @@ export class JobRepository {
         promises.push(this.getQueue(queueName).add(item.name, item.data, job.options));
       } else {
         itemsByQueue[queueName] ||= [];
-        itemsByQueue[queueName].push(job);
+        // addBulk reads a job's options from `opts`
+        itemsByQueue[queueName].push({ name: job.name, data: job.data, opts: job.options });
       }
     }
 
@@ -568,7 +570,8 @@ export class JobRepository {
         id,
         name: name as JobName,
         timestamp,
-        data,
+        // FL-71: the signup notice and its mail carry a password, which the Job manager never shows
+        data: JOBS_WITH_SENSITIVE_DATA.has(name as JobName) ? {} : data,
         attemptsMade,
         // FL-71: the Job manager shows a failed job's last error; bullmq keeps it on the job. A
         // stack-sized message is cut to the 500 characters the manager has room for.
@@ -578,6 +581,13 @@ export class JobRepository {
   }
 
   private getJobOptions(item: JobItem): JobsOptions | null {
+    const options = this.getNamedJobOptions(item);
+    // FL-71: a job that must never be retried, or whose data is sensitive, is not kept once it has
+    // failed, however it failed (a handler error is not rethrown for these, but a stalled job still fails)
+    return JOBS_NOT_RETRIED.has(item.name) ? { ...options, removeOnFail: true } : options;
+  }
+
+  private getNamedJobOptions(item: JobItem): JobsOptions | null {
     switch (item.name) {
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
