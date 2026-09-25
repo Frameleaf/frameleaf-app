@@ -381,6 +381,7 @@ const AssetEditsResponseSchema = z
         durationMs: z.number().int().positive().describe('Duration of the original in milliseconds'),
         colorPolicy: z
           .enum(['preserve', 'tone-map', 'unsupported'])
+          .meta({ id: 'AssetEditsColorPolicy' })
           .optional()
           .describe(
             "FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged",
