@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 58,
-      "partial": 11,
+      "partial": 13,
       "missing": 0,
-      "fixed": 146,
+      "fixed": 144,
       "in-flight": 6,
       "studio-parked": 2,
       "retained-live-route": 8,
@@ -2192,11 +2192,14 @@
     },
     {
       "route": "/auth/onboarding",
-      "prototype": ["design/frameleaf/template/src/AuthScreens.jsx", "design/frameleaf/template/src/system-data.mjs"],
+      "prototype": [
+        "design/frameleaf/template/src/FirstRunSetup.jsx",
+        "design/frameleaf/template/src/first-run-setup.mjs"
+      ],
       "production": ["web/src/routes/auth/onboarding/+page.svelte"],
-      "status": "fixed",
-      "gaps": ["O-8", "O-12"],
-      "followUp": "Store links only when configured (O-12, FL-135); Check for new versions is a real switch that asks only Frameleaf's releases (O-8, FL-80). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)"
+      "status": "partial",
+      "gaps": ["FS-1", "O-8", "O-12"],
+      "followUp": "FL-176 redesigned first-run setup in the prototype (two admin flows and the personal account tool, FS-1); production still runs the FL-80 onboarding port (ON-1, O-1..O-12) until the FS-1 port lands"
     },
     {
       "route": "/auth/pin-prompt",
@@ -2208,11 +2211,14 @@
     },
     {
       "route": "/auth/register",
-      "prototype": ["design/frameleaf/template/src/AuthScreens.jsx"],
+      "prototype": [
+        "design/frameleaf/template/src/FirstRunSetup.jsx",
+        "design/frameleaf/template/src/first-run-setup.mjs"
+      ],
       "production": ["web/src/routes/auth/register/+page.svelte"],
-      "status": "fixed",
-      "gaps": ["AU-2"],
-      "followUp": "Prototype copy, field order, strength meter (fixed on claude/frameleaf-implementation by the FL-80 auth screens)"
+      "status": "partial",
+      "gaps": ["FS-1", "AU-2"],
+      "followUp": "FL-176 replaced Register with the new-server setup flow in the prototype (FS-1); production keeps the FL-80 register screen (AU-2 fixed) until the FS-1 port lands"
     },
     {
       "route": "/best-photos/[[photos=photos]]/[[assetId=id]]",
