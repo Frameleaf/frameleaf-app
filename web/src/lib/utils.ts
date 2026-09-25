@@ -498,8 +498,12 @@ export function createDateFormatter(localeCode: string | undefined): DateFormatt
   };
 }
 
-export const semverToName = ({ major, minor, patch, prerelease }: ServerVersionResponseDto) =>
-  `v${major}.${minor}.${patch}${prerelease === null ? '' : `-rc.${prerelease}`}`;
+// FL-80: the server's full pre-release identifier (beta.2, rc.1) when it sends one; older servers only
+// send the number, which was always a release candidate.
+export const semverToName = ({ major, minor, patch, prerelease, prereleaseName }: ServerVersionResponseDto) => {
+  const suffix = prereleaseName ? `-${prereleaseName}` : prerelease === null ? '' : `-rc.${prerelease}`;
+  return `v${major}.${minor}.${patch}${suffix}`;
+};
 
 export const withoutIcons = (actions: ActionItem[]): ActionItem[] =>
   actions.map((action) => ({ ...action, icon: undefined }));
