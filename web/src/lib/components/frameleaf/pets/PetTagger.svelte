@@ -215,7 +215,7 @@
     <p id={helpId} class="help">{$t('frameleaf_pet_tagger_help')}</p>
 
     <!-- The stage takes focus so the region's arrow-key moves are reachable (FaceTagger.jsx:450-460). -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
     <div
       bind:this={stage}
       class="stage"
