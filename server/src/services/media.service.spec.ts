@@ -2649,6 +2649,23 @@ describe(MediaService.name, () => {
       expect(filters).toContain(':shadowcolor=black@0.7:shadowx=0:shadowy=3');
     });
 
+    it('crops the stabilized edges and limits gain above 100% (FL-113)', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          { action: AssetEditAction.Stabilize, parameters: { enabled: true } },
+          { action: AssetEditAction.Audio, parameters: { volume: 1.4 } },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      expect(getFilterOption(command.outputOptions)).toContain(
+        'deshake,crop=trunc(iw*0.96/2)*2:trunc(ih*0.96/2)*2,scale=1920:1080',
+      );
+      expect(getFilterOption(command.outputOptions, '-filter:a')).toBe('volume=1.4,alimiter=limit=0.98');
+    });
+
     it('copies the packets for a lone fast trim instead of re-encoding (FL-113)', () => {
       const command = editCommand(
         defaults.ffmpeg,
