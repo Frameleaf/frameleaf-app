@@ -38,6 +38,7 @@ import {
 import {
   AlbumUserRole,
   CacheControl,
+  MediaOperationCheckpointState,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -50,7 +51,11 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  MediaOperation,
+  MediaOperationCheckpoint,
+  MediaOperationRepository,
+} from 'src/repositories/media-operation.repository.js';
 import {
   AuthenticatedRenderWorker,
   RenderWorker,
@@ -65,7 +70,13 @@ import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
-import { RENDER_WORKER_MEDIA_OPERATION_KINDS, isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
+import {
+  ChunkPlan,
+  RENDER_WORKER_MEDIA_OPERATION_KINDS,
+  StoredChunk,
+  canReuseChunk,
+  isRenderWorkerMediaOperationKind,
+} from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   AuthorizedManifest,
@@ -92,6 +103,22 @@ export const RENDER_WORKER_HEARTBEAT_INTERVAL_MS = 30_000;
 /** How many queued candidates admission looks at before telling the worker there is nothing. */
 const CLAIM_CANDIDATES = 25;
 const DEFAULT_AUDIT_TAKE = 100;
+
+/** A stored checkpoint in the shape the reuse rules compare (FL-104). */
+const asStoredChunk = (chunk: MediaOperationCheckpoint): StoredChunk => ({
+  sequence: chunk.sequence,
+  state: chunk.state as MediaOperationCheckpointState,
+  chunkKey: chunk.chunkKey,
+  inputDigest: chunk.inputDigest,
+  historyDigest: chunk.historyDigest,
+  configDigest: chunk.configDigest,
+  seed: chunk.seed,
+  timebase: chunk.timebase,
+  startTicks: BigInt(chunk.startTicks as never),
+  endTicks: BigInt(chunk.endTicks as never),
+  requiresSequentialContext: !!chunk.requiresSequentialContext,
+  outputPath: chunk.outputPath,
+});
 
 const asIso = (value: Date | string | null | undefined): string | null => {
   if (!value) {
@@ -877,6 +904,31 @@ export class RenderWorkerService {
     const { worker } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
 
+    /**
+     * FL-104: reuse is the server's decision, not the worker's. A finished chunk is kept only when
+     * every digest (input, effect history, config, seed), the timebase and the range match the new
+     * plan. Anything else is planned afresh, and the history after it no longer holds: every later
+     * chunk, and the run of chunks before it whose filter or audio state flows into it, is
+     * invalidated so the render restarts at a boundary it can legitimately begin from.
+     */
+    const stored = await this.operations.getCheckpoints(operation.id);
+    const existing = stored.find((chunk) => chunk.sequence === dto.sequence);
+    const planned: ChunkPlan = {
+      sequence: dto.sequence,
+      chunkKey: dto.chunkKey,
+      inputDigest: dto.inputDigest,
+      historyDigest: dto.historyDigest,
+      configDigest: dto.configDigest,
+      seed: dto.seed ?? null,
+      timebase: dto.timebase,
+      startTicks: BigInt(dto.startTicks),
+      endTicks: BigInt(dto.endTicks),
+      requiresSequentialContext: dto.requiresSequentialContext ?? false,
+    };
+    if (existing && canReuseChunk(asStoredChunk(existing), planned).reusable) {
+      return { accepted: true, refusal: null };
+    }
+
     const accepted = await this.operations.upsertCheckpoint(operation.id, dto.claimToken, {
       operationId: operation.id,
       sequence: dto.sequence,
@@ -892,6 +944,35 @@ export class RenderWorkerService {
       requiresSequentialContext: dto.requiresSequentialContext ?? false,
       claimToken: dto.claimToken,
     });
+
+    if (accepted && existing) {
+      let restart = dto.sequence;
+      const bySequence = new Map(stored.map((chunk) => [chunk.sequence, chunk]));
+      while (bySequence.get(restart - 1)?.requiresSequentialContext) {
+        restart--;
+      }
+      // The re-planned chunk itself is pending again; everything else from the restart is invalid.
+      if (restart < dto.sequence) {
+        await this.operations.invalidateCheckpointsFrom(operation.id, restart);
+        await this.operations.upsertCheckpoint(operation.id, dto.claimToken, {
+          operationId: operation.id,
+          sequence: dto.sequence,
+          chunkKey: dto.chunkKey,
+          inputDigest: dto.inputDigest,
+          historyDigest: dto.historyDigest,
+          configDigest: dto.configDigest,
+          seed: dto.seed,
+          timebase: dto.timebase,
+          startTicks: dto.startTicks,
+          endTicks: dto.endTicks,
+          prerollTicks: dto.prerollTicks ?? '0',
+          requiresSequentialContext: dto.requiresSequentialContext ?? false,
+          claimToken: dto.claimToken,
+        });
+      } else if (stored.some((chunk) => chunk.sequence > dto.sequence)) {
+        await this.operations.invalidateCheckpointsFrom(operation.id, dto.sequence + 1);
+      }
+    }
 
     return { accepted, refusal: null };
   }
@@ -924,6 +1005,12 @@ export class RenderWorkerService {
   ): Promise<RenderWorkerWriteResultDto> {
     const { worker } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
+
+    // FL-104: output built on a chunk the server invalidated, or never saw finish, is not validated.
+    const checkpoints = await this.operations.getCheckpoints(operation.id);
+    if (checkpoints.some((chunk) => chunk.state !== MediaOperationCheckpointState.Complete)) {
+      return { accepted: false, refusal: null };
+    }
 
     const accepted = await this.operations.beginValidation(operation.id, dto.claimToken);
     return { accepted, refusal: null };
