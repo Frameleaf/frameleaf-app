@@ -5,7 +5,7 @@ import type { Person } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
-import type { PersonId, UpdateFacesData } from 'src/repositories/person.repository.js';
+import type { FaceBoxPixels, PersonId, UpdateFacesData } from 'src/repositories/person.repository.js';
 import type { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import type { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import type { PersonTable } from 'src/schema/tables/person.table.js';
@@ -13,11 +13,15 @@ import type { JobItem, JobOf } from 'src/types.js';
 import { Chunked, OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
+  AssetFaceBoxDto,
+  AssetFaceCorrectionDto,
   AssetFaceCreateDto,
   AssetFaceDeleteDto,
   AssetFaceResponseDto,
+  AssetFaceSourceResponseDto,
   AssetFaceUpdateDto,
   FaceDto,
+  FaceSearchDto,
   MergePersonDto,
   MergeSuggestionsResponseDto,
   PeopleResponseDto,
@@ -53,6 +57,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { type FaceSource, getFaceSourceRevision } from 'src/utils/face-source.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions, isLockedAssetRow } from 'src/utils/locked-visibility.js';
@@ -262,9 +267,17 @@ export class PersonService extends BaseService {
     return mapPerson(await this.findOrFail(auth, personGroupId));
   }
 
-  async getFacesById(auth: AuthDto, dto: FaceDto): Promise<AssetFaceResponseDto[]> {
+  async getFacesById(auth: AuthDto, dto: FaceSearchDto): Promise<AssetFaceResponseDto[]> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [dto.id] });
-    const faces = await this.personRepository.getFaces(dto.id, { viewingUserId: auth.user.id, isVisible: true });
+    if (dto.withHidden) {
+      // FL-38: hiding a face is its owner's decision, so only the owner lists hidden faces
+      await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [dto.id] });
+    }
+    const faces = await this.personRepository.getFaces(dto.id, {
+      viewingUserId: auth.user.id,
+      isVisible: true,
+      withHidden: dto.withHidden,
+    });
     const asset = await this.assetRepository.getForFaces(dto.id);
     const assetDimensions = getDimensions(asset);
 
@@ -660,6 +673,12 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // FL-38: a face its owner corrected (for example unassigned on purpose) keeps that answer
+    if (face.correctedAt) {
+      this.logger.debug(`Face ${id} was corrected by its owner, skipping`);
+      return JobStatus.Skipped;
+    }
+
     const { ownerId, clusterGroupId } = face.asset;
     const matches = await this.searchRepository.searchFaces({
       clusterGroupId,
@@ -856,8 +875,7 @@ export class PersonService extends BaseService {
     return requireEntityAccess(this.accessRepository, { auth, permission, ids: [personGroupId] }, 'Person');
   }
 
-  // TODO return a asset face response
-  async createFace(auth: AuthDto, dto: AssetFaceCreateDto): Promise<void> {
+  async createFace(auth: AuthDto, dto: AssetFaceCreateDto): Promise<AssetFaceResponseDto> {
     await Promise.all([
       this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [dto.assetId] }),
       this.requirePerson(auth, Permission.PersonRead, dto.personId),
@@ -872,8 +890,135 @@ export class PersonService extends BaseService {
       throw new NotFoundException('Asset not found');
     }
 
-    const edits = asset.edits || [];
+    // FL-38: a box drawn on an image that has since changed would land in the wrong place
+    this.requireFaceSource(asset, dto.expectedSourceRevision);
 
+    const id = this.cryptoRepository.randomUUID();
+    await this.personRepository.createAssetFace({
+      id,
+      personGroupId: person.personGroupId,
+      assetId: dto.assetId,
+      ...this.toStoredFaceBox(asset, dto),
+      sourceType: SourceType.Manual,
+    });
+
+    if (!person.faceAssetId) {
+      await this.createNewFeaturePhoto([person]);
+    }
+
+    return this.mapStoredFace(auth, id);
+  }
+
+  /** FL-38: the revision a face tagger draws against (see `getFaceSourceRevision`). */
+  async getFaceSource(auth: AuthDto, dto: FaceDto): Promise<AssetFaceSourceResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [dto.id] });
+    const asset = await this.assetRepository.getById(dto.id, { edits: true, exifInfo: true });
+    if (!asset) {
+      throw new NotFoundException('Asset not found');
+    }
+    return { assetId: dto.id, revision: getFaceSourceRevision(asset) };
+  }
+
+  /**
+   * FL-38: one revision-checked correction of an existing face, detected or manual: reassign
+   * or unassign it, move or resize it, hide it or show it again. The correction applies only
+   * while the face is still at `expectedRevision` (and, when given, still assigned to
+   * `expectedPersonId`), so it never overwrites a change another editor made meanwhile (409).
+   */
+  async correctFace(auth: AuthDto, id: string, dto: AssetFaceCorrectionDto): Promise<AssetFaceResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.FaceUpdate, ids: [id] });
+    if (dto.personId) {
+      await this.requirePerson(auth, Permission.PersonUpdate, dto.personId);
+    }
+
+    const face = await this.personRepository.getFaceForCorrection(id, { viewingUserId: auth.user.id });
+    if (!face) {
+      throw new NotFoundException('Face not found');
+    }
+    const staleFace = () => new ConflictException('This face changed in another view. Reload it before correcting it.');
+    if (face.updateId !== dto.expectedRevision) {
+      throw staleFace();
+    }
+    if (dto.expectedPersonId !== undefined && face.personGroupId !== dto.expectedPersonId) {
+      throw staleFace();
+    }
+
+    const target = dto.personId ? await this.findOrFail(auth, dto.personId) : null;
+    let box: FaceBoxPixels | undefined;
+    if (dto.box) {
+      const asset = await this.assetRepository.getById(face.assetId, { edits: true, exifInfo: true });
+      if (!asset) {
+        throw new NotFoundException('Asset not found');
+      }
+      this.requireFaceSource(asset, dto.expectedSourceRevision);
+      box = this.toStoredFaceBox(asset, dto.box);
+    }
+
+    const changed = await this.personRepository.correctFace(id, dto.expectedRevision, {
+      personGroupId: dto.personId === undefined ? undefined : (target?.personGroupId ?? null),
+      box,
+      hidden: dto.hidden,
+    });
+    if (changed === 0) {
+      throw staleFace();
+    }
+
+    const previous = face.person;
+    const leavesPrevious = (dto.personId !== undefined && dto.personId !== face.personGroupId) || dto.hidden === true;
+    const featureChanges = new Map<string, PersonId>();
+    if (target && target.faceAssetId === null) {
+      featureChanges.set(personKey(target), target);
+    }
+    if (previous && previous.faceAssetId === face.id && leavesPrevious) {
+      featureChanges.set(personKey(previous), previous);
+    }
+    if (featureChanges.size > 0) {
+      await this.createNewFeaturePhoto(featureChanges.values().toArray());
+    }
+    if (box && previous && previous.faceAssetId === face.id && !leavesPrevious) {
+      // the featured face moved: redraw the person's photo from the new box
+      await this.jobRepository.queue({
+        name: JobName.PersonGenerateThumbnail,
+        data: { ownerId: previous.ownerId, personGroupId: previous.personGroupId },
+      });
+    }
+
+    return this.mapStoredFace(auth, id);
+  }
+
+  async deleteFace(auth: AuthDto, id: string, dto: AssetFaceDeleteDto): Promise<void> {
+    await this.requireAccess({ auth, permission: Permission.FaceDelete, ids: [id] });
+
+    if (dto.expectedRevision !== undefined) {
+      // FL-38: refuse to remove a face someone changed since this client read it
+      const changed = await this.personRepository.deleteFaceAtRevision(id, dto.expectedRevision, { force: dto.force });
+      if (changed === 0) {
+        throw new ConflictException('This face changed in another view. Reload it before removing it.');
+      }
+      return;
+    }
+
+    return dto.force ? this.personRepository.deleteAssetFace(id) : this.personRepository.softDeleteAssetFaces(id);
+  }
+
+  private requireFaceSource(asset: FaceSource, expectedSourceRevision?: string) {
+    if (expectedSourceRevision !== undefined && expectedSourceRevision !== getFaceSourceRevision(asset)) {
+      throw new ConflictException('The image changed since this face was drawn. Reload it before placing faces.');
+    }
+  }
+
+  /**
+   * A box drawn on the displayed preview, in the pixels it is stored in. The client draws on the
+   * upright, edited preview; with edits the box is converted back to the original, unedited
+   * image, otherwise the preview's size is kept as the face's image size.
+   */
+  private toStoredFaceBox(
+    asset: NonNullable<Awaited<ReturnType<typeof this.assetRepository.getById>>>,
+    dto: Pick<AssetFaceBoxDto, 'imageWidth' | 'imageHeight' | 'x' | 'y' | 'width' | 'height'>,
+  ): FaceBoxPixels {
+    const edits = asset.edits || [];
+    let imageWidth = dto.imageWidth;
+    let imageHeight = dto.imageHeight;
     let topLeft: Point = { x: dto.x, y: dto.y };
     let bottomRight: Point = { x: dto.x + dto.width, y: dto.y + dto.height };
 
@@ -908,30 +1053,27 @@ export class PersonService extends BaseService {
 
       // now coordinates are in original image space
       const originalDimensions = getDimensions(asset.exifInfo);
-      dto.imageWidth = originalDimensions.width;
-      dto.imageHeight = originalDimensions.height;
+      imageWidth = originalDimensions.width;
+      imageHeight = originalDimensions.height;
     }
 
-    await this.personRepository.createAssetFace({
-      personGroupId: person.personGroupId,
-      assetId: dto.assetId,
-      imageHeight: dto.imageHeight,
-      imageWidth: dto.imageWidth,
+    return {
+      imageWidth,
+      imageHeight,
       boundingBoxX1: Math.round(topLeft.x),
       boundingBoxX2: Math.round(bottomRight.x),
       boundingBoxY1: Math.round(topLeft.y),
       boundingBoxY2: Math.round(bottomRight.y),
-      sourceType: SourceType.Manual,
-    });
-
-    if (!person.faceAssetId) {
-      await this.createNewFeaturePhoto([person]);
-    }
+    };
   }
 
-  async deleteFace(auth: AuthDto, id: string, dto: AssetFaceDeleteDto): Promise<void> {
-    await this.requireAccess({ auth, permission: Permission.FaceDelete, ids: [id] });
-
-    return dto.force ? this.personRepository.deleteAssetFace(id) : this.personRepository.softDeleteAssetFaces(id);
+  /** A stored face (hidden or not) as the client sees it, in the displayed image's space. */
+  private async mapStoredFace(auth: AuthDto, id: string): Promise<AssetFaceResponseDto> {
+    const face = await this.personRepository.getFaceForCorrection(id, { viewingUserId: auth.user.id });
+    if (!face) {
+      throw new NotFoundException('Face not found');
+    }
+    const asset = await this.assetRepository.getForFaces(face.assetId);
+    return mapFaces(face, auth, asset.edits, getDimensions(asset));
   }
 }
