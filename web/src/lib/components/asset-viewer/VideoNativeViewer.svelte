@@ -422,21 +422,26 @@
     });
   });
 
-  // FL-36 (MediaViewer.jsx:898-903): pausing or resuming a slideshow (its button, Space or the media
-  // keys) pauses or resumes the video on screen too.
-  let previousSlideshowState = untrack(() => $slideshowState);
+  // FL-36 (MediaViewer.jsx:422-460, 898-903): pausing or resuming a slideshow (its button, Space
+  // or the media keys) pauses or resumes the video on screen, and so does opening and closing the
+  // slideshow settings, which hold the slideshow without pausing it.
+  const { settingsOpen: slideshowSettingsOpen } = slideshowStore;
+  const slideshowHeld = (state: SlideshowState, settingsOpen: boolean) =>
+    state === SlideshowState.PauseSlideshow || (state === SlideshowState.PlaySlideshow && settingsOpen);
+  let previousHeld = untrack(() => slideshowHeld($slideshowState, $slideshowSettingsOpen));
   $effect(() => {
-    const state = $slideshowState;
+    const held = slideshowHeld($slideshowState, $slideshowSettingsOpen);
+    const resumable = $slideshowState === SlideshowState.PlaySlideshow;
     const player = videoPlayer;
     untrack(() => {
-      const previous = previousSlideshowState;
-      previousSlideshowState = state;
-      if (!player || state === previous) {
+      const wasHeld = previousHeld;
+      previousHeld = held;
+      if (!player || held === wasHeld) {
         return;
       }
-      if (state === SlideshowState.PauseSlideshow) {
+      if (held) {
         player.pause();
-      } else if (state === SlideshowState.PlaySlideshow && previous === SlideshowState.PauseSlideshow) {
+      } else if (resumable) {
         player.play().catch(() => {});
       }
     });

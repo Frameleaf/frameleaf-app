@@ -621,7 +621,7 @@
         direction: slideshowDirection,
         video: asset.type === AssetTypeEnum.Video,
       }),
-      () => $slideshowState === SlideshowState.PauseSlideshow,
+      () => $slideshowState === SlideshowState.PauseSlideshow || $slideshowSettingsOpen,
     )}
   >
     {#if viewerKind === 'StackVideoViewer'}

@@ -88,4 +88,10 @@ describe('SlideshowSettingsPanel (FL-36)', () => {
     await fireEvent.click(autoplay);
     expect(get(slideshowStore.slideshowAutoplay)).toBe(true);
   });
+
+  // MediaViewer.jsx:499-502
+  it('puts focus on Photo duration when it opens', () => {
+    render(SlideshowSettingsPanel, { onClose: vi.fn() });
+    expect(screen.getByLabelText('Photo duration')).toHaveFocus();
+  });
 });

@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { renderWithTooltips } from '$tests/helpers';
+import { progressBarCalls } from '@test-data/components/progress-bar-calls';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import SlideshowBar from './SlideshowBar.svelte';
 
@@ -17,6 +18,11 @@ vi.mock('$lib/utils/wakelock.svelte', () => ({
   acquireWakeLock: mocks.acquireWakeLock,
   releaseWakeLock: mocks.releaseWakeLock,
 }));
+
+vi.mock('$lib/components/shared-components/progress-bar/ProgressBar.svelte', async () => {
+  const { default: MockProgressBar } = await import('@test-data/components/MockProgressBar.svelte');
+  return { default: MockProgressBar };
+});
 
 vi.mock('$lib/frameleaf/media-session', () => ({
   MEDIA_SESSION_ARTIST: 'Frameleaf',
@@ -193,5 +199,111 @@ describe('SlideshowBar (FL-36)', () => {
     const { onClose } = renderBar({ isFullScreen: true });
     document.dispatchEvent(new Event('fullscreenchange'));
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  // MediaViewer.jsx:422-460: the open settings hold the advance without changing play or pause.
+  it('holds the progress while the settings are open and resumes on close', async () => {
+    renderBar();
+    await waitFor(() => expect(screen.getByLabelText('frameleaf_slideshow_pause')).toBeInTheDocument());
+    progressBarCalls.length = 0;
+
+    await fireEvent.click(screen.getByLabelText('slideshow_settings'));
+    await waitFor(() => expect(progressBarCalls).toEqual(['pause']));
+    expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+
+    await slideshowStore.closeSettings();
+    await waitFor(() => expect(progressBarCalls).toEqual(['pause', 'play']));
+  });
+
+  it('stays paused after the settings close when it was paused', async () => {
+    slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
+    renderBar();
+    progressBarCalls.length = 0;
+    await fireEvent.click(screen.getByLabelText('slideshow_settings'));
+    await slideshowStore.closeSettings();
+    await Promise.resolve();
+    expect(progressBarCalls).not.toContain('play');
+  });
+
+  describe('idle auto-hide', () => {
+    let canvas: HTMLElement;
+    beforeEach(() => {
+      if (!('PointerEvent' in globalThis)) {
+        // jsdom has no PointerEvent; a MouseEvent carries the coordinates a tap needs
+        vi.stubGlobal('PointerEvent', class extends MouseEvent {});
+      }
+      vi.useFakeTimers();
+      canvas = document.createElement('div');
+      canvas.dataset.viewerContent = '';
+      document.body.append(canvas);
+    });
+    afterEach(() => {
+      canvas.remove();
+      vi.useRealTimers();
+    });
+
+    const controls = () => screen.getByTestId('slideshow-controls');
+
+    it('hides the controls and the pointer after 2.5 s, and movement shows them', async () => {
+      renderBar();
+      expect(controls()).not.toHaveClass('chrome-hidden');
+
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(controls()).toHaveClass('chrome-hidden');
+      expect(document.body.style.cursor).toBe('none');
+
+      await fireEvent.mouseMove(document);
+      expect(controls()).not.toHaveClass('chrome-hidden');
+      expect(document.body.style.cursor).toBe('');
+    });
+
+    it('shows the controls when keyboard focus moves into them and keeps them while focused', async () => {
+      renderBar();
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(controls()).toHaveClass('chrome-hidden');
+
+      screen.getByLabelText('exit_slideshow').focus();
+      await Promise.resolve();
+      expect(controls()).not.toHaveClass('chrome-hidden');
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(controls()).not.toHaveClass('chrome-hidden');
+    });
+
+    it('keeps the controls while the settings are open', async () => {
+      renderBar();
+      await fireEvent.click(screen.getByLabelText('slideshow_settings'));
+      screen.getByLabelText('slideshow_settings').blur();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(controls()).not.toHaveClass('chrome-hidden');
+    });
+
+    // MediaViewer.jsx:559-572: a tap on the photo toggles the controls.
+    it('toggles the controls with a tap on the photo', async () => {
+      renderBar();
+      const tapCanvas = async () => {
+        await fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10 });
+        await fireEvent.pointerUp(canvas, { clientX: 11, clientY: 10 });
+      };
+
+      await tapCanvas();
+      expect(controls()).toHaveClass('chrome-hidden');
+      await tapCanvas();
+      expect(controls()).not.toHaveClass('chrome-hidden');
+
+      // a drag is not a tap
+      await fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10 });
+      await fireEvent.pointerUp(canvas, { clientX: 60, clientY: 10 });
+      expect(controls()).not.toHaveClass('chrome-hidden');
+    });
+
+    it('reveals hidden controls with a swipe down', async () => {
+      renderBar();
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(controls()).toHaveClass('chrome-hidden');
+
+      await fireEvent.pointerDown(canvas, { clientX: 100, clientY: 100 });
+      await fireEvent.pointerUp(canvas, { clientX: 105, clientY: 220 });
+      expect(controls()).not.toHaveClass('chrome-hidden');
+    });
   });
 });

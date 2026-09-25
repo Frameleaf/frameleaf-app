@@ -34,6 +34,11 @@
   let { onClose }: { onClose: () => void } = $props();
 
   // Closing the viewer (or ending the slideshow) with the panel open leaves it closed next time.
+  // MediaViewer.jsx:499-502: opening the panel puts focus on Photo duration.
+  const focusFirstControl = (panel: HTMLElement) => {
+    panel.querySelector<HTMLElement>('select')?.focus();
+  };
+
   onDestroy(() => {
     if (get(slideshowStore.settingsOpen)) {
       void slideshowStore.closeSettings({ restoreFocus: false });
@@ -128,6 +133,7 @@
   data-theme="dark"
   data-testid="slideshow-settings"
   aria-labelledby={titleId}
+  {@attach focusFirstControl}
   onkeydown={(event) => {
     if (event.key !== 'Escape') {
       return;
@@ -248,9 +254,18 @@
       transform: none;
     }
   }
+  /* Reduce Motion: a plain crossfade, no slide */
+  @keyframes fl-slideshow-settings-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .slideshow-settings {
-      animation: fl-slideshow-settings-pop 150ms ease;
+      animation: fl-slideshow-settings-fade 150ms ease;
     }
   }
 </style>
