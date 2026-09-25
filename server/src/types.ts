@@ -1,6 +1,6 @@
-import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
+import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';

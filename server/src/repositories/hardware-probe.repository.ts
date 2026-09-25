@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { execFile } from 'node:child_process';
-import { access, constants, readdir, readFile, stat } from 'node:fs/promises';
+import { access, constants, readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
@@ -84,7 +84,7 @@ export class HardwareProbeRepository {
       return { speed: Math.round((TEST_SECONDS / Math.max(seconds, 0.01)) * 10) / 10, error: null };
     } catch (error) {
       const stderr = (error as { stderr?: string }).stderr ?? (error as Error).message;
-      return { speed: null, error: firstLine(String(stderr)) };
+      return { speed: null, error: firstLine(stderr) };
     }
   }
 
@@ -109,7 +109,7 @@ export class HardwareProbeRepository {
         return { gpu: null, error: null };
       }
       const stderr = (error as { stderr?: string }).stderr ?? (error as Error).message;
-      return { gpu: null, error: firstLine(String(stderr)) };
+      return { gpu: null, error: firstLine(stderr) };
     }
   }
 
@@ -140,7 +140,10 @@ export class HardwareProbeRepository {
   private async encoders(): Promise<string[]> {
     try {
       const { stdout } = await run('ffmpeg', ['-hide_banner', '-encoders'], { timeout: 10_000 });
-      return [...stdout.matchAll(/^\s*V\S*\s+(\S+)/gm)].map((match) => match[1]);
+      return stdout
+        .matchAll(/^\s*V\S*\s+(\S+)/gm)
+        .map((match) => match[1])
+        .toArray();
     } catch {
       return [];
     }

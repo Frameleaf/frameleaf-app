@@ -14,7 +14,6 @@ import { AuthController } from 'src/controllers/auth.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
 import { CloudMlAdminController } from 'src/controllers/cloud-ml-admin.controller.js';
-import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
 import { ClusterGroupController } from 'src/controllers/cluster-group.controller.js';
 import { ConfigAdminController } from 'src/controllers/config-admin.controller.js';
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
@@ -26,6 +25,7 @@ import { DuplicateReviewController } from 'src/controllers/duplicate-review.cont
 import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
+import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';

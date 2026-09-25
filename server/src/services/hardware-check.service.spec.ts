@@ -1,7 +1,7 @@
 import { SystemMetadataKey } from 'src/enum.js';
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
-import { newTestService, ServiceMocks } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(HardwareCheckService.name, () => {
   let sut: HardwareCheckService;
