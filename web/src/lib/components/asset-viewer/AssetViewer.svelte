@@ -543,8 +543,22 @@
       viewerKind !== 'ImagePanaramaViewer',
   );
 
+  /**
+   * Every pointer down anywhere, tracked on the window (capture phase, so it is counted before the
+   * canvas sees it). The swipe starts only while exactly one pointer is down: lifting and replacing
+   * one finger of a pinch never restarts it.
+   */
+  const activePointers = new Set<number>();
+  const releasePointer = (event: PointerEvent) => activePointers.delete(event.pointerId);
+
   const onCanvasPointerDown = (event: PointerEvent) => {
-    if (!gesturesEnabled || event.button > 0 || assetViewerManager.zoom > 1 || isGestureExempt(event.target)) {
+    if (
+      activePointers.size !== 1 ||
+      !gesturesEnabled ||
+      event.button > 0 ||
+      assetViewerManager.zoom > 1 ||
+      isGestureExempt(event.target)
+    ) {
       return;
     }
     gesture.start(event.pointerId, event.clientX, event.clientY);
@@ -660,6 +674,9 @@
 
 <svelte:window
   onkeydown={revealChrome}
+  onpointerdowncapture={(event) => activePointers.add(event.pointerId)}
+  onpointerupcapture={releasePointer}
+  onpointercancelcapture={releasePointer}
   onpointerdown={onWindowPointerDown}
   onpointermove={onWindowPointerMove}
   onpointerup={(event) => gesture.end(event.pointerId, event.clientX, event.clientY)}
