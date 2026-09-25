@@ -407,13 +407,14 @@ const actions = {
   ],
   // quick-edit
   "ai-preview-full-job-faithful-creative-local-lan-versus-runpod": [
-    "partial",
+    "fixed",
     ["R-1", "R-2", "R-3"],
-    "Cost/size estimate, loupe, labels",
+    "Estimate Output and Cloud cost rows, 100% loupe, Use current frame and the video labels (fixed in FL-115)",
     {
       prototype: [`${P}/Studio.jsx`],
       production: [
         `${W}/lib/components/frameleaf/editor/RestorationPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/RestorationCompare.svelte`,
       ],
     },
   ],

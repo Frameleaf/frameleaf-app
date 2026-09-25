@@ -30,6 +30,7 @@
     RESTORATION_MODES,
     RESTORATION_POLL_MS,
     RESTORATION_UPSCALES,
+    abandonedResultKeptUntil,
     anyRestorationBusy,
     canDecideRestoration,
     canDiscardRestoration,
@@ -80,6 +81,8 @@
     mdiCompare,
     mdiDeleteOutline,
     mdiDownload,
+    mdiMagnify,
+    mdiPlayCircleOutline,
     mdiRefresh,
     mdiStop,
   } from '@mdi/js';
@@ -94,9 +97,22 @@
     onCompare: (compare: RestorationCompareRequest | null) => void;
     /** The chosen playback version changed, so the viewer should refresh when the editor closes. */
     onCurrentChanged?: () => void;
+    /** Whether the stage's comparison shows the 100% loupe (prototype `Studio.jsx:1634`). */
+    loupe?: boolean;
+    onLoupeChange?: (loupe: boolean) => void;
+    /** Video only: the stage's playhead, for "Use current frame" (prototype `Studio.jsx:1637`). */
+    currentFrameSeconds?: () => number | null;
   };
 
-  let { asset, crop = null, onCompare, onCurrentChanged }: Props = $props();
+  let {
+    asset,
+    crop = null,
+    onCompare,
+    onCurrentChanged,
+    loupe = false,
+    onLoupeChange,
+    currentFrameSeconds,
+  }: Props = $props();
 
   const isVideo = isVideoAsset(asset);
 
@@ -407,6 +423,17 @@
     return Math.max(0, Math.min(100, Math.round(operation.progress)));
   };
 
+  /** "Use current frame": the preview clip starts at the stage's playhead, kept inside the video. */
+  const useCurrentFrame = () => {
+    const seconds = currentFrameSeconds?.();
+    if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) {
+      announce = $t('frameleaf_restoration_no_current_frame');
+      return;
+    }
+    startSeconds = Math.max(0, Math.min(maxStart, Math.round(seconds * 2) / 2));
+    announce = $t('frameleaf_restoration_clip_from_frame', { values: { seconds: startSeconds } });
+  };
+
   const upscaleLabel = (factor: RestorationUpscale) =>
     factor === 1
       ? $t('frameleaf_restoration_upscale_same')
@@ -581,6 +608,22 @@
             ? $t('frameleaf_restoration_about', { values: { time: fullEstimate } })
             : $t('frameleaf_restoration_estimate_unmeasured')}
         </dd>
+        <!-- Prototype Estimate (Studio.jsx:1619-1629): Output and Cloud cost. The output is the capped
+             size the server will render; no charge is invented for a destination that leaves the network. -->
+        {#if options}
+          <dt>{$t('frameleaf_restoration_estimate_output')}</dt>
+          <dd>
+            {$t('frameleaf_restoration_output_dimensions', {
+              values: { width: options.outputWidth, height: options.outputHeight },
+            })}
+          </dd>
+        {/if}
+        <dt>{$t('frameleaf_restoration_estimate_cloud_cost')}</dt>
+        <dd>
+          {selected.leavesNetwork
+            ? $t('frameleaf_restoration_estimate_unmeasured')
+            : $t('frameleaf_restoration_estimate_cost_none')}
+        </dd>
       </dl>
       <p class="rs-help">
         {selected.estimate.sampleCount > 0
@@ -594,10 +637,33 @@
     {/if}
   {/if}
 
+  <!-- Prototype RestorePanel tools row (Studio.jsx:1632-1640): Loupe and, for video, Use current frame. -->
+  <div class="ed-row">
+    <button
+      type="button"
+      class="ed-chip"
+      aria-pressed={loupe}
+      data-testid="restoration-loupe-toggle"
+      onclick={() => onLoupeChange?.(!loupe)}
+    >
+      <Icon icon={mdiMagnify} size="16" />
+      {$t('frameleaf_restoration_loupe')}
+    </button>
+    {#if isVideo && currentFrameSeconds}
+      <button type="button" class="ed-chip" disabled={!options} onclick={useCurrentFrame}>
+        <Icon icon={mdiRefresh} size="16" />
+        {$t('frameleaf_restoration_use_current_frame')}
+      </button>
+    {/if}
+  </div>
   <div class="rs-actions">
     <button type="button" class="ed-button primary" disabled={!canRequest} onclick={requestPreview}>
-      <Icon icon={mdiAutoFix} size="18" />
-      {submitting ? $t('frameleaf_restoration_requesting') : $t('frameleaf_restoration_request_preview')}
+      <Icon icon={isVideo ? mdiPlayCircleOutline : mdiAutoFix} size="18" />
+      {submitting
+        ? $t('frameleaf_restoration_requesting')
+        : isVideo
+          ? $t('frameleaf_restoration_preview_seconds', { values: { seconds: options?.previewSeconds ?? 5 } })
+          : $t('frameleaf_restoration_request_preview')}
     </button>
     <p class="rs-help">{$t('frameleaf_restoration_request_help')}</p>
   </div>
@@ -616,6 +682,7 @@
   {#each items as item (item.id)}
     {@const tone = restorationStatusTone(item.status)}
     {@const progress = progressFor(item)}
+    {@const partialKeptUntil = abandonedResultKeptUntil(item)}
     <div class={['ed-version', item.isCurrent && 'current']}>
       <strong>{itemTitle(item)}</strong>
       <span
@@ -646,6 +713,14 @@
           })}</small
         >
       {/if}
+      {#if partialKeptUntil}
+        <!-- FL-115 result retention: a stopped full render keeps its finished chunks for a while. -->
+        <small data-testid="restoration-result-kept-until"
+          >{$t('frameleaf_restoration_partial_kept_until', {
+            values: { date: formatDate(partialKeptUntil) },
+          })}</small
+        >
+      {/if}
       <div class="ed-row">
         {#if compareKindFor(item)}
           <button type="button" class="ed-chip" aria-pressed={compareId === item.id} onclick={() => compare(item)}>
@@ -656,7 +731,7 @@
         {#if canDecideRestoration(item.status)}
           <button type="button" class="ed-chip accent" disabled={busyId === item.id} onclick={() => accept(item)}>
             <Icon icon={mdiCheck} size="16" />
-            {$t('frameleaf_restoration_accept')}
+            {isVideo ? $t('frameleaf_restoration_restore_full_video') : $t('frameleaf_restoration_accept')}
           </button>
           <button type="button" class="ed-chip" disabled={busyId === item.id} onclick={() => reject(item)}>
             {$t('frameleaf_restoration_reject')}

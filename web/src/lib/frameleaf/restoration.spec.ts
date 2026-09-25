@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import {
   CENTRE_REGION,
+  abandonedResultKeptUntil,
   anyRestorationBusy,
   canDecideRestoration,
   canDiscardRestoration,
@@ -64,6 +65,20 @@ describe('restoration presentation rules (FL-115)', () => {
     expect(canSelectRestoration({ status: AssetRestorationStatus.PreviewReady, hasResult: false })).toBe(false);
     expect(canDiscardRestoration(AssetRestorationStatus.Expired)).toBe(false);
     expect(canDiscardRestoration(AssetRestorationStatus.Rejected)).toBe(true);
+  });
+
+  it('shows the retention date of a stopped full render only', () => {
+    const resultExpiresAt = '2026-10-02T00:00:00.000Z';
+    expect(abandonedResultKeptUntil({ status: AssetRestorationStatus.RestoreFailed, resultExpiresAt })).toBe(
+      resultExpiresAt,
+    );
+    expect(abandonedResultKeptUntil({ status: AssetRestorationStatus.RestoreCancelled, resultExpiresAt })).toBe(
+      resultExpiresAt,
+    );
+    expect(abandonedResultKeptUntil({ status: AssetRestorationStatus.Restored, resultExpiresAt })).toBeNull();
+    expect(
+      abandonedResultKeptUntil({ status: AssetRestorationStatus.RestoreFailed, resultExpiresAt: null }),
+    ).toBeNull();
   });
 
   it('retries the job of the stage that failed, and nothing else', () => {

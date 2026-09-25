@@ -85,6 +85,17 @@ export const retryOperationIdFor = (
     : item.previewOperationId;
 };
 
+/**
+ * When the finished chunks of a stopped full render go (FL-115 result retention). Only a failed or
+ * cancelled full render carries this date; a finished result never expires on its own.
+ */
+export const abandonedResultKeptUntil = (
+  item: Pick<AssetRestorationResponseDto, 'status' | 'resultExpiresAt'>,
+): string | null =>
+  item.status === AssetRestorationStatus.RestoreFailed || item.status === AssetRestorationStatus.RestoreCancelled
+    ? item.resultExpiresAt
+    : null;
+
 /** Which comparison a restoration can show: the preview crop, or the finished result against the original. */
 export const compareKindFor = (
   item: Pick<AssetRestorationResponseDto, 'status' | 'hasPreview' | 'hasResult'>,
