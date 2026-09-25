@@ -581,7 +581,9 @@ export const evaluateRenderOutput = (
     return { supported: false, refusal: RenderOutputRefusal.InsufficientMemory };
   }
   const encoder = FORMAT_ENCODERS[request.format];
-  const withCodec = withMemory.filter((candidate) => !!encoder && candidate.codecs.some((codec) => encoder.test(codec)));
+  const withCodec = withMemory.filter(
+    (candidate) => !!encoder && candidate.codecs.some((codec) => encoder.test(codec)),
+  );
   if (withCodec.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.CodecUnavailable };
   }

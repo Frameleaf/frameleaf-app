@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import {
   MlDestinationTable,
   MlProbeHardware,

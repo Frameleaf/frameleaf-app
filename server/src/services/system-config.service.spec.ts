@@ -858,7 +858,6 @@ describe(SystemConfigService.name, () => {
         }
       });
     });
-
   });
 
   describe('write-only credentials (FL-67)', () => {

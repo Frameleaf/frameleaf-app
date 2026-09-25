@@ -31,6 +31,9 @@ import {
   RenderWorkerStatus,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
   accelerationOf,
@@ -47,9 +50,6 @@ import {
   unresolvedEndpointSummary,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
-import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
-import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import { SDR_ONLY, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 
 /**
@@ -216,7 +216,8 @@ export class MlDestinationService extends BaseService {
       // FL-159: the Frameleaf Cloud destination is created only by POST admin/cloud/ml/destination,
       // never here, by configuration or by a seed.
       throw new BadRequestException('Add Frameleaf Cloud from its own settings section');
-    } else if (dto.kind === MlDestinationKind.Lan && !dto.url) {
+    }
+    if (dto.kind === MlDestinationKind.Lan && !dto.url) {
       throw new BadRequestException('A LAN destination needs a URL');
     }
     const workloads = this.uniqueWorkloads(dto.workloads);
@@ -659,7 +660,7 @@ export class MlDestinationService extends BaseService {
       list.push(entry);
       byDestination.set(entry.worker.destination, list);
     }
-    const render = [...byDestination.entries()].map(([destination, entries]) => {
+    const render = [...byDestination].map(([destination, entries]) => {
       const memories = entries
         .map(({ session }) => (session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes)))
         .filter((value): value is number => value !== null);

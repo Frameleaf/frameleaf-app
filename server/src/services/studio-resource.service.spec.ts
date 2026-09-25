@@ -75,7 +75,10 @@ describe(StudioResourceService.name, () => {
 
       const { manifest } = await sut.resolveProjectResources(
         auth,
-        context(sequenceWith({ assetId: asset.id }), { destination: StudioDestination.FrameleafCloud, cloudConsent: true }),
+        context(sequenceWith({ assetId: asset.id }), {
+          destination: StudioDestination.FrameleafCloud,
+          cloudConsent: true,
+        }),
       );
 
       expect(manifest.destination).toBe(StudioDestination.FrameleafCloud);

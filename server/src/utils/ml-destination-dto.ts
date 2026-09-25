@@ -1,6 +1,6 @@
 import type { MlDestinationHealthStateDto, MlDestinationResponseDto } from 'src/dtos/ml-destination.dto.js';
-import { MlDestinationKind } from 'src/enum.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import { MlDestinationKind } from 'src/enum.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
   isCloudDestination,

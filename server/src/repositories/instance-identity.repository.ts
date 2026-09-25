@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, sign, type KeyObject } from 'node:crypto';
+import { type KeyObject, createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
