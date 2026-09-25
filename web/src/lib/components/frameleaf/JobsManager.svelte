@@ -209,7 +209,7 @@
       ),
     ).then((entries) => {
       if (cancelled) {
-      	return;
+        return;
       }
 
       ownerStats = new Map(entries.filter((entry) => entry !== undefined));
