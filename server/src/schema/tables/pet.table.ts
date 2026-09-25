@@ -38,10 +38,10 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  * durable observation for the proposed pet, so an earlier "not this pet" stays applied
  * after the model changes. See `src/utils/pets.ts` for those rules as pure functions.
  *
- * The embedding a future pet-recognition model produces is NOT stored here. Faces keep
- * theirs in `face_search`, whose column is a `vector` of a fixed width; the width is a
- * property of the model, and no pet model exists yet. The embedding table lands with
- * the model, alongside `pet_detection`, on the replaceable side of the line.
+ * No embedding is stored here. Recognition (FL-58, `PetRecognitionService`) reads the CLIP
+ * embedding smart search already keeps per photo in `smart_search`, so a detection is a
+ * whole-photo reading tagged with the CLIP model and matcher revision. A per-region pet model,
+ * if one is ever qualified (FL-145), would bring its own embedding table on the replaceable side.
  *
  * These tables carry no `updateId` and no `updatedAt` trigger: pets are not part of the
  * mobile sync protocol, and `updatedAt` is written explicitly by `PetRepository`.
@@ -129,6 +129,22 @@ export class PetObservationTable {
 
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
+
+  /**
+   * The asset checksum when this decision was made. A write that names the checksum it was looking
+   * at is refused once the original has changed. Added by the fork migration
+   * 0000000000176-PetObservationSourceAndRecognitionRuns, so it is kept out of the schema generator
+   * (`synchronize: false`) while the Kysely types still carry it.
+   */
+  @Column({ type: 'bytea', nullable: true, synchronize: false })
+  sourceChecksum!: Buffer | null;
+
+  /**
+   * Set when the original was replaced after a region was drawn on it: the region may no longer
+   * point at the animal. The observation and the identity it confirms stay; the owner reviews it.
+   */
+  @Column({ type: 'timestamp with time zone', nullable: true, synchronize: false })
+  staleAt!: Timestamp | null;
 }
 
 @Index({ columns: ['modelName', 'modelRevision'] })
