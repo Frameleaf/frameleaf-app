@@ -125,7 +125,11 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'clip.move': ['command.moveItem'],
   'clip.setTransform': ['command.setTransform'],
   'clip.setTransformParent': ['command.setTransformParent'],
-  'clip.setTransition': ['command.addTransition', 'command.updateTransition', 'command.removeTransition'],
+  'clip.setTransition': [
+    'command.addTransition',
+    'command.updateTransition',
+    'command.removeTransition',
+  ],
   'clip.split': ['command.split'],
   'clip.trimEnd': ['command.trimEnd'],
   'clip.trimStart': ['command.trimStart'],
@@ -181,8 +185,11 @@ const timeField = (payload: Record<string, unknown>, name: string, fps: number):
   return frames
 }
 
-const optionalTime = (payload: Record<string, unknown>, name: string, fps: number): number | undefined =>
-  payload[name] === undefined ? undefined : timeField(payload, name, fps)
+const optionalTime = (
+  payload: Record<string, unknown>,
+  name: string,
+  fps: number,
+): number | undefined => (payload[name] === undefined ? undefined : timeField(payload, name, fps))
 
 const stringField = (payload: Record<string, unknown>, name: string): string => {
   const value = payload[name]
@@ -256,7 +263,11 @@ export const deterministicUuids = (seed: string): (() => string) => {
  * Run `work` with `crypto.randomUUID` and `Date.now` fixed for this envelope. The command runtime
  * owns its document, so nothing else observes the substitution, and both are restored after.
  */
-async function withDeterminism<T>(seed: string, clock: number, work: () => Promise<T> | T): Promise<T> {
+async function withDeterminism<T>(
+  seed: string,
+  clock: number,
+  work: () => Promise<T> | T,
+): Promise<T> {
   const cryptoObject = globalThis.crypto as Crypto & { randomUUID: () => string }
   const hadOwn = Object.hasOwn(cryptoObject, 'randomUUID')
   const previous = cryptoObject.randomUUID
@@ -272,7 +283,11 @@ async function withDeterminism<T>(seed: string, clock: number, work: () => Promi
   } finally {
     Date.now = previousNow
     if (hadOwn) {
-      Object.defineProperty(cryptoObject, 'randomUUID', { value: previous, configurable: true, writable: true })
+      Object.defineProperty(cryptoObject, 'randomUUID', {
+        value: previous,
+        configurable: true,
+        writable: true,
+      })
     } else {
       delete (cryptoObject as { randomUUID?: unknown }).randomUUID
     }
@@ -286,7 +301,8 @@ async function withDeterminism<T>(seed: string, clock: number, work: () => Promi
 /** JSON with object keys sorted, so equal graphs serialise identically. */
 export const canonicalJson = (value: unknown): string => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
-  if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry === undefined ? null : entry)).join(',')}]`
+  if (Array.isArray(value))
+    return `[${value.map((entry) => canonicalJson(entry === undefined ? null : entry)).join(',')}]`
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, entry]) => entry !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -321,7 +337,11 @@ const requireTrack = (id: string, field = 'trackId') => {
 
 const canvas = () => {
   const settings = useTimelineSettingsStore.getState()
-  return { width: projectCanvas.width, height: projectCanvas.height, fps: settings.fps || projectCanvas.fps }
+  return {
+    width: projectCanvas.width,
+    height: projectCanvas.height,
+    fps: settings.fps || projectCanvas.fps,
+  }
 }
 
 let projectCanvas = { width: 1920, height: 1080, fps: 30 }
@@ -334,7 +354,10 @@ const failed = (message: string): never => {
 const nextOnTrack = (item: TimelineItem): TimelineItem | undefined => {
   const end = item.from + item.durationInFrames
   return items()
-    .filter((candidate) => candidate.trackId === item.trackId && candidate.id !== item.id && candidate.from >= end - 1)
+    .filter(
+      (candidate) =>
+        candidate.trackId === item.trackId && candidate.id !== item.id && candidate.from >= end - 1,
+    )
     .sort((a, b) => a.from - b.from)[0]
 }
 
@@ -370,7 +393,8 @@ const prototypeTitleStyles: Record<string, TextStylePresetId | 'plain' | 'bold'>
 const titleStyleOf = (style: string): TextStylePresetId | 'plain' | 'bold' => {
   const mapped = prototypeTitleStyles[style] ?? style
   if (mapped === 'plain' || mapped === 'bold') return mapped
-  if (!(TEXT_STYLE_PRESET_IDS as readonly string[]).includes(mapped)) invalid(`style: unknown title style "${style}"`)
+  if (!(TEXT_STYLE_PRESET_IDS as readonly string[]).includes(mapped))
+    invalid(`style: unknown title style "${style}"`)
   return mapped as TextStylePresetId
 }
 
@@ -399,14 +423,16 @@ const titleMotionOf = (animation: string): TextItem['textMotion'] => {
     invalid(`animation: unknown title animation "${animation}"`)
   }
   const motion: NonNullable<TextItem['textMotion']> = {
-    in: createTextMotionEffect(mapped.in as (typeof TEXT_MOTION_IN_PRESET_IDS)[number], 0) as NonNullable<
-      TextItem['textMotion']
-    >['in'],
+    in: createTextMotionEffect(
+      mapped.in as (typeof TEXT_MOTION_IN_PRESET_IDS)[number],
+      0,
+    ) as NonNullable<TextItem['textMotion']>['in'],
   }
   if (mapped.out && (TEXT_MOTION_OUT_PRESET_IDS as readonly string[]).includes(mapped.out)) {
-    motion.out = createTextMotionEffect(mapped.out as (typeof TEXT_MOTION_OUT_PRESET_IDS)[number], 0) as NonNullable<
-      TextItem['textMotion']
-    >['out']
+    motion.out = createTextMotionEffect(
+      mapped.out as (typeof TEXT_MOTION_OUT_PRESET_IDS)[number],
+      0,
+    ) as NonNullable<TextItem['textMotion']>['out']
   }
   return motion
 }
@@ -415,16 +441,20 @@ const applyTitleStyle = (item: TextItem, style: string): Partial<TextItem> => {
   const mapped = titleStyleOf(style)
   if (mapped === 'plain') return { fontWeight: 'medium' }
   if (mapped === 'bold') return { fontWeight: 'bold' }
-  const { text: _text, textSpans: _spans, label: _label, ...styling } = applyTextStylePresetToItem(
-    item,
-    mapped,
-    canvas(),
-  )
+  const {
+    text: _text,
+    textSpans: _spans,
+    label: _label,
+    ...styling
+  } = applyTextStylePresetToItem(item, mapped, canvas())
   return styling
 }
 
 /** `{ x, y, scale, rotation, opacity }` from the prototype, onto Freecut's transform. */
-const transformOf = (item: TimelineItem, intent: Record<string, unknown>): Partial<TransformProperties> => {
+const transformOf = (
+  item: TimelineItem,
+  intent: Record<string, unknown>,
+): Partial<TransformProperties> => {
   const allowed = new Set(['x', 'y', 'scale', 'rotation', 'opacity'])
   for (const key of Object.keys(intent)) {
     if (!allowed.has(key)) invalid(`transform: unknown field "${key}"`)
@@ -433,7 +463,8 @@ const transformOf = (item: TimelineItem, intent: Record<string, unknown>): Parti
   for (const key of ['x', 'y', 'rotation', 'opacity'] as const) {
     const value = intent[key]
     if (value === undefined) continue
-    if (typeof value !== 'number' || !Number.isFinite(value)) invalid(`transform.${key} must be a number`)
+    if (typeof value !== 'number' || !Number.isFinite(value))
+      invalid(`transform.${key} must be a number`)
     transform[key] = value as number
   }
   if (transform.opacity !== undefined && (transform.opacity < 0 || transform.opacity > 1)) {
@@ -441,9 +472,14 @@ const transformOf = (item: TimelineItem, intent: Record<string, unknown>): Parti
   }
   if (intent.scale !== undefined) {
     const scale = intent.scale
-    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) invalid('transform.scale must be positive')
+    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0)
+      invalid('transform.scale must be positive')
     // Scale is relative to Freecut's fit-to-canvas size, as the prototype's is to the frame.
-    const fitted = resolveTransform({ ...item, transform: undefined } as TimelineItem, canvas(), getSourceDimensions(item))
+    const fitted = resolveTransform(
+      { ...item, transform: undefined } as TimelineItem,
+      canvas(),
+      getSourceDimensions(item),
+    )
     transform.width = fitted.width * (scale as number)
     transform.height = fitted.height * (scale as number)
   }
@@ -468,7 +504,10 @@ const setTransform = (id: string, transform: Partial<TransformProperties>) => {
 /* Handlers                                                             */
 /* ------------------------------------------------------------------ */
 
-type Handler = (payload: Record<string, unknown>, context: { fps: number; media: Map<string, MediaMetadata> }) => void
+type Handler = (
+  payload: Record<string, unknown>,
+  context: { fps: number; media: Map<string, MediaMetadata> },
+) => void
 
 const handlers: Record<string, Handler> = {
   'clip.add'(payload, { fps, media }) {
@@ -498,10 +537,16 @@ const handlers: Record<string, Handler> = {
     const linkVideoAudio = mediaType === 'video' && !!source!.audioCodec
     let audioTrackId: string | undefined
     if (linkVideoAudio) {
-      audioTrackId = tracks().find((candidate) => !candidate.isGroup && candidate.kind === 'audio')?.id
+      audioTrackId = tracks().find(
+        (candidate) => !candidate.isGroup && candidate.kind === 'audio',
+      )?.id
       if (!audioTrackId) {
         const all = tracks()
-        const created = createClassicTrack({ tracks: all, kind: 'audio', order: Math.max(0, ...all.map((t) => t.order)) + 1 })
+        const created = createClassicTrack({
+          tracks: all,
+          kind: 'audio',
+          order: Math.max(0, ...all.map((t) => t.order)) + 1,
+        })
         setTracks([...all, created])
         audioTrackId = created.id
       }
@@ -542,7 +587,8 @@ const handlers: Record<string, Handler> = {
       : payload.clipId !== undefined
         ? [payload.clipId]
         : []
-    if (ids.length === 0 || ids.some((id) => typeof id !== 'string')) invalid('clipId or clipIds is required')
+    if (ids.length === 0 || ids.some((id) => typeof id !== 'string'))
+      invalid('clipId or clipIds is required')
     for (const id of ids as string[]) requireItem(id, 'clipIds')
     if (payload.ripple === true) rippleDeleteItems(ids as string[])
     else removeItems(ids as string[])
@@ -570,7 +616,8 @@ const handlers: Record<string, Handler> = {
   'clip.setTransformParent'(payload) {
     const child = requireItem(stringField(payload, 'clipId'))
     const parentId = payload.parentId
-    if (parentId !== null && parentId !== undefined && typeof parentId !== 'string') invalid('parentId must be a clip id or null')
+    if (parentId !== null && parentId !== undefined && typeof parentId !== 'string')
+      invalid('parentId must be a clip id or null')
     if (typeof parentId === 'string') requireItem(parentId, 'parentId')
     const ok = setTransformParent({
       childItemId: child.id,
@@ -583,7 +630,9 @@ const handlers: Record<string, Handler> = {
 
   'clip.setTransition'(payload, { fps }) {
     const item = requireItem(stringField(payload, 'clipId'))
-    const existing = useTransitionsStore.getState().transitions.find((transition) => transition.leftClipId === item.id)
+    const existing = useTransitionsStore
+      .getState()
+      .transitions.find((transition) => transition.leftClipId === item.id)
     const intent = payload.transition
     if (intent === null) {
       if (existing) removeTransition(existing.id)
@@ -597,8 +646,11 @@ const handlers: Record<string, Handler> = {
     if (frames < 1) invalid('transition.duration must be at least one frame')
     if (existing) {
       updateTransition(existing.id, { durationInFrames: frames, presentation })
-      const applied = useTransitionsStore.getState().transitions.find((transition) => transition.id === existing.id)
-      if (applied?.durationInFrames !== frames) failed('clip.setTransition: the clips do not have enough handle for that length')
+      const applied = useTransitionsStore
+        .getState()
+        .transitions.find((transition) => transition.id === existing.id)
+      if (applied?.durationInFrames !== frames)
+        failed('clip.setTransition: the clips do not have enough handle for that length')
       return
     }
     const next = nextOnTrack(item)
@@ -615,7 +667,8 @@ const handlers: Record<string, Handler> = {
       if (splitAllItemsAtFrame(frame) === 0) invalid('clip.split: nothing spans that time')
       return
     }
-    if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string')) invalid('clipIds must be clip ids')
+    if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
+      invalid('clipIds must be clip ids')
     for (const id of ids as string[]) {
       requireItem(id, 'clipIds')
       if (!splitItem(id, frame)) invalid(`clip.split: "${id}" cannot be split there`)
@@ -630,7 +683,8 @@ const handlers: Record<string, Handler> = {
     if (start >= item.from + item.durationInFrames) invalid('start must be before the clip ends')
     if (payload.ripple === true) rippleTrimItem(item.id, 'start', delta)
     else trimItemStart(item.id, delta)
-    if (requireItem(item.id).durationInFrames === item.durationInFrames) failed('clip.trimStart: the source has no more media there')
+    if (requireItem(item.id).durationInFrames === item.durationInFrames)
+      failed('clip.trimStart: the source has no more media there')
   },
 
   'clip.trimEnd'(payload, { fps }) {
@@ -641,7 +695,8 @@ const handlers: Record<string, Handler> = {
     if (end <= item.from) invalid('end must be after the clip starts')
     if (payload.ripple === true) rippleTrimItem(item.id, 'end', delta)
     else trimItemEnd(item.id, delta)
-    if (requireItem(item.id).durationInFrames === item.durationInFrames) failed('clip.trimEnd: the source has no more media there')
+    if (requireItem(item.id).durationInFrames === item.durationInFrames)
+      failed('clip.trimEnd: the source has no more media there')
   },
 
   'clip.update'(payload) {
@@ -649,8 +704,18 @@ const handlers: Record<string, Handler> = {
     const patch = payload.patch
     if (!patch || typeof patch !== 'object') invalid('patch is required')
     const fields = patch as Record<string, unknown>
-    const allowed = new Set(['name', 'text', 'style', 'position', 'animation', 'volume', 'muted', 'transform'])
-    for (const key of Object.keys(fields)) if (!allowed.has(key)) invalid(`patch: unknown field "${key}"`)
+    const allowed = new Set([
+      'name',
+      'text',
+      'style',
+      'position',
+      'animation',
+      'volume',
+      'muted',
+      'transform',
+    ])
+    for (const key of Object.keys(fields))
+      if (!allowed.has(key)) invalid(`patch: unknown field "${key}"`)
     const updates: Partial<TextItem> & Record<string, unknown> = {}
     if (fields.name !== undefined) updates.label = optionalString(fields, 'name')
     const isText = item.type === 'text'
@@ -658,21 +723,32 @@ const handlers: Record<string, Handler> = {
       if (fields[key] !== undefined && !isText) invalid(`patch.${key} applies to titles only`)
     }
     if (fields.text !== undefined) updates.text = optionalString(fields, 'text')
-    if (fields.style !== undefined) Object.assign(updates, applyTitleStyle(item as TextItem, optionalString(fields, 'style')!))
-    if (fields.position !== undefined) Object.assign(updates, titlePositionOf(optionalString(fields, 'position')!))
-    if (fields.animation !== undefined) updates.textMotion = titleMotionOf(optionalString(fields, 'animation')!)
+    if (fields.style !== undefined)
+      Object.assign(updates, applyTitleStyle(item as TextItem, optionalString(fields, 'style')!))
+    if (fields.position !== undefined)
+      Object.assign(updates, titlePositionOf(optionalString(fields, 'position')!))
+    if (fields.animation !== undefined)
+      updates.textMotion = titleMotionOf(optionalString(fields, 'animation')!)
     if (fields.volume !== undefined) {
-      if (item.type !== 'video' && item.type !== 'audio') invalid('patch.volume applies to video and audio clips')
+      if (item.type !== 'video' && item.type !== 'audio')
+        invalid('patch.volume applies to video and audio clips')
       updates.volume = optionalNumber(fields, 'volume')
     }
     if (fields.muted !== undefined) {
       // Freecut mutes tracks, not clips (`TimelineTrack.muted`); a clip has only its gain.
-      throw new CommandRejection('not-implemented', 'patch.muted: Freecut clips have no mute; mute the track or set the volume')
+      throw new CommandRejection(
+        'not-implemented',
+        'patch.muted: Freecut clips have no mute; mute the track or set the volume',
+      )
     }
     if (Object.keys(updates).length > 0) updateItem(item.id, updates as Partial<TimelineItem>)
     if (fields.transform !== undefined) {
-      if (!fields.transform || typeof fields.transform !== 'object') invalid('patch.transform must be an object')
-      setTransform(item.id, transformOf(requireItem(item.id), fields.transform as Record<string, unknown>))
+      if (!fields.transform || typeof fields.transform !== 'object')
+        invalid('patch.transform must be an object')
+      setTransform(
+        item.id,
+        transformOf(requireItem(item.id), fields.transform as Record<string, unknown>),
+      )
     }
   },
 
@@ -684,9 +760,12 @@ const handlers: Record<string, Handler> = {
     }
     for (const id of ids as string[]) requireItem(id, 'clipIds')
     if (payload.trackId !== undefined || payload.at !== undefined) {
-      invalid('composition.add places the composition where its clips were; trackId and at are not accepted')
+      invalid(
+        'composition.add places the composition where its clips were; trackId and at are not accepted',
+      )
     }
-    if (!createPreComp(name, ids as string[])) failed('composition.add: these clips cannot form a composition')
+    if (!createPreComp(name, ids as string[]))
+      failed('composition.add: these clips cannot form a composition')
   },
 
   'effect.add'(payload) {
@@ -694,13 +773,17 @@ const handlers: Record<string, Handler> = {
     const gpuEffectType = stringField(payload, 'effect')
     if (!getGpuEffect(gpuEffectType)) invalid(`effect: unknown effect "${gpuEffectType}"`)
     const params = payload.params ?? {}
-    if (!params || typeof params !== 'object' || Array.isArray(params)) invalid('params must be an object')
+    if (!params || typeof params !== 'object' || Array.isArray(params))
+      invalid('params must be an object')
     const before = (requireItem(item.id) as { effects?: Array<{ id: string }> }).effects ?? []
     addEffect(item.id, { type: 'gpu-effect', gpuEffectType, params } as never)
     const index = optionalNumber(payload, 'index')
     if (index !== undefined) {
-      if (!Number.isInteger(index) || index < 0 || index > before.length) invalid('index is outside the effect stack')
-      const after = [...((requireItem(item.id) as { effects?: Array<{ id: string }> }).effects ?? [])]
+      if (!Number.isInteger(index) || index < 0 || index > before.length)
+        invalid('index is outside the effect stack')
+      const after = [
+        ...((requireItem(item.id) as { effects?: Array<{ id: string }> }).effects ?? []),
+      ]
       const [added] = after.splice(after.length - 1, 1)
       after.splice(index, 0, added!)
       setItemEffects([{ itemId: item.id, effects: after as never }])
@@ -711,7 +794,8 @@ const handlers: Record<string, Handler> = {
     const item = requireItem(stringField(payload, 'clipId'))
     const effectId = stringField(payload, 'effectId')
     const effects = (item as { effects?: Array<{ id: string }> }).effects ?? []
-    if (!effects.some((effect) => effect.id === effectId)) invalid(`effectId: "${effectId}" is not on this clip`)
+    if (!effects.some((effect) => effect.id === effectId))
+      invalid(`effectId: "${effectId}" is not on this clip`)
     removeEffect(item.id, effectId)
   },
 
@@ -720,9 +804,11 @@ const handlers: Record<string, Handler> = {
     const property = stringField(payload, 'property') as AnimatableProperty
     const at = timeField(payload, 'at', fps)
     const value = (payload.value as { value?: unknown } | undefined)?.value
-    if (typeof value !== 'number' || !Number.isFinite(value)) invalid('value must be { value: number }')
+    if (typeof value !== 'number' || !Number.isFinite(value))
+      invalid('value must be { value: number }')
     const easing = optionalString(payload, 'easing') as EasingType | undefined
-    if (at < item.from || at >= item.from + item.durationInFrames) invalid('at must fall inside the clip')
+    if (at < item.from || at >= item.from + item.durationInFrames)
+      invalid('at must fall inside the clip')
     // Freecut keyframes are addressed relative to the clip's start.
     if (!addKeyframe(item.id, property, at - item.from, value as number, easing)) {
       failed('keyframe.add: keyframes cannot be placed inside a transition')
@@ -733,13 +819,16 @@ const handlers: Record<string, Handler> = {
     const item = requireItem(stringField(payload, 'clipId'))
     const property = stringField(payload, 'property') as AnimatableProperty
     const ids = payload.keyframeIds
-    if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string')) invalid('keyframeIds is required')
+    if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
+      invalid('keyframeIds is required')
     const existing =
       useKeyframesStore
         .getState()
-        .keyframesByItemId[item.id]?.properties.find((entry) => entry.property === property)?.keyframes ?? []
+        .keyframesByItemId[item.id]?.properties.find((entry) => entry.property === property)
+        ?.keyframes ?? []
     for (const id of ids as string[]) {
-      if (!existing.some((keyframe) => keyframe.id === id)) invalid(`keyframeIds: "${id}" is not on ${property}`)
+      if (!existing.some((keyframe) => keyframe.id === id))
+        invalid(`keyframeIds: "${id}" is not on ${property}`)
     }
     for (const id of ids as string[]) removeKeyframe(item.id, property, id)
   },
@@ -749,7 +838,9 @@ const handlers: Record<string, Handler> = {
     const from = timeField(payload, 'at', fps)
     const duration = optionalTime(payload, 'duration', fps) ?? 3 * Math.round(fps)
     if (duration < 1) invalid('duration must be at least one frame')
-    const track = tracks().find((candidate) => !candidate.isGroup && (candidate.kind ?? 'video') === 'video')
+    const track = tracks().find(
+      (candidate) => !candidate.isGroup && (candidate.kind ?? 'video') === 'video',
+    )
     if (!track) invalid('title.add: the project has no video track')
     const base: TextItem = {
       id: crypto.randomUUID(),
@@ -781,7 +872,8 @@ const handlers: Record<string, Handler> = {
     const all = tracks()
     const sorted = [...all].sort((a, b) => a.order - b.order)
     const index = optionalNumber(payload, 'index')
-    if (index !== undefined && (!Number.isInteger(index) || index < 0 || index > sorted.length)) invalid('index is outside the track list')
+    if (index !== undefined && (!Number.isInteger(index) || index < 0 || index > sorted.length))
+      invalid('index is outside the track list')
     const orders = all.map((track) => track.order)
     const order =
       index === undefined
@@ -824,7 +916,12 @@ export async function applyCanonicalCommands(
   media: readonly MediaMetadata[],
 ): Promise<ApplyOutcome> {
   if (!isProject(graph)) {
-    return { status: 'rejected', index: 0, reason: 'invalid', detail: 'The project has no editable graph yet' }
+    return {
+      status: 'rejected',
+      index: 0,
+      reason: 'invalid',
+      detail: 'The project has no editable graph yet',
+    }
   }
   const { project } = migrateProject(structuredClone(graph))
   projectCanvas = {
@@ -836,7 +933,10 @@ export async function applyCanonicalCommands(
   const mediaById = new Map(media.map((entry) => [entry.id, entry]))
 
   await hydrateTimelineStoresFromProject(project)
-  useMediaLibraryStore.setState({ mediaItems: [...media], mediaById: Object.fromEntries(mediaById) })
+  useMediaLibraryStore.setState({
+    mediaItems: [...media],
+    mediaById: Object.fromEntries(mediaById),
+  })
 
   for (const [index, envelope] of envelopes.entries()) {
     const handler = handlers[envelope.id]

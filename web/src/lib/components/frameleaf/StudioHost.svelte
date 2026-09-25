@@ -205,6 +205,17 @@
     online,
     mode,
     workspace,
+    // The adapter's own chrome (its server preview panel) speaks the host's language (FL-96).
+    strings: {
+      previewTitle: $t('frameleaf_studio_server_preview'),
+      previewShow: $t('frameleaf_studio_server_preview_show'),
+      previewHide: $t('frameleaf_studio_server_preview_hide'),
+      previewRendering: $t('frameleaf_studio_preview_rendering'),
+      previewStale: $t('frameleaf_studio_preview_stale'),
+      previewUnavailable: $t('frameleaf_studio_preview_unavailable'),
+      previewToneMapped: $t('frameleaf_studio_preview_tone_mapped'),
+      previewNoWorker: $t('frameleaf_studio_server_preview_no_worker'),
+    },
   });
 
   const disposeEngine = async () => {

@@ -171,7 +171,22 @@ export interface StudioHostContext {
    * Advanced. Absent means Basic.
    */
   mode?: StudioWorkspaceMode;
+  /**
+   * The few words the adapter's own chrome shows (the server preview panel), already translated by
+   * the host, because the engine's locale files do not carry Frameleaf strings.
+   */
+  strings?: Readonly<Partial<Record<StudioAdapterString, string>>>;
 }
+
+export type StudioAdapterString =
+  | 'previewTitle'
+  | 'previewShow'
+  | 'previewHide'
+  | 'previewRendering'
+  | 'previewStale'
+  | 'previewUnavailable'
+  | 'previewToneMapped'
+  | 'previewNoWorker';
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 
@@ -213,8 +228,7 @@ export type StudioWorkspaceSaveResult = { status: 'saved'; savedAt: string } | {
  * edit is kept when it is not.
  */
 export type StudioDraftResult =
-  | { status: 'staged' }
-  | { status: 'rejected'; reason: 'invalid' | 'forbidden' | 'lease-lost' | 'offline' };
+  { status: 'staged' } | { status: 'rejected'; reason: 'invalid' | 'forbidden' | 'lease-lost' | 'offline' };
 
 export const unavailableStudioWorkspace = (): StudioWorkspaceView => ({
   state: 'unavailable',

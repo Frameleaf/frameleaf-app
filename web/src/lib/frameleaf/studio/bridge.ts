@@ -48,6 +48,22 @@ export interface StudioBridgeContext {
  */
 export type StudioCommandHandler = (envelope: StudioCommandEnvelope) => Promise<number>;
 
+/**
+ * Thrown by a handler that decided the command cannot apply, with the reason the person should
+ * hear (`invalid` for a payload the graph contradicts, `not-implemented` for an intent the engine
+ * has no equivalent for). Settled like any other decision: a retry of the same key gets the same
+ * answer. Anything else a handler throws is an unknown outcome and stays retryable.
+ */
+export class StudioCommandRejectedError extends Error {
+  constructor(
+    readonly reason: 'invalid' | 'not-implemented' | 'failed',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'StudioCommandRejectedError';
+  }
+}
+
 export interface StudioBridgeOptions {
   /** Read the live context at submission time, not at construction time. */
   context: () => StudioBridgeContext;
@@ -136,7 +152,10 @@ export const createStudioBridge = ({ context, handlers = {} }: StudioBridgeOptio
       };
       settled.set(envelope.idempotencyKey, result);
       return result;
-    } catch {
+    } catch (error) {
+      if (error instanceof StudioCommandRejectedError) {
+        return reject(error.reason);
+      }
       // Not settled: a transport failure leaves the outcome unknown, and the editor may
       // legitimately retry the same key.
       return studioCommandRejection(envelope.idempotencyKey, 'failed');
