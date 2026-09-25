@@ -36,6 +36,7 @@ import {
   RESTORATION_PREVIEW_EDGE,
   RESTORATION_PREVIEW_SECONDS,
   RestorationErrorCode,
+  RestorationInferenceResult,
   RestorationSelection,
   RestorationSnapshot,
   RestorationStage,
@@ -43,6 +44,7 @@ import {
   canRunStage,
   cappedOutputSize,
   isFullRegion,
+  isReviewedModel,
   parseRestorationSnapshot,
   planRestorationChunks,
   previewExpiryAfterReady,
@@ -539,6 +541,7 @@ export class RestorationWorkerService {
       this.inferenceOptions(ctx, resultTmp, cap),
     );
     this.check(ctx);
+    this.assertReviewedModel(ctx, result);
     const restored = await this.validateImage(result.outputPath, cap);
 
     const previewTmp = this.scratch(ctx, path.join(workDir, `result-preview-${operation.id}.jpg`));
@@ -721,8 +724,9 @@ export class RestorationWorkerService {
 
     let processed = 2;
     const outputs: string[] = [];
-    let modelName = 'unknown';
-    let modelVersion: string | null = null;
+    // Every chunk reused from a checkpoint ran the reviewed model, so it names the result.
+    let modelName = snapshot.model?.name ?? 'unknown';
+    let modelVersion: string | null = snapshot.model?.version ?? null;
     for (const plan of planned) {
       const kept = reusable.get(plan.sequence);
       if (kept) {
@@ -784,6 +788,7 @@ export class RestorationWorkerService {
         this.inferenceOptions(ctx, chunkOut, cap),
       );
       this.check(ctx);
+      this.assertReviewedModel(ctx, result);
       await this.validateVideo(result.outputPath, cap, probe.format.duration);
       modelName = result.modelName;
       modelVersion = result.modelVersion;
@@ -1026,6 +1031,27 @@ export class RestorationWorkerService {
   /* ------------------------------------------------------------------ */
   /* Helpers                                                             */
   /* ------------------------------------------------------------------ */
+
+  /**
+   * The full render must run the model the owner reviewed in the preview (FL-115). A destination
+   * whose model or weights changed since then refuses; the owner requests a new preview.
+   */
+  private assertReviewedModel(
+    ctx: Pick<RunContext, 'snapshot'>,
+    result: Pick<RestorationInferenceResult, 'modelName' | 'modelVersion'>,
+  ) {
+    if (isReviewedModel(ctx.snapshot, result)) {
+      return;
+    }
+
+    const reviewed = ctx.snapshot.model!;
+    throw new RestorationFailure(
+      RestorationErrorCode.ModelChanged,
+      `The destination now runs ${result.modelName} ${result.modelVersion ?? ''}`.trim() +
+        `, not the ${reviewed.name} ${reviewed.version ?? ''}`.trimEnd() +
+        ' the preview was reviewed with; request a new preview',
+    );
+  }
 
   /** A full render that stops without a result starts its leftovers' retention clock (FL-115). */
   private abandonedRetention(statuses: (typeof STAGE_STATUSES)[RestorationStage]) {

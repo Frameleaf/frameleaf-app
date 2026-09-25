@@ -97,6 +97,8 @@ export const RestorationErrorCode = {
   SourceChanged: 'restoration_source_changed',
   DestinationRefused: 'restoration_destination_refused',
   OutputInvalid: 'restoration_output_invalid',
+  /** The destination's model is not the one the owner reviewed in the preview (FL-115). */
+  ModelChanged: 'restoration_model_changed',
   LeaseLost: 'restoration_lease_lost',
   Failed: 'restoration_failed',
 } as const;
@@ -371,6 +373,12 @@ export const RestorationSnapshotSchema = z.object({
   destinationKind: MlDestinationKindSchema,
   region: AssetRestorationRegionSchema,
   output: z.object({ width: z.int().min(1), height: z.int().min(1) }),
+  /**
+   * The model the reviewed preview ran (FL-115). A full render is bound to it: any other model or
+   * weight revision on the destination is a refusal, not a silent substitute. Absent on previews
+   * and on jobs queued before the binding existed.
+   */
+  model: z.object({ name: z.string().min(1), version: z.string().nullable() }).optional(),
 });
 
 export type RestorationSnapshot = z.infer<typeof RestorationSnapshotSchema>;
@@ -379,6 +387,17 @@ export const parseRestorationSnapshot = (value: unknown): RestorationSnapshot | 
   const result = RestorationSnapshotSchema.safeParse(value);
   return result.success ? result.data : null;
 };
+
+/**
+ * Whether an inference result came from the model the owner reviewed. True when the snapshot binds
+ * no model (a preview, or a job from before the binding).
+ */
+export const isReviewedModel = (
+  snapshot: Pick<RestorationSnapshot, 'model'>,
+  result: Pick<RestorationInferenceResult, 'modelName' | 'modelVersion'>,
+) =>
+  !snapshot.model ||
+  (snapshot.model.name === result.modelName && snapshot.model.version === (result.modelVersion ?? null));
 
 /* ------------------------------------------------------------------ */
 /* Video chunks                                                        */
@@ -420,6 +439,7 @@ export const restorationChunkIdentity = (snapshot: RestorationSnapshot, chunk: R
       workload: snapshot.workload,
       destinationId: snapshot.destinationId,
       output: snapshot.output,
+      ...(snapshot.model && { model: snapshot.model }),
     }),
   );
   const startTicks = BigInt(Math.round(chunk.startSeconds * 1000));
