@@ -170,6 +170,8 @@
       data-testid="viewer-rating-button"
     />
     {#if open}
+      <!-- The popover's arrow keys move between its stars and Escape returns to the tool (MediaViewer.jsx:1076-1125). -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
         class="fl-rating-popover fl-continuous-corners"
         role="group"

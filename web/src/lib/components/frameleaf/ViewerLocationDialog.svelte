@@ -38,7 +38,7 @@
   let open = $state(true);
   let updated: AssetResponseDto | undefined;
   let city = $state(initial.city);
-  let state = $state(initial.state);
+  let region = $state(initial.state);
   let country = $state(initial.country);
   let latitude = $state(initial.latitude);
   let longitude = $state(initial.longitude);
@@ -47,7 +47,7 @@
 
   const lat = $derived(parseCoordinate(latitude, 90));
   const lon = $derived(parseCoordinate(longitude, 180));
-  const patch = $derived(locationPatch(initial, { city, state, country, latitude, longitude }));
+  const patch = $derived(locationPatch(initial, { city, state: region, country, latitude, longitude }));
   const invalid = $derived(patch === 'invalid');
 
   const startPoint = initial.latitude
@@ -127,7 +127,7 @@
       </label>
       <label>
         {$t('frameleaf_info_state_or_region')}
-        <input bind:value={state} autocomplete="off" />
+        <input bind:value={region} autocomplete="off" />
       </label>
       <label>
         {$t('country')}
@@ -150,6 +150,8 @@
       {/if}
     </div>
     <div class="mv-map-wrap">
+      <!-- The pin map is an application widget: arrow keys move the pin (UtilityMapPicker.jsx:48-57). -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div
         class="mv-map fl-continuous-corners"
