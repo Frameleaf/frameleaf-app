@@ -127,14 +127,26 @@
   let controlsElement = $state<HTMLElement>();
   let pointerOverControls = false;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  // Only keyboard navigation (Tab) through the chrome holds it on screen. A focused button left
-  // behind by a click, or any other key (the arrows, S), lets the idle hide run again, so neither
-  // strands the chrome and the pointer on screen.
-  let keyboardModality = false;
   // the capsule and the viewer's header and footer (data-viewer-chrome) are one chrome
   const CHROME = '[data-testid="slideshow-controls"], [data-viewer-chrome]';
   const inChrome = (node: EventTarget | Element | null) => node instanceof Element && !!node.closest(CHROME);
-  const focusInsideControls = () => keyboardModality && inChrome(document.activeElement);
+  /**
+   * Visible focus in the chrome holds it on screen: a keyboard or screen-reader user there, or focus
+   * returned to the cog when the settings close. A button left focused by a click is not
+   * focus-visible, so it lets the idle hide run again.
+   */
+  const focusVisible = (element: Element) => {
+    try {
+      return element.matches(':focus-visible');
+    } catch {
+      // an engine without :focus-visible (test DOMs): no focus is treated as visible
+      return false;
+    }
+  };
+  const focusInsideControls = () => {
+    const active = document.activeElement;
+    return !!active && inChrome(active) && focusVisible(active);
+  };
   const setCursor = (value: string) => (document.body.style.cursor = value);
   const scheduleHide = () => {
     clearTimeout(idleTimer);
@@ -185,7 +197,6 @@
   // the state at pointerdown decides the toggle, so a swipe-down reveal in between cannot undo it
   let tap: { x: number; y: number; time: number; visible: boolean } | undefined;
   const onPointerDown = (event: PointerEvent) => {
-    keyboardModality = false;
     const target = event.target as Element | null;
     tap =
       target?.closest?.('[data-viewer-content]') && !inChrome(target)
@@ -289,7 +300,6 @@
     pointerOverControls = inChrome(event.target);
     showControls();
   }}
-  onkeydown={(event) => (keyboardModality = event.key === 'Tab')}
   onpointerdown={onPointerDown}
   onpointerup={onPointerUp}
 />
