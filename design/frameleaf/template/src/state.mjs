@@ -300,7 +300,11 @@ export function parseSavedPrototype(raw, assets, readView) {
       id: text(String(item.id)),
       kind: text(item.kind, "Export"),
       name: text(item.name, "Sample media"),
-      destination: choice(item.destination, ["local", "lan", "runpod"], "local"),
+      destination: choice(
+        item.destination === "runpod" ? "cloud" : item.destination,
+        ["local", "lan", "cloud"],
+        "local",
+      ),
       simulated: true,
       status: choice(
         item.status,
@@ -317,6 +321,10 @@ export function parseSavedPrototype(raw, assets, readView) {
         "paused",
       ),
       progress: number(item.progress, 0, 0, 100),
+      // When the current stage began (ms), so Queued/Starting timers survive a reload.
+      ...(Number.isFinite(item.stageStartedAt) && item.stageStartedAt > 0
+        ? { stageStartedAt: Math.round(item.stageStartedAt) }
+        : {}),
       ...(typeof item.error === "string" ? { error: text(item.error, "", 400) } : {}),
       ...(item.preview === true ? { preview: true } : {}),
       ...(object(item.estimate)
@@ -330,7 +338,15 @@ export function parseSavedPrototype(raw, assets, readView) {
             },
           }
         : {}),
-      ...(object(item.settings) ? { settings: structuredClone(item.settings) } : {}),
+      ...(object(item.settings)
+        ? {
+            settings: {
+              ...structuredClone(item.settings),
+              ...(item.settings.destination === "runpod" ? { destination: "cloud" } : {}),
+            },
+          }
+        : {}),
+      ...(object(item.cloud) ? { cloud: cloudJobMeta(item.cloud) } : {}),
       snapshot:
         object(item.snapshot) && ids.has(item.snapshot.assetId)
           ? {
@@ -401,7 +417,10 @@ export function parseSavedPrototype(raw, assets, readView) {
       .slice(0, 5),
     theme: saved.theme === "light" ? "light" : "dark",
     collection: text(saved.collection, "Summer in the Rockies"),
-    destination: saved.destination === "runpod" ? "runpod" : "local",
+    destination:
+      saved.destination === "cloud" || saved.destination === "runpod"
+        ? "cloud"
+        : "local",
     selection: validIds(saved.selection) ?? [assets[0].id],
     snapshotIds: validIds(saved.snapshotIds),
     ratings: Object.fromEntries(
@@ -438,6 +457,30 @@ export function applyPreset(context, preset) {
     collection: preset.name,
     snapshotIds: preset.ids ? [...preset.ids] : null,
     state: structuredClone(preset.state),
+  };
+}
+
+/** Frameleaf Cloud cost facts kept with a job: estimate band, hold and settled charge. */
+function cloudJobMeta(value) {
+  const usd = (input) => number(input, 0, 0, 1e5);
+  return {
+    modelId: text(value.modelId, "", 80),
+    modelName: text(value.modelName, "Frameleaf Cloud", 120),
+    quantity: number(value.quantity, 0, 0, 1e7),
+    quantityLabel: text(value.quantityLabel, "", 40),
+    p50: usd(value.p50),
+    p90: usd(value.p90),
+    hold: usd(value.hold),
+    gpuClass: text(value.gpuClass, "", 40),
+    gpuClassLabel: text(value.gpuClassLabel, "", 80),
+    rate: number(value.rate, 0, 0, 1),
+    startFee: usd(value.startFee),
+    workers: number(value.workers, 1, 1, 64),
+    workSeconds: number(value.workSeconds, 0, 0, 1e7),
+    disclosureVersion: text(value.disclosureVersion, "", 20),
+    consentedAt: text(value.consentedAt, "", 40),
+    settled: value.settled === true,
+    chargedUsd: Number.isFinite(value.chargedUsd) ? usd(value.chargedUsd) : null,
   };
 }
 

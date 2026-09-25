@@ -131,7 +131,7 @@ const APP_PREFERENCES = [
   {
     prop: "destination",
     field: "destination",
-    values: { local: "local", runpod: "runpod" },
+    values: { local: "local", cloud: "cloud" },
   },
   {
     prop: "defaultLayout",
@@ -142,7 +142,7 @@ const APP_PREFERENCES = [
 
 /**
  * Reconcile app-owned preferences without overwriting unfinished settings edits.
- * Props use app values: dark/light, local/runpod, and browse/work. Missing or
+ * Props use app values: dark/light, local/cloud, and browse/work. Missing or
  * unknown props are ignored. Omitting previousProps reconciles all supplied props.
  * Unchanged settings and drafts retain their references for effect callers.
  */

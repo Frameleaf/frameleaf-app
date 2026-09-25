@@ -391,6 +391,35 @@ describe(AssetService.name, () => {
       );
     });
 
+    it("removes a Live Photo's location from its paired video too (FL-51)", async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getByIds.mockResolvedValue([{ id: asset.id, livePhotoVideoId: 'motion-1' }] as never);
+
+      await sut.update(authStub.admin, asset.id, { latitude: null, longitude: null });
+
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith([asset.id, 'motion-1']);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: asset.id } });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: 'motion-1' } });
+    });
+
+    it('removes typed place names with the location instead of storing them (FL-51, FL-36)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getByIds.mockResolvedValue([{ id: asset.id, livePhotoVideoId: null }] as never);
+
+      await sut.update(authStub.admin, asset.id, { latitude: null, longitude: null, city: 'Paris' });
+
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: asset.id } });
+    });
+
     it('should update the exif rating', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -409,6 +438,79 @@ describe(AssetService.name, () => {
           lockedPropertiesBehavior: 'append',
         }),
       );
+    });
+
+    it('stores and locks a typed place name, clearing an empty one (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, {
+        latitude: 51.4,
+        longitude: -116.2,
+        city: '  Lake Louise ',
+        state: 'Alberta',
+        country: '',
+      });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: {
+            assetId: asset.id,
+            latitude: 51.4,
+            longitude: -116.2,
+            city: 'Lake Louise',
+            state: 'Alberta',
+            country: null,
+            lockedProperties: ['latitude', 'longitude', 'city', 'state', 'country'],
+          },
+          lockedPropertiesBehavior: 'append',
+        }),
+      );
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+    });
+
+    it('lets geocoding name a moved item whose place was not typed (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { latitude: 10, longitude: 20 });
+
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['city', 'state', 'country']);
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: { assetId: asset.id, latitude: 10, longitude: 20, lockedProperties: ['latitude', 'longitude'] },
+        }),
+      );
+    });
+
+    it('keeps a typed place when the same edit names it at the new coordinates (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { latitude: 35.68, longitude: 139.69, city: 'Tokyo' });
+
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ city: 'Tokyo' }) }),
+      );
+    });
+
+    it('never passes place names to the asset row (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { city: 'Banff' });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.not.objectContaining({ city: expect.anything() }));
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
     });
 
     it('should fail linking a live video if the motion part could not be found', async () => {
@@ -573,6 +675,27 @@ describe(AssetService.name, () => {
       });
     });
 
+    it('removes the location for null coordinates and rewrites the sidecars (FL-51)', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      mocks.asset.getByIds.mockResolvedValue([
+        { id: 'asset-1', livePhotoVideoId: 'motion-1' },
+        { id: 'asset-2', livePhotoVideoId: null },
+      ] as never);
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], latitude: null, longitude: null });
+
+      // the Live Photo's paired video loses its location with the photo
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['asset-1', 'asset-2', 'motion-1']);
+      expect(mocks.asset.updateAllExif).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SidecarWrite, data: { id: 'asset-1' } },
+        { name: JobName.SidecarWrite, data: { id: 'asset-2' } },
+        { name: JobName.SidecarWrite, data: { id: 'motion-1' } },
+      ]);
+    });
+
     it('should keep album membership when assets are locked (FL-32, FL-34)', async () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
@@ -654,7 +777,11 @@ describe(AssetService.name, () => {
         rating: undefined,
       });
       expect(mocks.asset.updateAll).toHaveBeenCalled();
-      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { latitude: 0, longitude: 0 });
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { latitude: 0, longitude: 0 }, [
+        'city',
+        'state',
+        'country',
+      ]);
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
     });
 
@@ -671,11 +798,11 @@ describe(AssetService.name, () => {
         rating: undefined,
       });
       expect(mocks.asset.updateAll).toHaveBeenCalled();
-      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], {
-        dateTimeOriginal,
-        latitude: 30,
-        longitude: 50,
-      });
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        ['asset-1'],
+        { dateTimeOriginal, latitude: 30, longitude: 50 },
+        ['city', 'state', 'country'],
+      );
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(
         ['asset-1'],
         expect.objectContaining({
@@ -684,6 +811,36 @@ describe(AssetService.name, () => {
         }),
       );
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+
+    it('releases typed place names when a bulk change moves the items (FL-36, V-24)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1', 'asset-2'], latitude: 35.68, longitude: 139.69 });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        ['asset-1', 'asset-2'],
+        { latitude: 35.68, longitude: 139.69 },
+        ['city', 'state', 'country'],
+      );
+    });
+
+    it('does not release place names on a bulk location removal, which clears them (FL-51, FL-36)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getByIds.mockResolvedValue([{ id: 'asset-1', livePhotoVideoId: null }] as never);
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], latitude: null, longitude: null, rating: 2 });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { rating: 2 }, []);
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['asset-1']);
+    });
+
+    it('keeps typed place names when a bulk change does not move the items (FL-36, V-24)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], rating: 4 });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { rating: 4 }, []);
     });
 
     it('should update Assets table if duplicateId is provided as null', async () => {
@@ -1288,6 +1445,25 @@ describe(AssetService.name, () => {
       mocks.assetEdit.getAll.mockResolvedValue([]);
     });
 
+    it('lists the original keyframes in milliseconds for the fast trim (FL-113)', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [
+          { index: 0, width: 1920, height: 1080, rotation: 0, timeBase: 600, timeBaseRational: { num: 1, den: 600 } },
+        ],
+      } as any);
+      mocks.media.probePackets.mockResolvedValue({ startPts: 300, keyframePts: [300, 1500, 1500, 2700] } as any);
+      await expect(sut.getAssetEditKeyframes(authStub.admin, 'asset-1')).resolves.toEqual({
+        keyframesMs: [0, 2000, 4000],
+      });
+      expect(mocks.media.probePackets).toHaveBeenCalledWith('/original.mp4', 0);
+    });
+
+    it('refuses keyframes for a photo', async () => {
+      mocks.asset.getById.mockResolvedValue({ type: AssetType.Image, originalPath: '/a.jpg' } as any);
+      await expect(sut.getAssetEditKeyframes(authStub.admin, 'asset-1')).rejects.toThrow('not a video');
+    });
+
     it('returns the rotated original raster and timeline instead of current render metadata', async () => {
       mocks.media.probe.mockResolvedValue({
         format: { duration: 30 },
@@ -1600,6 +1776,36 @@ describe(AssetService.name, () => {
         name: JobName.AssetVideoEditGeneration,
         data: { id: 'asset-1' },
       });
+    });
+
+    it('accepts a whole-clip speed with speed ranges, and refuses two whole-clip speeds (FL-113)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 10_000,
+        livePhotoVideoId: null,
+        originalPath: '/upload/video.mp4',
+        originalFileName: 'video.mp4',
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      const edits: AssetEditActionItem[] = [
+        { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+        { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 1000, endMs: 3000 } },
+      ];
+      mocks.assetEdit.replaceAll.mockResolvedValue(edits.map((edit, index) => ({ id: `edit-${index}`, ...edit })));
+      await expect(sut.editAsset(authStub.admin, 'asset-1', { edits })).resolves.toMatchObject({ assetId: 'asset-1' });
+
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [
+            { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+            { action: AssetEditAction.Speed, parameters: { rate: 4 } },
+          ],
+        }),
+      ).rejects.toThrow('Only one whole-clip speed edit is allowed');
     });
 
     it('should reject overlapping video speed segments', async () => {

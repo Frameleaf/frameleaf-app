@@ -30,6 +30,7 @@
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import JobsConcurrencyDialog from '$lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte';
   import JobsCreateDialog from '$lib/components/frameleaf/jobs/JobsCreateDialog.svelte';
+  import JobsEnrichmentDialog from '$lib/components/frameleaf/jobs/JobsEnrichmentDialog.svelte';
   import QueueGraph from '$lib/components/frameleaf/jobs/QueueGraph.svelte';
   import QueueStorageMigrationDescription from '$lib/components/frameleaf/jobs/QueueStorageMigrationDescription.svelte';
   import {
@@ -63,13 +64,13 @@
     type JobTab,
     type ManualJobDefinition,
   } from '$lib/frameleaf/job-queues';
+  import type { EnrichmentTaskAction } from '$lib/frameleaf/enrichment-tasks';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
   import { fromQueueSlug, Route } from '$lib/route';
   import { eventManager } from '$lib/managers/event-manager.svelte';
-  import EnrichmentTasksModal from '$lib/modals/EnrichmentTasksModal.svelte';
   import {
     handleClearFailedJobs,
     handleClearWaitingJobs,
@@ -78,9 +79,12 @@
     handleRetryFailedJobs,
   } from '$lib/services/queue.service';
   import { locale } from '$lib/stores/preferences.store';
+  import { OpenQueryParam } from '$lib/constants';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
     createJob,
+    deferImageDescriptionRequeue,
+    getImageDescriptionRequeueEstimate,
     getQueueJobs,
     getQueueOwnerStatistics,
     QueueCommand,
@@ -94,9 +98,12 @@
     type QueueResponseDto,
     type QueueStatisticsDto,
     searchUsersAdmin,
+    triggerImageDescriptionRequeue,
+    triggerSmartAlbumReevaluate,
+    type SmartAlbumBuiltInKind,
     type UserAdminResponseDto,
   } from '@immich/sdk';
-  import { CommandPaletteDefaultProvider, Icon, modalManager, type ActionItem } from '@immich/ui';
+  import { CommandPaletteDefaultProvider, Icon, type ActionItem } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAlertCircleOutline,
@@ -245,7 +252,16 @@
 
   let concurrencyOpen = $state(false);
   let createOpen = $state(false);
-  const openEnrichmentTasks = () => void modalManager.show(EnrichmentTasksModal, {});
+  let enrichmentOpen = $state(false);
+  const openEnrichmentTasks = () => (enrichmentOpen = true);
+  /**
+   * "Remind me later" on Regenerate descriptions (the template's `descriptionDeferred`, `JobsManager.jsx`
+   * 402-408): the server keeps `pendingRequeueAt` until a regeneration is queued.
+   */
+  let reminderDeferred = $state<boolean | undefined>();
+  const descriptionReminder = $derived(
+    reminderDeferred ?? !!draft?.baseline.machineLearning?.imageDescription?.pendingRequeueAt,
+  );
 
   /** Concurrency as the settings draft has it; a queue the settings do not list runs one job at a time. */
   type JobSettings = Record<string, { concurrency: number } | undefined>;
@@ -318,7 +334,12 @@
     | 'force'
     | 'refresh'
     | 'resume-all'
-    | 'manual';
+    | 'manual'
+    | 'description-requeue'
+    | 'description-defer'
+    | 'smart-album';
+  /** The commands `request` reviews; the enrichment tasks are reviewed by `requestEnrichment` (CC-42). */
+  type QueueCommand = Exclude<Command, 'description-requeue' | 'description-defer' | 'smart-album'>;
   type Review = {
     command: Command;
     name?: QueueName;
@@ -329,6 +350,10 @@
     note?: string;
     affected: number;
     dangerous: boolean;
+    /** Why the command cannot run now (the template's review `error`); the confirm stays disabled. */
+    error?: string;
+    /** The smart-album category a re-evaluation is limited to. */
+    kind?: SmartAlbumBuiltInKind;
   };
   let review = $state<Review | null>(null);
   let reviewOpen = $state(false);
@@ -339,14 +364,14 @@
   const forceLabel = (definition: JobQueueDefinition) => $t(`frameleaf_jobs_force_${definition.force}` as Translations);
 
   const request = (
-    command: Command,
+    command: QueueCommand,
     row?: { definition: JobQueueDefinition; queue: QueueResponseDto },
     manual?: ManualJobDefinition,
   ) => {
     const queueCounts = row ? jobCounts(row.queue.statistics) : undefined;
     const faces = row?.definition.force === 'reset';
     const failed = queueCounts?.failed ?? 0;
-    const reviews: Record<Command, Omit<Review, 'command' | 'name' | 'manual'>> = {
+    const reviews: Record<QueueCommand, Omit<Review, 'command' | 'name' | 'manual'>> = {
       pause: {
         title: $t('frameleaf_jobs_pause_queue'),
         detail: $t('frameleaf_jobs_review_pause'),
@@ -419,7 +444,83 @@
     reviewOpen = true;
   };
 
-  const perform = async ({ command, name, manual }: Review) => {
+  // The template's review of an enrichment task (`jobs-data.mjs` 819-864).
+  const formatSeconds = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.max(1, Math.round((seconds % 3600) / 60));
+    return hours > 0
+      ? $t('frameleaf_jobs_review_duration_hours', { values: { hours, minutes } })
+      : $t('frameleaf_jobs_review_duration_minutes', { values: { minutes } });
+  };
+  const requestEnrichment = (action: EnrichmentTaskAction) => {
+    const description = byName.get(QueueName.ImageDescription)?.statistics;
+    const busy = !!description && description.active + description.waiting + description.paused > 0;
+    const disabled = draft?.baseline.machineLearning?.imageDescription?.enabled === false;
+    switch (action.type) {
+      case 'description-requeue': {
+        review = {
+          command: action.type,
+          title: $t('frameleaf_jobs_review_descriptions_title'),
+          detail: $t('frameleaf_jobs_review_descriptions'),
+          affected: 1,
+          dangerous: false,
+          error: disabled
+            ? $t('frameleaf_jobs_review_descriptions_disabled')
+            : busy
+              ? $t('frameleaf_jobs_review_descriptions_busy')
+              : undefined,
+        };
+        // The saved model's estimate for every eligible item, read from the server.
+        const current = review;
+        getImageDescriptionRequeueEstimate()
+          .then(({ totalAssets, estimatedTotalSeconds }) => {
+            if (review === current) {
+              review = {
+                ...current,
+                note: $t('frameleaf_jobs_review_descriptions_estimate', {
+                  values: { count: totalAssets, duration: formatSeconds(estimatedTotalSeconds) },
+                }),
+              };
+            }
+          })
+          .catch(() => {
+            // The review still runs without an estimate.
+          });
+        break;
+      }
+      case 'description-defer': {
+        review = {
+          command: action.type,
+          title: $t('frameleaf_jobs_review_descriptions_defer_title'),
+          detail: $t('frameleaf_jobs_review_descriptions_defer'),
+          affected: 0,
+          dangerous: false,
+          error: disabled ? $t('frameleaf_jobs_review_descriptions_disabled') : undefined,
+        };
+        break;
+      }
+      case 'smart-album': {
+        review = {
+          command: action.type,
+          kind: action.kind,
+          title: $t('frameleaf_jobs_review_smart_albums_title'),
+          detail: action.kind
+            ? $t('frameleaf_jobs_review_smart_albums_kind', {
+                values: { kind: $t(`admin.smart_albums_kind_${action.kind}` as const) },
+              })
+            : $t('frameleaf_jobs_review_smart_albums_all'),
+          affected: 1,
+          dangerous: false,
+        };
+        break;
+      }
+    }
+    acknowledged = false;
+    reviewOpen = true;
+  };
+
+  /** Runs a reviewed command; a returned message replaces the done notice. */
+  const perform = async ({ command, name, manual, kind }: Review): Promise<string | undefined> => {
     if (command === 'resume-all') {
       for (const { queue } of pausedQueues) {
         await handleResumeQueue(queue);
@@ -433,6 +534,20 @@
         eventManager.emit('JobCreate', { dto });
       }
       return;
+    }
+    if (command === 'description-requeue') {
+      const { queued } = await triggerImageDescriptionRequeue();
+      reminderDeferred = false;
+      return queued ? undefined : $t('frameleaf_jobs_notice_descriptions_already_queued');
+    }
+    if (command === 'description-defer') {
+      await deferImageDescriptionRequeue();
+      reminderDeferred = true;
+      return;
+    }
+    if (command === 'smart-album') {
+      const { queued } = await triggerSmartAlbumReevaluate({ smartAlbumReevaluateRequestDto: kind ? { kind } : {} });
+      return queued ? undefined : $t('frameleaf_jobs_notice_smart_albums_already_queued');
     }
     if (!name) {
       return;
@@ -470,15 +585,15 @@
   };
 
   const confirm = async () => {
-    if (!review || working || (review.dangerous && !acknowledged)) {
+    if (!review || working || review.error || (review.dangerous && !acknowledged)) {
       return;
     }
     const current = review;
     working = true;
     error = '';
     try {
-      await perform(current);
-      notice = $t('frameleaf_jobs_notice_done', { values: { title: current.title } });
+      const message = await perform(current);
+      notice = message ?? $t('frameleaf_jobs_notice_done', { values: { title: current.title } });
       history = recordJobHistory({
         id: crypto.randomUUID(),
         at: new Date().toISOString(),
@@ -742,6 +857,13 @@
     {/each}
   </div>
 
+  {#if descriptionReminder}
+    <div class="jm-message">
+      <Icon icon={mdiClockOutline} size="16px" aria-hidden={true} />
+      {$t('frameleaf_jobs_description_reminder')}
+      <Button onclick={openEnrichmentTasks}>{$t('frameleaf_jobs_description_reminder_review')}</Button>
+    </div>
+  {/if}
   {#if error}
     <div class="jm-message jm-error" role="alert">
       <Icon icon={mdiAlertCircleOutline} size="16px" aria-hidden={true} />
@@ -1194,6 +1316,9 @@
       {#if review.note}
         <p class="jm-muted">{review.note}</p>
       {/if}
+      {#if review.error}
+        <p class="jm-review-error" role="alert">{review.error}</p>
+      {/if}
       <p class="jm-muted">{$t('frameleaf_jobs_review_filter_note')}</p>
       {#if review.dangerous}
         <label class="jm-confirm">
@@ -1205,7 +1330,7 @@
         <Button variant="quiet" onclick={() => (reviewOpen = false)}>{$t('frameleaf_jobs_review_keep')}</Button>
         <Button
           variant="primary"
-          disabled={working || (review.dangerous && !acknowledged)}
+          disabled={working || !!review.error || (review.dangerous && !acknowledged)}
           onclick={() => void confirm()}
         >
           {review.title}
@@ -1281,6 +1406,12 @@
     return definition ? title(definition) : name;
   }}
   onSelect={selectManual}
+/>
+<JobsEnrichmentDialog
+  bind:open={enrichmentOpen}
+  store={draft}
+  onReview={requestEnrichment}
+  onReviewSettings={() => void goto(Route.systemSettings({ isOpen: OpenQueryParam.IMAGE_DESCRIPTION }))}
 />
 
 <style>
@@ -1840,6 +1971,9 @@
   .jm-confirm input {
     margin-top: 5px;
     accent-color: var(--jm-green);
+  }
+  .jm-review-error {
+    color: var(--fl-danger);
   }
   .jm-review footer,
   .jm-job-detail footer {

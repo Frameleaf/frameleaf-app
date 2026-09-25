@@ -156,6 +156,14 @@ describe(ServerService.name, () => {
       expect(sut.getApkLinks()).toEqual(releases.android.links);
       expect(JSON.stringify(releases)).not.toContain('immich');
     });
+
+    it('offers the Android store listing when one is configured (FL-135)', () => {
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ appReleases: { androidStoreUrl: 'https://f-droid.example/app' } }),
+      );
+
+      expect(sut.getAppReleases().android).toEqual({ available: false, storeUrl: 'https://f-droid.example/app' });
+    });
   });
 
   describe('getAboutInfo', () => {

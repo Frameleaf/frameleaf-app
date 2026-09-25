@@ -11,7 +11,10 @@
   import FaceTagger from '$lib/components/frameleaf/FaceTagger.svelte';
   import ViewerFilmstrip from '$lib/components/frameleaf/ViewerFilmstrip.svelte';
   import ViewerFooter from '$lib/components/frameleaf/ViewerFooter.svelte';
+  import ViewerLiveBadge from '$lib/components/frameleaf/ViewerLiveBadge.svelte';
+  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import ViewerOfflineBanner from '$lib/components/frameleaf/ViewerOfflineBanner.svelte';
+  import { bumpPlaybackRevision, playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
   import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
@@ -38,6 +41,7 @@
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AssetTypeEnum,
+    AssetVisibility,
     getAssetInfo,
     getStack,
     type AlbumResponseDto,
@@ -92,6 +96,11 @@
      */
     filmstripAssets?: TimelineAsset[];
     /**
+     * V-17: how the viewer moves to another item of the caller's list. By default it changes the item in
+     * the address; a page whose address carries no item (Explore, the map) opens it in place instead.
+     */
+    onNavigateToAsset?: (asset: Pick<AssetResponseDto, 'id'>) => Promise<void>;
+    /**
      * FL-55: what the activity side panel shows for the open item. A shared space mounts its own
      * per-item conversation here; without it the panel keeps the album activity viewer.
      */
@@ -116,6 +125,7 @@
     onClose,
     onRandom,
     filmstripAssets = [],
+    onNavigateToAsset,
     activityPanel,
     position = null,
   }: Props = $props();
@@ -181,8 +191,33 @@
       return;
     }
 
+    // FL-35 / FL-34: an item Locked elsewhere is never shown to a session that has not unlocked; the
+    // viewer moves on as if it had been removed.
+    if (updatedAsset.visibility === AssetVisibility.Locked && !sessionAccess.isElevated) {
+      void onAssetsDelete([updatedAsset.id]);
+      return;
+    }
+
     cursor = { ...cursor, current: updatedAsset };
     notifyAssetUpdate?.(updatedAsset);
+  };
+
+  /**
+   * FL-35: the open item was deleted or moved to the trash elsewhere (another tab, another device, a
+   * bulk action): show its neighbour, as a local delete does, or close when there is none. A delete
+   * made here has already moved on before this arrives, so it is not the open item any more.
+   */
+  const onAssetsDelete = async (ids: string[]) => {
+    // The page already moved on from an item it removed here: the viewer still shows it until the
+    // next item loads, and acting now would close the viewer and cancel that load.
+    if (!ids.includes(asset.id) || movedPast.has(asset.id)) {
+      return;
+    }
+    const next = cursor.nextAsset && !ids.includes(cursor.nextAsset.id) ? cursor.nextAsset : undefined;
+    const previous = cursor.previousAsset && !ids.includes(cursor.previousAsset.id) ? cursor.previousAsset : undefined;
+    if (!(await goToAsset(next)) && !(await goToAsset(previous))) {
+      closeViewer();
+    }
   };
 
   const onAssetsUndoArchive = async (assets: TimelineAsset[]) => {
@@ -236,9 +271,15 @@
     onClose?.(asset.id);
   };
 
+  // FL-115: choosing a restored version (or the original again) for playback changes the file the
+  // video playback, photo preview and photo full-size URLs serve without changing the asset's thumbhash,
+  // so all of them get a fresh cache key (see playback-revision.svelte.ts; getAssetUrl reads it too).
+  const videoCacheKey = $derived(playbackCacheKey(asset));
+
   // FL-113: the quick editor says whether a saved version changed what the viewer should show.
   const closeEditor = async (refreshAsset = false) => {
     if (refreshAsset) {
+      bumpPlaybackRevision(asset.id);
       const refreshedAsset = await getAssetInfo({ id: asset.id });
       onAssetChange?.(refreshedAsset);
       assetViewerManager.setAsset(refreshedAsset);
@@ -253,6 +294,17 @@
     assetViewerManager.setAsset(refreshedAsset);
     faceManager.clear();
     await faceManager.getAssetFaces(refreshedAsset.id);
+  };
+
+  const goToAsset = async (target: Pick<AssetResponseDto, 'id'> | undefined | null) => {
+    if (!onNavigateToAsset) {
+      return navigateToAsset(target);
+    }
+    if (!target) {
+      return false;
+    }
+    await onNavigateToAsset(target);
+    return true;
   };
 
   const tracker = new InvocationTracker();
@@ -288,8 +340,7 @@
           }
         }
       } else {
-        hasNext =
-          order === 'previous' ? await navigateToAsset(cursor.previousAsset) : await navigateToAsset(cursor.nextAsset);
+        hasNext = order === 'previous' ? await goToAsset(cursor.previousAsset) : await goToAsset(cursor.nextAsset);
       }
 
       if ($slideshowState !== SlideshowState.PlaySlideshow) {
@@ -366,8 +417,27 @@
     }
   };
 
-  const handlePreAction = (action: Action) => {
-    return preAction?.(action);
+  /**
+   * Items this viewer moved to the trash or deleted while a page's `preAction` took it to a neighbour
+   * (every page that passes `preAction` moves on from the open item it removes). Showing an item
+   * again, after an undo, takes it off the list.
+   */
+  const movedPast = new Set<string>();
+  $effect(() => {
+    movedPast.delete(asset.id);
+  });
+
+  const handlePreAction = async (action: Action) => {
+    if (!preAction) {
+      return;
+    }
+    const removedId =
+      action.type === AssetAction.DELETE || action.type === AssetAction.TRASH ? action.asset.id : undefined;
+    const shown = asset.id;
+    await preAction(action);
+    if (removedId === shown) {
+      movedPast.add(shown);
+    }
   };
 
   const handleAction = async (action: Action) => {
@@ -668,9 +738,7 @@
       return;
     }
     infoHadFocus = false;
-    const label = $t('frameleaf_viewer_information');
-    const buttons = assetViewerHtmlElement?.querySelectorAll<HTMLElement>(':scope [data-viewer-chrome] button') ?? [];
-    [...buttons].find((button) => button.getAttribute('aria-label') === label)?.focus();
+    assetViewerHtmlElement?.querySelector<HTMLElement>(':scope [data-viewer-chrome] [data-viewer-info]')?.focus();
   });
 
   const onSwipe = (event: SwipeCustomEvent) => {
@@ -691,7 +759,7 @@
 </script>
 
 <CommandPaletteDefaultProvider name={$t('assets')} actions={[Tag, TagPeople]} />
-<OnEvents {onAssetUpdate} {onAssetsUndoArchive} />
+<OnEvents {onAssetUpdate} {onAssetsUndoArchive} {onAssetsDelete} />
 
 <svelte:window
   onkeydowncapture={closeSettingsOnEscape}
@@ -741,7 +809,6 @@
       <AssetViewerNavBar
         {asset}
         {album}
-        {person}
         {stack}
         preAction={handlePreAction}
         onAction={handleAction}
@@ -833,7 +900,7 @@
     {:else if viewerKind === 'VideoViewer'}
       <VideoViewer
         {asset}
-        cacheKey={asset.thumbhash}
+        cacheKey={videoCacheKey}
         projectionType={asset.exifInfo?.projectionType}
         loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
         extendedControls
@@ -844,6 +911,13 @@
         onVideoStarted={handleVideoStarted}
         playOriginalVideo={isPlayingOriginalVideo}
       />
+    {/if}
+
+    <!-- V-16: a Live Photo plays its clip from the on-photo badge (MediaViewer.jsx:1522-1543). -->
+    {#if asset.livePhotoVideoId && (viewerKind === 'PhotoViewer' || viewerKind === 'LiveVideoViewer') && !isPanorama(asset) && !assetViewerManager.isShowEditor}
+      <div class="fl-live-badge-slot pointer-events-none absolute z-10">
+        <ViewerLiveBadge />
+      </div>
     {/if}
 
     <!-- FL-35: the original file is missing from its library; offer the relink route. -->
@@ -959,7 +1033,7 @@
       <ViewerFilmstrip
         assets={filmstripAssets}
         currentAssetId={asset.id}
-        onSelect={(selected) => handlePromiseError(navigate({ targetRoute: 'current', assetId: selected.id }))}
+        onSelect={(selected) => handlePromiseError(goToAsset(selected))}
       />
     </div>
   {/if}
@@ -1002,6 +1076,12 @@
 </section>
 
 <style>
+  /* .mv-live-badge sits 14px into the photo's top-left corner, under the 64px header (media-viewer.css:478-481). */
+  .fl-live-badge-slot {
+    top: calc(64px + env(safe-area-inset-top, 0px) + 14px);
+    inset-inline-start: max(14px, env(safe-area-inset-left));
+  }
+
   #immich-asset-viewer {
     contain: layout;
     /* apple-style.css:366-370: a pure black canvas in both themes. */

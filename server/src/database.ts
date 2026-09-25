@@ -298,6 +298,8 @@ export type AssetFace = {
   updatedAt: Date;
   updateId: string;
   isVisible: boolean;
+  /** FL-57 correction stamp; optional because not every face query selects it. */
+  correctedAt?: Date | null;
 };
 
 export type Plugin = Selectable<PluginTable>;
@@ -615,4 +617,15 @@ export const lockableProperties = [
   'rating',
   'timeZone',
   'tags',
+  // FL-36 (V-24): a place name the owner typed; reverse geocoding never overwrites it.
+  'city',
+  'state',
+  'country',
 ] as const;
+
+/**
+ * FL-36: the place names the owner can set (V-24). The sidecar has no field for them, so unlike the
+ * other locks they are kept after the sidecar is written; they are released when the owner moves the
+ * item without naming its place, so geocoding names the new spot.
+ */
+export const placeProperties = ['city', 'state', 'country'] as const satisfies readonly LockableProperty[];

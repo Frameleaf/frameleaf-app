@@ -5,7 +5,9 @@
    * the settings bar saves them with everything else; without a draft (somebody who is not an
    * administrator) nothing is shown, since these are server settings.
    */
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import { SettingInputFieldType } from '$lib/constants';
   import {
     LIBRARY_CARE_SECTION_TOGGLES,
     LIBRARY_CARE_TOGGLES,
@@ -34,6 +36,18 @@
         isEdited={configToEdit.libraryCare[key] !== baseline?.libraryCare?.[key]}
       />
     {/each}
+    {#if section === 'integrity-checks'}
+      <!-- When the incremental health scan runs; the same cron field as the other scheduled tasks. -->
+      <SettingField
+        inputType={SettingInputFieldType.TEXT}
+        label={$t('frameleaf_care_health_scan_schedule')}
+        description={$t('frameleaf_care_health_scan_schedule_description')}
+        disabled={disabled || !configToEdit.libraryCare.healthScan}
+        bind:value={configToEdit.libraryCare.healthScanCronExpression}
+        isEdited={configToEdit.libraryCare.healthScanCronExpression !== baseline?.libraryCare?.healthScanCronExpression}
+        required
+      />
+    {/if}
   </div>
 {/if}
 

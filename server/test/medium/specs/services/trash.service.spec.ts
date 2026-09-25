@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
-import { randomUUID } from 'node:crypto';
-import { AssetLockReason, AssetStatus, AssetVisibility } from 'src/enum.js';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { AssetLockReason, AssetStatus, AssetVisibility, PhysicalFileType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -43,6 +43,28 @@ const statusOf = async (db: Kysely<DB>, id: string) => {
   const row = await db.selectFrom('asset').select(['status', 'deletedAt']).where('id', '=', id).executeTakeFirst();
   return row?.status;
 };
+
+/** Point several items at one physical original, as deduplicated uploads do. */
+const sharePhysicalOriginal = async (db: Kysely<DB>, assetIds: string[], sizeInBytes: number) => {
+  const file = await db
+    .insertInto('physical_file')
+    .values({
+      type: PhysicalFileType.Original,
+      checksum: randomBytes(32),
+      sizeInBytes,
+      path: `/data/physical/${randomUUID()}`,
+      canonicalAssetId: assetIds[0],
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  await db.updateTable('asset').set({ physicalOriginalFileId: file.id }).where('id', 'in', assetIds).execute();
+};
+
+/** An ordinary session whose privacy marks hide items carrying one of `tagIds`. */
+const markedAuth = (user: { id: string }, tagIds: string[], elevated = false) => ({
+  ...factory.auth({ user, ...(elevated && { session: { hasElevatedPermission: true } }) }),
+  hiddenContent: { userId: user.id, includeNsfw: false, tagIds, personIds: [], petIds: [], scope: 'owned' as const },
+});
 
 describe(TrashService.name, () => {
   describe('review and apply', () => {
@@ -176,6 +198,30 @@ describe(TrashService.name, () => {
       });
     });
 
+    it('should report an original shared through the physical file as retained', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      // different paths, one deduplicated original on disk
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+      await ctx.newExif({ assetId: asset.id, fileSizeInByte: 7000 });
+      const { user: other } = await ctx.newUser();
+      const { asset: copy } = await ctx.newAsset({ ownerId: other.id, originalPath: own() });
+      await sharePhysicalOriginal(ctx.database, [asset.id, copy.id], 7000);
+
+      await expect(sut.review(auth, { action: TrashReviewAction.Delete, ids: [asset.id] })).resolves.toMatchObject({
+        count: 1,
+        bytes: 7000,
+        retainedOriginals: 1,
+        retainedBytes: 7000,
+      });
+    });
+
     it('should not count copies deleted together as keeping their shared original', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
@@ -273,6 +319,101 @@ describe(TrashService.name, () => {
     });
   });
 
+  describe('privacy marks', () => {
+    it('should keep items a privacy mark hides out of the list, the counts and every review', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'private-mark' });
+      const { asset: open } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+      const { asset: marked } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [marked.id] });
+      const auth = markedAuth(user, [tag.id]);
+
+      await expect(sut.getSummary(auth)).resolves.toMatchObject({ count: 1 });
+      const { items } = await sut.getItems(auth, {});
+      expect(items.map(({ id }) => id)).toEqual([open.id]);
+
+      // a chosen hidden item is refused, alone or with a visible one (access or availability, never a review)
+      await expect(sut.review(auth, { action: TrashReviewAction.Delete, ids: [marked.id] })).rejects.toThrow();
+      await expect(
+        sut.review(auth, { action: TrashReviewAction.Restore, ids: [open.id, marked.id] }),
+      ).rejects.toThrow();
+
+      // emptying covers only what the session sees
+      const review = await sut.review(auth, { action: TrashReviewAction.Empty });
+      expect(review.count).toBe(1);
+      await sut.apply(auth, { action: TrashReviewAction.Empty, token: review.token });
+      await expect(statusOf(ctx.database, open.id)).resolves.toBe(AssetStatus.Deleted);
+      await expect(statusOf(ctx.database, marked.id)).resolves.toBe(AssetStatus.Trashed);
+    });
+
+    it('should refuse an apply when a privacy mark was added after the review', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'private-mark' });
+      const { asset: open } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+      const { asset: laterMarked } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+      const auth = markedAuth(user, [tag.id]);
+
+      const review = await sut.review(auth, { action: TrashReviewAction.Empty });
+      expect(review.count).toBe(2);
+
+      // another tab marks it: this session no longer sees it
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [laterMarked.id] });
+
+      await expect(sut.apply(auth, { action: TrashReviewAction.Empty, token: review.token })).rejects.toThrow(
+        'Trash changed since this review',
+      );
+      await expect(statusOf(ctx.database, open.id)).resolves.toBe(AssetStatus.Trashed);
+      await expect(statusOf(ctx.database, laterMarked.id)).resolves.toBe(AssetStatus.Trashed);
+    });
+
+    it('should refuse an unlocked apply when an item was locked after the review', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+      const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+      const review = await sut.review(elevated, { action: TrashReviewAction.Restore, ids: [asset.id] });
+
+      // still visible to the unlocked session, but it is now Locked media: the reviewed set changed
+      await ctx.database
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Detected, lockedBy: null })
+        .execute();
+
+      await expect(
+        sut.apply(elevated, { action: TrashReviewAction.Restore, ids: [asset.id], token: review.token }),
+      ).rejects.toThrow('Trash changed since this review');
+      await expect(statusOf(ctx.database, asset.id)).resolves.toBe(AssetStatus.Trashed);
+    });
+  });
+
   describe('missing external originals', () => {
     it('should list them without restoring or emptying them', async () => {
       const { sut, ctx } = setup();
@@ -323,19 +464,28 @@ describe(TrashService.name, () => {
   });
 
   describe('restore', () => {
-    it('should keep albums, favourites and the archive when restoring', async () => {
+    it('should keep albums, favourites, the archive, tags and source provenance when restoring', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user });
+      const originalPath = own();
       const { asset } = await ctx.newAsset({
         ownerId: user.id,
-        originalPath: own(),
+        originalPath,
+        originalFileName: 'IMG_0001.HEIC',
         isFavorite: true,
         visibility: AssetVisibility.Archive,
         status: AssetStatus.Trashed,
         deletedAt: new Date(),
       });
       const { album } = await ctx.newAlbum({ ownerId: user.id }, [asset.id]);
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'kept' });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [asset.id] });
+      const before = await ctx.database
+        .selectFrom('asset')
+        .select(['originalPath', 'originalFileName', 'checksum', 'libraryId', 'fileCreatedAt'])
+        .where('id', '=', asset.id)
+        .executeTakeFirstOrThrow();
 
       const review = await sut.review(auth, { action: TrashReviewAction.Restore, ids: [asset.id] });
       await expect(
@@ -356,6 +506,18 @@ describe(TrashService.name, () => {
       await expect(
         ctx.database.selectFrom('album_asset').select('assetId').where('albumId', '=', album.id).execute(),
       ).resolves.toEqual([{ assetId: asset.id }]);
+      await expect(
+        ctx.database.selectFrom('tag_asset').select('tagId').where('assetId', '=', asset.id).execute(),
+      ).resolves.toEqual([{ tagId: tag.id }]);
+      // where it came from is untouched: the same original, name, checksum, library and capture date
+      await expect(
+        ctx.database
+          .selectFrom('asset')
+          .select(['originalPath', 'originalFileName', 'checksum', 'libraryId', 'fileCreatedAt'])
+          .where('id', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual(before);
+      expect(before.originalPath).toBe(originalPath);
     });
 
     it('should not report a stale restore', async () => {

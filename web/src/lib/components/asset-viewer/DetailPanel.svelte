@@ -11,7 +11,7 @@
   import VideoMomentsPanel from '$lib/components/frameleaf/VideoMomentsPanel.svelte';
   import ViewerDetailRows from '$lib/components/frameleaf/ViewerDetailRows.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
-  import type { DescriptionReview } from '$lib/frameleaf/info-panel';
+  import { ownerLine, type DescriptionReview } from '$lib/frameleaf/info-panel';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -26,13 +26,13 @@
     type AlbumResponseDto,
     type AssetResponseDto,
   } from '@immich/sdk';
-  import { IconButton, Link, LoadingSpinner, Text } from '@immich/ui';
-  import { mdiClose } from '@mdi/js';
+  import { Icon, IconButton, Link, LoadingSpinner, Text } from '@immich/ui';
+  import { mdiAccountOutline, mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import OnEvents from '../OnEvents.svelte';
-  import UserAvatar from '../shared-components/UserAvatar.svelte';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
   import DetailPanelPeople from '$lib/components/asset-viewer/DetailPanelPeople.svelte';
+  import DetailPanelPets from '$lib/components/asset-viewer/DetailPanelPets.svelte';
   import { faceManager } from '$lib/stores/face.svelte';
 
   interface Props {
@@ -45,6 +45,12 @@
   let { asset, currentAlbum = null, onAssetSuppressed, onAssetUpdate }: Props = $props();
 
   let isOwner = $derived(authManager.authenticated && authManager.user.id === asset.ownerId);
+  // A shared link strips the owner from the asset, so it never shows one (the server drops it).
+  const owner = $derived(
+    ownerLine(asset, authManager.authenticated ? authManager.user.id : undefined, {
+      sharedAlbum: !!currentAlbum && currentAlbum.albumUsers.length > 1,
+    }),
+  );
   let latlng = $derived(
     (() => {
       const lat = asset.exifInfo?.latitude;
@@ -135,6 +141,8 @@
   <VideoMomentsPanel {asset} {isOwner} />
   <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
   <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
+  <!-- FL-58: the owner's pets in this photo, with add, draw and undo. -->
+  <DetailPanelPets {asset} {isOwner} />
 
   <!-- FL-36: the design's Captured section carries the date, the timezone and the place. -->
   <div class="p-4">
@@ -211,23 +219,6 @@
   </div>
 {/if}
 
-{#if currentAlbum && currentAlbum.albumUsers.length > 1 && asset.owner}
-  <section class="mt-4 px-6 dark:text-immich-dark-fg">
-    <Text size="small" color="muted">{$t('shared_by')}</Text>
-    <div class="flex gap-4 pt-4">
-      <div>
-        <UserAvatar user={asset.owner} size="md" />
-      </div>
-
-      <div class="my-auto">
-        <p>
-          {asset.owner.name}
-        </p>
-      </div>
-    </div>
-  </section>
-{/if}
-
 {#await albums then albums}
   {#if albums.length > 0}
     <section class="p-6 dark:text-immich-dark-fg">
@@ -262,7 +253,31 @@
   {/if}
 {/await}
 
+<!-- V-27: who owns or shared someone else's item, under the albums (MediaViewer.jsx:2514-2519). -->
+{#if owner}
+  <p class="fl-owner" data-testid="detail-panel-owner">
+    <Icon icon={mdiAccountOutline} size="16" aria-hidden />
+    {owner.kind === 'shared'
+      ? $t('frameleaf_info_shared_by', { values: { name: owner.name } })
+      : $t('frameleaf_info_owned_by', { values: { name: owner.name } })}
+  </p>
+{/if}
+
 <!-- FL-63: the design puts "Text in this photo" last, after the albums and the owner. -->
 <DocumentTextSection {asset} />
 
 <div class="pb-12"></div>
+
+<style>
+  /* .mv-owner (media-viewer.css:1690-1699). */
+  .fl-owner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 24px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--fl-viewer-border, rgb(255 255 255 / 8%));
+    color: var(--fl-viewer-muted, #979ba2);
+    font-size: var(--fl-font-small, 13px);
+  }
+</style>

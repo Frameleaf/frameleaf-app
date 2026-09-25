@@ -383,6 +383,54 @@ describe('/trash', () => {
       expect(again.status).toBe(409);
     });
 
+    it('should keep items a privacy mark hides out of the trash, and refuse an apply after a new mark', async () => {
+      await emptyVisibleTrash();
+      const [tag] = await utils.upsertTags(admin.accessToken, ['trash-private-mark']);
+      const open = await trashed();
+      const marked = await trashed();
+      const laterMarked = await trashed();
+      await utils.tagAssets(admin.accessToken, tag.id, [marked]);
+      await utils.updateMyPreferences(admin.accessToken, { privacy: { suppression: { tagIds: [tag.id] } } });
+
+      try {
+        const items = await request(app).get('/trash/items').set('Authorization', bearer());
+        const ids = items.body.items.map((item: { id: string }) => item.id);
+        expect(ids).toEqual(expect.arrayContaining([open, laterMarked]));
+        expect(ids).not.toContain(marked);
+
+        const chosen = await review({ action: 'delete', ids: [marked] });
+        expect(chosen.status).toBe(400);
+
+        const reviewed = await review({ action: 'empty' });
+        expect(reviewed.status).toBe(200);
+        expect(reviewed.body.count).toBe(2);
+
+        // another tab marks a reviewed item: this session no longer sees it, so nothing changes
+        await utils.tagAssets(admin.accessToken, tag.id, [laterMarked]);
+        const { status } = await apply({ action: 'empty', token: reviewed.body.token });
+        expect(status).toBe(409);
+        for (const id of [open, marked, laterMarked]) {
+          await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({ isTrashed: true });
+        }
+      } finally {
+        await utils.updateMyPreferences(admin.accessToken, { privacy: { suppression: { tagIds: [] } } });
+      }
+    });
+
+    it('should refuse a restore when the reviewed item was deleted after the review', async () => {
+      const id = await trashed();
+      const reviewed = await review({ action: 'restore', ids: [id] });
+      expect(reviewed.status).toBe(200);
+
+      const deleteReview = await review({ action: 'delete', ids: [id] });
+      await apply({ action: 'delete', ids: [id], token: deleteReview.body.token }).expect(200);
+
+      const { status } = await apply({ action: 'restore', ids: [id], token: reviewed.body.token });
+      expect([400, 409]).toContain(status);
+      const items = await request(app).get('/trash/items').set('Authorization', bearer());
+      expect(items.body.items.map((item: { id: string }) => item.id)).not.toContain(id);
+    });
+
     it("should not review another account's items", async () => {
       const other = await utils.userSetup(admin.accessToken, {
         email: 'trash-other@immich.cloud',

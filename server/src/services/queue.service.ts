@@ -35,7 +35,12 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { handlePromiseError, isImageDescriptionEnabled, isNsfwDetectionEnabled } from 'src/utils/misc.js';
+import {
+  handlePromiseError,
+  isImageDescriptionEnabled,
+  isNsfwDetectionEnabled,
+  isSmartSearchEnabled,
+} from 'src/utils/misc.js';
 
 /** FL-71: the machine-learning workload whose routed destination runs a queue's jobs. */
 const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
@@ -45,6 +50,7 @@ const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
   [QueueName.ImageEnrichment]: MlWorkload.Enrichment,
   [QueueName.ImageDescription]: MlWorkload.Enrichment,
   [QueueName.NsfwDetection]: MlWorkload.Enrichment,
+  [QueueName.PetRecognition]: MlWorkload.PetRecognition,
 };
 
 /** FL-71 (J-1): the most jobs of one state read to count an account's share of a queue. */
@@ -412,6 +418,15 @@ export class QueueService extends BaseService {
         return this.jobRepository.queue({ name: JobName.MediaHealthScanMissing, data: { force } });
       }
 
+      case QueueName.PetRecognition: {
+        const { machineLearning } = await this.getConfig({ withCache: false });
+        if (!isSmartSearchEnabled(machineLearning)) {
+          throw new BadRequestException(`Pet recognition needs smart search, which is not enabled`);
+        }
+
+        return this.jobRepository.queue({ name: JobName.PetRecognitionQueueAll, data: { force } });
+      }
+
       case QueueName.ImageDescription: {
         const { machineLearning } = await this.getConfig({ withCache: false });
         if (!isImageDescriptionEnabled(machineLearning)) {
@@ -490,8 +505,11 @@ export class QueueService extends BaseService {
     }
 
     // FL-79: the local analytics collector runs every night. It only reads counts and sizes and
-    // writes them to this server's database; it has no setting because it never leaves the host.
-    jobs.push({ name: JobName.AnalyticsCollect });
+    // writes them to this server's database, never elsewhere. FL-71: an administrator can turn it
+    // off ("Collect local metrics"); the collector also checks the setting when it runs.
+    if (config.analytics.enabled) {
+      jobs.push({ name: JobName.AnalyticsCollect });
+    }
 
     await this.jobRepository.queueAll(jobs);
   }

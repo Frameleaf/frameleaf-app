@@ -360,6 +360,8 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return await access.authDevice.checkOwnerAccess(auth.user.id, ids);
     }
 
+    // FL-38: correcting a face (reassign, unassign, move, hide) is its asset owner's call
+    case Permission.FaceUpdate:
     case Permission.FaceDelete: {
       return checkPersonFaceOwnerAccess(access, auth, ids);
     }

@@ -5,6 +5,7 @@
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Link } from '@immich/ui';
@@ -15,6 +16,9 @@
   const settingsDraft = requireSystemConfigDraft();
   const configToEdit = $derived(settingsDraft.draft);
   const config = $derived(settingsDraft.baseline);
+
+  // FL-135: this installation's documentation, or no link at all
+  const geocodingDocs = $derived(helpLinks.docs('features/reverse-geocoding'));
 </script>
 
 <div class="mt-2">
@@ -53,13 +57,15 @@
 
         <SettingGroup key="reverse-geocoding" title={$t('admin.map_reverse_geocoding_settings')}>
           {#snippet subtitleSnippet()}
-            <p class="text-sm dark:text-immich-dark-fg">
-              <FormatMessage key="admin.map_manage_reverse_geocoding_settings">
-                {#snippet children({ message })}
-                  <Link href="https://docs.immich.app/features/reverse-geocoding">{message}</Link>
-                {/snippet}
-              </FormatMessage>
-            </p>
+            {#if geocodingDocs}
+              <p class="text-sm dark:text-immich-dark-fg">
+                <FormatMessage key="admin.map_manage_reverse_geocoding_settings">
+                  {#snippet children({ message })}
+                    <Link href={geocodingDocs}>{message}</Link>
+                  {/snippet}
+                </FormatMessage>
+              </p>
+            {/if}
           {/snippet}
           <div class="flex flex-col gap-4">
             <SettingToggle

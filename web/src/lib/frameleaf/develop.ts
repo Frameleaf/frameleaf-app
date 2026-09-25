@@ -11,7 +11,7 @@
  * so the histogram and the stage never disagree with what the renderer will actually produce
  * for longer than one round trip.
  */
-import { AssetDevelopPreset, type AssetDevelopRecipeDto } from '@immich/sdk';
+import { AssetDevelopPreset, VideoDevelopPreset, type AssetDevelopRecipeDto } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -150,8 +150,13 @@ export const autoToneCleared = (): Partial<DevelopValues> =>
 
 export type DevelopLook = { grayscale: number; sepia: number };
 
+/** The looks a recipe can name: the photo develop presets plus the video-only B&W. */
+export type DevelopLookId = AssetDevelopPreset | VideoDevelopPreset;
+
 export type DevelopPresetSpec = {
-  id: AssetDevelopPreset;
+  id: DevelopLookId;
+  /** `video`: offered for clips only (`develop.mjs` PRESETS `scope`). */
+  scope?: 'video';
   /** i18n key. */
   label: Translations;
   params: Partial<DevelopValues>;
@@ -204,11 +209,23 @@ export const PRESETS: readonly DevelopPresetSpec[] = [
     label: 'frameleaf_editor_preset_fade',
     params: { contrast: -18, blacks: 26, saturation: -18, whites: -10 },
   },
+  {
+    id: VideoDevelopPreset.BW,
+    label: 'frameleaf_editor_preset_bw',
+    scope: 'video',
+    params: { contrast: 24 },
+    look: { grayscale: 100 },
+  },
 ];
-export const PRESET_IDS: readonly AssetDevelopPreset[] = PRESETS.map((item) => item.id);
+/** The photo looks: what a still recipe may name. */
+export const PRESET_IDS: readonly AssetDevelopPreset[] = PRESETS.filter((item) => !item.scope).map(
+  (item) => item.id as AssetDevelopPreset,
+);
 export const presetFor = (id: unknown) => PRESETS.find((item) => item.id === id) ?? PRESETS[0];
+/** The looks offered for a photo or a clip (`develop.mjs` presetsFor). */
+export const presetsFor = (kind: 'photo' | 'video') => PRESETS.filter((item) => !item.scope || item.scope === kind);
 
-export type DevelopSource = Partial<DevelopValues> & { preset?: AssetDevelopPreset; presetStrength?: number };
+export type DevelopSource = Partial<DevelopValues> & { preset?: DevelopLookId; presetStrength?: number };
 
 /** Manual sliders plus the chosen preset scaled by its strength. */
 export function effectiveDevelop(recipe: DevelopSource): { params: DevelopValues; look: DevelopLook } {
@@ -650,4 +667,24 @@ export const formatParam = (spec: DevelopParamSpec, value: number) => {
     return `${sign}${value.toFixed(2)} ${spec.unit}`;
   }
   return `${sign}${Math.round(value)}${spec.unit}`;
+};
+
+type CompareKeyEvent = Pick<KeyboardEvent, 'key'> &
+  Partial<Pick<KeyboardEvent, 'code' | 'metaKey' | 'ctrlKey' | 'altKey'>>;
+
+/**
+ * Hold-to-compare keys for the photo editor (`develop.mjs` `isCompareKey`). Backslash is the
+ * primary key: Apple Photos uses M, but M already means "Group by month" in the library
+ * shortcuts, and backslash is Lightroom's before/after key. Y stays as the earlier binding.
+ * A press with a command modifier is never a compare, but a release always is, so a held
+ * original can't get stuck.
+ */
+export const isCompareKey = (event: CompareKeyEvent | undefined | null, { release = false } = {}) => {
+  if (!event) {
+    return false;
+  }
+  if (!release && (event.metaKey || event.ctrlKey || event.altKey)) {
+    return false;
+  }
+  return event.key === '\\' || event.code === 'Backslash' || (event.key || '').toLowerCase() === 'y';
 };

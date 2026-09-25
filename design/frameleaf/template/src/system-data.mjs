@@ -497,6 +497,8 @@ export const onboardingSteps = Object.freeze([
   { id: "server-privacy", title: "Server privacy", short: "Server privacy" },
   { id: "user-privacy", title: "Your privacy", short: "Your privacy" },
   { id: "storage-template", title: "Storage template", short: "Storage" },
+  { id: "frameleaf-account", title: "Frameleaf account", short: "Account", optional: true },
+  { id: "plan", title: "Plan & licence", short: "Plan", optional: true },
   { id: "backup", title: "Back up your phone", short: "Backup" },
   { id: "mobile", title: "Get the mobile app", short: "Mobile app" },
   { id: "done", title: "You're all set", short: "Done" },
@@ -583,9 +585,17 @@ export function createOnboarding() {
       server: { versionCheck: true, map: true, cast: true },
       user: { mapLocations: true, memories: true, sharedInTimeline: true },
       storageTemplate: { enabled: true, pattern: DEFAULT_STORAGE_TEMPLATE },
+      cloud: { account: "skip", plan: "self-hosted" },
     },
   };
 }
+/** Plan choices offered during setup; paid plans are finished on frameleaf.cloud. */
+export const onboardingPlanChoices = Object.freeze([
+  "self-hosted",
+  "cloud-monthly",
+  "cloud-annual",
+  "supporter-key",
+]);
 const bool = (value, fallback) => (typeof value === "boolean" ? value : fallback);
 export function parseOnboarding(raw) {
   const source = parseJson(raw);
@@ -598,6 +608,7 @@ export function parseOnboarding(raw) {
   const server = record(choices.server) ? choices.server : {};
   const user = record(choices.user) ? choices.user : {};
   const template = record(choices.storageTemplate) ? choices.storageTemplate : {};
+  const cloud = record(choices.cloud) ? choices.cloud : {};
   return {
     version: 1,
     step,
@@ -625,6 +636,10 @@ export function parseOnboarding(raw) {
           text(template.pattern, 200) && template.pattern.trim()
             ? template.pattern
             : DEFAULT_STORAGE_TEMPLATE,
+      },
+      cloud: {
+        account: cloud.account === "linked" ? "linked" : "skip",
+        plan: onboardingPlanChoices.includes(cloud.plan) ? cloud.plan : "self-hosted",
       },
     },
   };

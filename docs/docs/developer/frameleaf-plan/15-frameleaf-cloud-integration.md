@@ -1,0 +1,503 @@
+# Frameleaf Cloud integration (self-hosted workstream `cloud`)
+
+Status: reviewed planning contract for workstream `cloud` (Plan IDs `CLD-*`), not implementation, qualification, release or deployment evidence. Read the [implementation plan](00-implementation-plan.md), the [agent execution guide](01-agent-execution.md) and the approved design record (`docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md`) first. Every item in this workstream is `planned-not-qualified`; nothing is enabled or contacted before an administrator opts in, and the cloud base address is deployment configuration, never a setting.
+
+## 4. Contracts (instance ↔ cloud), condensed
+
+Full DTO tables are in Workstreams A/B; `packages/contracts` (Zod 4 + golden fixtures) is the single source
+both repos test against.
+
+- **Discovery** `GET https://api.frameleaf.cloud/.well-known/frameleaf-services` → `{version, validFor:86400, issuer, api, ml:{eu,na}, endpoints{heartbeat,commands,entitlements,licenseRefresh,relayToken,dnsTxt,backupGrant,mlGrant}, jwks{oidc,keys}, regions[], intervals{heartbeatSec:300, entitlementRefreshSec:86400, relayTokenRefreshPct:50}, limits}`; `GET /v1/discovery` (instance auth) adds per-instance service statuses + entitlements.
+- **Link** (RFC 8628 from the admin UI): `POST id./device/auth` (client `frameleaf-link`, `instance_name/version/jkt/platform`) → user code `XXXX-XXXX` (BCDFGHJKLMNPQRSTVWXZ), `verification_uri_complete`, 600 s, interval 5; approval page shows server name, version, key fingerprint, IP locale; step-up required; `POST /token` device grant → 10-min link token → `POST api./v1/instances {name, version, platform, jwk, bootId, capabilities, permissions}` → `{instanceId, oidc:{issuer, clientId=instanceId, initialAccessToken (once), registrationEndpoint, scope:"openid email profile", roleClaim:"frameleaf_role", storageLabelClaim:""}, services, owner}`; instance then `POST id./reg` (DCR, `private_key_jwt`, redirect URIs on the relay origin: `/auth/login`, `/user-settings`, `/link`, `/api/oauth/mobile-redirect`, `frameleaf-auth:///oauth-callback`). Headless: `FRAMELEAF_LINK_TOKEN=fll_…` (single use, ≤1 h) as `X-Frameleaf-Link-Token`.
+- **Tokens**: `client_credentials` + `client_assertion` (EdDSA, `iss=sub=client_id=instanceId`, `aud=https://id.frameleaf.cloud/token`, `jti`, `exp≤5 min`, `kid`) + `resource=` → JWT 10 min, `scope:"instance"`. Key rotation `GET /v1/instance/keys/nonce` + `POST /v1/instance/keys/rotate {newJwk, proof}` (old key retiring 24 h).
+- **Heartbeat** `POST /v1/instance/heartbeat` every 5 min `{version, bootId, uptimeSec, health, endpoints[≤16], remoteAccess, permissions, licenseKid}` → `{commands[], entitlementsChanged, servicesChanged, nextHeartbeatSec, cloneSuspected, notices[]}`; commands `remote.enable|remote.disable|backup.run|secret.rotate|key.rotate|relink`, honoured only if the instance-side permission flag allows; `POST /v1/instance/commands/:id/ack`. Clone rule: ≥3 alternations between two `bootId`s in 30 min → `clone_suspected` (owner email, backup grant refused).
+- **Claims to instances** (id token + userinfo): `sub` (account UUIDv7), `email`, `email_verified`, `name`, `picture?`, `frameleaf_role` (`admin` for owner/admin else `user`), `frameleaf_access`, `sid`, `auth_time`. Prompt `instance-access` runs on **every** authorization: `email_verified`, `instance_access(account, client_id)` (owner implicit), account/instance status; consent stored once, access check never skipped. Back-channel logout on unshare/unlink/suspend.
+- **License certificate** (JWS EdDSA, `typ:"license+jwt"`, `kid`): `{iss, aud:"frameleaf-server", sub:<account>, iid:<instance>, cnf:{jkt}?, lic:{id,last4,kind}?, ent:["CLOUD","REMOTE_ACCESS","CLOUD_BACKUP","CLOUD_ML","SUPPORTER_SERVER"|"SUPPORTER_INDIVIDUAL"], lim:{relay_mbps:8, relay_gb_month:200, backup_bytes:1e12, instances:3}, lic_exp (period end + 3 d; null lifetime), upd:{after:86400,url}, grace_days:7|14, iat, nbf, exp:+7d, jti}`. Endpoints: `POST /v1/licenses/activate {key, fingerprint:{instanceId, jkt?}, instanceName}` (instance or public rate-limited, air-gapped browser page returns the file), `POST /v1/licenses/refresh`, `POST /v1/licenses/deactivate`, `GET /v1/entitlements`, JWKS `GET /.well-known/frameleaf-keys.json`. Key format `FL-KXXX-XXXX-XXXX` (`K`=S|I, alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, mod-32 check symbol; cloud stores sha256 + last4; shown once).
+- **Relay**: `POST /v1/remote/enroll` → `{label, domain, names{relay, lanPattern, ipv6Pattern}, relay{id,host,port:443}, caa{issue, validationMethods:"dns-01", accountUri}, certProfile:"tlsserver", renewBeforeDays:25}`; `PUT/DELETE /v1/remote/dns/txt {name:"_acme-challenge.<label>", value}` (waits ≤25 s for both NS); `PUT /v1/remote/caa`; `GET /v1/remote/relays/candidates` + `POST /v1/remote/relays/select {measurements}`; `POST /v1/remote/relay-token` → `{token (JWS relay+jwt: sub=instance, sni, relay, cnf.jwk, thr{bps,burst}, lim{conns}, exp +4 h), relay{host, sni:"tun.<relay>", alpn:"fl-tunnel/1"}, refreshAfterSec:7200, throttling, limits, keepaliveSec:30}`; `POST /v1/remote/certs` (CT baseline); `GET /v1/remote/usage`. Relay internal: `/internal/relay/{jwks,denylist,throttles,metering,heartbeat,events}`.
+- **Backup grant** `POST /v1/backup/grant` → `{provider:"wasabi", region, endpoint, bucket:"fl-<region>-<instanceId>" (dedicated, created for this instance), credentials{accessKeyId, secretAccessKey (once)} scoped to that bucket only, expiresAt:+90 d, rotateAfterSec, quotaBytes, readOnly, versioning:true, sseC:{required:true, algorithm:"AES256"}, policy{denies:["s3:DeleteObjectVersion","s3:PutBucketVersioning","s3:DeleteBucket"]}}`; `/grant/rotate`, `/usage` (per-bucket utilization), `/runs`, `PUT/GET /escrow {version, kdf, cipher, nonce, ciphertext}` (server-key mode only, optional), `/purge` (30-d hold, deletes the bucket). The cloud never receives the bucket key; it can list object names and sizes only.
+- **Cloud ML v2** (regional host from discovery, bearer JWT `aud=ml`): `GET /ping` (public), `GET /capabilities` → `{protocol:"frameleaf-cloud-v2", region, workloads[] (only what can run now: entitled+consented+balance>0), consent{requiredVersion, recordedVersion, features{identityNames,medicalSignals,ocrAddon}}, entitlement, wallet{balanceUsd, heldUsd, dailyCapUsd, spentTodayUsd}, limits, catalogEtag}`, `GET /hardware` (synthetic CUDA so `readinessOf()` = model-ready), `GET /v2/catalog`, `POST /v2/estimates` → `{estimateId, expiresAt:+15 min, modelFingerprint, gpuClass, cost{p50,p90,startup,hold,minimum}, seconds{coldStart,run}, basis:"measured|modelled"}`, `POST /v2/jobs` (`Idempotency-Key`; `estimateId, workload, modelId, modelFingerprint, clientRef, packKey, deadlineSeconds, inputs[{inputId, contentType, bytes, sha256}], request`) → `{jobId, status:"awaiting_upload", hold, uploads[{inputId, method:"multipart", partBytes:8388608, parts[], completeUrl, inline}]}`, `POST /v2/jobs/{id}/start`, `GET /v2/jobs/{id}` (ETag/Retry-After; `progress`, `run`, `charges{meteredUsd,holdUsd,ceilingUsd}`, `result{outputs[{url,sha256,bytes}], model{…fingerprint}, timing}`, `purgeAfter`), `POST /v2/jobs/{id}/cancel`, `DELETE /v2/jobs/{id}` (ack → purge), `GET /v2/wallet`, `GET /v2/usage`, `GET /v2/consent/current`, `POST /v2/consent`. Error envelope `{code, message, retryable, refusal, detail, requestId}`; mapping: 401 invalid-key→DestinationUnhealthy, 403 consent-*→ConsentMissing/ConsentVersionOutdated, 402 insufficient-credits/daily-cap→BudgetExceeded/WalletInsufficient, 409 model-mismatch/retired/estimate-expired→ModelMismatch, 429→QuotaExceeded, 503 capacity/region→DestinationUnhealthy (never fallback).
+- **Wallet flow** (metered GPU time, 2026-09-25): `startup` = start fee × planned workers (chunked video uses up to 5); hold = ceil(p90Run × 1.25) + startup, sized from the p90 estimate including start fees; metering starts at model-ready, seconds round up; at ≥90 % of hold extend by 25 % from free balance; ceiling = hold + 10 % grace (absorbed by us); over ceiling → cancel at next safe point (`cancelled_budget`, completed outputs delivered); complete → charge = max(min, Σ start fees + metered seconds × class rate) ≤ ceiling (min = one start fee), refund rest; our/provider failure → full refund incl. startup; user cancel/their failure → charge to that point (min charge). Ledger append-only (`top_up|hold|capture|release|refund|adjustment|bonus|expiry|chargeback`), `posted ≥ 0`, `held = Σ open holds`; hard kill at model max runtime. Top-ups $20 minimum, $25 default, presets $25 / $50 / $100, no pack bonuses; per-photo and per-minute figures are display estimates (p50–p90), never the billing basis.
+- **Via header contract** (edge → API over loopback): `X-Forwarded-For/Proto/Host`, `X-Frameleaf-Via: lan|wan|relay`, `X-Frameleaf-Via-Auth: ${FRAMELEAF_EDGE_SECRET}` (per-boot secret generated by the supervisor); API strips client-supplied `X-Frameleaf-*`.
+- **Unlink propagation**: instance revoked → OIDC client deleted + back-channel logout (immediate), token endpoint `invalid_client`, relay denylist (≤2 min), Wasabi keys deleted (≤1 min; data read-only 30 d then purge ≤90 d), ML tokens refused, DNS removed after 24 h grace, audit + owner email.
+
+## 5. Workstream A — self-hosted (this fork)
+
+Root for paths: the fork checkout (currently `/Users/adamtaylor/Github/fl-integration`; work happens in a
+fresh worktree from the refetched `master/frameleaf-implementation`).
+
+### A1. Fixed engineering choices
+
+Second OIDC **provider slot** for Frameleaf (runtime-derived `OAuthConfig` fed to the existing
+`OAuthRepository.authorize/getProfileAndOAuthSid`; routes `/oauth/frameleaf/*`; secret via write-only
+credential `frameleaf-oidc-client-secret`) — never presets `oauth.*` (config-file installs, existing IdPs).
+Edge = new `ImmichWorker.Edge`, forked like `Api` in `server/src/main.ts:98-116`, slim `EdgeModule` modelled
+on `MaintenanceModule`, single active edge via `tryLock(DatabaseLock.FrameleafEdge)`. Rate limiting =
+small ioredis `INCR/EXPIRE` guard (`@RateLimited`). Audit = `recordAdminEvents()` with new
+`AdminAuditAction`s. Deps to add: `acme-client`, `@achingbrain/nat-port-mapper`, `@aws-sdk/client-s3` (+ `@aws-sdk/lib-storage` for
+multipart) — SSE-C requires the S3 API directly; no restic, no extra binaries in the image.
+
+### A2. Server module map (new)
+
+`repositories/instance-identity.repository.ts` (load/create under `DatabaseLock.FrameleafIdentity`, PEM
+`O_EXCL` 0600, `publicJwk`, `kid`, `signAssertion`), `repositories/frameleaf-cloud.repository.ts`
+(`discovery()` cached by `validFor`, `request<T>()` modelled on the previous GPU-provider integration's repository `request()` — the one piece of
+that code we keep as a pattern, `accessToken(resource)` cache), `services/frameleaf-cloud.service.ts` (link
+lifecycle, heartbeat cron + jitter under `DatabaseLock.FrameleafHeartbeat`, commands, unlink, permissions,
+audit, `notifyAdmins`), `controllers/cloud-admin.controller.ts` (`admin/cloud`), `dtos/frameleaf-cloud.dto.ts`,
+`utils/frameleaf-license.ts` (pure verify/status/flags), `services/frameleaf-license.service.ts` +
+`controllers/license-admin.controller.ts` (`admin/license`) + `dtos/frameleaf-license.dto.ts`,
+`repositories/frameleaf-account.repository.ts` (fork tables), `services/frameleaf-auth.service.ts` +
+`controllers/frameleaf-auth.controller.ts` (`oauth/frameleaf`), `middleware/frameleaf-via.middleware.ts`,
+`middleware/rate-limit.guard.ts`, `workers/edge.ts`, `edge/{edge.module,edge-certificate.repository,
+edge-proxy.service,edge-direct.service,edge-relay.service,edge-state.service}.ts`,
+`repositories/frameleaf-cloud-ml.repository.ts` (job client), `services/cloud-ml.service.ts`,
+`services/cloud-ml-batch.service.ts`, `controllers/cloud-ml-admin.controller.ts` + `cloud-ml.controller.ts`,
+`dtos/cloud-ml.dto.ts`, `repositories/cloud-backup-store.repository.ts` (S3 client: SSE-C headers on every call, multipart PUT, HEAD/LIST,
+GET with sha256 verify), `repositories/cloud-backup-index.repository.ts` (fork table `cloud_backup_object`),
+`services/cloud-backup.service.ts`, `controllers/cloud-backup-admin.controller.ts`, `dtos/cloud-backup.dto.ts`,
+`commands/cloud-backup.command.ts`; fork migrations `0000000000170-FrameleafAccountLinks`,
+`…180-FrameleafSessions`, `…190-FrameleafUserLicenses`, `…200-FrameleafConsents`, `…210-CloudBackupObjects` (`cloud_backup_object`: `sha256 PK`, `bucket`, `size`,
+`uploadedAt`, `etag`, `lastSeenAt`; `cloud_backup_manifest`: `id`, `bucket`, `key`, `createdAt`, `assetCount`,
+`bytes`, `status`); public migrations
+`2100000000620-FrameleafCloudMlDestination` (widen `ml_destination_kind_check` to `local|lan|frameleaf-cloud`
+after deleting the previous GPU-provider integration's rows (the two cloud kinds in `CLOUD_ML_DESTINATION_KINDS`) — same shape as `2100000000490-SeparateRestorationWorkers.ts:18-35`) and
+`2100000000630-HashSharedLinkPasswords`; medium specs per fork table (`recipient-group.repository.spec.ts` pattern).
+
+### A3. Server changes (existing files)
+
+- `enum.ts`: `SystemMetadataKey.{FrameleafInstance,FrameleafCloudLink,FrameleafServiceDiscovery,FrameleafLicense,FrameleafRemoteAccess,FrameleafCloudBackup,FrameleafMlWallet}` (remove the previous GPU-provider integration's two metadata keys); `ImmichWorker.Edge`; `DatabaseLock.Frameleaf{Identity,Heartbeat,LicenseRefresh,CloudBackup,CloudBackupCheck,CloudMlBatch,Edge}` (unique numbers ≥ 940); `JobName.{FrameleafHeartbeat,FrameleafLicenseRefresh,CloudMlDescriptionBatch,CloudBackupSchedule,CloudBackupVerify}` on `QueueName.BackgroundTask` (+ `JobItem` union, `getJobOptions`); `Permission.{AdminCloudRead,AdminCloudUpdate,AdminCloudLink,AdminRemoteAccessUpdate,AdminCloudBackupRead|Update|Run,AdminCloudMlRead|Update,CloudMlJobCreate|Read,FrameleafAccountRead|Update}` (keep `ServerLicense*`/`UserLicense*`); `AdminAuditAction` set (CloudLinked… FrameleafAccountUnlinked); `ConfigCredential.{FrameleafOidcClientSecret,CloudBackupBucketKey,CloudBackupS3SecretKey}` (+ `CREDENTIAL_PATHS`, `stripCredentialFlags`, `mapAdminConfig`); `MlDestinationKind.FrameleafCloud='frameleaf-cloud'` in `CLOUD_ML_DESTINATION_KINDS` **replacing** the two cloud kinds in `CLOUD_ML_DESTINATION_KINDS` (the previous GPU-provider integration); `MlWorkload.{Upscale,Interpolation,StudioRender}`; `MlAdmissionRefusal.{WalletInsufficient,ConsentVersionOutdated,CloudUnavailable,QuotaExceeded,ModelMismatch,EntitlementMissing}`; `MediaOperationKind.{CloudMlJob,CloudBackup,CloudRestore}`; `MediaOperationDestination.FrameleafCloud`; `ApiTag.Frameleaf{Cloud,License,RemoteAccess,CloudMl,CloudBackup}` + `endpointTags` (`constants.ts`); `ImmichHeader.{FrameleafVia,FrameleafViaAuth}`; `StorageFolder.Frameleaf`.
+- `types.ts`: `SystemMetadata` entries — `FrameleafInstance {instanceId, kid, publicJwk, keyFile, createdAt}`, `FrameleafCloudLink {status, cloudUrl, accountId?, accountLabel?, linkedAt?, lastContactAt?, pending?{deviceCode,userCode,verificationUri(Complete),expiresAt,intervalSeconds}, permissions{allowRemoteEnable,allowBackupTrigger,allowEntitlementRefresh}, revoked?, lastError?}`, `FrameleafServiceDiscovery {fetchedAt, validUntil, document}`, `FrameleafLicense {certificate, kind, keyHint?, activationId?, claims, verifiedAt, refreshedAt?, nextRefreshAt?, lastRefreshError?}`, `FrameleafRemoteAccess {status, bootId, names?, certificate?, relay{connected,…}, direct{listening,port,mapping?,cgnatSuspected}, candidates[]}`, `FrameleafCloudBackup {target, bucket?, claimedAt?, keyMode:'server'|'own-stored'|'own-memory', keyFingerprint?, keyLoaded (own-memory: true only while held in process memory), lastRun?, lastSuccessAt?, lastManifestKey?, lastCheckAt?, usage?, escrow?}`, `FrameleafMlWallet {balanceUsd, heldUsd, updatedAt, topUpUrl|null}`.
+- `dtos/env.dto.ts` + `config.repository.ts`: `FRAMELEAF_CLOUD_URL`, `FRAMELEAF_IDENTITY_DIR`, `FRAMELEAF_LINK_TOKEN`, `FRAMELEAF_EDGE_PORT` (2443), `FRAMELEAF_EDGE_BIND`, `FRAMELEAF_TRUSTED_LAN_CIDRS`; remove `licensePublicKey`/`productionKeys`/`stagingKeys`; default workers `[api, microservices, edge]`. `main.ts`: fork `Edge`; supervisor sets `FRAMELEAF_EDGE_SECRET`. `app.common.ts`: register via-middleware after `cookieParser()`.
+- `dtos/config.dto.ts`: new section `frameleafCloud {remoteAccess{enabled:false, mode:'relay'|'relay-and-direct', directPort:2443, manualPublicPort, portMapping:true, allowOriginalsOverRelay:false, allowPasswordOverRelay:false}, signIn{buttonText (Public), clientSecret (write-only)}, cloudMl{enabled, routing{descriptions, upscale, restoration, transcription, interpolation} (each one of local-only, both, cloud-only; default local-only), descriptions{enabled, defaultModel, autoBatch:false, dailyBudgetUsd}, restoration{enabled, defaultModel}, interpolation{enabled, defaultModel}, faces{enabled:false}}, cloudBackup{enabled, target:'off'|'managed'|'byo-s3', s3{endpoint,region,bucket,accessKeyId,secretAccessKey (write-only)}, keyMode:'server'|'own-stored'|'own-memory', bucketKey (write-only credential `cloud-backup-bucket-key`, absent in own-memory mode), schedule{cronExpression:'0 3 * * *'}, retention{keepDaily:7,keepWeekly:4,keepMonthly:12}, include{thumbs:false,encodedVideo:false}, verifyWeekly:true, escrow:false}}` (schema-level `.default()` everywhere); **remove** the previous GPU-provider integration's `machineLearning` section (keep `hfToken` only if the local ML container needs it for gated model downloads — verify). `system-config.service.ts` `ConfigValidate`: remote access needs link + entitlement; byo-s3 needs endpoint/bucket.
+- `server.service.ts`/`server.controller.ts`: delete `server/license` routes (and from `ADMIN_ROUTES` in `controllers/index.spec.ts`); `getAboutInfo().licensed = state ∈ {active, grace}`; `getFeatures()` + `ServerFeaturesSchema` add `frameleafCloud, remoteAccess, cloudMl, cloudBackup, supporter`; `getSystemConfig(via)` adds `frameleaf{via, signInAvailable, signInRequired, publicUrl}`; new `GET server/connections` (Plex `connections[]` shape). `app.controller.ts` `/.well-known/immich` adds `frameleaf{instanceId, publicUrl, signIn}`. `PublicConfigDto` adds `frameleaf{signInAvailable, signInRequired, via}`.
+- `user.service.ts`/`user.dto.ts`/`user.controller.ts`: replace IMCL with `UserSupporterSchema {kind:'individual', keyHint, activatedAt}` (DTO id `UserLicense` kept; protocol change recorded for native apps); `dtos/license.dto.ts` re-exports; remove `config.repository.ts` FUTO keys, `emails/license.email.tsx` my.immich.app link (rewrite or delete), `helmet.json` pay.futo.org CSP.
+- `auth.service.ts`: `callback()` requires `email_verified===true` for email-linking and auto-register; `authenticate()` enforcement (relay/WAN: shared link ok; session must be Frameleaf-tagged; API key only if owner linked; else 403 `frameleaf_sign_in_required`); `login()` refuses password over relay/WAN unless `allowPasswordOverRelay`; back-channel logout accepts `aud===instanceId` (Frameleaf JWKS); extract `createSession()` for `FrameleafAuthService`. `auth.guard.ts` passes `request.frameleafVia`. Originals/downloads/DB backups refuse `via==='relay'` unless `allowOriginalsOverRelay`.
+- `websocket.repository.ts`: `cors` → origin allow-list (same-origin, `server.externalDomain`, published names); `on_frameleaf_cloud {topic}` to admins; handshake `frameleafVia`. `shared-link.service.ts`: bcrypt passwords, `timingSafeEqual` tokens (+ migration 630). `user.repository.ts` `getAdmins()`; `notification.service.ts` `notifyAdmins({…, dedupeKey, dedupeDays≤30})` + `findRecentByDedupeKey`; the previous GPU-provider integration's service deleted (its `notifyAdmin` callers move to `notifyAdmins`).
+- ML: `utils/ml-destination.ts` (`resolveEndpoint` sentinel for the cloud kind; `workloadPolicyProblem` allows Mixed only for FrameleafCloud restricted to `enrichment|upscale|restoration-*|studio-ai|interpolation|studio-render`; `evaluateAdmission` adds the new refusals from the probe; pre-flight `hold ≤ balance` for every cloud job; per-workload routing `local-only`/`both`/`cloud-only` where `both` means the job picks at confirmation and a job is never moved to the cloud silently), `machine-learning.repository.ts` (`probe()` delegates for the cloud kind; `MlEndpoint.kind`), `ml-destination.service.ts` (cloud row created only by `POST admin/cloud/ml/destination`; no url/token fields; restoration models from the catalog), `asset-restoration.service.ts` + dto (cloud branch: `estimate.cloudCost` filled as GPU time × rate + start fee with per-unit estimates, model slider, `consentVersion` + `acknowledgeDataLeaves`; new interpolation operation), `enrichment-plan.service.ts`/`image-enrichment.service.ts` (description stage → cloud batches; prompt privacy: `identityInjection`/`medical` off unless consent features allow), `restoration-worker.service.ts` (`-map_metadata -1 -map_chapters -1` on preview/chunk cuts; re-encode web-native originals for cloud, strip EXIF/GPS, keep ICC), `ml_workload_accounting.costUsd` filled from settlements (+ `credits`, `cloudJobId`), `ml_workload_route.modelId`, `ml_destination.region/consentVersion` (in migration 620). Delete the previous GPU-provider integration (locate it from the two cloud kinds in `CLOUD_ML_DESTINATION_KINDS`): its repository, service and controller, its admin settings components under `components/admin-page/settings/machine-learning/`, and its docs and i18n.
+- Backup agent (`cloud-backup.service.ts`): bucket claim (`frameleaf-backup.json` root marker with instance id;
+  refuse foreign/claimed buckets; one bucket per server); per-bucket key in three modes (server / own-stored /
+  own-memory) with `POST admin/cloud/backup/key/unlock` for own-memory after restarts; run = `media_operation`
+  kind `cloud_backup`: (1) `createDatabaseBackup()` → `db/<file>.sql.gz` (keep last N), (2) walk assets by
+  `immich_fork.asset_checksum` + sidecars/profile (sha256 on the fly), skip every hash present in
+  `cloud_backup_object` (or in a fresh bucket listing on first run), upload the rest as `o/<sha256>` with SSE-C
+  (multipart 8 MiB, `Content-MD5`, verify ETag), (3) write manifest `m/<ISO>.json.gz` (asset id → hash, path,
+  size, mtime, sidecar hash, owner), (4) retention: keep daily/weekly/monthly manifests, delete objects not
+  referenced by any kept manifest; lease, cursor every 25 assets, pause/resume/cancel, resume by manifest id;
+  weekly verify = sampled GET + sha256 of 1/52 of objects, monthly HEAD of all referenced hashes; restore =
+  pick manifest → download by hash with SSE-C → verify → `<media>/frameleaf/restore/<id>` (Library Care) or
+  `<media>/backups` (maintenance DB restore) or per-asset restore; `commands/cloud-backup.command.ts`
+  (`immich-admin cloud-backup restore --bucket … --key-file …`).
+- Registration arrays (`services/controllers/repositories index.ts`), `schema/migrations/ORDER` (`migrations:sync-order`), `fork-schema/manifests/fork-v2-catalog.json` regen, `catalog.spec.ts` counts (177 → 181), `migration-ledgers.spec.ts` names, `mise run //:sql`, OpenAPI + SDK regen.
+
+### A4. Web changes
+
+- Navigation: `lib/frameleaf/settings-areas.ts` new area `cloud` (group `server`, after `server`) with sections `cloud-account, license, remote-access, cloud-ml, cloud-backup` + personal `frameleaf-account`, `AREA_TILE_COLORS.cloud`, `DIRECTORY_GROUPS.cloud` (`account_link|licensing|remote|cloud_services`); `SettingsHost.svelte` `areaCopy.cloud`; `sections/SectionBody.svelte` branches; `personal-sections.ts` + `UserSettingsList.svelte` (`frameleaf-account` gated by `featureFlagsManager.value.frameleafCloud`); `command-index.ts`; `CommandCenterOverview.svelte` "Frameleaf Cloud" glance tile (replaces "Cloud destination"); `AccountMenu.svelte` Frameleaf pill; `MlDestinationsPanel.svelte` cloud row (no URL/token; consent + budget kept; wallet instead of hourly rate).
+- New: `lib/managers/cloud-manager.svelte.ts` (admin-only, subscribes `on_frameleaf_cloud`, reloads on `SystemConfigUpdate`), `lib/frameleaf/cloud.ts` (pure helpers incl. `validateProductKey` port of `system-data.mjs:684-705`, `storeUrl`), `components/frameleaf/cloud/{CloudAccountSection, LicenseSection, LicenseActivateDialog, LicenseFileDialog, RemoteAccessSection, CloudMlSection, CloudMlConsentDialog, CloudMlWalletCard, CloudMlModelSlider, HardwareGpuSection, CloudBackupSection, CloudBackupSetupDialog, CloudBackupRestoreDialog, RecoveryKitPanel}.svelte`, `components/frameleaf/access/FrameleafAccountSection.svelte`, `components/frameleaf/buy/{BuyScreen, BuyPlanCard, BuyKeyField, BuyActivated}.svelte + buy.css` (port of `AuthScreens.jsx:1400-1620`: "Support Frameleaf", plan cards for the subscription, supporter cards one-time, "Already have a key?", activated card, "Hide the supporter badge" switch, Remove key in place), onboarding `OnboardingFrameleafAccount.svelte` + `OnboardingLicense.svelte` (SERVER steps after `storage_template` in `lib/frameleaf/onboarding.ts`; e2e "Step 11 of 11").
+- Routes: `(user)/buy/+page.svelte` mounts `BuyScreen`; `+page.ts` reads `sessionStorage['frameleaf:license:pending']`; `routes/link/+page.ts` handles `#target=frameleaf_license&key=…` (fragment only; `history.replaceState`) and `?target=frameleaf_account` (avoids the `?code=` OAuth-return gotcha); login page "Sign in with Frameleaf" (only that button when `signInRequired`), LAN bounce.
+- Delete: `shared-components/purchasing/*`, `lib/utils/license-utils.ts`, `PUBLIC_IMMICH_BUY_HOST/PAY_HOST` (`web/svelte.config.js:7-8`, `app.d.ts`), `side-bar/PurchaseInfo.svelte` mount, the previous GPU-provider integration's settings panel.
+- i18n (`i18n/en.json`, sorted): `frameleaf_cloud_*`, `frameleaf_license_*`, `frameleaf_remote_*`, `frameleaf_settings_area_cloud*`, `frameleaf_cc_group_{account_link,licensing,remote,cloud_services}`, audit sentences, activity kinds; `buy` → "Support Frameleaf"; drop `purchase_*` (27 keys), `frameleaf_access_server_key_product_name`, every "the GPU provider" string (closes audit B-1..B-9, S-31, B-9).
+- Activity: `ActivityItem.cost {estimatedUsd, soFarUsd, settledUsd|null}`, `model`, kinds `cloud_ml_job|cloud_backup|cloud_restore`.
+- Docs: new `docs/docs/administration/frameleaf-cloud.md`; update `guides/remote-access.md`, `administration/workers-and-endpoints.md` (edge worker; Frameleaf Cloud destination; no the GPU provider), `system-settings.md`, `features/user-settings.md`, `FAQ.mdx`, `install/environment-variables.md`; Confluence mirror + documentation-coverage re-pin.
+
+### A5. Edge worker (implementation notes)
+
+`EdgeStateService` polls desired state every 10 s (config `frameleafCloud.remoteAccess.enabled` ∧ link ∧
+entitlement active/grace), writes `SystemMetadataKey.FrameleafRemoteAccess`, publishes candidates
+(`PUT /v1/instance/endpoints`), tears down on `AppShutdown`. `EdgeCertificateRepository`: `acme-client`,
+account key + certs under the identity dir (0600), DNS-01 through the cloud TXT API, wait for propagation
+via the cloud's resolver hint, renew daily with 0–6 h jitter when remaining < max(25 d, ⅓ lifetime), retry
+1 h → 24 h with a deduped admin notice. `EdgeProxyService`: one `http.createServer` (never listened) +
+`upgrade`; strips client `x-frameleaf-*`, injects the via contract, pipes unbuffered (24-h request timeout,
+Range, chunked), HSTS; caps 512 connections / 64 per IP. `EdgeDirectService`: `tls.createServer` on
+`FRAMELEAF_EDGE_BIND:FRAMELEAF_EDGE_PORT`, peer RFC 1918/ULA (or trusted CIDRs) → `via: lan` else `wan`;
+`@achingbrain/nat-port-mapper` (UPnP then NAT-PMP/PCP), lease 3600 s refreshed every 30 min, unmap on
+disable; external IP vs heartbeat `observed_ip` → `cgnatSuspected`; WAN candidate `verified` only after
+`POST /v1/remote/probe`; bridge networking → documented guidance (host networking or manual port).
+`EdgeRelayService`: token → `tls.connect` (SNI `tun.<relay>`, ALPN `fl-tunnel/1`) → handshake → h2 server
+over the socket → `CONNECT` streams → `TLSSocket` per stream → proxy core with `via: relay`; PING 30 s (3
+misses reconnect), full-jitter backoff 1 s → 5 min, refresh token at 50 %, re-select relay after 3
+failures. Public URL `https://r.<label>.frameleaf-direct.net` exposed via `/server/config`,
+`/.well-known/immich`, `/server/connections` (candidate order local → wan → ipv6 → relay).
+
+### A6. Delivery slices (each a `codex/FL-<n>-slug` PR, off until linked; reviewer required where marked ★)
+
+1. **Instance identity + cloud deployment config** — identity repo, env, `request()`, `GET admin/cloud/status`, `cloud` area skeleton. AC: identity created once (PEM 0600, RFC 7638 `kid`), no outbound call without link, unset URL ⇒ "not configured" never a fallback.
+2. **Link a server (device flow, link token, heartbeat, unlink)** — AC: code + QR flow; headless single-use token; unlink leaves no secret; heartbeat matches the "what we send" panel; audit rows.
+3. ★ **License certificates replace the product key** — pinned keys (+spare), refresh job/grace/notices, feature flags, `About.licensed`, supporter tables, IMSV/IMCL removal. AC: spare-key cert verifies; bad `kid`/`sub`/tamper refused; grace keeps entitlements; offline file install works; `ADMIN_ROUTES` updated; OpenAPI/SDK regen.
+4. **Support Frameleaf screen and key relay** (`/buy`, `/link`; closes B-1..B-9) — AC: key never in a query string (Playwright asserts); prototype states match; onboarding `license` step; i18n cleanup.
+5. ★ **Sign in with Frameleaf (second provider slot)** — `email_verified` patch, fork tables, back-channel logout, login button, personal section, onboarding `frameleaf_account`. AC: unverified email refused for all providers; coexists with an admin's own IdP; tagged sessions; cloud logout kills them; mobile override rewrites to `frameleaf-auth:///oauth-callback`.
+6. ★ **Remote-access security prerequisites** — rate limits, shared-link password hashing (+630), websocket origin check, via-middleware + supervisor secret, `authenticate()` rule, originals-over-relay refusal. AC: client `X-Frameleaf-Via` dropped; rule enforced; old plaintext links keep working; login throttled.
+7. **Edge worker: certificate + direct listener** — AC: idle without link; cert issued via mocked TXT API; LAN name serves HTTPS with `via: lan`; teardown ≤ 5 s.
+8. ★ **Edge worker: blind relay tunnel** — AC: fake relay harness (Node `http2.connect` over a socket pair) round-trips HTTP + WebSocket; token refresh; PING misses reconnect; originals refused by default.
+9. **Edge worker: port mapping, WAN candidate, LAN→relay sign-in bounce** — AC: lease refresh/unmap; bridge guidance; handoff child session lands on the LAN origin.
+10. ★ **Frameleaf Cloud as the processing destination (replaces the GPU provider)** — kind, migration 620 (gpu-provider rows deleted), policy/admission, job client probe/catalog/wallet/consent, `CloudMlSection`, the GPU provider code/config/docs/i18n removed, Hardware & GPU check, per-workload routing, colour-banded model slider. AC: destination only by explicit admin action; a job never moves to the cloud silently; faces refused; admission refuses on missing/outdated consent, empty wallet, cloud unreachable — never falls back; no "the GPU provider" string remains in customer copy (spec greps `i18n/en.json`, `docs/`).
+11. ★ **Cloud restoration/upscaling and Smooth motion jobs** (`media_operation` kind `cloud_ml_job`; estimate → confirm → submit → progress → result; model slider; per-job consent; cancel releases hold; refunds; Activity cost). AC: estimate shown as GPU time × rate + start fee with per-unit estimates before confirm and settled cost after; long video chunked 20–30 s across ≤ 5 serverless workers; resume by `cloudJobId`; 402 refuses without downgrade.
+12. **Cloud description batches** (`CloudMlBatchService`, one run per batch, daily budget, Library-care wording). AC: never one run per asset; estimate by GPU time; budget exhaustion notifies once.
+13. ★ **Cloud backup: bucket claim, per-bucket key modes, content-addressed manual runs** — AC: bucket claimed once and refused if foreign; key modes server/own-stored/own-memory behave as specified; every object uploaded with SSE-C; a second run uploads nothing when nothing changed; duplicates on the same server produce one object; run survives restart.
+14. ★ **Cloud backup: schedule, retention, verification, managed Wasabi, escrow, restore + CLI** — AC: single scheduler; retention prunes only unreferenced objects; over-quota → read-only; restore by manifest verifies every hash; DB restore via existing maintenance flow.
+15. **Command Center polish, onboarding, docs, Confluence** — AC: no "fork"/"DTO"/"Immich" product copy; every section searchable; docs list env + credentials.
+
+Specs that must change: `controllers/index.spec.ts`, `server.service.spec.ts`, `user.service.spec.ts`,
+`auth.service.spec.ts`, `shared-link.service.spec.ts`, `notification.service.spec.ts`,
+`ml-destination.service.spec.ts`, `asset-restoration.service.spec.ts`, `config.repository.spec.ts`,
+`fork-schema/catalog.spec.ts`, `migration-ledgers.spec.ts`, `ml-destination.repository.spec.ts`,
+`SettingsHost.spec.ts`, `CommandCenterOverview.spec.ts`, `PersonalAccessDialogs.spec.ts`, onboarding
+`page.svelte.spec.ts`, `e2e/src/specs/web/auth.e2e-spec.ts:53`, `e2e/src/ui/mock-network/base-network.ts`,
+`open-api/immich-openapi-specs.json` + `packages/sdk`, `server/src/queries/*.sql`; delete the previous GPU-provider integration's service spec.
+
+## 11. Deliverable: the plan as Jira epics/stories (FL + FC) and Confluence pages (FR + FC)
+
+The owner's instruction (2026-09-25): create the plan for the open-source fork in Jira **FL** and for the
+cloud in Jira **FC**, mirror the plan to Confluence (**FR** for the fork, **FC** for the cloud), and write
+every epic and story for AI coding agents in the format the FL board already uses.
+
+Verified targets: Jira FL (id 10232) and FC (id 10233), both with Epic 10000 / Story 10039 / Task 10118;
+only `summary`, `project`, `issuetype` are required — `parent` and `labels` go in `additional_fields`;
+link types `Blocks` (inward = blocker) and `Relates`. Confluence FR (space id 61374475; implementation-plan
+parent page 61538319; agent guide 61407516) and FC (space id 63733763; home page 63733939, still the
+template text). Site `heroit.atlassian.net`.
+
+### 11.1 Conventions (apply to every issue)
+
+- Summary `[PLAN-ID] Title`; labels `[<PLAN-ID>, frameleaf-cloud]`; parent = the epic key; priority Medium
+  unless marked High; status To Do at creation; no assignee, no estimates or dates.
+- Plan IDs are stable join keys. FL workstream `cloud`: epics `CLD-E01..E04`, stories `CLD-0nn/1nn/2nn/3nn`.
+  FC workstreams: `OPS`, `IDN`, `INS`, `ENT`, `WAL`, `REM`, `BAK`, `MLC`, `WEB` with epics `XXX-E0n` and
+  stories `XXX-nnn`.
+- Copy rule in every issue: say "Frameleaf Cloud", never "the GPU provider"; customer-facing copy never says
+  "fork", "DTO", "worker-admission proof" or names Immich as the product.
+- Dependencies become `Blocks` links (inward = prerequisite) using the transitive reduction, exactly like
+  `jira-map.json`; cross-project dependencies use `Blocks` too; informational overlaps use `Relates`.
+- Fork-side stories also get `backlog.json` records (exact keys: `acceptance, dependencies, epicId,
+executionGuide, id, objective, paths, phase, priority, risks, sourcePhase, status, tests, title, type,
+workstream, workstreamGuide`; `workstream: "cloud"`, `workstreamGuide:
+docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md`, `status: planned-not-qualified`,
+  `phase: 4`, `sourcePhase: "P1"`), `jira-map.json` entries and a `topologicalOrder` update; the validator
+  `scripts/frameleaf-delivery-backlog-contracts.mjs` counts (142 items / 24 epics / 118 stories) and
+  `delivery-backlog-evidence.json` are re-observed in the same PR (CLD-000).
+
+### 11.2 Story description template (agent-facing; identical structure to FL-67/FL-80)
+
+```
+<Objective: one or two sentences.>
+
+[Program plan](<FR page: Frameleaf Cloud program plan>) · [Agent execution guide](https://heroit.atlassian.net/wiki/spaces/FR/pages/61407516/AI+Coding+Agent+Execution+Guide) · [Workstream specification](<FR or FC page for this workstream>)
+
+Repository: https://github.com/Frameleaf/frameleaf-app | https://github.com/Frameleaf/frameleaf-cloud. Read root AGENTS.md before work. Source anchors refer to the inspected working tree; preserve pre-existing changes and verify the current baseline (fork: refetched `master/frameleaf-implementation`).
+
+Plan ID: `<ID>`. Stage <n>. Status at creation: planned, not qualified. No estimate or delivery date is implied.
+
+## Scope and source anchors
+* <paths>
+## Acceptance criteria
+* <bullets>
+## Validation and evidence
+* <bullets; hosted CI only, never full builds on the operator's Mac>
+## Risks and boundaries
+* <bullets>
+## Depends on
+* [<KEY>](<url>) — `<PLAN-ID>`
+## Design reference
+* <Confluence page + section>; naming rule: "Frameleaf Cloud", never the previous GPU provider's name; prototype anchors where the design/frameleaf template covers the screen (authoritative), otherwise apple-style patterns.
+## Agent completion contract
+Retain source feature behavior and owner/privacy rules. Implement real production behavior, error/recovery paths and required web/worker counterparts. Update the requirement ledger, docs and evidence. A prototype control or a generated client is insufficient. Keep this issue open while required acceptance is missing or unqualified. Break work into reviewed child tasks when necessary without reducing parent acceptance. Do not deploy, publish, push upstream or push to origin from this ticket alone.
+```
+
+Epic template = FL-10's: objective, the same links line, repository line, Plan ID + Stage, "## Scope and
+source anchors", "## Acceptance criteria" ("Every child issue has production evidence and preserves the
+source actions named in its acceptance criteria"; "Nothing is enabled or contacted before the admin opts
+in"), "## Validation and evidence", "## Risks and boundaries", "## Agent completion contract".
+
+### 11.3 FL (open-source fork) — epics and stories
+
+Stages: 3 = foundation, 4 = feature. All stories: repository frameleaf-app; base = refetched
+`master/frameleaf-implementation`; branch `codex/FL-<n>-<slug>`; ★ = independent reviewer required.
+
+**CLD-000 (Task) Register the Frameleaf Cloud workstream** — objective: land the design as repo-owned docs and
+backlog records before any feature work. Anchors: `docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md`
+(new, prettier-clean), `docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md` (new workstream
+guide: contracts, module map, slices), `backlog.json`, `jira-map.json`, `delivery-backlog-evidence.json`,
+`scripts/frameleaf-delivery-backlog-contracts.mjs`, `confluence-mirror.json`, `docs/docs/developer/frameleaf-plan/00-implementation-plan.md`
+(one paragraph + link). AC: validator passes with the new counts; every CLD item has a Jira key in `jira-map.json`;
+FR mirror pages carry source path + SHA-256 + backlink and are read back; no "the GPU provider" in the new docs. Deps: none.
+
+**CLD-E01 Frameleaf Cloud account, licensing and sign-in (self-hosted)** — Stage 3/4. Anchors: `server/src/services/auth.service.ts`,
+`server/src/services/server.service.ts`, `server/src/dtos/config.dto.ts`, `web/src/lib/frameleaf/settings-areas.ts`,
+`web/src/routes/(user)/buy`, `design/frameleaf/template/src/AuthScreens.jsx`. Overlaps: FL-10 (settings parent),
+FL-67, FL-80, FL-131 (`Relates`).
+
+- **CLD-001 Instance identity and Frameleaf Cloud deployment configuration** (Stage 3). Anchors:
+  `server/src/repositories/instance-identity.repository.ts` (new), `server/src/repositories/frameleaf-cloud.repository.ts`
+  (new), `server/src/dtos/env.dto.ts`, `server/src/repositories/config.repository.ts`, `server/src/enum.ts`,
+  `server/src/types.ts`, `server/src/controllers/cloud-admin.controller.ts` (new), `web/src/lib/frameleaf/settings-areas.ts`,
+  `web/src/lib/components/frameleaf/cloud/CloudAccountSection.svelte` (new), `docs/docs/administration/frameleaf-cloud.md` (new).
+  AC: UUIDv7 `instanceId` + Ed25519 key created once under `DatabaseLock.FrameleafIdentity`, PEM 0600 under
+  `FRAMELEAF_IDENTITY_DIR` default `<media>/frameleaf/identity`, `kid` = RFC 7638; `FRAMELEAF_CLOUD_URL`,
+  `FRAMELEAF_IDENTITY_DIR`, `FRAMELEAF_LINK_TOKEN`, `FRAMELEAF_EDGE_PORT/BIND` parsed and documented; `GET admin/cloud/status`
+  (`Permission.AdminCloudRead`, `ApiTag.FrameleafCloud`, `@Endpoint` history) reports not-configured/unlinked;
+  Command Center area `cloud` (server group, after `server`) exists with the account section in its
+  not-configured state; **no outbound request is made without a link** (spec asserts `fetch` unused); unset URL
+  ⇒ "not configured", never a fallback. Validation: `instance-identity.repository.spec.ts` (tmp dir, `wx` race),
+  `frameleaf-cloud.repository.spec.ts` (timeout, allow-listed upstream errors), `settings-areas.spec.ts`,
+  `command-index.spec.ts`, `SettingsHost.spec.ts`; OpenAPI + SDK regen. Risks: cloud URL is deployment config,
+  never a setting (FL-71 rule). Deps: CLD-000.
+- **CLD-002 Link a server to a Frameleaf account (device flow, link token, heartbeat, unlink)** (Stage 4).
+  Anchors: `server/src/services/frameleaf-cloud.service.ts` (new), `server/src/dtos/frameleaf-cloud.dto.ts` (new),
+  `server/src/repositories/user.repository.ts` (`getAdmins`), `server/src/services/notification.service.ts`
+  (`notifyAdmins` + dedupe), `server/src/repositories/websocket.repository.ts` (`on_frameleaf_cloud`),
+  `web/src/lib/managers/cloud-manager.svelte.ts` (new), `CloudAccountSection.svelte`. AC: `POST/GET/DELETE
+admin/cloud/link` implement RFC 8628 against the cloud (user code + `verification_uri_complete` + QR; server-side
+  polling honours `interval`/`slow_down`/`expired_token`/`access_denied`); `FRAMELEAF_LINK_TOKEN` links once
+  headlessly; heartbeat cron (5 min + jitter) under `DatabaseLock.FrameleafHeartbeat` sends exactly the fields
+  shown in the "What we send" panel; commands honoured only when the instance permission toggles allow; unlink
+  from either side leaves no secret (credential cleared, link `revoked`, remote/ML/backup desired-state false);
+  every link/unlink/revoke is an admin audit row; admins get deduped notices. Validation: service state-machine
+  spec with a fake cloud, notification dedupe spec, Playwright `ui` with `e2e/src/ui/mock-network/cloud-network.ts`.
+  Risks: revoke command must never delete local data. Deps: CLD-001, FC INS-001, FC INS-002.
+- ★ **CLD-003 Frameleaf license certificates replace the Immich product key** (Stage 4). Anchors:
+  `server/src/utils/frameleaf-license.ts` (new), `server/src/services/frameleaf-license.service.ts` (new),
+  `server/src/controllers/license-admin.controller.ts` (new), `server/src/dtos/frameleaf-license.dto.ts` (new),
+  `server/src/constants.ts` (pinned Ed25519 keys + spare), `server/src/services/server.service.ts`,
+  `server/src/controllers/server.controller.ts`, `server/src/services/user.service.ts`, `server/src/dtos/user.dto.ts`,
+  `server/src/dtos/license.dto.ts`, `server/src/repositories/config.repository.ts`, `server/src/emails/license.email.tsx`,
+  `server/helmet.json`, `server/src/fork-schema/migrations/0000000000190-FrameleafUserLicenses.ts` (new),
+  `web/src/lib/components/frameleaf/cloud/LicenseSection.svelte` (new). AC: `GET admin/license` returns
+  `LicenseStatusResponseDto {state none|active|grace|expired|invalid, kind, keyHint, expiresAt, graceUntil,
+fingerprint, entitlements{remoteAccess,cloudMl,cloudBackup,supporter}, refresh, offline}`; `PUT admin/license/activate
+{key}` (`FL-KXXX-XXXX-XXXX`, check symbol), `PUT admin/license/certificate` (offline file), `DELETE`, `POST …/refresh`;
+  certificates verified with pinned keys (spare key verifies; unknown `kid`, wrong `sub`, tampered payload refused);
+  daily refresh with jitter, grace keeps entitlements with `state: grace`, past grace ⇒ flags false, **data untouched**;
+  `ServerFeaturesDto` gains `frameleafCloud, remoteAccess, cloudMl, cloudBackup, supporter`; `About.licensed` =
+  active|grace; IMSV/IMCL code, FUTO keys, `pay.futo.org` CSP and the `server/license` routes removed (also from
+  `ADMIN_ROUTES`); per-user supporter keys stored in `immich_fork.frameleaf_user_license`. Validation: key/cert
+  vectors spec, rewritten `server.service.spec.ts` + `user.service.spec.ts`, `controllers/index.spec.ts`, medium spec
+  - catalog/ledger counts, OpenAPI/SDK regen. Risks: `UserAdminResponseDto.license` shape change is a recorded
+    protocol change for the native rebuild. Deps: CLD-001, FC ENT-002.
+- **CLD-004 Support Frameleaf screen and license relay (`/buy`, `/link`)** (Stage 4; closes audit B-1..B-9, S-31).
+  Anchors: `web/src/lib/components/frameleaf/buy/{BuyScreen,BuyPlanCard,BuyKeyField,BuyActivated}.svelte` (new),
+  `web/src/routes/(user)/buy/+page.{svelte,ts}`, `web/src/routes/link/+page.ts`, `web/src/lib/components/frameleaf/access/SupporterSection.svelte`,
+  `web/src/lib/components/frameleaf/AccountMenu.svelte`, `web/src/lib/frameleaf/onboarding.ts`,
+  `web/src/routes/auth/onboarding/OnboardingLicense.svelte` (new), `web/svelte.config.js`, `i18n/en.json`,
+  `design/frameleaf/template/src/AuthScreens.jsx:1400-1620`, `system-data.mjs:648-766`. AC: prototype states
+  ported (Support Frameleaf heading, subscription plan cards, one-time supporter cards, "Already have a key?" with
+  `FL-` validation, activated card with key/date/badge, hide-badge switch with correct sense, Remove key in place,
+  Back + wide auth shell); keys travel only in `#fragment`/`sessionStorage`/POST body (Playwright asserts no
+  `licenseKey=` in any URL); `GET license/products` returns bundled prices + deployment-configured store URL, no
+  outbound call; onboarding SERVER step `license`; `purchase_*`, `buy` and Immich product-name keys removed;
+  `shared-components/purchasing/*`, `license-utils.ts`, `PUBLIC_IMMICH_*` deleted. Validation: `BuyScreen.spec.ts`,
+  `cloud.spec.ts`, ui `buy.e2e-spec.ts`, `auth.e2e-spec.ts` step count. Deps: CLD-003.
+- ★ **CLD-005 Sign in with Frameleaf (second OIDC provider slot)** (Stage 4). Anchors:
+  `server/src/services/frameleaf-auth.service.ts` (new), `server/src/controllers/frameleaf-auth.controller.ts` (new),
+  `server/src/services/auth.service.ts` (`callback()` `email_verified`, `createSession()` extraction, back-channel
+  branch), `server/src/repositories/frameleaf-account.repository.ts` (new), fork migrations `0000000000170-FrameleafAccountLinks`,
+  `0000000000180-FrameleafSessions`, `server/src/dtos/config.dto.ts` (`frameleafCloud.signIn`, credential
+  `frameleaf-oidc-client-secret`), `web/src/routes/auth/login/+page.svelte`, `web/src/lib/components/frameleaf/access/FrameleafAccountSection.svelte` (new),
+  `web/src/routes/auth/onboarding/OnboardingFrameleafAccount.svelte` (new). AC: `POST oauth/frameleaf/{authorize,callback,handoff,link}`
+  - `GET/DELETE oauth/frameleaf/link` reuse `OAuthRepository` with a runtime-derived config (issuer from discovery,
+    `clientId = instanceId`, `storageLabelClaim ''`, `roleClaim frameleaf_role`); **unverified email refused for every
+    provider**; an account linked to the admin's own IdP can also link Frameleaf; sessions created here are tagged in
+    `immich_fork.frameleaf_session`; cloud back-channel logout kills them; mobile override rewrites to
+    `frameleaf-auth:///oauth-callback`; `PublicConfigDto.frameleaf{signInAvailable, signInRequired, via}` drives the
+    login page. Validation: `auth.service.spec.ts`, `frameleaf-auth.service.spec.ts`, medium specs, web login spec,
+    ledger/catalog counts. Risks: never preset `oauth.*`. Deps: CLD-002, FC IDN-002, FC IDN-003.
+- **CLD-006 Command Center polish, onboarding and documentation for Frameleaf Cloud** (Stage 4). Anchors:
+  `web/src/lib/components/frameleaf/settings/CommandCenterOverview.svelte`, `web/src/lib/frameleaf/command-index.ts`,
+  `web/src/routes/(user)/user-settings/personal-sections.ts`, `docs/docs/{administration,guides,features}/**`,
+  `docs/docs/FAQ.mdx`, `docs/docs/install/environment-variables.md`, `confluence-mirror.json`. AC: "Frameleaf Cloud"
+  glance tile (link state · remote on/off · license state); every cloud section reachable from search and deep links;
+  docs list every env var and credential; no "fork"/"DTO"/"Immich"-as-product/"the GPU provider" in customer copy (grep test);
+  Confluence mirrored in the same pass. Deps: CLD-004, CLD-005, CLD-104, CLD-203, CLD-302.
+
+**CLD-E02 Remote access: edge worker, relay and direct connect (self-hosted)** — Stage 4. Anchors:
+`server/src/main.ts`, `server/src/app.common.ts`, `server/src/edge/**` (new), `server/src/services/auth.service.ts`,
+`server/src/repositories/websocket.repository.ts`, `docs/docs/guides/remote-access.md`.
+
+- ★ **CLD-101 Remote-access security prerequisites**. Anchors: `server/src/middleware/rate-limit.guard.ts` (new),
+  `server/src/middleware/frameleaf-via.middleware.ts` (new), `server/src/schema/migrations/2100000000630-HashSharedLinkPasswords.ts` (new),
+  `server/src/services/shared-link.service.ts`, `server/src/services/auth.service.ts`, `server/src/middleware/auth.guard.ts`,
+  `server/src/repositories/websocket.repository.ts`, `server/src/main.ts` (`FRAMELEAF_EDGE_SECRET`). AC: ioredis
+  rate limits on login, OAuth callbacks, `oauth/frameleaf/*`, shared-link login, license activation, link start,
+  plus a per-IP ceiling for `via ∈ {relay, wan}`; shared-link passwords bcrypt-hashed with `timingSafeEqual` tokens
+  and existing links keep working after migration; websocket `cors` → origin allow-list; client-supplied
+  `X-Frameleaf-*` headers dropped, secret-authenticated ones set `request.frameleafVia`; enforcement in
+  `authenticate()`: relay/WAN requires a Frameleaf-tagged session (shared links pass; API keys pass only when the
+  owner is linked) else 403 `frameleaf_sign_in_required`; originals/archives/DB backups refused over relay unless
+  `allowOriginalsOverRelay`; `ServerConfigDto.frameleaf` + `/.well-known/immich` fields. Validation: middleware,
+  guard (ioredis mock), `auth.service.spec.ts`, `shared-link.service.spec.ts`, `sql-schema-up-to-date`. Deps: CLD-005.
+- **CLD-102 Edge worker: certificate and direct listener**. Anchors: `server/src/workers/edge.ts` (new),
+  `server/src/edge/{edge.module,edge-state.service,edge-certificate.repository,edge-proxy.service,edge-direct.service}.ts` (new),
+  `server/src/enum.ts` (`ImmichWorker.Edge`, `DatabaseLock.FrameleafEdge`), `server/src/dtos/config.dto.ts`
+  (`frameleafCloud.remoteAccess`), `server/src/controllers/server.controller.ts` (`GET server/connections`),
+  `web/src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte` (new), `server/package.json` (`acme-client`).
+  AC: edge forked like `Api`, inert until linked + entitled + enabled; ACME DNS-01 via the cloud TXT API issues the
+  wildcard cert (account key + cert key never leave the host; renew < max(25 d, ⅓ lifetime) with jitter; deduped
+  notice on failure); HTTPS listener on `FRAMELEAF_EDGE_PORT` proxies to `127.0.0.1:${IMMICH_PORT}` with
+  `X-Forwarded-*` + via contract, unbuffered bodies, upgrade, Range, HSTS; LAN name serves the web app with `via: lan`;
+  disable/unlink removes cert and listener; `AppShutdown` closes sockets ≤ 5 s; `/server/config`, `/.well-known/immich`,
+  `/server/connections` publish the public URL and candidates. Validation: proxy-core spec (headers/upgrade/range),
+  certificate spec against a fake ACME directory, state spec, `PUT admin/cloud/remote` + `POST …/test`. Deps: CLD-101, FC REM-001.
+- ★ **CLD-103 Edge worker: blind relay tunnel**. Anchors: `server/src/edge/edge-relay.service.ts` (new),
+  `server/test/fixtures/relay.ts` (new harness). AC: relay token from `POST /v1/remote/relay-token`; outbound TLS
+  (SNI `tun.<relay>`, ALPN `fl-tunnel/1`), handshake `AUTH → CHALLENGE → PROOF(Ed25519) → READY`, reversed HTTP/2
+  server over the socket, one `CONNECT` stream per visitor connection terminated with `tls.TLSSocket` and proxied
+  with `via: relay` and the relay-supplied client IP; PING 30 s (3 misses → reconnect), full-jitter backoff 1 s → 5
+  min, token refresh at 50 %, re-select after 3 failures; `relay` candidate published; "relay disconnected" notice
+  after 15 min (dedupe 24 h). Validation: harness round-trips HTTP + WebSocket, backoff spec, ui status panel spec.
+  Deps: CLD-102, FC REM-002, FC REM-101.
+- **CLD-104 Edge worker: port mapping, WAN candidate and LAN→relay sign-in bounce**. Anchors:
+  `server/src/edge/edge-direct.service.ts`, `server/src/services/frameleaf-auth.service.ts` (`handoff`),
+  `web/src/routes/auth/login/+page.svelte`, `server/package.json` (`@achingbrain/nat-port-mapper`),
+  `docs/docs/guides/remote-access.md`. AC: UPnP then NAT-PMP/PCP mapping with lease refresh (30 min) and unmap on
+  disable; manual public-port mode; external IP vs heartbeat `observed_ip` ⇒ `cgnatSuspected`; WAN candidate
+  `verified` only after the cloud probe; bridge networking yields the documented guidance instead of silent
+  failure; a LAN user signing in with Frameleaf lands back on the LAN origin with a tagged child session. Deps: CLD-103.
+
+**CLD-E03 Frameleaf Cloud processing destination and AI Wallet (self-hosted)** — Stage 4. Anchors:
+`server/src/utils/ml-destination.ts`, `server/src/services/ml-destination.service.ts`, `server/src/repositories/machine-learning.repository.ts`,
+`server/src/services/asset-restoration.service.ts`, `server/src/services/image-enrichment.service.ts`,
+`docs/docs/administration/workers-and-endpoints.md`. Overlaps: FL-42, FL-110, FL-114 (`Relates`; their
+"the GPU provider" wording is superseded — comment on each).
+
+- ★ **CLD-201 Frameleaf Cloud replaces the GPU provider destination**. Anchors: `server/src/enum.ts`
+  (`MlDestinationKind.FrameleafCloud`, refusals, workloads), `server/src/schema/migrations/2100000000620-FrameleafCloudMlDestination.ts` (new;
+  deletes the previous GPU-provider integration's rows and widens `ml_destination_kind_check` like `2100000000490`), `server/src/schema/tables/ml-destination.table.ts`,
+  `server/src/repositories/frameleaf-cloud-ml.repository.ts` (new), `server/src/services/cloud-ml.service.ts` (new),
+  `server/src/controllers/cloud-ml-admin.controller.ts` (new), `server/src/dtos/cloud-ml.dto.ts` (new),
+  `server/src/dtos/config.dto.ts` (`frameleafCloud.cloudMl`; **remove the previous GPU-provider integration's `machineLearning` section**),
+  delete the previous GPU-provider integration's server service, repository and controller and its web settings components under `web/src/lib/components/admin-page/settings/machine-learning/` (located via the two cloud kinds in `CLOUD_ML_DESTINATION_KINDS`),
+  `web/src/lib/components/frameleaf/MlDestinationsPanel.svelte`, `web/src/lib/components/frameleaf/cloud/{CloudMlSection,CloudMlConsentDialog,CloudMlWalletCard,CloudMlModelSlider,HardwareGpuSection}.svelte` (new),
+  `machine-learning/immich_ml` (hardware probe endpoint), `server/src/utils/ml-destination.ts`,
+  `docs/docs/administration/workers-and-endpoints.md`, `i18n/en.json`. AC: the `frameleaf-cloud` row is created only
+  by `POST admin/cloud/ml/destination` (no URL/token fields; auth = short-lived instance JWT `aud=ml`);
+  `probe()` reads `/ping`, `/capabilities`, `/hardware` from the regional gateway; admission refuses on missing or
+  outdated consent version, empty wallet (`WalletInsufficient`), entitlement missing, or cloud unreachable — **never
+  a fallback**; faces refused by policy; versioned per-feature consent recorded in `immich_fork.frameleaf_consent`
+  (`identityNames`, `medicalSignals` off by default); wallet card shows balance/holds and a top-up link only when the
+  server returned one (top-ups $20 minimum, $25 default, presets $25 / $50 / $100); the GPU provider code, config,
+  credentials, metadata keys, docs and strings are gone (spec greps `i18n/en.json` and `docs/`);
+  `ml_workload_accounting.costUsd` populated from settlements. **Hardware check** (Compute & jobs → Hardware & GPU):
+  probes the ML and server containers and reports per container whether a GPU is present, visible and usable
+  (NVIDIA device nodes + `nvidia-smi`/NVML compute capability and the NVIDIA Container Toolkit, versus `/dev/dri` render
+  nodes + render-group GID for Intel/AMD, `/dev/kfd` for ROCm, OpenVINO devices); each misconfiguration (toolkit
+  missing, `video` capability missing, driver older than the image's CUDA, bf16/FlashAttention on Turing, `/dev/dri`
+  not passed or GID mismatch, wrong render node, ROCm `HSA_OVERRIDE_GFX_VERSION`, WSL2, Unraid, CPU image tag on a GPU
+  host, Docker on a Mac) shows a fix with a copy-ready compose snippet; a short benchmark per workload records
+  throughput. **Per-workload routing** in "Where each job runs": Local only (default), Both (each job picks local or
+  Frameleaf Cloud at confirmation) or Cloud only; a job is never moved to the cloud silently; search, faces and OCR
+  are local only. **Model slider** per workload, light → heavy, colour-banded white = CPU, green = fits your GPU,
+  blue = Frameleaf Cloud (from `/v2/catalog`), shown in "Where each job runs", Cloud processing, the per-job
+  confirmation, the editor Enhance panel and Studio. **Licence gate**: models whose licence forbids commercial hosted
+  use never get a blue band; the slider shows each model's licence; faces stay local on InsightFace `buffalo_l` under
+  the purchased commercial licence. **Pricing display**: GPU time × class rate + start fee, with per-photo/per-minute
+  estimates as a p50–p90 range. Validation: `ml-destination` specs, migration in `sql-schema-up-to-date`, service spec
+  with a fake gateway, hardware-probe fixtures per misconfiguration, slider colour-band spec, web specs, catalog
+  regen. Deps: CLD-002, CLD-003, FC MLC-001.
+- ★ **CLD-202 Cloud restoration and upscaling jobs (estimate → confirm → submit → progress → result)**.
+  Anchors: `web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte` (Enhance panel), `web/src/routes/(user)/studio/+page.svelte`, `server/src/services/cloud-ml.service.ts`, `server/src/services/asset-restoration.service.ts`,
+  `server/src/dtos/asset-restoration.dto.ts`, `server/src/services/restoration-worker.service.ts` (`-map_metadata -1`,
+  EXIF-stripped re-encode), `server/src/controllers/cloud-ml.controller.ts` (new), `web/src/lib/frameleaf/activity.ts`,
+  `web/src/lib/components/frameleaf/ActivityView.svelte`. AC: job runs as `media_operation` kind `cloud_ml_job`
+  (lease, cursor, pause/resume/cancel); estimate shown as "GPU time × rate + start fee" with per-photo/per-minute
+  estimates (p50–p90, start fees included) and wallet balance before confirm; model slider (white/green/blue) from the
+  catalog; restoration runs on serverless workers only, long video cut into 20–30 s chunks with a small overlap across
+  at most 5 workers with a checkpoint per chunk (a lost worker costs at most one chunk, each worker adds one start fee);
+  new **Smooth motion** frame-interpolation job (RIFE locally, FILM on Frameleaf Cloud) in the editor video Enhance panel
+  and Studio for slow motion and export frame-rate conversion, preview-first (a short clip before the full job) and
+  saved as a new version, never overwriting the original; per-job consent text + `acknowledgeDataLeaves`; multipart uploads to presigned URLs;
+  long-poll progress; sha256-verified results; cancel releases the hold; provider failure refunds; 402 refuses
+  without downgrading; restart resumes by `cloudJobId`; Activity shows estimated/so-far/settled cost; no metadata
+  (GPS/EXIF) leaves the instance in clips or stills. Validation: service spec with a fake gateway, activity mapping
+  spec, ui confirm-dialog spec, chunk fan-out and resume spec, interpolation preview/new-version spec, ffmpeg metadata
+  test. Deps: CLD-201, FC MLC-103.
+- **CLD-203 Cloud description batches**. Anchors: `server/src/services/cloud-ml-batch.service.ts` (new),
+  `server/src/services/enrichment-plan.service.ts`, `server/src/services/image-enrichment.service.ts`, Library Care
+  wording. AC: description stage routed to Frameleaf Cloud submits per-owner batches (one run per batch, never per
+  asset) with `packKey`; `autoBatch` off by default with a daily USD budget; budget exhaustion stops new batches and
+  notifies admins once; prompt excludes names/medical unless consented; backfill shows the estimate before enqueueing,
+  computed from GPU time (photos ÷ measured throughput × class rate + start fee, p50–p90) with a per-photo estimate;
+  the model comes from the descriptions ladder via the slider (Qwen3.5-4B → 9B → 27B / 35B-A3B → 122B-A10B,
+  Qwen2.5-VL-72B fallback); for the 72B class a minimum batch of about 200 photos is suggested (below it the start fee
+  dominates and the UI recommends the 27B/35B class).
+  Deps: CLD-201, FC MLC-101.
+
+**CLD-E04 Cloud backup (self-hosted)** — Stage 4. Anchors: `server/src/services/database-backup.service.ts`,
+`server/src/services/media-health-operation.service.ts` (durable-job pattern), `server/Dockerfile`.
+
+- ★ **CLD-301 Cloud backup: bucket claim, per-bucket key modes and content-addressed runs**. Anchors:
+  `server/src/repositories/cloud-backup-store.repository.ts` (new; `@aws-sdk/client-s3` with SSE-C headers on every
+  call), `server/src/repositories/cloud-backup-index.repository.ts` (new), fork migration `0000000000210-CloudBackupObjects`
+  (new; `cloud_backup_object`, `cloud_backup_manifest`), `server/src/services/cloud-backup.service.ts` (new),
+  `server/src/controllers/cloud-backup-admin.controller.ts` (new), `server/src/dtos/cloud-backup.dto.ts` (new),
+  `server/src/dtos/config.dto.ts` (`frameleafCloud.cloudBackup` with `keyMode`; credentials `cloud-backup-bucket-key`,
+  `cloud-backup-s3-secret-key`), `server/src/services/database-backup.service.ts` (`createDatabaseBackup()` returns the
+  path), `web/src/lib/components/frameleaf/cloud/{CloudBackupSection,CloudBackupSetupDialog,RecoveryKitPanel}.svelte` (new).
+  AC: **one bucket per server** — setup claims an empty bucket with a `frameleaf-backup.json` root marker holding the
+  instance id and refuses a bucket claimed by another instance or holding foreign objects; SSE-C capability probe at
+  setup; **per-bucket key**: mode `server` generates a 256-bit key, stores it in the 0600 key file and shows a recovery
+  kit once; mode `own-stored` accepts a user-generated key file and stores it in the key file, never escrowed; mode
+  `own-memory` never persists it (`POST admin/cloud/backup/key/unlock` after each restart, backups pause until
+  unlocked, status shows `keyLoaded`); every PUT/GET/HEAD carries the SSE-C headers and a request without them is a
+  test failure; a run is `media_operation` kind `cloud_backup`: DB dump first (`db/`), then assets by SHA-256
+  (`immich_fork.asset_checksum`, on-the-fly hashing for sidecars/profile), uploading only hashes absent from
+  `cloud_backup_object` (first run reconciles against the bucket listing) as `o/<sha256>`, then a manifest
+  `m/<ISO>.json.gz`; **a second run with no changes uploads nothing; two identical files on the same server produce one
+  object**; `thumbs/ encoded-video/` excluded unless toggled; lease/cursor/pause/resume/cancel; restart resumes the same
+  manifest; failures notify all admins. Validation: store spec against a fake S3 (asserts SSE-C headers, multipart,
+  ETag/MD5), index spec, dedup spec (duplicate assets, changed file → new hash, unchanged → skipped), medium spec +
+  catalog/ledger counts, ui spec. Risks: a lost own-memory key means unrecoverable backups — the UI says so before
+  choosing it. Deps: CLD-002, CLD-003.
+- ★ **CLD-302 Cloud backup: schedule, retention, verification, managed storage, escrow and restore**.
+  Anchors: `cloud-backup.service.ts`, `server/src/commands/cloud-backup.command.ts` (new),
+  `web/src/lib/components/frameleaf/cloud/CloudBackupRestoreDialog.svelte` (new). AC: cron under
+  `DatabaseLock.FrameleafCloudBackup` (single scheduler); retention keeps daily/weekly/monthly manifests and deletes
+  only objects referenced by no kept manifest; weekly verify = sampled GET + sha256 of 1/52 of objects, monthly HEAD of
+  every referenced hash, mismatches notify admins; managed grant fetched at run start (`POST /v1/backup/grant`,
+  bucket-scoped credentials never persisted); usage/quota from the cloud, over-quota ⇒ read-only and uploads stop
+  without touching data; scrypt-wrapped escrow `PUT/DELETE` offered in `server` key mode only; restore by manifest
+  (files → `<media>/frameleaf/restore/<id>` for Library Care; single asset restore; database → existing maintenance
+  restore), every downloaded object sha256-verified; `immich-admin cloud-backup restore --bucket … --key-file …`
+  documented for bare-metal recovery. Deps: CLD-301, FC BAK-001, FC BAK-002.
+
+### 11.5 Confluence pages
+
+**FR (fork)** — under "Frameleaf Implementation Plan" (61538319), source-owned mirrors with source path +
+SHA-256 + backlink (labelled "uncommitted candidate" until the CLD-000 PR merges):
+
+1. "Frameleaf Cloud program plan" ← `docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md` (sections 1–4, 8–10 of this plan, customer-safe wording).
+2. "Frameleaf Cloud: self-hosted integration" ← `docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md` (Workstream A: contracts the instance implements, module map, config/env, API, edge worker, slices).
+3. "Delivery Sequence and Jira Backlog" (61407624) gets a paragraph + link for workstream `cloud`; "Complete Feature Ownership and Jira Coverage" (61538800) a row per CLD story.
+
+**FC (cloud)** — rewrite the home page (63733939) and add child pages (initial authoring from this plan; the
+frameleaf-cloud repo `docs/` becomes the source of truth in OPS-001 and mirrors back with hashes):
+
+1. "Frameleaf Cloud Home": what it is, decisions table (§2), naming rule, links to Jira FC board and the pages below.
+2. "Architecture and trust boundaries" (§3).
+3. "Instance contract: discovery, linking, tokens, heartbeat, certificates" (§4 minus ML/relay detail).
+4. "Identity provider" (IDN design: Better Auth + oidc-provider config, claims, prompts, invariants, exit path).
+5. "Entitlements, Stripe and licensing" (ENT design, key format, certificate claims, webhook table).
+6. "AI Wallet" (ledger kinds, hold rules, top-ups, statements, limits).
+7. "Remote access: control plane, DNS and relay" (REM design: domain/PSL/LE, PowerDNS, tokens, handshake, h2 tunnel, caps, metering, failure modes, costs).
+8. "Cloud backup service" (BAK design, Wasabi facts, policies, escrow, purge).
+9. "Frameleaf Cloud ML" (Workstream C: scope matrix, architecture, substrates, worker protocol, storage, v2 API, catalog + rights, pricing, privacy, milestones).
+10. "Delivery sequence and Jira backlog (FC)" (§11.4 with Jira keys once created; dependency graph).
+11. "Operations, security and compliance" (OPS: hosting, CI/provenance, backups, observability, GDPR/DPIA, subprocessors, costs).
+
+### 11.6 Execution procedure (after approval)
+
+1. Fork PR `codex/FL-<CLD-000>-frameleaf-cloud-workstream`: write the spec + workstream guide, add the CLD
+   backlog records, update the validator counts/evidence/jira-map (keys filled after step 3), mirror FR pages
+   (read back, record in `confluence-mirror.json`). No feature code.
+2. Create the FC Confluence pages (home rewrite + 10 children) with a "source: frameleaf-cloud repo docs (OPS-001);
+   initial authoring 2026-09-25" header; read each page back.
+3. Create epics: FL `CLD-E01..E04`; FC `OPS-E01, IDN-E01, INS-E01, ENT-E01, WAL-E01, REM-E01, REM-E02, BAK-E01,
+MLC-E01, MLC-E02, WEB-E01`. Record keys.
+4. Create stories/tasks from the template with `parent` + `labels`; verify each by reading it back; record keys in
+   `jira-map.json` (FL) and in the FC backlog page.
+5. Create `Blocks` links (transitively reduced) and `Relates` links to FL-10/FL-67/FL-80/FL-131/FL-42/FL-110/FL-114.
+6. Comment on FL-146 (decisions now answered: supporter page destination `/buy` + deployment-configured store URL,
+   key format, purchase wording replaced, version checks stay off, cloud opt-in, the GPU provider replaced by Frameleaf Cloud)
+   and on FL-42/FL-110/FL-114/FL-128 (wording superseded by CLD-201; owner to approve description edits).
+7. Verify with JQL counts (`project = FL AND labels = frameleaf-cloud`, same for FC) and report every created key.
+   Never transition issues beyond To Do here; never push to `origin`; the fork PR targets `master/frameleaf-implementation`.
+
+---

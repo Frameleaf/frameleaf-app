@@ -25,8 +25,9 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { AudioStreamInfo, VideoColorRange, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import type { DecodeQualification } from 'src/utils/media-decode.js';
 import { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
-import { AssetEditAction, AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import { AssetEditAction, AssetEditActionItem, VideoTrimMode } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   ColorMatrix,
@@ -46,7 +47,9 @@ import { type OutputCadenceDecision, OutputCadenceMode, resolveSourceTimeBase } 
  * recognised and re-rendered from the original.
  */
 export const FRAMELEAF_RENDERER = 'frameleaf-ffmpeg';
-export const FRAMELEAF_RENDERER_VERSION = '1.0.0';
+// 1.1.0 (FL-113): the develop adjustment model, anchored and shadowed text, ranges over a whole-clip
+// speed, stream-copied fast trims and the opt-in straighten fill, stabilize edge crop and gain limit.
+export const FRAMELEAF_RENDERER_VERSION = '1.1.0';
 
 /** Version of the lineage document itself, so future fields can be added compatibly. */
 export const EDITED_MASTER_LINEAGE_SCHEMA_VERSION = 1;
@@ -223,6 +226,11 @@ export type EditedMasterLineage = {
   renderer: typeof FRAMELEAF_RENDERER;
   rendererVersion: string;
   color: EditedMasterColorDecision;
+  /**
+   * FL-101: how the source was qualified for decoding — the advertised matrix row it matched, or
+   * null with the reason when it decodes but is outside the tested matrix. Video masters only.
+   */
+  decode?: { matrixEntry: string | null; support: string; reason: string };
   createdAt: string;
 };
 
@@ -690,6 +698,49 @@ export const qualifyMetadataOnlyRotation = ({
 };
 
 /**
+ * FL-113 (`Editor.jsx` Trim, "Fast · keyframes"): a recipe that is only a fast trim needs no
+ * re-encode. The cut snaps to the keyframe at or before the in point, and every packet between is
+ * copied, so it finishes in seconds and loses nothing. It qualifies under the same remux rules as
+ * the metadata-only rotation; anything else, including a fast trim next to any other edit, renders
+ * the ordinary frame-accurate master.
+ */
+export const qualifyStreamCopyTrim = ({
+  edits,
+  videoStream,
+  audioStream,
+  format,
+}: {
+  edits: AssetEditActionItem[];
+  videoStream: Pick<VideoStreamInfo, 'codecName'>;
+  audioStream?: Pick<AudioStreamInfo, 'codecName'>;
+  format: Pick<VideoFormat, 'formatName'>;
+}): { startMs: number; endMs: number } | null => {
+  if (edits.length !== 1) {
+    return null;
+  }
+
+  const [edit] = edits;
+  if (edit.action !== AssetEditAction.Trim || edit.parameters.mode !== VideoTrimMode.Fast) {
+    return null;
+  }
+
+  if (!MP4_STREAM_COPYABLE_VIDEO_CODECS.has((videoStream.codecName ?? '').toLowerCase())) {
+    return null;
+  }
+
+  if (audioStream && !MP4_STREAM_COPYABLE_AUDIO_CODECS.has((audioStream.codecName ?? '').toLowerCase())) {
+    return null;
+  }
+
+  const formatNames = (format.formatName ?? '').toLowerCase().split(',');
+  if (formatNames.every((name) => !MP4_REMUXABLE_FORMATS.has(name.trim()))) {
+    return null;
+  }
+
+  return { startMs: edit.parameters.startMs, endMs: edit.parameters.endMs };
+};
+
+/**
  * ffmpeg's `-display_rotation` is the rotation, in degrees **counter-clockwise**, that a player
  * should apply before displaying the picture. The recipe's angle is clockwise, so the sign flips;
  * the result is normalised into (-180, 180].
@@ -706,6 +757,7 @@ export const buildEditedMasterLineage = ({
   sourceChecksum = null,
   edits,
   color,
+  decode,
   rendererVersion = FRAMELEAF_RENDERER_VERSION,
   createdAt = new Date(),
 }: {
@@ -714,6 +766,7 @@ export const buildEditedMasterLineage = ({
   sourceChecksum?: string | null;
   edits: AssetEditActionItem[];
   color: EditedMasterColorDecision;
+  decode?: Pick<DecodeQualification, 'matrixEntry' | 'support' | 'reason'> | null;
   rendererVersion?: string;
   createdAt?: Date;
 }): EditedMasterLineage => ({
@@ -726,6 +779,7 @@ export const buildEditedMasterLineage = ({
   renderer: FRAMELEAF_RENDERER,
   rendererVersion,
   color,
+  ...(decode && { decode: { matrixEntry: decode.matrixEntry, support: decode.support, reason: decode.reason } }),
   createdAt: createdAt.toISOString(),
 });
 

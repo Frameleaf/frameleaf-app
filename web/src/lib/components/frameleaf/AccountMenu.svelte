@@ -14,6 +14,7 @@
   import {
     mdiAccountEditOutline,
     mdiChevronDown,
+    mdiChevronRight,
     mdiCogOutline,
     mdiHandHeartOutline,
     mdiInformationOutline,
@@ -172,6 +173,8 @@
           {$t('frameleaf_locked_content')}
           <small>{isElevated ? $t('frameleaf_locked_revealed') : $t('frameleaf_locked_hidden')}</small>
         </span>
+        <!-- S-24 (SystemPanels.jsx:77-88, system.css:379-393): the item carries a switch affordance. -->
+        <span class="fl-switch" aria-hidden="true"></span>
       </button>
 
       <a href={Route.locked()} role="menuitem" class="fl-item" onclick={close}>
@@ -180,6 +183,7 @@
           {$t('frameleaf_open_locked')}
           {#if !isElevated}<small>{$t('frameleaf_open_locked_hint')}</small>{/if}
         </span>
+        <Icon icon={mdiChevronRight} size="1em" aria-hidden={true} />
       </a>
 
       <hr />
@@ -221,7 +225,8 @@
 
       <hr />
 
-      <a href={Route.logout()} role="menuitem" class="fl-item" onclick={close}>
+      <!-- S-23 (SystemPanels.jsx:132-135, system.css:375-378): Sign out is the danger item. -->
+      <a href={Route.logout()} role="menuitem" class="fl-item danger" onclick={close}>
         <Icon icon={mdiLogoutVariant} size="1.125em" aria-hidden={true} />
         <span>{$t('sign_out')}</span>
       </a>
@@ -338,17 +343,49 @@
     color: var(--fl-muted);
     cursor: default;
   }
-  .fl-item span {
+  .fl-item > span:not(.fl-switch) {
     display: flex;
     min-width: 0;
+    flex: 1;
     flex-direction: column;
+  }
+  .fl-item.danger,
+  .fl-item.danger :global(svg) {
+    color: var(--fl-danger);
+  }
+  /* system.css `.fl-switch` at the menu size (34 × 20, 14px knob). */
+  .fl-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 34px;
+    height: 20px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-border);
+    transition: background var(--fl-motion) var(--fl-ease);
+  }
+  .fl-switch::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    inset-inline-start: 3px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform var(--fl-motion) var(--fl-ease);
+  }
+  .fl-item[aria-checked='true'] .fl-switch {
+    background: var(--fl-accent);
+  }
+  .fl-item[aria-checked='true'] .fl-switch::after {
+    transform: translateX(14px);
+  }
+  :global([dir='rtl']) .fl-item[aria-checked='true'] .fl-switch::after {
+    transform: translateX(-14px);
   }
   .fl-item small {
     color: var(--fl-muted);
     font-size: 0.75rem;
-  }
-  .fl-item[aria-checked='true'] {
-    color: var(--fl-accent);
   }
   /* The prototype hides the name at 1000px and below. */
   @media (min-width: 1001px) {

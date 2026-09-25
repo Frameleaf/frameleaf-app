@@ -53,7 +53,7 @@
       "id": "63111169",
       "source": "docs/docs/administration/server-migration.md",
       "sourceSha256": "b8db949967c3235c75eefcc2011bf949e164549c8b5673223b82747fd1a0ae61",
-      "title": "Administration Reference — Server-to-server migration",
+      "title": "Administration Reference \u2014 Server-to-server migration",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63111169/Administration+Reference+Server-to-server+migration",
       "version": 1
     },
@@ -329,7 +329,7 @@
       "id": "61538514",
       "source": "docs/docs/features/classification-and-culling.md",
       "sourceSha256": "6737e871fd53574c5dd00df4548c27bc3b9246f63be2c74053a16b24f22cdde2",
-      "title": "Feature Reference — Classification And Culling",
+      "title": "Feature Reference \u2014 Classification And Culling",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538514/Feature+Reference+Classification+And+Culling",
       "version": 2
     },
@@ -339,7 +339,7 @@
       "id": "61407445",
       "source": "docs/docs/features/derivative-privacy.md",
       "sourceSha256": "e56484ed9702f2c0f73fc91cd99710c19f4ff11ce059a6947644901f3b2ed391",
-      "title": "Feature Reference — Derivative Privacy",
+      "title": "Feature Reference \u2014 Derivative Privacy",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407445/Feature+Reference+Derivative+Privacy",
       "version": 2
     },
@@ -349,7 +349,7 @@
       "id": "61538534",
       "source": "docs/docs/features/descriptions-and-smart-albums.md",
       "sourceSha256": "e67febdd8ef68a55b277353a3c8a34ca016c394af8619c0f38a8516023f24c3d",
-      "title": "Feature Reference — Descriptions And Smart Albums",
+      "title": "Feature Reference \u2014 Descriptions And Smart Albums",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538534/Feature+Reference+Descriptions+And+Smart+Albums",
       "version": 3,
       "verified": true,
@@ -362,7 +362,7 @@
       "id": "61374947",
       "source": "docs/docs/features/documents-and-receipts.md",
       "sourceSha256": "65c6692886fc8196f87417172687c6c5d13f0f3ad8d9aa0a58084663227335f7",
-      "title": "Feature Reference — Documents And Receipts",
+      "title": "Feature Reference \u2014 Documents And Receipts",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374947/Feature+Reference+Documents+And+Receipts",
       "version": 2
     },
@@ -372,7 +372,7 @@
       "id": "61538555",
       "source": "docs/docs/features/duplicates-utility.md",
       "sourceSha256": "f02ae75889c7e3f789282aa24ac73e3137d8939ebc817f68ee7c53b57f328689",
-      "title": "Feature Reference — Duplicates Utility",
+      "title": "Feature Reference \u2014 Duplicates Utility",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538555/Feature+Reference+Duplicates+Utility",
       "version": 2
     },
@@ -382,7 +382,7 @@
       "id": "61440234",
       "source": "docs/docs/features/enrichment-workspace.md",
       "sourceSha256": "c085331d0fc8e248873202457d8fe3a88f49559ef0a93a318d37025f08e23749",
-      "title": "Feature Reference — Enrichment Workspace",
+      "title": "Feature Reference \u2014 Enrichment Workspace",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440234/Feature+Reference+Enrichment+Workspace",
       "version": 2
     },
@@ -392,7 +392,7 @@
       "id": "61440256",
       "source": "docs/docs/features/face-review.md",
       "sourceSha256": "ee31ec43309ddbcab21cea323a009318088cd144590444d512bb719affd3baa2",
-      "title": "Feature Reference — Face Review",
+      "title": "Feature Reference \u2014 Face Review",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440256/Feature+Reference+Face+Review",
       "version": 2
     },
@@ -402,7 +402,7 @@
       "id": "61440280",
       "source": "docs/docs/features/fork-privacy-suite.md",
       "sourceSha256": "bdec0d0d9a2a2866a06fd1ef879f20218fd857f13e56ff49b76956c0e114206c",
-      "title": "Feature Reference — Fork Privacy Suite",
+      "title": "Feature Reference \u2014 Fork Privacy Suite",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Fork+Privacy+Suite",
       "verification": "Confluence page read back at version 4 with source hash and reviewed plan guidance",
       "verified": true,
@@ -415,7 +415,7 @@
       "id": "61538579",
       "source": "docs/docs/features/google-photos-import.md",
       "sourceSha256": "2c097e6c18be9bb5062602f9c37a39a00a9bfcb5faee0fec6dd25a63570ab88c",
-      "title": "Feature Reference — Google Photos Import",
+      "title": "Feature Reference \u2014 Google Photos Import",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538579/Feature+Reference+Google+Photos+Import",
       "version": 3,
       "verified": true,
@@ -428,7 +428,7 @@
       "id": "61374970",
       "source": "docs/docs/features/image-enrichment.md",
       "sourceSha256": "91eafee35b4580cbd054a1bd1088b3146ba5e797e132be6609b0023d954f3610",
-      "title": "Feature Reference — Image Enrichment",
+      "title": "Feature Reference \u2014 Image Enrichment",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374970/Feature+Reference+Image+Enrichment",
       "verification": "Confluence page read back at version 4 with source hash and sample first guidance",
       "verified": true,
@@ -441,7 +441,7 @@
       "id": "61407465",
       "source": "docs/docs/features/individual-pets.md",
       "sourceSha256": "891cbf77b32938bb87efa3f73032280add21ee6ce7c2695dcc26b2d73753be73",
-      "title": "Feature Reference — Individual Pets",
+      "title": "Feature Reference \u2014 Individual Pets",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407465/Feature+Reference+Individual+Pets",
       "version": 2
     },
@@ -451,7 +451,7 @@
       "id": "61407493",
       "source": "docs/docs/features/library-care.md",
       "sourceSha256": "8c264743e4a63c2175eb7beb2754b77d3917ae1c9b34ab055599d0b39e891e81",
-      "title": "Feature Reference — Library Care",
+      "title": "Feature Reference \u2014 Library Care",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407493/Feature+Reference+Library+Care",
       "version": 3,
       "verified": true,
@@ -464,7 +464,7 @@
       "id": "61440302",
       "source": "docs/docs/features/memory-stories.md",
       "sourceSha256": "024c794c138109f18b75f9a25afe15f16500df6cdf6b9b051109f5f3391c627f",
-      "title": "Feature Reference — Memory Stories",
+      "title": "Feature Reference \u2014 Memory Stories",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440302/Feature+Reference+Memory+Stories",
       "version": 2
     },
@@ -474,7 +474,7 @@
       "id": "61538603",
       "source": "docs/docs/features/photo-tools.md",
       "sourceSha256": "2745d9633453353e22e016d07df15bc591e1d54cafb5779b3693ff6c47592120",
-      "title": "Feature Reference — Photo Tools",
+      "title": "Feature Reference \u2014 Photo Tools",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538603/Feature+Reference+Photo+Tools",
       "version": 2
     },
@@ -484,7 +484,7 @@
       "id": "61374992",
       "source": "docs/docs/features/preservation.md",
       "sourceSha256": "5e0f8a3cb00193ebe5a5698e9ae5d3d71b6d6f9ecd8858e9b21eec52c9b43512",
-      "title": "Feature Reference — Preservation",
+      "title": "Feature Reference \u2014 Preservation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374992/Feature+Reference+Preservation",
       "version": 3
     },
@@ -494,7 +494,7 @@
       "id": "61440324",
       "source": "docs/docs/features/shared-spaces.md",
       "sourceSha256": "7d586462c0824793f7301690f9eefd9801c3d0bb8829f089cc5f8b5c0fb33577",
-      "title": "Feature Reference — Shared Spaces",
+      "title": "Feature Reference \u2014 Shared Spaces",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440324/Feature+Reference+Shared+Spaces",
       "version": 2
     },
@@ -504,7 +504,7 @@
       "id": "61440346",
       "source": "docs/docs/features/unified-discovery.md",
       "sourceSha256": "25f48c93763b6807ae113231fa1b3cc329a79af65faf49fbf77729e2ce22a830",
-      "title": "Feature Reference — Unified Discovery",
+      "title": "Feature Reference \u2014 Unified Discovery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440346/Feature+Reference+Unified+Discovery",
       "version": 2
     },
@@ -514,7 +514,7 @@
       "id": "61440372",
       "source": "docs/docs/features/video-editing.md",
       "sourceSha256": "1ee7195e5c88e34f3271e8d7d0ee7e5a9a02fd960cf878f279ac987a070e3c4c",
-      "title": "Feature Reference — Video Editing",
+      "title": "Feature Reference \u2014 Video Editing",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440372/Feature+Reference+Video+Editing",
       "version": 2
     },
@@ -524,7 +524,7 @@
       "id": "61375014",
       "source": "docs/docs/features/video-restoration.md",
       "sourceSha256": "7235d56179452083b049ac36400bac3512d80f5d209c6ea8f78648f300d446f3",
-      "title": "Feature Reference — Video Restoration",
+      "title": "Feature Reference \u2014 Video Restoration",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375014/Feature+Reference+Video+Restoration",
       "version": 2
     },
@@ -534,7 +534,7 @@
       "id": "61440396",
       "source": "docs/docs/features/switching-between-fork-and-official.md",
       "sourceSha256": "dd9fb1160783cff514ac1b7232d089eaf49af7f821a500ccbbd439364959d238",
-      "title": "Feature Reference — Switching Between Fork And Official",
+      "title": "Feature Reference \u2014 Switching Between Fork And Official",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440396/Feature+Reference+Switching+Between+Fork+And+Official",
       "version": 2
     },
@@ -544,7 +544,7 @@
       "id": "61538631",
       "source": "docs/docs/features/revert-to-upstream.md",
       "sourceSha256": "1e76c46e9a56042353fd1dd51a749af2fe182dcb7aee22b95a1a37a24584b83d",
-      "title": "Feature Reference — Revert To Upstream",
+      "title": "Feature Reference \u2014 Revert To Upstream",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538631/Feature+Reference+Revert+To+Upstream",
       "version": 2
     },
@@ -689,17 +689,17 @@
       "version": 2
     },
     {
-      "bytes": 19860,
+      "bytes": 20812,
       "category": "plan",
       "id": "61538319",
       "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
-      "sourceSha256": "d9ee05d8d24c7b47600cdedf11650ad555a274c284f4fc93cc1fdd2d692a1a48",
+      "sourceSha256": "1d0934ad4ec3f5511a94980c03f3bcc5f59c2e73820f9beddf5e50dae32ddf3e",
       "title": "Frameleaf Implementation Plan",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
-      "verification": "Confluence page version 11 published as HTML from local branch aj/apple-style-integration (uncommitted, based on claude/frameleaf-implementation e2cca307f4): the prior mirror matched the committed source aca9a06d, so only the header and the Apple-style design paragraph changed. The header hash and new paragraph were read back through CQL.",
+      "verification": "Confluence page version 12 published as HTML from local branch codex/CLD-000-frameleaf-cloud-workstream (uncommitted candidate, based on master/frameleaf-implementation c2488e3a59). The remote page was read before the write; the previous mirror matched committed source d9ee05d8, so the delta is the header and the new Frameleaf Cloud workstream section (guide link resolved to page 63864877). Read back as markdown: header carries the source path, SHA-256 1d0934ad and 20812 bytes; body matches the current source.",
       "verified": true,
-      "verifiedAt": "2026-09-24T15:14:15.463Z",
-      "version": 11
+      "verifiedAt": "2026-09-25T08:51:20.863Z",
+      "version": 12
     },
     {
       "bytes": 11216,
@@ -715,17 +715,17 @@
       "version": 6
     },
     {
-      "bytes": 9292,
+      "bytes": 9687,
       "category": "plan",
       "id": "61407624",
       "source": "docs/docs/developer/frameleaf-plan/05-delivery-and-backlog.md",
-      "sourceSha256": "2b159525f794f753b1abb55ec8fb15794d8739303a48946f751ac782a49a9096",
+      "sourceSha256": "7bedfc6608e125f5ffe821a41307903098f51ba9a1ad1e2a30ce3d5566889707",
       "title": "Delivery Sequence and Jira Backlog",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407624/Delivery+Sequence+and+Jira+Backlog",
-      "verification": "Source path, SHA-256, byte count, exact 59133353 fork/main baseline, informational 1603-path routing statistic, FL-25/FL-26 ownership boundary, open merge/hosted/Jira gates and terminal non-implementation boundary read back; existing Confluence resource links preserved through HTML replacement.",
+      "verification": "Confluence page version 7 published as HTML from local branch codex/CLD-000-frameleaf-cloud-workstream (uncommitted candidate). The remote page (version 6, no intervening edits) was read before the write; the previous mirror matched committed source 2b159525. Read back in full as markdown: header carries the source path, SHA-256 7bedfc66 and 9687 bytes; the independently authored source/FL-25/FL-26 line and Related mirrors paragraph are preserved verbatim; the body equals the current source with zero text differences, including the 162/28/134/434/298 counts and the 2026-09-25 checkpoint (79 To Do, 54 In Progress including FL-153 / CLD-000); existing Confluence resource links preserved through HTML replacement.",
       "verified": true,
-      "verifiedAt": "2026-09-20T13:33:18.638Z",
-      "version": 5
+      "verifiedAt": "2026-09-25T08:59:27.037Z",
+      "version": 7
     },
     {
       "bytes": 9079,
@@ -985,6 +985,34 @@
       "sourceState": "historical-pr133-recovery-evidence",
       "readbackResult": "Recovered byte-identical PR133 source; live page version 1 retains the complete source block. Historical acceptance only; current integration qualification is recorded separately.",
       "readbackAt": "2026-09-23T19:55:00Z"
+    },
+    {
+      "bytes": 41419,
+      "category": "plan",
+      "id": "63832108",
+      "source": "docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md",
+      "sourceSha256": "7dcb684b9c0f21d2c4c3ec88852e6f19869a94b64ebf7c8da14db6701dd1792a",
+      "title": "Frameleaf Cloud program plan",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63832108",
+      "version": 3,
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceState": "committed-fl-153-serverless-pricing-2026-09-25",
+      "readbackResult": "Markdown read-back of version 3 begins with the six-line header carrying SHA-256 7dcb684b, 41419 bytes and the FL-153 (CLD-000) registration; body matches the posted source (2026-09-25 owner decisions: serverless-only Frameleaf Cloud ML, metered GPU time with start fees, top-ups, where ML work runs, hardware check and model slider, InsightFace licence) except table separator padding.",
+      "readbackAt": "2026-09-25T14:41:32.000Z"
+    },
+    {
+      "bytes": 68897,
+      "category": "plan",
+      "id": "63864877",
+      "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
+      "sourceSha256": "285c0759d1b4a77be645694c65794dc5fddbcbdf82b105da4435b1e453f9268e",
+      "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
+      "version": 5,
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceState": "committed-fl-153-serverless-pricing-2026-09-25",
+      "readbackResult": "Markdown read-back of version 5 begins with the header carrying SHA-256 285c0759, 68897 bytes and the FL-153 (CLD-000) registration and ends with the source's closing rule; body matches the posted source (CLD-201 hardware check, routing and model slider; CLD-202 metered pricing, chunked serverless restoration and Smooth motion; CLD-203 GPU-time estimates) except wrapped inline code joined onto one line and one normalized space at a nested-backtick boundary.",
+      "readbackAt": "2026-09-25T14:45:55.000Z"
     }
   ],
   "spaceId": "61374475",

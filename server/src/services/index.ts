@@ -58,6 +58,7 @@ import { NotificationService } from 'src/services/notification.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
+import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
@@ -84,6 +85,8 @@ import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
+import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
@@ -167,6 +170,7 @@ export const services = [
   ClusterGroupService,
   PartnerService,
   PersonService,
+  PetRecognitionService,
   PetService,
   PhysicalDeduplicationPlanService,
   PhysicalDeduplicationService,
@@ -192,6 +196,8 @@ export const services = [
   StudioBundleService,
   StudioProjectService,
   StudioResourceService,
+  StudioRevocationService,
+  StudioWorkspaceService,
   SyncService,
   SystemConfigService,
   SystemMetadataService,

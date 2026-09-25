@@ -1,52 +1,23 @@
 <script lang="ts">
+  import PlacesPanel from '$lib/components/frameleaf/PlacesPanel.svelte';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import PlacesControls from './PlacesControls.svelte';
+  import { Theme as AppTheme, themeManager } from '@immich/ui';
   import type { PageData } from './$types';
-  import { type AssetResponseDto } from '@immich/sdk';
-  import { t } from 'svelte-i18n';
-  import { locale } from '$lib/stores/preferences.store';
-  import Places from './PlacesList.svelte';
-  import { placesViewSettings } from '$lib/stores/preferences.store';
 
+  /** Places (FL-51): the prototype's `Places.jsx` over the real places data (`PlacesPanel`). */
   interface Props {
     data: PageData;
   }
 
   let { data }: Props = $props();
 
-  type AssetWithCity = AssetResponseDto & {
-    exifInfo: {
-      city: string;
-    };
-  };
-
-  let searchQuery = $state('');
-  let searchResultCount = $state(0);
-  let placesGroups: string[] = $state([]);
-
-  let places = $derived(data.items.filter((item): item is AssetWithCity => !!item.exifInfo?.city));
-  let countVisiblePlaces = $derived(searchQuery ? searchResultCount : places.length);
-
-  let innerHeight: number = $state(0);
+  const counts = $derived(new Map(data.counts.map(({ city, count }) => [city, count])));
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
-<svelte:window bind:innerHeight />
-
-<UserPageLayout
-  title={$t('places')}
-  description={countVisiblePlaces === 0 && !searchQuery ? undefined : `(${countVisiblePlaces.toLocaleString($locale)})`}
->
-  {#snippet buttons()}
-    <div class="flex place-items-center gap-2">
-      <PlacesControls {placesGroups} bind:searchQuery />
-    </div>
-  {/snippet}
-
-  <Places
-    {places}
-    userSettings={$placesViewSettings}
-    {searchQuery}
-    bind:searchResultCount
-    bind:placesGroupIds={placesGroups}
-  />
+<UserPageLayout>
+  <Theme theme={appTheme}>
+    <PlacesPanel places={data.items} {counts} unplaced={data.unplaced} />
+  </Theme>
 </UserPageLayout>

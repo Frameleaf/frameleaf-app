@@ -240,7 +240,7 @@ test.describe('Timeline', () => {
         await page.getByLabel('View next asset').click();
         await assetViewerUtils.waitForViewerLoad(page, assets[index]);
       }
-      await page.getByRole('button', { name: /^(Go back|Close viewer \(Escape\))$/ }).click();
+      await page.getByRole('button', { name: /^(Go back|Close viewer)$/ }).click();
       await expect.poll(() => new URL(page.url()).pathname).toBe('/photos');
       await thumbnailUtils.expectInViewport(page, assets[index].id);
       await thumbnailUtils.expectBottomIsTimelineBottom(page, assets[index].id);
@@ -259,7 +259,7 @@ test.describe('Timeline', () => {
         await page.getByLabel('View previous asset').click();
         await assetViewerUtils.waitForViewerLoad(page, assets.at(-1 - back)!);
       }
-      await page.getByRole('button', { name: /^(Go back|Close viewer \(Escape\))$/ }).click();
+      await page.getByRole('button', { name: /^(Go back|Close viewer)$/ }).click();
       await expect.poll(() => new URL(page.url()).pathname).toBe('/photos');
       await thumbnailUtils.expectInViewport(page, assets.at(-1 - back)!.id);
       await thumbnailUtils.expectTopIsTimelineTop(page, assets.at(-1 - back)!.id);
@@ -279,6 +279,40 @@ test.describe('Timeline', () => {
       await timelineUtils.waitForTimelineLoad(page);
       // Layout is device-local and survives a reload (prototype `App.jsx` saved session.layout).
       await expect(timelineUtils.layoutButton(page, 'Timeline')).toHaveAttribute('aria-pressed', 'true');
+    });
+  });
+
+  test.describe('library session (FL-31, FL-33)', () => {
+    test('Layout switches keep the selection', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await thumbnailUtils.ensureSelected(page, assets[0].id);
+      await thumbnailUtils.ensureSelected(page, assets[1].id);
+      await expect(selectionBarUtils.locator(page)).toContainText('2 selected');
+      for (const layout of ['Timeline', 'Work', 'Browse'] as const) {
+        await timelineUtils.setLayout(page, layout);
+        await expect(selectionBarUtils.locator(page)).toContainText('2 selected');
+      }
+    });
+
+    test('A link to an item that is gone opens the library without it', async ({ page }) => {
+      const gone = assets[3];
+      await page.route(`**/api/assets/${gone.id}`, (route) =>
+        route.fulfill({ status: 404, json: { message: 'Not found', statusCode: 404 } }),
+      );
+      await page.goto(`/photos/${gone.id}`);
+      await expect(page).toHaveURL(/\/photos(?:\?|$)/);
+      await timelineUtils.waitForTimelineLoad(page);
+      await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    });
+
+    test('Favorites with nothing in it shows the Frameleaf empty state', async ({ page }) => {
+      await page.route('**/api/timeline/buckets?*', (route, request) =>
+        new URL(request.url()).searchParams.get('isFavorite') === 'true'
+          ? route.fulfill({ json: [] })
+          : route.fallback(),
+      );
+      await page.goto('/favorites');
+      await expect(page.getByText('No photos or videos in this view.')).toBeVisible();
     });
   });
 

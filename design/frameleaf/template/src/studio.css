@@ -2199,3 +2199,21 @@
     display: none;
   }
 }
+.fls-destination {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  color: var(--fl-text);
+}
+.fls-frame-method {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: var(--fl-text);
+}
+.fls-frame-method .fls-segmented {
+  flex-wrap: wrap;
+}
+.fls-field--wide {
+  grid-column: 1 / -1;
+}

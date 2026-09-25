@@ -11,7 +11,9 @@
   import { getAssetInfo, type AssetResponseDto, type TrashItemResponseDto } from '@immich/sdk';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { onDestroy } from 'svelte';
-  import { resolveTrashNeighbours } from './trash-neighbours';
+  import { resolveTrashNeighbours, survivingTrashNeighbours } from './trash-neighbours';
+  import { websocketEvents } from '$lib/stores/websocket';
+  import { trashFilmstripAsset } from '$lib/frameleaf/trash';
 
   /**
    * Trash (FL-47): the Frameleaf trash browser, the design template's Trash area of the Command
@@ -73,13 +75,22 @@
 
   const cursor = $derived({ current: assetViewerManager.asset!, ...neighbours });
 
+  // V-17: the trash viewer's filmstrip is the page's own list, in the order the trash shows it.
+  const filmstripAssets = $derived(
+    authManager.authenticated ? items.map((item) => trashFilmstripAsset(item, authManager.user.id)) : [],
+  );
+
   const closeViewer = () => {
     assetViewerManager.showAssetViewer(false);
     handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
   };
 
+  /** Items this viewer restored or deleted itself; it has already moved on from them. */
+  const handledHere = new Set<string>();
+
   /** A restored or permanently deleted item leaves the trash: show the next one, as the timeline does. */
   const moveOn = async (assetId: string) => {
+    handledHere.add(assetId);
     // A second delete or restore can land before the neighbour lookup for this item finishes; look
     // the neighbours up directly then, instead of closing the viewer on an empty lookup.
     const { nextAsset, previousAsset } = await resolveTrashNeighbours(items, assetId, neighbours, loadAsset);
@@ -100,6 +111,29 @@
       await moveOn(action.asset.id);
     }
   };
+
+  /**
+   * The open item was restored elsewhere (another tab or device): move on as a local restore does,
+   * or close when nothing is left. A delete elsewhere is the viewer's own AssetsDelete handling.
+   */
+  const onRestoredElsewhere = async (ids: string[]) => {
+    const current = assetViewerManager.isViewing ? assetViewerManager.asset : undefined;
+    if (!current || !ids.includes(current.id) || handledHere.has(current.id)) {
+      return;
+    }
+    const known = neighbours;
+    for (const id of survivingTrashNeighbours(items, current.id, known, ids)) {
+      const candidate =
+        [known.nextAsset, known.previousAsset].find((asset) => asset?.id === id) ?? (await loadAsset(id));
+      if (await navigateToAsset(candidate)) {
+        return;
+      }
+    }
+    closeViewer();
+  };
+
+  // Subscribed before TrashManager mounts, so this runs while the list still holds the open item.
+  onDestroy(websocketEvents.on('on_asset_restore', (ids) => handlePromiseError(onRestoredElsewhere(ids))));
 </script>
 
 <TrashManager bind:items />
@@ -110,6 +144,7 @@
       <AssetViewer
         {cursor}
         showNavigation={items.length > 1}
+        {filmstripAssets}
         {preAction}
         {onAction}
         onClose={closeViewer}

@@ -290,6 +290,35 @@ export const storedProbe = (
   };
 };
 
+/**
+ * The least GPU memory a workload needs, where one is known (FL-58). It is only held against a
+ * worker that reported its GPUs and their memory (restoration workers do; the `/predict` container
+ * reports providers only), so a worker that says nothing about memory is never refused for it.
+ * Pet recognition encodes short CLIP text prompts; 1 GiB covers the largest supported CLIP text
+ * encoder with its runtime.
+ */
+export const ML_WORKLOAD_MIN_GPU_MEMORY_BYTES: Partial<Record<MlWorkload, number>> = {
+  [MlWorkload.PetRecognition]: 1024 ** 3,
+};
+
+/** Why a worker's reported GPU memory is too small for a workload, or null when it is not known to be. */
+export const insufficientMemoryDetail = (
+  destination: Pick<MlDestinationRow, 'name' | 'lastProbeHardware'>,
+  workload: MlWorkload,
+): string | null => {
+  const required = ML_WORKLOAD_MIN_GPU_MEMORY_BYTES[workload];
+  const gpus = destination.lastProbeHardware?.gpus ?? [];
+  if (!required || gpus.length === 0) {
+    return null;
+  }
+  const largest = Math.max(...gpus.map((gpu) => gpu.memoryTotalBytes));
+  if (largest >= required) {
+    return null;
+  }
+  const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1);
+  return `${destination.name} has ${gib(largest)} GiB of GPU memory; ${workload} needs ${gib(required)} GiB`;
+};
+
 export type MlAdmissionInput = {
   destination: MlDestinationRow | undefined;
   workload: MlWorkload;
@@ -450,6 +479,10 @@ export const evaluateAdmission = ({
       MlAdmissionRefusal.WorkloadNotServed,
       `${destination.name} reports it does not serve ${workload}${probe.error ? ` (${probe.error})` : ''}`,
     );
+  }
+  const memory = insufficientMemoryDetail(destination, workload);
+  if (memory) {
+    return { admitted: false, refusal: MlAdmissionRefusal.InsufficientMemory, detail: memory };
   }
   return { admitted: true };
 };

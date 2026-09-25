@@ -17,12 +17,10 @@ import ResultsAssetViewer from './ResultsAssetViewer.svelte';
 
 const { deleteRequest, confirmRequest } = vi.hoisted(() => ({
   deleteRequest: vi.fn<() => Promise<void>>(),
-  confirmRequest: vi.fn<() => Promise<boolean>>(),
+  confirmRequest: vi.fn<(options: unknown) => Promise<boolean>>(),
 }));
-vi.mock('@immich/ui', async () => {
-  const ui = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
-  return { ...ui, modalManager: { ...ui.modalManager, show: confirmRequest } };
-});
+// A permanent delete is confirmed with the Frameleaf dialog (`confirmAndDeletePermanently`).
+vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: confirmRequest }));
 vi.mock('@immich/sdk', async () => ({
   ...(await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk')),
   deleteAssets: deleteRequest,
@@ -108,13 +106,21 @@ it.each([true, false])(
     );
     const deleted = vi.fn();
     const stop = eventManager.on({ AssetsDelete: deleted });
-    await fireEvent.click(await view.findByRole('button', { name: force ? 'permanently_delete' : 'delete' }));
+    await fireEvent.click(
+      await view.findByRole('button', {
+        name: force ? 'frameleaf_viewer_delete_permanently' : 'frameleaf_viewer_move_to_trash',
+      }),
+    );
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ assetId: b.id })));
     expect(deleteRequest).not.toHaveBeenCalled();
     resolveRoute(b);
     await waitFor(() => expect(deleted).toHaveBeenCalledWith([a.id]));
     expect(assetViewerManager.asset?.id).toBe(b.id);
-    await fireEvent.click(await view.findByRole('button', { name: force ? 'permanently_delete' : 'delete' }));
+    await fireEvent.click(
+      await view.findByRole('button', {
+        name: force ? 'frameleaf_viewer_delete_permanently' : 'frameleaf_viewer_move_to_trash',
+      }),
+    );
     await waitFor(() => expect(deleted).toHaveBeenCalledWith([b.id]));
     expect(assetViewerManager.asset?.id).toBe(c.id);
     expect(assetViewerManager.isViewing).toBe(true);
@@ -127,7 +133,7 @@ it('uses the previous neighbor for the last asset and ignores stale confirmation
   const { assets, view } = setup();
   const [a, b, c] = assets;
   assetViewerManager.setAsset(c);
-  await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
+  await fireEvent.click(await view.findByRole('button', { name: 'frameleaf_viewer_delete_permanently' }));
   await waitFor(() => expect(assetViewerManager.asset?.id).toBe(b.id));
   let confirm!: (value: boolean) => void;
   confirmRequest.mockReturnValueOnce(
@@ -135,7 +141,7 @@ it('uses the previous neighbor for the last asset and ignores stale confirmation
       confirm = resolve;
     }),
   );
-  await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
+  await fireEvent.click(await view.findByRole('button', { name: 'frameleaf_viewer_delete_permanently' }));
   await waitFor(() => expect(confirmRequest).toHaveBeenCalledTimes(2));
   assetViewerManager.setAsset(a);
   vi.mocked(navigate).mockClear();
@@ -153,7 +159,7 @@ it('uses the current cursor after backward and forward navigation', async () => 
   await waitFor(() => expect(assetViewerManager.asset?.id).toBe(a.id));
   await fireEvent.click(await view.findByRole('button', { name: 'view_next_asset' }));
   await waitFor(() => expect(assetViewerManager.asset?.id).toBe(b.id));
-  await fireEvent.click(await view.findByRole('button', { name: 'delete' }));
+  await fireEvent.click(await view.findByRole('button', { name: 'frameleaf_viewer_move_to_trash' }));
   await waitFor(() => expect(deleteRequest).toHaveBeenCalledOnce());
   expect(assetViewerManager.asset?.id).toBe(c.id);
 });
@@ -167,11 +173,11 @@ it('does not remove an unrelated final result when the deleted ID was already re
       complete = resolve;
     }),
   );
-  await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
+  await fireEvent.click(await view.findByRole('button', { name: 'frameleaf_viewer_delete_permanently' }));
   await waitFor(() => expect(deleteRequest).toHaveBeenCalledOnce());
+  // always confirmed, even with the delete prompt turned off, and as a danger action
   expect(confirmRequest).toHaveBeenCalledWith(
-    expect.anything(),
-    expect.objectContaining({ size: 1, suppressible: false }),
+    expect.objectContaining({ confirmText: 'frameleaf_viewer_delete_permanently', danger: true }),
   );
   assets.splice(
     assets.findIndex((asset) => asset.id === a.id),

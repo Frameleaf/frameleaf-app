@@ -36,6 +36,28 @@ describe('/stacks', () => {
       });
     });
 
+    // FL-36: a stack is all or nothing: someone else's item or a stale selection changes nothing.
+    it("refuses a stack that includes someone else's item", async () => {
+      const [own, other] = await Promise.all([
+        utils.createAsset(user1.accessToken),
+        utils.createAsset(admin.accessToken),
+      ]);
+      const { status } = await request(app)
+        .post('/stacks')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ assetIds: [own.id, other.id] });
+      expect(status).toBe(400);
+    });
+
+    it('refuses a stale selection that names an item that is gone', async () => {
+      const own = await utils.createAsset(user1.accessToken);
+      const { status } = await request(app)
+        .post('/stacks')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ assetIds: [own.id, '00000000-0000-4000-8000-000000000000'] });
+      expect(status).toBe(400);
+    });
+
     it('should merge an existing stack', async () => {
       const [asset1, asset2, asset3] = await Promise.all([
         utils.createAsset(user1.accessToken),

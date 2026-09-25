@@ -66,6 +66,20 @@ export const RESTORATION_PREVIEW_UNREVIEWED_DAYS = 14;
 /** After a decision the preview files stay this long for comparison, then go. */
 export const RESTORATION_PREVIEW_AFTER_DECISION_DAYS = 7;
 
+/**
+ * A full render that failed or was cancelled keeps its chunk checkpoints this long so a retry can
+ * resume, then they go (FL-115 result retention, answered with the story's own decision window).
+ * A finished result is a separate version the owner keeps: it never expires on its own and only
+ * Discard removes it.
+ */
+export const RESTORATION_ABANDONED_RESULT_DAYS = RESTORATION_PREVIEW_AFTER_DECISION_DAYS;
+
+/** The full-render statuses whose leftovers expire. */
+export const EXPIRING_RESULT_STATUSES: readonly AssetRestorationStatus[] = [
+  AssetRestorationStatus.RestoreFailed,
+  AssetRestorationStatus.RestoreCancelled,
+];
+
 /** Both restoration kinds the worker claims. */
 export const RESTORATION_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.RestorationPreview,
@@ -83,6 +97,8 @@ export const RestorationErrorCode = {
   SourceChanged: 'restoration_source_changed',
   DestinationRefused: 'restoration_destination_refused',
   OutputInvalid: 'restoration_output_invalid',
+  /** The destination's model is not the one the owner reviewed in the preview (FL-115). */
+  ModelChanged: 'restoration_model_changed',
   LeaseLost: 'restoration_lease_lost',
   Failed: 'restoration_failed',
 } as const;
@@ -323,6 +339,9 @@ export const previewExpiryAfterReady = (now: Date) => addDays(now, RESTORATION_P
 /** When the preview files of a decided restoration are removed. */
 export const previewExpiryAfterDecision = (now: Date) => addDays(now, RESTORATION_PREVIEW_AFTER_DECISION_DAYS);
 
+/** When the leftovers of a failed or cancelled full render are removed. */
+export const resultExpiryAfterAbandon = (now: Date) => addDays(now, RESTORATION_ABANDONED_RESULT_DAYS);
+
 /* ------------------------------------------------------------------ */
 /* Snapshot                                                            */
 /* ------------------------------------------------------------------ */
@@ -351,6 +370,12 @@ export const RestorationSnapshotSchema = z.object({
   destinationKind: MlDestinationKindSchema,
   region: AssetRestorationRegionSchema,
   output: z.object({ width: z.int().min(1), height: z.int().min(1) }),
+  /**
+   * The model the reviewed preview ran (FL-115). A full render is bound to it: any other model or
+   * weight revision on the destination is a refusal, not a silent substitute. Absent on previews
+   * and on jobs queued before the binding existed.
+   */
+  model: z.object({ name: z.string().min(1), version: z.string().nullable() }).optional(),
 });
 
 export type RestorationSnapshot = z.infer<typeof RestorationSnapshotSchema>;
@@ -359,6 +384,17 @@ export const parseRestorationSnapshot = (value: unknown): RestorationSnapshot | 
   const result = RestorationSnapshotSchema.safeParse(value);
   return result.success ? result.data : null;
 };
+
+/**
+ * Whether an inference result came from the model the owner reviewed. True when the snapshot binds
+ * no model (a preview, or a job from before the binding).
+ */
+export const isReviewedModel = (
+  snapshot: Pick<RestorationSnapshot, 'model'>,
+  result: Pick<RestorationInferenceResult, 'modelName' | 'modelVersion'>,
+) =>
+  !snapshot.model ||
+  (snapshot.model.name === result.modelName && snapshot.model.version === (result.modelVersion ?? null));
 
 /* ------------------------------------------------------------------ */
 /* Video chunks                                                        */
@@ -400,6 +436,7 @@ export const restorationChunkIdentity = (snapshot: RestorationSnapshot, chunk: R
       workload: snapshot.workload,
       destinationId: snapshot.destinationId,
       output: snapshot.output,
+      ...(snapshot.model && { model: snapshot.model }),
     }),
   );
   const startTicks = BigInt(Math.round(chunk.startSeconds * 1000));

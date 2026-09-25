@@ -68,6 +68,35 @@ describe('evaluateAdmission', () => {
     expect(evaluateAdmission(base)).toEqual({ admitted: true });
   });
 
+  it('refuses a worker that reported too little GPU memory for the workload (FL-58)', () => {
+    const destination = {
+      ...mlDestinationStub.local,
+      workloads: [MlWorkload.PetRecognition],
+      lastProbeHardware: {
+        preferredAcceleration: null,
+        providers: [],
+        cudaDeviceCount: 1,
+        gpus: [{ name: 'Tiny', memoryTotalBytes: 512 * 1024 ** 2 }],
+      },
+    };
+    const probe = { ...mlProbeStub.healthy, workloads: [MlWorkload.PetRecognition] };
+
+    expect(evaluateAdmission({ ...base, destination, probe, workload: MlWorkload.PetRecognition })).toEqual({
+      admitted: false,
+      refusal: MlAdmissionRefusal.InsufficientMemory,
+      detail: 'This server has 0.5 GiB of GPU memory; pet-recognition needs 1.0 GiB',
+    });
+  });
+
+  it('never holds unknown memory against a worker', () => {
+    const destination = { ...mlDestinationStub.local, workloads: [MlWorkload.PetRecognition] };
+    const probe = { ...mlProbeStub.healthy, workloads: [MlWorkload.PetRecognition] };
+
+    expect(evaluateAdmission({ ...base, destination, probe, workload: MlWorkload.PetRecognition })).toEqual({
+      admitted: true,
+    });
+  });
+
   it('refuses a missing destination before anything else', () => {
     expect(evaluateAdmission({ ...base, destination: undefined })).toMatchObject({
       admitted: false,

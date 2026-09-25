@@ -217,10 +217,21 @@ export class UserRepository {
   /**
    * FL-71 (CC-10), FL-55: fork rows of accounts that no longer exist, left behind when an account
    * was removed while the fork schema was not writable. Preference history of a removed account
-   * goes; recipient groups it owned go, and it leaves everyone else's. Returns what was removed,
-   * or undefined while the fork schema is still not writable.
+   * goes; recipient groups it owned go, and it leaves everyone else's. FL-57/FL-58: its face
+   * correction history, merge-suggestion answers and pet recognition run go too. Returns what was
+   * removed, or undefined while the fork schema is still not writable.
    */
-  async sweepRemovedAccountForkRows(): Promise<{ preferenceHistory: number; recipientGroups: number } | undefined> {
+  async sweepRemovedAccountForkRows(): Promise<
+    | {
+        preferenceHistory: number;
+        recipientGroups: number;
+        memoryShowLess: number;
+        memoryCurations: number;
+        peopleAndPets: number;
+        workspaceLayouts: number;
+      }
+    | undefined
+  > {
     return this.db.transaction().execute(async (trx) => {
       if (!(await canWriteFork(trx))) {
         return;
@@ -232,6 +243,11 @@ export class UserRepository {
       const groups = await sql`
         DELETE FROM immich_fork.recipient_group AS recipient_group
         WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = recipient_group."ownerId")
+      `.execute(trx);
+      // FL-91: a Studio workspace layout left by an account removed during a handoff.
+      const layouts = await sql`
+        DELETE FROM immich_fork.studio_workspace_layout AS layout
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = layout."userId")
       `.execute(trx);
       await sql`
         UPDATE immich_fork.recipient_group
@@ -245,9 +261,34 @@ export class UserRepository {
           WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = member)
         )
       `.execute(trx);
+      // FL-62: the removed account's memory show-less rules and memory curation.
+      const showLess = await sql`
+        DELETE FROM immich_fork.memory_show_less AS rule
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = rule."userId")
+      `.execute(trx);
+      const curations = await sql`
+        DELETE FROM immich_fork.memory_curation AS curation
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = curation."ownerId")
+      `.execute(trx);
+      let peopleAndPets = 0;
+      for (const table of [
+        sql`immich_fork.face_correction`,
+        sql`immich_fork.person_merge_verdict`,
+        sql`immich_fork.pet_recognition_run`,
+      ]) {
+        const removed = await sql`
+          DELETE FROM ${table} AS owned
+          WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = owned."ownerId")
+        `.execute(trx);
+        peopleAndPets += Number(removed.numAffectedRows ?? 0);
+      }
       return {
         preferenceHistory: Number(history.numAffectedRows ?? 0),
         recipientGroups: Number(groups.numAffectedRows ?? 0),
+        workspaceLayouts: Number(layouts.numAffectedRows ?? 0),
+        memoryShowLess: Number(showLess.numAffectedRows ?? 0),
+        memoryCurations: Number(curations.numAffectedRows ?? 0),
+        peopleAndPets,
       };
     });
   }
@@ -297,12 +338,16 @@ export class UserRepository {
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
-  getByStorageLabel(storageLabel: string) {
+  /**
+   * `withDeleted` (FL-76): the unique constraint on `storageLabel` covers soft-deleted accounts too, so
+   * a duplicate check before an insert or update must see them.
+   */
+  getByStorageLabel(storageLabel: string, withDeleted = false) {
     return this.db
       .selectFrom('user')
       .select(columns.userAdmin)
       .where('user.storageLabel', '=', storageLabel)
-      .where('user.deletedAt', 'is', null)
+      .$if(!withDeleted, (qb) => qb.where('user.deletedAt', 'is', null))
       .executeTakeFirst();
   }
 
@@ -331,7 +376,7 @@ export class UserRepository {
       .selectFrom('user')
       .select(columns.userAdmin)
       .select(withMetadata)
-      .$if(!withDeleted, (eb) => eb.where('user.deletedAt', 'is', null))
+      .$if(!withDeleted, (qb) => qb.where('user.deletedAt', 'is', null))
       .$if(!!id, (eb) => eb.where('user.id', '=', id!))
       .orderBy('createdAt', 'desc')
       .execute();

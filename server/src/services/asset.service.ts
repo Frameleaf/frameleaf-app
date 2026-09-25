@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { isUndefined, omitBy } from 'lodash-es';
+import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
-import { AssetFile } from 'src/database.js';
+import { AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -26,6 +26,7 @@ import {
 import {
   AssetEditAction,
   AssetEditActionItem,
+  AssetEditKeyframesResponseDto,
   AssetEditsCreateDto,
   AssetEditsResponseDto,
   VideoEditVersionResponseDto,
@@ -195,7 +196,8 @@ export class AssetService extends BaseService {
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
-    const { description, dateTimeOriginal, latitude, longitude, rating, visibility, ...rest } = dto;
+    const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
+      dto;
     const repos = { asset: this.assetRepository, event: this.eventRepository };
 
     let previousMotion: { id: string } | null = null;
@@ -208,7 +210,7 @@ export class AssetService extends BaseService {
       }
     }
 
-    await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating });
+    await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating, city, state, country });
 
     const storedVisibility = await this.applyLockedVisibility(auth, [id], visibility);
     const asset = await this.assetRepository.update({
@@ -268,10 +270,12 @@ export class AssetService extends BaseService {
       { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
       isUndefined,
     );
+    // FL-51: null coordinates remove the location (the geolocation utility's "Remove location")
+    const clearLocation = latitude === null && longitude === null;
     const exifDto = omitBy(
       {
-        latitude,
-        longitude,
+        latitude: clearLocation ? undefined : (latitude ?? undefined),
+        longitude: clearLocation ? undefined : (longitude ?? undefined),
         rating,
         description,
         dateTimeOriginal,
@@ -279,8 +283,17 @@ export class AssetService extends BaseService {
       isUndefined,
     );
 
+    // FL-36 (V-24): moving items releases their typed place names, as a single edit does
+    // (`updateExif`), so reverse geocoding names the new spot instead of keeping the old place.
+    const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
     if (Object.keys(exifDto).length > 0) {
-      await this.assetRepository.updateAllExif(ids, exifDto);
+      await this.assetRepository.updateAllExif(ids, exifDto, moved ? [...placeProperties] : []);
+    }
+
+    // FL-51: a Live Photo's paired video carries the same location, so it goes with the photo's
+    const locationVideoIds = clearLocation ? await this.getLivePhotoVideoIds(ids) : [];
+    if (clearLocation) {
+      await this.assetRepository.clearLocation([...ids, ...locationVideoIds]);
     }
 
     const extractedTimeZone = extractTimeZone(dateTimeOriginal);
@@ -312,7 +325,20 @@ export class AssetService extends BaseService {
     // and every album read hides it from everyone but its owner's elevated session, so it is back in
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
-    await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+    await this.jobRepository.queueAll(
+      [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
+    );
+  }
+
+  /** FL-51: the paired videos of these Live Photos that are not already among them. */
+  private async getLivePhotoVideoIds(ids: string[]): Promise<string[]> {
+    const assets = await this.assetRepository.getByIds(ids);
+    const named = new Set(ids);
+    return [
+      ...new Set(
+        assets.map(({ livePhotoVideoId }) => livePhotoVideoId).filter((id): id is string => !!id && !named.has(id)),
+      ),
+    ];
   }
 
   /**
@@ -817,22 +843,57 @@ export class AssetService extends BaseService {
     id: string;
     description?: string;
     dateTimeOriginal?: string;
-    latitude?: number;
-    longitude?: number;
+    latitude?: number | null;
+    longitude?: number | null;
     rating?: number | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
   }) {
     const { id, description, dateTimeOriginal, latitude, longitude, rating } = dto;
+    // FL-51: null coordinates remove the location, and with it any typed place names
+    const clearLocation = latitude === null && longitude === null;
+    // FL-36 (V-24): a typed place name is stored as typed (an empty one clears it) and locked, so
+    // reverse geocoding keeps it; moving the item without naming its place lets geocoding name it again.
+    const place = clearLocation
+      ? {}
+      : omitBy(
+          {
+            city: this.placeName(dto.city),
+            state: this.placeName(dto.state),
+            country: this.placeName(dto.country),
+          },
+          isUndefined,
+        );
     const writes = omitBy(
       {
         description,
         dateTimeOriginal,
         timeZone: extractTimeZone(dateTimeOriginal)?.name,
-        latitude,
-        longitude,
+        latitude: clearLocation ? undefined : (latitude ?? undefined),
+        longitude: clearLocation ? undefined : (longitude ?? undefined),
         rating,
+        ...place,
       },
       isUndefined,
     );
+
+    const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
+    if (moved && Object.keys(place).length === 0) {
+      await this.assetRepository.unlockProperties(id, [...placeProperties]);
+    }
+
+    if (clearLocation) {
+      // FL-51: the Live Photo's paired video loses its location with the photo
+      const videoIds = await this.getLivePhotoVideoIds([id]);
+      await this.assetRepository.clearLocation([id, ...videoIds]);
+      if (Object.keys(writes).length === 0) {
+        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+      }
+      for (const videoId of videoIds) {
+        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id: videoId } });
+      }
+    }
 
     if (Object.keys(writes).length > 0) {
       await this.assetRepository.upsertExif({
@@ -844,6 +905,13 @@ export class AssetService extends BaseService {
       });
       await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
     }
+  }
+
+  private placeName(value: string | null | undefined): string | null | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    return value?.trim() || null;
   }
 
   async getAssetEdits(auth: AuthDto, id: string): Promise<AssetEditsResponseDto> {
@@ -863,6 +931,34 @@ export class AssetService extends BaseService {
     const edits = await this.assetEditRepository.getAll(id);
 
     return { assetId: id, edits, ...(originalVideo && { originalVideo }) };
+  }
+
+  /**
+   * FL-113 (VID-105, "exact versus fast trim shows actual boundaries"): the original's keyframes,
+   * read from its packets without decoding, so the editor can show where a fast trim cuts.
+   */
+  async getAssetEditKeyframes(auth: AuthDto, id: string): Promise<AssetEditKeyframesResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AssetEditGet, ids: [id] });
+    const asset = await this.assetRepository.getById(id);
+    if (!asset || asset.type !== AssetType.Video) {
+      throw new BadRequestException('Asset not found or asset is not a video');
+    }
+    const { videoStreams } = await this.mediaRepository.probe(asset.originalPath);
+    const video = videoStreams[0];
+    const ticks = video?.timeBaseRational ?? (video?.timeBase ? { num: 1, den: video.timeBase } : null);
+    if (!video || !ticks) {
+      throw new BadRequestException('Original video keyframes are not available');
+    }
+    const packets = await this.mediaRepository.probePackets(asset.originalPath, video.index);
+    const start = packets?.startPts ?? 0;
+    const keyframesMs = [
+      ...new Set(
+        (packets?.keyframePts ?? []).map((pts) =>
+          Math.max(0, Math.round(((pts - start) * Number(ticks.num) * 1000) / Number(ticks.den))),
+        ),
+      ),
+    ].sort((a, b) => a - b);
+    return { keyframesMs };
   }
 
   private async getOriginalVideoMetadata(path: string): Promise<NonNullable<AssetEditsResponseDto['originalVideo']>> {
@@ -956,15 +1052,17 @@ export class AssetService extends BaseService {
       const trimStartMs = trimEdit?.parameters.startMs ?? 0;
       const trimEndMs = trimEdit?.parameters.endMs ?? durationMs;
       const speedEdits = edits.filter((edit) => edit.action === AssetEditAction.Speed);
-      const hasGlobalSpeedEdit = speedEdits.some(
+      const globalSpeedEdits = speedEdits.filter(
         (edit) => edit.parameters.startMs === undefined && edit.parameters.endMs === undefined,
       );
       const speedSegments = speedEdits
         .filter((edit) => edit.parameters.startMs !== undefined && edit.parameters.endMs !== undefined)
         .sort((a, b) => a.parameters.startMs! - b.parameters.startMs!);
 
-      if (hasGlobalSpeedEdit && speedSegments.length > 0) {
-        throw new BadRequestException('Global and segment speed edits cannot be combined');
+      // FL-113: a whole-clip speed and speed ranges combine. The ranges override it and it plays in
+      // the gaps between them (`MediaService.getVideoEditTimeline`, `develop.mjs` speedAt).
+      if (globalSpeedEdits.length > 1) {
+        throw new BadRequestException('Only one whole-clip speed edit is allowed');
       }
 
       for (let index = 1; index < speedSegments.length; index++) {

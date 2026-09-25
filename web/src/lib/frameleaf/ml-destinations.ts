@@ -22,6 +22,7 @@ export const ML_WORKLOAD_ORDER: readonly MlWorkload[] = [
   MlWorkload.Clip,
   MlWorkload.Ocr,
   MlWorkload.Enrichment,
+  MlWorkload.PetRecognition,
   MlWorkload.RestorationFaithful,
   MlWorkload.RestorationCreative,
   MlWorkload.StudioAi,
@@ -61,6 +62,9 @@ export const mlWorkloadLabelKey = (workload: MlWorkload): Translations => {
     }
     case MlWorkload.StudioRender: {
       return 'admin.frameleaf_ml_workload_studio_render';
+    }
+    case MlWorkload.PetRecognition: {
+      return 'admin.frameleaf_ml_workload_pet_recognition';
     }
   }
 };
@@ -158,6 +162,9 @@ export const mlRefusalLabelKey = (refusal: MlAdmissionRefusal): Translations => 
     case MlAdmissionRefusal.ModelMismatch: {
       return 'admin.frameleaf_ml_refusal_model_mismatch';
     }
+    case MlAdmissionRefusal.InsufficientMemory: {
+      return 'admin.frameleaf_ml_refusal_insufficient_memory';
+    }
   }
 };
 
@@ -170,6 +177,7 @@ export const LIBRARY_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Clip,
   MlWorkload.Ocr,
   MlWorkload.Enrichment,
+  MlWorkload.PetRecognition,
 ];
 export const RESTORATION_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.RestorationFaithful,

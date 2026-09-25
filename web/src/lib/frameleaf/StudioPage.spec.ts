@@ -87,6 +87,81 @@ afterEach(() => {
   clearStudioEngine();
 });
 
+describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
+  it('renames the project from the header, and puts the stored name back when refused', async () => {
+    const onRename = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    render(StudioHost, { ...baseProps(), onRename, loadEngine: loadStudioEngine });
+
+    const field = screen.getByRole('textbox', { name: 'frameleaf_studio_project_name' });
+    expect(field).toHaveValue('Summer in the Rockies');
+    await fireEvent.focus(field);
+    await fireEvent.input(field, { target: { value: 'Lake trip' } });
+    await fireEvent.keyDown(field, { key: 'Enter' });
+    await fireEvent.blur(field);
+    await waitFor(() => expect(onRename).toHaveBeenCalledWith('Lake trip'));
+    await waitFor(() => expect(field).toHaveValue('Summer in the Rockies'));
+
+    await fireEvent.focus(field);
+    await fireEvent.input(field, { target: { value: 'Draft cut' } });
+    await fireEvent.keyDown(field, { key: 'Escape' });
+    await fireEvent.blur(field);
+    expect(field).toHaveValue('Summer in the Rockies');
+    expect(onRename).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the name as a title when it cannot be renamed', () => {
+    render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+    expect(screen.queryByRole('textbox', { name: 'frameleaf_studio_project_name' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Summer in the Rockies' })).toBeInTheDocument();
+  });
+
+  it('offers Export only when the route wires it, and says how many jobs are queued', async () => {
+    const onExport = vi.fn();
+    const onOpenActivity = vi.fn();
+    render(StudioHost, { ...baseProps(), onExport, onOpenActivity, queuedJobs: 2, loadEngine: loadStudioEngine });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_export_action' }));
+    expect(onExport).toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_queued_open_activity' }));
+    expect(onOpenActivity).toHaveBeenCalled();
+  });
+
+  it('offers Basic and Advanced only while the engine runs, and hands the choice to it', async () => {
+    const engine = stubEngine();
+    render(StudioHost, { ...baseProps(), loadEngine: engine.load });
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+
+    const advanced = await screen.findByRole('radio', { name: 'frameleaf_studio_mode_advanced' });
+    expect(screen.getByRole('radio', { name: 'frameleaf_studio_mode_basic' })).toHaveAttribute('aria-checked', 'true');
+    await fireEvent.click(advanced);
+    expect(advanced).toHaveAttribute('aria-checked', 'true');
+    await waitFor(() => expect(engine.update).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'advanced' })));
+  });
+
+  it('hands the stored workspace layout to the engine and keeps saves on the host (FL-91)', async () => {
+    const engine = stubEngine();
+    const layout = { panels: { bin: { open: true } } };
+    const saveWorkspace = vi.fn().mockResolvedValue({ status: 'saved', savedAt: '2026-09-25T10:00:00.000Z' });
+    const props = { ...baseProps(), services: { ...services(), saveWorkspace }, loadEngine: engine.load };
+    render(StudioHost, {
+      ...props,
+      workspace: { state: 'ready', layout, savedAt: '2026-09-25T09:00:00.000Z' },
+    });
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+    expect(engine.contexts[0].workspace).toEqual({ state: 'ready', layout, savedAt: '2026-09-25T09:00:00.000Z' });
+    const handed = vi.mocked(engine.module.mount).mock.calls[0][2];
+    await expect(handed.saveWorkspace?.({ zoom: 2 })).resolves.toEqual({
+      status: 'saved',
+      savedAt: '2026-09-25T10:00:00.000Z',
+    });
+  });
+
+  it('has no mode switch without an engine', () => {
+    render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+    expect(screen.queryByRole('radiogroup', { name: 'frameleaf_studio_mode_label' })).not.toBeInTheDocument();
+  });
+});
+
 describe('Studio route, engine absent', () => {
   it('says the editor is not part of this build instead of showing an empty editor', async () => {
     render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
@@ -179,11 +254,17 @@ describe('Studio route, engine present', () => {
       'auth',
       'capabilities',
       'handoffAssetIds',
+      // Basic or Advanced from the header (Studio.jsx:2626-2633).
+      'mode',
       'online',
       // FL-96: the preview reaches the engine as data. There is still no transport here.
       'preview',
       'project',
+      // FL-42: what qualified render workers verified, for the export sheet (no credentials).
+      'renderEvidence',
       'theme',
+      // FL-91: the stored workspace layout, as data; saving it goes through services only.
+      'workspace',
     ]);
     expect(Object.keys(passedServices).sort()).toEqual([
       'navigate',

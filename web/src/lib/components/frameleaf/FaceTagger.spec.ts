@@ -1,4 +1,10 @@
-import { AssetTypeEnum, AssetVisibility, type AssetFaceResponseDto, type PersonResponseDto } from '@immich/sdk';
+import {
+  AssetTypeEnum,
+  AssetVisibility,
+  SourceType,
+  type AssetFaceResponseDto,
+  type PersonResponseDto,
+} from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -11,9 +17,10 @@ import en from '../../../../../i18n/en.json';
 import FaceTagger from './FaceTagger.svelte';
 
 /**
- * FL-38 (V-28): the face tagger dialog ported from FaceTagger.jsx. Existing faces load as
- * read-only detected regions; new regions, reassignments and removals are applied in one
- * batch through the real face and person endpoints.
+ * FL-38 (V-28): the face tagger dialog ported from FaceTagger.jsx. Existing faces load with
+ * their provenance and revision and can be moved, resized, reassigned, unassigned or removed;
+ * every change is saved revision-checked through the real face and person endpoints, and a
+ * refused (409) save keeps the draft behind the prototype's stale banner.
  */
 describe('FaceTagger', () => {
   const owner = userAdminFactory.build();
@@ -27,8 +34,13 @@ describe('FaceTagger', () => {
     boundingBoxY1: 80,
     boundingBoxX2: 300,
     boundingBoxY2: 280,
+    revision: 'rev-1',
+    sourceType: SourceType.MachineLearning,
+    correctedAt: null,
+    hiddenAt: null,
     person: alex,
   } as AssetFaceResponseDto;
+  const conflict = Object.assign(new Error('conflict'), { status: 409 });
 
   beforeAll(async () => {
     await init({ fallbackLocale: 'en-US' });
@@ -48,9 +60,11 @@ describe('FaceTagger', () => {
     authManager.setPreferences(preferencesFactory.build());
     sdkMock.getAllPeople.mockResolvedValue({ people: [alex, bailey], total: 2, hidden: 0, hasNextPage: false });
     sdkMock.getFaces.mockResolvedValue([detectedFace]);
-    sdkMock.createFace.mockResolvedValue(undefined as never);
+    sdkMock.getFaceSource.mockResolvedValue({ assetId: 'asset', revision: 'src-1' });
+    sdkMock.createFace.mockResolvedValue(detectedFace);
     sdkMock.deleteFace.mockResolvedValue(undefined as never);
-    sdkMock.reassignFacesById.mockResolvedValue(bailey);
+    sdkMock.correctFace.mockResolvedValue(detectedFace);
+    sdkMock.isHttpError.mockImplementation((error) => (error as { status?: number })?.status === 409);
   });
 
   afterEach(() => {
@@ -73,7 +87,7 @@ describe('FaceTagger', () => {
       await fireEvent.load(image);
     }
     await waitFor(() => expect(sdkMock.getFaces).toHaveBeenCalledWith({ id: asset.id }));
-    await screen.findByText(en.frameleaf_face_tagger_detected_note);
+    await screen.findByText(en.frameleaf_face_tagger_position_note);
     return { asset, onClose, onSaved };
   };
 
@@ -81,23 +95,41 @@ describe('FaceTagger', () => {
   const pickPerson = (person: PersonResponseDto) =>
     fireEvent.click(screen.getByRole('button', { name: person.name, pressed: false }));
 
-  it('shows the title, file name and the asset’s detected faces as read-only regions', async () => {
+  it('shows the title, file name and the asset’s detected faces as editable regions with their provenance', async () => {
     await setup();
 
     expect(screen.getByRole('heading', { name: en.frameleaf_face_tagger_title })).toBeInTheDocument();
     expect(screen.getByText('beach.jpg')).toBeInTheDocument();
     expect(screen.getByText('1 face')).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: en.frameleaf_face_tagger_faces_list })).toHaveTextContent('Alex');
-    expect(screen.getByLabelText(en.frameleaf_face_tagger_left)).toBeDisabled();
+    const list = screen.getByRole('group', { name: en.frameleaf_face_tagger_faces_list });
+    expect(list).toHaveTextContent('Alex');
+    expect(list).toHaveTextContent(en.frameleaf_face_provenance_detected);
+    expect(screen.getByLabelText(en.frameleaf_face_tagger_left)).toBeEnabled();
     expect(screen.getByLabelText(en.frameleaf_face_tagger_left)).toHaveValue(10);
+    expect(sdkMock.getFaceSource).toHaveBeenCalledWith({ id: expect.any(String) });
     expect(screen.getByText(en.frameleaf_face_tagger_status_idle)).toBeInTheDocument();
     expect(sdkMock.getAllPeople).toHaveBeenCalledWith({ page: 1, size: 1000, withHidden: false });
   });
 
-  it('labels a video with the prototype’s preview suffix', async () => {
+  it('labels a video with the frame it is tagged on: the preview still, for the whole video', async () => {
     await setup({ type: AssetTypeEnum.Video });
 
-    expect(screen.getByText('beach.jpg · Video preview')).toBeInTheDocument();
+    expect(
+      screen.getByText('beach.jpg · Video preview still. Tags apply to the whole video, not to a moment in it.'),
+    ).toBeInTheDocument();
+  });
+
+  it('tells manual and corrected faces apart from detected ones', async () => {
+    sdkMock.getFaces.mockResolvedValue([
+      { ...detectedFace, id: 'm', sourceType: SourceType.Manual },
+      { ...detectedFace, id: 'c', correctedAt: '2026-09-25T00:00:00.000Z' },
+    ]);
+    await setup();
+
+    const list = screen.getByRole('group', { name: en.frameleaf_face_tagger_faces_list });
+    expect(list).toHaveTextContent(en.frameleaf_face_provenance_manual);
+    expect(list).toHaveTextContent(en.frameleaf_face_provenance_corrected);
+    expect(list).not.toHaveTextContent(en.frameleaf_face_provenance_detected);
   });
 
   it('closes straight away for an asset the viewer does not own', async () => {
@@ -141,16 +173,94 @@ describe('FaceTagger', () => {
           y: 240,
           width: 200,
           height: 200,
+          expectedSourceRevision: 'src-1',
         },
       }),
     );
     expect(onSaved).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
     expect(sdkMock.deleteFace).not.toHaveBeenCalled();
-    expect(sdkMock.reassignFacesById).not.toHaveBeenCalled();
+    expect(sdkMock.correctFace).not.toHaveBeenCalled();
   });
 
-  it('moves the selected new region with arrow keys and resizes it with Alt', async () => {
+  it('moves and resizes a detected face with the keyboard and position fields, saved as a correction', async () => {
+    const { onClose } = await setup();
+    const dialog = screen.getByRole('dialog', { hidden: true });
+
+    await fireEvent.keyDown(dialog, { key: 'ArrowRight', shiftKey: true });
+    expect(screen.getByLabelText(en.frameleaf_face_tagger_left)).toHaveValue(12);
+    await fireEvent.input(screen.getByLabelText(en.frameleaf_face_tagger_width), { target: { value: '25' } });
+    await fireEvent.change(screen.getByLabelText(en.frameleaf_face_tagger_width));
+    expect(screen.getByRole('group', { name: en.frameleaf_face_tagger_faces_list })).toHaveTextContent(
+      en.frameleaf_face_provenance_corrected,
+    );
+
+    await fireEvent.click(save());
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(sdkMock.correctFace).toHaveBeenCalledWith({
+      id: 'face-1',
+      assetFaceCorrectionDto: {
+        expectedRevision: 'rev-1',
+        expectedSourceRevision: 'src-1',
+        box: { imageWidth: 1000, imageHeight: 800, x: 120, y: 80, width: 250, height: 200 },
+      },
+    });
+  });
+
+  it('unassigns a detected face', async () => {
+    const { onClose } = await setup();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_unassign }));
+    expect(screen.getByRole('group', { name: en.frameleaf_face_tagger_faces_list })).toHaveTextContent(
+      en.frameleaf_face_tagger_unnamed_person,
+    );
+    await fireEvent.click(save());
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(sdkMock.correctFace).toHaveBeenCalledWith({
+      id: 'face-1',
+      assetFaceCorrectionDto: { expectedRevision: 'rev-1', personId: null },
+    });
+  });
+
+  it('keeps the draft and shows the stale banner when another editor changed a face (409)', async () => {
+    sdkMock.correctFace.mockRejectedValue(conflict);
+    const { onClose } = await setup();
+    await pickPerson(bailey);
+
+    await fireEvent.click(save());
+
+    expect(await screen.findByText(en.frameleaf_face_tagger_stale)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(save()).toBeDisabled();
+    // the unsaved reassignment is still on screen
+    expect(screen.getByRole('button', { name: bailey.name, pressed: true })).toBeInTheDocument();
+
+    sdkMock.getFaces.mockResolvedValue([{ ...detectedFace, revision: 'rev-2', person: null }]);
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_load_latest }));
+
+    await waitFor(() => expect(screen.queryByText(en.frameleaf_face_tagger_stale)).toBeNull());
+    expect(screen.getByRole('group', { name: en.frameleaf_face_tagger_faces_list })).toHaveTextContent(
+      en.frameleaf_face_tagger_unnamed_person,
+    );
+  });
+
+  it('refuses a new region when the image changed since the dialog opened', async () => {
+    sdkMock.createFace.mockRejectedValue(conflict);
+    const { onClose } = await setup();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_add_face }));
+    await pickPerson(bailey);
+    sdkMock.getFaceSource.mockResolvedValue({ assetId: 'asset', revision: 'src-2' });
+
+    await fireEvent.click(save());
+
+    expect(await screen.findByText(en.frameleaf_face_tagger_stale_source)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText('2 faces')).toBeInTheDocument();
+  });
+
+  it('moves the selected new region with arrow keys and resizes it with Alt (no pointer needed)', async () => {
     await setup();
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_add_face }));
     const dialog = screen.getByRole('dialog', { hidden: true });
@@ -172,21 +282,31 @@ describe('FaceTagger', () => {
     expect(screen.getByRole('button', { name: en.undo })).toBeDisabled();
   });
 
-  it('reassigns and removes detected faces in one batch save', async () => {
-    const second = { ...detectedFace, id: 'face-2', person: null };
+  it('reassigns and removes detected faces in one revision-checked batch save', async () => {
+    const second = { ...detectedFace, id: 'face-2', revision: 'rev-2', person: null };
     sdkMock.getFaces.mockResolvedValue([detectedFace, second]);
     const { onClose } = await setup();
 
     await pickPerson(bailey);
-    await fireEvent.click(screen.getByRole('button', { name: `2 ${en.frameleaf_face_tagger_unnamed_person}` }));
+    await fireEvent.click(
+      screen.getByRole('button', {
+        name: `2 ${en.frameleaf_face_tagger_unnamed_person} ${en.frameleaf_face_provenance_detected}`,
+      }),
+    );
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_faces_remove_face }));
     expect(screen.getByText('1 face')).toBeInTheDocument();
 
     await fireEvent.click(save());
 
     await waitFor(() => expect(onClose).toHaveBeenCalled());
-    expect(sdkMock.reassignFacesById).toHaveBeenCalledWith({ id: bailey.id, faceDto: { id: 'face-1' } });
-    expect(sdkMock.deleteFace).toHaveBeenCalledWith({ id: 'face-2', assetFaceDeleteDto: { force: true } });
+    expect(sdkMock.correctFace).toHaveBeenCalledWith({
+      id: 'face-1',
+      assetFaceCorrectionDto: { expectedRevision: 'rev-1', personId: bailey.id },
+    });
+    expect(sdkMock.deleteFace).toHaveBeenCalledWith({
+      id: 'face-2',
+      assetFaceDeleteDto: { force: true, expectedRevision: 'rev-2' },
+    });
     expect(sdkMock.createFace).not.toHaveBeenCalled();
   });
 
@@ -221,7 +341,7 @@ describe('FaceTagger', () => {
     await pickPerson(bailey);
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_add_face }));
     await pickPerson(alex);
-    sdkMock.getFaces.mockResolvedValue([{ ...detectedFace, person: bailey }]);
+    sdkMock.getFaces.mockResolvedValue([{ ...detectedFace, revision: 'rev-2', person: bailey }]);
 
     await fireEvent.click(save());
 
@@ -230,13 +350,13 @@ describe('FaceTagger', () => {
     // The reassignment landed, so the viewer refreshes and a retry only re-sends the new region.
     expect(onSaved).toHaveBeenCalled();
     expect(screen.getByText('2 faces')).toBeInTheDocument();
-    sdkMock.createFace.mockResolvedValue(undefined as never);
-    sdkMock.reassignFacesById.mockClear();
+    sdkMock.createFace.mockResolvedValue(detectedFace);
+    sdkMock.correctFace.mockClear();
 
     await fireEvent.click(save());
 
     await waitFor(() => expect(onClose).toHaveBeenCalled());
-    expect(sdkMock.reassignFacesById).not.toHaveBeenCalled();
+    expect(sdkMock.correctFace).not.toHaveBeenCalled();
     expect(sdkMock.createFace).toHaveBeenCalledTimes(2);
   });
 

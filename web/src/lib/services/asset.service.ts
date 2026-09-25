@@ -59,7 +59,6 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
-import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
 import { Route } from '$lib/route';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
@@ -69,14 +68,13 @@ import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
 /**
- * Whether a slideshow may play from this item: never from a Locked item, and on a shared link only
- * when the link allows downloads (FL-83). The More menu, the shared link's bar and the viewer footer
- * (V-13) all read this one rule.
+ * Whether a slideshow may play from this item: never from a Locked item. The More menu, the shared
+ * link's bar and the viewer footer (V-13) all read this one rule. FL-56 (AL-37): a slideshow shows
+ * only the previews a shared link already shows, so it no longer depends on the link allowing
+ * downloads (FL-56 acceptance: the public viewer keeps its slideshow).
  */
-export const canPlaySlideshow = (
-  asset: Pick<AssetResponseDto, 'visibility'>,
-  sharedLink: { allowDownload: boolean } | undefined = getSharedLink(),
-): boolean => asset.visibility !== AssetVisibility.Locked && (!sharedLink || sharedLink.allowDownload);
+export const canPlaySlideshow = (asset: Pick<AssetResponseDto, 'visibility'>): boolean =>
+  asset.visibility !== AssetVisibility.Locked;
 
 export const getAssetActions = (
   $t: MessageFormatter,
@@ -151,7 +149,7 @@ export const getAssetActions = (
   const PlaySlideshow: ActionItem = {
     title: $t('frameleaf_viewer_play_slideshow'),
     icon: mdiPresentationPlay,
-    $if: () => canPlaySlideshow(asset, sharedLink),
+    $if: () => canPlaySlideshow(asset),
     onAction: () => slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow),
   };
 
@@ -224,11 +222,18 @@ export const getAssetActions = (
     shortcuts: { key: 'i' },
   };
 
+  // V-15 / V-25: T opens the information panel on its "Add a tag" box (MediaViewer.jsx:803-807).
   const Tag: ActionItem = {
     title: $t('add_tag'),
     icon: mdiTagPlusOutline,
-    $if: () => authManager.authenticated && authManager.preferences.tags.enabled,
-    onAction: () => modalManager.show(AssetTagModal, { assetIds: [asset.id] }),
+    $if: () => isOwner && !asset.isTrashed && authManager.preferences.tags.enabled,
+    onAction: () => {
+      // T pauses a running slideshow first, as the template's `play(false)` does (MediaViewer.jsx:803-807).
+      if (get(slideshowStore.slideshowState) === SlideshowState.PlaySlideshow) {
+        slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
+      }
+      assetViewerManager.focusDetailField('tags');
+    },
     shortcuts: { key: 't' },
   };
 

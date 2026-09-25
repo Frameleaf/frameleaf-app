@@ -252,12 +252,19 @@ export type ClaimAdmissionInput = {
     /** What the worker was admitted with. A claim is measured against this, not a fresh figure. */
     gpuMemoryBytes: number | null;
     engineDigest: string | null;
+    /**
+     * The encoders and containers the session's conformance check verified (FL-95). Null when the
+     * session proved none, which admits no job that names an output format.
+     */
+    capabilities?: { codecs: readonly string[]; formats: readonly string[] } | null;
   };
   operation: {
     kind: MediaOperationKind;
     destination: MediaOperationDestination;
     destinationDetail: string | null;
     snapshot: Record<string, unknown>;
+    /** The job's output settings; `format` names what it writes (FL-106 Studio export formats). */
+    settings?: Record<string, unknown>;
   };
   owner: {
     /** Operations this account already has claimed, across every worker. */
@@ -320,6 +327,12 @@ export const evaluateClaimAdmission = (input: ClaimAdmissionInput): AdmissionDec
     return refuse(RenderWorkerRefusalReason.EngineDigestMismatch);
   }
 
+  const output = requiredOutput(operation.settings);
+  if (output && !provesOutput(session.capabilities ?? null, output)) {
+    // Bound to the evidence, not to a hope: an unproven encoder would fail or fall back mid-render.
+    return refuse(RenderWorkerRefusalReason.CodecUnsupported);
+  }
+
   const gpuHint = snapshotNumber(operation.snapshot, 'gpuMemoryHintBytes');
   if (gpuHint !== null) {
     const available = session.gpuMemoryBytes ?? worker.gpuMemoryBytes;
@@ -378,6 +391,75 @@ export const evaluateRunningLimits = ({
   }
 
   return ADMIT;
+};
+
+/**
+ * The encoder family and container each Studio export format writes (`STUDIO_EXPORT_FORMATS`).
+ * A worker proves a family by reporting any encoder whose name carries one of its tokens, so
+ * `hevc_nvenc`, `libx265` and `hevc_vaapi` all prove HEVC.
+ */
+/**
+ * The ffmpeg *encoder* names that can write each export format. Evidence must name one of them
+ * exactly: a decoder such as `h264_cuvid` or `hevc_qsv`'s decode-only sibling proves nothing about
+ * writing the format, so substring matching is not allowed.
+ */
+const OUTPUT_FORMATS: Readonly<Record<string, { codec: readonly string[]; container: string }>> = {
+  'mp4-hevc-main10': {
+    codec: [
+      'libx265',
+      'hevc_nvenc',
+      'hevc_qsv',
+      'hevc_vaapi',
+      'hevc_videotoolbox',
+      'hevc_amf',
+      'hevc_rkmpp',
+      'hevc_v4l2m2m',
+    ],
+    container: 'mp4',
+  },
+  'mp4-h264': {
+    codec: [
+      'libx264',
+      'h264_nvenc',
+      'h264_qsv',
+      'h264_vaapi',
+      'h264_videotoolbox',
+      'h264_amf',
+      'h264_rkmpp',
+      'h264_v4l2m2m',
+    ],
+    container: 'mp4',
+  },
+  'webm-av1': {
+    codec: ['libsvtav1', 'libaom-av1', 'librav1e', 'av1_nvenc', 'av1_qsv', 'av1_vaapi', 'av1_amf'],
+    container: 'webm',
+  },
+  'prores-422-hq': { codec: ['prores_ks', 'prores', 'prores_aw', 'prores_videotoolbox'], container: 'mov' },
+};
+
+export type RequiredOutput = { format: string; codec: readonly string[]; container: string };
+
+/** What a job's output needs, or null when it names no output format. An unknown format needs the impossible. */
+export const requiredOutput = (settings: Record<string, unknown> | undefined): RequiredOutput | null => {
+  const format = settings?.format;
+  if (typeof format !== 'string' || format.length === 0) {
+    return null;
+  }
+  const known = Object.hasOwn(OUTPUT_FORMATS, format) ? OUTPUT_FORMATS[format] : undefined;
+  return known ? { format, ...known } : { format, codec: [], container: format };
+};
+
+/** Did the session's evidence name one of this format's encoders, exactly, and its container? */
+export const provesOutput = (
+  capabilities: { codecs: readonly string[]; formats: readonly string[] } | null,
+  output: RequiredOutput,
+): boolean => {
+  if (!capabilities || output.codec.length === 0) {
+    return false;
+  }
+  const codecs = new Set(capabilities.codecs.map((codec) => codec.toLowerCase()));
+  const formats = capabilities.formats.map((format) => format.toLowerCase());
+  return output.codec.some((encoder) => codecs.has(encoder)) && formats.includes(output.container);
 };
 
 const snapshotString = (snapshot: Record<string, unknown>, key: string): string | null => {
