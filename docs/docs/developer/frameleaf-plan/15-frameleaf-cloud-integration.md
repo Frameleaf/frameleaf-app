@@ -1,6 +1,6 @@
 # Frameleaf Cloud integration (self-hosted workstream `cloud`)
 
-Status: reviewed planning contract for workstream `cloud` (Plan IDs `CLD-*`), not implementation, qualification, release or deployment evidence. Read the [implementation plan](00-implementation-plan.md), the [agent execution guide](01-agent-execution.md) and the approved [design record](../../../superpowers/specs/2026-09-24-frameleaf-cloud-design.md) first. Every item in this workstream is `planned-not-qualified`; nothing is enabled or contacted before an administrator opts in, and the cloud base address is deployment configuration, never a setting.
+Status: reviewed planning contract for workstream `cloud` (Plan IDs `CLD-*`), not implementation, qualification, release or deployment evidence. Read the [implementation plan](00-implementation-plan.md), the [agent execution guide](01-agent-execution.md) and the approved design record (`docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md`) first. Every item in this workstream is `planned-not-qualified`; nothing is enabled or contacted before an administrator opts in, and the cloud base address is deployment configuration, never a setting.
 
 ## 4. Contracts (instance ↔ cloud), condensed
 
@@ -358,7 +358,7 @@ fingerprint, entitlements{remoteAccess,cloudMl,cloudBackup,supporter}, refresh, 
 `docs/docs/administration/workers-and-endpoints.md`. Overlaps: FL-42, FL-110, FL-114 (`Relates`; their
 "the GPU provider" wording is superseded — comment on each).
 
-- ★ **CLD-201 Frameleaf Cloud replaces the the GPU provider destination**. Anchors: `server/src/enum.ts`
+- ★ **CLD-201 Frameleaf Cloud replaces the GPU provider destination**. Anchors: `server/src/enum.ts`
   (`MlDestinationKind.FrameleafCloud`, refusals, workloads), `server/src/schema/migrations/2100000000620-FrameleafCloudMlDestination.ts` (new;
   deletes `runpod*` rows and widens `ml_destination_kind_check` like `2100000000490`), `server/src/schema/tables/ml-destination.table.ts`,
   `server/src/repositories/frameleaf-cloud-ml.repository.ts` (new), `server/src/services/cloud-ml.service.ts` (new),
