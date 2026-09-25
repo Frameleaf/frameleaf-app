@@ -1,0 +1,1177 @@
+{
+  "analytics.enabled": {
+    "type": "boolean"
+  },
+  "analytics.historyDays": {
+    "type": "integer",
+    "minimum": 30,
+    "maximum": 800
+  },
+  "backup.database.cronExpression": {
+    "type": "string"
+  },
+  "backup.database.enabled": {
+    "type": "boolean"
+  },
+  "backup.database.keepLastAmount": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "ffmpeg.accel": {
+    "type": "string",
+    "enum": [
+      "nvenc",
+      "qsv",
+      "vaapi",
+      "rkmpp",
+      "disabled"
+    ]
+  },
+  "ffmpeg.accelDecode": {
+    "type": "boolean"
+  },
+  "ffmpeg.acceptedAudioCodecs": {
+    "type": "array",
+    "itemEnum": [
+      "mp3",
+      "aac",
+      "libopus",
+      "opus",
+      "pcm_s16le"
+    ]
+  },
+  "ffmpeg.acceptedContainers": {
+    "type": "array",
+    "itemEnum": [
+      "mov",
+      "mp4",
+      "ogg",
+      "webm"
+    ]
+  },
+  "ffmpeg.acceptedVideoCodecs": {
+    "type": "array",
+    "itemEnum": [
+      "h264",
+      "hevc",
+      "vp9",
+      "av1"
+    ]
+  },
+  "ffmpeg.bframes": {
+    "type": "integer",
+    "minimum": -1,
+    "maximum": 16
+  },
+  "ffmpeg.cqMode": {
+    "type": "string",
+    "enum": [
+      "auto",
+      "cqp",
+      "icq"
+    ]
+  },
+  "ffmpeg.crf": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 51
+  },
+  "ffmpeg.gopSize": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 9007199254740991
+  },
+  "ffmpeg.maxBitrate": {
+    "type": "string"
+  },
+  "ffmpeg.preferredHwDevice": {
+    "type": "string"
+  },
+  "ffmpeg.preset": {
+    "type": "string"
+  },
+  "ffmpeg.realtime.enabled": {
+    "type": "boolean"
+  },
+  "ffmpeg.realtime.resolutions": {
+    "type": "array",
+    "itemEnum": [
+      480,
+      720,
+      1080,
+      1440,
+      2160
+    ]
+  },
+  "ffmpeg.realtime.videoCodecs": {
+    "type": "array",
+    "itemEnum": [
+      "h264",
+      "hevc",
+      "vp9",
+      "av1"
+    ]
+  },
+  "ffmpeg.refs": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 6
+  },
+  "ffmpeg.targetAudioCodec": {
+    "type": "string",
+    "enum": [
+      "mp3",
+      "aac",
+      "libopus",
+      "opus",
+      "pcm_s16le"
+    ]
+  },
+  "ffmpeg.targetResolution": {
+    "type": "string"
+  },
+  "ffmpeg.targetVideoCodec": {
+    "type": "string",
+    "enum": [
+      "h264",
+      "hevc",
+      "vp9",
+      "av1"
+    ]
+  },
+  "ffmpeg.temporalAQ": {
+    "type": "boolean"
+  },
+  "ffmpeg.threads": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 9007199254740991
+  },
+  "ffmpeg.tonemap": {
+    "type": "string",
+    "enum": [
+      "hable",
+      "mobius",
+      "reinhard",
+      "disabled"
+    ]
+  },
+  "ffmpeg.transcode": {
+    "type": "string",
+    "enum": [
+      "all",
+      "optimal",
+      "bitrate",
+      "required",
+      "disabled"
+    ]
+  },
+  "ffmpeg.twoPass": {
+    "type": "boolean"
+  },
+  "image.colorspace": {
+    "type": "string",
+    "enum": [
+      "srgb",
+      "p3"
+    ]
+  },
+  "image.enhancedRaw.enabled": {
+    "type": "boolean"
+  },
+  "image.extractEmbedded": {
+    "type": "boolean"
+  },
+  "image.fullsize.enabled": {
+    "type": "boolean"
+  },
+  "image.fullsize.format": {
+    "type": "string",
+    "enum": [
+      "jpeg",
+      "webp"
+    ]
+  },
+  "image.fullsize.progressive": {
+    "type": "boolean"
+  },
+  "image.fullsize.quality": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 100
+  },
+  "image.preview.format": {
+    "type": "string",
+    "enum": [
+      "jpeg",
+      "webp"
+    ]
+  },
+  "image.preview.progressive": {
+    "type": "boolean"
+  },
+  "image.preview.quality": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 100
+  },
+  "image.preview.size": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "image.thumbnail.format": {
+    "type": "string",
+    "enum": [
+      "jpeg",
+      "webp"
+    ]
+  },
+  "image.thumbnail.progressive": {
+    "type": "boolean"
+  },
+  "image.thumbnail.quality": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 100
+  },
+  "image.thumbnail.size": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "integrityChecks.checksumFiles.cronExpression": {
+    "type": "string"
+  },
+  "integrityChecks.checksumFiles.enabled": {
+    "type": "boolean"
+  },
+  "integrityChecks.checksumFiles.percentageLimit": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "integrityChecks.checksumFiles.timeLimit": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 9007199254740991
+  },
+  "integrityChecks.missingFiles.cronExpression": {
+    "type": "string"
+  },
+  "integrityChecks.missingFiles.enabled": {
+    "type": "boolean"
+  },
+  "integrityChecks.untrackedFiles.cronExpression": {
+    "type": "string"
+  },
+  "integrityChecks.untrackedFiles.enabled": {
+    "type": "boolean"
+  },
+  "job.backgroundTask.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.editor.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.faceDetection.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.imageDescription.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.imageEnrichment.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.integrityCheck.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.library.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.mediaHealth.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.metadataExtraction.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.migration.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.notifications.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.nsfwDetection.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.ocr.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.search.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.sidecar.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.smartSearch.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.thumbnailGeneration.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.videoConversion.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.videoDuplicateDetection.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "job.workflow.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "library.scan.cronExpression": {
+    "type": "string"
+  },
+  "library.scan.enabled": {
+    "type": "boolean"
+  },
+  "library.watch.enabled": {
+    "type": "boolean"
+  },
+  "localFeatures.askSearch.enabled": {
+    "type": "boolean"
+  },
+  "localFeatures.askSearch.maxResults": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 1000
+  },
+  "logging.enabled": {
+    "type": "boolean"
+  },
+  "logging.level": {
+    "type": "string",
+    "enum": [
+      "verbose",
+      "debug",
+      "log",
+      "warn",
+      "error",
+      "fatal"
+    ]
+  },
+  "machineLearning.availabilityChecks.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.availabilityChecks.interval": {
+    "type": "integer",
+    "minimum": -9007199254740991,
+    "maximum": 9007199254740991
+  },
+  "machineLearning.availabilityChecks.timeout": {
+    "type": "integer",
+    "minimum": -9007199254740991,
+    "maximum": 9007199254740991
+  },
+  "machineLearning.clip.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.clip.modelName": {
+    "type": "string"
+  },
+  "machineLearning.clip.zeroShotTagging.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.clip.zeroShotTagging.maxTags": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 20
+  },
+  "machineLearning.clip.zeroShotTagging.minSimilarity": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "machineLearning.duplicateDetection.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.duplicateDetection.enhancedVideo.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.duplicateDetection.enhancedVideo.frameCount": {
+    "type": "integer",
+    "minimum": 2,
+    "maximum": 8
+  },
+  "machineLearning.duplicateDetection.enhancedVideo.maxDistance": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0.001,
+    "maximum": 0.1
+  },
+  "machineLearning.duplicateDetection.enhancedVideo.minMatchingFrames": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 8
+  },
+  "machineLearning.duplicateDetection.maxDistance": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0.001,
+    "maximum": 0.1
+  },
+  "machineLearning.duplicateDetection.preferOriginalFormat": {
+    "type": "boolean"
+  },
+  "machineLearning.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.facialRecognition.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.facialRecognition.maxDistance": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0.1,
+    "maximum": 2
+  },
+  "machineLearning.facialRecognition.minFaces": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "machineLearning.facialRecognition.minScore": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0.1,
+    "maximum": 1
+  },
+  "machineLearning.facialRecognition.modelName": {
+    "type": "string"
+  },
+  "machineLearning.imageDescription.acceleration": {
+    "type": "string",
+    "enum": [
+      "auto",
+      "openvino",
+      "cuda"
+    ]
+  },
+  "machineLearning.imageDescription.device": {
+    "type": "string"
+  },
+  "machineLearning.imageDescription.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.imageDescription.fallbackModelName": {
+    "type": "string"
+  },
+  "machineLearning.imageDescription.lastConfigChangeAt": {
+    "type": "string",
+    "nullable": true
+  },
+  "machineLearning.imageDescription.modelName": {
+    "type": "string"
+  },
+  "machineLearning.imageDescription.pendingRequeueAt": {
+    "type": "string",
+    "nullable": true
+  },
+  "machineLearning.imageDescription.prompt.advanced.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.imageDescription.prompt.advanced.placeholderValidation": {
+    "type": "string",
+    "enum": [
+      "strict",
+      "warn"
+    ]
+  },
+  "machineLearning.imageDescription.prompt.advanced.rawPromptTemplate": {
+    "type": "string"
+  },
+  "machineLearning.imageDescription.prompt.customInstructions": {
+    "type": "string"
+  },
+  "machineLearning.imageDescription.prompt.customVocabulary": {
+    "type": "array"
+  },
+  "machineLearning.imageDescription.prompt.forbiddenInferences": {
+    "type": "array"
+  },
+  "machineLearning.imageDescription.prompt.identityInjection.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.imageDescription.prompt.identityInjection.maxNames": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 20
+  },
+  "machineLearning.imageDescription.prompt.identityInjection.minFaceConfidence": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "machineLearning.imageDescription.prompt.lookFor": {
+    "type": "array"
+  },
+  "machineLearning.imageDescription.prompt.medicalIndicators": {
+    "type": "array"
+  },
+  "machineLearning.imageDescription.prompt.nsfwIndicators": {
+    "type": "array"
+  },
+  "machineLearning.imageDescription.prompt.sentenceCountTarget": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 6
+  },
+  "machineLearning.imageDescription.prompt.style": {
+    "type": "string",
+    "enum": [
+      "terse",
+      "balanced",
+      "rich"
+    ]
+  },
+  "machineLearning.nsfwDetection.device": {
+    "type": "string"
+  },
+  "machineLearning.nsfwDetection.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.nsfwDetection.hideFromLibrary": {
+    "type": "boolean"
+  },
+  "machineLearning.nsfwDetection.modelName": {
+    "type": "string"
+  },
+  "machineLearning.nsfwDetection.threshold": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0.01,
+    "maximum": 1
+  },
+  "machineLearning.ocr.documentFields": {
+    "type": "boolean"
+  },
+  "machineLearning.ocr.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.ocr.maxResolution": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "machineLearning.ocr.minDetectionScore": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0.1,
+    "maximum": 1
+  },
+  "machineLearning.ocr.minRecognitionScore": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0.1,
+    "maximum": 1
+  },
+  "machineLearning.ocr.modelName": {
+    "type": "string"
+  },
+  "machineLearning.runpod.apiKey": {
+    "type": "string"
+  },
+  "machineLearning.runpod.apiKeyConfigured": {
+    "type": "boolean"
+  },
+  "machineLearning.runpod.autoBackfillOnLaunch": {
+    "type": "boolean"
+  },
+  "machineLearning.runpod.autoStopEnabled": {
+    "type": "boolean"
+  },
+  "machineLearning.runpod.autoStopGraceMinutes": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 1440
+  },
+  "machineLearning.runpod.containerDiskGb": {
+    "type": "integer",
+    "minimum": 10,
+    "maximum": 2000
+  },
+  "machineLearning.runpod.dataPrivacyAcknowledged": {
+    "type": "boolean"
+  },
+  "machineLearning.runpod.defaultGpuTypeId": {
+    "type": "string"
+  },
+  "machineLearning.runpod.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.runpod.hfToken": {
+    "type": "string"
+  },
+  "machineLearning.runpod.hfTokenConfigured": {
+    "type": "boolean"
+  },
+  "machineLearning.runpod.imageName": {
+    "type": "string"
+  },
+  "machineLearning.runpod.maxRuntimeHours": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 168
+  },
+  "machineLearning.runpod.mode": {
+    "type": "string",
+    "enum": [
+      "disabled",
+      "pod",
+      "serverless"
+    ]
+  },
+  "machineLearning.runpod.provisionTimeoutMinutes": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 60
+  },
+  "machineLearning.runpod.serverless.executionTimeoutMs": {
+    "type": "integer",
+    "minimum": 5000,
+    "maximum": 3600000
+  },
+  "machineLearning.runpod.serverless.gpuTypeIds": {
+    "type": "array"
+  },
+  "machineLearning.runpod.serverless.idleTimeoutSeconds": {
+    "type": "integer",
+    "minimum": 5,
+    "maximum": 3600
+  },
+  "machineLearning.runpod.serverless.scalerType": {
+    "type": "string",
+    "enum": [
+      "QUEUE_DELAY",
+      "REQUEST_COUNT"
+    ]
+  },
+  "machineLearning.runpod.serverless.scalerValue": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 60
+  },
+  "machineLearning.runpod.serverless.workersMax": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 20
+  },
+  "machineLearning.runpod.serverless.workersMin": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 10
+  },
+  "machineLearning.runpod.volumeGb": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 2000
+  },
+  "machineLearning.urls": {
+    "type": "array"
+  },
+  "map.darkStyle": {
+    "type": "string",
+    "format": "uri"
+  },
+  "map.enabled": {
+    "type": "boolean"
+  },
+  "map.lightStyle": {
+    "type": "string",
+    "format": "uri"
+  },
+  "metadata.faces.import": {
+    "type": "boolean"
+  },
+  "newVersionCheck.channel": {
+    "type": "string",
+    "enum": [
+      "stable",
+      "releaseCandidate"
+    ]
+  },
+  "newVersionCheck.enabled": {
+    "type": "boolean"
+  },
+  "nightlyTasks.clusterNewFaces": {
+    "type": "boolean"
+  },
+  "nightlyTasks.databaseCleanup": {
+    "type": "boolean"
+  },
+  "nightlyTasks.generateMemories": {
+    "type": "boolean"
+  },
+  "nightlyTasks.missingThumbnails": {
+    "type": "boolean"
+  },
+  "nightlyTasks.startTime": {
+    "type": "string"
+  },
+  "nightlyTasks.syncQuotaUsage": {
+    "type": "boolean"
+  },
+  "notifications.smtp.enabled": {
+    "type": "boolean"
+  },
+  "notifications.smtp.from": {
+    "type": "string"
+  },
+  "notifications.smtp.replyTo": {
+    "type": "string"
+  },
+  "notifications.smtp.transport.host": {
+    "type": "string"
+  },
+  "notifications.smtp.transport.ignoreCert": {
+    "type": "boolean"
+  },
+  "notifications.smtp.transport.password": {
+    "type": "string"
+  },
+  "notifications.smtp.transport.passwordConfigured": {
+    "type": "boolean"
+  },
+  "notifications.smtp.transport.port": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 65535
+  },
+  "notifications.smtp.transport.secure": {
+    "type": "boolean"
+  },
+  "notifications.smtp.transport.username": {
+    "type": "string"
+  },
+  "oauth.accountManagementUrl": {
+    "type": "string"
+  },
+  "oauth.allowInsecureRequests": {
+    "type": "boolean"
+  },
+  "oauth.autoLaunch": {
+    "type": "boolean"
+  },
+  "oauth.autoRegister": {
+    "type": "boolean"
+  },
+  "oauth.buttonText": {
+    "type": "string"
+  },
+  "oauth.clientId": {
+    "type": "string"
+  },
+  "oauth.clientSecret": {
+    "type": "string"
+  },
+  "oauth.clientSecretConfigured": {
+    "type": "boolean"
+  },
+  "oauth.defaultStorageQuota": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 9007199254740991,
+    "nullable": true
+  },
+  "oauth.enabled": {
+    "type": "boolean"
+  },
+  "oauth.endSessionEndpoint": {
+    "type": "string"
+  },
+  "oauth.issuerUrl": {
+    "type": "string"
+  },
+  "oauth.mobileOverrideEnabled": {
+    "type": "boolean"
+  },
+  "oauth.mobileRedirectUri": {
+    "type": "string"
+  },
+  "oauth.profileSigningAlgorithm": {
+    "type": "string"
+  },
+  "oauth.prompt": {
+    "type": "string"
+  },
+  "oauth.roleClaim": {
+    "type": "string"
+  },
+  "oauth.scope": {
+    "type": "string"
+  },
+  "oauth.signingAlgorithm": {
+    "type": "string"
+  },
+  "oauth.storageLabelClaim": {
+    "type": "string"
+  },
+  "oauth.storageQuotaClaim": {
+    "type": "string"
+  },
+  "oauth.timeout": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "oauth.tokenEndpointAuthMethod": {
+    "type": "string",
+    "enum": [
+      "client_secret_post",
+      "client_secret_basic"
+    ]
+  },
+  "passwordLogin.enabled": {
+    "type": "boolean"
+  },
+  "physicalDeduplication.enabled": {
+    "type": "boolean"
+  },
+  "physicalDeduplication.masterUserId": {
+    "type": "string",
+    "format": "uuid",
+    "nullable": true
+  },
+  "preferences.albums.defaultAssetOrder": {
+    "type": "string",
+    "enum": [
+      "asc",
+      "desc"
+    ]
+  },
+  "preferences.avatar.color": {
+    "type": "string",
+    "enum": [
+      "primary",
+      "pink",
+      "red",
+      "yellow",
+      "blue",
+      "green",
+      "purple",
+      "orange",
+      "gray",
+      "amber"
+    ]
+  },
+  "preferences.cast.adminDisabled": {
+    "type": "boolean"
+  },
+  "preferences.cast.gCastEnabled": {
+    "type": "boolean"
+  },
+  "preferences.download.archiveSize": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "preferences.download.includeEmbeddedVideos": {
+    "type": "boolean"
+  },
+  "preferences.emailNotifications.albumInvite": {
+    "type": "boolean"
+  },
+  "preferences.emailNotifications.albumUpdate": {
+    "type": "boolean"
+  },
+  "preferences.emailNotifications.enabled": {
+    "type": "boolean"
+  },
+  "preferences.expectedRevision": {
+    "type": "string"
+  },
+  "preferences.folders.enabled": {
+    "type": "boolean"
+  },
+  "preferences.folders.sidebarWeb": {
+    "type": "boolean"
+  },
+  "preferences.memories.duration": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "preferences.memories.enabled": {
+    "type": "boolean"
+  },
+  "preferences.memories.sidebarWeb": {
+    "type": "boolean"
+  },
+  "preferences.people.enabled": {
+    "type": "boolean"
+  },
+  "preferences.people.minimumFaces": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
+  "preferences.people.sidebarWeb": {
+    "type": "boolean"
+  },
+  "preferences.privacy.suppression.personIds": {
+    "type": "array"
+  },
+  "preferences.privacy.suppression.petIds": {
+    "type": "array"
+  },
+  "preferences.privacy.suppression.scope": {
+    "type": "string",
+    "enum": [
+      "owned",
+      "visible"
+    ]
+  },
+  "preferences.privacy.suppression.tagIds": {
+    "type": "array"
+  },
+  "preferences.purchase.hideBuyButtonUntil": {
+    "type": "string"
+  },
+  "preferences.purchase.showSupportBadge": {
+    "type": "boolean"
+  },
+  "preferences.ratings.enabled": {
+    "type": "boolean"
+  },
+  "preferences.recentlyAdded.sidebarWeb": {
+    "type": "boolean"
+  },
+  "preferences.savedSearches": {
+    "type": "array"
+  },
+  "preferences.sharedLinks.enabled": {
+    "type": "boolean"
+  },
+  "preferences.sharedLinks.sidebarWeb": {
+    "type": "boolean"
+  },
+  "preferences.tags.enabled": {
+    "type": "boolean"
+  },
+  "preferences.tags.sidebarWeb": {
+    "type": "boolean"
+  },
+  "reverseGeocoding.enabled": {
+    "type": "boolean"
+  },
+  "server.externalDomain": {
+    "type": "string"
+  },
+  "server.loginPageMessage": {
+    "type": "string"
+  },
+  "server.name": {
+    "type": "string"
+  },
+  "server.publicUsers": {
+    "type": "boolean"
+  },
+  "smartAlbums.builtIn.documents.clipQueries": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.documents.enabled": {
+    "type": "boolean"
+  },
+  "smartAlbums.builtIn.documents.name": {
+    "type": "string"
+  },
+  "smartAlbums.builtIn.documents.tagTriggers": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.documents.threshold": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "smartAlbums.builtIn.food.clipQueries": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.food.enabled": {
+    "type": "boolean"
+  },
+  "smartAlbums.builtIn.food.name": {
+    "type": "string"
+  },
+  "smartAlbums.builtIn.food.tagTriggers": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.food.threshold": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "smartAlbums.builtIn.nature.clipQueries": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.nature.enabled": {
+    "type": "boolean"
+  },
+  "smartAlbums.builtIn.nature.name": {
+    "type": "string"
+  },
+  "smartAlbums.builtIn.nature.tagTriggers": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.nature.threshold": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "smartAlbums.builtIn.pets.clipQueries": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.pets.enabled": {
+    "type": "boolean"
+  },
+  "smartAlbums.builtIn.pets.name": {
+    "type": "string"
+  },
+  "smartAlbums.builtIn.pets.tagTriggers": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.pets.threshold": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "smartAlbums.builtIn.screenshots.clipQueries": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.screenshots.enabled": {
+    "type": "boolean"
+  },
+  "smartAlbums.builtIn.screenshots.name": {
+    "type": "string"
+  },
+  "smartAlbums.builtIn.screenshots.tagTriggers": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.screenshots.threshold": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "smartAlbums.builtIn.travel.clipQueries": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.travel.enabled": {
+    "type": "boolean"
+  },
+  "smartAlbums.builtIn.travel.name": {
+    "type": "string"
+  },
+  "smartAlbums.builtIn.travel.tagTriggers": {
+    "type": "array"
+  },
+  "smartAlbums.builtIn.travel.threshold": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "smartAlbums.enabled": {
+    "type": "boolean"
+  },
+  "smartAlbums.rules.defaultAction": {
+    "type": "string",
+    "enum": [
+      "review",
+      "tag"
+    ]
+  },
+  "smartAlbums.rules.visualCategories": {
+    "type": "boolean"
+  },
+  "storageTemplate.enabled": {
+    "type": "boolean"
+  },
+  "storageTemplate.hashVerificationEnabled": {
+    "type": "boolean"
+  },
+  "storageTemplate.template": {
+    "type": "string"
+  },
+  "templates.email.albumInviteTemplate": {
+    "type": "string"
+  },
+  "templates.email.albumUpdateTemplate": {
+    "type": "string"
+  },
+  "templates.email.welcomeTemplate": {
+    "type": "string"
+  },
+  "theme.customCss": {
+    "type": "string"
+  },
+  "trash.days": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 9007199254740991
+  },
+  "trash.enabled": {
+    "type": "boolean"
+  },
+  "user.deleteDelay": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  }
+}

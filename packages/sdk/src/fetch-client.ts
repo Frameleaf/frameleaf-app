@@ -54,6 +54,12 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type AdminConfigAnalyticsDto = {
+    /** Collect local analytics history every night */
+    enabled: boolean;
+    /** Days of local analytics history to keep */
+    historyDays: number;
+};
 export type AdminConfigDatabaseBackupDto = {
     /** Cron expression */
     cronExpression: string;
@@ -618,6 +624,7 @@ export type AdminConfigUserDto = {
     deleteDelay: number;
 };
 export type AdminConfigDto = {
+    analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
     ffmpeg: AdminConfigFFmpegDto;
     image: AdminConfigImageDto;
@@ -1012,6 +1019,8 @@ export type PhysicalDeduplicationRetainedDto = {
     canView: boolean;
     /** Hex-encoded SHA-1 checksum of the original file */
     checksum: string;
+    /** Whether the retained original file is on disk now, checked on every read (FL-71 UT-24) */
+    fileAvailable: boolean;
     /** Copies this retained original would share that are Locked media of another account; counted, never named (FL-73) */
     hiddenCopies: number;
     originalFileName: string;
@@ -1401,6 +1410,8 @@ export type UserPreferencesResponseDto = {
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
+    /** Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67) */
+    lockedRulesRevealed: boolean;
     memories: MemoriesResponse;
     people: PeopleResponse;
     privacy: PrivacyResponse;
@@ -7066,6 +7077,8 @@ export type ServerAppReleasesResponseDto = {
         links?: ServerApkLinksDto;
         /** SHA-256 fingerprint of the release signing certificate, as AA:BB:... */
         signingCertificateSha256?: string;
+        /** Store listing of the Android app, when the operator configured one (FL-135) */
+        storeUrl?: string;
     };
     /** iOS application */
     ios: {

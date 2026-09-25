@@ -65,6 +65,9 @@ export type PhysicalDeduplicationCopyState = z.infer<typeof PhysicalDeduplicatio
 const PhysicalDeduplicationRetainedResponseSchema = PhysicalDeduplicationRetainedStateSchema.extend({
   ownerName: z.string().describe('Display name of the retained account'),
   canView: z.boolean().describe('Whether the requesting administrator may view this asset and its thumbnail'),
+  fileAvailable: z
+    .boolean()
+    .describe('Whether the retained original file is on disk now, checked on every read (FL-71 UT-24)'),
   hiddenCopies: z
     .number()
     .int()

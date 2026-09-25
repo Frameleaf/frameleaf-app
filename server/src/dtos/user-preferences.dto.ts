@@ -321,6 +321,11 @@ const UserPreferencesResponseSchema = z
       .describe(
         'Changes whenever the stored preferences change; send it back as expectedRevision to reject stale saves',
       ),
+    lockedRulesRevealed: z
+      .boolean()
+      .describe(
+        "Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67)",
+      ),
   })
   .meta({ id: 'UserPreferencesResponseDto' });
 
@@ -357,6 +362,7 @@ export const mapPreferences = (
           ? withoutLockedSavedSearches(preferences.savedSearches, suppression)
           : preferences.savedSearches,
     revision: getPreferencesRevision(preferences),
+    lockedRulesRevealed: audience === 'self',
   };
 };
 
