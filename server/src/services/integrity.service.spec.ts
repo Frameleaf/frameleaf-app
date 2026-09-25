@@ -181,39 +181,103 @@ describe(IntegrityService.name, () => {
       });
     });
 
-    it('records a full missing-file run, not a refresh', async () => {
+    it('starts a missing-file run and completes it once every batch is queued and finished', async () => {
+      mocks.crypto.randomUUID.mockReturnValue('run-1');
       mocks.integrityReport.streamIntegrityReportsWithAssetChecksum.mockReturnValue((async function* () {})() as never);
       await sut.handleMissingFilesQueueAll({ refreshOnly: true });
-      expect(mocks.systemMetadata.merge).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.startIntegrityRun).not.toHaveBeenCalled();
 
-      mocks.integrityReport.streamAssetPathsForMissingFiles.mockReturnValue((async function* () {})() as never);
-      await sut.handleMissingFilesQueueAll();
-      expect(mocks.systemMetadata.merge).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckRuns, {
-        [IntegrityReport.MissingFile]: { lastRunAt: expect.any(String) },
+      mocks.integrityReport.streamAssetPathsForMissingFiles.mockReturnValue(
+        (function* () {
+          yield { path: '/a', reportId: null, assetId: 'a', fileAssetId: null };
+        })() as never,
+      );
+      // Queued, but the batch has not finished yet: not complete.
+      mocks.systemMetadata.updateIntegrityRun.mockResolvedValueOnce({
+        runId: 'run-1',
+        startedAt: '',
+        batches: 1,
+        done: 0,
       });
+      await sut.handleMissingFilesQueueAll();
+
+      expect(mocks.systemMetadata.startIntegrityRun).toHaveBeenCalledWith(
+        IntegrityReport.MissingFile,
+        expect.objectContaining({ runId: 'run-1', batches: null, done: 0 }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ runId: 'run-1' }) }),
+      );
+      expect(mocks.systemMetadata.updateIntegrityRun).toHaveBeenCalledWith(IntegrityReport.MissingFile, 'run-1', {
+        batches: 1,
+      });
+      expect(mocks.systemMetadata.completeIntegrityRun).not.toHaveBeenCalled();
+
+      // The last batch finishes: the run completes.
+      mocks.storage.stat.mockResolvedValue({} as never);
+      mocks.systemMetadata.updateIntegrityRun.mockResolvedValueOnce({
+        runId: 'run-1',
+        startedAt: '',
+        batches: 1,
+        done: 1,
+      });
+      await sut.handleMissingFiles({
+        runId: 'run-1',
+        items: [{ path: '/a', reportId: null, assetId: 'a', fileAssetId: null }],
+      });
+      expect(mocks.systemMetadata.updateIntegrityRun).toHaveBeenLastCalledWith(IntegrityReport.MissingFile, 'run-1', {
+        finished: 1,
+      });
+      expect(mocks.systemMetadata.completeIntegrityRun).toHaveBeenCalledWith(
+        IntegrityReport.MissingFile,
+        'run-1',
+        expect.any(Date),
+      );
     });
 
-    it('records a full untracked-file run', async () => {
+    it('completes an untracked-file run with no batches at once', async () => {
+      mocks.crypto.randomUUID.mockReturnValue('run-2');
       mocks.integrityReport.streamIntegrityReportsWithAssetChecksum.mockReturnValue((async function* () {})() as never);
       mocks.storage.walk.mockReturnValue((async function* () {})() as never);
+      mocks.systemMetadata.updateIntegrityRun.mockResolvedValue({ runId: 'run-2', startedAt: '', batches: 0, done: 0 });
 
       await sut.handleUntrackedFilesQueueAll();
 
-      expect(mocks.systemMetadata.merge).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckRuns, {
-        [IntegrityReport.UntrackedFile]: { lastRunAt: expect.any(String) },
-      });
+      expect(mocks.systemMetadata.completeIntegrityRun).toHaveBeenCalledWith(
+        IntegrityReport.UntrackedFile,
+        'run-2',
+        expect.any(Date),
+      );
     });
 
-    it('records a checksum run', async () => {
+    it('does not count a batch of a run that is no longer current, or one without a run', async () => {
+      mocks.integrityReport.getAssetPathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getAssetFilePathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getPersonThumbnailPathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getVideoDuplicateFramePathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getDevelopRevisionPathsByPaths.mockResolvedValue([]);
+      mocks.systemMetadata.updateIntegrityRun.mockResolvedValue(undefined);
+
+      await sut.handleUntrackedFiles({ type: 'asset', paths: [], runId: 'stale' });
+      await sut.handleUntrackedFiles({ type: 'asset', paths: [] });
+
+      expect(mocks.systemMetadata.updateIntegrityRun).toHaveBeenCalledTimes(1);
+      expect(mocks.systemMetadata.completeIntegrityRun).not.toHaveBeenCalled();
+    });
+
+    it('records a checksum pass that covered every asset, and not one stopped by its limits', async () => {
+      mocks.crypto.randomUUID.mockReturnValue('run-3');
       mocks.integrityReport.getAssetCount.mockResolvedValue({ count: 0 } as never);
       mocks.systemMetadata.get.mockResolvedValue(null);
       mocks.integrityReport.streamAssetChecksums.mockReturnValue((function* () {})() as never);
 
       await sut.handleChecksumFiles();
 
-      expect(mocks.systemMetadata.merge).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckRuns, {
-        [IntegrityReport.ChecksumFail]: { lastRunAt: expect.any(String) },
-      });
+      expect(mocks.systemMetadata.completeIntegrityRun).toHaveBeenCalledWith(
+        IntegrityReport.ChecksumFail,
+        'run-3',
+        expect.any(Date),
+      );
     });
   });
 });

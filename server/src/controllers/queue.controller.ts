@@ -72,7 +72,7 @@ export class QueueController {
     return this.service.searchJobs(auth, name, dto);
   }
 
-  /** FL-71: the Job manager's "Retry failed" (`JobsManager.jsx` 715-727). */
+  // FL-71: the Job manager's "Retry failed" (`JobsManager.jsx` 715-727).
   @Post(':name/jobs/retry-failed')
   @Authenticated({ permission: Permission.QueueJobCreate, admin: true })
   @HttpCode(HttpStatus.OK)

@@ -53,14 +53,16 @@ describe('AccountDeleteDialog (FL-76 CC-32)', () => {
 
     await fireEvent.click(screen.getByRole('checkbox', { name: 'Skip recovery and permanently remove this account' }));
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'The account and its owned library entries will be removed. This cannot be undone.',
+      'The account, its original photos and videos, and its owned library entries will be removed. This cannot be undone.',
     );
-    expect(screen.getByRole('button', { name: 'Delete account' })).toBeDisabled();
+    const submit = screen.getByRole('button', { name: 'Permanently delete' });
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveClass('danger');
 
     await fireEvent.input(screen.getByLabelText('Type the account email to confirm'), {
       target: { value: 'grace@example.test' },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete account' }));
+    await fireEvent.click(submit);
 
     expect(handleDeleteUserAdmin).toHaveBeenCalledWith(user, { force: true });
   });

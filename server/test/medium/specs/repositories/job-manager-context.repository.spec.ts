@@ -1,6 +1,9 @@
 import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
+import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
+import * as jobIndexMigration from 'src/fork-schema/migrations/0000000000170-MlWorkloadAccountingJobIndex.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -33,6 +36,21 @@ beforeAll(async () => {
 });
 
 describe('Job manager context', () => {
+  it('certifies the Worker lookup index against the catalog and rolls it back cleanly', async () => {
+    const isJobIndex = (entry: { identity: string }) =>
+      entry.identity === 'public.ml_workload_accounting.ml_workload_accounting_jobId_jobName_startedAt_idx';
+    const before = await getCatalogEvidence(defaultDatabase);
+    expect(before.indexes.filter((entry) => isJobIndex(entry))).toEqual(
+      manifest.indexes.filter((entry) => isJobIndex(entry)),
+    );
+    expect(before.indexes.filter((entry) => isJobIndex(entry))).toHaveLength(1);
+
+    await jobIndexMigration.down(defaultDatabase);
+    expect((await getCatalogEvidence(defaultDatabase)).indexes.filter((entry) => isJobIndex(entry))).toEqual([]);
+    await jobIndexMigration.up(defaultDatabase);
+    expect((await getCatalogEvidence(defaultDatabase)).indexes).toEqual(before.indexes);
+  });
+
   describe(UserRepository.prototype.getJobSubjectOwners.name, () => {
     it('resolves the owner of an asset, person, library or account, and ignores unknown ids', async () => {
       const { ctx, users } = setup();
@@ -58,6 +76,19 @@ describe('Job manager context', () => {
           })),
         ),
       );
+    });
+
+    it('names no account for a person that several accounts share through a cluster group', async () => {
+      const { ctx, users } = setup();
+      const { user: ada } = await ctx.newUser({ name: 'Ada' });
+      const { user: grace } = await ctx.newUser({ name: 'Grace' });
+      const { person: shared } = await ctx.newPerson({ ownerId: ada.id });
+      await ctx.newPerson({ ownerId: grace.id, personGroupId: shared.personGroupId });
+      const { person: own } = await ctx.newPerson({ ownerId: ada.id });
+
+      await expect(users.getJobSubjectOwners([shared.personGroupId, own.personGroupId])).resolves.toEqual([
+        { subjectId: own.personGroupId, ownerId: ada.id, ownerName: 'Ada' },
+      ]);
     });
 
     it('returns nothing for no ids', async () => {

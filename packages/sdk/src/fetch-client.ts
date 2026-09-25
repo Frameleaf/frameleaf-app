@@ -719,11 +719,11 @@ export type IntegrityReportResponseDto = {
     nextCursor?: string;
 };
 export type IntegrityCheckRunsResponseDto = {
-    /** When the checksum check last ran */
+    /** When the checksum check last completed a full pass */
     checksum_mismatch: string | null;
-    /** When the missing-file check last ran */
+    /** When the missing-file check last completed */
     missing_file: string | null;
-    /** When the untracked-file check last ran */
+    /** When the untracked-file check last completed */
     untracked_file: string | null;
 };
 export type IntegrityReportSummaryResponseDto = {
@@ -14441,7 +14441,7 @@ export function getQueueJobs({ name, status }: {
     }));
 }
 /**
- * FL-71: the Job manager's "Retry failed" (`JobsManager.jsx` 715-727).
+ * Retry failed queue jobs
  */
 export function retryFailedQueueJobs({ name }: {
     name: QueueName;

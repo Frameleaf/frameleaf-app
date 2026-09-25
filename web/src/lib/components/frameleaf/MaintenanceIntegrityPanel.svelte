@@ -7,9 +7,11 @@
    * `integrityReport` summary.
    *
    * Production keeps one standing report per check (its findings, re-read by the refresh jobs), not a
-   * report per run. The server records when each check last ran in full (`getIntegrityCheckRuns`),
-   * so a check reads "Last run …" / "Never run" and its findings, as the template's does
-   * (`Maintenance.jsx:466-469`). Deleting a report acts on its findings (files are deleted or items trashed, see
+   * report per run. The server records when each check last completed a full run
+   * (`getIntegrityCheckRuns`), so a check reads "Last run …" and its findings, as the template's does
+   * (`Maintenance.jsx:466-469`). Where the template says "Never run", production says "No completed
+   * run recorded": runs from before the server recorded them, and runs that did not finish, are
+   * unknown rather than absent (truthfulness deviation). Deleting a report acts on its findings (files are deleted or items trashed, see
    * `handleRemoveAllIntegrityReportItems`), which the confirmation says in full.
    */
   import { Route } from '$lib/route';
@@ -71,7 +73,7 @@
   const when = (value: string) =>
     new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
   /**
-   * "Last run …" / "Never run", then " · n findings" once the check has a report: after any run, or
+   * "Last run …" / "No completed run recorded", then " · n findings" once the check has a report: after any run, or
    * findings from before runs were recorded (`Maintenance.jsx:466-469`).
    */
   const runLine = (type: IntegrityReport, count: number) => {
