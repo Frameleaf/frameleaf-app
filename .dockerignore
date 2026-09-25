@@ -20,6 +20,12 @@ docker/
 docs/
 !docs/package.json
 !docs/package-lock.json
+# The Studio engine build validates its contracts against these (server/Dockerfile studio-engine).
+!docs/docs/developer/frameleaf-plan/01-agent-execution.md
+!docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md
+!docs/docs/developer/frameleaf-plan/backlog.json
+!docs/docs/developer/frameleaf-plan/freecut-issue-map.json
+!docs/docs/developer/frameleaf-plan/studio-backlog.json
 
 e2e/
 !e2e/package.json
@@ -37,3 +43,9 @@ server/src/queries
 server/www/
 
 web/.svelte-kit
+
+# Generated Studio engine workspaces and output; the image recovers and builds its own.
+studio/vendor/
+studio/engine/
+studio/.prepare-*/
+web/static/studio-engine/

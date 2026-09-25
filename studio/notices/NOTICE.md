@@ -1,5 +1,11 @@
 # Studio third-party notices
 
+The complete list of everything Frameleaf credits (engines, models, voices, fonts and assets, with
+authors, licences and links) is `licenses/acknowledgements.json`, published as
+`licenses/THIRD-PARTY-NOTICES.md` (every licence text, verbatim), the docs Acknowledgements page and
+Support and feedback → Third-party notices in the app. This folder holds the notices that ship with
+the Studio engine build; server images carry them under `/licenses/studio`.
+
 ## Freecut
 
 Frameleaf Studio's video editor is **Freecut**, © its authors, used under the MIT licence.
