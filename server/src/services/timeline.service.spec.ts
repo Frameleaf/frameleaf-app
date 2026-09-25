@@ -245,7 +245,7 @@ describe(TimelineService.name, () => {
         bbox: { west: -115, south: 50, east: -113, north: 52 },
       });
 
-      expect(mocks.partner.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith([albumId]);
+      expect(mocks.partner.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith([albumId], authStub.admin.user.id);
       expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
         'bucket',
         expect.objectContaining({ albumId, locationHiddenOwnerIds: [hidingFromAlbumOwner.id] }),

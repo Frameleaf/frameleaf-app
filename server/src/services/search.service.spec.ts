@@ -570,7 +570,7 @@ describe(SearchService.name, () => {
 
       await sut.searchMetadata(auth, { size: 250, albumIds: [albumId], city: 'Oslo' });
       expect(mocks.search.searchMetadata.mock.calls[0][1].locationHiddenOwnerIds).toEqual([hidingFromAlbumOwner]);
-      expect(mocks.partner.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith([albumId]);
+      expect(mocks.partner.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith([albumId], auth.user.id);
 
       await sut.searchMetadata(auth, { size: 250, filter: { albumIds: { any: [albumId] }, city: { eq: 'Oslo' } } });
       expect(mocks.search.searchMetadataV3.mock.calls[0][2]).toMatchObject({

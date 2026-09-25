@@ -172,7 +172,9 @@ export const getLocationHiddenOwnerIdsForView = async ({
 }): Promise<Set<string>> => {
   const [hidden, throughAlbums] = await Promise.all([
     getLocationHiddenPartnerIds({ userId: viewerId, repository }),
-    albumIds.length > 0 ? repository.getLocationHiddenOwnerIdsForAlbums(albumIds) : Promise.resolve([] as string[]),
+    albumIds.length > 0
+      ? repository.getLocationHiddenOwnerIdsForAlbums(albumIds, viewerId)
+      : Promise.resolve([] as string[]),
   ]);
   for (const ownerId of throughAlbums) {
     if (ownerId !== viewerId) {

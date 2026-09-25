@@ -87,10 +87,11 @@ export class PartnerRepository {
   /**
    * FL-54 (owner default, privacy first): owners who hide their locations from the owner of any of
    * `albumIds`. Viewing an album is viewing it through its owner's eyes, so their items are treated as
-   * location-hidden for everyone looking through those albums.
+   * location-hidden for everyone looking through those albums, except a viewer the owner shares
+   * locations with directly (as `getLocationHiddenThroughAlbums`).
    */
-  @GenerateSql({ params: [[DummyValue.UUID]] })
-  async getLocationHiddenOwnerIdsForAlbums(albumIds: string[]): Promise<string[]> {
+  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.UUID] })
+  async getLocationHiddenOwnerIdsForAlbums(albumIds: string[], viewerId: string): Promise<string[]> {
     if (albumIds.length === 0) {
       return [];
     }
@@ -105,6 +106,18 @@ export class PartnerRepository {
       .where('album_owner.albumId', 'in', albumIds)
       .where('partner.shareLocation', '=', false)
       .whereRef('partner.sharedById', '!=', 'partner.sharedWithId')
+      // an owner who shares locations with the viewer directly shows them in the partner library anyway
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('partner as direct')
+              .whereRef('direct.sharedById', '=', 'partner.sharedById')
+              .where('direct.sharedWithId', '=', viewerId)
+              .where('direct.shareLocation', '=', true),
+          ),
+        ),
+      )
       .select('partner.sharedById')
       .distinct()
       .execute();
