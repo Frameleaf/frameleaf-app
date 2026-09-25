@@ -1751,7 +1751,7 @@
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": [
         "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-        "web/src/lib/components/frameleaf/SlideshowSettingsDialog.svelte"
+        "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
       ],
       "status": "fixed",
       "gaps": ["V-8"],
@@ -1763,7 +1763,7 @@
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": [
         "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-        "web/src/lib/components/frameleaf/SlideshowSettingsDialog.svelte"
+        "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
       ],
       "status": "partial",
       "gaps": ["V-8", "V-18"],
@@ -1775,7 +1775,7 @@
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": [
         "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-        "web/src/lib/components/frameleaf/SlideshowSettingsDialog.svelte"
+        "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
       ],
       "status": "fixed",
       "gaps": ["V-8"],
