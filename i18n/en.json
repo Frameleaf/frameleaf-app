@@ -2290,6 +2290,7 @@
   "frameleaf_album_activity_liked": "Liked",
   "frameleaf_album_activity_liked_label": "Liked",
   "frameleaf_album_activity_likers": "People who liked this",
+  "frameleaf_album_activity_menu": "Activity ({count})",
   "frameleaf_album_activity_no_likes": "No likes yet",
   "frameleaf_album_activity_send": "Send comment",
   "frameleaf_album_activity_summary": "{likes, plural, =0 {} one {# like · } other {# likes · }}{comments, plural, =0 {} one {# comment} other {# comments}}",
