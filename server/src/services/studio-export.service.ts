@@ -225,7 +225,7 @@ export class StudioExportService {
     // Studio exports render at home: this server or a worker on the home network (owner prototype
     // effd05ffb7, Studio.jsx ExportDialog). Frameleaf Cloud takes restoration and smooth-motion jobs,
     // each confirmed on its own, never a Studio export.
-    if (destination === StudioDestination.RunPod) {
+    if (destination === StudioDestination.FrameleafCloud) {
       throw new BadRequestException({
         message: 'Studio exports render on this server or another computer on your home network.',
         code: 'studio_export_local_only',
