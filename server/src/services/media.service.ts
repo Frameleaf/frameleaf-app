@@ -1800,7 +1800,10 @@ export class MediaService extends BaseService {
     }
 
     if (edits.some((edit) => edit.action === AssetEditAction.Stabilize && edit.parameters.enabled)) {
-      videoFilters.push('deshake');
+      // FL-113 (`Editor.jsx` Stabilize: "Edges are cropped slightly to hide the correction"): the
+      // corrected picture is cropped 4% and scaled back to the frame, so no filled edges show.
+      const { width, height } = this.getVideoEditDimensions(edits, videoStream);
+      videoFilters.push('deshake', 'crop=trunc(iw*0.96/2)*2:trunc(ih*0.96/2)*2', `scale=${width}:${height}`);
     }
 
     if (edits.some((edit) => edit.action === AssetEditAction.AutoEnhance && edit.parameters.enabled)) {
@@ -1838,6 +1841,10 @@ export class MediaService extends BaseService {
     const muted = !!audioEdit?.parameters.muted;
     if (audioEdit?.parameters.volume !== undefined && !muted) {
       audioFilters.push(`volume=${this.roundFilterNumber(audioEdit.parameters.volume)}`);
+      // Gain above 100% is limited so it cannot clip (`Editor.jsx` Audio).
+      if (audioEdit.parameters.volume > 1) {
+        audioFilters.push('alimiter=limit=0.98');
+      }
     }
 
     let outputOptions = [
