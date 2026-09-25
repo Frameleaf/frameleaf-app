@@ -13234,6 +13234,21 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             }
+          },
+          {
+            "name": "withHidden",
+            "required": false,
+            "in": "query",
+            "description": "Also list faces the asset's owner hid (owner only)",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              }
+            ],
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -13299,6 +13314,13 @@
         },
         "responses": {
           "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFaceResponseDto"
+                }
+              }
+            },
             "description": ""
           }
         },
@@ -13333,6 +13355,59 @@
         ],
         "x-immich-permission": "face.create",
         "x-immich-state": "Stable"
+      }
+    },
+    "/faces/source": {
+      "get": {
+        "description": "Retrieve the revision of the image faces are drawn on. Send it back as expectedSourceRevision when creating or moving a face; it changes when the image, its orientation or its edits change.",
+        "operationId": "getFaceSource",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "query",
+            "description": "Face ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFaceSourceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the face source revision for an asset",
+        "tags": [
+          "Faces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "face.read"
       }
     },
     "/faces/{id}": {
@@ -13397,6 +13472,66 @@
         ],
         "x-immich-permission": "face.delete",
         "x-immich-state": "Stable"
+      },
+      "patch": {
+        "description": "Reassign or unassign a face, move or resize it, or hide it and show it again. The correction is refused with 409 when the face (or, for a box, the image) changed since expectedRevision.",
+        "operationId": "correctFace",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetFaceCorrectionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFaceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Correct a face",
+        "tags": [
+          "Faces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "face.update"
       },
       "put": {
         "description": "Re-assign the face provided in the body to the person identified by the id in the path parameter.",
@@ -43730,6 +43865,99 @@
         ],
         "type": "object"
       },
+      "AssetFaceBoxDto": {
+        "properties": {
+          "height": {
+            "description": "Face bounding box height",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "imageHeight": {
+            "description": "Height in pixels of the image the box was drawn on",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "imageWidth": {
+            "description": "Width in pixels of the image the box was drawn on",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "width": {
+            "description": "Face bounding box width",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "x": {
+            "description": "Face bounding box X coordinate",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "y": {
+            "description": "Face bounding box Y coordinate",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "height",
+          "imageHeight",
+          "imageWidth",
+          "width",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetFaceCorrectionDto": {
+        "properties": {
+          "box": {
+            "$ref": "#/components/schemas/AssetFaceBoxDto",
+            "description": "Move or resize the face, in the displayed (edited) image"
+          },
+          "expectedPersonId": {
+            "description": "The person the face was assigned to when the correction was made (null when unassigned)",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "description": "The face revision this correction was made against; a different current revision is refused with 409",
+            "type": "string"
+          },
+          "expectedSourceRevision": {
+            "description": "The face source revision (GET /faces/source) the coordinates were drawn on. When the image, its orientation or its edits changed since, the request is refused with 409",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              }
+            ]
+          },
+          "hidden": {
+            "description": "Hide the face, or show a hidden face again",
+            "type": "boolean"
+          },
+          "personId": {
+            "description": "Assign the face to this person, or null to unassign it",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
       "AssetFaceCreateDto": {
         "properties": {
           "assetId": {
@@ -43737,6 +43965,16 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "expectedSourceRevision": {
+            "description": "The face source revision (GET /faces/source) the coordinates were drawn on. When the image, its orientation or its edits changed since, the request is refused with 409",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              }
+            ]
           },
           "height": {
             "description": "Face bounding box height",
@@ -43795,6 +44033,16 @@
       },
       "AssetFaceDeleteDto": {
         "properties": {
+          "expectedRevision": {
+            "description": "The face revision the deletion was decided on; a different current revision is refused with 409",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              }
+            ]
+          },
           "force": {
             "description": "Force delete even if person has other faces",
             "type": "boolean"
@@ -43832,6 +44080,30 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "correctedAt": {
+            "description": "When a person last corrected this face (moved, resized, reassigned or unassigned it), or null",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              }
+            ]
+          },
+          "hiddenAt": {
+            "description": "When the owner hid this face, or null. Hidden faces are only listed with withHidden",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              }
+            ]
+          },
           "id": {
             "description": "Face ID",
             "format": "uuid",
@@ -43858,6 +44130,16 @@
             ],
             "nullable": true
           },
+          "revision": {
+            "description": "Changes whenever this face changes; send it back as expectedRevision so a correction made against an older face is refused with 409",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              }
+            ]
+          },
           "sourceType": {
             "$ref": "#/components/schemas/SourceType"
           }
@@ -43867,10 +44149,32 @@
           "boundingBoxX2",
           "boundingBoxY1",
           "boundingBoxY2",
+          "correctedAt",
+          "hiddenAt",
           "id",
           "imageHeight",
           "imageWidth",
-          "person"
+          "person",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "AssetFaceSourceResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Changes when the image, its orientation or its edits change; send it back as expectedSourceRevision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "revision"
         ],
         "type": "object"
       },

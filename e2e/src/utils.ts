@@ -524,6 +524,32 @@ export const utils = {
     await client.query('INSERT INTO asset_face ("assetId", "personGroupId") VALUES ($1, $2)', [assetId, personGroupId]);
   },
 
+  /** FL-38: a face as face detection stores it (machine-learning source), with a real box. */
+  createDetectedFace: async ({
+    assetId,
+    personGroupId,
+    imageWidth,
+    imageHeight,
+    box,
+  }: {
+    assetId: string;
+    personGroupId: string | null;
+    imageWidth: number;
+    imageHeight: number;
+    box: { x1: number; y1: number; x2: number; y2: number };
+  }) => {
+    if (!client) {
+      return;
+    }
+
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO asset_face ("assetId", "personGroupId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'machine-learning') RETURNING id`,
+      [assetId, personGroupId, imageWidth, imageHeight, box.x1, box.y1, box.x2, box.y2],
+    );
+    return rows[0].id;
+  },
+
   setPersonThumbnail: async (personId: string) => {
     if (!client) {
       return;

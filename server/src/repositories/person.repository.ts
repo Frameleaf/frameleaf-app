@@ -82,7 +82,31 @@ export type UnassignFacesOptions = DeleteFacesOptions & { clusterGroupId?: strin
 /** FL-57: an owner's answer to a merge suggestion they did not accept. */
 export type PersonMergeVerdict = 'different' | 'later';
 
-export type GetFacesOptions = WithPersonOptions & { isVisible?: boolean };
+export type GetFacesOptions = WithPersonOptions & {
+  isVisible?: boolean;
+  /** FL-38: also return faces the owner hid (soft-deleted, `deletedAt` set). */
+  withHidden?: boolean;
+};
+
+/** FL-38: a face box in pixels of an image of `imageWidth` x `imageHeight`. */
+export type FaceBoxPixels = {
+  imageWidth: number;
+  imageHeight: number;
+  boundingBoxX1: number;
+  boundingBoxY1: number;
+  boundingBoxX2: number;
+  boundingBoxY2: number;
+};
+
+/**
+ * FL-38: one revision-checked correction of a face. `personGroupId: null` unassigns it, a box
+ * moves or resizes it (in original-image pixels) and `hidden` hides or restores it.
+ */
+export type FaceCorrection = {
+  personGroupId?: string | null;
+  box?: FaceBoxPixels;
+  hidden?: boolean;
+};
 
 /** a person is identified by its owner and the group it belongs to */
 export type PersonId = { ownerId: string; personGroupId: string };
@@ -134,7 +158,9 @@ export class PersonRepository {
   async unassignFaces({ sourceType, clusterGroupId }: UnassignFacesOptions): Promise<void> {
     await this.db
       .updateTable('asset_face')
-      .set({ personGroupId: null })
+      // FL-38: a forced re-run starts clustering over, so earlier corrections no longer hold the
+      // face back from recognition (see handleRecognizeFaces)
+      .set({ personGroupId: null, correctedAt: null })
       .from('asset')
       .whereRef('asset_face.assetId', '=', 'asset.id')
       .where('asset_face.sourceType', '=', sourceType)
@@ -338,14 +364,14 @@ export class PersonRepository {
 
   @GenerateSql({ params: [DummyValue.UUID, { viewingUserId: DummyValue.UUID, isVisible: true }] })
   getFaces(assetId: string, options: GetFacesOptions) {
-    const { viewingUserId, isVisible } = options;
+    const { viewingUserId, isVisible, withHidden } = options;
 
     return this.db
       .selectFrom('asset_face')
       .selectAll('asset_face')
       .select(withPerson({ viewingUserId }))
       .where('asset_face.assetId', '=', assetId)
-      .where('asset_face.deletedAt', 'is', null)
+      .$if(!withHidden, (qb) => qb.where('asset_face.deletedAt', 'is', null))
       .$if(isVisible !== undefined, (qb) => qb.where('asset_face.isVisible', '=', isVisible!))
       .orderBy('asset_face.boundingBoxX1', 'asc')
       .execute();
@@ -363,11 +389,64 @@ export class PersonRepository {
       .executeTakeFirstOrThrow();
   }
 
+  /** FL-38: a face for a correction, including one its owner hid (so it can be shown again). */
+  getFaceForCorrection(id: string, { viewingUserId }: WithPersonOptions) {
+    return this.db
+      .selectFrom('asset_face')
+      .selectAll('asset_face')
+      .select(withPerson({ viewingUserId }))
+      .where('asset_face.id', '=', id)
+      .executeTakeFirst();
+  }
+
+  /**
+   * FL-38: applies a correction only while the face is still at `expectedRevision` (its
+   * `updateId`, renewed by the `asset_face_updatedAt` trigger on every update), so a correction
+   * made against an older face never overwrites a newer change. Returns the rows changed (0 when
+   * the face moved on). Person and box changes stamp `correctedAt` like `reassignFace`; hiding or
+   * showing a face does not, since it corrects neither identity nor position.
+   */
+  async correctFace(id: string, expectedRevision: string, { personGroupId, box, hidden }: FaceCorrection) {
+    const corrected = personGroupId !== undefined || box !== undefined;
+    const result = await this.db
+      .updateTable('asset_face')
+      .set({
+        ...(personGroupId !== undefined && { personGroupId }),
+        // a box is drawn on the displayed image, so it is visible there by construction
+        ...(box && { ...box, isVisible: true }),
+        ...(hidden !== undefined && { deletedAt: hidden ? sql<Date>`clock_timestamp()` : null }),
+        ...(corrected && { correctedAt: sql<Date>`clock_timestamp()` }),
+      })
+      .where('asset_face.id', '=', id)
+      .where('asset_face.updateId', '=', expectedRevision)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows);
+  }
+
+  /** FL-38: deletes (or soft-deletes) a face only while it is still at `expectedRevision`. */
+  async deleteFaceAtRevision(id: string, expectedRevision: string, { force }: { force: boolean }) {
+    const result = force
+      ? await this.db
+          .deleteFrom('asset_face')
+          .where('asset_face.id', '=', id)
+          .where('asset_face.updateId', '=', expectedRevision)
+          .executeTakeFirst()
+      : await this.db
+          .updateTable('asset_face')
+          .set({ deletedAt: sql<Date>`clock_timestamp()` })
+          .where('asset_face.id', '=', id)
+          .where('asset_face.updateId', '=', expectedRevision)
+          .executeTakeFirst();
+
+    return Number('numDeletedRows' in result ? result.numDeletedRows : result.numUpdatedRows);
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   getFaceForFacialRecognitionJob(id: string) {
     return this.db
       .selectFrom('asset_face')
-      .select(['asset_face.id', 'asset_face.personGroupId', 'asset_face.sourceType'])
+      .select(['asset_face.id', 'asset_face.personGroupId', 'asset_face.sourceType', 'asset_face.correctedAt'])
       .select((eb) =>
         jsonObjectFrom(
           eb
