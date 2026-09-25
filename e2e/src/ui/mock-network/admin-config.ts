@@ -243,33 +243,6 @@ export const adminConfigDefaults = {
       device: 'AUTO',
       hideFromLibrary: false,
     },
-    runpod: {
-      enabled: false,
-      mode: 'disabled',
-      apiKey: '',
-      hfToken: '',
-      imageName: 'ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda-runpod',
-      dataPrivacyAcknowledged: false,
-      defaultGpuTypeId: 'NVIDIA RTX A5000',
-      containerDiskGb: 50,
-      volumeGb: 20,
-      autoStopEnabled: true,
-      autoStopGraceMinutes: 15,
-      autoBackfillOnLaunch: false,
-      maxRuntimeHours: 24,
-      provisionTimeoutMinutes: 5,
-      serverless: {
-        gpuTypeIds: ['AMPERE_48', 'ADA_48_PRO', 'AMPERE_80'],
-        workersMin: 0,
-        workersMax: 3,
-        idleTimeoutSeconds: 30,
-        executionTimeoutMs: 600_000,
-        scalerType: 'REQUEST_COUNT',
-        scalerValue: 4,
-      },
-      apiKeyConfigured: false,
-      hfTokenConfigured: false,
-    },
   },
   map: {
     enabled: true,
@@ -411,6 +384,27 @@ export const adminConfigDefaults = {
   },
   user: {
     deleteDelay: 7,
+  },
+  // FL-69: Library care settings.
+  libraryCare: {
+    healthScan: true,
+    healthScanCronExpression: '0 02 * * *',
+    checksumScan: true,
+    integrityAudit: true,
+    livePhotoRepair: true,
+    rawRecovery: true,
+    duplicateReview: true,
+    incrementalEnrichment: true,
+    manualMetadata: true,
+  },
+  // FL-159: Frameleaf Cloud processing replaced the previous GPU provider settings.
+  frameleafCloud: {
+    cloudMl: {
+      enabled: false,
+      descriptions: { enabled: false, defaultModel: '', autoBatch: false, dailyBudgetUsd: 0 },
+      restoration: { enabled: false, defaultModel: '' },
+      faces: { enabled: false },
+    },
   },
   smartAlbums: {
     enabled: false,
