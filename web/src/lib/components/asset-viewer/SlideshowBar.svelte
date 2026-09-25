@@ -3,18 +3,18 @@
   import ProgressBar from '$lib/components/shared-components/progress-bar/ProgressBar.svelte';
   import { ProgressBarStatus } from '$lib/constants';
   import { languageManager } from '$lib/managers/language-manager.svelte';
-  import SlideshowSettingsDialog from '$lib/components/frameleaf/SlideshowSettingsDialog.svelte';
+  import SlideshowSettingsPanel from '$lib/components/frameleaf/SlideshowSettingsPanel.svelte';
   import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
   import { locale } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { fromISODateTimeUTC } from '$lib/utils/timeline-util';
   import { acquireWakeLock, releaseWakeLock } from '$lib/utils/wakelock.svelte';
-  import { AssetMediaSize, AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
+  import { AssetMediaSize, AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
   import { IconButton } from '@immich/ui';
   import { mdiChevronLeft, mdiChevronRight, mdiClose, mdiCog, mdiFullscreen, mdiPause, mdiPlay } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { useSwipe } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { motionFly } from '$lib/frameleaf/motion';
@@ -73,6 +73,10 @@
 
   const hideControlsAfterDelay = () => {
     timer = setTimeout(() => {
+      // the settings panel keeps the controls and the pointer on screen while it is open
+      if (settingsOpen) {
+        return;
+      }
       if (isOverControls) {
         return;
       }
@@ -121,24 +125,24 @@
     onNext();
   };
 
-  // FL-36: the settings are a Frameleaf dialog over the slideshow (it stays full screen). The
-  // slideshow holds still while they are open and carries on when they close.
+  // FL-36 (MediaViewer.jsx:1700-1716, 2086): the settings are a non-modal panel over the running
+  // slideshow, so the photo stays in view and a new transition shows on the next item. Closing
+  // it (Escape or its close button) hands focus back to the settings button (MediaViewer.jsx:740-744).
   let settingsOpen = $state(false);
-  let resumeAfterSettings = false;
-  const onShowSettings = () => {
-    resumeAfterSettings = progressBarStatus !== ProgressBarStatus.Paused && !isVideoSlide;
-    if (resumeAfterSettings) {
-      pause();
+  let controlsElement = $state<HTMLElement>();
+  const toggleSettings = () => {
+    if (settingsOpen) {
+      void closeSettings();
+    } else {
+      settingsOpen = true;
     }
-    settingsOpen = true;
   };
-  $effect(() => {
-    if (settingsOpen || !resumeAfterSettings) {
-      return;
-    }
-    resumeAfterSettings = false;
-    play();
-  });
+  const closeSettings = async () => {
+    settingsOpen = false;
+    showControlBar();
+    await tick();
+    controlsElement?.querySelector<HTMLElement>('[data-slideshow-settings]')?.focus();
+  };
 
   onMount(() => {
     function exitFullscreenHandler() {
@@ -185,15 +189,18 @@
     }
   };
 
-  // FL-36 (MediaViewer.jsx:863-885): keep the screen awake while the slideshow plays.
+  // FL-36 (MediaViewer.jsx:863-885): keep the screen awake while the slideshow plays, and while
+  // its settings are open over it.
   $effect(() => {
-    if ($slideshowState === SlideshowState.PlaySlideshow) {
+    if ($slideshowState === SlideshowState.PlaySlideshow || settingsOpen) {
       void acquireWakeLock('slideshow');
     } else {
-      void releaseWakeLock('slideshow');
+      releaseWakeLock('slideshow').catch(() => {});
     }
   });
-  onDestroy(() => void releaseWakeLock('slideshow'));
+  onDestroy(() => {
+    releaseWakeLock('slideshow').catch(() => {});
+  });
 
   // FL-36 (MediaViewer.jsx:886-923): the lock screen, headphones and media keys see the item on
   // screen and can play, pause and move through the slideshow.
@@ -203,6 +210,8 @@
     }
     const date = fromISODateTimeUTC(asset.localDateTime);
     return bindMediaSession({
+      // a Locked item never reaches the lock screen or the OS media controls
+      locked: asset.visibility === AssetVisibility.Locked,
       title: asset.originalFileName,
       artist: title || MEDIA_SESSION_ARTIST,
       album: [date.isValid ? date.toLocaleString(DateTime.DATE_MED, { locale: $locale }) : '', asset.exifInfo?.city]
@@ -215,9 +224,9 @@
   });
 
   const shortcutBindings = $derived.by((): ShortcutOptions[] => {
-    // the settings dialog keeps Escape and the arrow keys to itself
+    // while the settings are open, Escape closes them and the arrow keys stay with their controls
     if (settingsOpen) {
-      return [];
+      return [{ shortcut: { key: 'Escape' }, onShortcut: () => void closeSettings() }];
     }
     const bindings: ShortcutOptions[] = [
       { shortcut: { key: 'Escape' }, onShortcut: onClose },
@@ -248,6 +257,7 @@
     class="dark m-4 flex gap-2 rounded-3xl bg-black/40 px-2 backdrop-blur-sm"
     onmouseenter={() => (isOverControls = true)}
     onmouseleave={() => (isOverControls = false)}
+    bind:this={controlsElement}
     transition:motionFly={{ duration: 150 }}
     role="navigation"
   >
@@ -291,8 +301,10 @@
       shape="round"
       color="secondary"
       icon={mdiCog}
-      onclick={onShowSettings}
+      onclick={toggleSettings}
       aria-label={$t('slideshow_settings')}
+      aria-expanded={settingsOpen}
+      data-slideshow-settings
     />
     {#if !isFullScreen}
       <IconButton
@@ -318,4 +330,6 @@
   />
 {/if}
 
-<SlideshowSettingsDialog bind:open={settingsOpen} />
+{#if settingsOpen}
+  <SlideshowSettingsPanel onClose={() => void closeSettings()} />
+{/if}

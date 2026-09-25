@@ -56,21 +56,29 @@ test.describe('Slideshow', () => {
     await expect(page.getByText('Added to favorites')).not.toBeVisible();
   });
 
-  // FL-36: the settings are a Frameleaf dialog with the five transitions, Fade by default.
+  // FL-36: the settings are the prototype's non-modal panel with the five transitions, Fade by default.
   test('slideshow settings offer the transitions', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
     await page.mouse.move(10, 10);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Slideshow' });
-    await expect(dialog).toBeVisible();
-    const transition = dialog.getByLabel('Transition');
+    const panel = page.getByRole('region', { name: 'Slideshow' });
+    await expect(panel).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // source behaviour retained: the Autoplay preference stays reachable
+    await expect(panel.getByRole('switch', { name: 'Autoplay slideshow' })).toBeVisible();
+    const transition = panel.getByLabel('Transition');
     await expect(transition).toHaveValue('fade');
     await expect(transition.locator('option')).toHaveText(['None', 'Fade (default)', 'Slide', 'Ken Burns', 'Memories']);
 
     await transition.selectOption('memories');
     expect(await page.evaluate(() => localStorage.getItem('slideshow-transition'))).toBe('"memories"');
+
+    await panel.getByRole('button', { name: 'Close slideshow settings' }).click();
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Slideshow settings' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Exit Slideshow' })).toBeVisible();
   });
 
   // FL-36: the old on/off switch reads back as the transition it meant.
@@ -81,6 +89,6 @@ test.describe('Slideshow', () => {
 
     await page.mouse.move(10, 10);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
-    await expect(page.getByRole('dialog', { name: 'Slideshow' }).getByLabel('Transition')).toHaveValue('none');
+    await expect(page.getByRole('region', { name: 'Slideshow' }).getByLabel('Transition')).toHaveValue('none');
   });
 });
