@@ -46,6 +46,8 @@ import {
   mdiVideoOutline,
   mdiWrench,
   mdiCertificateOutline,
+  mdiCloudOutline,
+  mdiShieldAccountOutline,
   mdiCreditCardOutline,
   mdiLinkVariant,
 } from '@mdi/js';
@@ -84,6 +86,8 @@ import { Route } from '$lib/route';
 export interface CommandIndexContext {
   capabilities: RailCapabilities;
   isAdmin: boolean;
+  /** FL-158: the server is configured for Frameleaf Cloud, so "Frameleaf account" is offered. */
+  frameleafCloud?: boolean;
 }
 
 /**
@@ -261,6 +265,13 @@ export const USER_SETTINGS_AREAS: readonly {
     descriptionKey: 'frameleaf_locked_rules_section_description',
     icon: mdiShieldLockOutline,
   },
+  // FL-158: Your preferences → Frameleaf account (settings-catalog.mjs:1815-1828).
+  {
+    key: 'frameleaf-account',
+    titleKey: 'frameleaf_personal_title',
+    descriptionKey: 'frameleaf_personal_description',
+    icon: mdiCloudOutline,
+  },
   {
     key: 'user-purchase-settings',
     titleKey: 'frameleaf_access_supporter_title',
@@ -274,6 +285,10 @@ export const USER_SETTINGS_AREAS: readonly {
     icon: mdiAccountGroupOutline,
   },
 ] as const;
+
+/** The account sections this server offers: "Frameleaf account" only with Frameleaf Cloud (FL-158). */
+export const personalSettingsAreas = (options: { frameleafCloud: boolean }) =>
+  USER_SETTINGS_AREAS.filter((area) => area.key !== 'frameleaf-account' || options.frameleafCloud);
 
 /** Server settings section keys declared by `user-settings/SystemSettings.svelte`. */
 export const ADMIN_SETTINGS_AREAS: readonly {
@@ -300,6 +315,13 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_cloud_license',
     descriptionKey: 'frameleaf_cc_section_cloud_license_description',
     icon: mdiCertificateOutline,
+  },
+  // FL-158: Access & security → Sign in with Frameleaf (settings-catalog.mjs:1801-1813).
+  {
+    key: 'frameleaf-signin',
+    titleKey: 'frameleaf_cc_section_frameleaf_signin',
+    descriptionKey: 'frameleaf_cc_section_frameleaf_signin_description',
+    icon: mdiShieldAccountOutline,
   },
   {
     key: 'authentication',
@@ -422,7 +444,7 @@ const settingsHref = (base: string, key: string) => `${base}?isOpen=${encodeURIC
 const serverSettingsHref = (key: string) => commandCenterUrl(areaForSection(key), key);
 
 export const buildSettingsCommands = ($t: MessageFormatter, context: CommandIndexContext): CommandInput[] => {
-  const areas: CommandInput[] = USER_SETTINGS_AREAS.map((area) => ({
+  const areas: CommandInput[] = personalSettingsAreas({ frameleafCloud: !!context.frameleafCloud }).map((area) => ({
     id: `user:${area.key}`,
     title: $t(area.titleKey as Translations),
     subtitle: $t('frameleaf_search_subtitle_settings'),

@@ -68,6 +68,7 @@
     mdiContentDuplicate,
     mdiMemory,
     mdiServerNetwork,
+    mdiShieldAccountOutline,
     mdiTrayFull,
     mdiWrench,
     mdiBackupRestore,
@@ -351,6 +352,8 @@
         ['cloud-account', 'frameleaf_cc_section_cloud_account', mdiLinkVariant],
         ['cloud-plan', 'frameleaf_cc_section_cloud_plan', mdiCreditCardOutline],
         ['cloud-license', 'frameleaf_cc_section_cloud_license', mdiCertificateOutline],
+        // FL-158: Access & security → Sign in with Frameleaf, beside the own-provider form.
+        ['frameleaf-signin', 'frameleaf_cc_section_frameleaf_signin', mdiShieldAccountOutline],
         ['mode', 'frameleaf_cc_section_mode', mdiWrench],
         ['backups', 'frameleaf_cc_section_backups', mdiDatabaseOutline],
         ['integrity', 'frameleaf_cc_section_integrity', mdiFileCheckOutline],

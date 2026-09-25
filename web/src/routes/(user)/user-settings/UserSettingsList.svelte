@@ -8,6 +8,7 @@
    */
   import ApiKeysSection from '$lib/components/frameleaf/access/ApiKeysSection.svelte';
   import DevicesSection from '$lib/components/frameleaf/access/DevicesSection.svelte';
+  import FrameleafAccountSection from '$lib/components/frameleaf/access/FrameleafAccountSection.svelte';
   import LockedRulesPanel from '$lib/components/frameleaf/access/LockedRulesPanel.svelte';
   import PasswordSection from '$lib/components/frameleaf/access/PasswordSection.svelte';
   import PinSection from '$lib/components/frameleaf/access/PinSection.svelte';
@@ -78,6 +79,8 @@
   <NotificationsSettings />
 {:else if section === 'oauth'}
   <SignInProviderSection />
+{:else if section === 'frameleaf-account'}
+  <FrameleafAccountSection />
 {:else if section === 'password'}
   <PasswordSection onSessionsChanged={refreshSessions} />
 {:else if section === 'user-pin-code-settings'}

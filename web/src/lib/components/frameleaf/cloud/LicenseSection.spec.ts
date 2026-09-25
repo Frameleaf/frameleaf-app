@@ -107,6 +107,9 @@ const cloudStatus = {
   linkTokenConfigured: false,
   signInClientId: null,
   signInIssuer: null,
+  signInLinkedAccounts: 0,
+  signInShowOnLocalLogin: false,
+  signInButtonText: 'Sign in with Frameleaf',
 };
 
 describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172)', () => {

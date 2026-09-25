@@ -108,6 +108,8 @@ export type CloudStatusResponseDto = {
         at: string;
         reason: string;
     } | null;
+    /** The Sign in with Frameleaf button text */
+    signInButtonText: string;
     /** The OpenID client ID for Sign in with Frameleaf */
     signInClientId: string | null;
     signInIssuer: string | null;
@@ -302,8 +304,10 @@ export type CloudPermissionsUpdateDto = {
     allowRemoteEnable?: boolean;
 };
 export type CloudSignInUpdateDto = {
+    /** The Sign in with Frameleaf button text */
+    buttonText?: string;
     /** Offer Sign in with Frameleaf on the login page at home */
-    showOnLocalLogin: boolean;
+    showOnLocalLogin?: boolean;
 };
 export type AdminConfigAnalyticsDto = {
     /** Collect local analytics history every night */
@@ -7200,8 +7204,7 @@ export type AskSearchPlanDto = {
         /** Include stacked assets */
         withStacked?: boolean;
     };
-    /** Search mode used to answer the query */
-    mode: Mode;
+    mode: SearchAskMode;
     /** Normalized query text */
     normalizedQuery: string;
 };
@@ -20815,7 +20818,7 @@ export enum SearchOrderField {
     FileSizeInBytes = "fileSizeInBytes",
     Rating = "rating"
 }
-export enum Mode {
+export enum SearchAskMode {
     Smart = "smart",
     Metadata = "metadata"
 }
