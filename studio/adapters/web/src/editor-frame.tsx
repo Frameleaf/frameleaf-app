@@ -53,7 +53,7 @@ import {
   acceptsWrite,
   beginMount,
   confirmEcho,
-  markLoaded,
+  loadFinished,
   saveMayStart,
   sendEditorDraft,
   shouldReloadFromHost,
@@ -353,22 +353,24 @@ function watchDirty(state: Session) {
 }
 
 /**
- * The mount is loaded once its own `loadTimeline` has run: the loading flag Freecut sets when that
- * load starts, then clears when it ends. Only then do its writes count (see the invariant in
- * `draft-sync.ts`).
+ * How a load Freecut ran for `projectId` ended (reported by `shims/timeline-persistence.ts`). A
+ * failed load leaves the stores on the replaced timeline: the editor is not usable, so the dirty
+ * flag is cleared (nothing autosaves it) and the host is told; the mount never becomes loaded.
  */
-function watchLoad(state: Session, mount: EditorMount, onLoaded: () => void) {
-  let started = false
-  const stop = useTimelineSettingsStore.subscribe((settings) => {
-    if (state.mount !== mount) return stop()
-    if (settings.isTimelineLoading) started = true
-    else if (started) {
-      stop()
-      markLoaded(state, mount)
-      onLoaded()
-    }
-  })
-  state.unsubscribe.push(stop)
+function onLoadFinished(state: Session, projectId: string, error: unknown) {
+  const mount = state.mount
+  const outcome = loadFinished(state, projectId, error === null)
+  if (outcome === 'loaded') {
+    // A brand-new project is stored as its first draft as soon as it has loaded, so "make a movie"
+    // is kept.
+    if (mount.generation === 0 && !state.context.project.graph) void sendDraft(state, mount)
+  } else if (outcome === 'failed') {
+    useTimelineSettingsStore.getState().markClean()
+    post({
+      type: 'fatal',
+      error: `The editor could not load this revision: ${error instanceof Error ? error.message : String(error)}`,
+    })
+  }
 }
 
 /**
@@ -389,7 +391,6 @@ async function remount(state: Session, context: StudioHostContext, incoming: str
   await seedProject(state, mount)
   await state.media.associate(mount.projectId)
   if (state.mount !== mount) return
-  watchLoad(state, mount, () => undefined)
   state.render()
 }
 
@@ -468,7 +469,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   // Every Freecut save is judged when it starts (see `shims/timeline-persistence.ts`).
   setPersistenceGate({
     mayStartSave: (projectId) => saveMayStart(state, projectId),
-    loadFinished: () => undefined,
+    loadFinished: (projectId, error) => onLoadFinished(state, projectId, error),
   })
 
   // The bin first (the handoff needs frame rates), then the project that uses it.
@@ -481,11 +482,6 @@ async function mount(context: StudioHostContext): Promise<void> {
         <EditorApp key={state.mount.generation} state={state} projectId={state.mount.projectId} />
       </StrictMode>,
     )
-  // A brand-new project is stored as its first draft as soon as it has loaded, so "make a movie"
-  // is kept.
-  watchLoad(state, first, () => {
-    if (!state.context.project.graph) void sendDraft(state, first)
-  })
   state.render()
   watchDrafts(state)
   watchDirty(state)
