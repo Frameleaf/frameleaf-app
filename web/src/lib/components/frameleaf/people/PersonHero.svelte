@@ -284,7 +284,7 @@
   bind:open={featuredOpen}
   onSelected={(updated) => {
     onPersonChange(updated);
-    status = $t('feature_photo_updated');
+    status = $t('frameleaf_people_featured_updated');
   }}
 />
 <MergePeopleDialog
@@ -298,7 +298,7 @@
   bind:open={birthdayOpen}
   onSaved={(updated, birthDate) => {
     onPersonChange(updated);
-    status = birthDate ? $t('date_of_birth_saved') : $t('frameleaf_people_birthday_removed');
+    status = birthDate ? $t('frameleaf_people_birthday_saved') : $t('frameleaf_people_birthday_removed');
   }}
 />
 {#if fixOpen}
