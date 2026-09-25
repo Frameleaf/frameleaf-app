@@ -51,7 +51,7 @@ import {
   permissionsOf,
   redirectUris,
 } from 'src/utils/frameleaf-cloud-link.js';
-import { cloudAddressProblem, FrameleafCloudError, FrameleafDiscoveryDocument } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, FrameleafDiscoveryDocument, cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /** One process start: the cloud's clone rule compares these between check-ins. */
