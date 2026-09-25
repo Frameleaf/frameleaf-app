@@ -144,9 +144,6 @@ const buildConfig = async (repos: RepoDeps) => {
     set(rawConfig, property, get(partial, property));
   }
 
-  // Legacy database/file settings cannot re-enable automatic external reporting.
-  rawConfig.newVersionCheck.enabled = false;
-
   // check for extra properties
   const unknownKeys = cloneDeep(rawConfig);
   for (const property of getKeysDeep(defaults)) {

@@ -471,17 +471,17 @@ describe(SystemConfigService.name, () => {
       await expect(sut.getAdminConfig()).resolves.toEqual(mapConfig(defaults));
     });
 
-    it('hard-disables version checks from legacy database configuration', async () => {
+    it('keeps the saved Frameleaf version-check choice (FL-80; it only asks Frameleaf releases)', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ newVersionCheck: { enabled: true } });
       const config = await sut.getAdminConfig();
-      expect(config.newVersionCheck.enabled).toBe(false);
+      expect(config.newVersionCheck.enabled).toBe(true);
     });
 
-    it('hard-disables version checks from file configuration', async () => {
+    it('keeps the version-check choice from file configuration', async () => {
       mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
       mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ newVersionCheck: { enabled: true } }));
       const config = await sut.getAdminConfig();
-      expect(config.newVersionCheck.enabled).toBe(false);
+      expect(config.newVersionCheck.enabled).toBe(true);
     });
 
     it('should merge the overrides', async () => {
