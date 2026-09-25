@@ -293,7 +293,7 @@ describe(StudioExportService.name, () => {
       await expect(
         sut.create(auth(), PROJECT, {
           ...(dto as object),
-          destination: MediaOperationDestination.RunPod,
+          destination: MediaOperationDestination.FrameleafCloud,
           cloudConsent: true,
         } as never),
       ).rejects.toBeInstanceOf(BadRequestException);

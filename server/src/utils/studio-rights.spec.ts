@@ -40,7 +40,7 @@ describe('studio rights (FL-86)', () => {
     expect(hosted).toMatchObject({ allowed: false, id: MUSICGEN });
     expect(hosted.allowed ? '' : hosted.detail).toMatch(/hosted use is not allowed\. CC-BY-NC-4\.0/);
     // Music generation on the cloud destination is refused by name; on this server it resolves.
-    expect(checkStudioProducerRights('musicgen', studioRightsUseFor(StudioDestination.RunPod))).toMatchObject({
+    expect(checkStudioProducerRights('musicgen', studioRightsUseFor(StudioDestination.FrameleafCloud))).toMatchObject({
       allowed: false,
       id: MUSICGEN,
     });
