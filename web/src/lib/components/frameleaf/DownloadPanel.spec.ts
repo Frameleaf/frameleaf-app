@@ -104,6 +104,28 @@ describe('DownloadPanel', () => {
     expect(downloadManager.assets.size).toBe(0);
   });
 
+  it('leaves out the rows of a public share page, which its strip shows', () => {
+    downloadManager.start({ name: 'shared.zip', group: 'share' }, never);
+
+    const { container } = render(DownloadPanel);
+
+    expect(container.querySelector('.fl-panel')).toBeNull();
+  });
+
+  it('asks before the tab closes while a prepared file is unsaved (B1)', async () => {
+    const { unmount } = render(DownloadPanel);
+    const idle = new Event('beforeunload', { cancelable: true });
+    dispatchEvent(idle);
+    expect(idle.defaultPrevented).toBe(false);
+
+    downloadManager.start({ name: 'photo.jpg' }, () => Promise.resolve(new Blob(['x'])));
+    await flush();
+    const unsaved = new Event('beforeunload', { cancelable: true });
+    dispatchEvent(unsaved);
+    expect(unsaved.defaultPrevented).toBe(true);
+    unmount();
+  });
+
   it('closes when nothing is being prepared', async () => {
     downloadManager.start({ name: 'a.jpg' }, () => Promise.resolve(new Blob(['x'])));
     await flush();

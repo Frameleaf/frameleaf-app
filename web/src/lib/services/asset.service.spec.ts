@@ -4,6 +4,7 @@ import { mdiTune } from '@mdi/js';
 import { vitest } from 'vitest';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { getAssetActions, handleDownloadAsset } from '$lib/services/asset.service';
+import * as utils from '$lib/utils';
 import { setSharedLink } from '$lib/utils';
 import { downloadAssetFile } from '$lib/utils/asset-utils';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -178,6 +179,21 @@ describe('AssetService', () => {
         expect.objectContaining({ id: asset.id, filename: 'asset.heic', edited: false }),
       );
       expect(toastManager.primary).not.toHaveBeenCalled();
+    });
+
+    it('saves the file directly on a public share, as its lightbox does (PublicViewer.jsx:508-517)', async () => {
+      const downloadUrl = vitest.spyOn(utils, 'downloadUrl').mockImplementation(() => {});
+      const isSharedLink = vitest.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+      try {
+        const asset = assetFactory.build({ originalFileName: 'shared.heic', livePhotoVideoId: null });
+        await handleDownloadAsset(asset, { edited: false });
+        expect(downloadAssetFile).not.toHaveBeenCalled();
+        // `@immich/sdk` is mocked here, so only the file name is meaningful.
+        expect(downloadUrl).toHaveBeenCalledWith(expect.any(String), 'shared.heic');
+      } finally {
+        isSharedLink.mockRestore();
+        downloadUrl.mockRestore();
+      }
     });
 
     it('adds the motion part as its own row with a -motion name', async () => {

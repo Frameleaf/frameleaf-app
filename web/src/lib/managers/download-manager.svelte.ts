@@ -1,4 +1,5 @@
 import { SvelteMap } from 'svelte/reactivity';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**
  * Browser-local downloads (FL-45), ported from the prototype's download model in
@@ -7,13 +8,17 @@ import { SvelteMap } from 'svelte/reactivity';
  *
  * - `preparing`: the request is running. `progress` counts the bytes received against the size the
  *   server announced (the archive plan from `/download/info` or the response `Content-Length`).
- * - `ready`: the file is held in this tab and waits for the person to press Save
- *   (`UploadPanel.jsx:494-507`); saving hands it to the browser and removes the row.
+ * - `ready`: the file waits for the person to press Save (`UploadPanel.jsx:494-507`); saving hands
+ *   it to the browser and removes the row.
  * - `error`: the request failed. The row keeps its request so it can be retried.
  *
+ * Only files up to `bufferLimit()` are fetched into this tab (buffered). A larger file is not
+ * fetched at all: its task returns a `StreamedDownload`, the row is ready at once, and Save starts
+ * the browser's own streamed download. Save is a click, so browsers allow one after another.
+ *
  * Every running request has its own `AbortController`: Cancel, Remove and `clearAll()` (which the
- * session lock calls, see `session-privacy.ts`) abort the transfer instead of only hiding its row.
- * Nothing here survives a reload: this is in-memory tab state, not a durable job.
+ * session lock and logout call) abort the transfer instead of only hiding its row. Nothing here
+ * survives a reload: this is in-memory tab state, not a durable job.
  */
 
 export type DownloadStatus = 'preparing' | 'ready' | 'error';
@@ -33,7 +38,14 @@ export interface DownloadDetails {
   /** Expected size in bytes (0 when not yet known). */
   total: number;
   assetIds: string[];
+  /**
+   * Which surface shows the row: none for the Downloads panel, `share` for the public share page's
+   * inline strip (`PublicViewer.jsx:402-426`).
+   */
+  group?: DownloadGroup;
 }
+
+export type DownloadGroup = 'share';
 
 export interface DownloadContext {
   signal: AbortSignal;
@@ -43,8 +55,13 @@ export interface DownloadContext {
   describe: (details: Partial<DownloadDetails>) => void;
 }
 
-/** Produces the file. Called again on Retry, so it must be safe to re-run. */
-export type DownloadTask = (context: DownloadContext) => Promise<Blob>;
+/** A file too large to hold in the tab: Save hands the request to the browser instead. */
+export class StreamedDownload {
+  constructor(readonly start: (name: string) => void) {}
+}
+
+/** Produces the file, or the streamed download for it. Called again on Retry, so it must be safe to re-run. */
+export type DownloadTask = (context: DownloadContext) => Promise<Blob | StreamedDownload>;
 
 export interface DownloadState extends DownloadDetails {
   status: DownloadStatus;
@@ -55,7 +72,52 @@ export interface DownloadState extends DownloadDetails {
   error?: unknown;
   /** The file name without `.zip`, as the Activity page shows it. */
   archiveName: string;
+  /** True while a ready row holds its file in this tab (lost if the tab closes before Save). */
+  buffered: boolean;
 }
+
+const MiB = 1024 * 1024;
+
+const isAppleWebKit = () => {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+  const agent = navigator.userAgent;
+  const iPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  return /iPad|iPhone|iPod/.test(agent) || iPadOS || /^((?!chrome|chromium|android).)*safari/i.test(agent);
+};
+
+/**
+ * The largest file fetched into the tab: 512 MiB, or 128 MiB on iOS and Safari, whose tabs are
+ * killed well before desktop Chromium or Firefox run out of blob storage.
+ */
+export const bufferLimit = () => (isAppleWebKit() ? 128 : 512) * MiB;
+
+/** Whether a file of `size` bytes (0 or undefined when unknown) is fetched into the tab. */
+export const shouldBuffer = (size: number | undefined) => !size || size <= bufferLimit();
+
+/** Row counts for one surface, as the prototype's `downloadSummary` (system-data.mjs:483-488). */
+export const summarizeDownloads = (rows: Iterable<DownloadState>) => {
+  let total = 0;
+  let preparing = 0;
+  let ready = 0;
+  let errors = 0;
+  for (const download of rows) {
+    total++;
+    if (download.status === 'preparing') {
+      preparing++;
+    } else if (download.status === 'ready') {
+      ready++;
+    } else {
+      errors++;
+    }
+  }
+  return { total, preparing, ready, errors, active: preparing > 0 };
+};
+
+const abortError = () => new DOMException('The download was cancelled', 'AbortError');
+
+type Waiter = { resolve: () => void; reject: (error: unknown) => void };
 
 /** No asset in the request could be downloaded (prototype `createDownload`, system-data.mjs:462). */
 export class EmptyDownloadError extends Error {
@@ -107,26 +169,30 @@ class DownloadManager {
 
   #tasks = new Map<string, DownloadTask>();
   #controllers = new Map<string, AbortController>();
-  #files = new Map<string, Blob>();
+  #files = new Map<string, Blob | StreamedDownload>();
+  #waiters = new Map<string, Waiter[]>();
 
-  /** True while any row is shown, whatever its state. */
-  isDownloading = $derived(this.assets.size > 0);
+  /** The rows of the Downloads panel (rows without a group). */
+  panelRows = $derived([...this.assets.entries()].filter(([, download]) => !download.group));
 
-  summary = $derived.by(() => {
-    let preparing = 0;
-    let ready = 0;
-    let errors = 0;
-    for (const download of this.assets.values()) {
-      if (download.status === 'preparing') {
-        preparing++;
-      } else if (download.status === 'ready') {
-        ready++;
-      } else {
-        errors++;
-      }
-    }
-    return { total: this.assets.size, preparing, ready, errors, active: preparing > 0 };
-  });
+  /** True while the Downloads panel has a row, whatever its state. */
+  isDownloading = $derived(this.panelRows.length > 0);
+
+  /** Counts for the Downloads panel. */
+  summary = $derived(summarizeDownloads(this.panelRows.map(([, download]) => download)));
+
+  /** A ready file held in this tab would be lost if the tab closed now. */
+  hasUnsavedFiles = $derived(this.#anyBuffered());
+
+  constructor() {
+    // B2: logging out aborts every request and forgets every row and file name, as uploads do.
+    eventManager.on({ AuthLogout: () => this.clearAll() });
+  }
+
+  /** The rows of one surface. */
+  rows(group?: DownloadGroup) {
+    return [...this.assets.entries()].filter(([, download]) => download.group === group);
+  }
 
   /**
    * Adds a row in the preparing state and starts `task`. Returns the row's key.
@@ -140,14 +206,36 @@ class DownloadManager {
       count: details.count ?? assetIds.length,
       total: details.total ?? 0,
       assetIds,
+      group: details.group,
       status: 'preparing',
       progress: 0,
       received: 0,
       archiveName: details.name.replace(/\.zip$/i, ''),
+      buffered: false,
     });
     this.#tasks.set(key, task);
     void this.#run(key);
     return key;
+  }
+
+  /**
+   * Resolves when the row is ready to save, rejects with its error when it fails, and with an
+   * `AbortError` when it is cancelled or cleared first.
+   */
+  settled(key: string): Promise<void> {
+    const download = this.assets.get(key);
+    if (!download) {
+      return Promise.reject(abortError());
+    }
+    if (download.status === 'ready') {
+      return Promise.resolve();
+    }
+    if (download.status === 'error') {
+      return Promise.reject(download.error);
+    }
+    return new Promise((resolve, reject) => {
+      this.#waiters.set(key, [...(this.#waiters.get(key) ?? []), { resolve, reject }]);
+    });
   }
 
   /** Runs a failed row's request again. */
@@ -172,46 +260,77 @@ class DownloadManager {
     this.#tasks.delete(key);
     this.#files.delete(key);
     this.assets.delete(key);
+    this.#settle(key, abortError());
   }
 
   /** Aborts everything and forgets every row, including the names of what was being downloaded. */
   clearAll() {
+    // Deleting the current entry while iterating a Map is safe.
+    for (const key of this.assets.keys()) {
+      this.remove(key);
+    }
     for (const controller of this.#controllers.values()) {
       controller.abort();
     }
     this.#controllers.clear();
     this.#tasks.clear();
     this.#files.clear();
-    this.assets.clear();
   }
 
-  /** Removes the rows that are no longer running (the panel's Close while idle). */
-  clearFinished() {
-    for (const [key, download] of this.assets) {
+  /** Removes the rows of one surface that are no longer running (the panel's Close while idle). */
+  clearFinished(group?: DownloadGroup) {
+    for (const [key, download] of this.rows(group)) {
       if (download.status !== 'preparing') {
         this.remove(key);
       }
     }
   }
 
-  /** The prepared file, while its row is ready. */
+  /** The prepared file, while its row is ready and buffered. */
   file(key: string) {
-    return this.assets.get(key)?.status === 'ready' ? this.#files.get(key) : undefined;
+    const file = this.assets.get(key)?.status === 'ready' ? this.#files.get(key) : undefined;
+    return file instanceof Blob ? file : undefined;
   }
 
   /**
    * Hands a ready file to the browser and removes the row, as the prototype's Save does
-   * (`UploadPanel.jsx:494-507`). Returns false when there was nothing to save.
+   * (`UploadPanel.jsx:494-507`): a buffered file through `saveFile`, a large one as the browser's
+   * own streamed download. Returns false when there was nothing to save.
    */
   save(key: string, saveFile: (file: Blob, name: string) => void) {
     const download = this.assets.get(key);
-    const file = this.file(key);
+    const file = download?.status === 'ready' ? this.#files.get(key) : undefined;
     if (!download || !file) {
       return false;
     }
-    saveFile(file, download.name);
+    if (file instanceof StreamedDownload) {
+      file.start(download.name);
+    } else {
+      saveFile(file, download.name);
+    }
     this.remove(key);
     return true;
+  }
+
+  #anyBuffered() {
+    for (const download of this.assets.values()) {
+      if (download.buffered) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  #settle(key: string, error?: unknown) {
+    const waiters = this.#waiters.get(key);
+    this.#waiters.delete(key);
+    for (const waiter of waiters ?? []) {
+      if (error === undefined) {
+        waiter.resolve();
+      } else {
+        waiter.reject(error);
+      }
+    }
   }
 
   async #run(key: string) {
@@ -253,19 +372,23 @@ class DownloadManager {
         return;
       }
       this.#files.set(key, file);
+      const buffered = file instanceof Blob;
       this.assets.set(key, {
         ...download,
         status: 'ready',
         progress: 100,
-        received: file.size,
-        total: download.total || file.size,
+        received: buffered ? file.size : 0,
+        total: download.total || (buffered ? file.size : 0),
+        buffered,
       });
+      this.#settle(key);
     } catch (error) {
       const download = current();
       if (!download || controller.signal.aborted) {
         return;
       }
       this.assets.set(key, { ...download, status: 'error', error });
+      this.#settle(key, error ?? new Error('Download failed'));
     } finally {
       if (this.#controllers.get(key) === controller) {
         this.#controllers.delete(key);

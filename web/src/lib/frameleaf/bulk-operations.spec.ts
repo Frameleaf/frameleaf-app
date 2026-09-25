@@ -173,6 +173,21 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(api.downloadArchive).toHaveBeenCalledWith('Frameleaf', { assetIds: ['a', 'b'] });
   });
 
+  it('reports a download as failed when its archive fails, not as a success (FL-45)', async () => {
+    vi.mocked(api.downloadArchive).mockRejectedValueOnce(new Error('offline'));
+    const result = await runBulkAction('download', ['a', 'b'], { gateway: api });
+    expect(result.succeeded).toEqual([]);
+    expect(result.failed.map((outcome) => outcome.id)).toEqual(['a', 'b']);
+  });
+
+  it('reports a cancelled download as cancelled (FL-45)', async () => {
+    vi.mocked(api.downloadArchive).mockRejectedValueOnce(new DOMException('cancelled', 'AbortError'));
+    const result = await runBulkAction('download', ['a', 'b'], { gateway: api });
+    expect(result.cancelled).toBe(true);
+    expect(result.succeeded).toEqual([]);
+    expect(result.failed).toEqual([]);
+  });
+
   it('refuses to run an action whose payload is missing', async () => {
     await expect(runBulkAction('add-to-album', ['a'], { gateway: api })).rejects.toThrow(/albumId/);
   });

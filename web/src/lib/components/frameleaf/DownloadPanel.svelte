@@ -25,7 +25,8 @@
    * `design/frameleaf/template/src/UploadPanel.jsx:441-569` onto the real download manager. Every
    * download — a single photo, a selection, an album and each part of a split archive — shows here:
    * it is prepared with progress and Cancel, then waits for Save; a failure stays as a row with
-   * Retry (the upload panel's "Retry failed", `UploadPanel.jsx:414-418`) and Dismiss.
+   * Retry (the upload panel's "Retry failed", `UploadPanel.jsx:414-418`) and Dismiss. Rows of a
+   * public share page are shown by its inline strip instead (`PublicDownloadStrip`).
    */
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
@@ -61,7 +62,16 @@
       .join(' · ');
 
   const save = (key: string) => downloadManager.save(key, downloadBlob);
+
+  /** A ready file held in the tab is lost if the tab closes before Save, so the browser asks first. */
+  const onBeforeUnload = (event: BeforeUnloadEvent) => {
+    if (downloadManager.hasUnsavedFiles) {
+      event.preventDefault();
+    }
+  };
 </script>
+
+<svelte:window onbeforeunload={onBeforeUnload} />
 
 {#if downloadManager.isDownloading}
   <div class="frameleaf fl-panel-wrap" data-theme={appTheme}>
@@ -85,7 +95,7 @@
       </header>
 
       <ul class="fl-list">
-        {#each downloadManager.assets as [key, download] (key)}
+        {#each downloadManager.panelRows as [key, download] (key)}
           <li class="fl-row" data-status={download.status}>
             <span class="fl-row-icon">
               <Icon
@@ -220,7 +230,7 @@
     color: var(--fl-muted);
   }
   .fl-row[data-status='ready'] .fl-row-icon {
-    color: var(--fl-accent);
+    color: var(--fl-teal);
   }
   .fl-row[data-status='error'] .fl-row-icon {
     color: var(--fl-danger);
@@ -266,7 +276,7 @@
   .fl-progress span {
     display: block;
     block-size: 100%;
-    background: var(--fl-accent);
+    background: var(--fl-teal);
     transition: width var(--fl-motion) linear;
   }
   @media (max-width: 43.75rem) {
