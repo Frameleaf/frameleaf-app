@@ -23,6 +23,7 @@ import {
   formatBytes,
   parseWorkflowImport,
   RESTORE_REFUSED,
+  resolveBackupChecks,
 } from "./utilities-data.mjs";
 import "./utilities-manager.css";
 const read = () => {
@@ -66,18 +67,32 @@ export function UtilitiesManager({
     [confirmation, setConfirmation] = useState(""),
     [recovery, setRecovery] = useState(null),
     [restores, setRestores] = useState({}),
-    [backupChecked, setBackupChecked] = useState(false),
     [restoreDialog, setRestoreDialog] = useState(null);
   const [cloud, commitCloud] = useCloudState();
   const stateRef = useRef(null);
+  const restoreTimers = useRef([]);
   const backupOn =
     cloud.backup.configured && ["missing-media", "corrupt-media"].includes(tool);
   useEffect(() => {
-    // "Checking…" rows resolve once the kept manifests have been searched.
-    setBackupChecked(false);
-    const timer = setTimeout(() => setBackupChecked(true), 1600);
+    if (!backupOn) return undefined;
+    // "Checking…" rows resolve into stored state once the kept manifests have been searched.
+    const timer = setTimeout(
+      () =>
+        setState((current) => {
+          const next = resolveBackupChecks(current);
+          if (next !== current)
+            try {
+              localStorage.setItem(utilityStorageKey, JSON.stringify(next));
+            } catch {
+              // Blocked storage: the check resolves again after a reload.
+            }
+          return next;
+        }),
+      1600,
+    );
     return () => clearTimeout(timer);
-  }, [tool]);
+  }, [tool, backupOn]);
+  useEffect(() => () => restoreTimers.current.forEach(clearTimeout), []);
   useEffect(() => {
     setOwner(["taylor", "jamie", "emma"].includes(scope) ? scope : "all");
     setSelected([]);
@@ -130,8 +145,7 @@ export function UtilitiesManager({
         .includes(query.toLowerCase()),
   );
   const chosen = rows.filter((r) => selected.includes(r.id));
-  const coverage = (row) =>
-    row.backup?.status === "checking" && backupChecked ? "in-backup" : row.backup?.status;
+  const coverage = (row) => row.backup?.status;
   const restorable = (row) =>
     backupOn &&
     coverage(row) === "in-backup" &&
@@ -161,14 +175,19 @@ export function UtilitiesManager({
           files: targets.length,
         }),
       );
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       const verified = targets.filter((row) => !row.backup.fingerprintMismatch);
       const refused = targets.filter((row) => row.backup.fingerprintMismatch);
       setRestores((current) => ({
         ...current,
         ...Object.fromEntries(targets.map((row) => [row.id, refused.includes(row) ? "refused" : undefined])),
       }));
-      if (verified.length)
+      if (!verified.length) {
+        setNotice("");
+        setError(RESTORE_REFUSED);
+        return;
+      }
+      try {
         commit(
           applyUtilityAction(stateRef.current, {
             action: "restore",
@@ -180,11 +199,19 @@ export function UtilitiesManager({
             ? `Restored ${verified.length} of ${targets.length}. ${refused.length} refused because the fingerprint didn’t match.`
             : `Restored ${verified.length === 1 ? verified[0].name : `${verified.length} items`}. The fingerprint matched.`,
         );
-      else setError(RESTORE_REFUSED);
+      } catch (failure) {
+        setRestores((current) => ({
+          ...current,
+          ...Object.fromEntries(verified.map((row) => [row.id, undefined])),
+        }));
+        setNotice("");
+        setError(failure.message);
+      }
     }, 1400);
+    restoreTimers.current.push(timer);
   }
   const restoreSelected = () => {
-    const targets = chosen.filter(restorable);
+    const targets = chosen.filter((row) => restorable(row) && canEdit(row));
     if (restoreNeedsKey(cloud.backup)) setRestoreDialog({ kind: "key", rows: targets });
     else restoreRows(targets);
   };

@@ -3220,13 +3220,20 @@ function DetailsSection({ asset, name, media, available, hasAction, run }) {
         <ItemRestoreDialog
           item={{ name: asset.originalFileName || name, path: asset.originalPath, newest: inBackup.id }}
           close={() => setRestoring(false)}
-          onRestore={({ manifest }) => {
+          onRestore={({ manifest, details }) => {
             setRestoring(false);
             const current = loadCloudState();
-            if (!restoreRunActive(current))
-              saveCloudState(
-                startRestoreRun(current, { title: `Restore “${asset.originalFileName || name}”`, files: 1 }),
-              );
+            if (restoreRunActive(current)) {
+              setRestoreNote("Another restore is running. Try again when it finishes.");
+              return;
+            }
+            saveCloudState(
+              startRestoreRun(current, {
+                title: `Restore “${asset.originalFileName || name}”`,
+                files: 1,
+                details,
+              }),
+            );
             setRestoreNote(
               `Restoring from ${new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(manifest.createdAt))}. Follow it in Activity.`,
             );
