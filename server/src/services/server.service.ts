@@ -126,11 +126,14 @@ export class ServerService extends BaseService {
       notifications,
       physicalDeduplication,
       ffmpeg,
+      localFeatures,
     } = await this.getConfig({ withCache: false });
     const { configFile } = this.configRepository.getEnv();
 
     return {
       smartSearch: isSmartSearchEnabled(machineLearning),
+      // FL-31: Ask Search answers through smart search, so it needs both the setting and smart search
+      askSearch: localFeatures.askSearch.enabled && isSmartSearchEnabled(machineLearning),
       facialRecognition: isFacialRecognitionEnabled(machineLearning),
       duplicateDetection: isDuplicateDetectionEnabled(machineLearning),
       map: map.enabled,

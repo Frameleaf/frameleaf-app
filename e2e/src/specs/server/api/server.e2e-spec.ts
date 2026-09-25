@@ -98,6 +98,7 @@ describe('/server', () => {
       expect(status).toBe(200);
       expect(body).toEqual({
         smartSearch: false,
+        askSearch: false,
         configFile: false,
         duplicateDetection: false,
         facialRecognition: false,
