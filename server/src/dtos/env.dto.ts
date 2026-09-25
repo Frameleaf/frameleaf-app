@@ -92,6 +92,12 @@ export const EnvSchema = z
     FRAMELEAF_ANDROID_APP_ID: z.string().optional(),
     FRAMELEAF_ANDROID_SIGNING_SHA256: z.string().optional(),
     FRAMELEAF_IOS_APP_URL: z.string().optional(),
+    /** FL-135: the Android store listing and this installation's help destinations (https). */
+    FRAMELEAF_ANDROID_STORE_URL: z.string().optional(),
+    FRAMELEAF_DOCS_URL: z.string().optional(),
+    FRAMELEAF_SUPPORT_URL: z.string().optional(),
+    FRAMELEAF_BUG_FEATURE_URL: z.string().optional(),
+    FRAMELEAF_SOURCE_URL: z.string().optional(),
     DB_DATABASE_NAME: z.string().optional(),
     DB_HOSTNAME: z.string().optional(),
     DB_PASSWORD: z.string().optional(),

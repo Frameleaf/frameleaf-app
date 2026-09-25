@@ -5,6 +5,7 @@
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
@@ -49,6 +50,9 @@
       handleError(error, $t('errors.something_went_wrong'));
     }
   };
+
+  // FL-135: this installation's documentation, or no link at all
+  const oauthDocs = $derived(helpLinks.docs('administration/oauth'));
 </script>
 
 <div>
@@ -57,13 +61,15 @@
       <div class="flex flex-col">
         <SettingGroup key="oauth" title={$t('admin.oauth_settings')} subtitle={$t('admin.oauth_settings_description')}>
           <div class="flex flex-col gap-4">
-            <Text size="small">
-              <FormatMessage key="admin.oauth_settings_more_details">
-                {#snippet children({ message })}
-                  <Link href="https://docs.immich.app/administration/oauth">{message}</Link>
-                {/snippet}
-              </FormatMessage>
-            </Text>
+            {#if oauthDocs}
+              <Text size="small">
+                <FormatMessage key="admin.oauth_settings_more_details">
+                  {#snippet children({ message })}
+                    <Link href={oauthDocs}>{message}</Link>
+                  {/snippet}
+                </FormatMessage>
+              </Text>
+            {/if}
 
             <SettingToggle
               {disabled}

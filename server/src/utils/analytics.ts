@@ -172,8 +172,7 @@ export type GrowthSeriesId = (typeof GROWTH_SERIES)[number];
 
 /** Day samples are kept this long: the 90-day view at daily resolution, with margin. */
 export const ANALYTICS_DAY_RETENTION_DAYS = 120;
-/** Week samples (downsampled days) are kept this long: a 12-month view and the year before it. */
-export const ANALYTICS_WEEK_RETENTION_DAYS = 800;
+// Week samples (downsampled days) are kept for the administrator's `analytics.historyDays` (FL-71).
 /** A collector reading older than this is shown as stale. The collector runs nightly. */
 export const ANALYTICS_STALE_AFTER_HOURS = 36;
 /** Automatic retries a failed collection gets before it waits for the next night or a manual run. */

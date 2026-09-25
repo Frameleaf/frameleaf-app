@@ -77,7 +77,8 @@ export class ServerService extends BaseService {
 
   /** What the app download and Obtainium setup pages can offer, and what is unavailable (FL-82). */
   getAppReleases(): ServerAppReleasesResponseDto {
-    const { android, iosUrl } = this.configRepository.getEnv().appReleases;
+    const { android, iosUrl, androidStoreUrl } = this.configRepository.getEnv().appReleases;
+    const store = androidStoreUrl ? { storeUrl: androidStoreUrl } : {};
     return {
       android: android
         ? {
@@ -85,8 +86,9 @@ export class ServerService extends BaseService {
             appId: android.appId,
             signingCertificateSha256: android.signingSha256,
             links: apkLinks(android.releaseUrl, serverVersion.toString()),
+            ...store,
           }
-        : { available: false },
+        : { available: false, ...store },
       ios: iosUrl ? { available: true, url: iosUrl } : { available: false },
     };
   }

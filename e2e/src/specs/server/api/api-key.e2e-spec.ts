@@ -150,6 +150,30 @@ describe('/api-keys', () => {
     });
   });
 
+  describe('POST /api-keys/:id/rotate', () => {
+    // FL-67: rotating a key reveals a new secret and the previous secret stops working at once
+    it('should invalidate the old secret and accept the new one', async () => {
+      const { id, secret: oldSecret } = await create(user.accessToken, [Permission.All]);
+      const before = await request(app).get('/users/me').set('x-api-key', oldSecret);
+      expect(before.status).toBe(200);
+
+      const { status, body } = await request(app)
+        .post(`/api-keys/${id}/rotate`)
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(201);
+      expect(body).toMatchObject({ id, secret: expect.any(String) });
+      expect(body.secret).not.toBe(oldSecret);
+
+      const oldResponse = await request(app).get('/users/me').set('x-api-key', oldSecret);
+      expect(oldResponse.status).toBe(401);
+      expect(oldResponse.body).toEqual(errorDto.badRequest('Invalid API key'));
+
+      const newResponse = await request(app).get('/users/me').set('x-api-key', body.secret);
+      expect(newResponse.status).toBe(200);
+      expect(newResponse.body).toMatchObject({ id: user.userId });
+    });
+  });
+
   describe('DELETE /api-keys/:id', () => {
     it('should delete an api key', async () => {
       const { id } = await create(user.accessToken, [Permission.All]);
