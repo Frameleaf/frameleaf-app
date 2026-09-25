@@ -651,3 +651,23 @@ export const formatParam = (spec: DevelopParamSpec, value: number) => {
   }
   return `${sign}${Math.round(value)}${spec.unit}`;
 };
+
+type CompareKeyEvent = Pick<KeyboardEvent, 'key'> &
+  Partial<Pick<KeyboardEvent, 'code' | 'metaKey' | 'ctrlKey' | 'altKey'>>;
+
+/**
+ * Hold-to-compare keys for the photo editor (`develop.mjs` `isCompareKey`). Backslash is the
+ * primary key: Apple Photos uses M, but M already means "Group by month" in the library
+ * shortcuts, and backslash is Lightroom's before/after key. Y stays as the earlier binding.
+ * A press with a command modifier is never a compare, but a release always is, so a held
+ * original can't get stuck.
+ */
+export const isCompareKey = (event: CompareKeyEvent | undefined | null, { release = false } = {}) => {
+  if (!event) {
+    return false;
+  }
+  if (!release && (event.metaKey || event.ctrlKey || event.altKey)) {
+    return false;
+  }
+  return event.key === '\\' || event.code === 'Backslash' || (event.key || '').toLowerCase() === 'y';
+};

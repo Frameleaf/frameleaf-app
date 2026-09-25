@@ -14,6 +14,7 @@ import {
   groupIsDefault,
   groupReset,
   histogramBins,
+  isCompareKey,
   normalizeRect,
   resizeCropRect,
   rotateAspect,
@@ -142,5 +143,29 @@ describe('develop', () => {
       expect(toneKey({ ...base, contrast: 21 })).not.toBe(toneKey(base));
       expect(toneOnlyRecipe(cropped)).toMatchObject({ rotation: 0, flipHorizontal: false, crop: { w: 1, h: 1 } });
     });
+  });
+});
+
+// Ported from design/frameleaf/template/tests/editor-compare.test.mjs.
+describe('isCompareKey', () => {
+  it('holds the original on backslash and Y', () => {
+    expect(isCompareKey({ key: '\\', code: 'Backslash' })).toBe(true);
+    expect(isCompareKey({ key: '#', code: 'Backslash' })).toBe(true);
+    expect(isCompareKey({ key: 'y', code: 'KeyY' })).toBe(true);
+    expect(isCompareKey({ key: 'Y', code: 'KeyY' })).toBe(true);
+  });
+
+  it('does not claim other editor keys or M', () => {
+    for (const key of ['m', 'M', 'i', 'o', ' ', 'Escape', 'ArrowLeft']) {
+      expect(isCompareKey({ key, code: '' }), key).toBe(false);
+    }
+    expect(isCompareKey(undefined)).toBe(false);
+  });
+
+  it('ignores modified presses but always accepts a release', () => {
+    expect(isCompareKey({ key: '\\', metaKey: true })).toBe(false);
+    expect(isCompareKey({ key: 'y', ctrlKey: true })).toBe(false);
+    expect(isCompareKey({ key: '\\', altKey: true })).toBe(false);
+    expect(isCompareKey({ key: '\\', metaKey: true }, { release: true })).toBe(true);
   });
 });
