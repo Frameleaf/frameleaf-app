@@ -20,7 +20,7 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     id: '0195e2a0-0000-7000-8000-000000000001',
     kind: MediaOperationKind.StudioExport,
     status: MediaOperationStatus.Rendering,
-    destination: MediaOperationDestination.Runpod,
+    destination: MediaOperationDestination.FrameleafCloud,
     destinationDetail: null,
     label: 'Summer in the Rockies',
     assetId: null,
@@ -79,7 +79,7 @@ describe('Frameleaf Activity page', () => {
   it('names the destination on every job so cloud work is never implicit', async () => {
     await mount([operation()]);
 
-    await vi.waitFor(() => expect(screen.getByText(/RunPod/)).toBeInTheDocument());
+    await vi.waitFor(() => expect(screen.getByText(/Frameleaf Cloud/)).toBeInTheDocument());
     expect(screen.getByRole('heading', { name: 'Summer in the Rockies' })).toBeInTheDocument();
   });
 

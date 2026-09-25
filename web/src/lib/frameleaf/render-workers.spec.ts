@@ -74,7 +74,7 @@ describe('workerHealth', () => {
 
 describe('filterWorkers and sortWorkers', () => {
   const basement = worker({ id: 'w-1', name: 'Basement GPU' });
-  const attic = worker({ id: 'w-2', name: 'attic gpu', destination: MediaOperationDestination.Runpod });
+  const attic = worker({ id: 'w-2', name: 'attic gpu', destination: MediaOperationDestination.FrameleafCloud });
   const retired = worker({ id: 'w-3', name: 'Old box', status: RenderWorkerStatus.Revoked });
 
   it('hides revoked workers by default and can show only them', () => {
@@ -93,8 +93,8 @@ describe('filterWorkers and sortWorkers', () => {
   });
 
   it('narrows to one destination', () => {
-    const runpod = filterWorkers([basement, attic], { filter: 'all', destination: MediaOperationDestination.Runpod });
-    expect(runpod.map((w) => w.id)).toEqual(['w-2']);
+    const cloud = filterWorkers([basement, attic], { filter: 'all', destination: MediaOperationDestination.FrameleafCloud });
+    expect(cloud.map((w) => w.id)).toEqual(['w-2']);
   });
 
   it('sorts active workers first, then by name ignoring case', () => {
@@ -290,7 +290,7 @@ describe('parseWorkerForm', () => {
     const existing = {
       id: 'w-1',
       name: 'Attic',
-      destination: MediaOperationDestination.Runpod,
+      destination: MediaOperationDestination.FrameleafCloud,
       status: RenderWorkerStatus.Active,
       kinds: [MediaOperationKind.Restoration],
       engineDigest: null,
@@ -309,7 +309,7 @@ describe('parseWorkerForm', () => {
 
     expect(workerFormFrom(existing)).toEqual({
       name: 'Attic',
-      destination: MediaOperationDestination.Runpod,
+      destination: MediaOperationDestination.FrameleafCloud,
       kinds: [MediaOperationKind.Restoration],
       engineDigest: '',
       conformanceMaxAgeHours: '2',

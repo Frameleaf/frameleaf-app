@@ -199,7 +199,7 @@ export type ActivityItem = {
 const DESTINATION_KEY: Record<MediaOperationDestination, Translations> = {
   [MediaOperationDestination.Local]: 'frameleaf_activity_destination_local',
   [MediaOperationDestination.Lan]: 'frameleaf_activity_destination_lan',
-  [MediaOperationDestination.Runpod]: 'frameleaf_activity_destination_runpod',
+  [MediaOperationDestination.FrameleafCloud]: 'frameleaf_activity_destination_frameleaf_cloud',
 };
 
 /** Settings the prototype showed under a job title, in its order, skipping whatever is absent. */

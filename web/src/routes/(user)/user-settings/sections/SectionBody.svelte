@@ -4,6 +4,7 @@
    * the old administration pages (deduplication, Compute & jobs, Maintenance, Users), the account's
    * Trash and repair queues, and the account settings (`UserSettingsList`).
    */
+  import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import UserSettingsList from '../UserSettingsList.svelte';
   import DeduplicationSection from './DeduplicationSection.svelte';
@@ -36,6 +37,8 @@
     </Loader>
   {:else if section.key === 'queues'}
     <QueuesSection />
+  {:else if section.key === 'cloud-ml'}
+    <CloudMlSection />
   {:else if section.key === 'render-workers'}
     <Loader load={loadRenderWorkers}>
       {#snippet children(data)}

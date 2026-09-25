@@ -102,7 +102,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'processing',
     group: 'server',
-    sections: ['workers', 'routing', 'queues', 'render-workers', 'nightly-tasks'],
+    sections: ['workers', 'routing', 'queues', 'cloud-ml', 'render-workers', 'nightly-tasks'],
   },
   // The template's Access & security holds each account's own sign-in (password, PIN, provider),
   // Locked tags & people, and devices & API keys next to the server's sign-in methods.
@@ -414,6 +414,8 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     routing: 'workers',
     'render-workers': 'workers',
     queues: 'job_management',
+    // FL-159: Frameleaf Cloud sits where the template's provider manager sat.
+    'cloud-ml': 'workers',
     'nightly-tasks': 'schedules',
   },
   security: {

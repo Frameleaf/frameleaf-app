@@ -45,8 +45,6 @@ export type ConfigConflict = {
 export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'machineLearning.imageDescription.pendingRequeueAt',
   'machineLearning.imageDescription.lastConfigChangeAt',
-  'machineLearning.runpod.apiKeyConfigured',
-  'machineLearning.runpod.hfTokenConfigured',
   'notifications.smtp.transport.passwordConfigured',
   'oauth.clientSecretConfigured',
 ]);
@@ -59,8 +57,6 @@ export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
 export const SECRET_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'notifications.smtp.transport.password',
   'oauth.clientSecret',
-  'machineLearning.runpod.apiKey',
-  'machineLearning.runpod.hfToken',
 ]);
 
 const SECRET_NAME = /(password|secret|token|apikey|api_key|credential)$/i;
@@ -79,6 +75,7 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   authentication: ['passwordLogin', 'oauth'],
   backup: ['backup'],
   image: ['image'],
+  'cloud-ml': ['frameleafCloud'],
   'integrity-checks': ['integrityChecks'],
   'external-library': ['library'],
   logging: ['logging'],
