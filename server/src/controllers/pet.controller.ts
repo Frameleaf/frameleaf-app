@@ -3,13 +3,17 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  PetAssetObservationSearchDto,
   PetCandidateListResponseDto,
+  PetCandidateRejectDto,
   PetCandidateReviewDto,
   PetCandidateSearchDto,
   PetCreateDto,
   PetMergeDto,
   PetObservationCreateDto,
+  PetObservationDeleteDto,
   PetObservationResponseDto,
+  PetRecognitionStatusResponseDto,
   PetResponseDto,
   PetSearchDto,
   PetUpdateDto,
@@ -22,8 +26,8 @@ import { UUIDParamDto } from 'src/validation.js';
 /**
  * Pets (FL-58).
  *
- * Route order matters: `candidates` is declared before `:id` so the review queue is not
- * swallowed by the pet lookup, and observation routes sit under `observations/:id` so a
+ * Route order matters: `candidates`, `recognition` and `observations` are declared before
+ * `:id` so they are not swallowed by the pet lookup, and observation routes sit under `observations/:id` so a
  * durable decision can be undone by its own id.
  *
  * Every endpoint is owner-scoped inside `PetService`; there is no shared-pet concept, so
@@ -91,8 +95,61 @@ export class PetController {
     description: 'Record a durable rejection so the proposal does not return after the model is rerun.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  rejectPetCandidate(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<PetObservationResponseDto> {
-    return this.service.rejectCandidate(auth, id);
+  rejectPetCandidate(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: PetCandidateRejectDto,
+  ): Promise<PetObservationResponseDto> {
+    return this.service.rejectCandidate(auth, id, dto);
+  }
+
+  @Get('recognition')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Retrieve pet recognition status',
+    description:
+      'Whether pet recognition can run on the destination it is routed to, why not when it cannot, and the latest run over this library.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getPetRecognition(@Auth() auth: AuthDto): Promise<PetRecognitionStatusResponseDto> {
+    return this.service.getRecognition(auth);
+  }
+
+  @Post('recognition')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Start pet recognition',
+    description:
+      'Look through this library for the pets confirmed so far, on the routed destination only. Refused with the reason when recognition is unavailable.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  startPetRecognition(@Auth() auth: AuthDto): Promise<PetRecognitionStatusResponseDto> {
+    return this.service.startRecognition(auth);
+  }
+
+  @Delete('recognition')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Cancel pet recognition',
+    description: 'Cancel the running pet recognition run over this library. Proposals already made stay for review.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  cancelPetRecognition(@Auth() auth: AuthDto): Promise<PetRecognitionStatusResponseDto> {
+    return this.service.cancelRecognition(auth);
+  }
+
+  @Get('observations')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Retrieve the pet observations of an asset',
+    description: 'Retrieve the signed-in account’s decisions about which of its pets appear in one asset.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getAssetPetObservations(
+    @Auth() auth: AuthDto,
+    @Query() dto: PetAssetObservationSearchDto,
+  ): Promise<PetObservationResponseDto[]> {
+    return this.service.getAssetObservations(auth, dto);
   }
 
   @Delete('observations/:id')
@@ -100,11 +157,16 @@ export class PetController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     summary: 'Remove a pet observation',
-    description: 'Undo a durable observation, whether it was drawn by hand or made in review.',
+    description:
+      'Undo a durable observation, whether it was drawn by hand or made in review. With `expectedChecksum`, refused with 409 when the original changed.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  deletePetObservation(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
-    return this.service.removeObservation(auth, id);
+  deletePetObservation(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: PetObservationDeleteDto,
+  ): Promise<void> {
+    return this.service.removeObservation(auth, id, dto);
   }
 
   @Get(':id')

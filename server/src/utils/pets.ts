@@ -142,3 +142,193 @@ export const detectionsToReplace = <T extends ModelRevision & { id: string }>(
 
   return { staleIds, currentIds, allIds: [...staleIds, ...currentIds] };
 };
+
+/* -------------------------------------------------------------------------------------------- */
+/* Recognition with the configured CLIP model (FL-58)                                           */
+/* -------------------------------------------------------------------------------------------- */
+
+/**
+ * The pinned revision of the matcher below. It is part of every detection's `modelRevision`, with
+ * the CLIP model name, so changing either the rules here or the CLIP model makes every stored
+ * detection stale and a rerun replaces them (`detectionsToReplace`). Bump it when a threshold,
+ * prompt or scoring rule changes.
+ */
+export const PET_MATCHER_REVISION = 'clip-knn-1';
+
+export const petRecognitionRun = (clipModelName: string): ModelRevision => ({
+  modelName: clipModelName,
+  modelRevision: `${PET_MATCHER_REVISION}:${clipModelName}`,
+});
+
+/** Zero-shot prompts for the species the owner can pick. `Other` has no prompt of its own. */
+export const PET_SPECIES_PROMPTS: ReadonlyArray<{ species: PetSpecies; prompt: string }> = [
+  { species: PetSpecies.Cat, prompt: 'a photo of a cat' },
+  { species: PetSpecies.Dog, prompt: 'a photo of a dog' },
+  { species: PetSpecies.Bird, prompt: 'a photo of a pet bird' },
+  { species: PetSpecies.Rabbit, prompt: 'a photo of a rabbit' },
+  { species: PetSpecies.Horse, prompt: 'a photo of a horse' },
+  { species: PetSpecies.Reptile, prompt: 'a photo of a pet lizard, snake or turtle' },
+  { species: PetSpecies.Fish, prompt: 'a photo of an aquarium fish' },
+  { species: PetSpecies.SmallMammal, prompt: 'a photo of a hamster or guinea pig' },
+];
+
+/** What the photo may be instead of an animal. The gate asks whether an animal wins against these. */
+export const PET_NEGATIVE_PROMPTS: readonly string[] = [
+  'a photo of a person',
+  'a photo of a group of people',
+  'a photo of a landscape',
+  'a photo of food',
+  'a photo of a building',
+  'a screenshot or a document',
+  'a photo of an everyday object',
+];
+
+/** CLIP's logit scale: zero-shot probabilities are a softmax over 100 x cosine. */
+const CLIP_LOGIT_SCALE = 100;
+
+export const PET_RECOGNITION_THRESHOLDS = {
+  /** The animal prompts together must take at least this share for the photo to count as a pet photo. */
+  animalProbability: 0.5,
+  /** A pet is proposed at or above this mean similarity to its confirmed photos. */
+  candidateSimilarity: 0.7,
+  /** At or above this a proposal is a confident match. It is still only a proposal (never confirmed). */
+  confidentSimilarity: 0.85,
+  /** How many of a pet's closest confirmed photos the similarity averages. */
+  neighbours: 3,
+  /** The most confirmed photos per pet the matcher compares against, newest first. */
+  referencesPerPet: 50,
+} as const;
+
+export interface SpeciesReading {
+  /** The species prompt that won among the animals, or null when the photo is not a pet photo. */
+  species: PetSpecies | null;
+  /** The share the animal prompts took together, 0 to 1. */
+  animalProbability: number;
+  /** Per species share, 0 to 1. */
+  probabilities: Partial<Record<PetSpecies, number>>;
+}
+
+/**
+ * Zero-shot species gate: the asset's CLIP image embedding against the text embeddings of the
+ * species and non-animal prompts, as CLIP itself classifies (softmax over scaled cosines). All
+ * vectors must be unit length.
+ */
+export const readSpecies = (
+  asset: Float32Array,
+  species: ReadonlyArray<{ species: PetSpecies; embedding: Float32Array }>,
+  negatives: readonly Float32Array[],
+): SpeciesReading => {
+  const logits = [...species.map(({ embedding }) => embedding), ...negatives].map(
+    (embedding) => CLIP_LOGIT_SCALE * cosine(asset, embedding),
+  );
+  if (logits.length === 0 || species.length === 0) {
+    return { species: null, animalProbability: 0, probabilities: {} };
+  }
+  const max = Math.max(...logits);
+  const exps = logits.map((logit) => Math.exp(logit - max));
+  const total = exps.reduce((sum, value) => sum + value, 0);
+  const probabilities: Partial<Record<PetSpecies, number>> = {};
+  let animalProbability = 0;
+  let best: { species: PetSpecies; probability: number } | null = null;
+  for (const [index, entry] of species.entries()) {
+    const probability = exps[index] / total;
+    probabilities[entry.species] = probability;
+    animalProbability += probability;
+    if (!best || probability > best.probability) {
+      best = { species: entry.species, probability };
+    }
+  }
+  return {
+    species: animalProbability >= PET_RECOGNITION_THRESHOLDS.animalProbability ? (best?.species ?? null) : null,
+    animalProbability,
+    probabilities,
+  };
+};
+
+const cosine = (a: Float32Array, b: Float32Array): number => {
+  if (a.length !== b.length) {
+    return 0;
+  }
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    sum += a[i] * b[i];
+  }
+  return sum;
+};
+
+/** A pet as the matcher sees it: its owner-stated species and unit embeddings of its confirmed photos. */
+export interface PetReference {
+  petId: string;
+  species: PetSpecies;
+  embeddings: Float32Array[];
+}
+
+/**
+ * Whether a pet may be proposed for a photo whose animal reads as `detected`. A pet the owner
+ * called `Other` may be anything; otherwise the detected species must be the pet's.
+ */
+export const isSpeciesCompatible = (pet: PetSpecies, detected: PetSpecies | null): boolean =>
+  detected !== null && (pet === PetSpecies.Other || pet === detected);
+
+/**
+ * Identity by nearest neighbours: the mean cosine similarity of the photo to the pet's
+ * `neighbours` closest confirmed photos. One close photo is not enough on its own when the pet has
+ * more, which keeps a single look-alike photo from carrying a proposal.
+ */
+export const neighbourSimilarity = (asset: Float32Array, references: Float32Array[], neighbours: number): number => {
+  if (references.length === 0) {
+    return 0;
+  }
+  const similarities = references.map((reference) => cosine(asset, reference)).sort((a, b) => b - a);
+  const top = similarities.slice(0, Math.max(1, neighbours));
+  return top.reduce((sum, value) => sum + value, 0) / top.length;
+};
+
+export interface PetMatch {
+  petId: string;
+  score: number;
+  confident: boolean;
+}
+
+/**
+ * Which pets to propose for one photo, best first.
+ *
+ * Pets the owner already answered for this photo (confirmed or rejected) are never proposed: a
+ * rejection stays a rejection whatever the model revision. Nothing here confirms anything; every
+ * match, confident or not, is a proposal for review.
+ */
+export const matchPets = (
+  asset: Float32Array,
+  reading: SpeciesReading,
+  references: PetReference[],
+  answeredPetIds: ReadonlySet<string>,
+): PetMatch[] => {
+  const matches: PetMatch[] = [];
+  for (const pet of references) {
+    if (answeredPetIds.has(pet.petId) || !isSpeciesCompatible(pet.species, reading.species)) {
+      continue;
+    }
+    const score = neighbourSimilarity(asset, pet.embeddings, PET_RECOGNITION_THRESHOLDS.neighbours);
+    if (score >= PET_RECOGNITION_THRESHOLDS.candidateSimilarity) {
+      matches.push({
+        petId: pet.petId,
+        score: Math.min(1, score),
+        confident: score >= PET_RECOGNITION_THRESHOLDS.confidentSimilarity,
+      });
+    }
+  }
+  return matches.sort((a, b) => b.score - a.score || a.petId.localeCompare(b.petId));
+};
+
+/**
+ * A region drawn on an original that has since been replaced may no longer point at the animal.
+ * A whole-photo observation has no region to go wrong, and an observation made before checksums
+ * were recorded has nothing to compare, so neither is flagged.
+ */
+export const isStaleRegion = (
+  observation: { boundingBoxX1: number | null; sourceChecksum: Buffer | null },
+  currentChecksum: Buffer,
+): boolean =>
+  observation.boundingBoxX1 !== null &&
+  observation.sourceChecksum !== null &&
+  !observation.sourceChecksum.equals(currentChecksum);

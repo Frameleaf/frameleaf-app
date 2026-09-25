@@ -1,7 +1,26 @@
-import { AssetVisibility, PetSpecies, type PetCandidateResponseDto, type PetResponseDto } from '@immich/sdk';
+import {
+  AssetVisibility,
+  MlDestinationKind,
+  PetObservationSource,
+  PetObservationState,
+  PetRecognitionRunStatus,
+  PetRecognitionUnavailableReason,
+  PetSpecies,
+  type PetCandidateResponseDto,
+  type PetObservationResponseDto,
+  type PetResponseDto,
+} from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   confidencePercent,
+  confirmedObservations,
+  isRecognitionRunActive,
+  isStaleObservation,
+  observationToCreate,
+  recognitionDestinationKey,
+  recognitionReasonKey,
+  recognitionRunProgress,
+  regionFromBox,
   filterPetsByName,
   findPet,
   groupCandidatesByAsset,
@@ -13,6 +32,7 @@ import {
   sortPets,
   speciesLabelKey,
 } from '$lib/frameleaf/pets';
+import en from '../../../../i18n/en.json';
 
 const pet = (overrides: Partial<PetResponseDto> = {}): PetResponseDto =>
   ({
@@ -165,5 +185,99 @@ describe(petPhotosFilter.name, () => {
 
   it('returns a fresh filter each time, so a caller cannot mutate the next page', () => {
     expect(petPhotosFilter('pet-1')).not.toBe(petPhotosFilter('pet-1'));
+  });
+});
+
+describe('pet recognition status (FL-58)', () => {
+  it('names the managed cloud worker Frameleaf Cloud and a LAN worker by its name', () => {
+    expect(en[recognitionDestinationKey(MlDestinationKind.Runpod) as keyof typeof en]).toContain('Frameleaf Cloud');
+    expect(en[recognitionDestinationKey(MlDestinationKind.Lan) as keyof typeof en]).toContain('{name}');
+    expect(en[recognitionDestinationKey(MlDestinationKind.Local) as keyof typeof en]).toContain('this server');
+  });
+
+  it('has an actionable sentence for every reason the server can give', () => {
+    for (const reason of Object.values(PetRecognitionUnavailableReason)) {
+      expect(en[recognitionReasonKey(reason) as keyof typeof en], reason).toEqual(expect.any(String));
+    }
+  });
+
+  it('follows a queued or running run only', () => {
+    expect(isRecognitionRunActive({ status: PetRecognitionRunStatus.Queued })).toBe(true);
+    expect(isRecognitionRunActive({ status: PetRecognitionRunStatus.Running })).toBe(true);
+    expect(isRecognitionRunActive({ status: PetRecognitionRunStatus.Cancelled })).toBe(false);
+    expect(isRecognitionRunActive(null)).toBe(false);
+  });
+
+  it('reads progress without dividing by zero', () => {
+    expect(recognitionRunProgress({ assetCount: 0, processedCount: 0 })).toBe(0);
+    expect(recognitionRunProgress({ assetCount: 4, processedCount: 1 })).toBe(0.25);
+    expect(recognitionRunProgress({ assetCount: 4, processedCount: 9 })).toBe(1);
+  });
+});
+
+describe('pet observations (FL-58)', () => {
+  const observation = (overrides: Partial<PetObservationResponseDto> = {}): PetObservationResponseDto => ({
+    id: 'o1',
+    petId: 'p1',
+    assetId: 'a1',
+    state: PetObservationState.Confirmed,
+    source: PetObservationSource.Manual,
+    boundingBoxX1: null,
+    boundingBoxY1: null,
+    boundingBoxX2: null,
+    boundingBoxY2: null,
+    imageWidth: null,
+    imageHeight: null,
+    sourceChecksum: null,
+    staleAt: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    ...overrides,
+  });
+
+  it('lists confirmed pets with regions to check first', () => {
+    const list = confirmedObservations([
+      observation({ id: 'fresh' }),
+      observation({ id: 'rejected', state: PetObservationState.Rejected }),
+      observation({ id: 'stale', staleAt: '2026-09-02T00:00:00.000Z' }),
+    ]);
+
+    expect(list.map(({ id }) => id)).toEqual(['stale', 'fresh']);
+    expect(isStaleObservation(list[0])).toBe(true);
+  });
+
+  it('turns a drawn fraction box into the pixel region the API stores', () => {
+    expect(regionFromBox({ x: 0.1, y: 0.2, width: 0.5, height: 0.25 }, { width: 1000, height: 800 })).toEqual({
+      boundingBoxX1: 100,
+      boundingBoxY1: 160,
+      boundingBoxX2: 600,
+      boundingBoxY2: 360,
+      imageWidth: 1000,
+      imageHeight: 800,
+    });
+  });
+
+  it('writes a removed decision back as it was, naming the photo on screen', () => {
+    expect(observationToCreate(observation(), 'sum')).toEqual({ assetId: 'a1', expectedChecksum: 'sum' });
+    expect(
+      observationToCreate(
+        observation({
+          boundingBoxX1: 1,
+          boundingBoxY1: 2,
+          boundingBoxX2: 3,
+          boundingBoxY2: 4,
+          imageWidth: 10,
+          imageHeight: 10,
+        }),
+      ),
+    ).toEqual({
+      assetId: 'a1',
+      boundingBoxX1: 1,
+      boundingBoxY1: 2,
+      boundingBoxX2: 3,
+      boundingBoxY2: 4,
+      imageWidth: 10,
+      imageHeight: 10,
+    });
   });
 });

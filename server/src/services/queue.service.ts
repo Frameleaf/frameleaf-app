@@ -35,7 +35,12 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { handlePromiseError, isImageDescriptionEnabled, isNsfwDetectionEnabled } from 'src/utils/misc.js';
+import {
+  handlePromiseError,
+  isImageDescriptionEnabled,
+  isNsfwDetectionEnabled,
+  isSmartSearchEnabled,
+} from 'src/utils/misc.js';
 
 /** FL-71: the machine-learning workload whose routed destination runs a queue's jobs. */
 const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
@@ -45,6 +50,7 @@ const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
   [QueueName.ImageEnrichment]: MlWorkload.Enrichment,
   [QueueName.ImageDescription]: MlWorkload.Enrichment,
   [QueueName.NsfwDetection]: MlWorkload.Enrichment,
+  [QueueName.PetRecognition]: MlWorkload.PetRecognition,
 };
 
 /** FL-71 (J-1): the most jobs of one state read to count an account's share of a queue. */
@@ -410,6 +416,15 @@ export class QueueService extends BaseService {
 
       case QueueName.MediaHealth: {
         return this.jobRepository.queue({ name: JobName.MediaHealthScanMissing, data: { force } });
+      }
+
+      case QueueName.PetRecognition: {
+        const { machineLearning } = await this.getConfig({ withCache: false });
+        if (!isSmartSearchEnabled(machineLearning)) {
+          throw new BadRequestException(`Pet recognition needs smart search, which is not enabled`);
+        }
+
+        return this.jobRepository.queue({ name: JobName.PetRecognitionQueueAll, data: { force } });
       }
 
       case QueueName.ImageDescription: {

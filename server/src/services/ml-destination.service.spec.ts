@@ -72,13 +72,53 @@ describe(MlDestinationService.name, () => {
         expect.objectContaining({
           kind: MlDestinationKind.Local,
           url: 'http://immich-machine-learning:3003',
-          workloads: [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment],
+          workloads: [
+            MlWorkload.Face,
+            MlWorkload.Clip,
+            MlWorkload.Ocr,
+            MlWorkload.Enrichment,
+            MlWorkload.PetRecognition,
+          ],
         }),
       );
-      expect(mocks.mlDestination.setRoute).toHaveBeenCalledTimes(4);
-      for (const workload of [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment]) {
+      expect(mocks.mlDestination.setRoute).toHaveBeenCalledTimes(5);
+      for (const workload of [
+        MlWorkload.Face,
+        MlWorkload.Clip,
+        MlWorkload.Ocr,
+        MlWorkload.Enrichment,
+        MlWorkload.PetRecognition,
+      ]) {
         expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(workload, 'created');
       }
+    });
+
+    it('allows pet recognition on this server’s existing local destination as it routes it there (FL-58)', async () => {
+      mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
+      mocks.mlDestination.getRoute.mockImplementation((workload) =>
+        Promise.resolve(
+          workload === MlWorkload.PetRecognition
+            ? undefined
+            : { workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
+        ),
+      );
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+
+      await sut.onConfigInit({
+        newConfig: {
+          ...defaults,
+          machineLearning: {
+            ...defaults.machineLearning,
+            availabilityChecks: { ...defaults.machineLearning.availabilityChecks, enabled: false },
+          },
+        },
+      } as never);
+
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(mlDestinationStub.local.id, {
+        workloads: [...mlDestinationStub.local.workloads, MlWorkload.PetRecognition],
+      });
+      expect(mocks.mlDestination.setRoute).toHaveBeenCalledTimes(1);
+      expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(MlWorkload.PetRecognition, mlDestinationStub.local.id);
     });
 
     it('never creates a RunPod destination or routes restoration and Studio work on its own', async () => {

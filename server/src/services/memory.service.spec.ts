@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PassThrough } from 'node:stream';
 import type { OnThisDayData } from 'src/types.js';
-import { JobName, JobStatus, MemoryExportFormat, MemoryExportStatus } from 'src/enum.js';
+import { JobName, JobStatus, MemoryExportFormat, MemoryExportStatus, MemoryType, PetSpecies } from 'src/enum.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { MemoryFactory } from 'test/factories/memory.factory.js';
@@ -57,6 +57,94 @@ describe(MemoryService.name, () => {
     it('should map empty result', async () => {
       mocks.memory.search.mockResolvedValue([]);
       await expect(sut.search(factory.auth(), {})).resolves.toEqual([]);
+    });
+    describe('pet stories (FL-58)', () => {
+      const petStory = (userId: string, petId: string) => {
+        const asset = AssetFactory.create();
+        const memory = MemoryFactory.from({
+          ownerId: userId,
+          type: MemoryType.PetStory,
+          data: {
+            kind: 'pet_story',
+            year: 2026,
+            month: '2026-08',
+            petId,
+            name: 'Old name',
+            species: PetSpecies.Cat,
+            assetCount: 6,
+          } as never,
+        })
+          .asset(asset)
+          .build();
+        return getForMemory(memory);
+      };
+
+      it('shows a pet story under the pet’s current name', async () => {
+        const [userId, petId] = newUuids();
+        mocks.memory.search.mockResolvedValue([petStory(userId, petId)]);
+        mocks.memory.getStoryPets.mockResolvedValue([
+          { id: petId, name: 'Biscuit', species: PetSpecies.Cat, isHidden: false },
+        ]);
+
+        const [result] = await sut.search(factory.auth({ user: { id: userId } }), {});
+
+        expect(result.data).toMatchObject({ kind: 'pet_story', petId, name: 'Biscuit' });
+        expect(mocks.memory.getStoryPets).toHaveBeenCalledWith(userId, [petId]);
+      });
+
+      it('leaves out a story about a hidden or deleted pet', async () => {
+        const [userId, hiddenId, deletedId] = newUuids();
+        mocks.memory.search.mockResolvedValue([petStory(userId, hiddenId), petStory(userId, deletedId)]);
+        mocks.memory.getStoryPets.mockResolvedValue([
+          { id: hiddenId, name: 'Shy', species: PetSpecies.Dog, isHidden: true },
+        ]);
+
+        await expect(sut.search(factory.auth({ user: { id: userId } }), {})).resolves.toEqual([]);
+      });
+    });
+  });
+
+  describe('onMemoriesCreate pet stories (FL-58)', () => {
+    it('creates one story per named pet and month, once', async () => {
+      const [userId, petId] = newUuids();
+      const day = (date: number) => new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), date));
+      mocks.user.getList.mockResolvedValue([{ id: userId }] as never);
+      mocks.systemMetadata.get.mockResolvedValue({
+        lastOnThisDayDate: new Date().toISOString(),
+        lastYearInReviewYear: 9999,
+      });
+      mocks.asset.getEventStoryCandidates.mockResolvedValue([]);
+      mocks.memory.getPetStoryCandidates.mockResolvedValue(
+        [1, 2, 3, 4, 5].map((date) => ({
+          petId,
+          name: 'Biscuit',
+          species: PetSpecies.Cat,
+          assetId: `asset-${date}`,
+          localDateTime: day(date),
+        })),
+      );
+      mocks.memory.getPetStoryKeys.mockResolvedValue(new Set());
+      mocks.memory.create.mockResolvedValue({} as never);
+
+      await sut.onMemoriesCreate();
+
+      expect(mocks.memory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerId: userId,
+          type: MemoryType.PetStory,
+          data: expect.objectContaining({ kind: 'pet_story', petId, name: 'Biscuit', assetCount: 5 }),
+        }),
+        new Set(['asset-1', 'asset-2', 'asset-3', 'asset-4', 'asset-5']),
+      );
+
+      mocks.memory.create.mockClear();
+      const month = day(1).toISOString().slice(0, 7);
+      mocks.memory.getPetStoryKeys.mockResolvedValue(new Set([`${petId}:${month}`]));
+      await sut.onMemoriesCreate();
+      expect(mocks.memory.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: MemoryType.PetStory }),
+        expect.anything(),
+      );
     });
   });
 

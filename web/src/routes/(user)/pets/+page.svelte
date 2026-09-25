@@ -15,26 +15,44 @@
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PetCard from '$lib/components/frameleaf/pets/PetCard.svelte';
+  import PetRecognitionPanel from '$lib/components/frameleaf/pets/PetRecognitionPanel.svelte';
   import PetReviewPanel from '$lib/components/frameleaf/pets/PetReviewPanel.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import { filterPetsByName, petSpeciesOptions, sortPets, speciesLabelKey } from '$lib/frameleaf/pets';
+  import { toastPetDecision } from '$lib/frameleaf/pet-undo';
+  import {
+    filterPetsByName,
+    findPet,
+    isRecognitionRunActive,
+    isSourceConflict,
+    petSpeciesOptions,
+    sortPets,
+    speciesLabelKey,
+  } from '$lib/frameleaf/pets';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import {
     PetSpecies,
     acceptPetCandidate,
+    cancelPetRecognition,
     createPet,
     deletePet,
+    deletePetObservation,
     getAllPets,
     getPetCandidates,
+    getPetRecognition,
     mergePets,
     rejectPetCandidate,
+    startPetRecognition,
     updatePet,
     type PetCandidateResponseDto,
+    type PetObservationResponseDto,
+    type PetRecognitionStatusResponseDto,
     type PetResponseDto,
   } from '@immich/sdk';
   import { Icon, modalManager, toastManager } from '@immich/ui';
   import { mdiPawOutline, mdiPlus } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -47,7 +65,12 @@
   let pets = $state<PetResponseDto[]>(data.pets);
   let candidates = $state<PetCandidateResponseDto[]>(data.candidates.candidates);
   let recognitionAvailable = $state(data.candidates.recognitionAvailable);
-  let recognitionUnavailableReason = $state(data.candidates.recognitionUnavailableReason);
+  let recognition = $state<PetRecognitionStatusResponseDto>(data.candidates.recognition);
+  let recognitionBusy = $state(false);
+
+  /** How often a running recognition run is re-read, so progress and new suggestions appear. */
+  const RUN_POLL_MS = 4000;
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
 
   let search = $state('');
   let showHidden = $state(false);
@@ -86,7 +109,54 @@
     const response = await getPetCandidates({});
     candidates = response.candidates;
     recognitionAvailable = response.recognitionAvailable;
-    recognitionUnavailableReason = response.recognitionUnavailableReason;
+    recognition = response.recognition;
+  };
+
+  // FL-58: while a run is going the page follows it; a reload picks the same run up from the
+  // server, because the run is durable there, not state of this page.
+  const schedulePoll = () => {
+    clearTimeout(pollTimer);
+    if (!isRecognitionRunActive(recognition.run)) {
+      return;
+    }
+    pollTimer = setTimeout(() => {
+      // a failed read is left to the next poll or a reload
+      void refreshCandidates()
+        .catch(() => {})
+        .finally(() => schedulePoll());
+    }, RUN_POLL_MS);
+  };
+
+  $effect(() => {
+    void recognition.run?.status;
+    schedulePoll();
+  });
+
+  onDestroy(() => clearTimeout(pollTimer));
+
+  const handleStartRecognition = async () => {
+    recognitionBusy = true;
+    try {
+      recognition = await startPetRecognition();
+      toastManager.primary($t('frameleaf_pets_recognition_started'));
+    } catch (error) {
+      handleError(error, $t('frameleaf_pets_recognition_error'));
+      recognition = await getPetRecognition().catch(() => recognition);
+    } finally {
+      recognitionBusy = false;
+    }
+  };
+
+  const handleCancelRecognition = async () => {
+    recognitionBusy = true;
+    try {
+      recognition = await cancelPetRecognition();
+      toastManager.primary($t('frameleaf_pets_recognition_stopped'));
+    } catch (error) {
+      handleError(error, $t('frameleaf_pets_recognition_error'));
+    } finally {
+      recognitionBusy = false;
+    }
   };
 
   const handleCreate = async (event: Event) => {
@@ -199,26 +269,77 @@
     }
   };
 
-  const reviewed = async (candidate: PetCandidateResponseDto, action: () => Promise<unknown>) => {
+  const petName = (id: string) => findPet(pets, id)?.name || $t('frameleaf_pets_unnamed');
+
+  /**
+   * One review answer, then a toast whose Undo removes the durable decision it left (FL-58). Every
+   * answer names the checksum of the photo as it was proposed, so an answer about a replaced
+   * original is refused (409) and the queue is reloaded instead.
+   */
+  const reviewed = async (
+    candidate: PetCandidateResponseDto,
+    action: () => Promise<PetObservationResponseDto>,
+    message: string,
+  ) => {
     busyCandidateId = candidate.id;
     try {
-      await action();
+      const observation = await action();
       await Promise.all([refreshPets(), refreshCandidates()]);
+      toastPetDecision(message, async () => {
+        try {
+          await deletePetObservation({ id: observation.id, expectedChecksum: candidate.assetChecksum });
+          // The server sends the photo back through recognition; the proposal returns with it.
+          candidates = [...candidates, candidate];
+          await refreshPets();
+          toastManager.primary($t('frameleaf_pets_undone'));
+        } catch (error) {
+          handleError(error, $t('frameleaf_pets_error_review'));
+        }
+      });
     } catch (error) {
-      handleError(error, $t('frameleaf_pets_error_review'));
+      if (isSourceConflict(error)) {
+        toastManager.warning($t('frameleaf_pets_photo_changed'));
+        await refreshCandidates().catch(() => {});
+      } else {
+        handleError(error, $t('frameleaf_pets_error_review'));
+      }
     } finally {
       busyCandidateId = null;
     }
   };
 
   const handleAccept = (candidate: PetCandidateResponseDto) =>
-    reviewed(candidate, () => acceptPetCandidate({ id: candidate.id, petCandidateReviewDto: {} }));
+    reviewed(
+      candidate,
+      () =>
+        acceptPetCandidate({
+          id: candidate.id,
+          petCandidateReviewDto: { expectedChecksum: candidate.assetChecksum },
+        }),
+      $t('frameleaf_pets_review_accepted', { values: { name: petName(candidate.petId) } }),
+    );
 
   const handleReassign = (candidate: PetCandidateResponseDto, petId: string) =>
-    reviewed(candidate, () => acceptPetCandidate({ id: candidate.id, petCandidateReviewDto: { petId } }));
+    reviewed(
+      candidate,
+      () =>
+        acceptPetCandidate({
+          id: candidate.id,
+          petCandidateReviewDto: { petId, expectedChecksum: candidate.assetChecksum },
+        }),
+      $t('frameleaf_pets_review_accepted', { values: { name: petName(petId) } }),
+    );
 
   const handleReject = (candidate: PetCandidateResponseDto) =>
-    reviewed(candidate, () => rejectPetCandidate({ id: candidate.id }));
+    reviewed(
+      candidate,
+      () =>
+        rejectPetCandidate({
+          id: candidate.id,
+          petCandidateRejectDto: { expectedChecksum: candidate.assetChecksum },
+        }),
+      $t('frameleaf_pets_review_ignored'),
+    );
 </script>
 
 <UserPageLayout title={data.meta.title} scrollbar={true}>
@@ -273,11 +394,18 @@
       </ul>
     {/if}
 
+    <PetRecognitionPanel
+      {recognition}
+      isAdmin={authManager.user.isAdmin}
+      busy={recognitionBusy}
+      onStart={() => void handleStartRecognition()}
+      onCancel={() => void handleCancelRecognition()}
+    />
+
     <PetReviewPanel
       {candidates}
       {pets}
       {recognitionAvailable}
-      {recognitionUnavailableReason}
       {busyCandidateId}
       onAccept={handleAccept}
       onReassign={handleReassign}
