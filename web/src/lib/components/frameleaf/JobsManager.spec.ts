@@ -404,4 +404,28 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
       'true',
     );
   });
+
+  it("shows a queue's counts as unknown, not 0, when they cannot be read for an account", async () => {
+    vi.mocked(getQueueOwnerStatistics).mockImplementation(({ name }) =>
+      name === QueueName.FaceDetection
+        ? Promise.reject(new Error('down'))
+        : Promise.resolve({ active: 1, completed: 0, delayed: 0, failed: 0, paused: 0, waiting: 2, truncated: false }),
+    );
+    render(JobsManager);
+
+    const filter = await screen.findByRole('combobox', { name: 'Account filter' });
+    await screen.findByRole('option', { name: 'Grace Hopper' });
+    await fireEvent.change(filter, { target: { value: 'grace' } });
+
+    expect(
+      await screen.findByText('Some counts for Grace Hopper could not be loaded. They show as unknown.'),
+    ).toBeInTheDocument();
+    const table = within(screen.getByRole('region', { name: 'Processing queues' }));
+    const faces = table.getAllByRole('button', { name: /^Face detection/ })[0].closest('tr')!;
+    expect(within(faces).getAllByText('—').length).toBeGreaterThan(0);
+    const thumbnails = table.getAllByRole('button', { name: /^Thumbnails/ })[0].closest('tr')!;
+    expect(within(thumbnails).getByText('2')).toBeInTheDocument();
+    // The totals would be partial, so they are unknown too.
+    expect(screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling).toHaveTextContent('—');
+  });
 });
