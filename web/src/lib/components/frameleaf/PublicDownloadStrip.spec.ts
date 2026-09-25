@@ -69,6 +69,20 @@ describe('PublicDownloadStrip', () => {
 
     expect(screen.getByRole('button', { name: en.frameleaf_public_save_archive })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: en.cancel })).toBeInTheDocument();
+    // "Archive ready" leads, without the preparing bar under it.
+    expect(screen.getByText(/^Archive ready · 1 file/)).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  it("keeps a failed part's Retry while another part is ready", async () => {
+    downloadManager.start({ name: 'a+1.zip', assetIds: ['1'], group: 'share' }, () => Promise.resolve(new Blob(['1'])));
+    downloadManager.start({ name: 'a+2.zip', assetIds: ['2'], group: 'share' }, () => Promise.reject(new Error('x')));
+    await flush();
+
+    render(PublicDownloadStrip);
+
+    expect(screen.getByRole('button', { name: en.frameleaf_public_save_archive })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en.retry })).toBeInTheDocument();
   });
 
   it('streams a large archive on Save archive', async () => {
