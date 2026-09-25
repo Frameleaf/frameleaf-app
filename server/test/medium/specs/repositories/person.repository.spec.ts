@@ -252,12 +252,45 @@ describe(PersonRepository.name, () => {
       const { person } = await ctx.newPerson({ ownerId: user.id });
       const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
 
-      await expect(sut.getFeaturedAsset(assetFace.id)).resolves.toEqual({
+      await expect(sut.getFeaturedAsset(assetFace.id, user.id)).resolves.toEqual({
         id: asset.id,
         visibility: AssetVisibility.Archive,
         deletedAt: null,
       });
-      await expect(sut.getFeaturedAsset(newUuid())).resolves.toBeUndefined();
+      await expect(sut.getFeaturedAsset(newUuid(), user.id)).resolves.toBeUndefined();
+    });
+
+    // a person group spans a cluster's accounts, so the featured face can be on someone else's photo
+    it("never names another account's photo", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: other.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+
+      await expect(sut.getFeaturedAsset(assetFace.id, user.id)).resolves.toBeUndefined();
+      await expect(sut.getFeaturedAsset(assetFace.id, other.id)).resolves.toMatchObject({ id: asset.id });
+    });
+
+    it('never names the photo of a soft-deleted or invisible face', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace: removed } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        deletedAt: new Date(),
+      });
+      const { assetFace: invisible } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        isVisible: false,
+      });
+
+      await expect(sut.getFeaturedAsset(removed.id, user.id)).resolves.toBeUndefined();
+      await expect(sut.getFeaturedAsset(invisible.id, user.id)).resolves.toBeUndefined();
     });
   });
 
