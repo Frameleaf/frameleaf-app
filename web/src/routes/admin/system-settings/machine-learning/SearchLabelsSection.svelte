@@ -23,8 +23,10 @@
   let { workingConfig, savedConfig, disabled }: Props = $props();
 
   const settingsDraft = requireSystemConfigDraft();
-  const askSearch = $derived(settingsDraft.draft.localFeatures.askSearch);
-  const savedAskSearch = $derived(settingsDraft.baseline.localFeatures.askSearch);
+  // The server always returns `localFeatures`; the DTO marks it optional only because it has a default.
+  const askSearchDefault = { enabled: true, maxResults: 100 };
+  const askSearch = $derived(settingsDraft.draft.localFeatures?.askSearch ?? askSearchDefault);
+  const savedAskSearch = $derived(settingsDraft.baseline.localFeatures?.askSearch ?? askSearchDefault);
 
   const clipOff = $derived(disabled || !workingConfig.enabled || !workingConfig.clip.enabled);
 </script>
