@@ -601,6 +601,7 @@ where
 select
   "asset"."id",
   "asset"."visibility",
+  "asset"."checksum",
   to_json("asset_exif") as "exifInfo",
   (
     select
