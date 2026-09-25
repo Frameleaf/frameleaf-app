@@ -631,6 +631,19 @@ export function parseUtilities(raw) {
       });
   return base;
 }
+/** Rows still "Checking…" once the kept manifests have been searched are in a backup. */
+export function resolveBackupChecks(state) {
+  if (!state.rows.some((row) => row.backup?.status === "checking")) return state;
+  return {
+    ...state,
+    rows: state.rows.map((row) =>
+      row.backup?.status === "checking"
+        ? { ...row, backup: { ...row.backup, status: "in-backup" } }
+        : row,
+    ),
+  };
+}
+
 /** Shown when a restored file doesn't match the fingerprint the library recorded. */
 export const RESTORE_REFUSED =
   "Restore refused: the backup copy doesn’t match this item’s fingerprint. The finding stays open.";

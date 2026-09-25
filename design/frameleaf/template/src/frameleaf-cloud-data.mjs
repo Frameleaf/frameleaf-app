@@ -1427,7 +1427,7 @@ export const RESTORE_RUN_ACTIVE = Object.freeze(["queued", "running"]);
 export const restoreRunActive = (state) => RESTORE_RUN_ACTIVE.includes(state?.backup?.restoreRun?.status);
 
 /** Queue a restore. It runs as a media operation with progress in Activity. */
-export function startRestoreRun(state, { title, files = 1, steps = null } = {}, now = Date.now()) {
+export function startRestoreRun(state, { title, files = 1, steps = null, details = "keep" } = {}, now = Date.now()) {
   if (restoreRunActive(state)) throw new Error("A restore is already running. Wait for it to finish.");
   const ms = nowMs(now);
   return {
@@ -1439,6 +1439,8 @@ export function startRestoreRun(state, { title, files = 1, steps = null } = {}, 
         title: String(title || "Restore from backup"),
         files: Math.max(1, Number(files) || 1),
         steps: Array.isArray(steps) ? steps : null,
+        // How the item's details come back: "keep" | "fill" | "replace".
+        details: restoreDetailsOptions.some((option) => option.id === details) ? details : "keep",
         progress: 0,
         startedAt: new Date(ms).toISOString(),
         stageStartedAt: ms,
