@@ -139,18 +139,18 @@ export class DownloadService extends BaseService {
     // as a single original download before anything is streamed
     const policyFor = await getOriginalLocationPolicies({
       auth,
-      ownerIds: new Set(assets.map(({ ownerId }) => ownerId)),
+      assets,
       purpose: 'download',
       repository: this.partnerRepository,
     });
-    if (assets.some(({ ownerId }) => policyFor(ownerId) === OriginalLocationPolicy.Refuse)) {
+    if (assets.some((asset) => policyFor(asset) === OriginalLocationPolicy.Refuse)) {
       throw new ForbiddenException('Downloads are turned off while metadata is hidden');
     }
 
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
     const disposition = dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`;
 
-    const removals = assets.filter(({ ownerId }) => policyFor(ownerId) === OriginalLocationPolicy.RemoveLocation);
+    const removals = assets.filter((asset) => policyFor(asset) === OriginalLocationPolicy.RemoveLocation);
     if (removals.length > 0) {
       if (removals.length > MAX_LOCATION_FREE_ARCHIVE_ENTRIES) {
         throw new BadRequestException(
@@ -207,9 +207,9 @@ export class DownloadService extends BaseService {
     dto: DownloadArchiveDto,
     assetMap: Map<
       string,
-      { ownerId: string; originalPath: string; editedPath?: string | null; originalFileName: string }
+      { id: string; ownerId: string; originalPath: string; editedPath?: string | null; originalFileName: string }
     >,
-    policyFor: (ownerId: string) => OriginalLocationPolicy,
+    policyFor: (asset: { id: string; ownerId: string }) => OriginalLocationPolicy,
   ) {
     const paths: Record<string, number> = {};
     const omitted: string[] = [];
@@ -225,7 +225,7 @@ export class DownloadService extends BaseService {
         }
 
         const realpath = await this.resolveArchivePath(asset, dto);
-        if (policyFor(asset.ownerId) !== OriginalLocationPolicy.RemoveLocation) {
+        if (policyFor(asset) !== OriginalLocationPolicy.RemoveLocation) {
           zip.addFile(realpath, nextArchiveName(paths, asset.originalFileName));
           continue;
         }

@@ -123,23 +123,80 @@ const getOriginalViewerId = (auth: AuthDto) => auth.sharedLink?.userId ?? auth.u
  * Resolves the policy for every owner in `ownerIds`. The partner lookup only runs when someone else's files
  * are read (by a signed-in user or through a link), so the owner's own downloads cost nothing extra.
  */
+export type OriginalAsset = { id: string; ownerId: string };
+
 export const getOriginalLocationPolicies = async ({
   auth,
-  ownerIds,
+  assets,
   purpose,
   repository,
 }: {
   auth: AuthDto;
-  ownerIds: Iterable<string>;
+  assets: Iterable<OriginalAsset>;
   purpose: OriginalPurpose;
   repository: PartnerRepository;
-}): Promise<(ownerId: string) => OriginalLocationPolicy> => {
+}): Promise<(asset: OriginalAsset) => OriginalLocationPolicy> => {
   const viewerId = getOriginalViewerId(auth);
   const hidesAllMetadata = !!auth.sharedLink && !auth.sharedLink.showExif;
-  const needsLookup = !hidesAllMetadata && [...ownerIds].some((ownerId) => ownerId !== viewerId);
-  const locationHiddenOwnerIds = needsLookup
-    ? await getLocationHiddenPartnerIds({ userId: viewerId, repository })
-    : new Set<string>();
+  const others = hidesAllMetadata ? [] : [...assets].filter(({ ownerId }) => ownerId !== viewerId);
+  const locationHiddenOwnerIds =
+    others.length > 0 ? await getLocationHiddenPartnerIds({ userId: viewerId, repository }) : new Set<string>();
 
-  return (ownerId) => getOriginalLocationPolicy({ auth, ownerId, locationHiddenOwnerIds, purpose });
+  // owner default (privacy first): an item reached through an album whose owner its owner hides locations
+  // from is location-hidden for everyone looking through that album
+  const candidates = others.filter(({ ownerId }) => !locationHiddenOwnerIds.has(ownerId)).map(({ id }) => id);
+  const hiddenThroughAlbums =
+    candidates.length > 0 ? await repository.getLocationHiddenThroughAlbums(viewerId, candidates) : new Set<string>();
+
+  return ({ id, ownerId }) => {
+    const policy = getOriginalLocationPolicy({ auth, ownerId, locationHiddenOwnerIds, purpose });
+    return policy === OriginalLocationPolicy.Serve && hiddenThroughAlbums.has(id)
+      ? OriginalLocationPolicy.RemoveLocation
+      : policy;
+  };
+};
+
+/**
+ * Owners whose locations are hidden in a view: those who hide them from the viewer and, when the view is
+ * one or more albums, those who hide them from any of those albums' owners (owner default, privacy
+ * first). The viewer's own items are never hidden from them.
+ */
+export const getLocationHiddenOwnerIdsForView = async ({
+  viewerId,
+  albumIds = [],
+  repository,
+}: {
+  viewerId: string;
+  albumIds?: string[];
+  repository: PartnerRepository;
+}): Promise<Set<string>> => {
+  const [hidden, throughAlbums] = await Promise.all([
+    getLocationHiddenPartnerIds({ userId: viewerId, repository }),
+    albumIds.length > 0 ? repository.getLocationHiddenOwnerIdsForAlbums(albumIds) : Promise.resolve([] as string[]),
+  ]);
+  for (const ownerId of throughAlbums) {
+    if (ownerId !== viewerId) {
+      hidden.add(ownerId);
+    }
+  }
+  return hidden;
+};
+
+/** Clears the location of assets the viewer reaches only through an album whose owner is hidden from. */
+export const applyAlbumLocationPolicy = async <
+  T extends { id: string; ownerId?: string; exifInfo?: LocationFields | null },
+>(
+  assets: T[],
+  { userId, repository }: PartnerLocationOptions,
+): Promise<T[]> => {
+  const candidates = assets.filter((asset) => asset.exifInfo && asset.ownerId && asset.ownerId !== userId);
+  if (candidates.length === 0) {
+    return assets;
+  }
+
+  const hidden = await repository.getLocationHiddenThroughAlbums(
+    userId,
+    candidates.map(({ id }) => id),
+  );
+  return hidden.size === 0 ? assets : assets.map((asset) => (hidden.has(asset.id) ? hideAssetLocation(asset) : asset));
 };

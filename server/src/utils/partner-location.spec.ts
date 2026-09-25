@@ -2,7 +2,9 @@ import { vitest } from 'vitest';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import {
   OriginalLocationPolicy,
+  applyAlbumLocationPolicy,
   applyPartnerLocationPolicy,
+  getLocationHiddenOwnerIdsForView,
   getLocationHiddenPartnerIds,
   getOriginalLocationPolicies,
   getOriginalLocationPolicy,
@@ -23,6 +25,8 @@ describe('partner location policy', () => {
 
   beforeEach(() => {
     repository = automock(PartnerRepository) as unknown as PartnerRepository;
+    vitest.mocked(repository.getLocationHiddenThroughAlbums).mockResolvedValue(new Set());
+    vitest.mocked(repository.getLocationHiddenOwnerIdsForAlbums).mockResolvedValue([]);
   });
 
   describe(getLocationHiddenPartnerIds.name, () => {
@@ -189,24 +193,24 @@ describe('partner location policy', () => {
       const me = UserFactory.create();
       const policyFor = await getOriginalLocationPolicies({
         auth: AuthFactory.create(me),
-        ownerIds: [me.id],
+        assets: [me.id].map((ownerId) => ({ id: ownerId, ownerId })),
         purpose: 'download',
         repository,
       });
 
-      expect(policyFor(me.id)).toBe(OriginalLocationPolicy.Serve);
+      expect(policyFor({ id: me.id, ownerId: me.id })).toBe(OriginalLocationPolicy.Serve);
       expect(repository.getAll).not.toHaveBeenCalled();
     });
 
     it('skips the partner lookup for a shared link that hides metadata', async () => {
       const policyFor = await getOriginalLocationPolicies({
         auth: AuthFactory.from().sharedLink({ showExif: false }).build(),
-        ownerIds: [newUuid()],
+        assets: [newUuid()].map((ownerId) => ({ id: ownerId, ownerId })),
         purpose: 'download',
         repository,
       });
 
-      expect(policyFor(newUuid())).toBe(OriginalLocationPolicy.Refuse);
+      expect(policyFor({ id: newUuid(), ownerId: newUuid() })).toBe(OriginalLocationPolicy.Refuse);
       expect(repository.getAll).not.toHaveBeenCalled();
     });
 
@@ -222,15 +226,15 @@ describe('partner location policy', () => {
 
       const policyFor = await getOriginalLocationPolicies({
         auth: AuthFactory.from(creator).sharedLink({ userId: creator.id, albumId: newUuid(), showExif: true }).build(),
-        ownerIds: [creator.id, hiding.id, member.id],
+        assets: [creator.id, hiding.id, member.id].map((ownerId) => ({ id: ownerId, ownerId })),
         purpose: 'download',
         repository,
       });
 
       expect(repository.getAll).toHaveBeenCalledWith(creator.id);
-      expect(policyFor(creator.id)).toBe(OriginalLocationPolicy.Serve);
-      expect(policyFor(hiding.id)).toBe(OriginalLocationPolicy.RemoveLocation);
-      expect(policyFor(member.id)).toBe(OriginalLocationPolicy.Serve);
+      expect(policyFor({ id: creator.id, ownerId: creator.id })).toBe(OriginalLocationPolicy.Serve);
+      expect(policyFor({ id: hiding.id, ownerId: hiding.id })).toBe(OriginalLocationPolicy.RemoveLocation);
+      expect(policyFor({ id: member.id, ownerId: member.id })).toBe(OriginalLocationPolicy.Serve);
     });
 
     it("resolves each owner from the viewer's partner settings", async () => {
@@ -246,15 +250,80 @@ describe('partner location policy', () => {
 
       const policyFor = await getOriginalLocationPolicies({
         auth: AuthFactory.create(me),
-        ownerIds: [me.id, hiding.id, sharing.id],
+        assets: [me.id, hiding.id, sharing.id].map((ownerId) => ({ id: ownerId, ownerId })),
         purpose: 'download',
         repository,
       });
 
-      expect(policyFor(me.id)).toBe(OriginalLocationPolicy.Serve);
-      expect(policyFor(hiding.id)).toBe(OriginalLocationPolicy.RemoveLocation);
-      expect(policyFor(sharing.id)).toBe(OriginalLocationPolicy.Serve);
+      expect(policyFor({ id: me.id, ownerId: me.id })).toBe(OriginalLocationPolicy.Serve);
+      expect(policyFor({ id: hiding.id, ownerId: hiding.id })).toBe(OriginalLocationPolicy.RemoveLocation);
+      expect(policyFor({ id: sharing.id, ownerId: sharing.id })).toBe(OriginalLocationPolicy.Serve);
       expect(repository.getAll).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('resharing through an album (FL-54 owner default)', () => {
+    it("removes the location from an original reached through a hidden album owner's album", async () => {
+      const viewer = UserFactory.create();
+      const owner = UserFactory.create();
+      vitest.mocked(repository.getAll).mockResolvedValue([]);
+      vitest.mocked(repository.getLocationHiddenThroughAlbums).mockResolvedValue(new Set(['reshared']));
+
+      const policyFor = await getOriginalLocationPolicies({
+        auth: AuthFactory.create(viewer),
+        assets: [
+          { id: 'reshared', ownerId: owner.id },
+          { id: 'direct', ownerId: owner.id },
+          { id: 'mine', ownerId: viewer.id },
+        ],
+        purpose: 'download',
+        repository,
+      });
+
+      expect(repository.getLocationHiddenThroughAlbums).toHaveBeenCalledWith(viewer.id, ['reshared', 'direct']);
+      expect(policyFor({ id: 'reshared', ownerId: owner.id })).toBe(OriginalLocationPolicy.RemoveLocation);
+      expect(policyFor({ id: 'direct', ownerId: owner.id })).toBe(OriginalLocationPolicy.Serve);
+      expect(policyFor({ id: 'mine', ownerId: viewer.id })).toBe(OriginalLocationPolicy.Serve);
+    });
+
+    it("adds the owners who hide locations from an album's owner to a view of that album", async () => {
+      const viewer = UserFactory.create();
+      const hidingFromViewer = UserFactory.create();
+      const hidingFromAlbumOwner = UserFactory.create();
+      vitest
+        .mocked(repository.getAll)
+        .mockResolvedValue([
+          getForPartner(
+            PartnerFactory.from({ shareLocation: false }).sharedBy(hidingFromViewer).sharedWith(viewer).build(),
+          ),
+        ]);
+      // the viewer's own items stay visible to them even if they hide locations from the album owner
+      vitest
+        .mocked(repository.getLocationHiddenOwnerIdsForAlbums)
+        .mockResolvedValue([hidingFromAlbumOwner.id, viewer.id]);
+
+      const hidden = await getLocationHiddenOwnerIdsForView({ viewerId: viewer.id, albumIds: ['album-1'], repository });
+
+      expect(repository.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith(['album-1']);
+      expect(hidden).toEqual(new Set([hidingFromViewer.id, hidingFromAlbumOwner.id]));
+    });
+
+    it('clears location fields of an asset reached through such an album', async () => {
+      const viewer = UserFactory.create();
+      const owner = UserFactory.create();
+      vitest.mocked(repository.getLocationHiddenThroughAlbums).mockResolvedValue(new Set(['reshared']));
+
+      const [reshared, own] = await applyAlbumLocationPolicy(
+        [
+          { id: 'reshared', ownerId: owner.id, exifInfo: located },
+          { id: 'mine', ownerId: viewer.id, exifInfo: located },
+        ],
+        { userId: viewer.id, repository },
+      );
+
+      expect(repository.getLocationHiddenThroughAlbums).toHaveBeenCalledWith(viewer.id, ['reshared']);
+      expect(reshared.exifInfo).toEqual({ latitude: null, longitude: null, city: null, state: null, country: null });
+      expect(own.exifInfo).toEqual(located);
     });
   });
 });

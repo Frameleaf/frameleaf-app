@@ -843,6 +843,52 @@ describe(AssetMediaService.name, () => {
       );
     });
 
+    it('cleans an existing fullsize preview lazily for a viewer who may not see its location', async () => {
+      const { auth, asset } = setup({ shareLocation: false });
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ownerId: asset.ownerId,
+        originalPath: '/original/photo.cr2',
+        originalFileName: 'photo.cr2',
+        path: '/thumbs/photo-fullsize.jpeg',
+      });
+
+      const response = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.FULLSIZE });
+
+      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/thumbs/photo-fullsize.jpeg');
+      expect(response).toMatchObject({ path: lease.path, release: lease.release });
+    });
+
+    it('never checks thumbnails or previews, which are re-encoded without metadata', async () => {
+      const { auth, asset } = setup({ shareLocation: false });
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ownerId: asset.ownerId,
+        originalPath: '/original/photo.cr2',
+        originalFileName: 'photo.cr2',
+        path: '/thumbs/photo-preview.jpeg',
+      });
+
+      await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW });
+
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('strips the location of an original reached through a hidden album owner (owner default)', async () => {
+      const me = UserFactory.create();
+      const owner = UserFactory.create();
+      const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      mocks.partner.getLocationHiddenThroughAlbums.mockResolvedValue(new Set([asset.id]));
+      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
+
+      await expect(sut.downloadOriginal(AuthFactory.create(me), asset.id, {})).resolves.toMatchObject({
+        path: lease.path,
+      });
+      expect(mocks.partner.getLocationHiddenThroughAlbums).toHaveBeenCalledWith(me.id, [asset.id]);
+    });
+
     it('refuses rather than leak when the location cannot be removed', async () => {
       const { auth, asset } = setup({ shareLocation: false });
       mocks.metadata.acquireLocationFreeOriginal.mockRejectedValue(new Error('exiftool failed'));
