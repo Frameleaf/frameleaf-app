@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { EmailImageAttachment, JobOf, UserMetadataItem } from 'src/types.js';
+import { JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { MapAlbumDto } from 'src/dtos/album.dto.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -86,7 +87,9 @@ export class NotificationService extends BaseService {
       return;
     }
 
-    this.logger.error(`Unable to run job handler (${job.name}): ${error}`, error?.stack, JSON.stringify(job.data));
+    // FL-71: the signup notice and its mail carry a password, which never goes to the log
+    const data = JOBS_WITH_SENSITIVE_DATA.has(job.name) ? '[redacted]' : JSON.stringify(job.data);
+    this.logger.error(`Unable to run job handler (${job.name}): ${error}`, error?.stack, data);
 
     switch (job.name) {
       case JobName.DatabaseBackup: {

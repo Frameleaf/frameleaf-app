@@ -408,6 +408,7 @@ export class AssetJobRepository {
         'asset.livePhotoVideoId',
         'asset.originalPath',
         'asset.isOffline',
+        'asset.deletedAt',
       ])
       .$call(withExif)
       .select(withFiles)

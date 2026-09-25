@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import type { JobItem } from 'src/types.js';
+import { JOBS_NOT_RETRIED } from 'src/constants.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, ImmichWorker, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
 import { JobService } from 'src/services/job.service.js';
@@ -238,6 +239,76 @@ describe(JobService.name, () => {
       expect(mocks.event.emit).toHaveBeenCalledWith('JobError', { job: item, error });
       expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.ThumbnailGeneration, item);
       expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('keeps the thumbnail job the retry-failed e2e fails out of the no-retry set', () => {
+      expect(JOBS_NOT_RETRIED.has(JobName.AssetGenerateThumbnails)).toBe(false);
+    });
+
+    it.each([
+      { name: JobName.NotifyUserSignup, data: { id: 'user-1', password: 'secret' } },
+      { name: JobName.SendMail, data: { to: 'a@b.c', subject: 's', html: 'secret', text: 'secret' } },
+      { name: JobName.NotifyAlbumInvite, data: { id: 'album-1', recipientId: 'user-1' } },
+      { name: JobName.NotifyAlbumUpdate, data: { id: 'album-1', recipientId: 'user-1' } },
+      { name: JobName.IntegrityDeleteReports, data: { reports: [] } },
+      { name: JobName.StorageTemplateMigrationSingle, data: { id: 'asset-1' } },
+      { name: JobName.LibrarySyncFiles, data: { libraryId: 'library-1', paths: [] } },
+      { name: JobName.FacialRecognition, data: { id: 'face-1' } },
+    ] as JobItem[])('reports but does not rethrow a $name failure, so no failed record is kept', async (item) => {
+      const error = new Error('boom');
+      mocks.job.run.mockRejectedValue(error);
+
+      await expect(sut.onJobRun(QueueName.BackgroundTask, item)).resolves.toBeUndefined();
+
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobError', { job: item, error });
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobSuccess', expect.anything());
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.BackgroundTask, item);
+    });
+
+    it('rethrows the handler error, not an error from a JobError listener', async () => {
+      const error = new Error('Input file is missing');
+      mocks.job.run.mockRejectedValue(error);
+      mocks.event.emit.mockImplementation((...[name]) =>
+        name === 'JobError' ? Promise.reject(new Error('listener')) : Promise.resolve(),
+      );
+      const item = { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } as const;
+
+      await expect(sut.onJobRun(QueueName.ThumbnailGeneration, item)).rejects.toBe(error);
+      expect(mocks.logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe('after a handler succeeds (FL-71)', () => {
+    it('logs an error from a JobSuccess listener instead of failing the job', async () => {
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+      mocks.event.emit.mockImplementation((...[name]) =>
+        name === 'JobSuccess' ? Promise.reject(new Error('redis down')) : Promise.resolve(),
+      );
+      const item = { name: JobName.SidecarCheck, data: { id: 'asset-1' } } as const;
+
+      await expect(sut.onJobRun(QueueName.Sidecar, item)).resolves.toBeUndefined();
+
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.Sidecar, item);
+      expect(mocks.logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('after it succeeded'),
+        expect.any(String),
+      );
+    });
+
+    it('logs an error from a follow-up job instead of failing the job', async () => {
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+      mocks.job.queue.mockRejectedValue(new Error('redis down'));
+      const item = { name: JobName.SidecarCheck, data: { id: 'asset-1' } } as const;
+
+      await expect(sut.onJobRun(QueueName.Sidecar, item)).resolves.toBeUndefined();
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetExtractMetadata, data: item.data });
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
+      expect(mocks.logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('after it succeeded'),
+        expect.any(String),
+      );
     });
   });
 

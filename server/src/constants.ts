@@ -6,12 +6,43 @@ import {
   AudioCodec,
   DatabaseExtension,
   ExifOrientation,
+  JobName,
   TranscodeHardwareAcceleration,
   VectorIndex,
   VideoCodec,
 } from 'src/enum.js';
 
 export const IMMICH_SERVER_START = 'Immich Server is listening';
+
+/**
+ * FL-71: jobs whose data must never be kept or logged: the signup notice carries the new account's
+ * password, and the mail it queues carries it in the rendered body.
+ */
+export const JOBS_WITH_SENSITIVE_DATA: ReadonlySet<JobName> = new Set([JobName.NotifyUserSignup, JobName.SendMail]);
+
+/**
+ * FL-71: jobs that are reported (JobError) when their handler throws but are not recorded as failed,
+ * so "Retry failed" can never run them again. Each is either sensitive (above), acts on a snapshot
+ * that a later retry would replay after it went stale, has side effects a partial run already made,
+ * or holds a fixed jobId that a kept failed record would block.
+ */
+export const JOBS_NOT_RETRIED: ReadonlySet<JobName> = new Set([
+  ...JOBS_WITH_SENSITIVE_DATA,
+  // the in-app notification and websocket message go out before the steps that can throw
+  JobName.NotifyAlbumInvite,
+  JobName.NotifyAlbumUpdate,
+  // the reports in the data are the ones listed when the job was queued; a retry would trash assets
+  // that have been fixed or restored since
+  JobName.IntegrityDeleteReports,
+  // jobId is the asset id: a kept failed record would silently drop every later migration of it
+  JobName.StorageTemplateMigrationSingle,
+  // the insert has happened when the event and follow-up jobs throw, so a retry only fails on the
+  // unique path; the next library scan picks up whatever was not imported
+  JobName.LibrarySyncFiles,
+  // a partial run leaves a person or group behind and a retry creates another; the next recognition
+  // run queues the faces that are still unassigned
+  JobName.FacialRecognition,
+]);
 
 export const ErrorMessages = {
   InconsistentMediaLocation:
