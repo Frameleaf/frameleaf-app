@@ -28,6 +28,7 @@ import {
   AssetMediaCreateDto,
   AssetMediaOptionsDto,
   AssetMediaSize,
+  AssetPlaybackOptionsDto,
 } from 'src/dtos/asset-media.dto.js';
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { type AuthDto } from 'src/dtos/auth.dto.js';
@@ -189,10 +190,11 @@ export class AssetMediaController {
   async playAssetVideo(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
+    @Query() { edited }: AssetPlaybackOptionsDto,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.playbackVideo(auth, id), this.logger);
+    await sendFile(res, next, () => this.service.playbackVideo(auth, id, edited ?? true), this.logger);
   }
 
   @Post('bulk-upload-check')
