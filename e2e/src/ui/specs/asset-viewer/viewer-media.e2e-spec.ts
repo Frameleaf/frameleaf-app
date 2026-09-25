@@ -1,6 +1,7 @@
 import { AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
 import { BrowserContext, expect, test } from '@playwright/test';
 import { SeededRandom, selectRandom, toAssetResponseDto } from 'src/ui/generators/timeline';
+import { setupSocketMock } from 'src/ui/mock-network/socket-network.js';
 import { assetViewerUtils } from '../timeline/utils';
 import { enableTagsPreference, setupAssetViewerFixture } from './utils';
 
@@ -154,4 +155,37 @@ test.describe('viewer media sources', () => {
     await assetViewerUtils.waitForViewerLoad(page, video);
     await expect(page.getByTestId('viewer-live-badge')).toHaveCount(0);
   });
+
+  /**
+   * FL-35: an item locked or removed elsewhere while a slideshow plays gives way to an authorized
+   * neighbour. The slideshow waits a minute per item here, so only the event can move the viewer.
+   */
+  for (const [name, send] of [
+    [
+      'locked elsewhere',
+      (socket: Awaited<ReturnType<typeof setupSocketMock>>, dto: AssetResponseDto) =>
+        socket.emit('on_asset_update', { ...dto, visibility: 'locked' }),
+    ],
+    [
+      'moved to the trash elsewhere',
+      (socket: Awaited<ReturnType<typeof setupSocketMock>>, dto: AssetResponseDto) =>
+        socket.emit('on_asset_trash', [dto.id]),
+    ],
+  ] as const) {
+    test(`a slideshow moves on when its item is ${name}`, async ({ context, page }) => {
+      await context.addInitScript(() => localStorage.setItem('slideshow-delay', '60'));
+      const socket = await setupSocketMock(context);
+      const index = fixture.assets.indexOf(fixture.primaryAsset);
+      await page.goto(`/photos/${fixture.primaryAsset.id}`);
+      await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
+      await expect.poll(() => socket.connected()).toBe(1);
+      await page.locator('#immich-asset-viewer').focus();
+      await page.keyboard.press('s');
+      await expect(page.getByTestId('viewer-footer').getByRole('button', { name: 'Pause slideshow' })).toBeVisible();
+
+      send(socket, fixture.primaryAssetDto);
+
+      await assetViewerUtils.waitForViewerLoad(page, fixture.assets[index + 1] ?? fixture.assets[index - 1]);
+    });
+  }
 });
