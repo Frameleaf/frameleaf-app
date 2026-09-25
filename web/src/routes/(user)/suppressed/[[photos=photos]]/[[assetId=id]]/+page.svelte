@@ -4,7 +4,7 @@
   import Albums from '$lib/components/album-page/AlbumsList.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
+  import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
@@ -15,6 +15,7 @@
   import { albumViewSettings } from '$lib/stores/preferences.store';
   import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility, getAuthStatus } from '@immich/sdk';
+  import { mdiEyeOffOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -108,10 +109,10 @@
       onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
     >
       {#snippet empty()}
-        <EmptyPlaceholder
-          text={$t('no_suppressed_content_message')}
+        <LibraryEmptyState
+          icon={mdiEyeOffOutline}
           title={$t('nothing_here_yet')}
-          class="mx-auto mt-10"
+          message={$t('no_suppressed_content_message')}
         />
       {/snippet}
 
@@ -135,10 +136,10 @@
         bind:albumGroupIds={albumGroups}
       >
         {#snippet empty()}
-          <EmptyPlaceholder
-            text={$t('no_suppressed_albums_message')}
+          <LibraryEmptyState
+            icon={mdiEyeOffOutline}
             title={$t('nothing_here_yet')}
-            class="mx-auto mt-10"
+            message={$t('no_suppressed_albums_message')}
           />
         {/snippet}
       </Albums>

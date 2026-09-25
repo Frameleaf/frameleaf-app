@@ -10,6 +10,7 @@
   import AssetTile from '$lib/components/frameleaf/AssetTile.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
+  import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -32,8 +33,13 @@
     grouped?: boolean;
     /** The layout the tiles are drawn in (FL-33 tile variants). */
     layout?: TileLayout;
-    /** Work: the caption row under each tile, included in the tile height. */
+    /** Timeline and Work: the caption row under each tile. */
     captionHeight?: number;
+    /**
+     * Timeline: the caption sits below the laid-out photo (the manager left room for it), so the tile
+     * is the photo plus the caption. Work's cells already include their caption row.
+     */
+    captionBelow?: boolean;
     /** Work: show file names in the captions. */
     showFileNames?: boolean;
     /** Rating override for an asset; by default each tile shows the asset's own rating. */
@@ -44,6 +50,8 @@
     onFocusAsset?: (asset: TimelineAsset) => void;
     /** Extra chrome drawn over every tile by the page that mounts the timeline. */
     tileOverlay?: Snippet<[TimelineAsset]>;
+    /** The hover quick actions each tile may offer. */
+    quickActions?: (asset: TimelineAsset) => TileQuickActions | null;
   };
 
   let {
@@ -55,6 +63,7 @@
     grouped = false,
     layout = 'timeline',
     captionHeight = 0,
+    captionBelow = false,
     showFileNames = false,
     ratingFor,
     onOpen,
@@ -62,6 +71,7 @@
     onSelectGroup,
     onFocusAsset,
     tileOverlay,
+    quickActions,
   }: Props = $props();
 
   const dayIds = $derived(timelineDay.viewerAssets.map((viewerAsset) => viewerAsset.id));
@@ -119,17 +129,18 @@
       {@const position = viewerAsset.position}
       {@const asset = viewerAsset.asset}
       {#if position && asset}
+        {@const tileHeight = captionBelow ? position.height + captionHeight : position.height}
         <div
           class="fl-day-cell"
           style:top="{position.top}px"
           style:inset-inline-start="{position.left}px"
           style:width="{position.width}px"
-          style:height="{position.height}px"
+          style:height="{tileHeight}px"
         >
           <AssetTile
             {asset}
             width={position.width}
-            height={position.height}
+            height={tileHeight}
             selected={selected.has(asset.id)}
             {selecting}
             {layout}
@@ -140,6 +151,7 @@
             {onToggleSelect}
             onFocus={onFocusAsset}
             overlay={tileOverlay}
+            quickActions={quickActions?.(asset)}
           />
         </div>
       {/if}

@@ -8,7 +8,11 @@
    * "grids per tab"): Browse is a square cell with no rating and no caption; Work always shows the
    * rating (and Rejected) and a caption under the photo whose file name shows on request, inset so
    * one tile's time never runs into the next tile's name; Timeline shows the rating on hover or
-   * selection, as before.
+   * selection, as before, and a caption with the name and time (`TimelineLibrary.jsx`
+   * `showCaption`). A Locked item's caption never names its file.
+   *
+   * Hovering (or focusing) a tile shows its quick actions — favorite, edit, share, more — in the
+   * top corner (`AssetTile.jsx` `.at-actions`), except while a selection is in progress.
    *
    * Media sources are the production ones. The hover scrub plays the existing preview transcode
    * (`/assets/:id/video/playback`), never the original file, and a Live Photo plays its own motion
@@ -19,6 +23,7 @@
   import { ProjectionType } from '$lib/constants';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
+  import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { lockBadgeLabelKey } from '$lib/frameleaf/locked-view';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -32,10 +37,14 @@
     mdiArchiveArrowDownOutline,
     mdiCheck,
     mdiCloudOffOutline,
+    mdiDotsHorizontal,
+    mdiExportVariant,
     mdiHeart,
+    mdiHeartOutline,
     mdiLayersOutline,
     mdiMotionPlayOutline,
     mdiPanoramaVariantOutline,
+    mdiPencilOutline,
     mdiPlay,
     mdiShieldLockOutline,
     mdiStar,
@@ -58,7 +67,7 @@
     /** Marked sensitive. Metadata only — the asset is never relocated. */
     sensitive?: boolean;
     offline?: boolean;
-    /** Work: space under the photo for the caption; `height` includes it. */
+    /** Timeline and Work: space under the photo for the caption; `height` includes it. */
     captionHeight?: number;
     /** Work: show the file name in the caption (a per-device toggle, off by default). */
     showFileName?: boolean;
@@ -71,6 +80,8 @@
      * utility's GPS markers, for instance. It is decoration: pointer events stay with the tile.
      */
     overlay?: Snippet<[TimelineAsset]>;
+    /** The hover quick actions this tile may offer; none are drawn without them. */
+    quickActions?: TileQuickActions | null;
   };
 
   let {
@@ -90,6 +101,7 @@
     onFocus,
     tabindex = 0,
     overlay,
+    quickActions = null,
   }: Props = $props();
 
   const PREVIEW_DELAY = 300;
@@ -120,9 +132,21 @@
     stars !== 0 && layout !== 'browse' && (layout === 'work' || hovered || selected || !!previewMode),
   );
   const title = $derived($getAltText(asset));
-  const withCaption = $derived(layout === 'work' && captionHeight > 0);
-  /** Template `assetTitle`: the file name without its extension. */
-  const fileName = $derived(asset.originalFileName ? asset.originalFileName.replace(/\.[^.]+$/, '') : null);
+  const withCaption = $derived(layout !== 'browse' && captionHeight > 0);
+  /** Template `assetTitle`: the file name without its extension. A Locked item's name is never shown. */
+  const fileName = $derived(
+    asset.originalFileName && !isLocked ? asset.originalFileName.replace(/\.[^.]+$/, '') : null,
+  );
+  /** The Timeline caption always names the item; Work names it only on request. */
+  const captionName = $derived(layout === 'timeline' || showFileName ? fileName : null);
+  const hasQuickActions = $derived(
+    !!quickActions && !!(quickActions.onFavorite || quickActions.onEdit || quickActions.onShare || quickActions.onMore),
+  );
+  /** Run a quick action without also opening or selecting the tile under it. */
+  const quick = (action: (() => void) | undefined) => (event: MouseEvent) => {
+    event.stopPropagation();
+    action?.();
+  };
   /** Template `localCaptureTime`: the capture time on the photo's own clock. */
   const captureTime = $derived.by(() => {
     try {
@@ -133,7 +157,33 @@
       return null;
     }
   });
-  const imageHeight = $derived(withCaption ? Math.max(1, height - captionHeight) : height);
+  /** The List view (S-15, template asset-tile.css `[data-layout="list"]`): a 96px 3:2 thumbnail and columns. */
+  const listed = $derived(layout === 'list');
+  const LIST_THUMB_WIDTH = 96;
+  const LIST_THUMB_HEIGHT = 64;
+  const imageWidth = $derived(listed ? LIST_THUMB_WIDTH : width);
+  const imageHeight = $derived(listed ? LIST_THUMB_HEIGHT : withCaption ? Math.max(1, height - captionHeight) : height);
+  /** The list's name column: the file name without its extension, never a Locked item's. */
+  const listName = $derived(isLocked ? $t('frameleaf_library_list_locked_item') : (fileName ?? title));
+  const listDate = $derived.by(() => {
+    try {
+      return fromTimelinePlainDateTime(asset.localDateTime).toLocaleString(DateTime.DATE_MED, {
+        locale: $locale ?? undefined,
+      });
+    } catch {
+      return '';
+    }
+  });
+  /** Template: a video's duration, else the pixel size, else the file size. */
+  const listDetail = $derived.by(() => {
+    if (asset.isVideo) {
+      return durationLabel(durationSeconds);
+    }
+    if (asset.width && asset.height) {
+      return `${asset.width} × ${asset.height}`;
+    }
+    return asset.fileSizeInByte ? fileSizeLabel(asset.fileSizeInByte) : '';
+  });
   // A durable bulk job working on this item (owner decision, September 22, 2026): a loader until
   // the job answers for it, then a failure mark if it did not work.
   const job = $derived(durableBulkTracker.stateOf(asset.id));
@@ -155,6 +205,10 @@
     }
     return null;
   });
+
+  /** Template `fileSize`: megabytes, or gigabytes from 1 GB. */
+  const fileSizeLabel = (bytes: number) =>
+    bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${(bytes / 1e6).toFixed(1)} MB`;
 
   const durationLabel = (seconds: number) => {
     if (!Number.isFinite(seconds) || seconds < 0) {
@@ -276,6 +330,7 @@
   class:is-selected={selected}
   class:is-selecting={selecting}
   class:is-previewing={!!previewMode}
+  class:has-actions={hasQuickActions && !selecting}
   aria-busy={job?.state === 'pending' ? true : undefined}
   data-asset-id={asset.id}
   data-layout={layout}
@@ -286,7 +341,8 @@
   <button
     type="button"
     class="fl-tile-open"
-    style:height={withCaption ? `${imageHeight}px` : undefined}
+    style:height={withCaption || listed ? `${imageHeight}px` : undefined}
+    style:width={listed ? `${imageWidth}px` : undefined}
     {tabindex}
     title={layout === 'work' && fileName && !showFileName ? (asset.originalFileName ?? undefined) : undefined}
     aria-label={jobLabel ? `${title}, ${jobLabel}` : title}
@@ -308,7 +364,7 @@
     <ImageThumbnail
       url={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
       altText={title}
-      widthStyle="{width}px"
+      widthStyle="{imageWidth}px"
       heightStyle="{imageHeight}px"
       class="fl-tile-image"
     />
@@ -420,11 +476,71 @@
     </span>
   </label>
 
+  {#if quickActions && hasQuickActions && !selecting}
+    <!-- Template `.at-actions`: hover and focus reveal them; a selection in progress hides them. -->
+    <div class="fl-tile-actions" role="group" aria-label={$t('frameleaf_tile_actions', { values: { title } })}>
+      {#if quickActions.onFavorite}
+        <button
+          type="button"
+          class:is-favorite={asset.isFavorite}
+          aria-pressed={asset.isFavorite}
+          aria-label={asset.isFavorite
+            ? $t('frameleaf_tile_unfavorite', { values: { title } })
+            : $t('frameleaf_tile_favorite', { values: { title } })}
+          title={asset.isFavorite ? $t('frameleaf_tile_remove_from_favorites') : $t('favorite')}
+          onclick={quick(quickActions.onFavorite)}
+        >
+          <Icon icon={asset.isFavorite ? mdiHeart : mdiHeartOutline} size="16" />
+        </button>
+      {/if}
+      {#if quickActions.onEdit}
+        <button
+          type="button"
+          aria-label={$t('frameleaf_tile_edit', { values: { title } })}
+          title={$t('edit')}
+          onclick={quick(quickActions.onEdit)}
+        >
+          <Icon icon={mdiPencilOutline} size="16" />
+        </button>
+      {/if}
+      {#if quickActions.onShare}
+        <button
+          type="button"
+          aria-label={$t('frameleaf_tile_share', { values: { title } })}
+          title={$t('share')}
+          onclick={quick(quickActions.onShare)}
+        >
+          <Icon icon={mdiExportVariant} size="16" />
+        </button>
+      {/if}
+      {#if quickActions.onMore}
+        <button
+          type="button"
+          aria-label={$t('frameleaf_tile_more', { values: { title } })}
+          title={$t('more')}
+          onclick={quick(quickActions.onMore)}
+        >
+          <Icon icon={mdiDotsHorizontal} size="16" />
+        </button>
+      {/if}
+    </div>
+  {/if}
+
+  {#if listed}
+    <!-- Template `.at-list-name` and `.at-list-cell`: name, date, kind, then duration, size or bytes. -->
+    <span class="fl-list-name" title={isLocked ? undefined : (asset.originalFileName ?? undefined)}>{listName}</span>
+    <span class="fl-list-cell fl-list-date">{listDate}</span>
+    <span class="fl-list-cell fl-list-kind"
+      >{asset.isVideo ? $t('frameleaf_library_list_video') : $t('frameleaf_library_list_photo')}</span
+    >
+    <span class="fl-list-cell">{listDetail}</span>
+  {/if}
+
   {#if withCaption}
-    <!-- Template `.at-caption`: the name (on request) and the capture time, inset from the tile edges. -->
+    <!-- Template `.at-caption`: the name and the capture time, inset from the tile edges. -->
     <div class="fl-tile-caption" style:height="{captionHeight}px">
-      {#if showFileName && fileName}
-        <span title={asset.originalFileName}>{fileName}</span>
+      {#if captionName}
+        <span title={captionName}>{captionName}</span>
       {/if}
       {#if captureTime}
         <time datetime={fromTimelinePlainDateTime(asset.localDateTime).toISO({ includeOffset: false }) ?? undefined}
@@ -544,6 +660,57 @@
     font-size: var(--fl-font-small, 12px);
     pointer-events: none;
   }
+  /* Template asset-tile.css `.at-actions`: a dark capsule in the top corner, shown on hover and focus. */
+  .fl-tile-actions {
+    position: absolute;
+    inset-inline-end: 6px;
+    top: 6px;
+    z-index: 2;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid rgb(255 255 255 / 12%);
+    border-radius: 6px;
+    background: rgb(16 20 22 / 86%);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity var(--fl-motion-fast, 120ms) var(--fl-ease, ease),
+      transform var(--fl-motion-fast, 120ms) var(--fl-ease, ease);
+  }
+  .fl-tile:hover .fl-tile-actions,
+  .fl-tile:focus-within .fl-tile-actions {
+    opacity: 1;
+    transform: none;
+  }
+  .fl-tile-actions button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #e5e7eb;
+    cursor: pointer;
+  }
+  .fl-tile-actions button:hover,
+  .fl-tile-actions button:focus-visible {
+    background: rgb(255 255 255 / 14%);
+  }
+  .fl-tile-actions button.is-favorite {
+    color: var(--fl-accent);
+  }
+  /* The actions take the top corner while they show; the badges there step aside. */
+  .fl-tile.has-actions:hover .fl-tile-badges,
+  .fl-tile.has-actions:focus-within .fl-tile-badges {
+    opacity: 0;
+  }
+  .fl-tile-badges {
+    transition: opacity var(--fl-motion-fast, 120ms) ease;
+  }
   .fl-tile-select {
     position: absolute;
     inset-inline-start: 6px;
@@ -625,7 +792,65 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
+  /* Template asset-tile.css "List layout". */
+  .fl-tile[data-layout='list'] {
+    display: grid;
+    grid-template-columns: 96px minmax(140px, 1fr) 110px 70px 120px;
+    gap: 14px;
+    align-items: center;
+    padding: 6px 8px;
+    overflow: visible;
+    border-radius: 0;
+    border-bottom: 1px solid var(--fl-border);
+    background: transparent;
+  }
+  .fl-tile[data-layout='list'] .fl-tile-open {
+    position: relative;
+    inset: auto;
+    overflow: hidden;
+    border-radius: 6px;
+    background: var(--fl-raised);
+  }
+  .fl-tile[data-layout='list'] .fl-tile-actions {
+    top: 50%;
+    inset-inline-end: 10px;
+    transform: translateY(-50%);
+  }
+  .fl-tile[data-layout='list']:hover .fl-tile-actions,
+  .fl-tile[data-layout='list']:focus-within .fl-tile-actions {
+    transform: translateY(-50%);
+  }
+  .fl-tile[data-layout='list'] .fl-tile-select {
+    inset-inline-start: 12px;
+    top: 10px;
+  }
+  .fl-list-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fl-text);
+    font-size: var(--fl-font-small, 13px);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fl-list-cell {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small, 12px);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  @media (max-width: 700px) {
+    .fl-tile[data-layout='list'] {
+      grid-template-columns: 96px minmax(0, 1fr) 70px;
+    }
+    .fl-list-date,
+    .fl-list-kind {
+      display: none;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
+    .fl-tile-actions {
+      transform: none;
+    }
     .fl-tile-scrim,
     .fl-tile-select {
       transition: none;

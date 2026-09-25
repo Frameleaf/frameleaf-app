@@ -109,6 +109,50 @@ describe(TimelineService.name, () => {
     });
   });
 
+  describe('getTimelineOrdered (FL-30, S-15)', () => {
+    it('runs the time buckets’ checks and options, and pages the flat order', async () => {
+      const json = `{ "id": ["asset-id"] }`;
+      mocks.asset.getTimelineOrdered.mockResolvedValue({ assets: json });
+
+      await expect(
+        sut.getTimelineOrdered(authStub.admin, {
+          sort: 'rating',
+          skip: 500,
+          take: 500,
+          visibility: AssetVisibility.Archive,
+          userId: authStub.admin.user.id,
+        }),
+      ).resolves.toEqual(json);
+      expect(mocks.asset.getTimelineOrdered).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: AssetVisibility.Archive, userIds: [authStub.admin.user.id] }),
+        authStub.admin,
+        { sort: 'rating', skip: 500, take: 500 },
+      );
+    });
+
+    it('refuses to sort for a shared link that hides EXIF, whose order would reveal it', async () => {
+      await expect(
+        sut.getTimelineOrdered(
+          { ...authStub.adminSharedLink, sharedLink: { ...authStub.adminSharedLink.sharedLink!, showExif: false } },
+          { sort: 'filename', skip: 0, take: 10 },
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.getTimelineOrdered).not.toHaveBeenCalled();
+    });
+
+    it('refuses the Locked view without an elevated session, as the buckets do', async () => {
+      await expect(
+        sut.getTimelineOrdered(authStub.admin, {
+          sort: 'filename',
+          skip: 0,
+          take: 10,
+          visibility: AssetVisibility.Locked,
+        }),
+      ).rejects.toBeInstanceOf(Error);
+      expect(mocks.asset.getTimelineOrdered).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getTimeBucket', () => {
     it('should return the assets for a album time bucket if user has album.read', async () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));

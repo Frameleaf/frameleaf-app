@@ -181,14 +181,53 @@ describe('LibraryView', () => {
       });
       await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
       librarySession.patchView({
-        query: { ...emptyDiscoveryQuery(), filter: { isFavorite: { eq: true } } } as never,
+        query: { ...emptyDiscoveryQuery(), filter: { tagIds: { any: ['t1'] } } } as never,
       });
 
-      await waitFor(() => expect(sdkMock.searchAssetStatistics).toHaveBeenCalledOnce());
+      // One count for "select all matching" and one for the scope without the filter (the status bar's Y).
+      await waitFor(() => expect(sdkMock.searchAssetStatistics).toHaveBeenCalledTimes(2));
       await waitFor(() => expect(librarySession.total).toBe(7));
       // One count per result set: re-rendering does not ask again.
       await tick();
-      expect(sdkMock.searchAssetStatistics).toHaveBeenCalledOnce();
+      expect(sdkMock.searchAssetStatistics).toHaveBeenCalledTimes(2);
+      librarySession.patchView({ query: emptyDiscoveryQuery() });
+    });
+
+    it('drops a condition the grid cannot apply instead of showing a chip for it (M3)', async () => {
+      render(LibraryView, { options: {}, destination: { kind: 'library' }, syncUrl: false });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.patchView({
+        query: {
+          ...emptyDiscoveryQuery(),
+          text: 'beach',
+          filter: { city: { eq: 'Halifax' }, tagIds: { any: ['t1'] } },
+        } as never,
+      });
+      await waitFor(() => expect(librarySession.query.filter).toEqual({ tagIds: { any: ['t1'] } }));
+      expect(librarySession.query.text).toBe('');
+      librarySession.patchView({ query: emptyDiscoveryQuery() });
+    });
+
+    it('applies a filter the time buckets can express to the grid itself (M3)', async () => {
+      sdkMock.searchAssetStatistics.mockResolvedValue({ total: 40 } as never);
+      sdkMock.getTimeBuckets.mockClear();
+      render(LibraryView, {
+        options: { visibility: AssetVisibility.Timeline },
+        destination: { kind: 'library' },
+        syncUrl: false,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.patchView({
+        query: { ...emptyDiscoveryQuery(), filter: { tagIds: { any: ['t1'] }, isFavorite: { eq: true } } } as never,
+      });
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
+          expect.objectContaining({ tagId: 't1', isFavorite: true }),
+        ),
+      );
+      // The grid is empty under the applied filter, so the page says so and offers to clear it.
+      const empty = await screen.findByTestId('frameleaf-library-empty');
+      await waitFor(() => expect(empty).toHaveTextContent('frameleaf_library_empty_filtered_title'));
       librarySession.patchView({ query: emptyDiscoveryQuery() });
     });
 
@@ -256,6 +295,111 @@ describe('LibraryView', () => {
       await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
 
       expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('the results toolbar, empty state and library keys (FL-30, FL-33)', () => {
+    const setupLibrary = async (props: Record<string, unknown> = {}) => {
+      render(LibraryView, { options: {}, destination: { kind: 'library' }, syncUrl: false, ...props });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+    };
+
+    afterEach(() => {
+      librarySession.patchView({ query: emptyDiscoveryQuery(), sort: 'captured-desc' });
+      librarySession.clearSelection();
+    });
+
+    it('shows the Frameleaf empty state, not the legacy upload card (T-10)', async () => {
+      await setupLibrary();
+      const empty = await screen.findByTestId('frameleaf-library-empty');
+      expect(empty).toHaveTextContent('frameleaf_library_empty');
+      expect(screen.queryByText('no_assets_message')).not.toBeInTheDocument();
+    });
+
+    it('says a filter left nothing, never how much it hides, and offers to clear it', async () => {
+      sdkMock.searchAssetStatistics.mockResolvedValue({ total: 0 } as never);
+      await setupLibrary();
+      librarySession.patchView({
+        query: { ...emptyDiscoveryQuery(), filter: { tagIds: { any: ['t1'] } } } as never,
+      });
+      const empty = await screen.findByTestId('frameleaf-library-empty');
+      await waitFor(() => expect(empty).toHaveTextContent('frameleaf_library_empty_filtered_title'));
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_empty_filtered_clear' }));
+      expect(librarySession.filterActive).toBe(false);
+    });
+
+    it('orders the timeline by the chosen sort where the page leaves ordering to it (S-15)', async () => {
+      await setupLibrary();
+      const sort = screen.getByRole('combobox', { name: 'frameleaf_library_sort' });
+      await fireEvent.change(sort, { target: { value: 'captured-asc' } });
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ order: 'asc' })),
+      );
+      await fireEvent.change(sort, { target: { value: 'imported-desc' } });
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
+          expect.objectContaining({ order: 'desc', dateType: 'added' }),
+        ),
+      );
+    });
+
+    it('keeps the Timeline dated, and pages Browse by file name or rating (S-15)', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2026-09-01', count: 3 }] as never);
+      await setupLibrary();
+      const sort = () => screen.getByRole('combobox', { name: 'frameleaf_library_sort' }) as HTMLSelectElement;
+      await fireEvent.change(sort(), { target: { value: 'filename' } });
+      // The manager pages GET /timeline/ordered in that order (timeline-manager ordered mode).
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ orderedBy: 'filename' })),
+      );
+
+      librarySession.setLayout('timeline');
+      await tick();
+      // The Timeline only turns newest-first or oldest-first; a flat sort leaves it dated.
+      expect([...sort().options].filter((option) => !option.disabled).map((option) => option.value)).toEqual([
+        'captured-desc',
+        'captured-asc',
+      ]);
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.not.objectContaining({ orderedBy: 'filename' })),
+      );
+      librarySession.setLayout('browse');
+    });
+
+    it('offers List outside the Timeline and draws rows (S-15)', async () => {
+      await setupLibrary();
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_list_view' }));
+      expect(librarySession.state.view).toBe('list');
+      librarySession.setLayout('timeline');
+      await tick();
+      expect(screen.queryByRole('button', { name: 'frameleaf_library_list_view' })).not.toBeInTheDocument();
+      librarySession.setLayout('browse');
+      librarySession.patchView({ view: 'grid' });
+    });
+
+    it('draws no Sort where the page fixes its own order', async () => {
+      await setupLibrary({ options: { dateType: 'added' } });
+      expect(screen.queryByRole('combobox', { name: 'frameleaf_library_sort' })).not.toBeInTheDocument();
+    });
+
+    it('shows the information panel toggle in every layout and opens More library actions', async () => {
+      await setupLibrary();
+      expect(librarySession.layout).toBe('browse');
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_more_actions' }));
+      expect(await screen.findByRole('heading', { name: 'frameleaf_library_actions_title' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'frameleaf_library_compare_selected' })).toBeDisabled();
+    });
+
+    it('opens the Frameleaf shortcuts sheet on ?, with Done', async () => {
+      await setupLibrary();
+      await fireEvent.keyDown(document, { key: '?', shiftKey: true });
+      expect(await screen.findByTestId('frameleaf-shortcuts-help')).toBeInTheDocument();
+      expect(screen.getByText('frameleaf_shortcuts_note')).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'done' }));
+      await waitFor(() => expect(screen.queryByTestId('frameleaf-shortcuts-help')).not.toBeInTheDocument());
     });
   });
 });

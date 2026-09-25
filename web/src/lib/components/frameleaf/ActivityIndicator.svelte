@@ -15,7 +15,8 @@
    * was always meant to. It stays hidden while nothing is happening.
    *
    * The count comes from the server, not from a local timer, which is why closing this tab and
-   * opening another one shows the same number.
+   * opening another one shows the same number. As in the prototype (`Activity.jsx`
+   * `ActivityIndicator`) the pill shows the spinner and the count, and speaks of jobs.
    */
 
   const pendingDownloads = $derived(
@@ -40,7 +41,7 @@
   <a
     class="fl-activity"
     href={Route.activity()}
-    title={$t('frameleaf_activity_title')}
+    title={$t('frameleaf_activity_open')}
     aria-label={indicator.progress === null
       ? $t('frameleaf_activity_indicator', { values: { count: indicator.count } })
       : $t('frameleaf_activity_indicator_progress', {
@@ -48,7 +49,8 @@
         })}
   >
     <span class="fl-spinner" aria-hidden="true"></span>
-    <span aria-hidden="true">{$t('frameleaf_activity_running', { values: { count: indicator.count } })}</span>
+    <!-- Prototype `ActivityIndicator`: the spinner and the number of running jobs; the label says the rest. -->
+    <span class="fl-activity-count" aria-hidden="true">{indicator.count}</span>
   </a>
 {/if}
 
@@ -70,6 +72,10 @@
   .fl-activity:focus-visible {
     color: var(--fl-text);
     background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
+  }
+  .fl-activity-count {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
   }
   .fl-spinner {
     width: 0.75rem;

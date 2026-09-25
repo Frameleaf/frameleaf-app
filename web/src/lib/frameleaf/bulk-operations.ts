@@ -36,6 +36,7 @@ import {
   type SearchResponseDto,
   type SmartSearchDto,
 } from '@immich/sdk';
+import { DateTime } from 'luxon';
 import type { Translations } from 'svelte-i18n';
 import {
   discoveryTextField,
@@ -115,6 +116,15 @@ export type BulkPayload = {
   dateMode?: 'set' | 'shift';
   dateTimeOriginal?: string;
   timeZone?: string;
+  /**
+   * "Keep each item's time zone" (prototype `ChangeDateDialog`, FL-32): `dateTimeOriginal` is a wall
+   * time without an offset, and each item is set to that wall time in its own zone: its IANA zone
+   * where known (`timeZoneById`, the offset then read for the new date), else its current UTC offset.
+   * Only possible for loaded items, whose offsets are known; such a run stays in the browser.
+   */
+  offsetMinutesById?: Record<string, number>;
+  /** Each item's IANA zone, where its metadata names one (FL-32 review N3). */
+  timeZoneById?: Record<string, string>;
   minutes?: number;
   description?: string;
   latitude?: number;
@@ -629,6 +639,34 @@ export const runBulkAction = async (
     }
     case 'change-date': {
       const mode = payload?.dateMode ?? 'set';
+      const offsets = payload?.offsetMinutesById;
+      if (mode === 'set' && offsets) {
+        const wall = requirePayload(payload, 'dateTimeOriginal');
+        return finish(
+          await runInChunks(runner, async (batch) => {
+            // One update per offset: every item keeps its own zone and gets the same wall time. An
+            // item whose offset is not known is reported, never guessed.
+            const outcomes: BulkOutcome[] = batch
+              .filter((id) => !Number.isFinite(offsets[id]) && payload?.timeZoneById?.[id] === undefined)
+              .map((id) => failed(id, new Error('unknown time zone')));
+            for (const [zone, ids] of groupByZone(batch, offsets, payload?.timeZoneById ?? {})) {
+              const dateTimeOriginal =
+                typeof zone === 'string'
+                  ? DateTime.fromISO(wall, { zone }).toISO({ suppressMilliseconds: true })
+                  : `${wallTimeWithSeconds(wall)}${formatIsoOffset(zone)}`;
+              if (!dateTimeOriginal) {
+                outcomes.push(...ids.map((id) => failed(id, new Error('invalid date in time zone'))));
+                continue;
+              }
+              await gateway.updateAssets({
+                assetBulkUpdateDto: { ids, dateTimeOriginal, ...(typeof zone === 'string' && { timeZone: zone }) },
+              });
+              outcomes.push(...ids.map((id) => ok(id)));
+            }
+            return outcomes;
+          }),
+        );
+      }
       const dto =
         mode === 'shift'
           ? { dateTimeRelative: Number(requirePayload(payload, 'minutes')) }
@@ -1035,8 +1073,35 @@ export const durableBulkAction = (action: BulkActionId): MediaOperationBulkActio
   DURABLE_BULK_ACTIONS[action] ?? null;
 
 /** Whether an explicit selection of this size goes to the server as a durable job. */
-export const shouldRunDurably = (action: BulkActionId, count: number): boolean =>
-  !!durableBulkAction(action) && count > DURABLE_BULK_THRESHOLD;
+export const shouldRunDurably = (action: BulkActionId, count: number, payload?: BulkPayload): boolean =>
+  !!durableBulkAction(action) && count > DURABLE_BULK_THRESHOLD && !payload?.offsetMinutesById;
+
+/** `yyyy-MM-ddTHH:mm` or with seconds → with seconds. */
+const wallTimeWithSeconds = (wall: string) => (/T\d{2}:\d{2}$/.test(wall) ? `${wall}:00` : wall);
+
+/** An ISO offset for minutes east of UTC: `+05:30`, `-08:00`, `+00:00`. */
+export const formatIsoOffset = (minutes: number) => {
+  const sign = minutes < 0 ? '-' : '+';
+  const whole = Math.abs(Math.round(minutes));
+  return `${sign}${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
+};
+
+/**
+ * Ids grouped by their IANA zone where known, else by their offset, in first-seen order. An id with
+ * neither is left out.
+ */
+const groupByZone = (ids: string[], offsets: Record<string, number>, zones: Record<string, string>) => {
+  const groups = new Map<string | number, string[]>();
+  for (const id of ids) {
+    const offset = offsets[id];
+    const key = zones[id] ?? (typeof offset === 'number' && Number.isFinite(offset) ? offset : null);
+    if (key === null) {
+      continue;
+    }
+    groups.set(key, [...(groups.get(key) ?? []), id]);
+  }
+  return groups;
+};
 
 /** The server's payload for an action. Only the fields it knows are sent; nothing is defaulted. */
 export const toDurablePayload = (payload: BulkPayload | undefined, tagIds?: string[]): MediaOperationBulkPayloadDto => {
