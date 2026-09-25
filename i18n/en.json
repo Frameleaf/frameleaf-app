@@ -4181,6 +4181,7 @@
   "frameleaf_info_sensitivity_score": "Score {score, number}%",
   "frameleaf_info_unmark_sensitive": "Unmark Sensitive",
   "frameleaf_jobs_account": "Account",
+  "frameleaf_jobs_account_counts_failed": "Some counts for {name} could not be loaded. They show as unknown.",
   "frameleaf_jobs_account_filter": "Account filter",
   "frameleaf_jobs_account_none": "No account",
   "frameleaf_jobs_account_scope": "Counts and job details: {name}. Queue controls and concurrency affect every account.",
