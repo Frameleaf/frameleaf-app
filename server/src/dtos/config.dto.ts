@@ -956,6 +956,13 @@ const AdminConfigSchemaWithVisibility = z
       .meta({ id: 'AdminConfigTemplatesDto' }),
     server: z
       .object({
+        // FL-71 (CC-4): the server's name in the Command Center rail and context bar (CommandCenter.jsx).
+        name: z
+          .string()
+          .trim()
+          .max(100)
+          .describe('Server name shown in settings; empty uses the host name')
+          .meta({ visibility: Public }),
         externalDomain: emptyOrUrl('External domain must be an empty string or a valid URL')
           .describe('External domain')
           .meta({ visibility: User }),
@@ -1370,6 +1377,7 @@ export const defaults = Object.freeze<SystemConfig>({
     },
   },
   server: {
+    name: '',
     externalDomain: '',
     loginPageMessage: '',
     publicUsers: true,

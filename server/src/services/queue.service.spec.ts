@@ -387,4 +387,66 @@ describe(QueueService.name, () => {
       expect(mocks.job.retryFailed).not.toHaveBeenCalled();
     });
   });
+
+  describe('account filter (FL-71 J-1)', () => {
+    const ada = 'af1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a03';
+    const grace = 'bf1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a04';
+    const asset = (n: number) => `6f1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a${String(n).padStart(2, '0')}`;
+    const job = (id: string, status: QueueJobStatus) => ({
+      id,
+      name: JobName.AssetGenerateThumbnails,
+      timestamp: 1,
+      data: { id },
+      status,
+    });
+
+    it("lists only the jobs of the chosen account's items", async () => {
+      mocks.job.searchJobs.mockResolvedValue([
+        job(asset(1), QueueJobStatus.Waiting),
+        job(asset(2), QueueJobStatus.Waiting),
+      ]);
+      mocks.user.getJobSubjectOwners.mockResolvedValue([
+        { subjectId: asset(1), ownerId: ada, ownerName: 'Ada' },
+        { subjectId: asset(2), ownerId: grace, ownerName: 'Grace' },
+      ]);
+
+      const result = await sut.searchJobs(factory.auth(), QueueName.ThumbnailGeneration, { ownerId: ada });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].account).toEqual({ id: ada, name: 'Ada' });
+    });
+
+    it("counts an account's jobs per state and says when a state was not read in full", async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics({ waiting: 1500, failed: 2 }));
+      mocks.job.searchJobs.mockImplementation((_name, dto) =>
+        Promise.resolve(
+          dto.status?.[0] === QueueJobStatus.Waiting
+            ? [job(asset(1), QueueJobStatus.Waiting), job(asset(2), QueueJobStatus.Waiting)]
+            : dto.status?.[0] === QueueJobStatus.Failed
+              ? [job(asset(1), QueueJobStatus.Failed), job(asset(3), QueueJobStatus.Failed)]
+              : [],
+        ),
+      );
+      mocks.user.getJobSubjectOwners.mockResolvedValue([
+        { subjectId: asset(1), ownerId: ada, ownerName: 'Ada' },
+        { subjectId: asset(2), ownerId: grace, ownerName: 'Grace' },
+        { subjectId: asset(3), ownerId: ada, ownerName: 'Ada' },
+      ]);
+
+      await expect(sut.getOwnerStatistics(factory.auth(), QueueName.ThumbnailGeneration, ada)).resolves.toEqual({
+        active: 0,
+        completed: 0,
+        failed: 2,
+        delayed: 0,
+        waiting: 1,
+        paused: 0,
+        truncated: true,
+      });
+      expect(mocks.job.searchJobs).toHaveBeenCalledWith(
+        QueueName.ThumbnailGeneration,
+        { status: [QueueJobStatus.Waiting] },
+        1000,
+      );
+    });
+  });
 });

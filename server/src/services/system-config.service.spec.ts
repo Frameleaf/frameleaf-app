@@ -313,6 +313,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     enabled: true,
   },
   server: {
+    name: '',
     externalDomain: '',
     loginPageMessage: '',
     publicUsers: true,

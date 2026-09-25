@@ -370,3 +370,18 @@ export class RenderWorkerRemoteReferenceDto extends createZodDto(RenderWorkerRem
 export class RenderWorkerFailDto extends createZodDto(RenderWorkerFailSchema) {}
 export class RenderWorkerCancelAckDto extends createZodDto(RenderWorkerCancelAckSchema) {}
 export class RenderWorkerWriteResultDto extends createZodDto(RenderWorkerWriteResultSchema) {}
+
+/**
+ * FL-71 (CC-9): which render kinds have a qualified GPU worker right now, for the Overview's "GPU
+ * Studio" and "Check worker compatibility" (CommandCenter.jsx:1800-1812, 1911-1914). A kind is
+ * qualified while a live, unrevoked session carrying fresh conformance on its worker's engine digest
+ * is scoped to it (`isQualifiedRenderSession`).
+ */
+const RenderWorkerCompatibilityResponseSchema = z
+  .object({
+    qualified: z.array(MediaOperationKindSchema).describe('Render kinds a qualified worker can take now'),
+    unavailable: z.array(MediaOperationKindSchema).describe('Render kinds no qualified worker can take now'),
+  })
+  .meta({ id: 'RenderWorkerCompatibilityResponseDto' });
+
+export class RenderWorkerCompatibilityResponseDto extends createZodDto(RenderWorkerCompatibilityResponseSchema) {}

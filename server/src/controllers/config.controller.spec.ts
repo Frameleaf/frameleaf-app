@@ -235,7 +235,8 @@ describe('config controllers', () => {
       const { status, body } = await request(ctx.getHttpServer()).get('/public/config');
 
       expect(status).toBe(200);
-      expect(body.server).toEqual({ loginPageMessage: defaults.server.loginPageMessage });
+      // FL-71 (CC-4): the server name is shown to everyone, like the login page message.
+      expect(body.server).toEqual({ name: defaults.server.name, loginPageMessage: defaults.server.loginPageMessage });
       expect(body.oauth).toEqual({
         autoLaunch: defaults.oauth.autoLaunch,
         buttonText: defaults.oauth.buttonText,
