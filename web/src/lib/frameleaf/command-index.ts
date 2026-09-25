@@ -45,6 +45,9 @@ import {
   mdiUpdate,
   mdiVideoOutline,
   mdiWrench,
+  mdiCertificateOutline,
+  mdiCreditCardOutline,
+  mdiLinkVariant,
 } from '@mdi/js';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { buildAlbumTree, type FrameleafAlbumNode } from '$lib/frameleaf/album-tree';
@@ -279,6 +282,25 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   descriptionKey: Translations;
   icon: string;
 }[] = [
+  // FL-154: Frameleaf Cloud → Account & link, Plan and Licence (settings-catalog.mjs:1713-1752).
+  {
+    key: 'cloud-account',
+    titleKey: 'frameleaf_cc_section_cloud_account',
+    descriptionKey: 'frameleaf_cc_section_cloud_account_description',
+    icon: mdiLinkVariant,
+  },
+  {
+    key: 'cloud-plan',
+    titleKey: 'frameleaf_cc_section_cloud_plan',
+    descriptionKey: 'frameleaf_cc_section_cloud_plan_description',
+    icon: mdiCreditCardOutline,
+  },
+  {
+    key: 'cloud-license',
+    titleKey: 'frameleaf_cc_section_cloud_license',
+    descriptionKey: 'frameleaf_cc_section_cloud_license_description',
+    icon: mdiCertificateOutline,
+  },
   {
     key: 'authentication',
     titleKey: 'frameleaf_cc_section_signin',

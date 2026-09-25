@@ -100,6 +100,35 @@ export const describeAdminEvent = (
     case AdminAuditAction.LibraryDeleted: {
       return $t('frameleaf_account_history_library_deleted');
     }
+    // FL-155..FL-158: Frameleaf Cloud link, licence and Frameleaf account events.
+    case AdminAuditAction.CloudLinked: {
+      return detail
+        ? $t('frameleaf_account_history_cloud_linked', { values: { account: detail } })
+        : $t('frameleaf_account_history_cloud_linked_unknown');
+    }
+    case AdminAuditAction.CloudUnlinked: {
+      return $t('frameleaf_account_history_cloud_unlinked');
+    }
+    case AdminAuditAction.CloudRevoked: {
+      return $t('frameleaf_account_history_cloud_revoked');
+    }
+    case AdminAuditAction.CloudPermissionsChanged: {
+      return $t('frameleaf_account_history_cloud_permissions_changed');
+    }
+    case AdminAuditAction.LicenseActivated: {
+      return detail === 'file' || !detail
+        ? $t('frameleaf_account_history_license_file_installed')
+        : $t('frameleaf_account_history_license_activated', { values: { hint: detail } });
+    }
+    case AdminAuditAction.LicenseRemoved: {
+      return $t('frameleaf_account_history_license_removed');
+    }
+    case AdminAuditAction.FrameleafAccountLinked: {
+      return $t('frameleaf_account_history_frameleaf_account_linked');
+    }
+    case AdminAuditAction.FrameleafAccountUnlinked: {
+      return $t('frameleaf_account_history_frameleaf_account_unlinked');
+    }
     default: {
       // an action from a newer server this client does not know yet
       return $t('frameleaf_account_history_other');
