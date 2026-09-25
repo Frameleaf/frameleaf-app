@@ -399,7 +399,8 @@ test.describe('Timeline', () => {
 
       // The Timeline keeps its dates: only newest-first and oldest-first are offered there.
       await timelineUtils.setLayout(page, 'Timeline');
-      await expect(toolbar.getByRole('option', { name: 'Filename' })).toBeDisabled();
+      // Playwright's toBeDisabled reads an <option> as enabled, so assert the property itself.
+      await expect(toolbar.getByRole('option', { name: 'Filename' })).toHaveJSProperty('disabled', true);
       await expect(toolbar.getByRole('button', { name: 'List view' })).toHaveCount(0);
     });
 

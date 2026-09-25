@@ -10,7 +10,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 
 const openMore = async (page: Page) => {
-  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('button', { name: 'More actions', exact: true }).click();
   return page.getByRole('menu', { name: 'More actions' });
 };
 
