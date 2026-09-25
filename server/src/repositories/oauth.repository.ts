@@ -148,7 +148,15 @@ export class OAuthRepository {
   private jwksClients: Map<string, JWTVerifyGetKey> = new Map(); // useful for caching and performnce
   async validateLogoutToken(config: OAuthConfig, logoutToken: string): Promise<{ sub?: string; sid?: string } | null> {
     const client = await this.getClient(config);
-    const algorithm = client.clientMetadata().id_token_signed_response_alg ?? 'RS256';
+    const configured = client.clientMetadata().id_token_signed_response_alg;
+    // FL-158: a client without a fixed algorithm (Sign in with Frameleaf) takes what the issuer
+    // advertises for ID tokens, never a shared-secret or unsigned one
+    const algorithms = configured
+      ? [configured]
+      : (client.serverMetadata().id_token_signing_alg_values_supported ?? ['RS256']).filter(
+          (value) => value !== 'none' && !value.startsWith('HS'),
+        );
+    const algorithm = algorithms[0] ?? 'RS256';
     let keyOrGetter: Uint8Array | JWTVerifyGetKey;
 
     try {
@@ -169,7 +177,7 @@ export class OAuthRepository {
       const { payload } = await jwtVerify(logoutToken, keyOrGetter as any, {
         issuer: client.serverMetadata().issuer,
         audience: config.clientId,
-        algorithms: [algorithm],
+        algorithms: algorithm.startsWith('HS') ? [algorithm] : algorithms,
         maxTokenAge: '2m',
         clockTolerance: '5s',
       });
@@ -218,7 +226,8 @@ export class OAuthRepository {
           client_secret: clientSecret,
           response_types: ['code'],
           userinfo_signed_response_alg: profileSigningAlgorithm === 'none' ? undefined : profileSigningAlgorithm,
-          id_token_signed_response_alg: signingAlgorithm,
+          // FL-158: empty leaves the choice to the issuer's advertised algorithms
+          id_token_signed_response_alg: signingAlgorithm || undefined,
         },
         clientAuth ?? this.getTokenAuthMethod(tokenEndpointAuthMethod, clientSecret),
         {
