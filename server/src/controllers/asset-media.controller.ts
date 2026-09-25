@@ -32,12 +32,13 @@ import {
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { type AuthDto } from 'src/dtos/auth.dto.js';
 import { VideoEditVersionParamsDto } from 'src/dtos/editing.dto.js';
-import { ApiTag, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
+import { ApiTag, CacheControl, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor, getFiles } from 'src/middleware/file-upload.interceptor.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { type AssetMediaRedirectResponse, AssetMediaService } from 'src/services/asset-media.service.js';
+import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { ImmichFileResponse, sendFile } from 'src/utils/file.js';
 import { FileNotEmptyValidator, UUIDParamDto } from 'src/validation.js';
 
@@ -47,7 +48,28 @@ export class AssetMediaController {
   constructor(
     private logger: LoggingRepository,
     private service: AssetMediaService,
+    private restorationService: AssetRestorationService,
   ) {}
+
+  /**
+   * FL-115: the owner's chosen restored version replaces what their own sessions play or view;
+   * otherwise the ordinary file, revalidated while a switch is possible.
+   */
+  private async withPlaybackChoice(
+    auth: AuthDto,
+    id: string,
+    view: 'video' | 'preview' | 'fullsize',
+    ordinary: () => Promise<ImmichFileResponse | AssetMediaRedirectResponse>,
+  ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
+    const choice = await this.restorationService.getPlaybackChoice(auth, id, view);
+    if (choice.file) {
+      return choice.file;
+    }
+    const response = await ordinary();
+    return choice.revalidate && response instanceof ImmichFileResponse
+      ? new ImmichFileResponse({ ...response, cacheControl: CacheControl.PrivateWithoutCache })
+      : response;
+  }
 
   @Post()
   @Authenticated({ permission: Permission.AssetUpload, sharedLink: true })
@@ -152,7 +174,11 @@ export class AssetMediaController {
       return res.redirect('original?' + redirSearchParams.toString());
     }
 
-    const viewThumbnailRes = await this.service.viewThumbnail(auth, id, dto);
+    const view =
+      dto.size === AssetMediaSize.FULLSIZE ? 'fullsize' : dto.size === AssetMediaSize.PREVIEW ? 'preview' : null;
+    const viewThumbnailRes = view
+      ? await this.withPlaybackChoice(auth, id, view, () => this.service.viewThumbnail(auth, id, dto))
+      : await this.service.viewThumbnail(auth, id, dto);
 
     if (viewThumbnailRes instanceof ImmichFileResponse) {
       await sendFile(res, next, () => Promise.resolve(viewThumbnailRes), this.logger);
@@ -192,7 +218,15 @@ export class AssetMediaController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.playbackVideo(auth, id), this.logger);
+    await sendFile(
+      res,
+      next,
+      async () =>
+        (await this.withPlaybackChoice(auth, id, 'video', () =>
+          this.service.playbackVideo(auth, id),
+        )) as ImmichFileResponse,
+      this.logger,
+    );
   }
 
   @Post('bulk-upload-check')
