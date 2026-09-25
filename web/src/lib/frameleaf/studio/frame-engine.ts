@@ -35,6 +35,7 @@ import type {
   StudioEngineModule,
   StudioHostContext,
   StudioHostServices,
+  StudioNavigationTarget,
 } from './host-contract';
 
 export const STUDIO_ENGINE_BASE = '/studio-engine/';
@@ -170,6 +171,22 @@ const connect = (
     addEventListener('message', onMessage);
   });
 
+const assetIdPattern = /^[\w-]{1,64}$/;
+
+/** Only the navigation targets the contract defines, with a well-formed asset id. */
+export const toNavigationTarget = (value: unknown): StudioNavigationTarget | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (value.kind === 'library' || value.kind === 'activity') {
+    return { kind: value.kind };
+  }
+  if (value.kind === 'asset' && typeof value.assetId === 'string' && assetIdPattern.test(value.assetId)) {
+    return { kind: 'asset', assetId: value.assetId };
+  }
+  return null;
+};
+
 type ServiceCall = (services: StudioHostServices, args: unknown[]) => Promise<unknown>;
 
 /** The services a frame may call, each checked for shape before it reaches the host. */
@@ -242,9 +259,18 @@ export const createFrameStudioEngine = ({
           break;
         }
         case 'service': {
-          const handler = serviceCalls[message.name];
+          if (!Number.isSafeInteger(message.callId)) {
+            break;
+          }
+          // Own properties only: `constructor` or `__proto__` must not reach a handler lookup.
+          const handler =
+            typeof message.name === 'string' && Object.hasOwn(serviceCalls, message.name)
+              ? serviceCalls[message.name]
+              : undefined;
           const args = Array.isArray(message.args) ? message.args : [];
-          const run = handler ? handler(services, args) : Promise.reject(new Error(`Unknown service ${message.name}`));
+          const run = handler
+            ? handler(services, args)
+            : Promise.reject(new Error(`Unknown service ${String((message as { name: unknown }).name)}`));
           void run
             .then((value) =>
               send({ type: 'service-result', callId: message.callId, ok: true, value: toFrameData(value) }),
@@ -260,19 +286,27 @@ export const createFrameStudioEngine = ({
           break;
         }
         case 'notify': {
-          services.notify(message.message, message.tone === 'error' ? 'error' : 'info');
+          if (typeof message.message === 'string' && message.message.length > 0) {
+            services.notify(message.message.slice(0, 500), message.tone === 'error' ? 'error' : 'info');
+          }
           break;
         }
         case 'navigate': {
-          services.navigate(message.target);
+          const target = toNavigationTarget(message.target);
+          if (target) {
+            services.navigate(target);
+          }
           break;
         }
         case 'dirty': {
-          services.setDirty(message.dirty);
+          // The frame is not trusted to send a boolean.
+          services.setDirty((message as { dirty: unknown }).dirty === true);
           break;
         }
         case 'fatal': {
-          services.reportFatal(new Error(message.error));
+          services.reportFatal(
+            new Error(typeof message.error === 'string' ? message.error.slice(0, 500) : 'Studio failed'),
+          );
           break;
         }
         case 'request-export': {

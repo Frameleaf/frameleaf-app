@@ -203,6 +203,43 @@ describe('studio editor frame (FL-88)', () => {
     await instance.dispose();
   });
 
+  it('ignores malformed or hostile messages from the frame', async () => {
+    const frame = fakeFrame();
+    const host = services();
+    const instance = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(
+      newStage(),
+      context(),
+      host,
+    );
+    const port = frame.port()!;
+    const results: unknown[] = [];
+    port.addEventListener('message', (event: MessageEvent) => {
+      results.push(event.data);
+    });
+
+    port.postMessage({ type: 'service', callId: 1, name: 'constructor', args: [] });
+    port.postMessage({ type: 'service', callId: 2, name: '__proto__', args: [] });
+    port.postMessage({ type: 'service', callId: 'x', name: 'reloadProject', args: [] });
+    port.postMessage({ type: 'navigate', target: { kind: 'asset', assetId: '../admin' } });
+    port.postMessage({ type: 'navigate', target: { kind: 'elsewhere' } });
+    port.postMessage({ type: 'navigate', target: 'library' });
+    port.postMessage({ type: 'notify', message: { html: '<b>x</b>' } });
+    port.postMessage({ type: 'fatal', error: { stack: 'x' } });
+    port.postMessage({ type: 'navigate', target: { kind: 'asset', assetId: 'asset-1', extra: true } });
+    await tick();
+
+    expect(results).toEqual([
+      { type: 'service-result', callId: 1, ok: false, error: 'Unknown service constructor' },
+      { type: 'service-result', callId: 2, ok: false, error: 'Unknown service __proto__' },
+    ]);
+    expect(host.reloadProject).not.toHaveBeenCalled();
+    expect(host.notify).not.toHaveBeenCalled();
+    expect(host.navigate).toHaveBeenCalledTimes(1);
+    expect(host.navigate).toHaveBeenCalledWith({ kind: 'asset', assetId: 'asset-1' });
+    expect(host.reportFatal).toHaveBeenCalledWith(new Error('Studio failed'));
+    await instance.dispose();
+  });
+
   it('refuses a frame built for another engine and leaves nothing behind', async () => {
     const frame = fakeFrame({ revision: 'b'.repeat(40) });
     const stage = newStage();
