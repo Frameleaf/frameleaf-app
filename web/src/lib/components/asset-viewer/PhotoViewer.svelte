@@ -117,7 +117,12 @@
   const onZoomIn = () => assetViewerManager.animatedZoom(Math.min(assetViewerManager.zoom * 1.25, 10));
   const onZoomOut = () => assetViewerManager.animatedZoom(Math.max(assetViewerManager.zoom / 1.25, 1));
 
-  const onPlaySlideshow = () => ($slideshowState = SlideshowState.PlaySlideshow);
+  // S starts a slideshow; while one runs, the slideshow controls own S (play and pause).
+  const onPlaySlideshow = () => {
+    if ($slideshowState === SlideshowState.None) {
+      $slideshowState = SlideshowState.PlaySlideshow;
+    }
+  };
 
   // TODO move to action + command palette
   const onCopyShortcut = (event: KeyboardEvent) => {

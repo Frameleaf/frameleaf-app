@@ -39,6 +39,7 @@ describe('SlideshowBar (FL-36)', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    void slideshowStore.closeSettings({ restoreFocus: false });
     slideshowStore.slideshowState.set(SlideshowState.None);
     document.body.style.cursor = '';
   });
@@ -47,6 +48,8 @@ describe('SlideshowBar (FL-36)', () => {
     const asset = assetFactory.build({ type: AssetTypeEnum.Image, originalFileName: 'IMG_0001.jpg' });
     const onNext = vi.fn();
     const onPrevious = vi.fn();
+    const onClose = vi.fn();
+    const onToggleFullScreen = vi.fn();
     const result = renderWithTooltips(SlideshowBar, {
       isFullScreen: true,
       assetType: AssetTypeEnum.Image,
@@ -54,9 +57,11 @@ describe('SlideshowBar (FL-36)', () => {
       title: 'Lisbon',
       onNext,
       onPrevious,
+      onClose,
+      onToggleFullScreen,
       ...props,
     });
-    return { ...result, asset, onNext, onPrevious };
+    return { ...result, asset, onNext, onPrevious, onClose, onToggleFullScreen };
   };
 
   it('keeps the screen awake while playing and lets go when paused', async () => {
@@ -113,19 +118,80 @@ describe('SlideshowBar (FL-36)', () => {
     expect(mocks.cleanup).toHaveBeenCalled();
   });
 
-  it('opens the settings as a panel and returns focus to the settings button on Escape', async () => {
+  it('opens the settings without pausing and returns focus to the settings button on Escape', async () => {
     renderBar();
     const button = screen.getByLabelText('slideshow_settings');
     await fireEvent.click(button);
 
-    const panel = await screen.findByTestId('slideshow-settings');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(get(slideshowStore.settingsOpen)).toBe(true);
+    expect(button).toHaveAttribute('aria-pressed', 'true');
     expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
 
-    await fireEvent.keyDown(panel, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByTestId('slideshow-settings')).not.toBeInTheDocument());
-    await waitFor(() => expect(screen.getByLabelText('slideshow_settings')).toHaveFocus());
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(get(slideshowStore.settingsOpen)).toBe(false));
+    await waitFor(() => expect(button).toHaveFocus());
     // Escape closed the panel, not the slideshow
     expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+  });
+
+  it('closes the settings when the slideshow ends', async () => {
+    const { unmount } = renderBar();
+    await fireEvent.click(screen.getByLabelText('slideshow_settings'));
+    unmount();
+    expect(get(slideshowStore.settingsOpen)).toBe(false);
+  });
+
+  // The viewer footer (Packet 4A) drives the same state as these controls.
+  it('follows play and pause set from elsewhere', async () => {
+    renderBar();
+    slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
+    expect(await screen.findByLabelText('frameleaf_slideshow_play')).toBeInTheDocument();
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+    expect(await screen.findByLabelText('frameleaf_slideshow_pause')).toBeInTheDocument();
+  });
+
+  // V-18: the slideshow plays in the viewer, with its controls in a bar along the bottom.
+  it('plays in the viewer, offering full screen as a choice', async () => {
+    const requestFullscreen = vi.fn();
+    Element.prototype.requestFullscreen = requestFullscreen;
+    const { onToggleFullScreen } = renderBar({ isFullScreen: false });
+
+    expect(screen.getByRole('toolbar', { name: 'slideshow' })).toBe(screen.getByTestId('slideshow-controls'));
+    expect(requestFullscreen).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByLabelText('frameleaf_slideshow_enter_full_screen'));
+    expect(onToggleFullScreen).toHaveBeenCalledOnce();
+  });
+
+  it('offers Exit full screen while full screen', () => {
+    renderBar({ isFullScreen: true });
+    expect(screen.getByLabelText('frameleaf_slideshow_exit_full_screen')).toBeInTheDocument();
+  });
+
+  it('plays and pauses from its button and S', async () => {
+    renderBar();
+    await fireEvent.click(screen.getByLabelText('frameleaf_slideshow_pause'));
+    expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PauseSlideshow);
+    await fireEvent.keyDown(document, { key: 's' });
+    expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+  });
+
+  // MediaViewer.jsx:733-747: Escape closes the settings first, then ends the slideshow.
+  it('closes the settings on the first Escape and ends the slideshow on the next', async () => {
+    const { onClose } = renderBar();
+    await fireEvent.click(screen.getByLabelText('slideshow_settings'));
+    expect(get(slideshowStore.settingsOpen)).toBe(true);
+
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(get(slideshowStore.settingsOpen)).toBe(false));
+    expect(onClose).not.toHaveBeenCalled();
+
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('does not end the slideshow when full screen is left', async () => {
+    const { onClose } = renderBar({ isFullScreen: true });
+    document.dispatchEvent(new Event('fullscreenchange'));
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
