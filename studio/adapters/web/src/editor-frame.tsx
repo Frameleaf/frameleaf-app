@@ -48,7 +48,17 @@ import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
 import { call, connectToHost, post } from './host-port'
 import { VirtualWorkspace } from './virtual-workspace'
-import { sendEditorDraft, shouldReloadFromHost, shouldResendDraft } from './draft-sync'
+import {
+  acceptsWrite,
+  beginMount,
+  confirmEcho,
+  markLoaded,
+  sendEditorDraft,
+  shouldReloadFromHost,
+  shouldResendDraft,
+  type DraftSendState,
+  type EditorMount,
+} from './draft-sync'
 import { createLibraryMediaSeeder, type LibraryMediaSeeder } from './library-media'
 import { canonicalJson } from './canonical-commands'
 import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
@@ -66,10 +76,13 @@ const LazyToaster = lazy(async () => {
 /* Session                                                              */
 /* ------------------------------------------------------------------ */
 
-/** The graph without the stamps Freecut refreshes on every save, for "did anything change". */
+/**
+ * The graph without the stamps Freecut refreshes on every save, for "did anything change". The id
+ * is left out too: each editor mount reads the same graph under its own Freecut project id.
+ */
 const contentOf = (graph: unknown): string => {
   if (!graph || typeof graph !== 'object') return canonicalJson(graph)
-  const { updatedAt: _updatedAt, ...rest } = graph as Record<string, unknown>
+  const { updatedAt: _updatedAt, id: _id, ...rest } = graph as Record<string, unknown>
   return canonicalJson(rest)
 }
 
@@ -112,27 +125,18 @@ function applyTheme(context: StudioHostContext) {
   }
 }
 
-interface Session {
+/** The editor frame's session; `mount` and the draft rules live in `draft-sync.ts`. */
+interface Session extends DraftSendState {
   context: StudioHostContext
   workspace: VirtualWorkspace
   media: LibraryMediaSeeder
   root: Root
+  /** The Freecut project id the host's graph carries; every draft is sent under it. */
   engineProjectId: string
-  /** Content of the graph the host holds, so an echo of our own draft is not reloaded. */
-  hostContent: string
-  /**
-   * The project revision the editor's graph was loaded from (or last matched). Every draft reports
-   * it, so an edit made on an older revision is never taken as built on a newer head.
-   */
-  hostRevision: number
-  /** Bumped to remount the editor route after the project changed underneath it. */
-  generation: number
   render: () => void
   unsubscribe: Array<() => void>
-  draftTimer: ReturnType<typeof setTimeout> | null
-  /** The host refused the last draft; it goes again when the host can take it. */
-  pendingSend: boolean
-  disposed: boolean
+  /** Timers the current mount scheduled (draft debounce, settled-save); a remount cancels them. */
+  mountTimers: Set<ReturnType<typeof setTimeout>>
 }
 
 let session: Session | null = null
@@ -215,31 +219,31 @@ async function newProjectFor(context: StudioHostContext, id: string): Promise<Pr
 }
 
 /** Write the host's graph where Freecut reads its project, creating one when there is none. */
-async function seedProject(state: Session): Promise<void> {
-  const { context, workspace, engineProjectId } = state
+async function seedProject(state: Session, mount: EditorMount): Promise<void> {
+  const { context, workspace } = state
   const graph = context.project.graph as Project | null
   if (graph && typeof graph === 'object') {
     workspace.putFile(
-      projectJsonPath(engineProjectId),
-      JSON.stringify({ ...graph, id: engineProjectId }, null, 2),
+      projectJsonPath(mount.projectId),
+      JSON.stringify({ ...graph, id: mount.projectId }, null, 2),
     )
     // Keep the index honest so Freecut's project listing agrees with the file.
-    if (!(await getProject(engineProjectId)))
+    if (!(await getProject(mount.projectId)))
       throw new Error('The stored project could not be read by the editor')
     return
   }
-  const created = await newProjectFor(context, engineProjectId)
+  const created = await newProjectFor(context, mount.projectId)
   await createProject(created)
 }
 
-function EditorApp({ state }: { state: Session }) {
+function EditorApp({ state, projectId }: { state: Session; projectId: string }) {
   const [router] = useState(() => {
-    const history = createMemoryHistory({ initialEntries: [`/editor/${state.engineProjectId}`] })
+    const history = createMemoryHistory({ initialEntries: [`/editor/${projectId}`] })
     // Anything but this project's editor route belongs to the host: projects list, landing page,
     // another project. The host decides, with its own unsaved-work guard.
     history.block({
       blockerFn: ({ nextLocation }) => {
-        if (nextLocation.pathname === `/editor/${state.engineProjectId}`) return false
+        if (nextLocation.pathname === `/editor/${projectId}`) return false
         post({ type: 'navigate', target: { kind: 'library' } })
         return true
       },
@@ -270,24 +274,46 @@ function EditorApp({ state }: { state: Session }) {
   )
 }
 
-/** Forward the editor's saves to the host as drafts; debounce bursts of store writes. */
+/** A timer that belongs to the current mount; `remount` cancels it before anything else. */
+function mountTimer(state: Session, run: () => void, ms: number) {
+  const timer = setTimeout(() => {
+    state.mountTimers.delete(timer)
+    run()
+  }, ms)
+  state.mountTimers.add(timer)
+  return timer
+}
+
+/**
+ * Forward the editor's saves to the host as drafts; debounce bursts of store writes. A write is
+ * attributed to the mount whose file it is, so a late save of a replaced instance (its own project
+ * file) or a write made while the mount is loading never becomes a draft.
+ */
 function watchDrafts(state: Session) {
-  const target = projectJsonPath(state.engineProjectId).join('/')
+  let pending: ReturnType<typeof setTimeout> | null = null
   state.unsubscribe.push(
     state.workspace.onWrite((path) => {
-      if (path.join('/') !== target) return
-      if (state.draftTimer) clearTimeout(state.draftTimer)
-      state.draftTimer = setTimeout(() => void sendDraft(state), 250)
+      const mount = state.mount
+      if (path.join('/') !== projectJsonPath(mount.projectId).join('/')) return
+      if (!acceptsWrite(state, mount)) return
+      if (pending) clearTimeout(pending)
+      pending = mountTimer(state, () => void sendDraft(state, mount), 250)
     }),
   )
 }
 
-async function sendDraft(state: Session) {
-  state.draftTimer = null
-  await sendEditorDraft(state, {
-    read: () => state.workspace.readText(projectJsonPath(state.engineProjectId)),
+function sendDraft(state: Session, mount: EditorMount): Promise<void> {
+  return sendEditorDraft(state, mount, {
+    read: (from) => state.workspace.readText(projectJsonPath(from.projectId)),
     contentOf,
-    stage: (graph, baseRevision) => call('stageDraft', graph, ['editor.save'], baseRevision),
+    // The host's graph keeps one Freecut id whichever mount wrote it.
+    stage: (graph, baseRevision) =>
+      call(
+        'stageDraft',
+        { ...(graph as object), id: state.engineProjectId },
+        ['editor.save'],
+        baseRevision,
+      ),
     dirty: (dirty) => post({ type: 'dirty', dirty }),
   })
 }
@@ -302,24 +328,67 @@ function watchDirty(state: Session) {
     useTimelineSettingsStore.subscribe((settings, previous) => {
       if (settings.isDirty === previous.isDirty && !settings.isDirty) return
       post({ type: 'dirty', dirty: settings.isDirty })
-      if (!settings.isDirty || settings.isTimelineLoading) return
+      const mount = state.mount
+      if (!settings.isDirty || settings.isTimelineLoading || !acceptsWrite(state, mount)) return
       if (timer) clearTimeout(timer)
-      timer = setTimeout(() => {
-        if (!state.disposed && useTimelineSettingsStore.getState().isDirty) {
-          void saveTimeline(state.engineProjectId).catch((error: unknown) =>
-            post({
-              type: 'notify',
-              message: error instanceof Error ? error.message : String(error),
-              tone: 'error',
-            }),
-          )
-        }
-      }, 1500)
+      timer = mountTimer(
+        state,
+        () => {
+          if (acceptsWrite(state, mount) && useTimelineSettingsStore.getState().isDirty) {
+            void saveTimeline(mount.projectId).catch((error: unknown) =>
+              post({
+                type: 'notify',
+                message: error instanceof Error ? error.message : String(error),
+                tone: 'error',
+              }),
+            )
+          }
+        },
+        1500,
+      )
     }),
-    () => {
-      if (timer) clearTimeout(timer)
-    },
   )
+}
+
+/**
+ * The mount is loaded once its own `loadTimeline` has run: the loading flag Freecut sets when that
+ * load starts, then clears when it ends. Only then do its writes count (see the invariant in
+ * `draft-sync.ts`).
+ */
+function watchLoad(state: Session, mount: EditorMount, onLoaded: () => void) {
+  let started = false
+  const stop = useTimelineSettingsStore.subscribe((settings) => {
+    if (state.mount !== mount) return stop()
+    if (settings.isTimelineLoading) started = true
+    else if (started) {
+      stop()
+      markLoaded(state, mount)
+      onLoaded()
+    }
+  })
+  state.unsubscribe.push(stop)
+}
+
+/**
+ * Put the host's graph in front of the person with a fresh editor instance. Everything the old
+ * instance scheduled is cancelled first, before anything is awaited; its later writes go to its
+ * own project file and are never sent.
+ */
+async function remount(state: Session, context: StudioHostContext, incoming: string) {
+  for (const timer of state.mountTimers) clearTimeout(timer)
+  state.mountTimers.clear()
+  const mount = beginMount(
+    state,
+    `${state.engineProjectId}-m${state.mount.generation + 1}`,
+    context.project.revision,
+  )
+  state.hostContent = incoming
+  usePlaybackStore.getState().pause()
+  await seedProject(state, mount)
+  await state.media.associate(mount.projectId)
+  if (state.mount !== mount) return
+  watchLoad(state, mount, () => undefined)
+  state.render()
 }
 
 /**
@@ -374,40 +443,47 @@ async function mount(context: StudioHostContext): Promise<void> {
     workspace,
     media: createLibraryMediaSeeder({
       workspace,
-      projectId: engineProjectId,
+      projectId: () => state.mount.projectId,
       onChange: () => void useMediaLibraryStore.getState().loadMediaItems(),
     }),
     root: createRoot(container),
     engineProjectId,
     hostContent: contentOf(context.project.graph),
-    hostRevision: context.project.revision,
-    generation: 0,
+    mount: {
+      generation: 0,
+      projectId: engineProjectId,
+      revision: context.project.revision,
+      loaded: false,
+    },
     render: () => undefined,
     unsubscribe: [],
-    draftTimer: null,
+    mountTimers: new Set(),
     pendingSend: false,
     disposed: false,
   }
   session = state
+  const first = state.mount
 
   // The bin first (the handoff needs frame rates), then the project that uses it.
   await state.media.seed(context.assets)
-  await seedProject(state)
+  await seedProject(state, first)
 
   state.render = () =>
     state.root.render(
       <StrictMode>
-        <EditorApp key={state.generation} state={state} />
+        <EditorApp key={state.mount.generation} state={state} projectId={state.mount.projectId} />
       </StrictMode>,
     )
+  // A brand-new project is stored as its first draft as soon as it has loaded, so "make a movie"
+  // is kept.
+  watchLoad(state, first, () => {
+    if (!state.context.project.graph) void sendDraft(state, first)
+  })
   state.render()
   watchDrafts(state)
   watchDirty(state)
   watchPlayhead(state)
   startAtHandoffPlayhead(state, context.handoffPlayhead ?? null)
-
-  // A brand-new project is stored as its first draft right away, so "make a movie" is kept.
-  if (!context.project.graph) void sendDraft(state)
 }
 
 async function update(context: StudioHostContext): Promise<void> {
@@ -416,32 +492,25 @@ async function update(context: StudioHostContext): Promise<void> {
   const previous = state.context
   state.context = context
   applyTheme(context)
-  // The graph is settled first, so the echo of a save is not held up behind video probing.
+  // The graph is settled first, so the echo of a save is not held up behind video probing; the
+  // mount rules keep this correct whatever the order.
   const incoming = contentOf(context.project.graph)
+  const current = contentOf(await currentGraph(state))
   if (
     context.project.graph &&
     shouldReloadFromHost({
       incoming,
       hostContent: state.hostContent,
-      current: contentOf(await currentGraph(state)),
+      current,
       draftHeld: context.draftHeld === true,
     })
   ) {
     // A revision this editor did not write: a restore, a reload after a conflict, or a canonical
-    // command applied by the host. Reload the editor from it.
-    state.hostContent = incoming
-    state.hostRevision = context.project.revision
-    state.workspace.putFile(
-      projectJsonPath(state.engineProjectId),
-      JSON.stringify({ ...(context.project.graph as object), id: state.engineProjectId }, null, 2),
-    )
-    usePlaybackStore.getState().pause()
-    state.generation += 1
-    // The edits a refused draft carried were just replaced; there is nothing left to resend.
-    state.pendingSend = false
+    // command applied by the host. A fresh editor instance loads it.
+    await remount(state, context, incoming)
   } else if (context.project.graph && context.draftHeld !== true) {
     state.hostContent = incoming
-    state.hostRevision = context.project.revision
+    confirmEcho(state, incoming, current, context.project.revision)
   }
   if (context.auth.locale !== previous.auth.locale)
     await changeAppLanguage(context.auth.locale).catch(() => undefined)
@@ -453,13 +522,13 @@ async function update(context: StudioHostContext): Promise<void> {
       hasLease: context.project.hasLease,
     })
   ) {
-    void sendDraft(state)
+    void sendDraft(state, state.mount)
   }
   state.render()
 }
 
 async function currentGraph(state: Session): Promise<unknown> {
-  const text = await state.workspace.readText(projectJsonPath(state.engineProjectId))
+  const text = await state.workspace.readText(projectJsonPath(state.mount.projectId))
   try {
     return text ? JSON.parse(text) : null
   } catch {
@@ -472,7 +541,8 @@ async function dispose(): Promise<void> {
   session = null
   if (!state || state.disposed) return
   state.disposed = true
-  if (state.draftTimer) clearTimeout(state.draftTimer)
+  for (const timer of state.mountTimers) clearTimeout(timer)
+  state.mountTimers.clear()
   for (const stop of state.unsubscribe.splice(0)) stop()
   usePlaybackStore.getState().pause()
   state.root.unmount()
