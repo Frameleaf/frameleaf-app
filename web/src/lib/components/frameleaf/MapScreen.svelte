@@ -53,7 +53,8 @@
     albumId?: string;
     /** Accessible name of the map region. */
     title: string;
-    onOpenAsset: (assetId: string) => void;
+    /** Opens an item; `inView` is the items in view, in the list's order, for the viewer's filmstrip (V-17). */
+    onOpenAsset: (assetId: string, inView: string[]) => void;
     /** "Search this area": the prototype opens the Library over the visible bounds. */
     onSearchArea?: (area: MapArea) => void;
   }
@@ -379,7 +380,11 @@
           applyToClusters={false}
           asButton
           bind:hovered={hoveredSingle}
-          onclick={(event) => onOpenAsset(event.feature.properties?.id as string)}
+          onclick={(event) =>
+            onOpenAsset(
+              event.feature.properties?.id as string,
+              inView.map(({ id }) => id),
+            )}
         >
           {#snippet children({ feature })}
             {@const id = feature.properties?.id as string}
@@ -551,7 +556,15 @@
           {#each inView as marker (marker.id)}
             {@const place = placeOf(marker) || $t('frameleaf_map_item')}
             <li>
-              <button type="button" class="row" onclick={() => onOpenAsset(marker.id)}>
+              <button
+                type="button"
+                class="row"
+                onclick={() =>
+                  onOpenAsset(
+                    marker.id,
+                    inView.map(({ id }) => id),
+                  )}
+              >
                 <img src={getAssetMediaUrl({ id: marker.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
                 <span>
                   <strong>{place}</strong>
