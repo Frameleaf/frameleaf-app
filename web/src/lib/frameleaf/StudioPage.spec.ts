@@ -138,6 +138,24 @@ describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
     await waitFor(() => expect(engine.update).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'advanced' })));
   });
 
+  it('hands the stored workspace layout to the engine and keeps saves on the host (FL-91)', async () => {
+    const engine = stubEngine();
+    const layout = { panels: { bin: { open: true } } };
+    const saveWorkspace = vi.fn().mockResolvedValue({ status: 'saved', savedAt: '2026-09-25T10:00:00.000Z' });
+    const props = { ...baseProps(), services: { ...services(), saveWorkspace }, loadEngine: engine.load };
+    render(StudioHost, {
+      ...props,
+      workspace: { state: 'ready', layout, savedAt: '2026-09-25T09:00:00.000Z' },
+    });
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+    expect(engine.contexts[0].workspace).toEqual({ state: 'ready', layout, savedAt: '2026-09-25T09:00:00.000Z' });
+    const handed = vi.mocked(engine.module.mount).mock.calls[0][2];
+    await expect(handed.saveWorkspace?.({ zoom: 2 })).resolves.toEqual({
+      status: 'saved',
+      savedAt: '2026-09-25T10:00:00.000Z',
+    });
+  });
+
   it('has no mode switch without an engine', () => {
     render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
     expect(screen.queryByRole('radiogroup', { name: 'frameleaf_studio_mode_label' })).not.toBeInTheDocument();
@@ -243,6 +261,8 @@ describe('Studio route, engine present', () => {
       'preview',
       'project',
       'theme',
+      // FL-91: the stored workspace layout, as data; saving it goes through services only.
+      'workspace',
     ]);
     expect(Object.keys(passedServices).sort()).toEqual([
       'navigate',

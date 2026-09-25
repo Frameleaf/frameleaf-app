@@ -33,6 +33,7 @@
     type StudioHostServices,
     type StudioProjectHandle,
     type StudioWorkspaceMode,
+    type StudioWorkspaceView,
   } from '$lib/frameleaf/studio/host-contract';
   import type { Rational } from '$lib/frameleaf/studio/rational-time';
   import {
@@ -48,6 +49,7 @@
     STUDIO_DRAFT_PROJECT_ID,
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
+  import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
   import { getProfileImageUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { createStudioExport } from '@immich/sdk';
@@ -68,6 +70,11 @@
   let playhead = $state<Rational | null>(null);
   /** Open review comments on the project, for the Review button's count. */
   let unresolvedComments = $state(0);
+  /**
+   * The account's workspace layout (FL-91, `STU-204`), stored on the server rather than in
+   * Freecut's workspace folder. Undefined until read; the engine then starts from its defaults.
+   */
+  let workspace = $state<StudioWorkspaceView | undefined>(undefined);
 
   const assets = $derived(toStudioAssets(data.assets));
   const handoffAssetIds = $derived(assets.map((asset) => asset.id));
@@ -330,6 +337,7 @@
     reportPlayhead: (time) => {
       playhead = { num: time.num, den: time.den };
     },
+    saveWorkspace: (layout) => saveStudioWorkspaceLayout(layout, pinnedFreecutRevision),
   };
 
   /**
@@ -468,6 +476,9 @@
   onMount(() => {
     online = globalThis.navigator?.onLine;
     void session.open();
+    void loadStudioWorkspace().then((view) => {
+      workspace = view;
+    });
 
     const goOnline = () => {
       online = true;
@@ -563,6 +574,7 @@
   onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}
   onRename={canRename ? onRename : undefined}
   bind:mode
+  {workspace}
   {unresolvedComments}
   {playhead}
   {queuedJobs}
