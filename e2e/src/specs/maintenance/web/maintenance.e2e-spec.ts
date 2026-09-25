@@ -68,4 +68,24 @@ test.describe('Maintenance', () => {
     await page.getByRole('button', { name: 'End maintenance' }).click();
     await page.waitForURL('**/auth/login');
   });
+
+  // FL-81: a refused sign-in link (expired after 4 hours, or from an earlier maintenance) is reported,
+  // and the token never stays in the address.
+  test('a refused sign-in link says so and leaves the address', async ({ page }) => {
+    const setCookie = await utils.enterMaintenance(admin.accessToken);
+    apiToken = setCookie
+      ?.map((cookie) => cookie.split(';', 1)[0].split('='))
+      ?.find(([name]) => name === 'immich_maintenance_token')?.[1];
+
+    await expect(async () => {
+      await page.goto(`/maintenance?${new URLSearchParams({ token: 'expired.sign-in.link' })}`);
+      await expect(page.getByRole('heading', { name: 'Frameleaf is being looked after' })).toBeVisible({
+        timeout: 1000,
+      });
+    }).toPass({ timeout: 10_000 });
+
+    await expect(page.getByRole('alert')).toContainText('This maintenance sign-in link is no longer valid.');
+    await expect(page.getByRole('button', { name: 'End maintenance' })).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.has('token')).toBe(false);
+  });
 });

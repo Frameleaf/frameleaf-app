@@ -133,6 +133,8 @@ export class MaintenanceWorkerController {
   @Post('admin/maintenance')
   @MaintenanceRoute()
   setMaintenanceMode(@Body() dto: SetMaintenanceModeDto): void {
+    // FL-81: a conflicting action is refused with 409 before the action runs in the background
+    this.service.claimAction(dto);
     void this.service.setAction(dto);
   }
 }

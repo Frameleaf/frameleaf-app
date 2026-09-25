@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { SignJWT } from 'jose';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
@@ -411,6 +411,86 @@ describe(MaintenanceWorkerService.name, () => {
   });
 
   describe.skip('setAction'); // just calls setStatus+runAction
+
+  describe('claimAction (FL-81)', () => {
+    it('refuses every other action while a restore is running', async () => {
+      let finishRestore: () => void = () => {};
+      databaseBackupServiceMock.restoreDatabaseBackup.mockReturnValue(
+        new Promise<void>((resolve) => (finishRestore = resolve)),
+      );
+      mocks.database.tryLock.mockResolvedValueOnce(true);
+
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction(restore);
+      const running = sut.setAction(restore);
+
+      for (const action of [
+        restore,
+        { action: MaintenanceAction.End },
+        { action: MaintenanceAction.Start },
+        { action: MaintenanceAction.SelectDatabaseRestore },
+      ]) {
+        expect(() => sut.claimAction(action)).toThrowError(ConflictException);
+      }
+
+      finishRestore();
+      await running;
+    });
+
+    it('allows End and another restore after a restore failed', async () => {
+      databaseBackupServiceMock.restoreDatabaseBackup.mockRejectedValue(new Error('Migration failed'));
+      mocks.database.tryLock.mockResolvedValueOnce(true);
+
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction(restore);
+      await sut.setAction(restore);
+
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
+      expect(() => sut.claimAction(restore)).not.toThrow();
+    });
+
+    it('does not restore when another process holds the maintenance lock, and keeps refusing meanwhile', async () => {
+      mocks.database.tryLock.mockResolvedValueOnce(false);
+
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction(restore);
+      await sut.setAction(restore);
+
+      expect(databaseBackupServiceMock.restoreDatabaseBackup).not.toHaveBeenCalled();
+      // the other process's restore is still running until its status says otherwise
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).toThrowError(ConflictException);
+    });
+
+    it('refuses actions while a restore resumed on start is running', async () => {
+      let finishRestore: () => void = () => {};
+      databaseBackupServiceMock.restoreDatabaseBackup.mockReturnValue(
+        new Promise<void>((resolve) => (finishRestore = resolve)),
+      );
+      mocks.database.tryLock.mockResolvedValueOnce(true);
+
+      const running = sut.runAction({
+        action: MaintenanceAction.RestoreDatabase,
+        restoreBackupFilename: 'development-filename.sql',
+      });
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).toThrowError(ConflictException);
+
+      finishRestore();
+      await running;
+    });
+
+    it('refuses actions while another server reports a restore without an error', () => {
+      sut.mock({ active: true, action: MaintenanceAction.RestoreDatabase, task: 'restore', progress: 0.4 });
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).toThrowError(ConflictException);
+
+      sut.mock({ active: true, action: MaintenanceAction.RestoreDatabase, task: 'error', error: 'failed' });
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
+    });
+
+    it('lets actions through when no restore is running', () => {
+      expect(() => sut.claimAction({ action: MaintenanceAction.Start })).not.toThrow();
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
+    });
+  });
 
   /**
    * Actions
