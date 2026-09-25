@@ -2090,7 +2090,7 @@ export class AssetRepository {
   private buildGetForOriginal(ids: string[], isEdited: boolean) {
     return this.db
       .selectFrom('asset')
-      .select('asset.id')
+      .select(['asset.id', 'asset.ownerId'])
       .select('originalFileName')
       .where('asset.id', 'in', ids)
       .$if(isEdited, (qb) =>
@@ -2133,7 +2133,7 @@ export class AssetRepository {
   async getForVideo(id: string) {
     return this.db
       .selectFrom('asset')
-      .select(['asset.originalPath'])
+      .select(['asset.originalPath', 'asset.ownerId'])
       .select((eb) => withFilePath(eb, AssetFileType.EncodedVideo).as('encodedVideoPath'))
       .select((eb) => withFilePath(eb, AssetFileType.EncodedVideo, true).as('editedVideoPath'))
       .where('asset.id', '=', id)

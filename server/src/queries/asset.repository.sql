@@ -973,6 +973,7 @@ where
 -- AssetRepository.getForOriginal
 select
   "asset"."id",
+  "asset"."ownerId",
   "originalFileName",
   "asset_file"."path" as "editedPath",
   "originalPath"
@@ -987,6 +988,7 @@ where
 -- AssetRepository.getForOriginals
 select
   "asset"."id",
+  "asset"."ownerId",
   "originalFileName",
   "asset_file"."path" as "editedPath",
   "originalPath"
@@ -1015,6 +1017,7 @@ order by
 -- AssetRepository.getForVideo
 select
   "asset"."originalPath",
+  "asset"."ownerId",
   (
     select
       "asset_file"."path"
