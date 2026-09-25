@@ -382,10 +382,14 @@
 
 <Dialog
   bind:open={() => removing, (open) => (removingKey = open ? removingKey : null)}
-  title={$t('frameleaf_license_remove_title')}
+  title={removingKey === 'personal'
+    ? $t('frameleaf_license_remove_personal_title')
+    : $t('frameleaf_license_remove_title')}
   closeLabel={$t('close')}
 >
-  <p>{$t('frameleaf_license_remove_body')}</p>
+  <p>
+    {removingKey === 'personal' ? $t('frameleaf_license_remove_personal_body') : $t('frameleaf_license_remove_body')}
+  </p>
   {#snippet actions()}
     <Button onclick={() => (removingKey = null)}>{$t('frameleaf_cloud_cancel')}</Button>
     <Button

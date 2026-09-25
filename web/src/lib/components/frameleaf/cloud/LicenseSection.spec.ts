@@ -245,7 +245,10 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(sdkMock.deleteUserLicense).not.toHaveBeenCalled();
 
       await fireEvent.click(screen.getByRole('button', { name: 'Remove your supporter key…' }));
-      await fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove key' }));
+      const personalDialog = await screen.findByRole('dialog');
+      expect(within(personalDialog).getByText('Remove your supporter key?')).toBeInTheDocument();
+      expect(within(personalDialog).queryByText(/on this server/)).toBeNull();
+      await fireEvent.click(within(personalDialog).getByRole('button', { name: 'Remove key' }));
       await waitFor(() => expect(sdkMock.deleteUserLicense).toHaveBeenCalledTimes(1));
       expect(sdkMock.removeLicenseKey).toHaveBeenCalledTimes(1);
     });
