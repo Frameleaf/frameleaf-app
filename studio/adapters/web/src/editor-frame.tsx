@@ -41,53 +41,23 @@ import { useMediaLibraryStore } from '@/features/media-library/stores/media-libr
 import { usePlaybackStore } from '@/shared/state/playback'
 import { createProjectObject } from '@/features/projects/utils/project-helpers'
 import type { Project } from '@/types/project'
-import type {
-  StudioFrameHello,
-  StudioFrameServiceCalls,
-  StudioFrameServiceName,
-  StudioFrameToHostMessage,
-  StudioHostToFrameMessage,
-} from '@frameleaf/host/frame-protocol'
+import type { StudioHostToFrameMessage } from '@frameleaf/host/frame-protocol'
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
-import { ENGINE_REVISION } from './engine-revision'
+import { call, connectToHost, post } from './host-port'
 import { VirtualWorkspace } from './virtual-workspace'
 import { createLibraryMediaSeeder, type LibraryMediaSeeder } from './library-media'
 import { canonicalJson } from './canonical-commands'
-import { installBrowserShims } from './browser-shims'
-import { RemotePreview, localPreviewSupport } from './remote-preview'
+import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
+import { RemotePreview, frameToTime, localPreviewSupport } from './remote-preview'
 
 installBrowserShims()
+hideFileSystemPickers()
 
 const LazyToaster = lazy(async () => {
   const { Toaster } = await import('@/components/ui/sonner')
   return { default: Toaster }
 })
-
-/* ------------------------------------------------------------------ */
-/* Host port                                                            */
-/* ------------------------------------------------------------------ */
-
-let port: MessagePort | null = null
-let nextCallId = 1
-const pending = new Map<
-  number,
-  { resolve: (value: unknown) => void; reject: (error: Error) => void }
->()
-
-const post = (message: StudioFrameToHostMessage) => port?.postMessage(message)
-
-function call<Name extends StudioFrameServiceName>(
-  name: Name,
-  ...args: StudioFrameServiceCalls[Name]['args']
-): Promise<StudioFrameServiceCalls[Name]['result']> {
-  if (!port) return Promise.reject(new Error('The Studio host is not connected'))
-  const callId = nextCallId++
-  return new Promise((resolve, reject) => {
-    pending.set(callId, { resolve: resolve as (value: unknown) => void, reject })
-    post({ type: 'service', callId, name, args })
-  })
-}
 
 /* ------------------------------------------------------------------ */
 /* Session                                                              */
@@ -365,10 +335,7 @@ function watchPlayhead(state: Session) {
       if (playback.isPlaying || playback.currentFrame === last) return
       last = playback.currentFrame
       const fps = useTimelineSettingsStore.getState().fps || 30
-      const rate = Number.isInteger(fps)
-        ? { num: fps, den: 1 }
-        : { num: Math.round(fps * 1000), den: 1000 }
-      post({ type: 'playhead', time: { num: last * rate.den, den: rate.num } })
+      post({ type: 'playhead', time: frameToTime(last, fps) })
     }),
   )
 }
@@ -516,29 +483,9 @@ async function onHostMessage(message: StudioHostToFrameMessage) {
       post({ type: 'disposed' })
       return
     }
-    case 'service-result': {
-      const waiting = pending.get(message.callId)
-      if (!waiting) return
-      pending.delete(message.callId)
-      if (message.ok) waiting.resolve(message.value)
-      else waiting.reject(new Error(message.error))
+    default:
       return
-    }
   }
 }
 
-window.addEventListener('message', (event) => {
-  if (event.source !== window.parent || event.origin !== window.location.origin) return
-  const data = event.data as { source?: string } | null
-  if (data?.source !== 'frameleaf-studio-host' || !event.ports[0] || port) return
-  port = event.ports[0]
-  port.onmessage = (portEvent) => void onHostMessage(portEvent.data as StudioHostToFrameMessage)
-})
-
-const hello: StudioFrameHello = {
-  source: 'frameleaf-studio-frame',
-  kind: 'editor',
-  protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION,
-  engineRevision: ENGINE_REVISION,
-}
-window.parent.postMessage(hello, window.location.origin)
+connectToHost('editor', (message) => void onHostMessage(message))

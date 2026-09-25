@@ -7182,6 +7182,7 @@
   "frameleaf_studio_export_resolution_720": "720p",
   "frameleaf_studio_export_start": "Export",
   "frameleaf_studio_export_title": "Export {name}",
+  "frameleaf_studio_export_unavailable": "Only the project's owner can export it, once it has been saved and while this window is editing it.",
   "frameleaf_studio_forbidden_body": "You no longer have access to this project. Everything it had open has been closed.",
   "frameleaf_studio_forbidden_title": "No longer available to you",
   "frameleaf_studio_handoff_dropped": "{count, plural, one {# item you chose is not available here} other {# items you chose are not available here}}",

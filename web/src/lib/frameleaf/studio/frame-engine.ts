@@ -275,6 +275,10 @@ export const createFrameStudioEngine = ({
           services.reportFatal(new Error(message.error));
           break;
         }
+        case 'request-export': {
+          services.requestExport?.('video');
+          break;
+        }
         case 'playhead': {
           const { num, den } = message.time ?? {};
           if (Number.isSafeInteger(num) && Number.isSafeInteger(den) && den > 0) {

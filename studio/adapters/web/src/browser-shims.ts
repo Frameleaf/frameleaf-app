@@ -6,6 +6,19 @@
  * - `requestIdleCallback` / `cancelIdleCallback`: Safari has neither. Freecut's autosave and several
  *   background caches schedule through them; without the shim they throw on Safari.
  */
+/**
+ * Chromium's File System Access pickers are hidden from the editor, so every browser takes the same
+ * path: Freecut falls back to its portable flows, and nothing is written to or read from a local
+ * folder behind Frameleaf's back (exports and bundles go to the host; media comes from the library).
+ */
+export function hideFileSystemPickers(target: typeof globalThis = globalThis): void {
+  for (const name of ['showOpenFilePicker', 'showSaveFilePicker', 'showDirectoryPicker']) {
+    if (name in target) {
+      Object.defineProperty(target, name, { value: undefined, configurable: true, writable: true })
+    }
+  }
+}
+
 export function installBrowserShims(target: typeof globalThis = globalThis): void {
   const scope = target as typeof globalThis & {
     requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
