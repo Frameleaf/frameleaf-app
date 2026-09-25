@@ -1781,12 +1781,13 @@ export class MediaService extends BaseService {
 
     const straighten = edits.find((edit) => edit.action === AssetEditAction.Straighten);
     if (straighten && straighten.parameters.angle !== 0) {
-      // The straightened picture is scaled to cover its own frame, as the prototype and the still
-      // renderer do (`straightenScale`), so no black corners are rendered (FL-113).
+      videoFilters.push(`rotate=${this.roundFilterNumber(straighten.parameters.angle)}*PI/180:fillcolor=black`);
+      // `fill` (FL-113 quick editor): scale the straightened picture to cover its own frame, as the
+      // prototype and the still renderer do (`straightenScale`). Recipes without it keep their
+      // black corners, so an earlier save re-renders exactly as it did.
       const { width, height } = this.getVideoEditDimensions(edits, videoStream);
       const cover = straightenScale(width, height, straighten.parameters.angle);
-      videoFilters.push(`rotate=${this.roundFilterNumber(straighten.parameters.angle)}*PI/180:fillcolor=black`);
-      if (cover > 1) {
+      if (straighten.parameters.fill && cover > 1) {
         videoFilters.push(
           `scale=trunc(iw*${this.roundFilterNumber(cover)}/2)*2:trunc(ih*${this.roundFilterNumber(cover)}/2)*2`,
           `crop=${width}:${height}`,
@@ -1799,11 +1800,15 @@ export class MediaService extends BaseService {
       videoFilters.push(mirror.parameters.axis === 'horizontal' ? 'hflip' : 'vflip');
     }
 
-    if (edits.some((edit) => edit.action === AssetEditAction.Stabilize && edit.parameters.enabled)) {
-      // FL-113 (`Editor.jsx` Stabilize: "Edges are cropped slightly to hide the correction"): the
-      // corrected picture is cropped 4% and scaled back to the frame, so no filled edges show.
-      const { width, height } = this.getVideoEditDimensions(edits, videoStream);
-      videoFilters.push('deshake', 'crop=trunc(iw*0.96/2)*2:trunc(ih*0.96/2)*2', `scale=${width}:${height}`);
+    const stabilize = edits.find(isEditAction(AssetEditAction.Stabilize));
+    if (stabilize?.parameters.enabled) {
+      videoFilters.push('deshake');
+      // `cropEdges` (FL-113, `Editor.jsx` Stabilize: "Edges are cropped slightly to hide the
+      // correction"): crop 4% and scale back to the frame. Earlier recipes render as before.
+      if (stabilize.parameters.cropEdges) {
+        const { width, height } = this.getVideoEditDimensions(edits, videoStream);
+        videoFilters.push('crop=trunc(iw*0.96/2)*2:trunc(ih*0.96/2)*2', `scale=${width}:${height}`);
+      }
     }
 
     if (edits.some((edit) => edit.action === AssetEditAction.AutoEnhance && edit.parameters.enabled)) {
@@ -1841,8 +1846,8 @@ export class MediaService extends BaseService {
     const muted = !!audioEdit?.parameters.muted;
     if (audioEdit?.parameters.volume !== undefined && !muted) {
       audioFilters.push(`volume=${this.roundFilterNumber(audioEdit.parameters.volume)}`);
-      // Gain above 100% is limited so it cannot clip (`Editor.jsx` Audio).
-      if (audioEdit.parameters.volume > 1) {
+      // `limit` (FL-113, `Editor.jsx` Audio): gain above 100% is limited so it cannot clip.
+      if (audioEdit.parameters.limit && audioEdit.parameters.volume > 1) {
         audioFilters.push('alimiter=limit=0.98');
       }
     }

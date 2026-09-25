@@ -2826,6 +2826,8 @@ export type TrimParameters = {
 export type StraightenParameters = {
     /** Straighten angle in degrees */
     angle: number;
+    /** Scale the straightened picture to fill its frame (the Frameleaf quick editor). Absent or false keeps the earlier behaviour: black corners, no zoom */
+    fill?: boolean;
 };
 export type AdjustParameters = {
     blackPoint?: number;
@@ -2866,6 +2868,11 @@ export type LookParameters = {
 export type ToggleParameters = {
     enabled?: boolean;
 };
+export type StabilizeParameters = {
+    /** Crop the corrected edges 4% and scale back (the Frameleaf quick editor). Absent or false keeps the earlier uncropped render */
+    cropEdges?: boolean;
+    enabled?: boolean;
+};
 export type TextOverlayParameters = {
     /** Text color in hex format */
     color?: string;
@@ -2885,6 +2892,8 @@ export type TextOverlayParameters = {
     y: number;
 };
 export type AudioParameters = {
+    /** Limit a gain above 1 so it cannot clip (the Frameleaf quick editor). Absent or false keeps the earlier unlimited gain */
+    limit?: boolean;
     muted?: boolean;
     /** Audio volume multiplier */
     volume?: number;
@@ -2900,7 +2909,7 @@ export type SpeedParameters = {
 export type AssetEditActionItemDto = {
     action: AssetEditAction;
     /** List of edit actions to apply */
-    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | StabilizeParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type VideoEditVersionResponseDto = {
     /** Asset ID */
@@ -2926,7 +2935,7 @@ export type AssetEditActionItemResponseDto = {
     /** Asset edit ID */
     id: string;
     /** List of edit actions to apply */
-    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | StabilizeParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type AssetEditsOriginalVideoDto = {
     /** Duration of the original in milliseconds */
@@ -8081,7 +8090,7 @@ export type StudioProjectDiffDto = {
 export type StudioWorkspaceDto = {
     /** The engine revision that wrote the layout */
     engineRevision: string | null;
-    /** The engine layout, byte for byte; null when none is stored */
+    /** The engine layout as the same JSON value it was saved as (key order and spacing are not kept); null when none is stored */
     layout: {
         [key: string]: any;
     } | null;
@@ -8090,7 +8099,7 @@ export type StudioWorkspaceDto = {
 export type StudioWorkspaceSaveDto = {
     /** The pinned engine revision writing it */
     engineRevision: string;
-    /** The engine layout; stored and returned byte for byte */
+    /** The engine layout; stored and returned as the same JSON value (key order and spacing are not kept) */
     layout: {
         [key: string]: any;
     };

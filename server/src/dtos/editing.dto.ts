@@ -83,6 +83,12 @@ const TrimParametersSchema = z
 const StraightenParametersSchema = z
   .object({
     angle: z.number().meta({ format: 'double' }).min(-45).max(45).describe('Straighten angle in degrees'),
+    fill: z
+      .boolean()
+      .optional()
+      .describe(
+        'Scale the straightened picture to fill its frame (the Frameleaf quick editor). Absent or false keeps the earlier behaviour: black corners, no zoom',
+      ),
   })
   .meta({ id: 'StraightenParameters' });
 
@@ -166,6 +172,18 @@ const LookParametersSchema = z
   })
   .meta({ id: 'LookParameters' });
 
+const StabilizeParametersSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    cropEdges: z
+      .boolean()
+      .optional()
+      .describe(
+        'Crop the corrected edges 4% and scale back (the Frameleaf quick editor). Absent or false keeps the earlier uncropped render',
+      ),
+  })
+  .meta({ id: 'StabilizeParameters' });
+
 const ToggleParametersSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -234,6 +252,12 @@ const AudioParametersSchema = z
   .object({
     muted: z.boolean().optional(),
     volume: z.number().meta({ format: 'double' }).min(0).max(2).optional().describe('Audio volume multiplier'),
+    limit: z
+      .boolean()
+      .optional()
+      .describe(
+        'Limit a gain above 1 so it cannot clip (the Frameleaf quick editor). Absent or false keeps the earlier unlimited gain',
+      ),
   })
   .meta({ id: 'AudioParameters' });
 
@@ -265,7 +289,7 @@ const __AssetEditActionItemSchema = z.discriminatedUnion('action', [
   z.object({ action: AssetEditActionSchema.extract(['Filter']), parameters: LookParametersSchema }),
   z.object({ action: AssetEditActionSchema.extract(['Effect']), parameters: LookParametersSchema }),
   z.object({ action: AssetEditActionSchema.extract(['AutoEnhance']), parameters: ToggleParametersSchema }),
-  z.object({ action: AssetEditActionSchema.extract(['Stabilize']), parameters: ToggleParametersSchema }),
+  z.object({ action: AssetEditActionSchema.extract(['Stabilize']), parameters: StabilizeParametersSchema }),
   z.object({ action: AssetEditActionSchema.extract(['TextOverlay']), parameters: TextOverlayParametersSchema }),
   z.object({ action: AssetEditActionSchema.extract(['Audio']), parameters: AudioParametersSchema }),
   z.object({ action: AssetEditActionSchema.extract(['Speed']), parameters: SpeedParametersSchema }),
@@ -281,6 +305,7 @@ const AssetEditParametersSchema = z
     AdjustParametersSchema,
     LookParametersSchema,
     ToggleParametersSchema,
+    StabilizeParametersSchema,
     TextOverlayParametersSchema,
     AudioParametersSchema,
     SpeedParametersSchema,

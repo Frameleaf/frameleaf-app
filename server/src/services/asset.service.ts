@@ -983,15 +983,17 @@ export class AssetService extends BaseService {
       const trimStartMs = trimEdit?.parameters.startMs ?? 0;
       const trimEndMs = trimEdit?.parameters.endMs ?? durationMs;
       const speedEdits = edits.filter((edit) => edit.action === AssetEditAction.Speed);
-      const hasGlobalSpeedEdit = speedEdits.some(
+      const globalSpeedEdits = speedEdits.filter(
         (edit) => edit.parameters.startMs === undefined && edit.parameters.endMs === undefined,
       );
       const speedSegments = speedEdits
         .filter((edit) => edit.parameters.startMs !== undefined && edit.parameters.endMs !== undefined)
         .sort((a, b) => a.parameters.startMs! - b.parameters.startMs!);
 
-      if (hasGlobalSpeedEdit && speedSegments.length > 0) {
-        throw new BadRequestException('Global and segment speed edits cannot be combined');
+      // FL-113: a whole-clip speed and speed ranges combine. The ranges override it and it plays in
+      // the gaps between them (`MediaService.getVideoEditTimeline`, `develop.mjs` speedAt).
+      if (globalSpeedEdits.length > 1) {
+        throw new BadRequestException('Only one whole-clip speed edit is allowed');
       }
 
       for (let index = 1; index < speedSegments.length; index++) {

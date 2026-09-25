@@ -31156,7 +31156,7 @@
         "x-immich-state": "Alpha"
       },
       "put": {
-        "description": "Replaces your stored editor layout. The layout is stored and returned byte for byte, up to 256 KiB.",
+        "description": "Replaces your stored editor layout. The layout is stored as JSON and returned as the same value (key order and spacing are not kept), up to 256 KiB.",
         "operationId": "saveStudioWorkspace",
         "parameters": [],
         "requestBody": {
@@ -43820,6 +43820,9 @@
                 "$ref": "#/components/schemas/ToggleParameters"
               },
               {
+                "$ref": "#/components/schemas/StabilizeParameters"
+              },
+              {
                 "$ref": "#/components/schemas/TextOverlayParameters"
               },
               {
@@ -43874,6 +43877,9 @@
               },
               {
                 "$ref": "#/components/schemas/ToggleParameters"
+              },
+              {
+                "$ref": "#/components/schemas/StabilizeParameters"
               },
               {
                 "$ref": "#/components/schemas/TextOverlayParameters"
@@ -45652,6 +45658,10 @@
       },
       "AudioParameters": {
         "properties": {
+          "limit": {
+            "description": "Limit a gain above 1 so it cannot clip (the Frameleaf quick editor). Absent or false keeps the earlier unlimited gain",
+            "type": "boolean"
+          },
           "muted": {
             "type": "boolean"
           },
@@ -66864,6 +66874,19 @@
         ],
         "type": "object"
       },
+      "StabilizeParameters": {
+        "properties": {
+          "cropEdges": {
+            "description": "Crop the corrected edges 4% and scale back (the Frameleaf quick editor). Absent or false keeps the earlier uncropped render",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "StackCreateDto": {
         "properties": {
           "assetIds": {
@@ -67605,6 +67628,10 @@
             "maximum": 45,
             "minimum": -45,
             "type": "number"
+          },
+          "fill": {
+            "description": "Scale the straightened picture to fill its frame (the Frameleaf quick editor). Absent or false keeps the earlier behaviour: black corners, no zoom",
+            "type": "boolean"
           }
         },
         "required": [
@@ -69686,7 +69713,7 @@
           },
           "layout": {
             "additionalProperties": {},
-            "description": "The engine layout, byte for byte; null when none is stored",
+            "description": "The engine layout as the same JSON value it was saved as (key order and spacing are not kept); null when none is stored",
             "nullable": true,
             "type": "object"
           },
@@ -69713,7 +69740,7 @@
           },
           "layout": {
             "additionalProperties": {},
-            "description": "The engine layout; stored and returned byte for byte",
+            "description": "The engine layout; stored and returned as the same JSON value (key order and spacing are not kept)",
             "type": "object"
           }
         },

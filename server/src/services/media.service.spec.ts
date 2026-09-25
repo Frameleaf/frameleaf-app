@@ -2579,7 +2579,7 @@ describe(MediaService.name, () => {
     it('scales a straightened picture to cover its frame instead of leaving black corners (FL-113)', () => {
       const command = editCommand(
         defaults.ffmpeg,
-        [{ action: AssetEditAction.Straighten, parameters: { angle: 5 } }],
+        [{ action: AssetEditAction.Straighten, parameters: { angle: 5, fill: true } }],
         videoStream,
         audioStream,
         format,
@@ -2653,8 +2653,8 @@ describe(MediaService.name, () => {
       const command = editCommand(
         defaults.ffmpeg,
         [
-          { action: AssetEditAction.Stabilize, parameters: { enabled: true } },
-          { action: AssetEditAction.Audio, parameters: { volume: 1.4 } },
+          { action: AssetEditAction.Stabilize, parameters: { enabled: true, cropEdges: true } },
+          { action: AssetEditAction.Audio, parameters: { volume: 1.4, limit: true } },
         ],
         videoStream,
         audioStream,
@@ -2664,6 +2664,25 @@ describe(MediaService.name, () => {
         'deshake,crop=trunc(iw*0.96/2)*2:trunc(ih*0.96/2)*2,scale=1920:1080',
       );
       expect(getFilterOption(command.outputOptions, '-filter:a')).toBe('volume=1.4,alimiter=limit=0.98');
+    });
+
+    it('renders an earlier recipe exactly as before: no fill, no edge crop, no limiter', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          { action: AssetEditAction.Straighten, parameters: { angle: 5 } },
+          { action: AssetEditAction.Stabilize, parameters: { enabled: true } },
+          { action: AssetEditAction.Audio, parameters: { volume: 1.4 } },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      const filters = getFilterOption(command.outputOptions);
+      expect(filters).toMatch(/^rotate=5\*PI\/180:fillcolor=black,deshake(,|$)/);
+      expect(filters).not.toContain('scale=trunc(iw*');
+      expect(filters).not.toContain('crop=trunc(iw*0.96');
+      expect(getFilterOption(command.outputOptions, '-filter:a')).toBe('volume=1.4');
     });
 
     it('copies the packets for a lone fast trim instead of re-encoding (FL-113)', () => {

@@ -500,7 +500,7 @@
   };
   const straightenStyle = $derived(
     frame
-      ? `transform:rotate(${edit.straighten}deg) scale(${straightenScale(frame.fw, frame.fh, edit.straighten)})`
+      ? `transform:rotate(${edit.straighten}deg) scale(${edit.straightenFill ? straightenScale(frame.fw, frame.fh, edit.straighten) : 1})`
       : '',
   );
   const windowStyle = $derived(
@@ -806,7 +806,7 @@
     context.translate(-edit.cropRect.x * shownW, -edit.cropRect.y * shownH);
     context.translate(shownW / 2, shownH / 2);
     context.rotate((edit.straighten * Math.PI) / 180);
-    const cover = straightenScale(shownW, shownH, edit.straighten);
+    const cover = edit.straightenFill ? straightenScale(shownW, shownH, edit.straighten) : 1;
     context.scale(cover * (edit.flipH ? -1 : 1), cover * (edit.flipV ? -1 : 1));
     context.rotate((edit.rotation * Math.PI) / 180);
     context.drawImage(element, -element.videoWidth / 2, -element.videoHeight / 2);

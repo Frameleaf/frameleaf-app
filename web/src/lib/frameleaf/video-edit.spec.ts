@@ -74,12 +74,12 @@ describe('video quick editor edit (FL-113)', () => {
       source,
     );
     expect(edits).toEqual([
-      { action: AssetEditAction.Stabilize, parameters: { enabled: true } },
+      { action: AssetEditAction.Stabilize, parameters: { enabled: true, cropEdges: true } },
       { action: AssetEditAction.AutoEnhance, parameters: { enabled: true } },
       { action: AssetEditAction.Trim, parameters: { startMs: 1500, endMs: 20_000, mode: VideoTrimMode.Fast } },
       { action: AssetEditAction.Speed, parameters: { rate: 2 } },
       { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 4000, endMs: 8000 } },
-      { action: AssetEditAction.Audio, parameters: { volume: 1.2 } },
+      { action: AssetEditAction.Audio, parameters: { volume: 1.2, limit: true } },
     ]);
     expect(toVideoEdits(edit({ volume: 0 }), source)).toEqual([
       { action: AssetEditAction.Audio, parameters: { muted: true } },
@@ -122,11 +122,11 @@ describe('video quick editor edit (FL-113)', () => {
   it('negates the straighten angle under a single flip, because the server mirrors afterwards', () => {
     expect(toVideoEdits(edit({ straighten: 5, flipH: true }), source)).toContainEqual({
       action: AssetEditAction.Straighten,
-      parameters: { angle: -5 },
+      parameters: { angle: -5, fill: true },
     });
     expect(toVideoEdits(edit({ straighten: 5, flipH: true, flipV: true }), source)).toContainEqual({
       action: AssetEditAction.Straighten,
-      parameters: { angle: 5 },
+      parameters: { angle: 5, fill: true },
     });
   });
 
@@ -225,9 +225,27 @@ describe('video quick editor edit (FL-113)', () => {
 
   it('shows where a fast trim really cuts: from the keyframe at or before the in point', () => {
     const clip = edit({ start: 5.5, end: 12 });
-    expect(fastTrimBounds([0, 2000, 4000, 6000], clip, 24)).toEqual({ start: 4, end: 10.5 });
+    expect(fastTrimBounds([0, 2000, 4000, 6000], clip, 24)).toEqual({ start: 4, end: 12 });
     expect(fastTrimBounds(null, clip, 24)).toBeNull();
-    expect(fastTrimBounds([0], edit({ start: 20, end: 24 }), 24)).toEqual({ start: 0, end: 4 });
+    expect(fastTrimBounds([0], edit({ start: 20, end: 24 }), 24)).toEqual({ start: 0, end: 24 });
+  });
+
+  it('keeps an earlier recipe rendering as it did until that control is changed (renderer 1.1.0)', () => {
+    const earlier = [
+      { action: AssetEditAction.Straighten, parameters: { angle: 4 } },
+      { action: AssetEditAction.Stabilize, parameters: { enabled: true } },
+      { action: AssetEditAction.Audio, parameters: { volume: 1.5 } },
+    ];
+    const opened = fromVideoEdits(earlier, source);
+    expect(opened.straightenFill).toBe(false);
+    expect(toVideoEdits(opened, source)).toEqual(earlier);
+
+    const straightened = changeVideoDraft(createVideoDraft(opened), { straighten: 6 }, 24).edit;
+    expect(toVideoEdits(straightened, source)).toContainEqual({
+      action: AssetEditAction.Straighten,
+      parameters: { angle: 6, fill: true },
+    });
+    expect(toVideoEdits(straightened, source)).toContainEqual(earlier[1]);
   });
 
   it('undoes and redoes, and ignores a change that changes nothing', () => {
