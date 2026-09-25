@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { SystemConfig } from 'src/config.js';
 import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority.js';
+import { assertNoLiveHandoffLeases, releaseTransientHandoffLeases } from 'src/repositories/fork-handoff-leases.js';
 import { DB } from 'src/schema/index.js';
 import { DeepPartial } from 'src/types.js';
 
@@ -509,6 +510,11 @@ export class ForkSchemaRepository {
         if (audit && audit.status !== 'applied' && audit.status !== 'failed') {
           throw new Error(`Unsupported official handoff preparation audit status: ${audit.status}`);
         }
+        // FL-44 (FN-304): transient leases never cross the handoff. Render-worker sessions and Studio
+        // editor leases are released here; a job still claimed by a live worker refuses preparation,
+        // and once the audit below runs every Frameleaf writer refuses, so none can be taken again.
+        await releaseTransientHandoffLeases(trx);
+        await assertNoLiveHandoffLeases(trx);
         // Steady-state backfills preserved deduplication; the handoff needs a
         // fresh destructive pass, so reset the storage evidence rows and run
         // the storage and checksum handlers again with handoff authority.
