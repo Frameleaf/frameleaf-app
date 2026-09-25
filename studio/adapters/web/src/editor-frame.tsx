@@ -120,6 +120,11 @@ interface Session {
   engineProjectId: string
   /** Content of the graph the host holds, so an echo of our own draft is not reloaded. */
   hostContent: string
+  /**
+   * The project revision the editor's graph was loaded from (or last matched). Every draft reports
+   * it, so an edit made on an older revision is never taken as built on a newer head.
+   */
+  hostRevision: number
   /** Bumped to remount the editor route after the project changed underneath it. */
   generation: number
   render: () => void
@@ -290,7 +295,7 @@ async function sendDraft(state: Session) {
   }
   const content = contentOf(graph)
   if (content === state.hostContent) return
-  const result = await call('stageDraft', graph, ['editor.save']).catch(
+  const result = await call('stageDraft', graph, ['editor.save'], state.hostRevision).catch(
     () => ({ status: 'rejected', reason: 'offline' }) as const,
   )
   if (result.status === 'staged') {
@@ -393,6 +398,7 @@ async function mount(context: StudioHostContext): Promise<void> {
     root: createRoot(container),
     engineProjectId,
     hostContent: contentOf(context.project.graph),
+    hostRevision: context.project.revision,
     generation: 0,
     render: () => undefined,
     unsubscribe: [],
@@ -445,6 +451,7 @@ async function update(context: StudioHostContext): Promise<void> {
     // A revision this editor did not write: a restore, a reload after a conflict, or a canonical
     // command applied by the host. Reload the editor from it.
     state.hostContent = incoming
+    state.hostRevision = context.project.revision
     state.workspace.putFile(
       projectJsonPath(state.engineProjectId),
       JSON.stringify({ ...(context.project.graph as object), id: state.engineProjectId }, null, 2),
@@ -453,6 +460,7 @@ async function update(context: StudioHostContext): Promise<void> {
     state.generation += 1
   } else if (context.project.graph && context.draftHeld !== true) {
     state.hostContent = incoming
+    state.hostRevision = context.project.revision
   }
   if (
     shouldResendDraft({
