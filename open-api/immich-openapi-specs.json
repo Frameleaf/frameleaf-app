@@ -56670,10 +56670,24 @@
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
+          },
+          "photos": {
+            "description": "Number of photos among the assets",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "videos": {
+            "description": "Number of videos among the assets",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
           }
         },
         "required": [
-          "assets"
+          "assets",
+          "photos",
+          "videos"
         ],
         "type": "object"
       },

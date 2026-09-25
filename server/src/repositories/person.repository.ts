@@ -7,7 +7,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, SourceType, UserMetadataKey } from 'src/enum.js';
+import { AssetFileType, AssetType, SourceType, UserMetadataKey } from 'src/enum.js';
 import { isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -57,6 +57,8 @@ export interface UpdateFacesData {
 
 export interface PersonStatistics {
   assets: number;
+  photos: number;
+  videos: number;
 }
 
 export interface DeleteFacesOptions {
@@ -499,7 +501,18 @@ export class PersonRepository {
           .on('asset.deletedAt', 'is', null)
           .on((eb) => eb.or([eb('asset.ownerId', '=', asUuid(userId)), inSharedAlbum(eb, userId)])),
       )
-      .select((eb) => eb.fn.count(eb.fn('distinct', ['asset.id'])).as('count'))
+      .select((eb) => [
+        eb.fn.count(eb.fn('distinct', ['asset.id'])).as('count'),
+        // FL-37: the person page says "N photos · N videos" (PersonDetail.jsx:257-264)
+        eb.fn
+          .count(eb.fn('distinct', ['asset.id']))
+          .filterWhere('asset.type', '=', sql.lit(AssetType.Image))
+          .as('photos'),
+        eb.fn
+          .count(eb.fn('distinct', ['asset.id']))
+          .filterWhere('asset.type', '=', sql.lit(AssetType.Video))
+          .as('videos'),
+      ])
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true)
@@ -508,6 +521,8 @@ export class PersonRepository {
 
     return {
       assets: result ? Number(result.count) : 0,
+      photos: result ? Number(result.photos) : 0,
+      videos: result ? Number(result.videos) : 0,
     };
   }
 
