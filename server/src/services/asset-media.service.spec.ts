@@ -860,6 +860,23 @@ describe(AssetMediaService.name, () => {
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
     });
 
+    it('serves a location-free copy through a link the hidden partner created (review B1)', async () => {
+      const me = UserFactory.create();
+      const owner = UserFactory.create();
+      const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(owner).sharedWith(me).build()),
+      ]);
+      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
+      const auth = AuthFactory.from(me).sharedLink({ userId: me.id, showExif: true, allowDownload: true }).build();
+
+      await expect(sut.downloadOriginal(auth, asset.id, {})).resolves.toMatchObject({ path: lease.path });
+      expect(mocks.partner.getAll).toHaveBeenCalledWith(me.id);
+      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/original/photo.jpg');
+    });
+
     it('serves a shared link that shows metadata the file untouched', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
