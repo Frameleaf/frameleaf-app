@@ -29,8 +29,8 @@ export type FrameleafSessionRow = {
 
 /**
  * Sign in with Frameleaf (FL-158): the Frameleaf account linked to each local account
- * (`immich_fork.frameleaf_account_link`, fork migration 0000000000201) and the sessions a Frameleaf
- * sign-in created (`immich_fork.frameleaf_session`, 0000000000202). Writes are refused while the
+ * (`immich_fork.frameleaf_account_link`, fork migration 0000000000202) and the sessions a Frameleaf
+ * sign-in created (`immich_fork.frameleaf_session`, 0000000000203). Writes are refused while the
  * server is being handed over, like every fork table.
  */
 @Injectable()
