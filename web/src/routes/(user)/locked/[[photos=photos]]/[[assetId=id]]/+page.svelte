@@ -5,7 +5,7 @@
   import LockedReasonFilter from '$lib/components/frameleaf/LockedReasonFilter.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
+  import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { AssetAction } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
@@ -16,6 +16,7 @@
   import { Route } from '$lib/route';
   import { getUserActions } from '$lib/services/user.service';
   import { navigate } from '$lib/utils/navigation';
+  import { mdiShieldLockOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -85,7 +86,11 @@
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
     {#snippet empty()}
-      <EmptyPlaceholder text={$t('frameleaf_locked_empty')} title={$t('nothing_here_yet')} class="mx-auto mt-10" />
+      <LibraryEmptyState
+        icon={mdiShieldLockOutline}
+        title={$t('nothing_here_yet')}
+        message={$t('frameleaf_locked_empty')}
+      />
     {/snippet}
 
     {#snippet viewer()}

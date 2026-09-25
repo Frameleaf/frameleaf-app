@@ -98,6 +98,25 @@ const TimeBucketAssetSchema = TimeBucketQueryBaseSchema.extend({
     .meta({ example: '2024-01-01T00:00:00.000Z' }),
 }).meta({ id: 'TimeBucketAssetDto' });
 
+/** FL-30 (S-15): one page of the timeline in a flat order the time buckets cannot give. */
+export const TIMELINE_ORDERED_MAX_TAKE = 1000;
+const TimelineOrderedSchema = TimeBucketQueryBaseSchema.extend({
+  sort: z
+    .enum(['filename', 'rating'])
+    .describe(
+      'filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture',
+    )
+    .meta({ id: 'TimelineOrderedSort' }),
+  skip: z.coerce.number().int().min(0).default(0).describe('Items to skip'),
+  take: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(TIMELINE_ORDERED_MAX_TAKE)
+    .default(500)
+    .describe(`Items to return (at most ${TIMELINE_ORDERED_MAX_TAKE})`),
+}).meta({ id: 'TimelineOrderedDto' });
+
 const stackTupleSchema = z.array(z.string()).length(2).nullable();
 
 const TimeBucketAssetResponseSchema = z
@@ -154,6 +173,18 @@ const TimeBucketAssetResponseSchema = z
       .array(z.string())
       .optional()
       .describe('Array of original file names. Omitted for shared links that hide EXIF'),
+    width: z
+      .array(z.int32().nullable())
+      .optional()
+      .describe('Array of widths in pixels (null when unknown). Omitted for shared links that hide EXIF'),
+    height: z
+      .array(z.int32().nullable())
+      .optional()
+      .describe('Array of heights in pixels (null when unknown). Omitted for shared links that hide EXIF'),
+    fileSizeInByte: z
+      .array(z.int().nullable())
+      .optional()
+      .describe('Array of file sizes in bytes (null when unknown). Omitted for shared links that hide EXIF'),
     city: z.array(z.string().nullable()).optional().describe('Array of city names extracted from EXIF GPS data'),
     country: z.array(z.string().nullable()).optional().describe('Array of country names extracted from EXIF GPS data'),
     latitude: z
@@ -219,6 +250,7 @@ const TimelineHighlightResponseSchema = z
 
 export class TimeBucketDto extends createZodDto(TimeBucketSchema) {}
 export class TimeBucketAssetDto extends createZodDto(TimeBucketAssetSchema) {}
+export class TimelineOrderedDto extends createZodDto(TimelineOrderedSchema) {}
 export class TimeBucketAssetResponseDto extends createZodDto(TimeBucketAssetResponseSchema) {}
 export class TimeBucketsResponseDto extends createZodDto(TimeBucketsResponseSchema) {}
 export class TimelineHighlightsDto extends createZodDto(TimelineHighlightsSchema) {}

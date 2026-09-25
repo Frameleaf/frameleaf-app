@@ -6,7 +6,9 @@
   import {
     ACTIVITY_FILTERS,
     activityCounts,
+    activityStatusText,
     buildActivityList,
+    formatActivityDuration,
     matchesActivityFilter,
     type ActivityFilter,
     type ActivityItem,
@@ -42,7 +44,7 @@
     mdiWifiOff,
   } from '@mdi/js';
   import { onMount } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   /**
    * The Activity page (FL-104), ported from the prototype's `Processing` screen
@@ -118,11 +120,16 @@
     return item.kindKey.includes('export') ? mdiExportVariant : mdiAutoFix;
   };
 
-  /** The prototype's status line: the state, then how far along it is, when that is known. */
-  const statusLine = (item: ActivityItem) => {
-    const status = $t(item.statusKey);
-    return item.progress !== null && !item.finished ? `${status} · ${Math.round(item.progress)}%` : status;
-  };
+  /**
+   * The prototype's status line (`Activity.jsx` `statusText`): the state, how far along it is and
+   * about how long is left; "Paused at N%"; "Waiting for connection" while the server is unreachable.
+   */
+  const statusLine = (item: ActivityItem) =>
+    activityStatusText(item, {
+      translate: $t,
+      online: !activitySession.unreachable,
+      formatDuration: (seconds) => formatActivityDuration(seconds, $locale ?? undefined),
+    });
 
   let retrying = $state(false);
   /** Ask the server again now, rather than waiting for the next poll (FL-43). */

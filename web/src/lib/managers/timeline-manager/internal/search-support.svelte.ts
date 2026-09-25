@@ -136,7 +136,13 @@ function compareTimelineOrder(order: AssetOrder, dateType: TimeBucketDateType, a
   return order === AssetOrder.Desc ? -diff : diff;
 }
 
-export async function retrieveRange(timelineManager: TimelineManager, start: AssetDescriptor, end: AssetDescriptor) {
+export async function retrieveRange(
+  timelineManager: TimelineManager,
+  start: AssetDescriptor,
+  end: AssetDescriptor,
+  /** A flat order (S-15) compares positions, not dates. */
+  position?: (asset: TimelineAsset) => number,
+) {
   let { asset: startAsset, timelineMonth: startTimelineMonth } =
     findTimelineMonthForAsset(timelineManager, start.id) ?? {};
   if (!startTimelineMonth || !startAsset) {
@@ -153,7 +159,10 @@ export async function retrieveRange(timelineManager: TimelineManager, start: Ass
   // fileCreatedAt within a day); comparing localDateTime alone is wrong when the
   // two endpoints share a day but have different UTC offsets, and would make the
   // loop below run to the end of the timeline and select every asset.
-  if (compareTimelineOrder(assetOrder, dateType, startAsset, endAsset) > 0) {
+  const compare = position
+    ? (a: TimelineAsset, b: TimelineAsset) => position(a) - position(b)
+    : (a: TimelineAsset, b: TimelineAsset) => compareTimelineOrder(assetOrder, dateType, a, b);
+  if (compare(startAsset, endAsset) > 0) {
     [startAsset, endAsset] = [endAsset, startAsset];
     // eslint-disable-next-line no-useless-assignment
     [startTimelineMonth, endTimelineMonth] = [endTimelineMonth, startTimelineMonth];
@@ -169,7 +178,7 @@ export async function retrieveRange(timelineManager: TimelineManager, start: Ass
     // Safety net: stop if we've iterated past where endAsset should be without
     // matching its id (e.g. an exact-timestamp tie), instead of selecting the
     // remainder of the library.
-    if (compareTimelineOrder(assetOrder, dateType, targetAsset, endAsset) > 0) {
+    if (compare(targetAsset, endAsset) > 0) {
       break;
     }
     range.push(targetAsset);

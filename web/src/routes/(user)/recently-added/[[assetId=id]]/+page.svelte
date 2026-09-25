@@ -1,14 +1,12 @@
 <script lang="ts">
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { AssetAction } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
-  import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility, TimeBucketDateType } from '@immich/sdk';
   import { t } from 'svelte-i18n';
@@ -47,10 +45,6 @@
     selectAll="loaded"
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
-    {#snippet empty()}
-      <EmptyPlaceholder text={$t('no_assets_message')} onClick={() => openFileUploadDialog()} class="mx-auto mt-10" />
-    {/snippet}
-
     {#snippet viewer()}
       <Portal target="body">
         {#if assetViewerManager.isViewing}
