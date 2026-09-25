@@ -228,12 +228,14 @@ describe('/jobs', () => {
 
   describe('POST /queues/:name/jobs/retry-failed (FL-71)', () => {
     let failed = 0;
+    let assetId = '';
 
     beforeAll(async () => {
       // A thumbnail job that fails deterministically: an image whose original is removed from disk
       // after upload, then asked for new thumbnails. (An unreadable upload is not a failure: the
       // thumbnail handler skips an unsupported format.)
       const asset = await utils.createAsset(admin.accessToken);
+      assetId = asset.id;
       await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
       await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
       const { originalPath } = await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) });
@@ -258,11 +260,11 @@ describe('/jobs', () => {
         .set('Authorization', `Bearer ${admin.accessToken}`);
 
       expect(status).toBe(200);
-      expect(body.length).toBeGreaterThan(0);
-      for (const job of body) {
-        expect(job.account).toEqual({ id: admin.userId, name: expect.any(String) });
-        expect(job.worker).toEqual({ kind: 'server', name: null });
-      }
+      // Failed jobs live in Redis and outlive the database reset between specs, so look at this spec's own job.
+      const job = body.find((job: { data: { id?: string } }) => job.data.id === assetId);
+      expect(job).toBeDefined();
+      expect(job.account).toEqual({ id: admin.userId, name: expect.any(String) });
+      expect(job.worker).toEqual({ kind: 'server', name: null });
     });
 
     it('is for administrators only', async () => {
