@@ -370,7 +370,15 @@ where
 
 -- PersonRepository.getStatistics
 select
-  count(distinct ("asset"."id")) as "count"
+  count(distinct ("asset"."id")) as "count",
+  count(distinct ("asset"."id")) filter (
+    where
+      "asset"."type" = 'IMAGE'
+  ) as "photos",
+  count(distinct ("asset"."id")) filter (
+    where
+      "asset"."type" = 'VIDEO'
+  ) as "videos"
 from
   "asset_face"
   left join "asset" on "asset"."id" = "asset_face"."assetId"
