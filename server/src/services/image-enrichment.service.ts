@@ -540,7 +540,12 @@ export class ImageEnrichmentService extends BaseService {
       if (members.some((member) => isLockedRow(member))) {
         requireElevatedPermission(auth);
       }
-      const unlocked = (await this.assetRepository.unlock([id], trx)).map(({ assetId }) => assetId);
+      // Legacy compatibility kept apart (FL-34): Mark Safe answers a sensitive verdict, so it releases
+      // marked and detected locks only; an item kept in the upstream Locked folder stays Locked until
+      // its owner unlocks it.
+      const unlocked = (
+        await this.assetRepository.unlock([id], trx, [AssetLockReason.Marked, AssetLockReason.Detected])
+      ).map(({ assetId }) => assetId);
       // the unlock works the group out again: it may release only what the elevation check saw
       requireUnchangedGroup(unlocked, memberIds);
       const ownerId = members.find((member) => member.id === id)?.ownerId;
