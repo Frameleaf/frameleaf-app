@@ -124,6 +124,13 @@ export const LIBRARY_CARE_HEALTH_SCAN_CRON = 'libraryCareHealthScan';
 
 type DurableScan = { missingRunId: string; corruptRunId: string; operationId: string };
 
+/**
+ * How often a scheduled scan is a full one (FL-69). An incremental scan only rechecks assets whose
+ * record changed, so an original removed or damaged on disk later, with no change to its record,
+ * would never be found; at least this often every asset's file is checked again.
+ */
+export const LIBRARY_CARE_FULL_SCAN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** Run states that mean "a job is still working on this". */
 const OPEN_RUN_STATES: ReadonlySet<string> = new Set(['running', 'paused', 'retrying']);
 /** A trash job is created just after its findings are queued; leave them this long before releasing them. */
@@ -301,8 +308,9 @@ export class MediaHealthService {
 
   /**
    * Start every account's scheduled health scan (FL-69). Incremental: an account whose last scan
-   * completed is scanned for what changed since that scan began; one never scanned is scanned in
-   * full. Each is the same durable, checkpointed job as "Scan again", so an interrupted scan carries
+   * completed is scanned for what changed since that scan began; one never scanned, or whose last
+   * full scan is older than `LIBRARY_CARE_FULL_SCAN_INTERVAL_MS`, is scanned in full, so files
+   * removed or damaged without any change to their records are found too. Each is the same durable, checkpointed job as "Scan again", so an interrupted scan carries
    * on from its checkpoint, and an account with a scan already open keeps it instead of getting a
    * second one (a scan somebody paused stays paused). Returns how many accounts have a scan.
    */
@@ -314,7 +322,7 @@ export class MediaHealthService {
     let scheduled = 0;
     for (const user of await this.userRepository.getList()) {
       try {
-        const changedSince = await this.lastCompletedScanAt(user.id);
+        const changedSince = await this.incrementalScanStart(user.id);
         await this.mediaHealthRepository.withLibraryCareLock(user.id, () =>
           this.admitDurableScan(user.id, { changedSince, scheduled: true }),
         );
@@ -326,8 +334,22 @@ export class MediaHealthService {
     return scheduled;
   }
 
-  /** When the account's last completed scan was started, for an incremental scan. */
-  private async lastCompletedScanAt(ownerId: string): Promise<string | undefined> {
+  /**
+   * Where the account's next scheduled scan starts from: the start of its last completed scan, or
+   * undefined for a full scan (never scanned, or no full scan completed within the interval).
+   */
+  private async incrementalScanStart(ownerId: string): Promise<string | undefined> {
+    const { lastScanAt, lastFullScanAt } = await this.lastCompletedScans(ownerId);
+    if (!lastScanAt || !lastFullScanAt) {
+      return undefined;
+    }
+    return Date.now() - new Date(lastFullScanAt).getTime() >= LIBRARY_CARE_FULL_SCAN_INTERVAL_MS
+      ? undefined
+      : lastScanAt;
+  }
+
+  /** When the account's last completed scan, and its last completed full scan, were started. */
+  private async lastCompletedScans(ownerId: string): Promise<{ lastScanAt?: string; lastFullScanAt?: string }> {
     const { items } = await this.mediaOperationRepository.list({
       ownerId,
       kind: MediaOperationKind.MediaHealth,
@@ -336,16 +358,24 @@ export class MediaHealthService {
       take: 20,
       skip: 0,
     });
+    let lastScanAt: string | undefined;
     for (const operation of items) {
       try {
-        if (parseMediaHealthSnapshot(operation.snapshot).mode === 'scan') {
-          return asDateTimeString(operation.createdAt as unknown as Date);
+        const snapshot = parseMediaHealthSnapshot(operation.snapshot);
+        if (snapshot.mode !== 'scan') {
+          continue;
+        }
+        const startedAt = asDateTimeString(operation.createdAt as unknown as Date);
+        lastScanAt ??= startedAt;
+        if (!snapshot.changedSince) {
+          return { lastScanAt, lastFullScanAt: startedAt };
         }
       } catch {
         // an unreadable snapshot is not a scan this can count from
       }
     }
-    return undefined;
+    // No full scan among the recent ones: the next one is full.
+    return { lastScanAt };
   }
 
   async list(auth: AuthDto, dto: MediaHealthListQueryDto): Promise<MediaHealthListResponseDto> {
