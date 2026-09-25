@@ -4,7 +4,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@immich/sdk';
   import { isEqual } from 'lodash-es';
-  import { onDestroy, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import AvailabilityChecksSection from './machine-learning/AvailabilityChecksSection.svelte';
   import DuplicateDetectionSection from './machine-learning/DuplicateDetectionSection.svelte';
@@ -18,21 +18,12 @@
   import MlUrlsSection from './machine-learning/MlUrlsSection.svelte';
   import NsfwDetectionSection from './machine-learning/NsfwDetectionSection.svelte';
   import OcrSection from './machine-learning/OcrSection.svelte';
-  import RunPodSection from './machine-learning/RunPodSection.svelte';
   import SmartSearchSection from './machine-learning/SmartSearchSection.svelte';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
   const configToEdit = $derived(settingsDraft.draft);
   const config = $derived(settingsDraft.baseline);
-  // Optional-with-default zod fields land in the generated DTO as
-  // `string | undefined`. The server always materialises them, but the
-  // password bindings below need a plain string. Backfill on load so the
-  // bind targets are never undefined.
-  if (configToEdit.machineLearning.runpod) {
-    configToEdit.machineLearning.runpod.hfToken ??= '';
-  }
-
   // Detected hardware preference, used to seed the "Auto" hardware
   // dropdown and apply matching preset model names.
   let detectedAcceleration = $state<MachineLearningHardwareAcceleration>();
@@ -45,31 +36,6 @@
   const savedImageDescription = $derived(config.machineLearning.imageDescription!);
   const nsfwDetection = $derived(configToEdit.machineLearning.nsfwDetection!);
   const savedNsfwDetection = $derived(config.machineLearning.nsfwDetection!);
-  const runpod = $derived(configToEdit.machineLearning.runpod!);
-  const savedRunpod = $derived(config.machineLearning.runpod!);
-  const runpodServerless = $derived(runpod.serverless!);
-  const savedRunpodServerless = $derived(savedRunpod.serverless!);
-
-  // Managed RunPod URL polling. Surfaces "Pod state: <URL>" chip when the
-  // admin has launched a pod via the Quick Actions panel.
-  let managedRunPodUrl = $state<string>('');
-  let managedUrlTimer: ReturnType<typeof setInterval> | undefined;
-
-  const refreshManagedUrl = async () => {
-    try {
-      const response = await fetch('/api/runpod/pods/current', { credentials: 'include' });
-      if (!response.ok) {
-        // Pod state endpoint failed — assume nothing is managed rather than
-        // leaving a stale URL in the chip.
-        managedRunPodUrl = '';
-        return;
-      }
-      const state = (await response.json()) as { status?: string; mlUrl?: string };
-      managedRunPodUrl = state.status === 'running' && state.mlUrl ? state.mlUrl : '';
-    } catch {
-      managedRunPodUrl = '';
-    }
-  };
 
   const detectMachineLearningHardware = async () => {
     try {
@@ -104,14 +70,6 @@
 
   onMount(() => {
     void detectMachineLearningHardware();
-    void refreshManagedUrl();
-    managedUrlTimer = setInterval(() => void refreshManagedUrl(), 10_000);
-  });
-
-  onDestroy(() => {
-    if (managedUrlTimer) {
-      clearInterval(managedUrlTimer);
-    }
   });
 
   // Track whether the ML config has unsaved edits — used by the "auto"
@@ -125,16 +83,6 @@
       <MlUrlsSection
         bind:workingConfig={configToEdit.machineLearning}
         savedConfig={config.machineLearning}
-        {disabled}
-        {managedRunPodUrl}
-      />
-
-      <RunPodSection
-        workingConfig={configToEdit.machineLearning}
-        {runpod}
-        {savedRunpod}
-        {runpodServerless}
-        {savedRunpodServerless}
         {disabled}
       />
 
@@ -169,7 +117,6 @@
         {imageDescription}
         {savedImageDescription}
         {nsfwDetection}
-        {runpodServerless}
         {detectedAcceleration}
         {isMachineLearningConfigEdited}
         {disabled}

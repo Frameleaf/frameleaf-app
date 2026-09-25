@@ -24,7 +24,6 @@ export const adminConfigFixture = () =>
       enabled: true,
       urls: ['http://ml:3003'],
       imageDescription: { modelName: 'model-a', pendingRequeueAt: null, lastConfigChangeAt: null },
-      runpod: { apiKey: '', apiKeyConfigured: true, hfToken: '', hfTokenConfigured: false },
     },
     physicalDeduplication: { enabled: false, masterUserId: null },
   }) as unknown as AdminConfigDto;

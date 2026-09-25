@@ -147,7 +147,7 @@ export const workerHealthTone: Readonly<Record<RenderWorkerHealth, 'teal' | 'blu
 export const destinationKey: Readonly<Record<MediaOperationDestination, Translations>> = {
   [MediaOperationDestination.Local]: 'frameleaf_render_workers_destination_local',
   [MediaOperationDestination.Lan]: 'frameleaf_render_workers_destination_lan',
-  [MediaOperationDestination.Runpod]: 'frameleaf_render_workers_destination_runpod',
+  [MediaOperationDestination.FrameleafCloud]: 'frameleaf_render_workers_destination_frameleaf_cloud',
 };
 
 export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>> = {

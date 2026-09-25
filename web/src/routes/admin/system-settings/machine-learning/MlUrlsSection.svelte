@@ -12,10 +12,9 @@
     workingConfig: AdminConfigMachineLearningDto;
     savedConfig: AdminConfigMachineLearningDto;
     disabled: boolean;
-    managedRunPodUrl: string;
   }
 
-  let { workingConfig = $bindable(), savedConfig, disabled, managedRunPodUrl }: Props = $props();
+  let { workingConfig = $bindable(), savedConfig, disabled }: Props = $props();
 </script>
 
 <div class="flex flex-col gap-4">
@@ -27,13 +26,6 @@
   />
 
   <hr />
-
-  {#if managedRunPodUrl}
-    <div class="rounded-sm border border-immich-gray/30 bg-immich-bg/30 p-2 font-mono text-xs break-all">
-      <span class="font-sans text-immich-gray not-italic">{$t('admin.machine_learning_runpod_managed_url_label')}</span>
-      {managedRunPodUrl}
-    </div>
-  {/if}
 
   <div>
     {#each workingConfig.urls as _, i (i)}

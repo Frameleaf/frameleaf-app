@@ -5,7 +5,7 @@
    * "View changes" (every change before and after) and who saved it.
    *
    * - For an administrator: the server's settings history, where settings saves read "n settings
-   *   changed", credential entries name the credential ("Updated RunPod API key", never a value) and
+   *   changed", credential entries name the credential ("Updated OAuth client secret", never a value) and
    *   reviews read "Reviewed: …". Entries from before titles were recorded fall back to the count.
    * - For everyone: the account's own preference history, with the device that saved each change.
    *   Locked-content rules appear only as changed.
