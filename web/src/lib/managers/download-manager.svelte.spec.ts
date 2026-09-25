@@ -1,4 +1,10 @@
-import { downloadManager, progressFetch, type DownloadContext } from '$lib/managers/download-manager.svelte';
+import {
+  downloadManager,
+  progressFetch,
+  StreamedDownload,
+  type DownloadContext,
+} from '$lib/managers/download-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**
  * FL-45 D-1…D-3: the download manager runs real requests with a status, progress, a true Cancel
@@ -140,6 +146,62 @@ describe('downloadManager', () => {
     });
 
     expect(only()[1]).toMatchObject({ name: 'album+1.zip', archiveName: 'album+1', count: 3, total: 30 });
+  });
+});
+
+describe('downloadManager (review B1, B2, M3)', () => {
+  it('aborts every request and forgets every row and name on logout (B2)', async () => {
+    let signal!: AbortSignal;
+    downloadManager.start({ name: 'private.jpg' }, (context) => {
+      signal = context.signal;
+      return new Promise<Blob>(() => {});
+    });
+    downloadManager.start({ name: 'ready.jpg' }, () => Promise.resolve(new Blob(['x'])));
+    await flush();
+
+    eventManager.emit('AuthLogout');
+
+    expect(signal.aborted).toBe(true);
+    expect(downloadManager.assets.size).toBe(0);
+    expect(downloadManager.hasUnsavedFiles).toBe(false);
+  });
+
+  it('marks only a buffered ready file as unsaved', async () => {
+    const start = vi.fn();
+    const streamed = downloadManager.start({ name: 'big.zip' }, () => Promise.resolve(new StreamedDownload(start)));
+    await flush();
+    expect(downloadManager.hasUnsavedFiles).toBe(false);
+
+    downloadManager.start({ name: 'small.jpg' }, () => Promise.resolve(new Blob(['x'])));
+    await flush();
+    expect(downloadManager.hasUnsavedFiles).toBe(true);
+
+    const saveFile = vi.fn();
+    expect(downloadManager.save(streamed, saveFile)).toBe(true);
+    expect(start).toHaveBeenCalledWith('big.zip');
+    expect(saveFile).not.toHaveBeenCalled();
+  });
+
+  it('settles a row: resolved when ready, rejected with its error, AbortError when cancelled', async () => {
+    const ok = downloadManager.start({ name: 'a.jpg' }, () => Promise.resolve(new Blob(['x'])));
+    await expect(downloadManager.settled(ok)).resolves.toBeUndefined();
+
+    const bad = downloadManager.start({ name: 'b.jpg' }, () => Promise.reject(new Error('offline')));
+    await expect(downloadManager.settled(bad)).rejects.toThrow('offline');
+
+    const slow = downloadManager.start({ name: 'c.jpg' }, () => new Promise<Blob>(() => {}));
+    const waiting = downloadManager.settled(slow);
+    downloadManager.cancel(slow);
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('keeps share rows out of the Downloads panel', () => {
+    downloadManager.start({ name: 'share.zip', group: 'share' }, () => new Promise<Blob>(() => {}));
+    downloadManager.start({ name: 'mine.zip' }, () => new Promise<Blob>(() => {}));
+
+    expect(downloadManager.panelRows.map(([, download]) => download.name)).toEqual(['mine.zip']);
+    expect(downloadManager.rows('share').map(([, download]) => download.name)).toEqual(['share.zip']);
+    expect(downloadManager.summary.preparing).toBe(1);
   });
 });
 

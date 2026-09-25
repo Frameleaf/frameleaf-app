@@ -350,6 +350,7 @@ describe('browser-local transfers', () => {
     received: 4,
     status,
     progress,
+    buffered: status === 'ready',
   });
 
   it('marks downloads as belonging to this tab, with their real progress', () => {
@@ -423,6 +424,7 @@ describe('buildActivityList', () => {
             received: 0,
             status: 'preparing',
             progress: 0,
+            buffered: false,
           },
         ],
       ],

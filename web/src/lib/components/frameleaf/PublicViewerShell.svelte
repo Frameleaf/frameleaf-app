@@ -1,5 +1,6 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import PublicDownloadStrip from '$lib/components/frameleaf/PublicDownloadStrip.svelte';
   import PublicShellFrame from '$lib/components/frameleaf/PublicShellFrame.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import type { SharedLinkResponseDto } from '@immich/sdk';
@@ -119,6 +120,10 @@
         <Button onclick={onSelectAll}>{$t('select_all')}</Button>
         <Button disabled={selectedCount === 0} onclick={onClear}>{$t('clear')}</Button>
       </div>
+    {/if}
+    {#if sharedLink.allowDownload}
+      <!-- PublicViewer.jsx:401-427: the archive job strip under the header, not the Downloads panel. -->
+      <PublicDownloadStrip />
     {/if}
   {/snippet}
 
