@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Kysely, RawBuilder, Selectable } from 'kysely';
+import { canWriteFork } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import {
   StudioBundleUploadTable,
@@ -434,6 +435,44 @@ export class StudioProjectRepository {
   async getIdsInSpace(spaceId: string): Promise<string[]> {
     const rows = await this.db.selectFrom('studio_project').select('id').where('spaceId', '=', spaceId).execute();
     return rows.map((row) => row.id);
+  }
+
+  /** FL-91: an account's stored workspace layout, from `immich_fork`. */
+  async getWorkspace(
+    userId: string,
+  ): Promise<{ layout: Record<string, unknown>; engineRevision: string; savedAt: Date } | undefined> {
+    const { rows } = await sql<{ layout: Record<string, unknown>; engineRevision: string; savedAt: Date }>`
+      SELECT layout, "engineRevision", "savedAt" FROM immich_fork.studio_workspace_layout WHERE "userId" = ${userId}::uuid
+    `.execute(this.db);
+    return rows[0];
+  }
+
+  /** FL-91: store (replace) an account's workspace layout. */
+  async saveWorkspace(
+    userId: string,
+    layout: Record<string, unknown>,
+    engineRevision: string,
+  ): Promise<{ savedAt: Date } | undefined> {
+    // Not written while the fork schema is being handed off or returned (like every fork table).
+    if (!(await canWriteFork(this.db))) {
+      return undefined;
+    }
+    const { rows } = await sql<{ savedAt: Date }>`
+      INSERT INTO immich_fork.studio_workspace_layout ("userId", layout, "engineRevision")
+      VALUES (${userId}::uuid, ${JSON.stringify(layout)}::text::jsonb, ${engineRevision})
+      ON CONFLICT ("userId") DO UPDATE
+        SET layout = excluded.layout, "engineRevision" = excluded."engineRevision", "savedAt" = clock_timestamp()
+      RETURNING "savedAt"
+    `.execute(this.db);
+    return rows[0];
+  }
+
+  /** FL-91: an account's layout goes with the account. */
+  async deleteWorkspace(userId: string): Promise<void> {
+    if (!(await canWriteFork(this.db))) {
+      return;
+    }
+    await sql`DELETE FROM immich_fork.studio_workspace_layout WHERE "userId" = ${userId}::uuid`.execute(this.db);
   }
 
   /** The retention sweep: trashed projects whose deadline has passed. Returns the ids removed. */

@@ -257,6 +257,8 @@ describe(RenderWorkerService.name, () => {
       getClaimed: vi.fn().mockResolvedValue(undefined),
       getClaimedByWorker: vi.fn().mockResolvedValue(undefined),
       recordOutputBytes: vi.fn().mockResolvedValue(true),
+      recordSessionCapabilities: vi.fn().mockResolvedValue(undefined),
+      getSessionCapabilities: vi.fn().mockResolvedValue(undefined),
     } as unknown as RenderWorkerRepository;
 
     operations = {
@@ -462,6 +464,20 @@ describe(RenderWorkerService.name, () => {
       expect(audits.some((entry) => entry.includes('secret-a'))).toBe(false);
     });
 
+    it('binds the codecs and containers the check verified to the new session (FL-95)', async () => {
+      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
+      vi.mocked(workers.createSession).mockImplementation((dto) =>
+        Promise.resolve({ ...dto, id: 'session-new' } as never),
+      );
+
+      await sut.admit({ ...admission, codecs: ['hevc_nvenc'], formats: ['mp4'] } as never);
+
+      expect(workers.recordSessionCapabilities).toHaveBeenCalledWith('session-new', {
+        codecs: ['hevc_nvenc'],
+        formats: ['mp4'],
+      });
+    });
+
     it('scopes the session to renders only, even for a worker enrolled with a server-side kind (FL-73)', async () => {
       const legacy = workerStub({ kinds: [MediaOperationKind.QuickEdit, MediaOperationKind.Bulk] as never });
       vi.mocked(workers.getWorkerBySecret).mockResolvedValue(legacy);
@@ -534,6 +550,20 @@ describe(RenderWorkerService.name, () => {
       expect(workers.claimQueued).toHaveBeenCalledWith(
         expect.objectContaining({ id: queued.id, workerId: workerA.id }),
       );
+    });
+
+    it('measures an export against the codecs and containers its session proved (FL-95)', async () => {
+      const hevc = operationStub({ settings: { format: 'mp4-hevc-main10', resolution: '2160p' } });
+      vi.mocked(workers.peekQueued).mockReset();
+      vi.mocked(workers.peekQueued)
+        .mockResolvedValueOnce([hevc] as never)
+        .mockResolvedValue([]);
+      vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['h264_nvenc'], formats: ['mp4'] });
+
+      await expect(sut.claim(SESSION_A, {} as never)).resolves.toBeUndefined();
+      expect(workers.getSessionCapabilities).toHaveBeenCalledWith(sessionA.id);
+      expect(workers.recordRefusal).toHaveBeenCalledWith(hevc.id, RenderWorkerRefusalReason.CodecUnsupported);
+      expect(workers.claimQueued).not.toHaveBeenCalled();
     });
 
     it('issues no grant for an input the owner has lost access to', async () => {
@@ -1750,6 +1780,26 @@ describe(RenderWorkerService.name, () => {
 
       expect(result).toEqual({ accepted: false, refusal: null });
       expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('revokes every session of a worker whose GPU was lost, until it re-admits (FL-95)', async () => {
+      vi.mocked(workers.revokeSessions).mockResolvedValue(2);
+      await sut.fail(SESSION_A, validating.id, {
+        claimToken: 'claim-1',
+        error: 'CUDA device lost',
+        errorCode: 'device_lost',
+      } as never);
+
+      expect(operations.fail).toHaveBeenCalled();
+      expect(workers.revokeSessions).toHaveBeenCalledWith(workerA.id);
+      expect(workers.recordAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ workerId: workerA.id, event: RenderWorkerAuditEvent.DeviceLost }),
+      );
+    });
+
+    it('keeps the sessions of a worker whose job failed for another reason', async () => {
+      await sut.fail(SESSION_A, validating.id, { claimToken: 'claim-1', error: 'x', errorCode: 'encode' } as never);
+      expect(workers.revokeSessions).not.toHaveBeenCalled();
     });
 
     it('fails the version only once the render failed for good', async () => {
