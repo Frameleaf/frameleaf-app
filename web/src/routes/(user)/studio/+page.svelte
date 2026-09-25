@@ -371,7 +371,11 @@
    * as a command decide it: access, connectivity, then the lease. The server checks the envelope
    * again before it stores anything.
    */
-  const stageDraft = (graph: unknown, commandIds: readonly string[]): Promise<StudioDraftResult> => {
+  const stageDraft = (
+    graph: unknown,
+    commandIds: readonly string[],
+    baseRevision?: number,
+  ): Promise<StudioDraftResult> => {
     // Offline, after a lost lease or in a conflict the session keeps the draft and sends it when the
     // connection or the lease is back; only a session that may not hold a draft refuses it.
     const decision = decideStudioDraft(
@@ -390,7 +394,7 @@
     // The session keeps `project.graph` on the newest draft (in a conflict too, never the head), so
     // history records this edit against the draft's own previous graph.
     const before = project.graph;
-    session.stage(graph, commandIds.length > 0 ? commandIds : ['editor.save']);
+    session.stage(graph, commandIds.length > 0 ? commandIds : ['editor.save'], [], baseRevision);
     if (!session.state.hasDraft) {
       return Promise.resolve({ status: 'rejected', reason: 'lease-lost' });
     }
@@ -706,7 +710,7 @@
   {onBack}
   {onBackToEditor}
   handoffPlayhead={data.at}
-  draftHeld={studioDraftHeld(sessionState?.status)}
+  draftHeld={studioDraftHeld(sessionState?.status, sessionState?.hasDraft === true)}
   {onOpenActivity}
   onExportBundle={canExportBundle ? onExportBundle : undefined}
   onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}

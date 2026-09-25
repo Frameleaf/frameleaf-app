@@ -37,7 +37,8 @@ export const decideStudioDraft = (
 /**
  * The editor keeps what it shows while the host holds edits the person has not decided about: a
  * conflict or a lost lease. A graph that arrives meanwhile (the head a take-over read) must not
- * replace those edits in the editor; Reload, Take over and Save as copy decide.
+ * replace those edits in the editor; Reload, Take over and Save as copy decide. With no draft
+ * (after Reload) nothing is held, so the editor shows the head it will be judged against.
  */
-export const studioDraftHeld = (status: StudioProjectStatus | undefined): boolean =>
-  status === 'conflict' || status === 'lease-lost';
+export const studioDraftHeld = (status: StudioProjectStatus | undefined, hasDraft: boolean): boolean =>
+  hasDraft && (status === 'conflict' || status === 'lease-lost');
