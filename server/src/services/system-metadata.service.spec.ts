@@ -54,13 +54,28 @@ describe(SystemMetadataService.name, () => {
       choices: { signIn: 'local' as const, accountCreated: true, adminName: 'Ada', nightlyBackup: true },
     };
 
-    it('reports an existing library when an admin exists and no flow was saved', async () => {
+    it('reports an existing library when no flow was saved and the server has more than a new admin', async () => {
+      mocks.user.getUserStats.mockResolvedValue([
+        { userId: 'u1', photos: 0, videos: 0, usage: 0 },
+        { userId: 'u2', photos: 3, videos: 0, usage: 10 },
+      ] as never);
       await expect(sut.getFrameleafSetup()).resolves.toEqual({
         completed: false,
         completedAt: null,
         flow: 'existing',
         progress: null,
       });
+    });
+
+    it('reads a server with one account and nothing uploaded as a new server when no flow was saved', async () => {
+      mocks.user.getUserStats.mockResolvedValue([{ userId: 'u1', photos: 0, videos: 0, usage: 0 }] as never);
+      await expect(sut.getFrameleafSetup()).resolves.toMatchObject({ flow: 'new' });
+      await expect(sut.updateFrameleafSetup({ progress })).resolves.toMatchObject({ flow: 'new' });
+    });
+
+    it('reads a single account that already has photos as an existing library', async () => {
+      mocks.user.getUserStats.mockResolvedValue([{ userId: 'u1', photos: 40, videos: 2, usage: 99 }] as never);
+      await expect(sut.getFrameleafSetup()).resolves.toMatchObject({ flow: 'existing' });
     });
 
     it('saves progress and fixes the flow on the first save', async () => {

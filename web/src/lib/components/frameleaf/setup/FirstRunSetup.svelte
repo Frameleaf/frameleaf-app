@@ -67,6 +67,7 @@
   import { convertBCP47, langs } from '$lib/utils/i18n';
   import {
     finishFrameleafSetup,
+    FrameleafSetupFlow,
     getConfig,
     getFrameleafSetupLibrary,
     getFrameleafSetupStorage,
@@ -82,7 +83,6 @@
     signUpAdmin,
     updateFrameleafSetup,
     type AdminConfigDto,
-    type FrameleafSetupFlow,
     type FrameleafSetupLibraryResponseDto,
     type FrameleafSetupStorageResponseDto,
     type HardwareCheckResponseDto,
@@ -197,7 +197,10 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       updateFrameleafSetup({
-        frameleafSetupUpdateDto: { flow: snapshot.flow as FrameleafSetupFlow, progress: toProgress(snapshot) },
+        frameleafSetupUpdateDto: {
+          flow: snapshot.flow === 'new' ? FrameleafSetupFlow.New : FrameleafSetupFlow.Existing,
+          progress: toProgress(snapshot),
+        },
       }).catch(() => {
         // this browser's copy still resumes; the next change tries again
       });
@@ -266,6 +269,15 @@
       await Promise.all([authManager.load(), serverConfigManager.loadServerConfig()]);
       signedIn = true;
       choose({ accountCreated: true });
+      // Record the new-server flow now, not on the debounced save: a reload before that save would
+      // otherwise resume this server as an existing library.
+      try {
+        await updateFrameleafSetup({
+          frameleafSetupUpdateDto: { flow: FrameleafSetupFlow.New, progress: toProgress(setup) },
+        });
+      } catch {
+        // the server also reads one account with nothing uploaded as a new server
+      }
       await loadServerData();
     }
     return true;

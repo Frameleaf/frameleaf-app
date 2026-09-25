@@ -16,7 +16,7 @@ import {
 } from 'src/dtos/system-metadata.dto.js';
 import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { FrameleafSetupState } from 'src/types.js';
+import { FrameleafSetupFlow, FrameleafSetupState } from 'src/types.js';
 
 @Injectable()
 export class SystemMetadataService extends BaseService {
@@ -40,7 +40,8 @@ export class SystemMetadataService extends BaseService {
   }
 
   async getFrameleafSetup(): Promise<FrameleafSetupResponseDto> {
-    return this.toSetupDto(await this.readSetup());
+    const setup = await this.readSetup();
+    return this.toSetupDto(setup, await this.resolveFlow(setup));
   }
 
   async updateFrameleafSetup(dto: FrameleafSetupUpdateDto): Promise<FrameleafSetupResponseDto> {
@@ -48,11 +49,11 @@ export class SystemMetadataService extends BaseService {
     const next: FrameleafSetupState = {
       ...setup,
       // The flow is fixed by the first save; an existing library never turns into a new server.
-      flow: setup.flow ?? dto.flow ?? 'existing',
+      flow: setup.flow ?? dto.flow ?? (await this.detectFlow()),
       progress: dto.progress,
     };
     await this.writeSetup(next);
-    return this.toSetupDto(next);
+    return this.toSetupDto(next, next.flow!);
   }
 
   /** Finishes setup once an administrator exists and the library location is writable. */
@@ -67,13 +68,13 @@ export class SystemMetadataService extends BaseService {
     const setup = await this.readSetup();
     const next: FrameleafSetupState = {
       ...setup,
-      flow: setup.flow ?? 'existing',
+      flow: await this.resolveFlow(setup),
       completed: true,
       completedAt: new Date().toISOString(),
     };
     await this.writeSetup(next);
     await this.systemMetadataRepository.set(SystemMetadataKey.AdminOnboarding, { isOnboarded: true });
-    return this.toSetupDto(next);
+    return this.toSetupDto(next, next.flow!);
   }
 
   /** The "Your library is safe" numbers: every account's items, people, albums and originals. */
@@ -133,14 +134,27 @@ export class SystemMetadataService extends BaseService {
     });
   }
 
-  private toSetupDto(setup: FrameleafSetupState): FrameleafSetupResponseDto {
+  private async resolveFlow(setup: FrameleafSetupState): Promise<FrameleafSetupFlow> {
+    return setup.flow ?? (await this.detectFlow());
+  }
+
+  /**
+   * No saved flow: a server with one account and nothing uploaded is a new server whose admin was
+   * just created (the flow save may not have landed); anything else is an existing library.
+   */
+  private async detectFlow(): Promise<FrameleafSetupFlow> {
+    const users = await this.userRepository.getUserStats();
+    const items = users.reduce((sum, user) => sum + Number(user.photos) + Number(user.videos), 0);
+    return users.length <= 1 && items === 0 ? 'new' : 'existing';
+  }
+
+  private toSetupDto(setup: FrameleafSetupState, flow: FrameleafSetupFlow): FrameleafSetupResponseDto {
     // A stored payload that no longer validates is dropped rather than resumed.
     const progress = frameleafSetupProgressSchema.safeParse(setup.progress);
     return {
       completed: setup.completed,
       completedAt: setup.completedAt,
-      // No saved flow and the endpoint reached (an administrator exists): an existing library.
-      flow: setup.flow ?? 'existing',
+      flow,
       progress: progress.success ? progress.data : null,
     };
   }
