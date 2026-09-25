@@ -27,6 +27,8 @@ import { createSession } from 'src/utils/session.js';
 export const HANDOFF_TTL_SECONDS = 60;
 
 const NOT_AVAILABLE_MESSAGE = 'Sign in with Frameleaf is not available on this server';
+const DELETED_ACCOUNT_MESSAGE =
+  'The account this Frameleaf account is linked to is being removed from this server. Ask an administrator to restore it.';
 
 /**
  * Sign in with Frameleaf (FL-158, CLD-005): the second OpenID Connect provider slot.
@@ -71,6 +73,10 @@ export class FrameleafAuthService extends BaseService {
     let link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
     if (link) {
       user = await this.userRepository.get(link.userId, { withDeleted: false });
+      if (!user) {
+        // the linked account is in the trash (scheduled for removal): never create a second one
+        throw new BadRequestException(DELETED_ACCOUNT_MESSAGE);
+      }
     }
     if (!user) {
       // an account here with the same verified email is linked to this Frameleaf account
@@ -141,7 +147,8 @@ export class FrameleafAuthService extends BaseService {
       throw new BadRequestException('Only a signed-in session can be handed over');
     }
     const tagged = await this.frameleafAccountRepository.getSession(auth.session.id);
-    if (!tagged) {
+    const link = tagged ? await this.frameleafAccountRepository.getLinkByUser(auth.user.id) : undefined;
+    if (!tagged || link?.sub !== tagged.sub) {
       throw new BadRequestException('Only a Sign in with Frameleaf session can be handed over');
     }
     const code = this.cryptoRepository.randomBytesAsText(32);
@@ -204,7 +211,10 @@ export class FrameleafAuthService extends BaseService {
     }
     const other = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
     if (other && other.userId !== auth.user.id) {
-      throw new BadRequestException('This Frameleaf account is already linked to another account on this server');
+      const owner = await this.userRepository.get(other.userId, { withDeleted: false });
+      throw new BadRequestException(
+        owner ? 'This Frameleaf account is already linked to another account on this server' : DELETED_ACCOUNT_MESSAGE,
+      );
     }
     await this.frameleafAccountRepository.upsertLink({
       userId: auth.user.id,
@@ -231,10 +241,12 @@ export class FrameleafAuthService extends BaseService {
     if (!removed) {
       return;
     }
-    const sessions = (await this.frameleafAccountRepository.findSessions({ sub: removed.sub })).filter(
-      ({ sessionId }) => sessionId !== auth.session?.id,
+    const sessionIds = (await this.frameleafAccountRepository.findSessions({ sub: removed.sub })).map(
+      ({ sessionId }) => sessionId,
     );
-    await this.endSessions(sessions.map(({ sessionId }) => sessionId));
+    // the other Frameleaf sessions end; this one stays signed in but is no longer a Frameleaf session
+    await this.endSessions(sessionIds.filter((sessionId) => sessionId !== auth.session?.id));
+    await this.frameleafAccountRepository.deleteSessions(sessionIds);
     const user = await this.userRepository.get(auth.user.id, { withDeleted: false });
     if (user) {
       await this.auditLink(user, AdminAuditAction.FrameleafAccountUnlinked, removed.email);
