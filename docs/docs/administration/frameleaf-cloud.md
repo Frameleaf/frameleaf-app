@@ -73,7 +73,7 @@ The server checks a key's format, including its check symbol, before sending it 
 
 ### Licence certificates
 
-Activating a key, or installing a licence file, gives this server a signed licence certificate. The server trusts only certificates signed by the Frameleaf keys built into it, bound to this server's instance ID. It refreshes them once a day while linked. If a refresh keeps failing, cloud features keep working through a grace period (the certificate says how long), then pause; nothing local changes. Administrators are told once when a plan enters grace and once when it ends.
+Activating a key, or installing a licence file, gives this server a signed licence certificate. The server trusts only certificates signed by the Frameleaf keys built into it, bound to this server's instance ID. The instance ID is the binding; a certificate may also name this server's identity key, which is then checked too, but it does not have to, so a licence survives a key rotation and a licence file can be made before the server is linked. It refreshes them once a day while linked. If a refresh keeps failing, cloud features keep working through a grace period (the certificate says how long), then pause; nothing local changes. Administrators are told once when a plan enters grace and once when it ends.
 
 ### Servers without internet access
 
