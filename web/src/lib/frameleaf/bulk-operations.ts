@@ -36,6 +36,7 @@ import {
   type SearchResponseDto,
   type SmartSearchDto,
 } from '@immich/sdk';
+import { DateTime } from 'luxon';
 import type { Translations } from 'svelte-i18n';
 import {
   discoveryTextField,
@@ -117,10 +118,13 @@ export type BulkPayload = {
   timeZone?: string;
   /**
    * "Keep each item's time zone" (prototype `ChangeDateDialog`, FL-32): `dateTimeOriginal` is a wall
-   * time without an offset, and each item is set to that wall time at its own current UTC offset.
+   * time without an offset, and each item is set to that wall time in its own zone: its IANA zone
+   * where known (`timeZoneById`, the offset then read for the new date), else its current UTC offset.
    * Only possible for loaded items, whose offsets are known; such a run stays in the browser.
    */
   offsetMinutesById?: Record<string, number>;
+  /** Each item's IANA zone, where its metadata names one (FL-32 review N3). */
+  timeZoneById?: Record<string, string>;
   minutes?: number;
   description?: string;
   latitude?: number;
@@ -643,11 +647,19 @@ export const runBulkAction = async (
             // One update per offset: every item keeps its own zone and gets the same wall time. An
             // item whose offset is not known is reported, never guessed.
             const outcomes: BulkOutcome[] = batch
-              .filter((id) => !Number.isFinite(offsets[id]))
+              .filter((id) => !Number.isFinite(offsets[id]) && payload?.timeZoneById?.[id] === undefined)
               .map((id) => failed(id, new Error('unknown time zone')));
-            for (const [offset, ids] of groupByOffset(batch, offsets)) {
+            for (const [zone, ids] of groupByZone(batch, offsets, payload?.timeZoneById ?? {})) {
+              const dateTimeOriginal =
+                typeof zone === 'string'
+                  ? DateTime.fromISO(wall, { zone }).toISO({ suppressMilliseconds: true })
+                  : `${wallTimeWithSeconds(wall)}${formatIsoOffset(zone)}`;
+              if (!dateTimeOriginal) {
+                outcomes.push(...ids.map((id) => failed(id, new Error('invalid date in time zone'))));
+                continue;
+              }
               await gateway.updateAssets({
-                assetBulkUpdateDto: { ids, dateTimeOriginal: `${wallTimeWithSeconds(wall)}${formatIsoOffset(offset)}` },
+                assetBulkUpdateDto: { ids, dateTimeOriginal, ...(typeof zone === 'string' && { timeZone: zone }) },
               });
               outcomes.push(...ids.map((id) => ok(id)));
             }
@@ -1062,15 +1074,19 @@ export const formatIsoOffset = (minutes: number) => {
   return `${sign}${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
 };
 
-/** Ids grouped by their offset, in first-seen order. An id without a known offset is left out. */
-const groupByOffset = (ids: string[], offsets: Record<string, number>) => {
-  const groups = new Map<number, string[]>();
+/**
+ * Ids grouped by their IANA zone where known, else by their offset, in first-seen order. An id with
+ * neither is left out.
+ */
+const groupByZone = (ids: string[], offsets: Record<string, number>, zones: Record<string, string>) => {
+  const groups = new Map<string | number, string[]>();
   for (const id of ids) {
     const offset = offsets[id];
-    if (typeof offset !== 'number' || !Number.isFinite(offset)) {
+    const key = zones[id] ?? (typeof offset === 'number' && Number.isFinite(offset) ? offset : null);
+    if (key === null) {
       continue;
     }
-    groups.set(offset, [...(groups.get(offset) ?? []), id]);
+    groups.set(key, [...(groups.get(key) ?? []), id]);
   }
   return groups;
 };

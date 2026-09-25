@@ -88,4 +88,53 @@ describe('BulkDateDialog (FL-32, T-19)', () => {
       expect.objectContaining({ dateTimeOriginal: '2026-03-07T12:00:00-08:00', timeZone: 'America/Vancouver' }),
     );
   });
+
+  describe('an Added-date view, whose timeline dates are upload times (review N1)', () => {
+    // No capture time from the timeline: the bucket's dates are when the items were added.
+    const added = (id: string) => ({ id, ownerId: 'me' });
+
+    it('pre-fills and keeps each item’s real zone, read from its details', async () => {
+      const onSubmit = vi.fn();
+      const resolveCaptureTimes = vi.fn().mockResolvedValue({
+        a: { localDateTime: '2019-01-05T09:30', offsetMinutes: -480, timeZone: 'America/Vancouver' },
+        b: { localDateTime: '2020-06-01T10:00', offsetMinutes: 120 },
+      });
+      renderWithTooltips(BulkDateDialog, { count: 2, assets: [added('a'), added('b')], resolveCaptureTimes, onSubmit });
+      expect(resolveCaptureTimes).toHaveBeenCalledWith(['a', 'b']);
+      await vi.waitFor(() => expect(screen.getByLabelText('date')).toHaveValue('2019-01-05'));
+      expect(screen.getByLabelText('time')).toHaveValue('09:30');
+      expect(zoneInput().value).toBe('frameleaf_bulk_date_keep_time_zone');
+      await apply();
+      expect(onSubmit).toHaveBeenCalledWith({
+        dateMode: 'set',
+        dateTimeOriginal: '2019-01-05T09:30',
+        offsetMinutesById: { a: -480, b: 120 },
+        timeZoneById: { a: 'America/Vancouver' },
+      });
+    });
+
+    it('offers no "keep", pre-fills nothing and asks for a zone when the capture times cannot be read', async () => {
+      const onSubmit = vi.fn();
+      const resolveCaptureTimes = vi.fn().mockResolvedValue(null);
+      renderWithTooltips(BulkDateDialog, { count: 1, assets: [added('a')], resolveCaptureTimes, onSubmit });
+      await vi.waitFor(() => expect(resolveCaptureTimes).toHaveBeenCalled());
+      expect(screen.getByLabelText('date')).toHaveValue('');
+      expect(zoneInput().value).toBe('');
+      const button = screen.getByRole('button', { name: 'frameleaf_bulk_apply_to' });
+      await fireEvent.input(screen.getByLabelText('date'), { target: { value: '2019-01-05' } });
+      await fireEvent.input(screen.getByLabelText('time'), { target: { value: '09:30' } });
+      expect(button).toBeDisabled();
+      expect(screen.getByText('frameleaf_bulk_date_choose_zone')).toBeInTheDocument();
+      await fireEvent.input(zoneInput(), { target: { value: 'keep' } });
+      expect(screen.queryByText('frameleaf_bulk_date_keep_time_zone')).not.toBeInTheDocument();
+
+      await chooseZone('Vancouver');
+      await apply();
+      expect(onSubmit).toHaveBeenCalledWith({
+        dateMode: 'set',
+        dateTimeOriginal: '2019-01-05T09:30:00-08:00',
+        timeZone: 'America/Vancouver',
+      });
+    });
+  });
 });

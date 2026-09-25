@@ -79,10 +79,10 @@ export const timelineQueryOptions = (
       }
       case 'isFavorite': {
         const eq = filter.isFavorite?.eq;
-        if (typeof eq === 'boolean' && options.isFavorite === undefined) {
+        // The buckets refuse a favourite filter with partners' items, so where the view includes
+        // them the condition is left to the search results rather than dropping partners (review).
+        if (typeof eq === 'boolean' && options.isFavorite === undefined && !options.withPartners) {
           options.isFavorite = eq;
-          // The server refuses partners' items with a favourite filter: favourites are the caller's own.
-          delete options.withPartners;
           continue;
         }
         break;

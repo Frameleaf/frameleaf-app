@@ -23,10 +23,14 @@ describe('timelineQueryOptions (FL-30, M3)', () => {
     expect(timelineQueryOptions(query({ albumIds: { any: ['a1'] } }), base).options.albumId).toBe('a1');
   });
 
-  it('applies favourites and leaves partners out, as the server requires', () => {
-    const { options } = timelineQueryOptions(query({ isFavorite: { eq: true } }), base);
-    expect(options.isFavorite).toBe(true);
-    expect(options.withPartners).toBeUndefined();
+  it('applies favourites where the view has no partners, and leaves them to search where it does', () => {
+    const own = timelineQueryOptions(query({ isFavorite: { eq: true } }), { visibility: AssetVisibility.Timeline });
+    expect(own.options.isFavorite).toBe(true);
+    expect(own.unapplied).toEqual([]);
+    const shared = timelineQueryOptions(query({ isFavorite: { eq: true } }), base);
+    expect(shared.options).toEqual(base);
+    expect(shared.unapplied).toEqual(['isFavorite']);
+    expect(viewInLibraryHref(query({ isFavorite: { eq: true } })).startsWith('/search?')).toBe(true);
   });
 
   it('reports what the buckets cannot express instead of pretending to apply it', () => {
