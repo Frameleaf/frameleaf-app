@@ -4426,6 +4426,7 @@
   "frameleaf_jobs_name_person_cleanup": "Clean up unused people",
   "frameleaf_jobs_name_person_file_migration": "Move a person's files",
   "frameleaf_jobs_name_person_generate_thumbnail": "Generate a person's photo",
+  "frameleaf_jobs_name_person_identity_refresh": "Update descriptions after people changed",
   "frameleaf_jobs_name_pet_recognition": "Find pets in a photo",
   "frameleaf_jobs_name_pet_recognition_nearest": "Look for a pet in similar photos",
   "frameleaf_jobs_name_pet_recognition_queue_all": "Find pets in libraries",
