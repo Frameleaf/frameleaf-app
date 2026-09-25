@@ -246,6 +246,18 @@ export class PhysicalDeduplicationService extends BaseService {
       ids: [...retained.map((item) => item.assetId), ...copies.map((item) => item.assetId)],
     });
 
+    // FL-71 UT-24: whether each retained original is still on disk, read now rather than trusted from
+    // the stored preview, so the page can mark an original that went missing since.
+    const available = await Promise.all(
+      retained.map(async (item) => {
+        try {
+          return await this.storageRepository.checkFileExists(item.originalPath);
+        } catch {
+          return false;
+        }
+      }),
+    );
+
     const fingerprint = physicalDeduplicationFingerprint(state);
     const plan: PhysicalDeduplicationPlanDto = {
       mode: state.mode === 'apply' ? PhysicalDeduplicationPlanMode.Apply : PhysicalDeduplicationPlanMode.DryRun,
@@ -260,10 +272,11 @@ export class PhysicalDeduplicationService extends BaseService {
       skippedMissingMaster: state.skippedMissingMaster,
       reclaimableBytes: state.reclaimableBytes,
       deletedBytes: state.deletedBytes,
-      retained: retained.map((item) => ({
+      retained: retained.map((item, index) => ({
         ...item,
         ownerName: nameOf(item.ownerId),
         canView: viewable.has(item.assetId),
+        fileAvailable: available[index],
         hiddenCopies: hiddenShares.get(item.assetId) ?? 0,
       })),
       copies: copies.map((item) => ({

@@ -1,4 +1,9 @@
-import { installSearchShortcuts, isSearchShortcut, SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
+import {
+  installSearchShortcuts,
+  isSearchShortcut,
+  SEARCH_SHORTCUT_EVENT,
+  searchShortcutHintKey,
+} from '$lib/frameleaf/search-shortcuts';
 
 const press = (init: KeyboardEventInit, target: EventTarget = document.body) => {
   const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
@@ -70,5 +75,12 @@ describe('search shortcuts', () => {
     press({ key: 'f' });
     expect(opened).toBe(0);
     expect(reachedBody).toBe(1);
+  });
+});
+
+describe('searchShortcutHintKey (FL-71 CC-7)', () => {
+  it('names the platform modifier', () => {
+    expect(searchShortcutHintKey(true)).toBe('frameleaf_search_shortcut_hint_mac');
+    expect(searchShortcutHintKey(false)).toBe('frameleaf_search_shortcut_hint');
   });
 });

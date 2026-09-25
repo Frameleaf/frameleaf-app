@@ -70,5 +70,25 @@ describe('/sessions', () => {
       expect(response.body).toEqual({ message: 'Invalid user token' });
       expect(response.status).toBe(401);
     });
+
+    // FL-67: a session revoked from another device can no longer be used
+    it('should reject the token of a session revoked from another session', async () => {
+      const other = await login({ loginCredentialDto: loginDto.admin });
+      const sessions = await getSessions({ headers: asBearerAuth(other.accessToken) });
+      const revoked = sessions.find(({ current }) => !current);
+      expect(revoked).toBeDefined();
+
+      const { status } = await request(app)
+        .delete(`/sessions/${revoked!.id}`)
+        .set('Authorization', `Bearer ${other.accessToken}`);
+      expect(status).toBe(204);
+
+      const response = await request(app).get('/users/me').set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual(errorDto.badRequest('Invalid user token'));
+
+      const stillSignedIn = await request(app).get('/users/me').set('Authorization', `Bearer ${other.accessToken}`);
+      expect(stillSignedIn.status).toBe(200);
+    });
   });
 });

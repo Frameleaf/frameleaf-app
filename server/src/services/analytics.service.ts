@@ -31,9 +31,12 @@ import {
   AnalyticsRepository,
   AnalyticsScopeTargets,
 } from 'src/repositories/analytics.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import {
   ANALYTICS_AUTO_RETRIES,
   ANALYTICS_DAY_RETENTION_DAYS,
@@ -41,7 +44,6 @@ import {
   ANALYTICS_PLACE_LIMIT,
   ANALYTICS_SERIES,
   ANALYTICS_STALE_AFTER_HOURS,
-  ANALYTICS_WEEK_RETENTION_DAYS,
   AnalyticsSampleInsert,
   AnalyticsScope,
   GROWTH_SERIES,
@@ -62,6 +64,7 @@ import {
   sumIntoBuckets,
   windowDays,
 } from 'src/utils/analytics.js';
+import { getConfig } from 'src/utils/config.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsightsDto => {
@@ -137,8 +140,33 @@ export class AnalyticsService {
     private analyticsRepository: AnalyticsRepository,
     private storageRepository: StorageRepository,
     private jobRepository: JobRepository,
+    private configRepository: ConfigRepository,
+    private systemMetadataRepository: SystemMetadataRepository,
+    private forkSchemaRepository: ForkSchemaRepository,
   ) {
     this.logger.setContext(AnalyticsService.name);
+  }
+
+  /**
+   * FL-71: the administrator's "Collect local metrics" and "Keep analytics history for" settings
+   * (`analytics` in the system configuration). Daily readings are kept for at most
+   * `ANALYTICS_DAY_RETENTION_DAYS`, weekly ones for the chosen history.
+   */
+  private async getRetention() {
+    const { analytics } = await getConfig(
+      {
+        configRepo: this.configRepository,
+        metadataRepo: this.systemMetadataRepository,
+        logger: this.logger,
+        forkSchemaRepo: this.forkSchemaRepository,
+      },
+      { withCache: true },
+    );
+    return {
+      enabled: analytics.enabled,
+      dayRetentionDays: Math.min(ANALYTICS_DAY_RETENTION_DAYS, analytics.historyDays),
+      weekRetentionDays: analytics.historyDays,
+    };
   }
 
   async getScopes(auth: AuthDto): Promise<AnalyticsScopesResponseDto> {
@@ -204,6 +232,7 @@ export class AnalyticsService {
       lastObservedAt,
       host,
       insights,
+      retention,
     ] = await Promise.all([
       this.analyticsRepository.getInventory(scope),
       this.analyticsRepository.getPhysical(scope),
@@ -221,6 +250,7 @@ export class AnalyticsService {
         suppressedPetIds: auth.hiddenContent?.petIds ?? [],
         privacy: getHiddenContentQueryOptions(auth),
       }),
+      this.getRetention(),
     ]);
 
     const items = inventory.photos + inventory.videos;
@@ -316,8 +346,8 @@ export class AnalyticsService {
         state: historyState(lastObservedAt, now),
         lastObservedAt: lastObservedAt?.toISOString() ?? null,
         staleAfterHours: ANALYTICS_STALE_AFTER_HOURS,
-        dayRetentionDays: ANALYTICS_DAY_RETENTION_DAYS,
-        weekRetentionDays: ANALYTICS_WEEK_RETENTION_DAYS,
+        dayRetentionDays: retention.dayRetentionDays,
+        weekRetentionDays: retention.weekRetentionDays,
       },
       series,
       days,
@@ -398,7 +428,12 @@ export class AnalyticsService {
   async handleCollect(data: IAnalyticsCollectJob = {}): Promise<JobStatus> {
     const attempt = data.attempt ?? 0;
     try {
-      await this.collect(new Date());
+      const retention = await this.getRetention();
+      if (!retention.enabled) {
+        // FL-71: local metrics are off; the history already kept stays until it is turned back on
+        return JobStatus.Skipped;
+      }
+      await this.collect(new Date(), retention);
       return JobStatus.Success;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -412,7 +447,7 @@ export class AnalyticsService {
     }
   }
 
-  private async collect(now: Date) {
+  private async collect(now: Date, retention: { dayRetentionDays: number; weekRetentionDays: number }) {
     const day = isoDay(now);
     const bucketStart = parseIsoDay(day);
     const [targets, snapshot] = await Promise.all([
@@ -504,12 +539,12 @@ export class AnalyticsService {
       samples.filter((sample) => allowed.has(`${scopeKindOf(sample.scopeKey)}:${sample.series}`)),
     );
 
-    const retention = await this.analyticsRepository.applyRetention(
-      parseIsoDay(addDays(day, -ANALYTICS_DAY_RETENTION_DAYS)),
-      parseIsoDay(addDays(day, -ANALYTICS_WEEK_RETENTION_DAYS)),
+    const removed = await this.analyticsRepository.applyRetention(
+      parseIsoDay(addDays(day, -retention.dayRetentionDays)),
+      parseIsoDay(addDays(day, -retention.weekRetentionDays)),
     );
     this.logger.log(
-      `Analytics collected ${samples.length} readings; downsampled ${retention.downsampled}, removed ${retention.deleted}`,
+      `Analytics collected ${samples.length} readings; downsampled ${removed.downsampled}, removed ${removed.deleted}`,
     );
   }
 

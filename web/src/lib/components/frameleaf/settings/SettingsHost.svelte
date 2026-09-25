@@ -17,6 +17,7 @@
    * in the navigation, the draft's messages sit under the heading, and the settings bar saves every
    * page together. "Change history" lists the saved settings changes the server recorded.
    */
+  import { searchShortcutHintKey } from '$lib/frameleaf/search-shortcuts';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
@@ -626,7 +627,7 @@
           placeholder={$t('frameleaf_cc_search')}
           bind:value={query}
         />
-        <kbd>{$t('frameleaf_search_shortcut_hint')}</kbd>
+        <kbd>{$t(searchShortcutHintKey())}</kbd>
       </label>
     </div>
 

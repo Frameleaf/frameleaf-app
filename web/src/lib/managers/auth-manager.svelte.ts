@@ -10,6 +10,7 @@ import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
 import { isSharedLinkRoute } from '$lib/utils/navigation';
@@ -108,6 +109,10 @@ class AuthManager {
     } catch {
       // noop
     }
+
+    // FL-80: the account's private browser state goes with the session, also when the provider's
+    // sign-out page takes over (which skips the in-app reset below)
+    clearPrivateBrowserState();
 
     if (redirectUri.startsWith('/')) {
       this.isPurchased = false;

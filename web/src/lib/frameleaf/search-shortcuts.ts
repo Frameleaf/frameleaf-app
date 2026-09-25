@@ -1,5 +1,6 @@
 import { shouldIgnoreEvent } from '$lib/actions/shortcut';
 import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
+import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
 
 /**
  * The prototype's search keys (App.jsx keydown handler and `shortcuts.mjs` `focus-search`):
@@ -13,6 +14,13 @@ import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
  * handler, stops the key from reaching it and hands it to the search entry instead.
  */
 export const SEARCH_SHORTCUT_EVENT = 'frameleaf:search-shortcut';
+
+/**
+ * FL-71 CC-7: the search hint names the platform's modifier, as the prototype's "⌘ K"
+ * (`CommandCenter.jsx:706`) does on a Mac; elsewhere it reads "Ctrl K". Both work (`isSearchShortcut`).
+ */
+export const searchShortcutHintKey = (mac = isMacPlatform()) =>
+  mac ? 'frameleaf_search_shortcut_hint_mac' : 'frameleaf_search_shortcut_hint';
 
 export const isSearchShortcut = (event: KeyboardEvent): boolean => {
   if (event.altKey || event.shiftKey) {

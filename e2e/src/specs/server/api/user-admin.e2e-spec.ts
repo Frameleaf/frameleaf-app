@@ -7,12 +7,23 @@ import {
   getUserAdmin,
   getUserPreferencesAdmin,
   login,
+  type SessionResponseDto,
 } from '@immich/sdk';
 import { Socket } from 'socket.io-client';
 import { createUserDto } from 'src/fixtures.js';
+import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+/** The id of the session a token belongs to, as the owner's own session list reports it. */
+const currentSessionId = async (accessToken: string) => {
+  const { status, body } = await request(app).get('/sessions').set('Authorization', `Bearer ${accessToken}`);
+  expect(status).toBe(200);
+  const session = (body as SessionResponseDto[]).find(({ current }) => current);
+  expect(session).toBeDefined();
+  return session!.id;
+};
 
 describe('/admin/users', () => {
   let websocket: Socket;
@@ -311,6 +322,101 @@ describe('/admin/users', () => {
           deletedAt: null,
         }),
       );
+    });
+  });
+
+  describe('POST /admin/users (FL-76 create-time secrets and labels)', () => {
+    // FL-76: a PIN given at creation is stored so the new account can unlock Locked content with it.
+    it('creates an account whose initial PIN unlocks its session, and refuses a wrong PIN', async () => {
+      const dto = { ...createUserDto.create('fl76-create-pin'), pinCode: '123456' };
+      const created = await request(app)
+        .post('/admin/users')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send(dto);
+      expect(created.status).toBe(201);
+
+      const state = await request(app)
+        .get(`/admin/users/${created.body.id}/pin-code`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(state.body).toEqual({ pinCode: true });
+
+      const { accessToken } = await login({ loginCredentialDto: { email: dto.email, password: dto.password } });
+
+      const unlocked = await request(app)
+        .post('/auth/session/unlock')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ pinCode: '123456' });
+      expect(unlocked.status).toBe(204);
+
+      // the wrong attempt comes last: failures are throttled per account
+      const wrong = await request(app)
+        .post('/auth/session/unlock')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ pinCode: '654321' });
+      expect(wrong.status).toBe(400);
+      expect(wrong.body).toEqual(errorDto.badRequest('Wrong PIN code'));
+    });
+
+    // FL-76: two accounts never share a storage label; the create path refuses it like update does.
+    it('refuses a storage label another account already has', async () => {
+      const first = await request(app)
+        .post('/admin/users')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ ...createUserDto.create('fl76-label-a'), storageLabel: 'fl76-shared-label' });
+      expect(first.status).toBe(201);
+
+      const { status, body } = await request(app)
+        .post('/admin/users')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ ...createUserDto.create('fl76-label-b'), storageLabel: 'fl76-shared-label' });
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('Storage label already in use by another account'));
+    });
+  });
+
+  describe('DELETE /admin/users/:id/sessions/:sessionId (FL-76)', () => {
+    // FL-76: signing a device out is an administrator action only.
+    it('is for administrators only', async () => {
+      const user = await utils.userSetup(admin.accessToken, createUserDto.create('fl76-session-forbidden'));
+      const sessionId = await currentSessionId(user.accessToken);
+
+      const { status } = await request(app)
+        .delete(`/admin/users/${user.userId}/sessions/${sessionId}`)
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(403);
+    });
+
+    // FL-76: the session must belong to the account named in the path.
+    it('refuses a session of a different account than the one named', async () => {
+      const [owner, other] = await Promise.all([
+        utils.userSetup(admin.accessToken, createUserDto.create('fl76-session-owner')),
+        utils.userSetup(admin.accessToken, createUserDto.create('fl76-session-other')),
+      ]);
+      const otherSessionId = await currentSessionId(other.accessToken);
+
+      const { status, body } = await request(app)
+        .delete(`/admin/users/${owner.userId}/sessions/${otherSessionId}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(status).toBe(404);
+      expect(body).toEqual(errorDto.notFound('Session not found'));
+
+      // the other account's device is still signed in
+      const me = await request(app).get('/users/me').set('Authorization', `Bearer ${other.accessToken}`);
+      expect(me.status).toBe(200);
+    });
+
+    // FL-76: revoking the named account's own session signs that device out.
+    it("signs out the named account's session", async () => {
+      const user = await utils.userSetup(admin.accessToken, createUserDto.create('fl76-session-revoke'));
+      const sessionId = await currentSessionId(user.accessToken);
+
+      const { status } = await request(app)
+        .delete(`/admin/users/${user.userId}/sessions/${sessionId}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(status).toBe(204);
+
+      const me = await request(app).get('/users/me').set('Authorization', `Bearer ${user.accessToken}`);
+      expect(me.status).toBe(401);
     });
   });
 });
