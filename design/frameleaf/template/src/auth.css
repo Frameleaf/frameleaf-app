@@ -1,5 +1,6 @@
-/* Full-page screens outside the library: sign in, first account, password
-   change, PIN, onboarding, maintenance and supporter. No app chrome. */
+/* Full-page screens outside the library: sign in, password change, PIN,
+   maintenance and supporter. No app chrome. First-run setup lives in
+   first-run-setup.css. */
 
 .auth-screen {
   flex: 1 1 auto;
@@ -706,7 +707,6 @@
   padding: 2px 8px;
 }
 
-
 /* Frameleaf account sign-in, remote access and Frameleaf Cloud */
 .auth-frameleaf {
   width: 100%;
@@ -764,53 +764,6 @@
 .auth-success svg {
   color: var(--fl-accent);
   margin-top: 1px;
-}
-.ob-cloud {
-  display: grid;
-  gap: 14px;
-}
-.ob-cloud-card {
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  padding: 16px;
-}
-.ob-cloud-card > div {
-  display: grid;
-  gap: 2px;
-}
-.ob-cloud-card > div span {
-  color: var(--fl-muted);
-  font-size: var(--fl-font-small);
-}
-.ob-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 18px;
-  letter-spacing: 2px;
-  padding: 8px 12px;
-  border-radius: var(--fl-radius-control);
-  background: var(--fl-raised);
-}
-.ob-cloud-actions {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-}
-.ob-cloud-actions .auth-frameleaf {
-  width: auto;
-  padding: 0 18px;
-}
-.ob-plan {
-  display: grid;
-  gap: 2px;
-}
-.ob-plan strong {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.ob-plan small {
-  color: var(--fl-muted);
 }
 .buy-section {
   display: grid;
@@ -884,9 +837,6 @@
   .buy-balance {
     justify-items: start;
   }
-  .ob-cloud-card {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 1000px) {
@@ -904,15 +854,6 @@
   .auth-screen.wide .auth-pane {
     max-width: 860px;
   }
-  .onboarding {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .ob-rail {
-    display: none;
-  }
-  .ob-progress {
-    display: flex;
-  }
 }
 @media (max-width: 700px) {
   .auth-pane {
@@ -922,29 +863,8 @@
   .auth-card {
     padding: 20px;
   }
-  .auth-field input,
-  .auth-field select,
-  .auth-submit,
-  .auth-oauth,
-  .ob-nav .button,
-  .maint-actions .button {
-    min-height: 44px;
-  }
   .auth-heading h1 {
     font-size: 23px;
-  }
-  .ob-theme-cards {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .ob-theme-card {
-    grid-template-columns: 120px 1fr;
-    align-items: center;
-  }
-  .ob-theme-card > span {
-    order: 2;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
   }
   .pin-keypad {
     grid-template-columns: repeat(3, minmax(0, 1fr));

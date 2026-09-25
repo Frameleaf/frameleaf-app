@@ -105,9 +105,19 @@
   transform-origin: 128px 128px;
   transform-box: view-box;
 }
+/* The lockup is 1080 × 264 with the wordmark starting at x ≈ 289; crop to it. */
 .frs-wordmark {
+  display: block;
+  height: 44px;
+  width: 132px;
+  overflow: hidden;
+}
+.frs-wordmark img {
+  display: block;
   height: 44px;
   width: auto;
+  max-width: none;
+  margin-left: -48px;
 }
 .frs-tagline {
   font-size: 20px;
@@ -1073,12 +1083,10 @@
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  background: #fff;
-  color: #1a73e8;
+  background: var(--fl-raised);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--fl-teal);
   box-shadow: var(--fl-shadow-2);
-}
-.frs-import.icloud .frs-import-badge {
-  color: #111;
 }
 .frs-import-arrow {
   position: absolute;
@@ -1502,4 +1510,21 @@
 }
 .frs .frs-language select {
   width: auto;
+}
+
+/* Decorative loops stop for reduced motion; the WAAPI intro already falls back to fades. */
+@media (prefers-reduced-motion: reduce) {
+  .frs-continue[data-ready],
+  .frs-path span,
+  .frs-import-art > img,
+  .frs-import-arrow,
+  .frs-dots::after,
+  .frs-pulse,
+  .frs-spin {
+    animation: none;
+  }
+  .frs-rail ol::after,
+  .frs-tool-progress circle + circle {
+    transition: none;
+  }
 }

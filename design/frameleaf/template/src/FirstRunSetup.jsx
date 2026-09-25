@@ -6,7 +6,7 @@ import { media } from "./media";
 import { Checklist, ErrorNote, PasswordField, StrengthMeter, SwitchRow, TextField, useTimer } from "./AuthScreens";
 import { languages } from "./system-data.mjs";
 import { formatUsd, loadCloudState, saveCloudState } from "./frameleaf-cloud-data.mjs";
-import { SAMPLE_ACCOUNT, SAMPLE_USER_CODE, linkAccount } from "./cloud-account.mjs";
+import { SAMPLE_ACCOUNT, SAMPLE_USER_CODE, linkAccount, unlinkAccount } from "./cloud-account.mjs";
 import {
   CLOUD_BACKUP_PER_TB,
   KEEP_LAYOUT,
@@ -20,6 +20,7 @@ import {
   cloudReindexEstimate,
   detectedHardware,
   examplePath,
+  firstInvalidStep,
   existingLibrary,
   flowSteps,
   formatCount,
@@ -37,6 +38,7 @@ import {
   reindexHours,
   saveAccountTool,
   saveSetup,
+  setLinked,
   setupChapters,
   setupSummary,
   themeAfterSetup,
@@ -161,7 +163,10 @@ function LogoIntro({ onSettled, children }) {
           <path className="frs-logo-stroke" d={LEAF} pathLength="1" />
         </svg>
       </div>
-      <img data-intro className="frs-wordmark" src="/brand/frameleaf-logo-dark.svg" alt="" />
+      {/* Wordmark only: the lockup's own icon is cropped away so the symbol shows once. */}
+      <span data-intro className="frs-wordmark" role="img" aria-label="Frameleaf">
+        <img src="/brand/frameleaf-logo-dark.svg" alt="" />
+      </span>
       {React.Children.map(children, (child) =>
         child ? React.cloneElement(child, { "data-intro": "" }) : child,
       )}
@@ -350,7 +355,14 @@ function FrameleafLink({ linked, onLinked, compact }) {
             A new tab opened. Check the code matches, then approve. <span className="frs-dots" aria-hidden="true" />
           </span>
         </div>
-        <button type="button" className="auth-link" onClick={() => setPhase("idle")}>
+        <button
+          type="button"
+          className="auth-link"
+          onClick={() => {
+            later.cancel();
+            setPhase("idle");
+          }}
+        >
           Cancel
         </button>
       </div>
@@ -392,12 +404,19 @@ export function FirstRunSetup({ flow = "new", onDone, onPreview, onOpenSettings,
   useEffect(() => {
     saveSetup(state, storage);
   }, [state, storage]);
+  const firstStep = useRef(true);
   useEffect(() => {
     setErrors({});
-    heading.current?.focus({ preventScroll: true });
+    // Leave focus alone on first load, and wherever a field takes autofocus.
+    if (firstStep.current) firstStep.current = false;
+    else if (current.id !== "admin-sign-in") heading.current?.focus({ preventScroll: true });
   }, [state.step]);
 
   const choose = (patch) => setState((prev) => ({ ...prev, choices: { ...prev.choices, ...patch } }));
+  const link = (value) => {
+    if (!value && linked) saveCloudState(unlinkAccount(loadCloudState()));
+    setState((prev) => setLinked(prev, value));
+  };
   const go = (target) => {
     const check = validateStep(state, current.id, secrets);
     if (target > state.step && !check.ok) return setErrors(check.errors);
@@ -412,6 +431,14 @@ export function FirstRunSetup({ flow = "new", onDone, onPreview, onOpenSettings,
     setState(loadSetup(flow, storage));
   };
   const finish = () => {
+    // A required step can go stale (storage removed, account unlinked): send the admin back to it.
+    const invalid = firstInvalidStep(state);
+    if (invalid >= 0) {
+      setDirection(-1);
+      setState((prev) => ({ ...prev, step: invalid }));
+      setErrors(validateStep(state, flowSteps(state.flow)[invalid].id).errors);
+      return;
+    }
     const done = { ...state, completed: true };
     setState(done);
     saveSetup(done, storage);
@@ -546,7 +573,7 @@ export function FirstRunSetup({ flow = "new", onDone, onPreview, onOpenSettings,
                   <li>Reach your library away from home without port-forwarding</li>
                   <li>Sign in anywhere with one account</li>
                   <li>Cloud backup and faster processing when you want them</li>
-                  <li>Carries your supporter licence</li>
+                  <li>Carries your supporter license</li>
                 </ul>
                 <small>Your photos still live on this server.</small>
               </ChoiceCard>
@@ -554,7 +581,10 @@ export function FirstRunSetup({ flow = "new", onDone, onPreview, onOpenSettings,
                 name={`${ids}-signin`}
                 value="local"
                 checked={choices.signIn === "local"}
-                onChange={(signIn) => choose({ signIn, linked: false })}
+                onChange={(signIn) => {
+                  link(false);
+                  choose({ signIn });
+                }}
                 icon="mdiServerOutline"
                 title="Local account only"
               >
@@ -577,7 +607,10 @@ export function FirstRunSetup({ flow = "new", onDone, onPreview, onOpenSettings,
                   name={`${ids}-keep`}
                   value="local"
                   checked={!linked && choices.signIn === "local"}
-                  onChange={() => choose({ signIn: "local" })}
+                  onChange={() => {
+                    link(false);
+                    choose({ signIn: "local" });
+                  }}
                   icon="mdiAccountOutline"
                   title="Keep your local admin"
                   recommended
@@ -596,7 +629,7 @@ export function FirstRunSetup({ flow = "new", onDone, onPreview, onOpenSettings,
                 </ChoiceCard>
               </div>
               {(choices.signIn === "frameleaf" || linked) && (
-                <FrameleafLink linked={linked} onLinked={() => choose({ linked: true })} />
+                <FrameleafLink linked={linked} onLinked={() => link(true)} />
               )}
             </>
           );
@@ -607,7 +640,7 @@ export function FirstRunSetup({ flow = "new", onDone, onPreview, onOpenSettings,
               here from now on.
             </p>
             {errors.link && <ErrorNote>{errors.link}</ErrorNote>}
-            <FrameleafLink linked={linked} onLinked={() => choose({ linked: true })} />
+            <FrameleafLink linked={linked} onLinked={() => link(true)} />
             {linked && (
               <section className="frs-found" aria-labelledby={`${ids}-found`}>
                 <header>
@@ -1126,9 +1159,11 @@ function ProtectionStep({ state, choose, ids }) {
         <SwitchRow
           label="Nightly database backups"
           description={
-            state.flow === "existing"
-              ? "On. Last backup 2:00 AM today, 14 kept. Albums, people and edits can always be rebuilt."
-              : "Every night at 2:00 AM, 14 kept. Protects albums, people and edits."
+            !choices.nightlyBackup
+              ? "Off. Albums, people and edits aren't backed up. Turn this on unless another tool backs up the database."
+              : state.flow === "existing"
+                ? "On. Last backup 2:00 AM today, 14 kept. Albums, people and edits can always be rebuilt."
+                : "Every night at 2:00 AM, 14 kept. Protects albums, people and edits."
           }
           checked={choices.nightlyBackup}
           onChange={(nightlyBackup) => choose({ nightlyBackup })}
@@ -1239,7 +1274,7 @@ function ImportShowcase() {
       id: "google",
       title: "Google Photos",
       via: "with Google Takeout",
-      icon: "mdiGoogle",
+      icon: "mdiImageMultipleOutline",
       body: "Bring in a Takeout export with albums, dates, places and descriptions intact. Photos you already have join their albums instead of being copied twice.",
       where: "Later, from Settings › Import & protection › Google Photos & server imports",
       href: "/?screen=admin&settings=backup&section=takeout",
@@ -1248,7 +1283,7 @@ function ImportShowcase() {
       id: "icloud",
       title: "iCloud Photos",
       via: "with a connection you control",
-      icon: "mdiApple",
+      icon: "mdiCloudOutline",
       body: "Connect iCloud Photos, choose the albums, and keep them in sync on a schedule. Live Photos stay paired.",
       where: "Later, from Utilities › iCloud Photos",
       href: "/?screen=admin&settings=utilities&section=icloud",
@@ -1347,9 +1382,11 @@ function ReadyStep({ state, choose, ids, onOpenSettings }) {
             <span>Queue the new models from Settings when it suits you.</span>
           </div>
         )}
-        <button type="button" className="auth-link" onClick={() => onOpenSettings?.("activity")}>
-          Follow them in Activity
-        </button>
+        {jobs.length > 0 && (
+          <button type="button" className="auth-link" onClick={() => onOpenSettings?.("activity")}>
+            Follow them in Activity
+          </button>
+        )}
       </section>
       <div className="frs-theme" role="radiogroup" aria-label="Theme after setup">
         <span>Theme after setup</span>
