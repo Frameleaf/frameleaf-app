@@ -54,6 +54,164 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type CloudMlConsentFeaturesDto = {
+    identityNames: boolean;
+    medicalSignals: boolean;
+    ocrAddon: boolean;
+};
+export type CloudMlConsentStateDto = {
+    /** The version an administrator accepted on this server */
+    acceptedVersion: string | null;
+    /** The full consent text, when Frameleaf Cloud links one */
+    documentUrl: string | null;
+    /** The feature choices on record */
+    features: CloudMlConsentFeaturesDto;
+    /** Consent was given, but for an older version; processing is refused until renewed */
+    outdated: boolean;
+    /** The version Frameleaf Cloud has on record for this server */
+    recordedVersion: string | null;
+    /** The consent version Frameleaf Cloud requires now */
+    requiredVersion: string;
+    /** What the consent covers, as Frameleaf Cloud words it */
+    summary: string;
+};
+export type MlDestinationCloudDto = {
+    /** AI Wallet balance, USD */
+    balanceUsd: number;
+    /** Daily AI Wallet limit, USD, or null */
+    dailyCapUsd: number | null;
+    /** The Frameleaf account has the cloud processing entitlement */
+    entitled: boolean;
+    /** AI Wallet amount held by running jobs, USD */
+    heldUsd: number;
+    /** Why the last check refused, or null */
+    refusal: (MlAdmissionRefusal) | null;
+    refusalDetail: string | null;
+    /** Frameleaf Cloud data region */
+    region: string | null;
+    /** AI Wallet spend today, USD */
+    spentTodayUsd: number;
+};
+export type MlDestinationConsentDto = {
+    /** When an administrator recorded consent, or null */
+    acknowledgedAt: string | null;
+    /** Administrator who recorded consent, or null */
+    acknowledgedBy: string | null;
+    /** Whether this destination sends media off the network and needs consent */
+    required: boolean;
+    /** Frameleaf Cloud: the consent version the cloud requires now, from the last check, or null */
+    requiredVersion: string | null;
+    /** Frameleaf Cloud: the consent version accepted, or null */
+    version: string | null;
+};
+export type MlDestinationCostControlsDto = {
+    /** Spend ceiling over the rolling budget window, or null for no ceiling */
+    budgetLimitUsd: number | null;
+    /** Length of the rolling window `spentUsd` covers */
+    budgetWindowDays: number;
+    /** Longest single job this destination may run, or null */
+    maxRuntimeMinutes: number | null;
+    /** Largest upload one job may send to this destination, or null */
+    maxUploadBytes: number | null;
+    /** Attributed spend inside the budget window; 0 when no cost has been attributed yet */
+    spentUsd: number;
+};
+export type MlDestinationHealthStateDto = {
+    /** When the destination was last probed, or null */
+    probedAt: string | null;
+    /** Workloads the worker itself reported on the last probe, or null when it never answered */
+    servedWorkloads: MlWorkload[] | null;
+    status: MlDestinationHealth;
+    /** Human-readable probe result, or null */
+    summary: string | null;
+};
+export type MlDestinationResponseDto = {
+    /** Whether a bearer token is stored for this destination */
+    authTokenConfigured: boolean;
+    /** Frameleaf Cloud facts from the last check; null for other kinds */
+    cloud: (MlDestinationCloudDto) | null;
+    consent: MlDestinationConsentDto;
+    costControls: MlDestinationCostControlsDto;
+    createdAt: string;
+    enabled: boolean;
+    health: MlDestinationHealthStateDto;
+    id: string;
+    kind: MlDestinationKind;
+    name: string;
+    role: MlWorkerRole;
+    /** A restoration worker on the GPU library analysis uses; its full restorations wait for library work */
+    sharesLibraryHardware: boolean;
+    updatedAt: string;
+    /** Endpoint URL; always null for Frameleaf Cloud */
+    url: string | null;
+    /** Workloads the administrator allows on this destination */
+    workloads: MlWorkload[];
+};
+export type CloudMlWalletDto = {
+    /** Balance minus holds, USD */
+    availableUsd: number;
+    /** AI Wallet balance, USD */
+    balanceUsd: number;
+    /** Daily limit, USD, or null */
+    dailyCapUsd: number | null;
+    /** Held by running jobs, USD */
+    heldUsd: number;
+    /** Spent today, USD */
+    spentTodayUsd: number;
+    /** Where to add credit; only when Frameleaf Cloud returned one */
+    topUpUrl: string | null;
+    /** When this balance was read */
+    updatedAt: string;
+};
+export type CloudMlStatusResponseDto = {
+    checkedAt: string;
+    connection: CloudMlConnection;
+    consent: (CloudMlConsentStateDto) | null;
+    /** The Frameleaf Cloud destination, once added */
+    destination: (MlDestinationResponseDto) | null;
+    /** Why the connection is not ready, in plain words */
+    detail: string | null;
+    /** Frameleaf Cloud processing is turned on in settings */
+    enabled: boolean;
+    /** Cloud processing entitlement, when the cloud answered */
+    entitled: boolean | null;
+    /** The Frameleaf account's data region */
+    region: string | null;
+    /** The last AI Wallet read, or null */
+    wallet: (CloudMlWalletDto) | null;
+};
+export type CloudMlModelDto = {
+    description: string;
+    fingerprint: string;
+    id: string;
+    name: string;
+    /** Price per unit, USD */
+    priceUsd: number | null;
+    /** What one price unit is (for example an image or a video minute) */
+    pricingUnit: string | null;
+    /** The workload this model serves, or null for one this server does not know */
+    workload: (MlWorkload) | null;
+};
+export type CloudMlCatalogResponseDto = {
+    /** Models Frameleaf Cloud offers now; retired models are left out */
+    models: CloudMlModelDto[];
+};
+export type CloudMlConsentRecordDto = {
+    acceptedAt: string;
+    acceptedBy: string;
+    features: CloudMlConsentFeaturesDto;
+    revokedAt: string | null;
+    version: string;
+};
+export type CloudMlConsentHistoryResponseDto = {
+    records: CloudMlConsentRecordDto[];
+};
+export type CloudMlDestinationCreateDto = {
+    budgetLimitUsd?: number | null;
+    name?: string;
+    /** The workloads Frameleaf Cloud may run; faces, search and text recognition are refused */
+    workloads: MlWorkload[];
+};
 export type AdminConfigDatabaseBackupDto = {
     /** Cron expression */
     cronExpression: string;
@@ -111,6 +269,36 @@ export type AdminConfigFFmpegDto = {
     transcode: TranscodePolicy;
     /** Two pass */
     twoPass: boolean;
+};
+export type AdminConfigFrameleafCloudDescriptionsDto = {
+    /** Run background description batches automatically (needs a daily budget) */
+    autoBatch: boolean;
+    /** Daily spending limit for background batches, USD */
+    dailyBudgetUsd: number;
+    /** Catalogue model id used for descriptions; empty = none chosen */
+    defaultModel: string;
+    /** Allow image descriptions on Frameleaf Cloud */
+    enabled: boolean;
+};
+export type AdminConfigFrameleafCloudFacesDto = {
+    /** Faces never run on Frameleaf Cloud in this version */
+    enabled: false;
+};
+export type AdminConfigFrameleafCloudRestorationDto = {
+    /** Catalogue model id preselected for restoration */
+    defaultModel: string;
+    /** Allow restoration and upscaling on Frameleaf Cloud */
+    enabled: boolean;
+};
+export type AdminConfigFrameleafCloudMlDto = {
+    descriptions: AdminConfigFrameleafCloudDescriptionsDto;
+    /** Allow Frameleaf Cloud processing at all (the destination still needs consent) */
+    enabled: boolean;
+    faces: AdminConfigFrameleafCloudFacesDto;
+    restoration: AdminConfigFrameleafCloudRestorationDto;
+};
+export type AdminConfigFrameleafCloudDto = {
+    cloudMl: AdminConfigFrameleafCloudMlDto;
 };
 export type AdminConfigEnhancedRawImageDto = {
     /** Enhanced RAW rendering */
@@ -207,6 +395,26 @@ export type AdminConfigLibraryWatchDto = {
 export type AdminConfigLibraryDto = {
     scan: AdminConfigLibraryScanDto;
     watch: AdminConfigLibraryWatchDto;
+};
+export type AdminConfigLibraryCareDto = {
+    /** Health scans verify each original against its recorded checksum */
+    checksumScan: boolean;
+    /** Group near-duplicates for review; deletion stays explicit */
+    duplicateReview: boolean;
+    /** Schedule incremental health scans of every account; each resumes from its recorded checkpoints */
+    healthScan: boolean;
+    /** When the scheduled health scan starts */
+    healthScanCronExpression: string;
+    /** A full description rerun reprocesses only results that are missing, failed or out of date */
+    incrementalEnrichment: boolean;
+    /** Run the scheduled database and file reference audits (missing and untracked files) */
+    integrityAudit: boolean;
+    /** Suggest Live Photo pairs to relink; ambiguous pairs stay in review */
+    livePhotoRepair: boolean;
+    /** A description rerun replaces only generated text and keeps manual text */
+    manualMetadata: boolean;
+    /** Search for recoverable copies of RAW originals when locating originals */
+    rawRecovery: boolean;
 };
 export type AdminConfigAskSearchDto = {
     /** Enable local Ask Photos-style search */
@@ -354,57 +562,6 @@ export type AdminConfigOcrDto = {
     /** Name of the model to use */
     modelName: string;
 };
-export type AdminConfigRunPodServerlessDto = {
-    /** Max time per request (ms) */
-    executionTimeoutMs: number;
-    /** Ranked GPU pool IDs the endpoint can use (cheapest first). At least one required. */
-    gpuTypeIds: string[];
-    /** Seconds before an idle worker scales down */
-    idleTimeoutSeconds: number;
-    /** Worker autoscaler strategy */
-    scalerType: ScalerType;
-    /** Scaler threshold (queue seconds or request count) */
-    scalerValue: number;
-    /** Max concurrent workers */
-    workersMax: number;
-    /** Always-warm workers (0 = scale to zero) */
-    workersMin: number;
-};
-export type AdminConfigRunPodDto = {
-    /** RunPod API key (write-only; empty preserves the existing key) */
-    apiKey: string;
-    /** Read-only indicator that a key is currently stored. Set by the server; ignored on write. */
-    apiKeyConfigured?: boolean;
-    /** Auto-run ML backfill on pod ready (Pod mode) */
-    autoBackfillOnLaunch: boolean;
-    /** Auto-stop when idle (Pod mode) */
-    autoStopEnabled: boolean;
-    /** Idle minutes before auto-stop (Pod mode) */
-    autoStopGraceMinutes: number;
-    /** Container disk size (GB) (Pod mode) */
-    containerDiskGb: number;
-    /** User accepted that image previews leave the network */
-    dataPrivacyAcknowledged: boolean;
-    /** Preferred GPU type ID (Pod mode) */
-    defaultGpuTypeId: string;
-    /** Enabled */
-    enabled: boolean;
-    /** HuggingFace token forwarded to worker as HF_TOKEN (write-only; empty preserves the existing token) */
-    hfToken?: string;
-    /** Read-only indicator that an HF token is currently stored. Set by the server; ignored on write. */
-    hfTokenConfigured?: boolean;
-    /** Container image to launch */
-    imageName: string;
-    /** Hard runtime ceiling (hours) (Pod mode) */
-    maxRuntimeHours: number;
-    /** disabled = off, pod = manually launched dedicated GPU, serverless = auto-managed scale-to-zero endpoint. Optional for back-compat with legacy clients. */
-    mode?: Mode;
-    /** How long to wait for the pod to reach RUNNING + healthy /ping before giving up (Pod mode) */
-    provisionTimeoutMinutes?: number;
-    serverless?: AdminConfigRunPodServerlessDto;
-    /** Persistent volume size (GB) (Pod mode) */
-    volumeGb: number;
-};
 export type AdminConfigMachineLearningDto = {
     availabilityChecks: AdminConfigMachineLearningAvailabilityChecksDto;
     clip: AdminConfigClipDto;
@@ -415,7 +572,6 @@ export type AdminConfigMachineLearningDto = {
     imageDescription?: AdminConfigImageDescriptionDto;
     nsfwDetection?: AdminConfigNsfwDetectionDto;
     ocr: AdminConfigOcrDto;
-    runpod?: AdminConfigRunPodDto;
     /** ML service URLs */
     urls: string[];
 };
@@ -620,10 +776,12 @@ export type AdminConfigUserDto = {
 export type AdminConfigDto = {
     backup: AdminConfigBackupsDto;
     ffmpeg: AdminConfigFFmpegDto;
+    frameleafCloud?: AdminConfigFrameleafCloudDto;
     image: AdminConfigImageDto;
     integrityChecks: AdminConfigIntegrityChecksDto;
     job: AdminConfigJobDto;
     library: AdminConfigLibraryDto;
+    libraryCare?: AdminConfigLibraryCareDto;
     localFeatures?: AdminConfigLocalFeaturesDto;
     logging: AdminConfigLoggingDto;
     machineLearning: AdminConfigMachineLearningDto;
@@ -676,7 +834,7 @@ export type SystemConfigHistoryEntryDto = {
     kind?: SystemConfigHistoryKind;
     /** Changed settings left out because the entry reached its limit */
     omittedChanges: number;
-    /** The entry title, such as "Updated RunPod API key"; absent for a settings save */
+    /** The entry title, such as "Updated email server password"; absent for a settings save */
     title?: string | null;
 };
 export type SystemConfigHistoryResponseDto = {
@@ -845,6 +1003,48 @@ export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
 };
+export type PhysicalDeduplicationRestoreRequestDto = {
+    /** A copy of the applied plan whose own file is still on disk */
+    assetId: string;
+};
+export type PhysicalDeduplicationVerificationItemDto = {
+    assetId: string;
+    /** Whether the requesting administrator may view this asset and its thumbnail */
+    canView: boolean;
+    copyFile: PhysicalDeduplicationCopyFile;
+    /** Whether the asset still resolves to the retained original */
+    linked: boolean;
+    originalFileName: string;
+    ownerName: string;
+    /** Whether the asset can go back to its own file: it is linked and that file still holds the reviewed bytes */
+    restorable: boolean;
+    /** Whether the asset is back on its own former file */
+    restored: boolean;
+    retainedFile: PhysicalDeduplicationRetainedFile;
+    "type": AssetTypeEnum;
+};
+export type PhysicalDeduplicationVerificationDto = {
+    /** Copies the plan applied, listed or not */
+    copies: number;
+    /** Copies that are Locked media of another account; counted, never named */
+    hiddenCopies: number;
+    items: PhysicalDeduplicationVerificationItemDto[];
+    /** Copies that no longer resolve to the retained original */
+    notLinked: number;
+    operationId: string;
+    planId: string;
+    /** Copies whose own file is gone: that cannot be undone */
+    removed: number;
+    restorable: number;
+    restored: number;
+    retainedChanged: number;
+    retainedIntact: number;
+    retainedMissing: number;
+    retainedOriginals: number;
+    /** Copies that resolve to a retained original still holding the reviewed bytes */
+    verified: number;
+    verifiedAt: string;
+};
 export type PhysicalDeduplicationApplyRequestDto = {
     /** `APPLY <planId>`, typed by the administrator */
     confirmation: string;
@@ -992,6 +1192,10 @@ export type PhysicalDeduplicationCopyDto = {
     /** Whether checksum and byte size match a retained original */
     checksumMatch: boolean;
     decision: PhysicalDeduplicationDecision;
+    /** Video length in milliseconds, when known */
+    duration: number | null;
+    /** Height in pixels, when known */
+    height: number | null;
     originalFileName: string;
     /** Path of the duplicate copy on disk */
     originalPath: string;
@@ -1004,10 +1208,6 @@ export type PhysicalDeduplicationCopyDto = {
     retainedAssetId: string | null;
     sizeInBytes: number;
     "type": AssetTypeEnum;
-    /** Video length in milliseconds, when known */
-    duration: number | null;
-    /** Height in pixels, when known */
-    height: number | null;
     /** Width in pixels, when known */
     width: number | null;
 };
@@ -1091,48 +1291,6 @@ export type PhysicalDeduplicationPreviewResponseDto = {
     running: boolean;
     /** The saved `physicalDeduplication.masterUserId` */
     savedMasterUserId: string | null;
-};
-export type PhysicalDeduplicationRestoreRequestDto = {
-    /** A copy of the applied plan whose own file is still on disk */
-    assetId: string;
-};
-export type PhysicalDeduplicationVerificationItemDto = {
-    assetId: string;
-    /** Whether the requesting administrator may view this asset and its thumbnail */
-    canView: boolean;
-    copyFile: PhysicalDeduplicationCopyFile;
-    /** Whether the asset still resolves to the retained original */
-    linked: boolean;
-    originalFileName: string;
-    ownerName: string;
-    /** Whether the asset can go back to its own file: it is linked and that file still holds the reviewed bytes */
-    restorable: boolean;
-    /** Whether the asset is back on its own former file */
-    restored: boolean;
-    retainedFile: PhysicalDeduplicationRetainedFile;
-    "type": AssetTypeEnum;
-};
-export type PhysicalDeduplicationVerificationDto = {
-    /** Copies the plan applied, listed or not */
-    copies: number;
-    /** Copies that are Locked media of another account; counted, never named */
-    hiddenCopies: number;
-    items: PhysicalDeduplicationVerificationItemDto[];
-    /** Copies that no longer resolve to the retained original */
-    notLinked: number;
-    operationId: string;
-    planId: string;
-    /** Copies whose own file is gone: that cannot be undone */
-    removed: number;
-    restorable: number;
-    restored: number;
-    retainedChanged: number;
-    retainedIntact: number;
-    retainedMissing: number;
-    retainedOriginals: number;
-    /** Copies that resolve to a retained original still holding the reviewed bytes */
-    verified: number;
-    verifiedAt: string;
 };
 export type PhysicalDeduplicationPreviewRequestDto = {
     /** Account to retain originals in for this preview; defaults to the saved master account */
@@ -4639,6 +4797,8 @@ export type LivePhotoCandidateDto = {
 };
 export type LivePhotoCandidatesResponseDto = {
     candidates: LivePhotoCandidateDto[];
+    /** Library care suggests Live Photo pairs; when false no pairs are looked for */
+    suggestionsEnabled: boolean;
     /** Total number of candidate pairs found */
     total: number;
 };
@@ -4668,12 +4828,19 @@ export type MapReverseGeocodeResponseDto = {
     /** State/Province name */
     state: string | null;
 };
+export type MediaHealthChecksumDto = {
+    algorithm: MediaHealthChecksumAlgorithm;
+    /** Checksum as lowercase hex */
+    value: string;
+};
 export type MediaHealthCandidateDto = {
     /** Candidate file path */
     candidatePath: string;
     checkedAt: string;
     /** The candidate has exactly the checksum recorded for the original */
     checksumMatch: boolean;
+    /** The checksums the candidate matched, as measured */
+    checksums: MediaHealthChecksumDto[];
     /** The reviewer chose this candidate for the finding */
     chosen: boolean;
     /** The candidate decoded successfully; null when not checked */
@@ -4695,6 +4862,22 @@ export type MediaHealthCandidateDto = {
     /** Visual match score from 0 to 1 */
     visualMatchScore: number | null;
 };
+export type MediaHealthProvenanceDto = {
+    action: MediaHealthProvenanceAction;
+    /** When it was done */
+    at: string | null;
+    /** The path the original had before */
+    previousPath: string | null;
+    /** Search location the copy came from */
+    rootId: string | null;
+    rootKind: (MediaHealthRootKind) | null;
+    /** Name of the search location */
+    rootLabel: string | null;
+    /** The verified copy that was used */
+    sourcePath: string | null;
+    /** The account that did it */
+    userId: string | null;
+};
 export type MediaHealthItemDto = {
     asset: AssetResponseDto;
     /** Asset ID */
@@ -4706,12 +4889,15 @@ export type MediaHealthItemDto = {
     evidence: {
         [key: string]: any;
     };
+    /** The checksums recorded for the original, which a copy must match exactly */
+    expectedChecksums: MediaHealthChecksumDto[];
     /** Media health finding ID */
     id: string;
     /** Original media filename */
     originalFileName: string;
     /** Original media path */
     originalPath: string;
+    provenance: (MediaHealthProvenanceDto) | null;
     resolution: {
         [key: string]: any;
     };
@@ -4801,6 +4987,18 @@ export type MediaHealthRootDto = {
 export type MediaHealthRootsResponseDto = {
     roots: MediaHealthRootDto[];
 };
+export type MediaHealthCareSettingsDto = {
+    /** Health scans verify original checksums */
+    checksumScan: boolean;
+    /** Near-duplicates are grouped for review */
+    duplicateReview: boolean;
+    /** Incremental health scans run on a schedule */
+    healthScan: boolean;
+    /** Database and file reference audits run on their schedules */
+    integrityAudit: boolean;
+    /** Searches for originals include RAW originals */
+    rawRecovery: boolean;
+};
 export type MediaHealthOperationDto = {
     autoRetries: number;
     cancelRequestedAt: string | null;
@@ -4848,6 +5046,7 @@ export type MediaHealthRunsDto = {
     missing: (MediaHealthRunResponseDto) | null;
 };
 export type MediaHealthSummaryResponseDto = {
+    care: MediaHealthCareSettingsDto;
     operation: (MediaHealthOperationDto) | null;
     queues: MediaHealthQueuesDto;
     recent: MediaHealthActivityDto[];
@@ -5119,57 +5318,8 @@ export type MemoryExportCreateDto = {
     /** Export format, defaults to an archive of the originals */
     format?: MemoryExportFormat;
 };
-export type MlDestinationConsentDto = {
-    /** When an administrator recorded consent, or null */
-    acknowledgedAt: string | null;
-    /** Administrator who recorded consent, or null */
-    acknowledgedBy: string | null;
-    /** Whether this destination sends media off the network and needs consent */
-    required: boolean;
-};
-export type MlDestinationCostControlsDto = {
-    /** Spend ceiling over the rolling budget window, or null for no ceiling */
-    budgetLimitUsd: number | null;
-    /** Length of the rolling window `spentUsd` covers */
-    budgetWindowDays: number;
-    /** Longest single job this destination may run, or null */
-    maxRuntimeMinutes: number | null;
-    /** Largest upload one job may send to this destination, or null */
-    maxUploadBytes: number | null;
-    /** Attributed spend inside the budget window; 0 when no cost has been attributed yet */
-    spentUsd: number;
-};
-export type MlDestinationHealthStateDto = {
-    /** When the destination was last probed, or null */
-    probedAt: string | null;
-    /** Workloads the worker itself reported on the last probe, or null when it never answered */
-    servedWorkloads: MlWorkload[] | null;
-    status: MlDestinationHealth;
-    /** Human-readable probe result, or null */
-    summary: string | null;
-};
-export type MlDestinationResponseDto = {
-    /** Whether a bearer token is stored for this destination */
-    authTokenConfigured: boolean;
-    consent: MlDestinationConsentDto;
-    costControls: MlDestinationCostControlsDto;
-    createdAt: string;
-    enabled: boolean;
-    health: MlDestinationHealthStateDto;
-    id: string;
-    kind: MlDestinationKind;
-    name: string;
-    role: MlWorkerRole;
-    /** A restoration worker on the GPU library analysis uses; its full restorations wait for library work */
-    sharesLibraryHardware: boolean;
-    updatedAt: string;
-    /** Endpoint URL; null for a RunPod destination with no ready worker */
-    url: string | null;
-    /** Workloads the administrator allows on this destination */
-    workloads: MlWorkload[];
-};
 export type MlDestinationCreateDto = {
-    /** Bearer token for a LAN or RunPod video worker (write-only) */
+    /** Bearer token for a LAN worker (write-only) */
     authToken?: string;
     budgetLimitUsd?: number | null;
     enabled?: boolean;
@@ -5179,13 +5329,30 @@ export type MlDestinationCreateDto = {
     name: string;
     /** Restoration workers only: full restorations wait while library analysis has work */
     sharesLibraryHardware?: boolean;
-    /** Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod */
+    /** Required for a LAN destination, optional for a local one; Frameleaf Cloud is added from its own endpoint */
     url?: string;
     workloads?: MlWorkload[];
+};
+export type StudioRenderEvidenceDto = {
+    /** Encoders and decoders qualified sessions verified */
+    codecs: string[];
+    destination: MediaOperationDestination;
+    /** A qualified session verified Dolby Vision output */
+    dolbyVision: boolean;
+    /** Largest GPU memory a qualified session verified, or null */
+    gpuMemoryBytes: number | null;
+    /** A qualified session verified HDR10 output */
+    hdr10: boolean;
+    /** Highest bit depth a qualified session verified (8 when none said more) */
+    maxBitDepth: number;
+    /** Qualified live render sessions for this destination */
+    sessions: number;
 };
 export type StudioCapabilitiesDto = {
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
     gpuWorker: boolean;
+    /** FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision) */
+    render: StudioRenderEvidenceDto[];
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
     renderWorker: boolean;
     /** A destination can serve a restoration workload right now */
@@ -5194,14 +5361,28 @@ export type StudioCapabilitiesDto = {
     transcriptionWorker: boolean;
 };
 export type MlCapabilityDestinationDto = {
-    /** Enabled, healthy on the last probe, consented and reporting this workload */
+    /** CPU or accelerator, from the last check; unknown without facts */
+    acceleration: MlWorkerAcceleration;
+    /** Enabled, healthy on a check that is not stale, consented and reporting this workload */
     available: boolean;
+    /** When the destination was last checked, or null */
+    checkedAt: string | null;
     /** True when the destination needs no consent or consent is recorded */
     consentGranted: boolean;
+    /** Largest GPU memory the worker reported, or null */
+    gpuMemoryBytes: number | null;
     health: MlDestinationHealth;
     id: string;
     kind: MlDestinationKind;
+    /** Work sent here leaves this network (Frameleaf Cloud) */
+    leavesNetwork: boolean;
     name: string;
+    /** Frameleaf Cloud data region, or null */
+    region: string | null;
+    /** Workloads the last check verified, or null when it never answered */
+    servedWorkloads: MlWorkload[] | null;
+    /** The last check is too old to count as evidence; the destination is checked again first */
+    stale: boolean;
 };
 export type MlWorkloadCapabilityDto = {
     /** At least one destination can serve this workload right now */
@@ -5220,6 +5401,8 @@ export type MlCapabilitiesResponseDto = {
 export type MlWorkloadRouteDto = {
     /** Destination the workload is routed to, or null when unrouted */
     destinationId: string | null;
+    /** Frameleaf Cloud catalogue model for this workload, or null */
+    modelId: string | null;
     workload: MlWorkload;
 };
 export type MlWorkloadRoutesResponseDto = {
@@ -5228,6 +5411,8 @@ export type MlWorkloadRoutesResponseDto = {
 export type MlWorkloadRouteUpdateDto = {
     /** Destination to route the workload to; null removes the route */
     destinationId: string | null;
+    /** Frameleaf Cloud only: the catalogue model this workload uses */
+    modelId?: string | null;
 };
 export type MlDestinationUpdateDto = {
     /** New bearer token; null clears it; omitted keeps the stored token */
@@ -5264,6 +5449,17 @@ export type MlAdmissionResponseDto = {
 export type MlDestinationConsentRequestDto = {
     /** The administrator confirms that media sent to this destination leaves the network */
     acknowledgeMediaLeavesNetwork: true;
+    /** Frameleaf Cloud: per-feature choices; every feature is off unless chosen */
+    features?: {
+        /** Allow people names in cloud description prompts */
+        identityNames?: boolean;
+        /** Allow medical signals in cloud descriptions */
+        medicalSignals?: boolean;
+        /** Allow the cloud text-recognition add-on */
+        ocrAddon?: boolean;
+    };
+    /** Frameleaf Cloud: the consent version being accepted; required for Frameleaf Cloud */
+    version?: string;
 };
 export type RestorationGpuDto = {
     driverVersion: string;
@@ -6200,6 +6396,15 @@ export type QueueOwnerStatisticsResponseDto = {
 export type RenderWorkerAdmissionDto = {
     /** Encoder and decoder names the check verified */
     codecs?: string[];
+    /** Colour precision the conformance check verified; absent means 8-bit SDR only (FL-42) */
+    colorPrecision?: {
+        /** The check verified Dolby Vision output */
+        dolbyVision: boolean;
+        /** The check verified HDR10 (PQ, BT.2020) output */
+        hdr10: boolean;
+        /** Highest bit depth the check rendered and verified */
+        maxBitDepth: number;
+    };
     /** When the conformance check ran */
     conformanceReportedAt: string;
     /** Digest of the engine and patches actually loaded */
@@ -6354,63 +6559,6 @@ export type RenderWorkerRemoteReferenceDto = {
     remoteRef: string | null;
     requestedAt: string;
 };
-export type RunPodBackfillResultDto = {
-    enqueued: string[];
-    skipped: string[];
-};
-export type RunPodConnectionTestDto = {
-    /** API key to verify (overrides the stored key for the test) */
-    apiKey?: string;
-};
-export type RunPodConnectionResultDto = {
-    message?: string;
-    ok: boolean;
-};
-export type RunPodStateDto = {
-    endpointId?: string;
-    endpointUrl?: string;
-    errorMessage?: string;
-    estimatedCostUsd?: number;
-    gpuTypeId?: string;
-    /** Serverless idle timeout; may be null when not yet provisioned. */
-    idleTimeoutSeconds?: number | null;
-    imageName?: string;
-    instanceTag?: string;
-    lastBusyAt?: string;
-    maxRuntimeHours?: number;
-    mlUrl?: string;
-    podCreatedAt?: string;
-    podId?: string;
-    pricePerHour?: number;
-    runningSince?: string;
-    status: Status4;
-    stoppedAt?: string;
-    templateId?: string;
-    unhealthySince?: string;
-    workerReady?: boolean;
-    /** Serverless workersMax; may be null when not yet provisioned. */
-    workersMax?: number | null;
-    /** Serverless workersMin; may be null when not yet provisioned. */
-    workersMin?: number | null;
-};
-export type RunPodGpuTypeDto = {
-    communityCloud?: boolean;
-    displayName: string;
-    id: string;
-    memoryInGb: number;
-    pricePerHour?: number | null;
-    secureCloud?: boolean;
-};
-export type RunPodProvisionDto = {
-    /** User confirms image previews will be sent to RunPod (must be true to launch) */
-    acknowledgeDataPrivacy: true;
-    gpuCount?: number;
-    /** RunPod GPU type ID, e.g. "NVIDIA RTX A5000" */
-    gpuTypeId: string;
-    /** Override the configured image */
-    imageName?: string;
-    maxRuntimeHours?: number;
-};
 export type AskSearchDto = {
     /** Search language code */
     language?: string;
@@ -6521,7 +6669,7 @@ export type AskSearchPlanDto = {
         withStacked?: boolean;
     };
     /** Search mode used to answer the query */
-    mode: Mode2;
+    mode: Mode;
     /** Normalized query text */
     normalizedQuery: string;
 };
@@ -9401,6 +9549,74 @@ export function unlinkAllOAuthAccountsAdmin(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText("/admin/auth/unlink-all", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get Frameleaf Cloud processing status
+ */
+export function getCloudMlStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlStatusResponseDto;
+    }>("/admin/cloud/ml", {
+        ...opts
+    }));
+}
+/**
+ * List Frameleaf Cloud models
+ */
+export function getCloudMlCatalog(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlCatalogResponseDto;
+    }>("/admin/cloud/ml/catalog", {
+        ...opts
+    }));
+}
+/**
+ * List Frameleaf Cloud consent records
+ */
+export function getCloudMlConsentHistory(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlConsentHistoryResponseDto;
+    }>("/admin/cloud/ml/consent", {
+        ...opts
+    }));
+}
+/**
+ * Add Frameleaf Cloud as a processing destination
+ */
+export function createCloudMlDestination({ cloudMlDestinationCreateDto }: {
+    cloudMlDestinationCreateDto: CloudMlDestinationCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MlDestinationResponseDto;
+    }>("/admin/cloud/ml/destination", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudMlDestinationCreateDto
+    })));
+}
+/**
+ * Apply Frameleaf Cloud settlements
+ */
+export function reconcileCloudMlUsage(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/cloud/ml/usage", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Get the AI Wallet
+ */
+export function getCloudMlWallet(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlWalletDto;
+    }>("/admin/cloud/ml/wallet", {
+        ...opts
     }));
 }
 /**
@@ -13025,6 +13241,21 @@ export function startMissingScan(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Reopen media health findings
+ */
+export function reopen({ mediaHealthBulkActionDto }: {
+    mediaHealthBulkActionDto: MediaHealthBulkActionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthBulkResponseDto;
+    }>("/media-health/reopen", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaHealthBulkActionDto
+    })));
+}
+/**
  * List Library Care search locations
  */
 export function getRoots(opts?: Oazapfts.RequestOpts) {
@@ -14938,130 +15169,6 @@ export function acknowledgeRenderRemoteReference({ id, xFrameleafWorkerSession }
         headers: oazapfts.mergeHeaders(opts?.headers, {
             "x-frameleaf-worker-session": xFrameleafWorkerSession
         })
-    }));
-}
-/**
- * Enqueue all ML backfill jobs
- */
-export function backfill(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunPodBackfillResultDto;
-    }>("/runpod/backfill", {
-        ...opts,
-        method: "POST"
-    }));
-}
-/**
- * Test RunPod connection
- */
-export function testConnection({ runPodConnectionTestDto }: {
-    runPodConnectionTestDto: RunPodConnectionTestDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunPodConnectionResultDto;
-    }>("/runpod/connect", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: runPodConnectionTestDto
-    })));
-}
-/**
- * Tear down the serverless endpoint
- */
-export function teardownServerlessEndpoint(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunPodStateDto;
-    }>("/runpod/endpoint", {
-        ...opts,
-        method: "DELETE"
-    }));
-}
-/**
- * Set up (or verify) the serverless endpoint
- */
-export function setupServerlessEndpoint(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunPodStateDto;
-    }>("/runpod/endpoint/setup", {
-        ...opts,
-        method: "POST"
-    }));
-}
-/**
- * List RunPod GPU types
- */
-export function listGpus(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunPodGpuTypeDto[];
-    }>("/runpod/gpus", {
-        ...opts
-    }));
-}
-/**
- * Provision a RunPod pod
- */
-export function provision({ runPodProvisionDto }: {
-    runPodProvisionDto: RunPodProvisionDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 201;
-        data: RunPodStateDto;
-    }>("/runpod/pods", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: runPodProvisionDto
-    })));
-}
-/**
- * Terminate the current RunPod pod
- */
-export function terminate(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunPodStateDto;
-    }>("/runpod/pods/current", {
-        ...opts,
-        method: "DELETE"
-    }));
-}
-/**
- * Get current RunPod state
- */
-export function getCurrent(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunPodStateDto;
-    }>("/runpod/pods/current", {
-        ...opts
-    }));
-}
-/**
- * Resume the current RunPod pod
- */
-export function start(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunPodStateDto;
-    }>("/runpod/pods/current/start", {
-        ...opts,
-        method: "POST"
-    }));
-}
-/**
- * Stop the current RunPod pod
- */
-export function stop(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunPodStateDto;
-    }>("/runpod/pods/current/stop", {
-        ...opts,
-        method: "POST"
     }));
 }
 /**
@@ -17964,6 +18071,59 @@ export enum UserAvatarColor {
     Gray = "gray",
     Amber = "amber"
 }
+export enum CloudMlConnection {
+    NotConfigured = "not-configured",
+    NotLinked = "not-linked",
+    Ready = "ready",
+    Unavailable = "unavailable"
+}
+export enum MlAdmissionRefusal {
+    DestinationMissing = "destination-missing",
+    DestinationDisabled = "destination-disabled",
+    WorkloadNotRouted = "workload-not-routed",
+    WorkloadNotAllowed = "workload-not-allowed",
+    WorkloadNotServed = "workload-not-served",
+    ConsentMissing = "consent-missing",
+    BudgetExceeded = "budget-exceeded",
+    EndpointUnresolved = "endpoint-unresolved",
+    DestinationUnhealthy = "destination-unhealthy",
+    RoleConflict = "role-conflict",
+    CloudUnavailable = "cloud-unavailable",
+    EntitlementMissing = "entitlement-missing",
+    ConsentVersionOutdated = "consent-version-outdated",
+    WalletInsufficient = "wallet-insufficient",
+    QuotaExceeded = "quota-exceeded",
+    ModelMismatch = "model-mismatch"
+}
+export enum MlWorkload {
+    Face = "face",
+    Clip = "clip",
+    Ocr = "ocr",
+    Enrichment = "enrichment",
+    RestorationFaithful = "restoration-faithful",
+    RestorationCreative = "restoration-creative",
+    StudioAi = "studio-ai",
+    Upscale = "upscale",
+    Interpolation = "interpolation",
+    StudioRender = "studio-render"
+}
+export enum MlDestinationHealth {
+    Healthy = "healthy",
+    Unhealthy = "unhealthy",
+    Unknown = "unknown"
+}
+export enum MlDestinationKind {
+    Local = "local",
+    Lan = "lan",
+    FrameleafCloud = "frameleaf-cloud"
+}
+export enum MlWorkerRole {
+    LibraryAnalysis = "library-analysis",
+    Restoration = "restoration",
+    Studio = "studio",
+    Mixed = "mixed",
+    Unassigned = "unassigned"
+}
 export enum TranscodeHWAccel {
     Nvenc = "nvenc",
     Qsv = "qsv",
@@ -18045,15 +18205,6 @@ export enum Style {
     Balanced = "balanced",
     Rich = "rich"
 }
-export enum Mode {
-    Disabled = "disabled",
-    Pod = "pod",
-    Serverless = "serverless"
-}
-export enum ScalerType {
-    QueueDelay = "QUEUE_DELAY",
-    RequestCount = "REQUEST_COUNT"
-}
 export enum ReleaseChannel {
     Stable = "stable",
     ReleaseCandidate = "releaseCandidate"
@@ -18068,9 +18219,7 @@ export enum ClassificationRuleAction {
 }
 export enum ConfigCredential {
     SmtpPassword = "smtp-password",
-    OauthClientSecret = "oauth-client-secret",
-    RunpodApiKey = "runpod-api-key",
-    HuggingfaceToken = "huggingface-token"
+    OauthClientSecret = "oauth-client-secret"
 }
 export enum SystemConfigHistoryCredentialChange {
     Replaced = "replaced",
@@ -18118,6 +18267,22 @@ export enum NotificationType {
     SharedSpaceReply = "SharedSpaceReply",
     Custom = "Custom"
 }
+export enum PhysicalDeduplicationCopyFile {
+    Removed = "removed",
+    Present = "present",
+    Changed = "changed"
+}
+export enum PhysicalDeduplicationRetainedFile {
+    Intact = "intact",
+    Missing = "missing",
+    Changed = "changed"
+}
+export enum AssetTypeEnum {
+    Image = "IMAGE",
+    Video = "VIDEO",
+    Audio = "AUDIO",
+    Other = "OTHER"
+}
 export enum MediaOperationBulkAction {
     Favorite = "favorite",
     Unfavorite = "unfavorite",
@@ -18152,7 +18317,7 @@ export enum MediaOperationBulkAction {
 export enum MediaOperationDestination {
     Local = "local",
     Lan = "lan",
-    Runpod = "runpod"
+    FrameleafCloud = "frameleaf-cloud"
 }
 export enum MediaOperationKind {
     StudioExport = "studio_export",
@@ -18197,25 +18362,9 @@ export enum PhysicalDeduplicationSkipReason {
     AlreadyShared = "already-shared",
     RetainedFileMissing = "retained-file-missing"
 }
-export enum AssetTypeEnum {
-    Image = "IMAGE",
-    Video = "VIDEO",
-    Audio = "AUDIO",
-    Other = "OTHER"
-}
 export enum PhysicalDeduplicationPlanMode {
     DryRun = "dry-run",
     Apply = "apply"
-}
-export enum PhysicalDeduplicationCopyFile {
-    Removed = "removed",
-    Present = "present",
-    Changed = "changed"
-}
-export enum PhysicalDeduplicationRetainedFile {
-    Intact = "intact",
-    Missing = "missing",
-    Changed = "changed"
 }
 export enum RenderWorkerStatus {
     Active = "active",
@@ -18300,27 +18449,6 @@ export enum MlWorkerAcceleration {
     Cpu = "cpu",
     Gpu = "gpu"
 }
-export enum MlAdmissionRefusal {
-    DestinationMissing = "destination-missing",
-    DestinationDisabled = "destination-disabled",
-    WorkloadNotRouted = "workload-not-routed",
-    WorkloadNotAllowed = "workload-not-allowed",
-    WorkloadNotServed = "workload-not-served",
-    ConsentMissing = "consent-missing",
-    BudgetExceeded = "budget-exceeded",
-    EndpointUnresolved = "endpoint-unresolved",
-    DestinationUnhealthy = "destination-unhealthy",
-    RoleConflict = "role-conflict"
-}
-export enum MlWorkload {
-    Face = "face",
-    Clip = "clip",
-    Ocr = "ocr",
-    Enrichment = "enrichment",
-    RestorationFaithful = "restoration-faithful",
-    RestorationCreative = "restoration-creative",
-    StudioAi = "studio-ai"
-}
 export enum WorkerCredentialState {
     None = "none",
     Stored = "stored",
@@ -18334,13 +18462,6 @@ export enum MlWorkerReadiness {
     NotServing = "not-serving",
     Cpu = "cpu",
     ModelReady = "model-ready"
-}
-export enum MlWorkerRole {
-    LibraryAnalysis = "library-analysis",
-    Restoration = "restoration",
-    Studio = "studio",
-    Mixed = "mixed",
-    Unassigned = "unassigned"
 }
 export enum WorkerInventorySource {
     MlDestination = "ml-destination",
@@ -18606,6 +18727,8 @@ export enum Permission {
     ServerStorage = "server.storage",
     ServerStatistics = "server.statistics",
     ServerVersionCheck = "server.versionCheck",
+    AdminCloudMlRead = "adminCloudMl.read",
+    AdminCloudMlUpdate = "adminCloudMl.update",
     ServerLicenseRead = "serverLicense.read",
     ServerLicenseUpdate = "serverLicense.update",
     ServerLicenseDelete = "serverLicense.delete",
@@ -18798,12 +18921,6 @@ export enum AssetImageEnrichmentAction {
     ClearGeneratedDescription = "clear-generated-description",
     ClearGeneratedTags = "clear-generated-tags"
 }
-export enum MlDestinationKind {
-    Local = "local",
-    Lan = "lan",
-    Runpod = "runpod",
-    RunpodVideo = "runpod-video"
-}
 export enum AssetRestorationMode {
     Faithful = "faithful",
     Creative = "creative"
@@ -18826,11 +18943,6 @@ export enum AssetRestorationStatus {
     Rejected = "rejected",
     Discarded = "discarded",
     Expired = "expired"
-}
-export enum MlDestinationHealth {
-    Healthy = "healthy",
-    Unhealthy = "unhealthy",
-    Unknown = "unknown"
 }
 export enum AssetRestorationFileKind {
     Before = "before",
@@ -19055,10 +19167,18 @@ export enum MediaHealthStatus {
     DeleteQueued = "delete_queued",
     Deleted = "deleted"
 }
+export enum MediaHealthChecksumAlgorithm {
+    Sha1 = "sha1",
+    Sha256 = "sha256"
+}
 export enum MediaHealthRootKind {
     Managed = "managed",
     Library = "library",
     Recovery = "recovery"
+}
+export enum MediaHealthProvenanceAction {
+    Relinked = "relinked",
+    Recovered = "recovered"
 }
 export enum MediaHealthSeverity {
     Info = "info",
@@ -19364,7 +19484,7 @@ export enum QueueJobWorkerKind {
     Server = "server",
     Local = "local",
     Lan = "lan",
-    Runpod = "runpod"
+    FrameleafCloud = "frameleaf-cloud"
 }
 export enum Status3 {
     Preparing = "preparing",
@@ -19373,17 +19493,6 @@ export enum Status3 {
 export enum StudioExportRemoteReason {
     Cancel = "cancel",
     Delete = "delete"
-}
-export enum Status4 {
-    Idle = "idle",
-    Provisioning = "provisioning",
-    Starting = "starting",
-    Running = "running",
-    Stopping = "stopping",
-    Stopped = "stopped",
-    Error = "error",
-    ServerlessProvisioning = "serverless-provisioning",
-    ServerlessReady = "serverless-ready"
 }
 export enum ImageEnrichmentFilter {
     Nsfw = "nsfw",
@@ -19401,7 +19510,7 @@ export enum SearchOrderField {
     FileSizeInBytes = "fileSizeInBytes",
     Rating = "rating"
 }
-export enum Mode2 {
+export enum Mode {
     Smart = "smart",
     Metadata = "metadata"
 }
