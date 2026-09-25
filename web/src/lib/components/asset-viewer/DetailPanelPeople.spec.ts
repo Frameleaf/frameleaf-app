@@ -1,5 +1,6 @@
 import type { AssetFaceResponseDto } from '@immich/sdk';
 import { render, screen } from '@testing-library/svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { personFactory } from '@test-data/factories/person-factory';
 import DetailPanelPeople from './DetailPanelPeople.svelte';
@@ -102,5 +103,32 @@ describe('DetailPanelPeople', () => {
     const crop = screen.getByTestId('unassigned-face').querySelector(':scope [aria-hidden="true"]');
     expect(crop).toHaveClass('fl-squircle');
     expect(container.querySelector(':scope .rounded-full, :scope [class~="rounded-xl"] > img')).toBeNull();
+  });
+
+  it('re-reads the chips when a person on the photo changes elsewhere (FL-37)', async () => {
+    const onFacesChanged = vi.fn();
+    render(DetailPanelPeople, { asset: assetFactory.build(), isOwner: true, previousRoute: '/photos', onFacesChanged });
+
+    eventManager.emit('PersonUpdate', { ...alex, name: 'Alexandra' });
+    expect(onFacesChanged).toHaveBeenCalledOnce();
+
+    // someone who is not on this photo changes nothing here
+    eventManager.emit('PersonUpdate', personFactory.build({ id: 'somebody-else' }));
+    expect(onFacesChanged).toHaveBeenCalledOnce();
+  });
+
+  it('re-reads the chips when faces move between people (FL-37)', async () => {
+    const onFacesChanged = vi.fn().mockRejectedValue(new Error('offline'));
+    render(DetailPanelPeople, {
+      asset: assetFactory.build(),
+      isOwner: false,
+      previousRoute: '/photos',
+      onFacesChanged,
+    });
+
+    eventManager.emit('PersonFacesChange', { personIds: ['someone'], removedPersonIds: ['someone'] });
+    expect(onFacesChanged).toHaveBeenCalledOnce();
+    // a failed re-read keeps the chips as they were
+    expect(screen.getByText('Alex')).toBeInTheDocument();
   });
 });

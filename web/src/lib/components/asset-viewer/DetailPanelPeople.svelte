@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
   import PersonFaceActions from '$lib/components/frameleaf/PersonFaceActions.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -50,6 +51,30 @@
       `background-position: ${offset(face.boundingBoxX1, width, face.imageWidth)} ${offset(face.boundingBoxY1, height, face.imageHeight)}`,
     ].join('; ');
   };
+  /**
+   * FL-37: a person on this photo was renamed, hidden, given a birthday or a featured photo, or
+   * faces moved between people (a merge, Fix incorrect match) somewhere else: re-read this photo's
+   * faces so the chips show current names and photos. Only what the server returns for this photo
+   * is drawn, so no other person's (or anyone's private) thumbnail can appear here.
+   */
+  const refreshChips = async () => {
+    try {
+      await onFacesChanged();
+    } catch {
+      // the chips keep what they showed; opening the next photo reads its faces again
+    }
+  };
+  const onPersonUpdate = ({ id }: { id: string }) => {
+    if (!authManager.isSharedLink && people.some((person) => person.id === id)) {
+      void refreshChips();
+    }
+  };
+  const onPersonFacesChange = () => {
+    if (!authManager.isSharedLink) {
+      void refreshChips();
+    }
+  };
+
   const hiddenCount = $derived(people.filter((person) => person.isHidden).length);
   const visiblePeople = $derived(
     people
@@ -86,6 +111,8 @@
       }),
   );
 </script>
+
+<OnEvents {onPersonUpdate} {onPersonFacesChange} />
 
 {#if !authManager.isSharedLink}
   <section class="px-4 pt-4 text-sm">

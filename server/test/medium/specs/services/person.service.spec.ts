@@ -2,7 +2,7 @@ import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto } from 'src/dtos/person.dto.js';
-import { AssetFileType, AssetMetadataKey, AssetVisibility, JobName, MlWorkload } from 'src/enum.js';
+import { AssetFileType, AssetMetadataKey, AssetType, AssetVisibility, JobName, MlWorkload } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -138,8 +138,37 @@ describe(PersonService.name, () => {
       await expect(sut.getById(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual(
         expect.objectContaining({ id: mixedPerson.personGroupId }),
       );
-      await expect(sut.getStatistics(auth, mixedPerson.personGroupId)).resolves.toEqual({ assets: 2 });
-      await expect(sut.getStatistics(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual({ assets: 1 });
+      await expect(sut.getStatistics(auth, mixedPerson.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ assets: 2 }),
+      );
+      await expect(sut.getStatistics(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ assets: 1 }),
+      );
+    });
+
+    it('splits the person page count into photos and videos over timeline assets only (FL-37)', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Counted' });
+      const { asset: photo } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+      const { asset: video } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+      const { asset: archived } = await ctx.newAsset({
+        ownerId: user.id,
+        type: AssetType.Image,
+        visibility: AssetVisibility.Archive,
+      });
+      const { asset: trashed } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video, deletedAt: new Date() });
+      for (const asset of [photo, video, archived, trashed]) {
+        await ctx.newAssetFace({ personGroupId: person.personGroupId, assetId: asset.id });
+      }
+      // two faces of the same person on one photo still count that photo once
+      await ctx.newAssetFace({ personGroupId: person.personGroupId, assetId: photo.id });
+
+      await expect(sut.getStatistics(factory.auth({ user }), person.personGroupId)).resolves.toEqual({
+        assets: 2,
+        photos: 1,
+        videos: 1,
+      });
     });
 
     it('should not serve person thumbnails generated from private NSFW feature faces', async () => {

@@ -22,7 +22,7 @@
   } from '$lib/components/discovery/query';
   import { QueryParameter } from '$lib/constants';
   import { brandedArchiveName, namedEntitySegments } from '$lib/frameleaf/archive-name';
-  import { resolveEntityName, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
+  import { forgetEntityNames, resolveEntityName, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
   import { LibrarySearchSession, type LibrarySearchQuery } from '$lib/frameleaf/library-search-session.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import {
@@ -273,6 +273,11 @@
    * generic word, so the chip is always there to remove.
    */
   let filterEntityNames = $state<Record<string, string | null>>({});
+  /**
+   * FL-37: bumped when a person is renamed, hidden or merged away, so the person chips re-read the
+   * name (a hidden person's chip falls back to the generic label, as a fresh lookup would).
+   */
+  let personNamesVersion = $state(0);
 
   /**
    * The query the chips describe. FL-48: for a search from the dialog it is the shared query itself,
@@ -284,6 +289,7 @@
   );
 
   $effect(() => {
+    void personNamesVersion;
     const groups = filterEntityIds(chipQuery?.filter);
     if (groups.length === 0) {
       return;
@@ -461,6 +467,17 @@
     return tagNames.join(', ');
   }
 
+  const refreshPersonNames = (ids: string[]) => {
+    forgetEntityNames('person', ids);
+    personNamesVersion++;
+  };
+  const onPersonUpdate = ({ id }: { id: string }) => refreshPersonNames([id]);
+  const onPersonFacesChange = ({ removedPersonIds = [] }: { removedPersonIds?: string[] }) => {
+    if (removedPersonIds.length > 0) {
+      refreshPersonNames(removedPersonIds);
+    }
+  };
+
   const onAlbumAddAssets = ({ assetIds }: { assetIds: string[] }) => {
     librarySession.clearSelection();
 
@@ -544,7 +561,7 @@
 
 <svelte:window bind:scrollY />
 
-<OnEvents {onAlbumAddAssets} />
+<OnEvents {onAlbumAddAssets} {onPersonUpdate} {onPersonFacesChange} />
 
 {#if hasSearchQuery}
   <!-- SD-12: the results page's chips use the search palette's chip (SearchChip, search-palette.css .sp-token) -->
@@ -583,9 +600,11 @@
             {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
               {getHumanReadableDate(value)}
             {:else if searchKey === 'personIds' && Array.isArray(value)}
-              {#await getPersonName(value) then personName}
-                {personName}
-              {/await}
+              {#key personNamesVersion}
+                {#await getPersonName(value) then personName}
+                  {personName}
+                {/await}
+              {/key}
             {:else if searchKey === 'petIds' && Array.isArray(value)}
               {#await getPetNames(value) then petNames}
                 {petNames}
