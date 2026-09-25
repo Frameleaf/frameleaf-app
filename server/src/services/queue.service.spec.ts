@@ -449,4 +449,26 @@ describe(QueueService.name, () => {
       );
     });
   });
+
+  it('marks an account count as a lower bound when a state fills the scan (FL-71 J-1)', async () => {
+    mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics({ waiting: 1000 }));
+    mocks.job.searchJobs.mockImplementation((_name, dto) =>
+      Promise.resolve(
+        dto.status?.[0] === QueueJobStatus.Waiting
+          ? Array.from({ length: 1000 }, (_, index) => ({
+              id: String(index),
+              name: JobName.AssetGenerateThumbnails,
+              timestamp: 1,
+              data: {},
+              status: QueueJobStatus.Waiting,
+            }))
+          : [],
+      ),
+    );
+    mocks.user.getJobSubjectOwners.mockResolvedValue([]);
+
+    await expect(
+      sut.getOwnerStatistics(factory.auth(), QueueName.ThumbnailGeneration, 'af1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a03'),
+    ).resolves.toEqual(expect.objectContaining({ truncated: true }));
+  });
 });

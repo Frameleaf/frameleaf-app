@@ -300,7 +300,10 @@ export class QueueService extends BaseService {
       delayed: count(3),
       waiting: count(4),
       paused: count(5),
-      truncated: states.some((status, index) => (totals[status] ?? 0) > lists[index].length),
+      // A full page may hide jobs added since the counts were read, so it is a lower bound too.
+      truncated: states.some(
+        (status, index) => (totals[status] ?? 0) > lists[index].length || lists[index].length >= QUEUE_OWNER_SCAN_LIMIT,
+      ),
     };
   }
 
