@@ -861,6 +861,38 @@
       "identity": "immich_fork.frameleaf_consent.version"
     },
     {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.frameleaf_user_license.activatedAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.frameleaf_user_license.activationId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_user_license.binding"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_user_license.certificate"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_user_license.keyHint"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_user_license.keySha256"
+    },
+    {
+      "definition": "text|not null|'individual'::text||",
+      "identity": "immich_fork.frameleaf_user_license.kind"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.frameleaf_user_license.userId"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "immich_fork.icloud_album.albumId"
     },
@@ -7075,6 +7107,22 @@
       "identity": "immich_fork.frameleaf_consent.frameleaf_consent_version_check"
     },
     {
+      "definition": "CHECK (length(\"keyHint\") = 4)",
+      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_key_hint_check"
+    },
+    {
+      "definition": "UNIQUE (\"keySha256\")",
+      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_key_unique"
+    },
+    {
+      "definition": "CHECK (kind = 'individual'::text)",
+      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"userId\")",
+      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
       "identity": "immich_fork.icloud_album.icloud_album_connectionId_fkey"
     },
@@ -9036,6 +9084,7 @@
     "0000000000182-StudioWorkspaceLayout",
     "0000000000187-MemoryCuration",
     "0000000000188-MemoryShowLess",
+    "0000000000190-FrameleafUserLicenses",
     "0000000000200-FrameleafConsents"
   ],
   "functions": [
@@ -10340,6 +10389,14 @@
     {
       "definition": "CREATE UNIQUE INDEX frameleaf_consent_pkey ON immich_fork.frameleaf_consent USING btree (id)",
       "identity": "immich_fork.frameleaf_consent.frameleaf_consent_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_user_license_key_unique ON immich_fork.frameleaf_user_license USING btree (\"keySha256\")",
+      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_key_unique"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_user_license_pkey ON immich_fork.frameleaf_user_license USING btree (\"userId\")",
+      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_pkey"
     },
     {
       "definition": "CREATE INDEX icloud_album_mapping_idx ON immich_fork.icloud_album USING btree (\"albumId\") WHERE (\"albumId\" IS NOT NULL)",
@@ -12883,6 +12940,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.frameleaf_consent"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.frameleaf_user_license"
     },
     {
       "definition": "table",

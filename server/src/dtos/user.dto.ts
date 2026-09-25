@@ -43,15 +43,19 @@ export const UserResponseSchema = z
 
 export class UserResponseDto extends createZodDto(UserResponseSchema) {}
 
-const licenseKeyRegex = /^IM(SV|CL)(-[\dA-Za-z]{4}){8}$/;
-
-export const UserLicenseSchema = z
+/**
+ * FL-156: a person's own Frameleaf supporter key (`FL-I…`), as it is shown again: its kind, the last
+ * four symbols and when it was activated. The key itself is never returned. The schema keeps the
+ * `UserLicense` id; the shape replaced the previous product key's (a protocol change for the apps).
+ */
+export const UserSupporterSchema = z
   .object({
-    licenseKey: z.string().regex(licenseKeyRegex).describe(`License key (format: ${licenseKeyRegex.toString()})`),
-    activationKey: z.string().describe('Activation key'),
+    kind: z.literal('individual').describe('Supporter key kind; personal keys are always individual'),
+    keyHint: z.string().describe('Last four symbols of the key'),
     activatedAt: isoDatetimeToDate.describe('Activation date'),
   })
   .meta({ id: 'UserLicense' });
+export const UserLicenseSchema = UserSupporterSchema;
 
 const emailToAvatarColor = (email: string): UserAvatarColor => {
   const values = Object.values(UserAvatarColor);
@@ -214,9 +218,11 @@ export class UserAdminResponseDto extends createZodDto(UserAdminResponseSchema) 
 
 export function mapUserAdmin(entity: UserAdmin): UserAdminResponseDto {
   const metadata = entity.metadata || [];
-  const license = metadata.find(
+  const stored = metadata.find(
     (item): item is UserMetadataItem<UserMetadataKey.License> => item.key === UserMetadataKey.License,
   )?.value;
+  // Only a Frameleaf supporter key counts; a stored value of the previous product key is ignored.
+  const license = stored && stored.kind === 'individual' && typeof stored.keyHint === 'string' ? stored : undefined;
 
   return {
     ...mapUser(entity),
@@ -232,6 +238,8 @@ export function mapUserAdmin(entity: UserAdmin): UserAdminResponseDto {
     quotaSizeInBytes: entity.quotaSizeInBytes,
     quotaUsageInBytes: entity.quotaUsageInBytes,
     status: entity.status,
-    license: license ? { ...license, activatedAt: new Date(license.activatedAt) } : null,
+    license: license
+      ? { kind: 'individual', keyHint: license.keyHint, activatedAt: new Date(license.activatedAt) }
+      : null,
   };
 }

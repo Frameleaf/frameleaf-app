@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
-import { ImmichEnvironment, JobName, JobStatus, UserAvatarColor } from 'src/enum.js';
+import { ImmichEnvironment, JobName, JobStatus, UserAvatarColor, UserMetadataKey } from 'src/enum.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -17,12 +17,6 @@ import { HumanReadableSize } from 'src/utils/bytes.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
-
-const userLicense = {
-  licenseKey: 'IMCL-FF69-TUK1-RWZU-V9Q8-QGQS-S5GC-X4R2-UFK4',
-  activationKey:
-    'KuX8KsktrBSiXpQMAH0zLgA5SpijXVr_PDkzLdWUlAogCTMBZ0I3KCHXK0eE9EEd7harxup8_EHMeqAWeHo5VQzol6LGECpFv585U9asXD4Zc-UXt3mhJr2uhazqipBIBwJA2YhmUCDy8hiyiGsukDQNu9Rg9C77UeoKuZBWVjWUBWG0mc1iRqfvF0faVM20w53czAzlhaMxzVGc3Oimbd7xi_CAMSujF_2y8QpA3X2fOVkQkzdcH9lV0COejl7IyH27zQQ9HrlrXv3Lai5Hw67kNkaSjmunVBxC5PS0TpKoc9SfBJMaAGWnaDbjhjYUrm-8nIDQnoeEAidDXVAdPw',
-};
 
 let defaultDatabase: Kysely<DB>;
 
@@ -140,14 +134,25 @@ describe(UserService.name, () => {
       );
     });
 
-    it('should include license info', async () => {
+    it('should include the supporter key summary, and ignore a previous product key (FL-156)', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user: { id: user.id } });
+      const userRepo = ctx.get(UserRepository);
 
-      await sut.setLicense(auth, userLicense);
+      await userRepo.upsertMetadata(user.id, {
+        key: UserMetadataKey.License,
+        value: { licenseKey: 'IMCL-FF69', activationKey: 'x', activatedAt: '2026-09-01T00:00:00.000Z' } as never,
+      });
+      await expect(sut.getMe(auth)).resolves.toMatchObject({ license: null });
 
-      await expect(sut.getMe(auth)).resolves.toMatchObject({ license: userLicense });
+      await userRepo.upsertMetadata(user.id, {
+        key: UserMetadataKey.License,
+        value: { kind: 'individual', keyHint: 'CMSF', activatedAt: '2026-09-25T00:00:00.000Z' },
+      });
+      await expect(sut.getMe(auth)).resolves.toMatchObject({
+        license: { kind: 'individual', keyHint: 'CMSF', activatedAt: new Date('2026-09-25T00:00:00.000Z') },
+      });
     });
   });
 
@@ -352,57 +357,6 @@ describe(UserService.name, () => {
 
       expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
       expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
-    });
-  });
-
-  describe('setLicense', () => {
-    it('should set a license', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user: { id: user.id } });
-      await expect(sut.getLicense(auth)).rejects.toThrowError();
-      const after = await sut.setLicense(auth, userLicense);
-      expect(after.licenseKey).toEqual(userLicense.licenseKey);
-      expect(after.activationKey).toEqual(userLicense.activationKey);
-      const response = await sut.getLicense(auth);
-      expect(response).toEqual(after);
-      await expect(sut.getMe(auth)).resolves.toMatchObject({ license: after });
-    });
-
-    it('should reject a license key that does not start with IMCL-', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user: { id: user.id } });
-
-      await expect(
-        sut.setLicense(auth, {
-          licenseKey: 'IMSV-ABCD-ABCD-ABCD-ABCD-ABCD-ABCD-ABCD-ABCD',
-          activationKey: 'activationKey',
-        }),
-      ).rejects.toThrow('Invalid license key');
-    });
-
-    it('should reject an invalid activation key', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user: { id: user.id } });
-
-      await expect(
-        sut.setLicense(auth, { ...userLicense, activationKey: `invalid${userLicense.activationKey}` }),
-      ).rejects.toThrow('Invalid license key');
-    });
-  });
-
-  describe('deleteLicense', () => {
-    it('should delete the license', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user: { id: user.id } });
-
-      await sut.setLicense(auth, userLicense);
-      await sut.deleteLicense(auth);
-
-      await expect(sut.getLicense(auth)).rejects.toThrowError();
     });
   });
 

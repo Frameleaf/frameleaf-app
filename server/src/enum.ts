@@ -487,7 +487,6 @@ export enum SystemMetadataKey {
   SystemConfig = 'system-config',
   SystemFlags = 'system-flags',
   VersionCheckState = 'version-check-state',
-  License = 'license',
   PhysicalDeduplicationMigration = 'physical-deduplication-migration',
   /** FL-159: the Frameleaf Cloud link written by linking the server (FL-155); read by cloud processing. */
   FrameleafCloudLink = 'frameleaf-cloud-link',
