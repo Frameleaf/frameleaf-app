@@ -245,6 +245,56 @@ describe('downloadArchive, what the tab holds (review)', () => {
   });
 });
 
+describe('the held cap across concurrent downloads (review)', () => {
+  it('reserves at once, so two downloads started together never exceed the cap', async () => {
+    vi.mocked(requestAsset).mockReturnValue(never());
+    const size = Math.floor(bufferLimit() * 0.6);
+
+    const first = downloadAssetFile({ id: 'asset-1', filename: 'a.mov', edited: false, size });
+    const second = downloadAssetFile({ id: 'asset-2', filename: 'b.mov', edited: false, size });
+    await flush();
+
+    expect(downloadManager.reservedBytes()).toBe(size);
+    expect(downloadManager.reservedBytes()).toBeLessThanOrEqual(bufferLimit());
+    expect(downloadManager.assets.get(first)?.status).toBe('preparing');
+    expect(downloadManager.assets.get(second)).toMatchObject({ status: 'ready', buffered: false });
+    expect(requestAsset).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds two concurrent downloads that fit together, and releases their reservations', async () => {
+    const answers: Array<(blob: Blob) => void> = [];
+    vi.mocked(requestAsset).mockImplementation(
+      () =>
+        new Promise<Blob>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+
+    downloadAssetFile({ id: 'asset-1', filename: 'a.jpg', edited: false, size: 3 });
+    downloadAssetFile({ id: 'asset-2', filename: 'b.jpg', edited: false, size: 3 });
+    await flush();
+    expect(downloadManager.reservedBytes()).toBe(6);
+
+    for (const answer of answers) {
+      answer(new Blob(['abc']));
+    }
+    await flush();
+
+    expect(downloadManager.reservedBytes()).toBe(0);
+    expect(downloadManager.heldBytes()).toBe(6);
+  });
+
+  it('releases the reservation when a download is cancelled', async () => {
+    vi.mocked(requestAsset).mockReturnValue(never());
+    const key = downloadAssetFile({ id: 'asset-1', filename: 'a.jpg', edited: false, size: 3 });
+    await flush();
+
+    downloadManager.cancel(key);
+
+    expect(downloadManager.reservedBytes()).toBe(0);
+  });
+});
+
 describe('downloadAssetFile, files of unknown size (review B1)', () => {
   /** Calls the provided `fetch` the way the SDK's `fetchBlob` does, swallowing a failed body. */
   const throughSdk = () =>
@@ -297,6 +347,26 @@ describe('downloadAssetFile, files of unknown size (review B1)', () => {
     await flush();
 
     expect(downloadManager.assets.get(key)).toMatchObject({ status: 'ready', buffered: false });
+  });
+
+  it('streams a body that outgrows what the tab can still hold part-way through', async () => {
+    // A held file leaves room for 2 more bytes; the next file is planned at 1 byte but sends 3.
+    downloadManager.start({ name: 'held.jpg' }, () => {
+      const blob = new Blob(['x']);
+      Object.defineProperty(blob, 'size', { value: bufferLimit() - 2 });
+      return Promise.resolve(blob);
+    });
+    await flush();
+    throughSdk();
+    serve({});
+
+    const key = downloadAssetFile({ id: 'asset-1', filename: 'a.jpg', edited: false, size: 1 });
+    await flush();
+
+    expect(downloadManager.assets.get(key)).toMatchObject({ status: 'ready', buffered: false });
+    expect(downloadManager.reservedBytes()).toBe(0);
+    downloadManager.save(key, vi.fn());
+    expect(downloadUrl).toHaveBeenCalledWith(expect.stringContaining('/assets/asset-1/original'), 'a.jpg');
   });
 
   it('trusts the headers, not the original size, for an edited file', async () => {
