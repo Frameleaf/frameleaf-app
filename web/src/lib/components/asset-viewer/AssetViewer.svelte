@@ -629,6 +629,19 @@
   };
 
   /**
+   * MediaViewer.jsx:733-744: with the slideshow settings open, Escape closes them first, wherever
+   * focus is, before anything else in the viewer (closing the viewer, ending a slideshow) sees it.
+   */
+  const closeSettingsOnEscape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !$slideshowSettingsOpen) {
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void slideshowStore.closeSettings();
+  };
+
+  /**
    * Closing the information card from inside it puts focus back on the Information button, not on
    * the page behind the viewer.
    */
@@ -681,6 +694,7 @@
 <OnEvents {onAssetUpdate} {onAssetsUndoArchive} />
 
 <svelte:window
+  onkeydowncapture={closeSettingsOnEscape}
   onkeydown={revealChrome}
   onpointerdowncapture={(event) => activePointers.add(event.pointerId)}
   onpointerupcapture={releasePointer}
