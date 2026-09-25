@@ -101,6 +101,22 @@ const FRAMELEAF_CALLBACK = /frameleaf-auth:\/+oauth-callback/;
 /** FL-158: the refusal for an email the identity provider has not verified (every provider). */
 export const UNVERIFIED_EMAIL_MESSAGE =
   'This email address has not been verified by the sign-in provider, so it cannot be used to sign in here';
+/** FL-158: the refusal when the provider sends no `email_verified` claim at all. */
+export const MISSING_EMAIL_VERIFIED_MESSAGE =
+  'The sign-in provider did not say whether this email address is verified, so it cannot be used to find or create an account here. Ask your administrator to map the email_verified claim in the provider.';
+
+/**
+ * FL-158: whether the provider verified the profile's email. `true` and the string `"true"` (some
+ * providers send claims as strings) count; anything else, including a missing claim, does not.
+ * Returns the refusal to give, or null when the email may be used.
+ */
+export const emailVerificationProblem = (profile: { email_verified?: unknown }): string | null => {
+  const value = profile.email_verified;
+  if (value === true || value === 'true') {
+    return null;
+  }
+  return value === undefined || value === null ? MISSING_EMAIL_VERIFIED_MESSAGE : UNVERIFIED_EMAIL_MESSAGE;
+};
 const LEGACY_MOBILE_REDIRECT_PATH = /\/oauth\/mobile-redirect\/?$/;
 
 /**
@@ -477,15 +493,15 @@ export class AuthService extends BaseService {
     let user: UserAdmin | undefined = await this.userRepository.getByOAuthId(profile.sub);
 
     // FL-158: an email is used to find or create an account only when the provider verified it
-    const emailVerified = profile.email_verified === true;
+    const emailProblem = emailVerificationProblem(profile);
 
     // link by email
     if (!user && normalizedEmail) {
       const emailUser = await this.userRepository.getByEmail(normalizedEmail);
       if (emailUser) {
-        if (!emailVerified) {
+        if (emailProblem) {
           this.logger.warn(`OAuth login refused: ${normalizedEmail} is not verified by the provider`);
-          throw new BadRequestException(UNVERIFIED_EMAIL_MESSAGE);
+          throw new BadRequestException(emailProblem);
         }
         if (emailUser.oauthId) {
           this.logger.debug('OAuth login conflict: email already linked to different account');
@@ -515,9 +531,9 @@ export class AuthService extends BaseService {
         throw new BadRequestException('OAuth profile does not have an email address');
       }
 
-      if (!emailVerified) {
+      if (emailProblem) {
         this.logger.warn(`OAuth registration refused: ${normalizedEmail} is not verified by the provider`);
-        throw new BadRequestException(UNVERIFIED_EMAIL_MESSAGE);
+        throw new BadRequestException(emailProblem);
       }
 
       this.logger.log(`Registering new user: ${profile.sub}/${normalizedEmail}`);

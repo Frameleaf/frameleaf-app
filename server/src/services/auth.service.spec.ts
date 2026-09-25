@@ -5,7 +5,7 @@ import { SALT_ROUNDS } from 'src/constants.js';
 import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
 import { AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
-import { AuthService } from 'src/services/auth.service.js';
+import { AuthService, emailVerificationProblem } from 'src/services/auth.service.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { OAuthProfileFactory } from 'test/factories/oauth-profile.factory.js';
@@ -1151,7 +1151,7 @@ describe(AuthService.name, () => {
       expect(mocks.session.create).not.toHaveBeenCalled();
     });
 
-    it('refuses to register an account with an unverified email (FL-158)', async () => {
+    it('refuses to register an account when the provider omits email_verified, saying how to fix it (FL-158)', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithAutoRegister);
       mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({
         profile: OAuthProfileFactory.create({ email_verified: undefined }),
@@ -1164,8 +1164,15 @@ describe(AuthService.name, () => {
           {},
           loginDetails,
         ),
-      ).rejects.toThrow('has not been verified');
+      ).rejects.toThrow('map the email_verified claim');
       expect(mocks.user.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts email_verified sent as the string "true" (FL-158)', () => {
+      expect(emailVerificationProblem({ email_verified: 'true' })).toBeNull();
+      expect(emailVerificationProblem({ email_verified: true })).toBeNull();
+      expect(emailVerificationProblem({ email_verified: 'false' })).toContain('has not been verified');
+      expect(emailVerificationProblem({})).toContain('map the email_verified claim');
     });
 
     it('should throw an error if OAuth is not enabled', async () => {
