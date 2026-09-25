@@ -1,5 +1,5 @@
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { AssetFileType, JobName, JobStatus, UserMetadataKey } from 'src/enum.js';
+import { AssetFileType, JobName, JobStatus, NotificationLevel, NotificationType, UserMetadataKey } from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
@@ -59,6 +59,60 @@ describe(NotificationService.name, () => {
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  describe('notifyAdmins (FL-155)', () => {
+    const notice = {
+      type: NotificationType.SystemMessage,
+      level: NotificationLevel.Warning,
+      title: 'This server cannot reach Frameleaf Cloud',
+      description: 'The last 3 check-ins failed.',
+      dedupeKey: 'frameleaf-cloud:heartbeat-failing',
+      dedupeDays: 1,
+    };
+
+    it('notifies every administrator and tags the notice with its dedupe key', async () => {
+      const [first, second] = [UserFactory.create({ isAdmin: true }), UserFactory.create({ isAdmin: true })];
+      mocks.user.getAdmins.mockResolvedValue([first, second] as never);
+      mocks.notification.findRecentByDedupeKey.mockResolvedValue(null);
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+      await expect(sut.notifyAdmins(notice)).resolves.toBe(2);
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: first.id, data: { dedupeKey: notice.dedupeKey } }),
+      );
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', second.id, expect.anything());
+    });
+
+    it('skips an administrator who already got the same notice within the window', async () => {
+      const [first, second] = [UserFactory.create({ isAdmin: true }), UserFactory.create({ isAdmin: true })];
+      mocks.user.getAdmins.mockResolvedValue([first, second] as never);
+      mocks.notification.findRecentByDedupeKey.mockImplementation((userId) =>
+        Promise.resolve(userId === first.id ? { id: 'n1' } : null),
+      );
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+      await expect(sut.notifyAdmins(notice)).resolves.toBe(1);
+      expect(mocks.notification.create).toHaveBeenCalledTimes(1);
+      const since = mocks.notification.findRecentByDedupeKey.mock.calls[0][2];
+      expect(Date.now() - since.getTime()).toBeGreaterThan(23 * 60 * 60 * 1000);
+      expect(Date.now() - since.getTime()).toBeLessThan(25 * 60 * 60 * 1000);
+    });
+
+    it('caps the window at 30 days and always sends a notice without a key', async () => {
+      mocks.user.getAdmins.mockResolvedValue([UserFactory.create({ isAdmin: true })] as never);
+      mocks.notification.findRecentByDedupeKey.mockResolvedValue(null);
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+      await sut.notifyAdmins({ ...notice, dedupeDays: 365 });
+      const since = mocks.notification.findRecentByDedupeKey.mock.calls[0][2];
+      expect(Date.now() - since.getTime()).toBeLessThanOrEqual(30 * 24 * 60 * 60 * 1000 + 1000);
+
+      mocks.notification.findRecentByDedupeKey.mockClear();
+      await sut.notifyAdmins({ ...notice, dedupeKey: undefined });
+      expect(mocks.notification.findRecentByDedupeKey).not.toHaveBeenCalled();
+      expect(mocks.notification.create).toHaveBeenLastCalledWith(expect.objectContaining({ data: null }));
+    });
   });
 
   describe('onConfigUpdate', () => {

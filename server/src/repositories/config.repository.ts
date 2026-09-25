@@ -22,6 +22,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
+import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
 
@@ -134,6 +135,12 @@ export interface EnvData {
   frameleafCloud: {
     url: string | null;
     identityDir: string | null;
+    /** FL-155: single-use headless link token, or null. */
+    linkToken: string | null;
+    /** FL-154: the edge worker's direct listener. */
+    edge: { port: number; bind: string };
+    /** FL-154: networks treated as home besides RFC 1918 and ULA. */
+    trustedLanCidrs: string[];
   };
 
   noColor: boolean;
@@ -351,6 +358,9 @@ const getEnv = (): EnvData => {
     frameleafCloud: {
       url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,
       identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
+      linkToken: dto.FRAMELEAF_LINK_TOKEN ?? null,
+      edge: { port: dto.FRAMELEAF_EDGE_PORT ?? 2443, bind: dto.FRAMELEAF_EDGE_BIND ?? '0.0.0.0' },
+      trustedLanCidrs: parseTrustedLanCidrs(dto.FRAMELEAF_TRUSTED_LAN_CIDRS),
     },
 
     storage: {

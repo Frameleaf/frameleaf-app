@@ -99,6 +99,19 @@ export const EnvSchema = z
     FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).optional(),
     /** FL-159: where this server's Ed25519 identity key lives (default `<media>/frameleaf/identity`). */
     FRAMELEAF_IDENTITY_DIR: z.string().optional(),
+    /**
+     * FL-154/FL-155: a single-use link token (`fll_…`, valid at most one hour) that links this server
+     * headlessly at boot. A token that already linked, or failed, is never sent again.
+     */
+    FRAMELEAF_LINK_TOKEN: z
+      .string()
+      .regex(/^fll_[A-Za-z0-9_-]{8,512}$/)
+      .optional(),
+    /** FL-154: the edge worker's direct HTTPS port (default 2443) and bind address. */
+    FRAMELEAF_EDGE_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
+    FRAMELEAF_EDGE_BIND: z.string().min(1).optional(),
+    /** FL-154: extra networks treated as home (comma-separated CIDRs) besides RFC 1918 and ULA. */
+    FRAMELEAF_TRUSTED_LAN_CIDRS: z.string().optional(),
     /** FL-135: the Android store listing and this installation's help destinations (https). */
     FRAMELEAF_ANDROID_STORE_URL: z.string().optional(),
     FRAMELEAF_DOCS_URL: z.string().optional(),
