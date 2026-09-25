@@ -1004,6 +1004,12 @@ export type PhysicalDeduplicationCopyDto = {
     retainedAssetId: string | null;
     sizeInBytes: number;
     "type": AssetTypeEnum;
+    /** Video length in milliseconds, when known */
+    duration: number | null;
+    /** Height in pixels, when known */
+    height: number | null;
+    /** Width in pixels, when known */
+    width: number | null;
 };
 export type PhysicalDeduplicationRetainedDto = {
     /** Asset that keeps the original file */
@@ -1012,6 +1018,12 @@ export type PhysicalDeduplicationRetainedDto = {
     canView: boolean;
     /** Hex-encoded SHA-1 checksum of the original file */
     checksum: string;
+    /** Video length in milliseconds, when known */
+    duration: number | null;
+    /** Whether the retained original was on disk when the preview ran; copies of a missing one are skipped */
+    fileAvailable: boolean;
+    /** Height in pixels, when known */
+    height: number | null;
     /** Copies this retained original would share that are Locked media of another account; counted, never named (FL-73) */
     hiddenCopies: number;
     originalFileName: string;
@@ -1027,6 +1039,8 @@ export type PhysicalDeduplicationRetainedDto = {
     referencesBefore: number;
     sizeInBytes: number;
     "type": AssetTypeEnum;
+    /** Width in pixels, when known */
+    width: number | null;
 };
 export type PhysicalDeduplicationPlanDto = {
     /** Copies listed with a share decision: the most this plan can apply. Copies past the list limit wait for a later plan */
@@ -1034,6 +1048,7 @@ export type PhysicalDeduplicationPlanDto = {
     copies: PhysicalDeduplicationCopyDto[];
     /** True when more copies were reviewed than the stored preview keeps; totals still cover all of them */
     copiesTruncated: boolean;
+    /** Measured: bytes actually removed from disk by applying this plan so far */
     deletedBytes: number;
     eligibleAssets: number;
     /** Digest over the plan evidence; changes with every preview (FL-73) */
@@ -1041,6 +1056,8 @@ export type PhysicalDeduplicationPlanDto = {
     /** Copies left out of the rows because they are Locked media of another account; counted, never named */
     hiddenCopies: number;
     linkedAssets: number;
+    /** Logical asset bytes (FL-73): the sizes of every asset that references a shared original once this plan is applied, counted once per asset */
+    logicalBytes: number;
     /** Account whose originals are retained by this plan */
     masterUserId: string;
     /** Display name of the retained account */
@@ -1050,11 +1067,14 @@ export type PhysicalDeduplicationPlanDto = {
     planId: string;
     /** When the plan was produced */
     ranAt: string;
+    /** Estimate: bytes of the copies to share, with their generated files, that applying would free */
     reclaimableBytes: number;
     retained: PhysicalDeduplicationRetainedDto[];
     /** When set, only copies owned by this account were reviewed; null means every account */
     scopeUserId: string | null;
     scopeUserName: string | null;
+    /** Physical shared-original bytes (FL-73): the retained originals those assets share, counted once per file */
+    sharedOriginalBytes: number;
     skippedExternal: number;
     skippedMissingMaster: number;
 };
@@ -1071,6 +1091,48 @@ export type PhysicalDeduplicationPreviewResponseDto = {
     running: boolean;
     /** The saved `physicalDeduplication.masterUserId` */
     savedMasterUserId: string | null;
+};
+export type PhysicalDeduplicationRestoreRequestDto = {
+    /** A copy of the applied plan whose own file is still on disk */
+    assetId: string;
+};
+export type PhysicalDeduplicationVerificationItemDto = {
+    assetId: string;
+    /** Whether the requesting administrator may view this asset and its thumbnail */
+    canView: boolean;
+    copyFile: PhysicalDeduplicationCopyFile;
+    /** Whether the asset still resolves to the retained original */
+    linked: boolean;
+    originalFileName: string;
+    ownerName: string;
+    /** Whether the asset can go back to its own file: it is linked and that file still holds the reviewed bytes */
+    restorable: boolean;
+    /** Whether the asset is back on its own former file */
+    restored: boolean;
+    retainedFile: PhysicalDeduplicationRetainedFile;
+    "type": AssetTypeEnum;
+};
+export type PhysicalDeduplicationVerificationDto = {
+    /** Copies the plan applied, listed or not */
+    copies: number;
+    /** Copies that are Locked media of another account; counted, never named */
+    hiddenCopies: number;
+    items: PhysicalDeduplicationVerificationItemDto[];
+    /** Copies that no longer resolve to the retained original */
+    notLinked: number;
+    operationId: string;
+    planId: string;
+    /** Copies whose own file is gone: that cannot be undone */
+    removed: number;
+    restorable: number;
+    restored: number;
+    retainedChanged: number;
+    retainedIntact: number;
+    retainedMissing: number;
+    retainedOriginals: number;
+    /** Copies that resolve to a retained original still holding the reviewed bytes */
+    verified: number;
+    verifiedAt: string;
 };
 export type PhysicalDeduplicationPreviewRequestDto = {
     /** Account to retain originals in for this preview; defaults to the saved master account */
@@ -9715,6 +9777,36 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
     })));
 }
 /**
+ * Restore a copy of an applied physical deduplication plan
+ */
+export function restorePhysicalDeduplicationCopy({ id, physicalDeduplicationRestoreRequestDto }: {
+    id: string;
+    physicalDeduplicationRestoreRequestDto: PhysicalDeduplicationRestoreRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhysicalDeduplicationVerificationDto;
+    }>(`/admin/physical-deduplication/applies/${encodeURIComponent(id)}/restore`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: physicalDeduplicationRestoreRequestDto
+    })));
+}
+/**
+ * Verify an applied physical deduplication plan
+ */
+export function verifyPhysicalDeduplicationApply({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhysicalDeduplicationVerificationDto;
+    }>(`/admin/physical-deduplication/applies/${encodeURIComponent(id)}/verify`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Apply a reviewed physical deduplication plan
  */
 export function applyPhysicalDeduplicationPlan({ physicalDeduplicationApplyRequestDto }: {
@@ -18114,6 +18206,16 @@ export enum AssetTypeEnum {
 export enum PhysicalDeduplicationPlanMode {
     DryRun = "dry-run",
     Apply = "apply"
+}
+export enum PhysicalDeduplicationCopyFile {
+    Removed = "removed",
+    Present = "present",
+    Changed = "changed"
+}
+export enum PhysicalDeduplicationRetainedFile {
+    Intact = "intact",
+    Missing = "missing",
+    Changed = "changed"
 }
 export enum RenderWorkerStatus {
     Active = "active",
