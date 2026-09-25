@@ -1,3 +1,5 @@
+import { pruneExpiredOAuthRequests } from '$lib/frameleaf/auth-session-preference';
+
 /**
  * FL-80: private state this browser keeps for the signed-in account is cleared at sign-out, so the
  * next person to use the browser starts clean. Every `frameleaf…` key in local and session storage
@@ -5,7 +7,8 @@
  * library and viewer sessions, iCloud and enrichment drafts, the pending lock), except:
  *
  * - the sign-in choices `auth-session-preference.ts` manages (`frameleaf.auth.*`), which a forced
- *   password change keeps for one sign-in and which never name any content; and
+ *   password change keeps for one sign-in and which never name any content; of its OAuth request
+ *   records only live ones (under 15 minutes old) stay, and expired ones are removed; and
  * - this device's display preferences, which describe the screen rather than the account.
  *
  * Keys a future feature adds under the `frameleaf` prefix are private by default.
@@ -47,6 +50,7 @@ const storageOrUndefined = (read: () => Storage) => {
 };
 
 export const clearPrivateBrowserState = () => {
+  pruneExpiredOAuthRequests();
   for (const store of [storageOrUndefined(() => localStorage), storageOrUndefined(() => sessionStorage)]) {
     try {
       clearStore(store);

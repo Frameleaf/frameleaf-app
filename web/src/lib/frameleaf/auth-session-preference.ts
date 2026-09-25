@@ -121,12 +121,33 @@ const pruneOAuthRequests = (store: Storage, now: number) => {
     }
     try {
       const record = JSON.parse(store.getItem(key) ?? '') as Partial<OAuthRequest>;
-      if (typeof record.expiresAt !== 'number' || record.expiresAt <= now) {
+      // Expired, or dated further ahead than a live record can be (older than 15 minutes is expired).
+      if (
+        typeof record.expiresAt !== 'number' ||
+        record.expiresAt <= now ||
+        record.expiresAt > now + OAUTH_REQUEST_TTL_MS
+      ) {
         store.removeItem(key);
       }
     } catch {
       store.removeItem(key);
     }
+  }
+};
+
+/**
+ * FL-80: sign-out removes expired sign-in records. A live one (under 15 minutes old) stays, because
+ * it belongs to a sign-in still in progress in another tab.
+ */
+export const pruneExpiredOAuthRequests = (now = Date.now()) => {
+  const store = local();
+  if (!store) {
+    return;
+  }
+  try {
+    pruneOAuthRequests(store, now);
+  } catch {
+    // Blocked storage must never stop a sign-out.
   }
 };
 

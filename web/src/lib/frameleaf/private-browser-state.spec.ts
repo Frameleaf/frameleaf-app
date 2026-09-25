@@ -27,4 +27,29 @@ describe('clearPrivateBrowserState (FL-80)', () => {
     expect(isPrivateBrowserKey('frameleaf.rail.closedSections')).toBe(false);
     expect(isPrivateBrowserKey('immich-ui-theme')).toBe(false);
   });
+
+  it('removes expired sign-in records and keeps a live one', () => {
+    const now = Date.now();
+    localStorage.setItem(
+      'frameleaf.auth.oauthRequest.expired',
+      JSON.stringify({ rememberMe: true, continueUrl: null, expiresAt: now - 1 }),
+    );
+    localStorage.setItem('frameleaf.auth.oauthRequest.damaged', 'not json');
+    localStorage.setItem(
+      'frameleaf.auth.oauthRequest.future',
+      JSON.stringify({ rememberMe: true, continueUrl: null, expiresAt: now + 60 * 60 * 1000 }),
+    );
+    localStorage.setItem(
+      'frameleaf.auth.oauthRequest.live',
+      JSON.stringify({ rememberMe: false, continueUrl: null, expiresAt: now + 60_000 }),
+    );
+
+    clearPrivateBrowserState();
+
+    expect(localStorage.getItem('frameleaf.auth.oauthRequest.expired')).toBeNull();
+    expect(localStorage.getItem('frameleaf.auth.oauthRequest.damaged')).toBeNull();
+    expect(localStorage.getItem('frameleaf.auth.oauthRequest.future')).toBeNull();
+    expect(localStorage.getItem('frameleaf.auth.oauthRequest.live')).not.toBeNull();
+    localStorage.removeItem('frameleaf.auth.oauthRequest.live');
+  });
 });
