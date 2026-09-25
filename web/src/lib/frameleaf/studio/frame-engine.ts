@@ -195,11 +195,12 @@ type ServiceCall = (services: StudioHostServices, args: unknown[]) => Promise<un
 const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
   submitCommands: (services, [envelopes]) =>
     services.submitCommands(Array.isArray(envelopes) ? (envelopes as StudioCommandEnvelope[]) : []),
-  stageDraft: (services, [graph, commandIds]) =>
+  stageDraft: (services, [graph, commandIds, baseRevision]) =>
     services.stageDraft
       ? services.stageDraft(
           graph,
           Array.isArray(commandIds) ? commandIds.filter((id): id is string => typeof id === 'string') : [],
+          ...(Number.isSafeInteger(baseRevision) && (baseRevision as number) >= 0 ? [baseRevision as number] : []),
         )
       : Promise.resolve({ status: 'rejected', reason: 'forbidden' } as const),
   reloadProject: (services) => services.reloadProject(),

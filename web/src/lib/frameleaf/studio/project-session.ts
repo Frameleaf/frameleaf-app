@@ -261,7 +261,16 @@ export interface StudioProjectSession {
    * engine applied (FL-92); they travel with the save, and the server checks them and counts the
    * revision summary from them.
    */
-  stage(graph: unknown, commands?: readonly string[], envelopes?: readonly StudioCommandEnvelope[]): void;
+  /**
+   * `baseRevision` is the revision the edited graph was loaded from, when the caller knows it (the
+   * editor frame reports it). Without it the draft is taken to be built on what the session shows.
+   */
+  stage(
+    graph: unknown,
+    commands?: readonly string[],
+    envelopes?: readonly StudioCommandEnvelope[],
+    baseRevision?: number,
+  ): void;
   /** Send the staged draft now, if there is one. */
   flush(): Promise<void>;
   /** Discard the draft and re-read the project. Resolves a `conflict` by accepting the head. */
@@ -806,7 +815,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       await load(generation, { keepDraft: false });
     },
 
-    stage(graph, commands = [], envelopes = []) {
+    stage(graph, commands = [], envelopes = [], baseRevision) {
       // Edits made after the lease was lost are kept with the draft until the person reacquires,
       // takes over or saves a copy; they are never dropped (FL-89).
       const keepsDraft = (state.status === 'lease-lost' || state.status === 'conflict') && state.access === 'owner';
@@ -831,8 +840,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         unchecked: (base?.unchecked ?? 0) + overflow,
         // A different document is a different request; the key is assigned when it is sent.
         requestKey: null,
-        // Later edits share the first unsaved edit's base, even while that one is in flight.
-        baseRevision: draft?.baseRevision ?? state.project.revision,
+        // Later edits share the first unsaved edit's base, even while that one is in flight. A graph
+        // loaded from an older revision keeps that older base, so it can never claim a newer head
+        // (ponytail: an edit racing the editor's own just-saved revision is a false conflict, not a loss).
+        baseRevision: Math.min(draft?.baseRevision ?? state.project.revision, baseRevision ?? Infinity),
       };
       if (keepsDraft) {
         emit({ project: { ...state.project, graph } });

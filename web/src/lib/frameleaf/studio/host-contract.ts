@@ -292,10 +292,11 @@ export interface StudioHostServices {
   /**
    * Hand the host the editor's complete graph after its own edits (FL-89 autosave, FL-92's
    * "replace graph" draft primitive). `commandIds` names the editor actions the draft contains,
-   * for the revision summary. Optional: a host without project storage leaves it out and the
-   * editor stays read-only.
+   * for the revision summary. `baseRevision` is the project revision the editor's graph was loaded
+   * from, so a draft from an editor still showing an older revision is never judged against a newer
+   * head. Optional: a host without project storage leaves it out and the editor stays read-only.
    */
-  stageDraft?(graph: unknown, commandIds: readonly string[]): Promise<StudioDraftResult>;
+  stageDraft?(graph: unknown, commandIds: readonly string[], baseRevision?: number): Promise<StudioDraftResult>;
   /** Re-read the project, for reconciling after a `stale-revision` rejection. */
   reloadProject(): Promise<StudioProjectHandle>;
   /** Resolve one asset the engine knows only by id. */

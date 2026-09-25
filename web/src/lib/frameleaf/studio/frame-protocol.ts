@@ -45,7 +45,7 @@ export interface StudioFrameManifest {
 /** Services the frame may call. Each maps one-to-one onto `StudioHostServices`. */
 export interface StudioFrameServiceCalls {
   submitCommands: { args: [envelopes: StudioCommandEnvelope[]]; result: StudioCommandResult[] };
-  stageDraft: { args: [graph: unknown, commandIds: string[]]; result: StudioDraftResult };
+  stageDraft: { args: [graph: unknown, commandIds: string[], baseRevision?: number]; result: StudioDraftResult };
   reloadProject: { args: []; result: StudioProjectHandle };
   saveWorkspace: { args: [layout: unknown]; result: StudioWorkspaceSaveResult };
 }

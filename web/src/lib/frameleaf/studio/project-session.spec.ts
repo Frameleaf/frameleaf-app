@@ -565,6 +565,40 @@ describe('studio project session', () => {
       expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 3 }));
     });
 
+    it('never saves a discarded draft after Reload, a refused lease, an edit and a take over', async () => {
+      api.save.mockRejectedValueOnce(httpError(409, { reason: 'stale-revision', currentRevision: 4 }));
+      const session = create();
+      await session.open();
+      session.stage({ mine: true }, ['clip.add']);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(last()).toMatchObject({ status: 'conflict', hasDraft: true });
+
+      // Reload reads B's revision 4, but B still holds the lease.
+      api.get.mockResolvedValue(detail({ revision: 4, envelope: { ...detail().envelope!, graph: { theirs: true } } }));
+      api.acquireLease.mockRejectedValueOnce(
+        httpError(409, { reason: 'lease-held', lease: lease({ heldByYou: false, heldByAnother: true }) }),
+      );
+      await session.reload();
+      expect(last()).toMatchObject({ status: 'lease-lost', hasDraft: false, project: { revision: 4 } });
+
+      // An editor that still shows the discarded draft reports the revision it was loaded from.
+      session.stage({ mine: 2 }, ['clip.move'], [], 3);
+      expect(await session.takeOver()).toBe(true);
+      expect(last()).toMatchObject({ status: 'conflict', conflict: { currentRevision: 4 }, hasDraft: true });
+      expect(api.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends an edit from an editor still showing an older revision against that revision', async () => {
+      api.save.mockResolvedValueOnce(saved(5));
+      api.get.mockResolvedValue(detail({ revision: 4 }));
+      const session = create();
+      await session.open();
+
+      session.stage({ stale: true }, ['clip.add'], [], 3);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 3 }));
+    });
+
     it('keeps the conflict when the lease lapses and is reacquired over a moved head', async () => {
       api.save.mockRejectedValueOnce(httpError(409, { reason: 'stale-revision', currentRevision: 4 }));
       const session = create();

@@ -30,9 +30,12 @@ describe('editor drafts reaching the host (FL-88, FL-89)', () => {
   });
 
   it('holds the editor’s edits while a conflict or a lost lease waits for the person', () => {
-    expect(studioDraftHeld('conflict')).toBe(true);
-    expect(studioDraftHeld('lease-lost')).toBe(true);
-    expect(studioDraftHeld('saved')).toBe(false);
-    expect(studioDraftHeld(undefined)).toBe(false);
+    expect(studioDraftHeld('conflict', true)).toBe(true);
+    expect(studioDraftHeld('lease-lost', true)).toBe(true);
+    expect(studioDraftHeld('saved', true)).toBe(false);
+    expect(studioDraftHeld(undefined, false)).toBe(false);
+    // After Reload there is no draft to hold, so the editor must show the head it is judged against.
+    expect(studioDraftHeld('lease-lost', false)).toBe(false);
+    expect(studioDraftHeld('conflict', false)).toBe(false);
   });
 });

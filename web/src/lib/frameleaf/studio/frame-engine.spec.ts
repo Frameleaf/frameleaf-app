@@ -192,6 +192,18 @@ describe('studio editor frame (FL-88)', () => {
     await tick();
 
     expect(host.stageDraft).toHaveBeenCalledWith({ id: 'g', edited: true }, ['editor.save']);
+
+    // The revision the editor's graph came from travels with the draft; anything else is dropped.
+    for (const [callId, base] of [
+      [8, 3],
+      [9, -1],
+      [10, 'x'],
+    ] as const) {
+      port.postMessage({ type: 'service', callId, name: 'stageDraft', args: [{ id: 'g' }, ['editor.save'], base] });
+    }
+    await tick();
+    expect(host.stageDraft).toHaveBeenCalledWith({ id: 'g' }, ['editor.save'], 3);
+    expect(host.stageDraft).toHaveBeenLastCalledWith({ id: 'g' }, ['editor.save']);
     expect(results).toContainEqual({ type: 'service-result', callId: 7, ok: true, value: { status: 'staged' } });
     expect(host.setDirty).toHaveBeenCalledWith(true);
     // The editor's Export opens the host's export dialog; nothing renders inside the editor.
