@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 101,
+      "partial": 99,
       "missing": 5,
-      "fixed": 40,
+      "fixed": 42,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -1620,10 +1620,13 @@
       "requirementId": "action:viewer:open-full-viewer-close-back-escape-previous-next",
       "title": "Open full viewer; close/back/Escape; previous/next",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/frameleaf/ViewerTitle.svelte"],
+      "production": [
+        "web/src/lib/components/frameleaf/ViewerTitle.svelte",
+        "web/src/lib/components/frameleaf/ViewerFooter.svelte"
+      ],
       "status": "partial",
-      "gaps": ["V-5", "V-12"],
-      "followUp": "Close label; \"n of N\" position"
+      "gaps": ["V-5"],
+      "followUp": "Close label (\"n of N\" is in the footer, V-12 fixed in FL-35)"
     },
     {
       "requirementId": "action:viewer:open-info",
@@ -1647,10 +1650,13 @@
       "requirementId": "action:viewer:play-pause-seek-volume-fullscreen-for-video",
       "title": "Play/pause/seek/volume/fullscreen for video",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/VideoNativeViewer.svelte"],
-      "status": "partial",
+      "production": [
+        "web/src/lib/components/asset-viewer/VideoNativeViewer.svelte",
+        "web/src/lib/components/frameleaf/ViewerFooter.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["V-13"],
-      "followUp": "Viewer footer with fullscreen and source segment"
+      "followUp": "FL-35 September 24 viewer: the footer carries full screen and the source segment"
     },
     {
       "requirementId": "action:viewer:refresh-faces-for-this-asset",
@@ -1794,10 +1800,10 @@
       "requirementId": "action:viewer:toggle-original-video-versus-encoded-playback",
       "title": "Toggle original video versus encoded playback",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "production": ["web/src/lib/components/frameleaf/ViewerFooter.svelte"],
       "status": "partial",
-      "gaps": ["V-13", "V-11"],
-      "followUp": "Footer segment \"Play original / Play encoded\""
+      "gaps": ["V-11"],
+      "followUp": "Menu label drift (the footer segment \"Play original / Play encoded\" is in, V-13 fixed in FL-35)"
     },
     {
       "requirementId": "action:viewer:transcode-this-video",
@@ -1839,10 +1845,13 @@
       "requirementId": "action:viewer:zoom-in-out-fit-image-pan",
       "title": "Zoom in/out, fit, image pan",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/PhotoViewer.svelte"],
-      "status": "partial",
+      "production": [
+        "web/src/lib/components/asset-viewer/PhotoViewer.svelte",
+        "web/src/lib/components/frameleaf/ViewerFooter.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["V-6", "V-13", "V-14"],
-      "followUp": "Footer zoom Fit/% readout; zoom keys (fix-viewer)"
+      "followUp": "FL-35: footer Zoom out / Fit or N% of fit / Zoom in; zoom keys (fix-viewer); legacy buttons gone"
     }
   ],
   "routes": [
