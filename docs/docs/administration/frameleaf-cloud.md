@@ -52,7 +52,7 @@ Administrators receive a notification when the server is linked or unlinked, whe
 
 Once the server is linked, people can sign in with their Frameleaf account. It works alongside passwords and your own OpenID provider, whose settings it never reads or changes. Settings → Access & security → **Sign in with Frameleaf** shows whether it is available, this server's client ID and how many accounts are linked.
 
-- **Through remote access** a Frameleaf sign-in is always required, and it is the only way in: passwords stay on the home network. A visitor who turns out to be on the same network is offered this server's local address (`FRAMELEAF_LOCAL_URL`).
+- **Through remote access** the sign-in page offers only Sign in with Frameleaf, and a visitor who turns out to be on the same network is offered this server's local address (`FRAMELEAF_LOCAL_URL`). The server does not yet refuse passwords or other sessions that arrive through remote access; that enforcement comes with remote access itself.
 - **At home** people keep signing in as they do now. Turn on **Show "Sign in with Frameleaf" at home** to add the button to the local sign-in page too; you can change its text on the same page.
 - Each person links their own Frameleaf account under Your preferences → **Frameleaf account**, and can unlink it there, which ends their other Frameleaf sessions.
 - A person Frameleaf Cloud authorizes for this server gets an account here on first sign-in, as an administrator or a member as Frameleaf Cloud says. A Frameleaf account is linked to an existing account here only by a verified email address; the same rule now applies to your own OpenID provider.
