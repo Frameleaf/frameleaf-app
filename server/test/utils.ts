@@ -60,7 +60,10 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
-import { RunPodRepository } from 'src/repositories/runpod.repository.js';
+import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -282,7 +285,10 @@ export type ServiceOverrides = {
   plugin: PluginRepository;
   process: ProcessRepository;
   renderWorker: RenderWorkerRepository;
-  runPod: RunPodRepository;
+  frameleafCloud: FrameleafCloudRepository;
+  frameleafCloudMl: FrameleafCloudMlRepository;
+  frameleafConsent: FrameleafConsentRepository;
+  instanceIdentity: InstanceIdentityRepository;
   search: SearchRepository;
   serverInfo: ServerInfoRepository;
   smartAlbum: SmartAlbumRepository;
@@ -378,7 +384,10 @@ export const getMocks = () => {
     plugin: automock(PluginRepository, { strict: true, args: [databaseMock, loggerMock] }),
     process: automock(ProcessRepository),
     renderWorker: automock(RenderWorkerRepository, { strict: false }),
-    runPod: automock(RunPodRepository, { args: [loggerMock], strict: false }),
+    frameleafCloud: automock(FrameleafCloudRepository, { args: [loggerMock], strict: false }),
+    frameleafCloudMl: automock(FrameleafCloudMlRepository, { strict: false }),
+    frameleafConsent: automock(FrameleafConsentRepository, { strict: false }),
+    instanceIdentity: automock(InstanceIdentityRepository, { strict: false }),
     search: automock(SearchRepository, { strict: false }),
     // eslint-disable-next-line no-sparse-arrays
     serverInfo: automock(ServerInfoRepository, { args: [, loggerMock], strict: false }),
@@ -430,7 +439,7 @@ export const getMocks = () => {
 
   // library workloads are routed to a healthy local destination unless a test says otherwise
   mocks.mlDestination.getRoute.mockImplementation((workload) =>
-    Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() }),
+    Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
   );
   mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
   // no route names a restoration endpoint for library work unless a test says otherwise (FL-72)
@@ -439,7 +448,6 @@ export const getMocks = () => {
   mocks.mlDestination.recordProbe.mockResolvedValue();
   mocks.mlDestination.recordAccounting.mockResolvedValue();
   mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
-  mocks.machineLearning.getRunPodEndpoint.mockReturnValue(null);
   // no owner hides their locations from an album's owner unless a test says otherwise (FL-54)
   mocks.partner.getLocationHiddenOwnerIdsForAlbums.mockResolvedValue([]);
   mocks.partner.getLocationHiddenThroughAlbums.mockResolvedValue(new Set());
@@ -496,7 +504,10 @@ export const newTestService = <T extends BaseService>(
     overrides.plugin || (mocks.plugin as As<PluginRepository>),
     overrides.process || (mocks.process as As<ProcessRepository>),
     overrides.renderWorker || (mocks.renderWorker as As<RenderWorkerRepository>),
-    overrides.runPod || (mocks.runPod as As<RunPodRepository>),
+    overrides.frameleafCloud || (mocks.frameleafCloud as As<FrameleafCloudRepository>),
+    overrides.frameleafCloudMl || (mocks.frameleafCloudMl as As<FrameleafCloudMlRepository>),
+    overrides.frameleafConsent || (mocks.frameleafConsent as As<FrameleafConsentRepository>),
+    overrides.instanceIdentity || (mocks.instanceIdentity as As<InstanceIdentityRepository>),
     overrides.search || (mocks.search as As<SearchRepository>),
     overrides.serverInfo || (mocks.serverInfo as As<ServerInfoRepository>),
     overrides.smartAlbum || (mocks.smartAlbum as As<SmartAlbumRepository>),

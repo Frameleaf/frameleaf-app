@@ -636,14 +636,14 @@ describe(MediaOperationService.name, () => {
       const failed = operationStub({
         kind: MediaOperationKind.Restoration,
         status: MediaOperationStatus.Failed,
-        destination: MediaOperationDestination.RunPod,
+        destination: MediaOperationDestination.FrameleafCloud,
       });
       vi.mocked(repository.getForOwner).mockResolvedValue(failed);
       vi.mocked(repository.create).mockResolvedValue(
         operationStub({
           id: '0195e2a0-0000-7000-8000-000000000002',
           status: MediaOperationStatus.Queued,
-          destination: MediaOperationDestination.RunPod,
+          destination: MediaOperationDestination.FrameleafCloud,
           retryOfId: failed.id,
           progress: 0,
         }),
@@ -654,7 +654,7 @@ describe(MediaOperationService.name, () => {
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           retryOfId: failed.id,
-          destination: MediaOperationDestination.RunPod,
+          destination: MediaOperationDestination.FrameleafCloud,
           snapshot: failed.snapshot,
           resultAssetId: null,
         }),
@@ -1332,7 +1332,7 @@ describe(MediaOperationService.name, () => {
         {
           kind: MediaOperationKind.StudioExport,
           status: MediaOperationStatus.Rendering,
-          destination: MediaOperationDestination.RunPod,
+          destination: MediaOperationDestination.FrameleafCloud,
           count: 3,
           oldestQueuedAt: new Date('2026-09-22T09:00:00.000Z'),
         },

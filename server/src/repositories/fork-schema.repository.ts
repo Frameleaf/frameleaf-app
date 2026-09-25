@@ -101,17 +101,17 @@ export class ForkSchemaRepository {
     }
     const result = await sql<{ key: string; value: unknown }>`
       SELECT key, value FROM immich_fork.config
-      WHERE key IN ('machineLearning.runpod', 'smartAlbums')
+      WHERE key IN ('frameleafCloud', 'smartAlbums')
     `.execute(this.db);
     const values = new Map(result.rows.map(({ key, value }) => [key, value]));
-    const runpod = values.get('machineLearning.runpod');
+    const frameleafCloud = values.get('frameleafCloud');
     const smartAlbums = values.get('smartAlbums');
-    if (!runpod || !smartAlbums) {
+    if (!frameleafCloud || !smartAlbums) {
       throw new Error('Missing authoritative fork configuration sidecar');
     }
     return {
       ...config,
-      machineLearning: { ...config.machineLearning, runpod: runpod as SystemConfig['machineLearning']['runpod'] },
+      frameleafCloud: frameleafCloud as SystemConfig['frameleafCloud'],
       smartAlbums: smartAlbums as SystemConfig['smartAlbums'],
     };
   }
@@ -123,7 +123,7 @@ export class ForkSchemaRepository {
     }
     await this.db.transaction().execute(async (trx) => {
       for (const [key, value] of [
-        ['machineLearning.runpod', config.machineLearning.runpod],
+        ['frameleafCloud', config.frameleafCloud],
         ['smartAlbums', config.smartAlbums],
       ] as const) {
         await sql`INSERT INTO immich_fork.config (key, value) VALUES (${key}, ${value}::jsonb)
@@ -146,7 +146,7 @@ export class ForkSchemaRepository {
       `.execute(trx);
       if (isForkWriteEnabled(state.rows[0].phase)) {
         for (const [key, value] of [
-          ['machineLearning.runpod', config.machineLearning.runpod],
+          ['frameleafCloud', config.frameleafCloud],
           ['smartAlbums', config.smartAlbums],
         ] as const) {
           await sql`INSERT INTO immich_fork.config (key, value) VALUES (${key}, ${value}::jsonb)

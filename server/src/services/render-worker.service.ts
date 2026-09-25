@@ -532,6 +532,9 @@ export class RenderWorkerService {
       gpuMemoryBytes: gpuMemoryBytes === null ? null : String(gpuMemoryBytes),
       engineDigest: dto.engineDigest,
       conformanceReportedAt: reportedAt,
+      // FL-42: what this session may render is what its conformance check verified, nothing more.
+      codecs: dto.codecs ?? [],
+      colorPrecision: dto.colorPrecision ?? null,
       expiresAt,
     });
     await this.repository.markAdmitted(worker.id, reportedAt);
@@ -543,6 +546,7 @@ export class RenderWorkerService {
         conformanceReportedAt: dto.conformanceReportedAt,
         gpuMemoryBytes: gpuMemoryBytes === null ? null : String(gpuMemoryBytes),
         codecs: dto.codecs ?? [],
+        colorPrecision: dto.colorPrecision ?? null,
         expiresAt: expiresAt.toISOString(),
       },
     });

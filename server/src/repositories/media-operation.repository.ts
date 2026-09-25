@@ -1108,7 +1108,7 @@ export class MediaOperationRepository {
   /**
    * Cancelled or failed jobs on a remote destination whose cleanup has not been confirmed.
    *
-   * These survive owner dismissal on purpose: a RunPod job nobody is watching still costs money
+   * These survive owner dismissal on purpose: a cloud job nobody is watching still costs money
    * and still holds data, so the record is kept until the remote says it is gone.
    */
   getUnreleasedRemoteOperations(limit: number): Promise<MediaOperation[]> {
@@ -1480,7 +1480,7 @@ export class MediaOperationRepository {
    * Counts for the administrator's operational view.
    *
    * Grouped by kind, status and destination and nothing else. No owner, no label, no asset, no
-   * path: an administrator can see that eleven renders are queued on RunPod without learning
+   * path: an administrator can see that eleven renders are queued on Frameleaf Cloud without learning
    * whose media they are.
    */
   async getAggregates(): Promise<MediaOperationAggregateRow[]> {

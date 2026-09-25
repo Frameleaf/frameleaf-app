@@ -98,6 +98,7 @@ export const envData: EnvData = {
   },
 
   appReleases: {},
+  frameleafCloud: { url: null, identityDir: null },
 
   noColor: false,
 };

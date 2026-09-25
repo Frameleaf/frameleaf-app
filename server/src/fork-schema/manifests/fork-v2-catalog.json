@@ -761,6 +761,38 @@
       "identity": "immich_fork.cutover_verification_run.verifiedCount"
     },
     {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.frameleaf_consent.acceptedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.frameleaf_consent.acceptedBy"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.frameleaf_consent.cloudRecordedVersion"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.frameleaf_consent.destinationId"
+    },
+    {
+      "definition": "jsonb|not null|'{}'::jsonb||",
+      "identity": "immich_fork.frameleaf_consent.features"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.frameleaf_consent.id"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.frameleaf_consent.revokedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_consent.version"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "immich_fork.icloud_album.albumId"
     },
@@ -3669,6 +3701,10 @@
       "identity": "public.ml_destination.consentAcknowledgedBy"
     },
     {
+      "definition": "text|nullable|||",
+      "identity": "public.ml_destination.consentVersion"
+    },
+    {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.ml_destination.createdAt"
     },
@@ -3687,6 +3723,10 @@
     {
       "definition": "timestamp with time zone|nullable|||",
       "identity": "public.ml_destination.lastProbeAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.ml_destination.lastProbeCloud"
     },
     {
       "definition": "jsonb|nullable|||",
@@ -3721,6 +3761,10 @@
       "identity": "public.ml_destination.name"
     },
     {
+      "definition": "text|nullable|||",
+      "identity": "public.ml_destination.region"
+    },
+    {
       "definition": "boolean|not null|false||",
       "identity": "public.ml_destination.sharesLibraryHardware"
     },
@@ -3745,12 +3789,20 @@
       "identity": "public.ml_workload_accounting.bytesSent"
     },
     {
+      "definition": "text|nullable|||",
+      "identity": "public.ml_workload_accounting.cloudJobId"
+    },
+    {
       "definition": "double precision|nullable|||",
       "identity": "public.ml_workload_accounting.costUsd"
     },
     {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.ml_workload_accounting.createdAt"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "public.ml_workload_accounting.credits"
     },
     {
       "definition": "uuid|nullable|||",
@@ -3795,6 +3847,10 @@
     {
       "definition": "uuid|not null|||",
       "identity": "public.ml_workload_route.destinationId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.ml_workload_route.modelId"
     },
     {
       "definition": "timestamp with time zone|not null|now()||",
@@ -4707,6 +4763,14 @@
     {
       "definition": "uuid|nullable|||",
       "identity": "public.render_worker_limit.userId"
+    },
+    {
+      "definition": "character varying[]|nullable|||",
+      "identity": "public.render_worker_session.codecs"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.render_worker_session.colorPrecision"
     },
     {
       "definition": "timestamp with time zone|not null|||",
@@ -6783,6 +6847,18 @@
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_verifiedCount_check"
     },
     {
+      "definition": "CHECK (jsonb_typeof(features) = 'object'::text)",
+      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_features_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_pkey"
+    },
+    {
+      "definition": "CHECK (length(version) >= 1 AND length(version) <= 64)",
+      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_version_check"
+    },
+    {
       "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
       "identity": "immich_fork.icloud_album.icloud_album_connectionId_fkey"
     },
@@ -7627,7 +7703,7 @@
       "identity": "public.ml_destination.ml_destination_consentAcknowledgedBy_fkey"
     },
     {
-      "definition": "CHECK (kind = ANY (ARRAY['local'::text, 'lan'::text, 'runpod'::text, 'runpod-video'::text]))",
+      "definition": "CHECK (kind = ANY (ARRAY['local'::text, 'lan'::text, 'frameleaf-cloud'::text]))",
       "identity": "public.ml_destination.ml_destination_kind_check"
     },
     {
@@ -8696,7 +8772,9 @@
     "0000000000150-AlbumPositions",
     "0000000000160-RecipientGroups",
     "0000000000170-MlWorkloadAccountingJobIndex",
-    "0000000000171-UserPreferenceHistory"
+    "0000000000171-UserPreferenceHistory",
+    "0000000000172-RenderSessionOutputEvidence",
+    "0000000000200-FrameleafConsents"
   ],
   "functions": [
     {
@@ -9972,6 +10050,14 @@
     {
       "definition": "CREATE UNIQUE INDEX cutover_verification_run_pkey ON immich_fork.cutover_verification_run USING btree (id)",
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_pkey"
+    },
+    {
+      "definition": "CREATE INDEX frameleaf_consent_destination_accepted_idx ON immich_fork.frameleaf_consent USING btree (\"destinationId\", \"acceptedAt\" DESC)",
+      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_destination_accepted_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_consent_pkey ON immich_fork.frameleaf_consent USING btree (id)",
+      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_pkey"
     },
     {
       "definition": "CREATE INDEX icloud_album_mapping_idx ON immich_fork.icloud_album USING btree (\"albumId\") WHERE (\"albumId\" IS NOT NULL)",
@@ -12483,6 +12569,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.cutover_verification_run"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.frameleaf_consent"
     },
     {
       "definition": "table",

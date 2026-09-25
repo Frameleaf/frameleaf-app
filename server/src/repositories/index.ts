@@ -66,8 +66,11 @@ import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
+import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
-import { RunPodRepository } from 'src/repositories/runpod.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -144,6 +147,10 @@ export const repositories = [
   MediaHealthRepository,
   MediaOperationRepository,
   RenderWorkerRepository,
+  FrameleafCloudRepository,
+  FrameleafCloudMlRepository,
+  FrameleafConsentRepository,
+  InstanceIdentityRepository,
   MediaRepository,
   MemoryRepository,
   MetadataRepository,
@@ -163,7 +170,6 @@ export const repositories = [
   PreservationFileRepository,
   PreservationRepository,
   ProcessRepository,
-  RunPodRepository,
   SearchRepository,
   ServerInfoRepository,
   SmartAlbumRepository,

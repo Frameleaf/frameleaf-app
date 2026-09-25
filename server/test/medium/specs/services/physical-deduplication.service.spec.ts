@@ -53,7 +53,7 @@ const bootstrap = async () => {
   await sql`
     INSERT INTO immich_fork.config (key, value)
     VALUES
-      ('machineLearning.runpod', ${JSON.stringify(defaults.machineLearning.runpod)}::jsonb),
+      ('frameleafCloud', ${JSON.stringify(defaults.frameleafCloud)}::jsonb),
       ('smartAlbums', ${JSON.stringify(defaults.smartAlbums)}::jsonb)
     ON CONFLICT (key) DO NOTHING
   `.execute(database);

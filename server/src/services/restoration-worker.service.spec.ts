@@ -372,13 +372,13 @@ describe(RestorationWorkerService.name, () => {
     });
 
     it('fails in place when the destination refuses, never moving the media elsewhere', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodVideo);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
 
       await sut.run(
         operation({
           snapshot: snapshot({
-            destinationId: mlDestinationStub.runPodVideo.id,
-            destinationKind: MlDestinationKind.RunPodVideo,
+            destinationId: mlDestinationStub.frameleafCloud.id,
+            destinationKind: MlDestinationKind.FrameleafCloud,
           }),
         }),
         CLAIM,

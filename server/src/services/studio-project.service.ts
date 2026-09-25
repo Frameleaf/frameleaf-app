@@ -1040,7 +1040,7 @@ export class StudioProjectService {
     destination: StudioDestination,
     cloudConsent?: boolean,
   ): Promise<CachedResolution & { cached: boolean }> {
-    const cacheable = destination !== StudioDestination.RunPod;
+    const cacheable = destination !== StudioDestination.FrameleafCloud;
     const key = `${project.id}:${revision.revision}:${auth.user.id}:${destination}`;
     const now = Date.now();
 
