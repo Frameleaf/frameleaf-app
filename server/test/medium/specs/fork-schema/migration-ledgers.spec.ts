@@ -83,12 +83,12 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000182-StudioWorkspaceLayout' },
       { name: '0000000000187-MemoryCuration' },
       { name: '0000000000188-MemoryShowLess' },
-      { name: '0000000000190-FrameleafUserLicenses' },
       { name: '0000000000191-UtilityActivity' },
       { name: '0000000000200-FrameleafConsents' },
       { name: '0000000000201-MlWorkloadAccountingCloudJobIndex' },
       { name: '0000000000202-FrameleafAccountLinks' },
       { name: '0000000000203-FrameleafSessions' },
+      { name: '0000000000204-FrameleafUserLicenses' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',
