@@ -11,9 +11,15 @@
    * backup of the current database first" (off by default). The server always takes that backup,
    * because it rolls back to it if the restore fails; the checkbox decides whether it is kept after
    * a successful restore (`keepSafetyBackup`). A failed restore always keeps it.
+   *
+   * Version compatibility (FL-81): the dialog says which server made the backup against the one
+   * running. An older backup is migrated after the restore; a backup from a newer server cannot be
+   * migrated down, so Restore stays disabled (the server refuses it too); an unreadable version is
+   * stated, and the rollback covers a migration that fails.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { backupVersionCompatibility } from '$lib/frameleaf/maintenance-page';
   import { restoreDatabaseBackup } from '$lib/services/database-backups.service';
   import { t } from 'svelte-i18n';
 
@@ -22,11 +28,18 @@
     /** When the backup was made, already formatted; omitted when the filename carries no date. */
     date?: string;
     size?: string;
+    /** The server version recorded in the backup's name, when it has one. */
+    version?: string;
+    /** The running server's version (`0.0.0` when it could not be read). */
+    expectedVersion: string;
     open: boolean;
     onClose: () => void;
   };
 
-  let { filename, date, size, open = $bindable(false), onClose }: Props = $props();
+  let { filename, date, size, version, expectedVersion, open = $bindable(false), onClose }: Props = $props();
+
+  const compatibility = $derived(backupVersionCompatibility(version, expectedVersion));
+  const blocked = $derived(compatibility === 'newer');
 
   let confirmText = $state('');
   let restoring = $state(false);
@@ -64,7 +77,7 @@
   });
 
   const confirm = async () => {
-    if (confirmText !== CONFIRM_WORD || restoring) {
+    if (confirmText !== CONFIRM_WORD || restoring || blocked) {
       return;
     }
     restoring = true;
@@ -83,6 +96,21 @@
       <p class="summary"><strong>{summary}</strong></p>
     {/if}
     <p class="filename"><code>{filename}</code></p>
+    {#if compatibility !== 'same'}
+      <p class="version-note" class:is-blocked={blocked} role={blocked ? 'alert' : undefined}>
+        {#if compatibility === 'older'}
+          {$t('admin.frameleaf_maintenance_restore_version_older', {
+            values: { backup: version, server: expectedVersion },
+          })}
+        {:else if compatibility === 'newer'}
+          {$t('admin.frameleaf_maintenance_restore_version_newer', {
+            values: { backup: version, server: expectedVersion },
+          })}
+        {:else}
+          {$t('admin.frameleaf_maintenance_restore_version_unknown')}
+        {/if}
+      </p>
+    {/if}
     <ul class="consequences">
       {#each consequences as key (key)}
         <li>{$t(key)}</li>
@@ -106,7 +134,7 @@
     </label>
     <div class="actions">
       <Button onclick={onClose} disabled={restoring}>{$t('cancel')}</Button>
-      <Button variant="primary" disabled={confirmText !== CONFIRM_WORD || restoring} onclick={confirm}>
+      <Button variant="primary" disabled={confirmText !== CONFIRM_WORD || restoring || blocked} onclick={confirm}>
         {$t('admin.frameleaf_maintenance_restore_confirm_action')}
       </Button>
     </div>
@@ -142,6 +170,16 @@
   .backup-first input {
     margin: 0;
     accent-color: var(--fl-accent);
+  }
+  /* The template's `.mt-notice` tone (maintenance.css), for the version line. */
+  .body .version-note {
+    padding: 8px 10px;
+    border-radius: var(--fl-radius-control);
+    background: color-mix(in srgb, var(--fl-warning) 12%, transparent);
+    font-size: var(--fl-font-small);
+  }
+  .body .version-note.is-blocked {
+    background: color-mix(in srgb, var(--fl-danger) 12%, transparent);
   }
   .filename code {
     font-size: var(--fl-font-small);

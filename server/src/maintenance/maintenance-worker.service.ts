@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { parse } from 'cookie';
 import { NextFunction, Request, Response } from 'express';
 import { jwtVerify } from 'jose';
@@ -41,6 +41,11 @@ export class MaintenanceWorkerService {
   #secret: string | null = null;
   /** FL-81: the administrator's public reason, carried on every status this worker reports */
   #reason: string | undefined;
+  /**
+   * FL-81: set when a restore is accepted or resumed on start, and cleared when it fails (a successful
+   * restore ends maintenance, which restarts the worker), so no other action can start meanwhile.
+   */
+  #restoring = false;
   #status: MaintenanceStatusResponseDto = {
     active: true,
     action: MaintenanceAction.Start,
@@ -284,6 +289,24 @@ export class MaintenanceWorkerService {
     }
   }
 
+  /**
+   * FL-81: refuses, before anything changes, an action that would conflict with a running restore:
+   * a second restore, a new Start or restore selection, or End (which would restart the worker in
+   * the middle of the restore). A restore that failed has cleared the flag, so End and another restore
+   * stay available as the safe exit. Called synchronously by the controller, which then runs the action
+   * without waiting for it.
+   */
+  claimAction(action: SetMaintenanceModeDto): void {
+    // this worker's own restore, or one another server reports running (its status has no error yet)
+    const reportedRestore = this.#status.action === MaintenanceAction.RestoreDatabase && this.#status.task !== 'error';
+    if (this.#restoring || reportedRestore) {
+      throw new ConflictException('A database restore is running. Wait until it finishes or fails.');
+    }
+    if (action.action === MaintenanceAction.RestoreDatabase) {
+      this.#restoring = true;
+    }
+  }
+
   async setAction(action: SetMaintenanceModeDto) {
     // a new reason replaces the old one, null (or a blank one) clears it, and an action without one keeps it
     if (action.reason !== undefined) {
@@ -321,8 +344,12 @@ export class MaintenanceWorkerService {
   }
 
   async runRestoreDatabase(action: SetMaintenanceModeDto) {
+    // also set here, before the first await, for a restore resumed from the stored state on start
+    this.#restoring = true;
     const isLock = await this.databaseRepository.tryLock(DatabaseLock.MaintenanceOperation);
     if (!isLock) {
+      // another process holds the maintenance lock; the claim is released so this worker is not stuck
+      this.#restoring = false;
       return;
     }
 
@@ -351,6 +378,8 @@ export class MaintenanceWorkerService {
         task: 'error',
         error: '' + error,
       });
+    } finally {
+      this.#restoring = false;
     }
   }
 

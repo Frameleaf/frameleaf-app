@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import path, { basename } from 'node:path';
 import { Duplex, PassThrough, Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { coerce, satisfies } from 'semver';
+import { coerce, gt, satisfies } from 'semver';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { serverVersion } from 'src/constants.js';
@@ -475,6 +475,16 @@ export class DatabaseBackupService {
 
       let isPgClusterDump = false;
       const version = findDatabaseBackupVersion(filename);
+
+      // FL-81: migrations only move a database forward, so a backup from a newer server cannot run on
+      // this one. It is refused before the restore point is made or anything is changed.
+      const backupVersion = version ? coerce(version) : null;
+      const runningVersion = coerce(serverVersion.toString());
+      if (backupVersion && runningVersion && gt(backupVersion, runningVersion)) {
+        throw new Error(
+          `This backup was made by a newer server (v${backupVersion.toString()}) than the one running (v${runningVersion.toString()}). Update the server first.`,
+        );
+      }
       if (version && satisfies(version, '<= 2.4')) {
         isPgClusterDump = true;
       }

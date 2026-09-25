@@ -9,7 +9,8 @@
    * Kept from the page it replaces: the status is loaded once and then follows the websocket; a
    * running restore also re-reads the status every 2 s (an update sent before the socket joined is
    * lost); the maintenance token is stripped from the address; and an administrator choosing a
-   * backup to restore gets `MaintenanceRestoreFlow`.
+   * backup to restore gets `MaintenanceRestoreFlow`. A sign-in link the server refused (expired or
+   * from an earlier maintenance) is reported instead of silently showing the public page (FL-81).
    */
   /* eslint-disable unicorn/no-optional-chaining-on-undeclared-variable */
   import { page } from '$app/state';
@@ -215,6 +216,13 @@
             <button type="button" class="auth-link" onclick={checkNow}>{$t('frameleaf_maintenance_check_now')}</button>
           </span>
         </div>
+      {/if}
+
+      {#if data.signInLinkRejected && !$auth && view.kind !== 'finished'}
+        <p class="auth-error" role="alert">
+          <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
+          <span>{$t('frameleaf_maintenance_link_rejected')}</span>
+        </p>
       {/if}
 
       {#if view.kind === 'maintenance' && $auth}
