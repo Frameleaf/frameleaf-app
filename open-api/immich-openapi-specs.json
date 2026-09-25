@@ -19253,6 +19253,63 @@
         "x-immich-state": "Stable"
       }
     },
+    "/people/corrections/{id}/undo": {
+      "post": {
+        "description": "Reverse one manual face decision from the correction history, while the face still stands as the decision left it (same original, same place, same person). Otherwise 409 with a `reason`.",
+        "operationId": "undoCorrection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonCorrectionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo a face correction",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/people/merge": {
       "post": {
         "description": "Merge an ordered list of people together into a single person. The final name and birth date are always the first defined value, following the order. Also automatically merges people for other users in the cluster group, skipping people that would result in overriding a previously set name or birth date.",
@@ -19360,7 +19417,7 @@
     },
     "/people/merge-suggestions/verdicts": {
       "delete": {
-        "description": "Remove the recorded verdict for a pair of people, so the pair can be suggested again.",
+        "description": "Remove the recorded verdict for a pair of people, so the pair can be suggested again. The same person id twice undoes \"ignore\" for that person.",
         "operationId": "deleteMergeVerdict",
         "parameters": [],
         "requestBody": {
@@ -19407,7 +19464,7 @@
         "x-immich-state": "Alpha"
       },
       "put": {
-        "description": "Record that a suggested pair of people are different people (never suggested again) or should be decided later (not suggested for 30 days). Replaces an earlier verdict for the same pair; the pair may be given in either order.",
+        "description": "Answer a suggested pair of people: \"same\" merges them now, \"different\" never suggests the pair again, \"later\" skips it for 30 days and \"ignore\" stops suggesting `personId` with anyone. Replaces an earlier verdict for the same pair (a \"later\" never replaces a \"different\"); the pair may be given in either order.",
         "operationId": "setMergeVerdict",
         "parameters": [],
         "requestBody": {
@@ -19652,7 +19709,7 @@
     },
     "/people/{id}/corrections": {
       "get": {
-        "description": "Retrieve the manual face corrections (reassignments) made for this person, most recent first. Faces the facial-recognition job assigned on its own and nobody has since corrected are not included.",
+        "description": "Retrieve the manual face decisions made about this person (faces moved onto or off them, \"not a face of anyone\", merges and moved face boxes), most recent first, a page at a time. Only the owner sees them. A photo that can no longer be shown (trashed, Locked, hidden) is left out of the evidence.",
         "operationId": "getCorrectionHistory",
         "parameters": [
           {
@@ -19663,6 +19720,30 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Number of decisions per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25,
+              "type": "integer"
             }
           }
         ],
@@ -49427,6 +49508,62 @@
         ],
         "type": "object"
       },
+      "FaceEvidenceDto": {
+        "properties": {
+          "assetId": {
+            "description": "The complete photo the face is in",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "box": {
+            "description": "Where the face is in the photo",
+            "nullable": true,
+            "properties": {
+              "height": {
+                "description": "Height, as a fraction of the photo height",
+                "format": "double",
+                "type": "number"
+              },
+              "width": {
+                "description": "Width, as a fraction of the photo width",
+                "format": "double",
+                "type": "number"
+              },
+              "x": {
+                "description": "Left edge, as a fraction of the photo width",
+                "format": "double",
+                "type": "number"
+              },
+              "y": {
+                "description": "Top edge, as a fraction of the photo height",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "faceId": {
+            "description": "The face, when it still exists",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "box",
+          "faceId"
+        ],
+        "type": "object"
+      },
       "FoldersResponse": {
         "properties": {
           "enabled": {
@@ -50493,6 +50630,7 @@
           "PersonCleanup",
           "PersonFileMigration",
           "PersonGenerateThumbnail",
+          "PersonIdentityRefresh",
           "SessionCleanup",
           "SendMail",
           "SidecarQueueAll",
@@ -56401,45 +56539,130 @@
         ],
         "type": "string"
       },
+      "PersonCorrectionAction": {
+        "description": "What the decision did",
+        "enum": [
+          "reassign",
+          "new-person",
+          "unassign",
+          "remove",
+          "merge",
+          "box-move"
+        ],
+        "type": "string"
+      },
       "PersonCorrectionDto": {
         "properties": {
-          "assetId": {
-            "description": "Asset the corrected face belongs to",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
+          "action": {
+            "$ref": "#/components/schemas/PersonCorrectionAction"
           },
-          "correctedAt": {
-            "description": "When the manual correction was made",
+          "createdAt": {
+            "description": "When the decision was made",
             "format": "date-time",
             "type": "string"
           },
-          "faceId": {
-            "description": "Face ID",
+          "evidence": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FaceEvidenceDto"
+              }
+            ],
+            "description": "The photo and face, when it may still be shown",
+            "nullable": true
+          },
+          "evidenceRevoked": {
+            "description": "True when the decision was about a photo that can no longer be shown (trashed, Locked, hidden)",
+            "type": "boolean"
+          },
+          "fromPerson": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PersonCorrectionPersonDto"
+              }
+            ],
+            "description": "Who the face belonged to before",
+            "nullable": true
+          },
+          "id": {
+            "description": "Correction ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "toPerson": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PersonCorrectionPersonDto"
+              }
+            ],
+            "description": "Who the face belongs to after",
+            "nullable": true
+          },
+          "undoable": {
+            "description": "Whether this kind of decision can be undone and has not been",
+            "type": "boolean"
+          },
+          "undoneAt": {
+            "description": "When the decision was undone",
+            "format": "date-time",
+            "nullable": true,
             "type": "string"
           }
         },
         "required": [
-          "assetId",
-          "correctedAt",
-          "faceId"
+          "action",
+          "createdAt",
+          "evidence",
+          "evidenceRevoked",
+          "fromPerson",
+          "id",
+          "toPerson",
+          "undoable",
+          "undoneAt"
+        ],
+        "type": "object"
+      },
+      "PersonCorrectionPersonDto": {
+        "properties": {
+          "exists": {
+            "description": "Whether the person still exists",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Person ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "The current name, or the name at the time when the person no longer exists",
+            "type": "string"
+          }
+        },
+        "required": [
+          "exists",
+          "id",
+          "name"
         ],
         "type": "object"
       },
       "PersonCorrectionsResponseDto": {
         "properties": {
           "corrections": {
-            "description": "Manual face corrections for this person, most recent first",
+            "description": "Manual face decisions for this person, most recent first",
             "items": {
               "$ref": "#/components/schemas/PersonCorrectionDto"
             },
             "type": "array"
+          },
+          "hasNextPage": {
+            "description": "Whether there are more pages",
+            "type": "boolean"
           }
         },
         "required": [
-          "corrections"
+          "corrections",
+          "hasNextPage"
         ],
         "type": "object"
       },
@@ -56484,30 +56707,52 @@
             "$ref": "#/components/schemas/PersonResponseDto",
             "description": "The person being reviewed"
           },
+          "personEvidence": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FaceEvidenceDto"
+              }
+            ],
+            "description": "The reviewed person's reference face and its complete photo, or null when none may be shown",
+            "nullable": true
+          },
           "suggestion": {
             "$ref": "#/components/schemas/PersonResponseDto",
             "description": "The suggested match for that person"
+          },
+          "suggestionEvidence": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FaceEvidenceDto"
+              }
+            ],
+            "description": "The suggested person's reference face and its complete photo, or null when none may be shown",
+            "nullable": true
           }
         },
         "required": [
           "distance",
           "person",
-          "suggestion"
+          "personEvidence",
+          "suggestion",
+          "suggestionEvidence"
         ],
         "type": "object"
       },
       "PersonMergeVerdict": {
-        "description": "\"different\": never suggest this pair again; \"later\": skip it for 30 days",
+        "description": "\"same\": merge the two people now (the named one survives, or `personId` when both or neither are named); \"different\": never suggest this pair again; \"later\": skip it for 30 days; \"ignore\": stop suggesting `personId` with anyone",
         "enum": [
+          "same",
           "different",
-          "later"
+          "later",
+          "ignore"
         ],
         "type": "string"
       },
       "PersonMergeVerdictCreateDto": {
         "properties": {
           "personId": {
-            "description": "One person of the suggested pair (either order)",
+            "description": "One person of the suggested pair (the reviewed person, for \"ignore\")",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
@@ -56532,7 +56777,7 @@
       "PersonMergeVerdictDeleteDto": {
         "properties": {
           "personId": {
-            "description": "One person of the suggested pair (either order)",
+            "description": "One person of the suggested pair (the reviewed person, for \"ignore\")",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
@@ -56558,13 +56803,13 @@
             "type": "string"
           },
           "personId": {
-            "description": "The person of the pair whose id sorts first",
+            "description": "The person of the pair whose id sorts first; the ignored person for \"ignore\"; the surviving person for \"same\"",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
           "suggestionId": {
-            "description": "The other person of the pair",
+            "description": "The other person of the pair; the ignored person again for \"ignore\"; the merged person for \"same\"",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"

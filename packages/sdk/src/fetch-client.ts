@@ -5390,6 +5390,50 @@ export type PeopleUpdateDto = {
     /** People to update */
     people: PeopleUpdateItem[];
 };
+export type FaceEvidenceDto = {
+    /** The complete photo the face is in */
+    assetId: string;
+    /** Where the face is in the photo */
+    box: {
+        /** Height, as a fraction of the photo height */
+        height: number;
+        /** Width, as a fraction of the photo width */
+        width: number;
+        /** Left edge, as a fraction of the photo width */
+        x: number;
+        /** Top edge, as a fraction of the photo height */
+        y: number;
+    } | null;
+    /** The face, when it still exists */
+    faceId: string | null;
+};
+export type PersonCorrectionPersonDto = {
+    /** Whether the person still exists */
+    exists: boolean;
+    /** Person ID */
+    id: string;
+    /** The current name, or the name at the time when the person no longer exists */
+    name: string;
+};
+export type PersonCorrectionDto = {
+    action: PersonCorrectionAction;
+    /** When the decision was made */
+    createdAt: string;
+    /** The photo and face, when it may still be shown */
+    evidence: (FaceEvidenceDto) | null;
+    /** True when the decision was about a photo that can no longer be shown (trashed, Locked, hidden) */
+    evidenceRevoked: boolean;
+    /** Who the face belonged to before */
+    fromPerson: (PersonCorrectionPersonDto) | null;
+    /** Correction ID */
+    id: string;
+    /** Who the face belongs to after */
+    toPerson: (PersonCorrectionPersonDto) | null;
+    /** Whether this kind of decision can be undone and has not been */
+    undoable: boolean;
+    /** When the decision was undone */
+    undoneAt: string | null;
+};
 export type MergePersonDto = {
     /** Person IDs to merge */
     ids: string[];
@@ -5399,21 +5443,25 @@ export type PersonMergeSuggestionDto = {
     distance: number;
     /** The person being reviewed */
     person: PersonResponseDto;
+    /** The reviewed person's reference face and its complete photo, or null when none may be shown */
+    personEvidence: (FaceEvidenceDto) | null;
     /** The suggested match for that person */
     suggestion: PersonResponseDto;
+    /** The suggested person's reference face and its complete photo, or null when none may be shown */
+    suggestionEvidence: (FaceEvidenceDto) | null;
 };
 export type MergeSuggestionsResponseDto = {
     /** Suggested pairs of people that may be the same person */
     suggestions: PersonMergeSuggestionDto[];
 };
 export type PersonMergeVerdictDeleteDto = {
-    /** One person of the suggested pair (either order) */
+    /** One person of the suggested pair (the reviewed person, for "ignore") */
     personId: string;
     /** The other person of the suggested pair */
     suggestionId: string;
 };
 export type PersonMergeVerdictCreateDto = {
-    /** One person of the suggested pair (either order) */
+    /** One person of the suggested pair (the reviewed person, for "ignore") */
     personId: string;
     /** The other person of the suggested pair */
     suggestionId: string;
@@ -5422,9 +5470,9 @@ export type PersonMergeVerdictCreateDto = {
 export type PersonMergeVerdictResponseDto = {
     /** When the verdict was recorded */
     createdAt: string;
-    /** The person of the pair whose id sorts first */
+    /** The person of the pair whose id sorts first; the ignored person for "ignore"; the surviving person for "same" */
     personId: string;
-    /** The other person of the pair */
+    /** The other person of the pair; the ignored person again for "ignore"; the merged person for "same" */
     suggestionId: string;
     verdict: PersonMergeVerdict;
 };
@@ -5442,17 +5490,11 @@ export type PersonUpdateDto = {
     /** Person name */
     name?: string;
 };
-export type PersonCorrectionDto = {
-    /** Asset the corrected face belongs to */
-    assetId: string;
-    /** When the manual correction was made */
-    correctedAt: string;
-    /** Face ID */
-    faceId: string;
-};
 export type PersonCorrectionsResponseDto = {
-    /** Manual face corrections for this person, most recent first */
+    /** Manual face decisions for this person, most recent first */
     corrections: PersonCorrectionDto[];
+    /** Whether there are more pages */
+    hasNextPage: boolean;
 };
 export type AssetFaceUpdateItem = {
     /** Asset ID */
@@ -13804,6 +13846,20 @@ export function updatePeople({ peopleUpdateDto }: {
     })));
 }
 /**
+ * Undo a face correction
+ */
+export function undoCorrection({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCorrectionDto;
+    }>(`/people/corrections/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Merge people
  */
 export function mergePeople({ mergePersonDto }: {
@@ -13899,13 +13955,18 @@ export function updatePerson({ id, personUpdateDto }: {
 /**
  * Get correction history
  */
-export function getCorrectionHistory({ id }: {
+export function getCorrectionHistory({ id, page, size }: {
     id: string;
+    page?: number;
+    size?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: PersonCorrectionsResponseDto;
-    }>(`/people/${encodeURIComponent(id)}/corrections`, {
+    }>(`/people/${encodeURIComponent(id)}/corrections${QS.query(QS.explode({
+        page,
+        size
+    }))}`, {
         ...opts
     }));
 }
@@ -19026,9 +19087,19 @@ export enum PartnerDirection {
     SharedBy = "shared-by",
     SharedWith = "shared-with"
 }
+export enum PersonCorrectionAction {
+    Reassign = "reassign",
+    NewPerson = "new-person",
+    Unassign = "unassign",
+    Remove = "remove",
+    Merge = "merge",
+    BoxMove = "box-move"
+}
 export enum PersonMergeVerdict {
+    Same = "same",
     Different = "different",
-    Later = "later"
+    Later = "later",
+    Ignore = "ignore"
 }
 export enum PetSpecies {
     Cat = "cat",
@@ -19226,6 +19297,7 @@ export enum JobName {
     PersonCleanup = "PersonCleanup",
     PersonFileMigration = "PersonFileMigration",
     PersonGenerateThumbnail = "PersonGenerateThumbnail",
+    PersonIdentityRefresh = "PersonIdentityRefresh",
     SessionCleanup = "SessionCleanup",
     SendMail = "SendMail",
     SidecarQueueAll = "SidecarQueueAll",

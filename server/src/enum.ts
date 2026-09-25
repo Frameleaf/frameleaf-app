@@ -1962,6 +1962,7 @@ export enum JobName {
   PersonCleanup = 'PersonCleanup',
   PersonFileMigration = 'PersonFileMigration',
   PersonGenerateThumbnail = 'PersonGenerateThumbnail',
+  PersonIdentityRefresh = 'PersonIdentityRefresh',
 
   SessionCleanup = 'SessionCleanup',
 
