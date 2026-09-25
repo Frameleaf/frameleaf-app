@@ -15,6 +15,8 @@ import {
   gpuProfileFor,
   interpolationEstimate,
   interpolationWork,
+  isCloudOffered,
+  isLocalOnlyModel,
   ladderFor,
   ladderStates,
   modelLadders,
@@ -204,6 +206,26 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
       expect(item.commercialHosted).toBe('yes');
       expect(item.licence).not.toMatch(/non-commercial|research/i);
     }
+  });
+
+  it('never offers the nllb-clip models or MusicGen-small on the cloud, whatever the offer (FL-146)', () => {
+    const qwen = positionById('qwen3.5-9b@1')!;
+    for (const id of [
+      'nllb-clip-base-siglip__mrl@1',
+      'nllb-clip-base-siglip__v1@1',
+      'nllb-clip-large-siglip__mrl@1',
+      'nllb-clip-large-siglip__v1@1',
+      'musicgen-small@1',
+      'Xenova/musicgen-small',
+    ]) {
+      expect(isLocalOnlyModel(id), id).toBe(true);
+      const item = { ...qwen, id };
+      expect(isCloudOffered(item), id).toBe(false);
+      expect(bandFor(item, null)).not.toBe('cloud');
+      expect(positionState(item, { gpu: null, route: 'cloud' }).runsOn).not.toBe('cloud');
+    }
+    expect(cloudPositions().filter((item) => isLocalOnlyModel(item.id))).toEqual([]);
+    expect(isLocalOnlyModel('qwen3.5-9b@1')).toBe(false);
   });
 
   it('every problem points at a real fix, and the fixes are the right ones per vendor', () => {

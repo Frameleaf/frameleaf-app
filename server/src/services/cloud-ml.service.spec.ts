@@ -109,6 +109,16 @@ describe(CloudMlService.name, () => {
           retired: false,
         },
         {
+          // Local only by owner decision (FL-146): never offered even when a catalogue lists it.
+          id: 'nllb-clip-large-siglip__v1',
+          workload: 'enrichment',
+          name: 'NLLB CLIP',
+          fingerprint: 'f2',
+          description: '',
+          pricing: { unit: 'image', usd: 0.001 },
+          retired: false,
+        },
+        {
           id: 'old',
           workload: 'enrichment',
           name: 'Old',
@@ -333,7 +343,7 @@ describe(CloudMlService.name, () => {
   });
 
   describe('catalogue, wallet and usage', () => {
-    it('lists only models the cloud still offers', async () => {
+    it('lists only models the cloud still offers and may host (never the local-only ones, FL-146)', async () => {
       link();
       await expect(sut.getCatalog()).resolves.toEqual({
         models: [

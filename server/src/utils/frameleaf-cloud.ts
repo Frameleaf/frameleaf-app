@@ -252,6 +252,14 @@ export type CloudProbeFacts = {
   refusal: { refusal: MlAdmissionRefusal; detail: string } | null;
 };
 
+/**
+ * Models that run on this server only (FL-146 owner decision, 2026-09-25): the nllb-clip search
+ * models (base and large, every variant; CC-BY-NC-4.0) and MusicGen-small. They are never taken
+ * from a Frameleaf Cloud catalogue, never routed there, and admission refuses a cloud job for them.
+ */
+const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small/i;
+export const isLocalOnlyModel = (id: string | null | undefined): boolean => !!id && LOCAL_ONLY_MODEL.test(id);
+
 export const isEntitled = (entitlement: CloudCapabilities['entitlement']): boolean =>
   typeof entitlement === 'boolean' ? entitlement : entitlement.active;
 
