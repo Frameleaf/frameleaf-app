@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { SearchFacetField } from 'src/dtos/search.dto.js';
 import { AlbumUserRole } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -129,6 +130,28 @@ describe('partner location through albums and place filters (FL-54)', () => {
     // without a place filter the album shows both
     const all = await sut.searchMetadata(auth, { albumIds: [album.id] });
     expect(all.assets.items).toHaveLength(2);
+  });
+
+  it("never counts a hidden owner's places in an album search's facets", async () => {
+    const { sut, ctx } = newSearch();
+    const { member, album } = await setupReshare(ctx);
+    const auth = factory.auth({ user: member });
+    const placeCounts = (response: Awaited<ReturnType<typeof sut.searchFacets>>, field: SearchFacetField) =>
+      response.facets.find(({ fieldName }) => fieldName === field)?.counts;
+
+    const v3 = await sut.searchFacets(auth, {
+      filter: { albumIds: { any: [album.id] } },
+      facets: [SearchFacetField.City, SearchFacetField.Country],
+    });
+    // both items are in the album, but only the album owner's own item names its place
+    expect(v3.total).toBe(2);
+    expect(placeCounts(v3, SearchFacetField.City)).toEqual([{ value: 'Oslo', count: 1 }]);
+    expect(placeCounts(v3, SearchFacetField.Country)).toEqual([{ value: 'Norway', count: 1 }]);
+
+    // the legacy flat body only ever searches the viewer's own and partner libraries, so a member reaches
+    // no album item there at all
+    const legacy = await sut.searchFacets(auth, { albumIds: [album.id], facets: [SearchFacetField.City] });
+    expect(legacy.total).toBe(0);
   });
 
   it("keeps a hidden owner's items off a member's map through the album", async () => {
