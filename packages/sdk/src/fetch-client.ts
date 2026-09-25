@@ -8311,6 +8311,10 @@ export type TimeBucketAssetResponseDto = {
     duration: (number | null)[];
     /** Array of file creation timestamps in UTC */
     fileCreatedAt: string[];
+    /** Array of file sizes in bytes (null when unknown). Omitted for shared links that hide EXIF */
+    fileSizeInByte?: (number | null)[];
+    /** Array of heights in pixels (null when unknown). Omitted for shared links that hide EXIF */
+    height?: (number | null)[];
     /** Array of asset IDs in the time bucket */
     id: string[];
     /** Array indicating whether each asset is favorited */
@@ -8345,6 +8349,8 @@ export type TimeBucketAssetResponseDto = {
     thumbhash: (string | null)[];
     /** Array of visibility statuses for each asset (e.g., ARCHIVE, TIMELINE, HIDDEN, LOCKED) */
     visibility: AssetVisibility[];
+    /** Array of widths in pixels (null when unknown). Omitted for shared links that hide EXIF */
+    width?: (number | null)[];
 };
 export type TimeBucketsResponseDto = {
     /** Number of assets in this time bucket */
@@ -17102,6 +17108,63 @@ export function getTimelineHighlights({ albumId, bbox, dateType, grouping, highl
     }));
 }
 /**
+ * Get the timeline in a flat order
+ */
+export function getTimelineOrdered({ albumId, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withPartners, withStacked }: {
+    albumId?: string;
+    bbox?: string;
+    dateType?: TimeBucketDateType;
+    isFavorite?: boolean;
+    isTrashed?: boolean;
+    key?: string;
+    lockReason?: AssetLockReason;
+    order?: AssetOrder;
+    orderBy?: AssetOrderBy;
+    personId?: string;
+    petId?: string;
+    skip?: number;
+    slug?: string;
+    sort: TimelineOrderedSort;
+    suppressedOnly?: boolean;
+    tagId?: string;
+    take?: number;
+    userId?: string;
+    visibility?: AssetVisibility;
+    withCoordinates?: boolean;
+    withPartners?: boolean;
+    withStacked?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TimeBucketAssetResponseDto;
+    }>(`/timeline/ordered${QS.query(QS.explode({
+        albumId,
+        bbox,
+        dateType,
+        isFavorite,
+        isTrashed,
+        key,
+        lockReason,
+        order,
+        orderBy,
+        personId,
+        petId,
+        skip,
+        slug,
+        sort,
+        suppressedOnly,
+        tagId,
+        take,
+        userId,
+        visibility,
+        withCoordinates,
+        withPartners,
+        withStacked
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Apply a reviewed trash change
  */
 export function applyTrashReview({ trashApplyDto }: {
@@ -19298,6 +19361,10 @@ export enum AssetOrderBy {
 export enum TimelineHighlightGrouping {
     Year = "year",
     Month = "month"
+}
+export enum TimelineOrderedSort {
+    Filename = "filename",
+    Rating = "rating"
 }
 export enum TrashReviewAction {
     Trash = "trash",
