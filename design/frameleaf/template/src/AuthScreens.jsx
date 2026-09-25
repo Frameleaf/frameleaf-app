@@ -9,20 +9,13 @@ import {
   advanceMaintenance,
   createMaintenance,
   formatPrice,
-  languages,
-  loadOnboarding,
   loadSupporter,
   maintenanceSummary,
-  onboardingSteps,
   passwordRequirements,
   passwordStrength,
   removeSupporter,
-  renderStorageTemplate,
-  saveOnboarding,
   saveSupporter,
   setSupporterBadgeHidden,
-  storageTemplatePresets,
-  storageTemplateVariables,
   supporterProducts,
   validPin,
   validateEmail,
@@ -39,18 +32,15 @@ import {
   WALLET_FEES_NOTE,
 } from "./frameleaf-cloud-data.mjs";
 import {
-  SAMPLE_USER_CODE,
   activatePlan,
   linkAccount,
   planById,
-  unlinkAccount,
 } from "./cloud-account.mjs";
 import { addCredit } from "./cloud-jobs.mjs";
 import "./system.css";
 import "./auth.css";
 
 const LOGO = "/brand/frameleaf-logo-dark.svg";
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const photoNamed = (pattern) =>
   media.find((asset) => asset.type === "photo" && pattern.test(asset.image));
 const heroAsset = photoNamed(/summit/i) ?? media.find((a) => a.type === "photo");
@@ -59,11 +49,10 @@ const HERO = {
   title: heroAsset?.name?.replace(/\.[a-z0-9]+$/i, "") ?? "Summit",
   subtitle: [heroAsset?.city, heroAsset?.date?.slice(0, 4)].filter(Boolean).join(" · "),
 };
-const HELLO_IMAGE = photoNamed(/hiking|lake/i)?.image ?? "/media/lake.png";
 
 // ------------------------------------------------------------------ shared UI
 
-function BrandPlate({ compact }) {
+export function BrandPlate({ compact }) {
   return (
     <div className={`auth-brand-plate ${compact ? "compact" : ""}`}>
       <img src={LOGO} alt="Frameleaf" />
@@ -132,7 +121,7 @@ function AuthShell({
     </div>
   );
 }
-function ErrorNote({ id, children }) {
+export function ErrorNote({ id, children }) {
   return (
     <p className="auth-error" role="alert" id={id}>
       <Icon name="mdiAlertCircleOutline" size={16} />
@@ -140,7 +129,7 @@ function ErrorNote({ id, children }) {
     </p>
   );
 }
-function InfoNote({ children }) {
+export function InfoNote({ children }) {
   return (
     <p className="auth-info">
       <Icon name="mdiInformationOutline" size={16} />
@@ -148,7 +137,7 @@ function InfoNote({ children }) {
     </p>
   );
 }
-function TextField({ id, label, hint, hintId, ...props }) {
+export function TextField({ id, label, hint, hintId, ...props }) {
   return (
     <div className="auth-field">
       <label htmlFor={id}>{label}</label>
@@ -161,7 +150,7 @@ function TextField({ id, label, hint, hintId, ...props }) {
     </div>
   );
 }
-function PasswordField({ id, label, value, onChange, describedBy, ...props }) {
+export function PasswordField({ id, label, value, onChange, describedBy, ...props }) {
   const [show, setShow] = useState(false);
   return (
     <div className="auth-field">
@@ -187,7 +176,7 @@ function PasswordField({ id, label, value, onChange, describedBy, ...props }) {
     </div>
   );
 }
-function StrengthMeter({ password }) {
+export function StrengthMeter({ password }) {
   const strength = passwordStrength(password);
   return (
     <div className="auth-strength" data-score={strength.score}>
@@ -204,7 +193,7 @@ function StrengthMeter({ password }) {
     </div>
   );
 }
-function Checklist({ password }) {
+export function Checklist({ password }) {
   const strength = passwordStrength(password);
   return (
     <ul className="auth-checks" aria-label="Password requirements">
@@ -242,7 +231,7 @@ export function SwitchRow({ label, description, checked, onChange }) {
     </div>
   );
 }
-function useTimer() {
+export function useTimer() {
   const timer = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
   return (callback, delay) => {
@@ -558,104 +547,6 @@ export function Login({
   );
 }
 
-// ------------------------------------------------------------------- Register
-
-export function Register({ onDone, onCancel, theme, setTheme }) {
-  const ids = useId();
-  const later = useTimer();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const strength = passwordStrength(password);
-  const submit = (event) => {
-    event.preventDefault();
-    if (busy) return;
-    if (!name.trim()) return setError("Enter your name.");
-    if (!validateEmail(email)) return setError("Enter a valid email address.");
-    if (!strength.acceptable)
-      return setError("Choose a stronger password that meets the requirements.");
-    if (confirm !== password) return setError("The passwords don't match.");
-    setError("");
-    setBusy(true);
-    later(() => {
-      setBusy(false);
-      onDone?.({ name: name.trim(), email: email.trim().toLowerCase() });
-    }, 700);
-  };
-  return (
-    <AuthShell
-      hero={{ ...HERO, src: photoNamed(/cabin|creek/i)?.image ?? HERO.src }}
-      theme={theme}
-      setTheme={setTheme}
-      footer={
-        <>
-          <BuiltOn />
-          <span>
-            Frameleaf builds on Immich's open-source photo library. Licences and
-            acknowledgements are listed in About.
-          </span>
-        </>
-      }
-    >
-      <div className="auth-heading">
-        <h1>Create the admin account</h1>
-        <p>This account manages the server, its members and libraries.</p>
-      </div>
-      <form className="auth-card auth-form" onSubmit={submit} noValidate>
-        {error && <ErrorNote>{error}</ErrorNote>}
-        <TextField
-          id={`${ids}-name`}
-          label="Name"
-          autoComplete="name"
-          autoFocus
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <TextField
-          id={`${ids}-email`}
-          label="Email"
-          type="email"
-          inputMode="email"
-          autoComplete="username"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-        <PasswordField
-          id={`${ids}-password`}
-          label="Password"
-          autoComplete="new-password"
-          value={password}
-          onChange={setPassword}
-          describedBy={`${ids}-strength`}
-        />
-        <div id={`${ids}-strength`}>
-          <StrengthMeter password={password} />
-        </div>
-        <Checklist password={password} />
-        <PasswordField
-          id={`${ids}-confirm`}
-          label="Confirm password"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={setConfirm}
-          aria-invalid={confirm && confirm !== password ? true : undefined}
-        />
-        <Button primary className="auth-submit" type="submit" disabled={busy}>
-          {busy ? "Creating account…" : "Create account"}
-        </Button>
-        {onCancel && (
-          <button type="button" className="auth-link" onClick={onCancel}>
-            Back to sign in
-          </button>
-        )}
-      </form>
-    </AuthShell>
-  );
-}
-
 // ------------------------------------------------------------- ChangePassword
 
 export function ChangePassword({ user, onDone, onCancel, theme, setTheme, reason }) {
@@ -917,651 +808,6 @@ export function PinPrompt({
               Start over
             </button>
           )}
-        </div>
-      </div>
-    </AuthShell>
-  );
-}
-
-// ----------------------------------------------------------------- Onboarding
-
-function ThemePreview({ mode }) {
-  return (
-    <div className={`theme-preview ${mode}`} aria-hidden="true">
-      <div className="tp-bar">
-        <i />
-        <i />
-        <i />
-      </div>
-      <div className="tp-side" />
-      <div className="tp-grid">
-        {Array.from({ length: 8 }, (_, index) => (
-          <i key={index} />
-        ))}
-      </div>
-    </div>
-  );
-}
-function OptionRadio({ name, value, checked, onChange, children }) {
-  return (
-    <label className="ob-option">
-      <input
-        type="radio"
-        name={name}
-        value={value}
-        checked={checked}
-        onChange={() => onChange(value)}
-      />
-      <span className="ob-radio" aria-hidden="true" />
-      <span>{children}</span>
-    </label>
-  );
-}
-
-export function Onboarding({ onDone, onCancel, theme, setTheme, user, storage }) {
-  const ids = useId();
-  const heading = useRef(null);
-  const patternInput = useRef(null);
-  const [state, setState] = useState(() => loadOnboarding(storage));
-  const [reached, setReached] = useState(state.step);
-  const cloud = useCloudState();
-  const [linking, setLinking] = useState(false);
-  const linkLater = useTimer();
-  const last = onboardingSteps.length - 1;
-  const index = clamp(state.step, 0, last);
-  const step = onboardingSteps[index];
-  const { choices } = state;
-  useEffect(() => {
-    saveOnboarding(state, storage);
-  }, [state, storage]);
-  useEffect(() => {
-    heading.current?.focus();
-  }, [index]);
-  const choose = (key, value) =>
-    setState((prev) => ({ ...prev, choices: { ...prev.choices, [key]: value } }));
-  const chooseIn = (group, key, value) =>
-    choose(group, { ...choices[group], [key]: value });
-  const go = (next) => {
-    const target = clamp(next, 0, last);
-    setState((prev) => ({ ...prev, step: target }));
-    setReached((prev) => Math.max(prev, target));
-  };
-  const finish = () => {
-    const done = { ...state, completed: true };
-    setState(done);
-    saveOnboarding(done, storage);
-    onDone?.(done.choices);
-  };
-  const applyTheme = (value) => {
-    choose("theme", value);
-    if (!setTheme) return;
-    if (value === "system") {
-      const light =
-        typeof window !== "undefined" &&
-        window.matchMedia?.("(prefers-color-scheme: light)").matches;
-      setTheme(light ? "light" : "dark");
-    } else setTheme(value);
-  };
-  const insertToken = (token) => {
-    const field = patternInput.current;
-    const pattern = choices.storageTemplate.pattern;
-    const start = field?.selectionStart ?? pattern.length;
-    const end = field?.selectionEnd ?? pattern.length;
-    const next = pattern.slice(0, start) + token + pattern.slice(end);
-    chooseIn("storageTemplate", "pattern", next);
-    requestAnimationFrame(() => {
-      field?.focus();
-      field?.setSelectionRange(start + token.length, start + token.length);
-    });
-  };
-  const onKeyDown = (event) => {
-    if (event.altKey && event.key === "ArrowRight") {
-      event.preventDefault();
-      index === last ? finish() : go(index + 1);
-    } else if (event.altKey && event.key === "ArrowLeft") {
-      event.preventDefault();
-      go(index - 1);
-    } else if (
-      event.key === "Enter" &&
-      event.target.tagName === "INPUT" &&
-      !["radio", "checkbox"].includes(event.target.type)
-    ) {
-      event.preventDefault();
-      index === last ? finish() : go(index + 1);
-    }
-  };
-  const preview = renderStorageTemplate(choices.storageTemplate.pattern);
-  const languageLabel =
-    languages.find((entry) => entry.code === choices.language)?.label ?? "English";
-  const themeLabel = { light: "Light", dark: "Dark", system: "Match system" }[
-    choices.theme
-  ];
-
-  const body = () => {
-    if (step.id === "hello")
-      return (
-        <div className="ob-hello">
-          <div className="ob-hero">
-            <img src={HELLO_IMAGE} alt="" />
-          </div>
-          <p>
-            Hi {user?.name ?? "there"}, welcome to Frameleaf. A few quick
-            choices set up your server. Everything here can be changed later in
-            Settings.
-          </p>
-          <ul className="ob-list">
-            <li>
-              <strong>Two minutes</strong> — language, theme, privacy and storage
-              layout.
-            </li>
-            <li>
-              <strong>Nothing leaves your server</strong> — choices are stored
-              locally and apply to this server only.
-            </li>
-          </ul>
-        </div>
-      );
-    if (step.id === "language")
-      return (
-        <div className="ob-options" role="radiogroup" aria-label="Language">
-          {languages.map((entry) => (
-            <OptionRadio
-              key={entry.code}
-              name={`${ids}-language`}
-              value={entry.code}
-              checked={choices.language === entry.code}
-              onChange={(value) => choose("language", value)}
-            >
-              {entry.label}
-            </OptionRadio>
-          ))}
-        </div>
-      );
-    if (step.id === "theme")
-      return (
-        <div className="ob-theme-cards" role="radiogroup" aria-label="Theme">
-          {[
-            ["dark", "Dark", "Photography first, easy on the eyes"],
-            ["light", "Light", "Bright rooms and printed work"],
-            ["system", "Match system", "Follows your device setting"],
-          ].map(([value, label, hint]) => (
-            <label key={value} className="ob-theme-card">
-              <input
-                type="radio"
-                name={`${ids}-theme`}
-                value={value}
-                checked={choices.theme === value}
-                onChange={() => applyTheme(value)}
-              />
-              <ThemePreview mode={value} />
-              <span>
-                {label}
-                <small>{hint}</small>
-              </span>
-            </label>
-          ))}
-        </div>
-      );
-    if (step.id === "server-privacy")
-      return (
-        <div className="ob-switches">
-          <SwitchRow
-            label="Check for new versions"
-            description="Frameleaf checks its own release feed once a day. No library data is sent."
-            checked={choices.server.versionCheck}
-            onChange={(value) => chooseIn("server", "versionCheck", value)}
-          />
-          <SwitchRow
-            label="Show the map"
-            description="Map tiles load from the tile server configured for this server."
-            checked={choices.server.map}
-            onChange={(value) => chooseIn("server", "map", value)}
-          />
-          <SwitchRow
-            label="Allow casting"
-            description="Members can send photos and videos to TVs on the local network."
-            checked={choices.server.cast}
-            onChange={(value) => chooseIn("server", "cast", value)}
-          />
-        </div>
-      );
-    if (step.id === "user-privacy")
-      return (
-        <div className="ob-switches">
-          <SwitchRow
-            label="Show my photos on the map"
-            description="Place your photos by their location data. Other members never see your map."
-            checked={choices.user.mapLocations}
-            onChange={(value) => chooseIn("user", "mapLocations", value)}
-          />
-          <SwitchRow
-            label="Suggest memories"
-            description="Resurface photos from past years on the same date."
-            checked={choices.user.memories}
-            onChange={(value) => chooseIn("user", "memories", value)}
-          />
-          <SwitchRow
-            label="Include shared albums in my timeline"
-            description="Photos others share with you appear alongside your own."
-            checked={choices.user.sharedInTimeline}
-            onChange={(value) => chooseIn("user", "sharedInTimeline", value)}
-          />
-        </div>
-      );
-    if (step.id === "storage-template")
-      return (
-        <div className="ob-template">
-          <SwitchRow
-            label="Organise originals into folders"
-            description="Files are renamed and filed on disk using the pattern below. Off keeps uploads as they arrive."
-            checked={choices.storageTemplate.enabled}
-            onChange={(value) => chooseIn("storageTemplate", "enabled", value)}
-          />
-          {choices.storageTemplate.enabled && (
-            <>
-              <div className="ob-chips" role="group" aria-label="Presets">
-                {storageTemplatePresets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    aria-pressed={choices.storageTemplate.pattern === preset.pattern}
-                    onClick={() =>
-                      chooseIn("storageTemplate", "pattern", preset.pattern)
-                    }
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-              <TextField
-                id={`${ids}-pattern`}
-                label="Pattern"
-                ref={patternInput}
-                value={choices.storageTemplate.pattern}
-                onChange={(event) =>
-                  chooseIn("storageTemplate", "pattern", event.target.value)
-                }
-                spellCheck={false}
-                autoComplete="off"
-                hint="Insert a variable at the cursor, or type your own."
-                hintId={`${ids}-pattern-hint`}
-              />
-              <div className="ob-chips" role="group" aria-label="Variables">
-                {storageTemplateVariables.map((variable) => (
-                  <button
-                    key={variable.token}
-                    type="button"
-                    onClick={() => insertToken(variable.token)}
-                    aria-label={`Insert ${variable.label}`}
-                  >
-                    {variable.label}
-                    <code aria-hidden="true">{variable.token}</code>
-                  </button>
-                ))}
-              </div>
-              <div
-                className={`ob-template-preview ${preview.valid ? "" : "invalid"}`}
-                aria-live="polite"
-              >
-                <span>Example</span>
-                <code>{preview.path}</code>
-                {preview.unknown.length > 0 && (
-                  <span>
-                    Unknown variable{preview.unknown.length > 1 ? "s" : ""}:{" "}
-                    {preview.unknown.join(", ")}
-                  </span>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      );
-    if (step.id === "frameleaf-account") {
-      const linked = cloud.link.status === "linked";
-      return (
-        <div className="ob-cloud">
-          <p>
-            Frameleaf works fully without an account. Link one only if you want
-            the optional online services. Everyone keeps signing in to this
-            server the way they do today.
-          </p>
-          <ul className="ob-list">
-            <li>
-              <strong>Remote access</strong> — reach this server away from home
-              without opening ports.
-            </li>
-            <li>
-              <strong>Cloud backup</strong> — an encrypted copy of your library
-              in a bucket that belongs to this server alone.
-            </li>
-            <li>
-              <strong>Frameleaf Cloud processing</strong> — pay-as-you-go AI
-              jobs you confirm one at a time.
-            </li>
-          </ul>
-          {linked ? (
-            <div className="auth-card ob-cloud-card">
-              <span className="buy-badge">
-                <Icon name="mdiCheckDecagramOutline" size={26} />
-              </span>
-              <div>
-                <strong>Linked to {cloud.link.account?.email ?? "your Frameleaf account"}</strong>
-                <span>This server can now use the services you turn on.</span>
-              </div>
-              <button
-                type="button"
-                className="auth-link"
-                onClick={() => {
-                  saveCloudState(unlinkAccount(loadCloudState()));
-                  chooseIn("cloud", "account", "skip");
-                }}
-              >
-                Unlink
-              </button>
-            </div>
-          ) : linking ? (
-            <div className="auth-card ob-cloud-card" role="status">
-              <span className="ob-code" aria-label={`Code ${SAMPLE_USER_CODE}`}>
-                {SAMPLE_USER_CODE}
-              </span>
-              <div>
-                <strong>Approve this server on frameleaf.cloud</strong>
-                <span>Check the code matches, then come back. Waiting for approval…</span>
-              </div>
-              <button type="button" className="auth-link" onClick={() => setLinking(false)}>
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <div className="ob-cloud-actions">
-              <Button
-                className="auth-frameleaf"
-                type="button"
-                onClick={() => {
-                  setLinking(true);
-                  linkLater(() => {
-                    saveCloudState(linkAccount(loadCloudState()));
-                    chooseIn("cloud", "account", "linked");
-                    setLinking(false);
-                  }, 1600);
-                }}
-              >
-                <img src="/brand/frameleaf-symbol.svg" alt="" width="18" height="18" />
-                Link with Frameleaf
-              </Button>
-              <span className="auth-note">Optional · you can skip this and link later in Settings.</span>
-            </div>
-          )}
-        </div>
-      );
-    }
-    if (step.id === "plan") {
-      const linked = cloud.link.status === "linked";
-      const options = [
-        {
-          id: "self-hosted",
-          title: "Self-hosted only",
-          hint: "Free. Every feature on this server, no account needed.",
-        },
-        ...cloudPlans.map((plan) => ({
-          id: plan.id,
-          title: `${plan.title} · ${formatUsd(plan.price, 0)}/${plan.period}`,
-          hint: plan.description,
-          badge: plan.recommended ? "Best value" : null,
-          needsAccount: true,
-        })),
-        {
-          id: "supporter-key",
-          title: "I have a supporter key",
-          hint: "A one-time key adds a supporter badge. It unlocks nothing; nothing is locked.",
-        },
-      ];
-      return (
-        <>
-          <div className="ob-options" role="radiogroup" aria-label="Plan and licence">
-            {options.map((option) => (
-              <OptionRadio
-                key={option.id}
-                name={`${ids}-plan`}
-                value={option.id}
-                checked={choices.cloud.plan === option.id}
-                onChange={(value) => chooseIn("cloud", "plan", value)}
-              >
-                <span className="ob-plan">
-                  <strong>
-                    {option.title}
-                    {option.badge && <span className="buy-tag">{option.badge}</span>}
-                  </strong>
-                  <small>{option.hint}</small>
-                </span>
-              </OptionRadio>
-            ))}
-          </div>
-          {planById(choices.cloud.plan) && (
-            <InfoNote>
-              {linked
-                ? "You'll finish on frameleaf.cloud after setup; nothing is charged here. Cloud backup is set up from Settings once the plan is active."
-                : "Paid plans need a Frameleaf account. Go back a step to link one, or subscribe later from Support Frameleaf."}
-            </InfoNote>
-          )}
-          {choices.cloud.plan === "supporter-key" && (
-            <InfoNote>Enter your key on the Support Frameleaf page after setup. Keys are never put in a link.</InfoNote>
-          )}
-        </>
-      );
-    }
-    if (step.id === "backup")
-      return (
-        <>
-          <div className="ob-illustration">
-            <div className="ob-device">
-              <Icon name="mdiCellphone" size={40} />
-              Your phone
-            </div>
-            <div className="ob-flow" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </div>
-            <div className="ob-device">
-              <Icon name="mdiServerOutline" size={40} />
-              {aboutInfo.server.name}
-            </div>
-          </div>
-          <p>
-            The mobile app backs up new photos and videos to this server in the
-            background, so your library grows without any copying by hand.
-          </p>
-          <ul className="ob-list">
-            <li>
-              <strong>Choose what to include</strong> — pick albums on your phone
-              to back up, and skip the rest.
-            </li>
-            <li>
-              <strong>Wi-Fi by default</strong> — mobile data is only used when
-              you allow it.
-            </li>
-            <li>
-              <strong>Originals stay put</strong> — nothing is removed from your
-              phone unless you ask.
-            </li>
-          </ul>
-        </>
-      );
-    if (step.id === "mobile")
-      return (
-        <>
-          <p>
-            Install the app, then enter{" "}
-            <code className="auth-server">{aboutInfo.server.url}</code> to
-            connect it to this server.
-          </p>
-          <div className="ob-stores">
-            {[
-              ["mdiApple", "App Store", "iPhone and iPad", aboutInfo.links.appStore],
-              ["mdiAndroid", "Google Play", "Android", aboutInfo.links.googlePlay],
-              [
-                "mdiPackageVariant",
-                "Obtainium",
-                "Android, direct releases",
-                aboutInfo.links.obtainium,
-              ],
-            ].map(([icon, label, hint, href]) => (
-              <a
-                key={label}
-                className="ob-store"
-                href={href}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Icon name={icon} size={26} />
-                <span>
-                  <strong>{label}</strong>
-                  <small>{hint}</small>
-                </span>
-                <Icon name="mdiOpenInNew" size={16} />
-              </a>
-            ))}
-          </div>
-        </>
-      );
-    return (
-      <>
-        <p>Your server is ready. Here is what you chose.</p>
-        <div className="ob-summary">
-          {[
-            ["Language", languageLabel],
-            ["Theme", themeLabel],
-            [
-              "Server privacy",
-              [
-                choices.server.versionCheck && "version checks",
-                choices.server.map && "map",
-                choices.server.cast && "casting",
-              ]
-                .filter(Boolean)
-                .join(", ") || "all off",
-            ],
-            [
-              "Your privacy",
-              [
-                choices.user.mapLocations && "map",
-                choices.user.memories && "memories",
-                choices.user.sharedInTimeline && "shared albums",
-              ]
-                .filter(Boolean)
-                .join(", ") || "all off",
-            ],
-            [
-              "Storage",
-              choices.storageTemplate.enabled
-                ? choices.storageTemplate.pattern
-                : "Keep files as uploaded",
-            ],
-            [
-              "Frameleaf account",
-              cloud.link.status === "linked"
-                ? `Linked · ${cloud.link.account?.email ?? "account"}`
-                : "Not linked · self-hosted only",
-            ],
-            [
-              "Plan & licence",
-              planById(choices.cloud.plan)
-                ? `${planById(choices.cloud.plan).title} · finish on frameleaf.cloud`
-                : choices.cloud.plan === "supporter-key"
-                  ? "Supporter key · add it on Support Frameleaf"
-                  : "Self-hosted · free",
-            ],
-          ].map(([label, value]) => (
-            <div key={label}>
-              <span>{label}</span>
-              <strong>{value}</strong>
-            </div>
-          ))}
-        </div>
-      </>
-    );
-  };
-
-  return (
-    <AuthShell
-      wide
-      theme={theme}
-      setTheme={setTheme}
-      footer={<BuiltOn />}
-      onKeyDown={onKeyDown}
-    >
-      <div className="onboarding">
-        <nav aria-label="Setup steps">
-          <ol className="ob-rail">
-            {onboardingSteps.map((entry, position) => (
-              <li key={entry.id} className={position < index ? "done" : ""}>
-                <button
-                  type="button"
-                  aria-current={position === index ? "step" : undefined}
-                  disabled={position > reached}
-                  onClick={() => go(position)}
-                >
-                  <span className="ob-step-mark" aria-hidden="true">
-                    {position < index ? <Icon name="mdiCheck" size={14} /> : position + 1}
-                  </span>
-                  {entry.short}
-                </button>
-              </li>
-            ))}
-          </ol>
-          <div className="ob-progress" aria-hidden="true">
-            <span>
-              Step {index + 1} of {onboardingSteps.length}
-            </span>
-            <div className="ob-progress-bar">
-              <span style={{ width: `${((index + 1) / onboardingSteps.length) * 100}%` }} />
-            </div>
-          </div>
-        </nav>
-        <div className="ob-panel">
-          <div className="auth-heading">
-            <h1 ref={heading} tabIndex={-1}>
-              {step.title}
-            </h1>
-            <p className="fl-sr-only">
-              Step {index + 1} of {onboardingSteps.length}
-            </p>
-          </div>
-          <div className="ob-body" key={step.id}>
-            {body()}
-          </div>
-          <div className="ob-nav">
-            <div>
-              {index > 0 && (
-                <Button icon="mdiArrowLeft" type="button" onClick={() => go(index - 1)}>
-                  Back
-                </Button>
-              )}
-              {onCancel && index < last && (
-                <button type="button" className="auth-link" onClick={onCancel}>
-                  Finish later
-                </button>
-              )}
-            </div>
-            <div>
-              <span className="auth-note">
-                Alt + arrow keys move between steps
-              </span>
-              {index < last ? (
-                <Button primary type="button" onClick={() => go(index + 1)}>
-                  {step.id === "frameleaf-account" && cloud.link.status !== "linked"
-                    ? "Skip"
-                    : "Next"}
-                  <Icon name="mdiArrowRight" size={16} />
-                </Button>
-              ) : (
-                <Button primary type="button" onClick={finish}>
-                  Open Frameleaf
-                </Button>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     </AuthShell>
