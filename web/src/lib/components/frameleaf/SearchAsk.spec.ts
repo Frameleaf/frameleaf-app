@@ -26,7 +26,9 @@ describe('SearchAsk (FL-31)', () => {
     const field = screen.getByRole('combobox', { name: 'Ask about your photos' });
     expect(field).toHaveAttribute('aria-controls', screen.getByRole('listbox').id);
     expect(screen.getByText('Try a search')).toBeInTheDocument();
-    expect(screen.getAllByRole('option')).toHaveLength(SEARCH_ASK_EXAMPLES.length);
+    expect(screen.getAllByRole('option').map((option) => option.textContent?.trim())).toEqual(
+      SEARCH_ASK_EXAMPLES.map((key) => en[key]),
+    );
   });
 
   it('asks the typed question on Enter', async () => {
@@ -56,7 +58,7 @@ describe('SearchAsk (FL-31)', () => {
     expect(field).toHaveAttribute('aria-activedescendant', screen.getAllByRole('option').at(-1)!.id);
 
     await fireEvent.keyDown(field, { key: 'Enter' });
-    expect(onAsk).toHaveBeenCalledWith(SEARCH_ASK_EXAMPLES.at(-1));
+    expect(onAsk).toHaveBeenCalledWith(en[SEARCH_ASK_EXAMPLES.at(-1)!]);
   });
 
   it('leaves the list and then clears the field with Escape', async () => {
@@ -115,6 +117,7 @@ describe('SearchAsk (FL-31)', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Ask about your photos is turned off on this server.');
     expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByRole('combobox')).not.toHaveAttribute('aria-controls');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 });

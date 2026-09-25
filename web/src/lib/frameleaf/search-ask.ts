@@ -2,12 +2,13 @@
 export type SearchAskProblem = 'disabled' | 'failed';
 
 /**
- * Plain-language questions the server's Ask planner understands (dates, favorites, videos, receipts,
- * screenshots). They only start a search; the answers always come from the library.
+ * The i18n keys of the plain-language questions offered under "Try a search", which the server's Ask
+ * planner understands (dates, favorites, videos, receipts, screenshots). They only start a search; the
+ * answers always come from the library.
  */
 export const SEARCH_ASK_EXAMPLES = [
-  'favorite videos since 2020',
-  'photos from last summer',
-  'receipts from last year',
-  'screenshots from last month',
+  'frameleaf_search_ask_example_favorites',
+  'frameleaf_search_ask_example_summer',
+  'frameleaf_search_ask_example_receipts',
+  'frameleaf_search_ask_example_screenshots',
 ] as const;
