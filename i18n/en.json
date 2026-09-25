@@ -5710,6 +5710,7 @@
   "frameleaf_preservation_verify_state_ok": "matches",
   "frameleaf_preservation_verify_too_many": "One package holds up to {max} items. Narrow the selection, for example by year or album.",
   "frameleaf_primary_navigation": "Primary",
+  "frameleaf_public_added": "{count, plural, one {# item} other {# items}} added to this share.",
   "frameleaf_public_archive_planning": "Preparing archive",
   "frameleaf_public_archive_preparing": "Preparing archive · {done} of {total}",
   "frameleaf_public_archive_ready": "Archive ready · {count, plural, one {# file} other {# files}}",
