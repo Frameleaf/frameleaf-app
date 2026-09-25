@@ -617,12 +617,12 @@ describe(StudioProjectService.name, () => {
       await sut.authorizeRevision(reviewer, { projectId: project.id });
       await sut.authorizeRevision(owner, {
         projectId: project.id,
-        destination: StudioDestination.RunPod,
+        destination: StudioDestination.FrameleafCloud,
         cloudConsent: true,
       });
       await sut.authorizeRevision(owner, {
         projectId: project.id,
-        destination: StudioDestination.RunPod,
+        destination: StudioDestination.FrameleafCloud,
         cloudConsent: true,
       });
 

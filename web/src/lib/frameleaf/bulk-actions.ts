@@ -78,7 +78,13 @@ export type BulkActionId =
   | 'refresh-thumbnails'
   | 'refresh-metadata'
   | 'refresh-encoded'
-  | 'refresh-faces';
+  | 'refresh-faces'
+  /**
+   * FL-74: "Export for preservation…" opens the preservation export on the selection, which makes its
+   * own durable job; nothing is dispatched to the bulk runner. Only the signed-in account's own items
+   * are exported, and the dialog says how many were left out.
+   */
+  | 'export-preservation';
 
 /**
  * The part of an asset a descriptor reads. The production list DTO is a superset; `toBulkAsset`
@@ -466,6 +472,16 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiMovieEditOutline',
       group: 'jobs',
       available: !readOnly && !locked && has && (unknown || assets.some((asset) => asset.isVideo)),
+    },
+    {
+      id: 'export-preservation',
+      labelKey: 'frameleaf_bulk_export_preservation',
+      icon: 'mdiPackageVariantClosed',
+      group: 'jobs',
+      dialog: true,
+      // A resolved selection with at least one item of the viewer's own: a package only ever holds
+      // its owner's originals. A matching-set snapshot is preserved as a Search scope instead.
+      available: !readOnly && !trash && resolved && (unknown || ownedAssets(assets, context.currentUserId).length > 0),
     },
   ];
 

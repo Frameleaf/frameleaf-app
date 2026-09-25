@@ -83,7 +83,7 @@ for (const [filename, project, rootless] of [
   });
 }
 
-test("local builds retain projects/storage and keep ordinary ML separate from RunPod", () => {
+test("local builds retain projects/storage and build ordinary ML from the prod stage", () => {
   for (const [filename, project, cache] of [
     ["docker-compose.prod.yml", "immich-prod", "model-cache"],
     ["docker-compose.dev.yml", "immich-dev", "model_cache"],
@@ -239,22 +239,10 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
     read("machine-learning/Dockerfile"),
     /^CMD \["python", "-m", "immich_ml"\]$/m,
   );
-  assert.match(
-    read("machine-learning/Dockerfile"),
-    /^FROM prod AS prod-runpod$/m,
-  );
-  assert.match(
-    read("server/src/dtos/config.dto.ts"),
-    /imageName: 'ghcr\.io\/frameleaf\/frameleaf-machine-learning:release-cuda-runpod'/,
-  );
+  assert.doesNotMatch(read("machine-learning/Dockerfile"), /AS prod-runpod/);
   assert.ok(
     read("server/src/dtos/config.dto.ts").includes(
       "'http://immich-machine-learning:3003'",
-    ),
-  );
-  assert.ok(
-    read("server/src/services/runpod.service.ts").includes(
-      "`immich-${instanceTag.slice(0, 8)}-`",
     ),
   );
   assert.match(read("docker/example.env"), /^IMMICH_VERSION=release$/m);

@@ -483,6 +483,15 @@ export class UserService extends BaseService {
       return;
     }
 
+    // FL-44 (FN-304): the account physical deduplication retains originals in holds files other
+    // accounts point at; it stays until another account is chosen (UserAdminService refuses too).
+    if (config.physicalDeduplication.masterUserId === user.id) {
+      this.logger.error(
+        `Skipped deleting user ${user.id}: it retains the originals shared by physical deduplication; choose another account first`,
+      );
+      return;
+    }
+
     this.logger.log(`Deleting user: ${user.id}`);
 
     this.logger.warn(`Removing user from database: ${user.id}`);
@@ -496,17 +505,26 @@ export class UserService extends BaseService {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: originalFiles } });
     }
 
-    const folders = [
+    // FL-44 (FN-304): media folders can hold files other accounts still reference — a deduplicated
+    // original or derivative, a fork mapping's upstream path, a retained render. Each file goes
+    // through the same reference-guarded delete as FileDelete, and only emptied folders are removed.
+    const sharedFolders = [
       StorageCore.getLibraryFolder(user),
       StorageCore.getFolderLocation(StorageFolder.Upload, user.id),
-      StorageCore.getFolderLocation(StorageFolder.Profile, user.id),
       StorageCore.getFolderLocation(StorageFolder.Thumbnails, user.id),
       StorageCore.getFolderLocation(StorageFolder.EncodedVideo, user.id),
+    ];
+    for (const folder of sharedFolders) {
+      this.logger.warn(`Removing user from filesystem: ${folder}`);
+      await this.removeUnreferencedFiles(folder);
+    }
+
+    const privateFolders = [
+      StorageCore.getFolderLocation(StorageFolder.Profile, user.id),
       // Owner-private export artefacts: bundles, uploads and staged Studio renders (FL-62, FL-91, FL-106).
       StorageCore.getFolderLocation(StorageFolder.Exports, user.id),
     ];
-
-    for (const folder of folders) {
+    for (const folder of privateFolders) {
       this.logger.warn(`Removing user from filesystem: ${folder}`);
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
     }
@@ -521,6 +539,32 @@ export class UserService extends BaseService {
     await this.userRepository.delete(user, true);
 
     await this.eventRepository.emit('UserDelete', user);
+  }
+
+  /**
+   * Deletes every file under `folder` that nothing references any more, then the folders left empty.
+   * A file another account still references is kept, and so is the folder holding it.
+   */
+  private async removeUnreferencedFiles(folder: string) {
+    let kept = 0;
+    for await (const file of this.storageRepository.walkFiles(folder)) {
+      const { deleted } = await this.physicalFileRepository.deleteUnreferencedPath(file, () =>
+        this.storageRepository.unlink(file),
+      );
+      if (!deleted) {
+        kept++;
+      }
+    }
+    if (kept > 0) {
+      this.logger.warn(`Kept ${kept} file(s) in ${folder} that other accounts still reference`);
+    }
+    try {
+      await this.storageRepository.removeEmptyDirs(folder, true);
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT') {
+        throw error;
+      }
+    }
   }
 
   private isReadyForDeletion(user: { id: string; deletedAt?: Date | null }, delayUntilDeletion: number): boolean {

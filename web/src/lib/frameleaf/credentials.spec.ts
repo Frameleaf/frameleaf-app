@@ -29,10 +29,7 @@ const config = (): AdminConfigDto =>
       },
     },
     oauth: { clientId: 'frameleaf', clientSecret: 'oauth-secret', clientSecretConfigured: true },
-    machineLearning: {
-      enabled: true,
-      runpod: { apiKey: 'rp-secret', apiKeyConfigured: true, hfToken: 'hf-secret', hfTokenConfigured: false },
-    },
+    machineLearning: { enabled: true, urls: ['http://ml:3003'] },
     trash: { enabled: true, days: 30 },
   }) as unknown as AdminConfigDto;
 
@@ -48,12 +45,11 @@ describe('write-only credentials (FL-67)', () => {
 
     expect(safe.notifications.smtp.transport.password).toBe('');
     expect(safe.oauth.clientSecret).toBe('');
-    expect(safe.machineLearning.runpod?.apiKey).toBe('');
-    expect(safe.machineLearning.runpod?.hfToken).toBe('');
+    expect(safe.machineLearning).toEqual(original.machineLearning);
     expect(safe.notifications.smtp.transport.passwordConfigured).toBe(true);
     expect(safe.notifications.smtp.transport.host).toBe('mail.example.com');
     expect(safe.trash).toEqual(original.trash);
-    expect(JSON.stringify(safe)).not.toMatch(/smtp-secret|oauth-secret|rp-secret|hf-secret/);
+    expect(JSON.stringify(safe)).not.toMatch(/smtp-secret|oauth-secret/);
     expect(original.oauth.clientSecret).toBe('oauth-secret');
   });
 
@@ -69,7 +65,6 @@ describe('write-only credentials (FL-67)', () => {
     const saved = forConfigSave(config());
     expect(saved.notifications.smtp.transport).not.toHaveProperty('passwordConfigured');
     expect(saved.oauth).not.toHaveProperty('clientSecretConfigured');
-    expect(saved.machineLearning.runpod).not.toHaveProperty('apiKeyConfigured');
     expect(saved.oauth.clientSecret).toBe('');
 
     // a draft loaded before a credential was replaced compares equal to the fresh configuration
@@ -87,8 +82,12 @@ describe('write-only credentials (FL-67)', () => {
     const current = config();
     expect(isCredentialConfigured(current, ConfigCredential.SmtpPassword)).toBe(true);
     expect(isCredentialConfigured(current, ConfigCredential.OauthClientSecret)).toBe(true);
-    expect(isCredentialConfigured(current, ConfigCredential.RunpodApiKey)).toBe(true);
-    expect(isCredentialConfigured(current, ConfigCredential.HuggingfaceToken)).toBe(false);
+    expect(
+      isCredentialConfigured(
+        withCredentialState(current, ConfigCredential.OauthClientSecret, false),
+        ConfigCredential.OauthClientSecret,
+      ),
+    ).toBe(false);
     expect(isCredentialConfigured({}, ConfigCredential.SmtpPassword)).toBe(false);
   });
 
@@ -96,8 +95,8 @@ describe('write-only credentials (FL-67)', () => {
     const cleared = withCredentialState(config(), ConfigCredential.SmtpPassword, false);
     expect(cleared.notifications.smtp.transport).toMatchObject({ password: '', passwordConfigured: false });
 
-    const stored = withCredentialState(config(), ConfigCredential.HuggingfaceToken, true);
-    expect(stored.machineLearning.runpod).toMatchObject({ hfToken: '', hfTokenConfigured: true });
+    const stored = withCredentialState(config(), ConfigCredential.OauthClientSecret, true);
+    expect(stored.oauth).toMatchObject({ clientSecret: '', clientSecretConfigured: true });
     expect(JSON.stringify(stored)).not.toMatch(/-secret/);
   });
 

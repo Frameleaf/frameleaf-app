@@ -26,6 +26,9 @@ export const ML_WORKLOAD_ORDER: readonly MlWorkload[] = [
   MlWorkload.RestorationFaithful,
   MlWorkload.RestorationCreative,
   MlWorkload.StudioAi,
+  MlWorkload.Upscale,
+  MlWorkload.Interpolation,
+  MlWorkload.StudioRender,
 ];
 
 export const mlWorkloadLabelKey = (workload: MlWorkload): Translations => {
@@ -51,6 +54,15 @@ export const mlWorkloadLabelKey = (workload: MlWorkload): Translations => {
     case MlWorkload.StudioAi: {
       return 'admin.frameleaf_ml_workload_studio_ai';
     }
+    case MlWorkload.Upscale: {
+      return 'admin.frameleaf_ml_workload_upscale';
+    }
+    case MlWorkload.Interpolation: {
+      return 'admin.frameleaf_ml_workload_interpolation';
+    }
+    case MlWorkload.StudioRender: {
+      return 'admin.frameleaf_ml_workload_studio_render';
+    }
     case MlWorkload.PetRecognition: {
       return 'admin.frameleaf_ml_workload_pet_recognition';
     }
@@ -65,11 +77,8 @@ export const mlDestinationKindLabelKey = (kind: MlDestinationKind): Translations
     case MlDestinationKind.Lan: {
       return 'admin.frameleaf_ml_destination_kind_lan';
     }
-    case MlDestinationKind.Runpod: {
-      return 'admin.frameleaf_ml_destination_kind_runpod';
-    }
-    case MlDestinationKind.RunpodVideo: {
-      return 'admin.frameleaf_ml_destination_kind_runpod_video';
+    case MlDestinationKind.FrameleafCloud: {
+      return 'admin.frameleaf_ml_destination_kind_frameleaf_cloud';
     }
   }
 };
@@ -135,6 +144,24 @@ export const mlRefusalLabelKey = (refusal: MlAdmissionRefusal): Translations => 
     case MlAdmissionRefusal.RoleConflict: {
       return 'admin.frameleaf_ml_refusal_role_conflict';
     }
+    case MlAdmissionRefusal.CloudUnavailable: {
+      return 'admin.frameleaf_ml_refusal_cloud_unavailable';
+    }
+    case MlAdmissionRefusal.EntitlementMissing: {
+      return 'admin.frameleaf_ml_refusal_entitlement_missing';
+    }
+    case MlAdmissionRefusal.ConsentVersionOutdated: {
+      return 'admin.frameleaf_ml_refusal_consent_version_outdated';
+    }
+    case MlAdmissionRefusal.WalletInsufficient: {
+      return 'admin.frameleaf_ml_refusal_wallet_insufficient';
+    }
+    case MlAdmissionRefusal.QuotaExceeded: {
+      return 'admin.frameleaf_ml_refusal_quota_exceeded';
+    }
+    case MlAdmissionRefusal.ModelMismatch: {
+      return 'admin.frameleaf_ml_refusal_model_mismatch';
+    }
     case MlAdmissionRefusal.InsufficientMemory: {
       return 'admin.frameleaf_ml_refusal_insufficient_memory';
     }
@@ -161,22 +188,24 @@ export const isLibraryWorkload = (workload: MlWorkload) => LIBRARY_WORKLOADS.inc
 export const isRestorationWorkload = (workload: MlWorkload) => RESTORATION_WORKLOADS.includes(workload);
 
 /**
- * The workloads a destination of this kind may be allowed at all. The managed RunPod pod runs
- * the ordinary image and never restoration; a RunPod video worker runs restoration only.
+ * The workloads Frameleaf Cloud may run (FL-159): descriptions, restoration, upscaling, Studio AI and
+ * interpolation. Studio exports render at home only (§2.7). Faces are refused by policy; search and text recognition stay
+ * on this network. Mirrors the server's `FRAMELEAF_CLOUD_ML_WORKLOADS`.
  */
-export const workloadsForKind = (kind: MlDestinationKind): MlWorkload[] => {
-  switch (kind) {
-    case MlDestinationKind.Runpod: {
-      return ML_WORKLOAD_ORDER.filter((workload) => !isRestorationWorkload(workload));
-    }
-    case MlDestinationKind.RunpodVideo: {
-      return [...RESTORATION_WORKLOADS];
-    }
-    default: {
-      return [...ML_WORKLOAD_ORDER];
-    }
-  }
-};
+export const FRAMELEAF_CLOUD_WORKLOADS: readonly MlWorkload[] = [
+  MlWorkload.Enrichment,
+  MlWorkload.Upscale,
+  MlWorkload.RestorationFaithful,
+  MlWorkload.RestorationCreative,
+  MlWorkload.StudioAi,
+  MlWorkload.Interpolation,
+];
+
+/** The workloads a destination of this kind may be allowed at all. */
+export const workloadsForKind = (kind: MlDestinationKind): MlWorkload[] =>
+  kind === MlDestinationKind.FrameleafCloud
+    ? ML_WORKLOAD_ORDER.filter((workload) => FRAMELEAF_CLOUD_WORKLOADS.includes(workload))
+    : [...ML_WORKLOAD_ORDER];
 
 /**
  * Whether a workload checkbox is unavailable in the destination form: library analysis and
@@ -194,6 +223,10 @@ export const workloadBlockedInDraft = (
   if (selected.includes(workload)) {
     return false;
   }
+  // Frameleaf Cloud gives each job its own capacity, so it may run both (server `mayMixRoles`).
+  if (kind === MlDestinationKind.FrameleafCloud) {
+    return false;
+  }
   if (isRestorationWorkload(workload)) {
     return selected.some((entry) => isLibraryWorkload(entry));
   }
@@ -203,9 +236,18 @@ export const workloadBlockedInDraft = (
   return false;
 };
 
-/** A cloud destination whose consent has not been recorded cannot be routed to or admitted. */
+/** Frameleaf Cloud consent was given for an older version than the cloud now requires (FL-159). */
+export const isConsentOutdated = (destination: Pick<MlDestinationResponseDto, 'consent'>): boolean =>
+  destination.consent.acknowledgedAt !== null &&
+  destination.consent.requiredVersion !== null &&
+  destination.consent.version !== destination.consent.requiredVersion;
+
+/**
+ * A cloud destination whose consent has not been recorded, or whose recorded consent is for an
+ * older version than Frameleaf Cloud requires, cannot be routed to or admitted.
+ */
 export const isConsentBlocking = (destination: Pick<MlDestinationResponseDto, 'consent'>): boolean =>
-  destination.consent.required && destination.consent.acknowledgedAt === null;
+  destination.consent.required && (destination.consent.acknowledgedAt === null || isConsentOutdated(destination));
 
 /**
  * Whether the admin may route `workload` to `destination`: it must be enabled, allow the
@@ -220,12 +262,12 @@ export const canRouteTo = (
   destination.enabled &&
   destination.workloads.includes(workload) &&
   !isConsentBlocking(destination) &&
-  // FL-72: restoration is never routed to the library-analysis pod or to a worker that also runs
-  // library analysis. (The server additionally refuses an endpoint a library route uses.)
-  !(
-    isRestorationWorkload(workload) &&
-    (destination.kind === MlDestinationKind.Runpod || destination.role === MlWorkerRole.Mixed)
-  );
+  // FL-72: restoration is never routed to a worker that also runs library analysis, except Frameleaf
+  // Cloud, which schedules every job on its own capacity. (The server additionally refuses an
+  // endpoint a library route uses.)
+  (!isRestorationWorkload(workload) ||
+    destination.role !== MlWorkerRole.Mixed ||
+    destination.kind === MlDestinationKind.FrameleafCloud);
 
 /** Destinations that may currently be routed to for `workload`, in the order the server listed them. */
 export const routableDestinations = (

@@ -20,6 +20,7 @@ import {
   fromMediaOperation,
   fromUpload,
   matchesActivityFilter,
+  mediaOperationEdit,
   mediaOperationPauseState,
 } from '$lib/frameleaf/activity';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
@@ -82,12 +83,60 @@ const bulk = (overrides: Partial<BulkOperationRecord> = {}): BulkOperationRecord
 describe('fromMediaOperation', () => {
   it('reports the destination explicitly', () => {
     expect(fromMediaOperation(operation()).destinationKey).toBe('frameleaf_activity_destination_local');
-    expect(fromMediaOperation(operation({ destination: MediaOperationDestination.Runpod })).destinationKey).toBe(
-      'frameleaf_activity_destination_runpod',
-    );
+    expect(
+      fromMediaOperation(operation({ destination: MediaOperationDestination.FrameleafCloud })).destinationKey,
+    ).toBe('frameleaf_activity_destination_frameleaf_cloud');
     expect(fromMediaOperation(operation({ destination: MediaOperationDestination.Lan })).destinationKey).toBe(
       'frameleaf_activity_destination_lan',
     );
+  });
+
+  describe('edits the server renders (FL-43)', () => {
+    const edit = (value: string, overrides: Partial<MediaOperationDto> = {}) =>
+      operation({ kind: MediaOperationKind.QuickEdit, settings: { edit: value }, pausable: false, ...overrides });
+
+    it('names each edit by what was edited', () => {
+      expect(fromMediaOperation(edit('photo_edit')).kindKey).toBe('frameleaf_activity_kind_photo_edit');
+      expect(fromMediaOperation(edit('photo_version')).kindKey).toBe('frameleaf_activity_kind_photo_version');
+      expect(fromMediaOperation(edit('video_edit')).kindKey).toBe('frameleaf_activity_kind_video_edit');
+      expect(fromMediaOperation(edit('video_export')).kindKey).toBe('frameleaf_activity_kind_video_export');
+      // A render worker's quick edit, or an edit this client does not know, stays "Edit".
+      expect(fromMediaOperation(edit('resize')).kindKey).toBe('frameleaf_activity_kind_quick_edit');
+      expect(fromMediaOperation(operation({ kind: MediaOperationKind.QuickEdit })).kindKey).toBe(
+        'frameleaf_activity_kind_quick_edit',
+      );
+      expect(mediaOperationEdit(operation({ settings: { edit: 'photo_edit' } }))).toBeUndefined();
+    });
+
+    it('offers cancel only for a photo version, which the server stops between stages', () => {
+      expect(fromMediaOperation(edit('photo_version')).canCancel).toBe(true);
+      for (const value of ['photo_edit', 'video_edit', 'video_export']) {
+        expect(fromMediaOperation(edit(value)).canCancel).toBe(false);
+        expect(fromMediaOperation(edit(value, { status: MediaOperationStatus.Queued })).canCancel).toBe(false);
+      }
+    });
+
+    it('offers retry after a failure, and after a cancel only where a cancel was possible', () => {
+      for (const value of ['photo_edit', 'photo_version', 'video_edit', 'video_export']) {
+        expect(fromMediaOperation(edit(value, { status: MediaOperationStatus.Failed })).canRetry).toBe(true);
+        expect(fromMediaOperation(edit(value, { status: MediaOperationStatus.Completed })).canRetry).toBe(false);
+      }
+      expect(fromMediaOperation(edit('photo_version', { status: MediaOperationStatus.Cancelled })).canRetry).toBe(true);
+      expect(fromMediaOperation(edit('video_edit', { status: MediaOperationStatus.Cancelled })).canRetry).toBe(false);
+    });
+
+    it('names a withheld Locked edit only as a Locked item', () => {
+      expect(fromMediaOperation(edit('photo_edit', { label: '', withheld: true }))).toMatchObject({
+        kindKey: 'frameleaf_activity_kind_photo_edit',
+        titleKey: 'frameleaf_activity_title_locked_item',
+        withheld: true,
+        title: '',
+      });
+    });
+
+    it('never spills the edit into the settings line', () => {
+      expect(fromMediaOperation(edit('video_export')).details).toEqual([]);
+    });
   });
 
   it('never marks a server job as browser-local', () => {

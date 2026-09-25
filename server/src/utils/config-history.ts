@@ -40,7 +40,7 @@ export type ConfigHistoryKind = 'settings' | 'credential' | 'review';
 export type ConfigHistoryEntry = {
   id: string;
   createdAt: string;
-  /** The entry's own title, such as "Updated RunPod API key"; absent for a settings save. */
+  /** The entry's own title, such as "Updated email server password"; absent for a settings save. */
   title?: string | null;
   kind?: ConfigHistoryKind;
   actorId: string | null;
@@ -54,18 +54,11 @@ export type ConfigHistoryEntry = {
 export type ConfigHistory = { entries: ConfigHistoryEntry[] };
 
 /** Where each write-only credential lives, and the flag an administrator reads for it. */
-export const CREDENTIAL_CONFIG_PATHS = [
-  'notifications.smtp.transport.password',
-  'oauth.clientSecret',
-  'machineLearning.runpod.apiKey',
-  'machineLearning.runpod.hfToken',
-] as const;
+export const CREDENTIAL_CONFIG_PATHS = ['notifications.smtp.transport.password', 'oauth.clientSecret'] as const;
 
 const CREDENTIAL_FLAG_PATHS = new Set([
   'notifications.smtp.transport.passwordConfigured',
   'oauth.clientSecretConfigured',
-  'machineLearning.runpod.apiKeyConfigured',
-  'machineLearning.runpod.hfTokenConfigured',
 ]);
 
 const SERVER_MANAGED = new Set<string>(SERVER_MANAGED_CONFIG_PATHS);
@@ -244,11 +237,9 @@ export const appendConfigHistory = (
 export const CREDENTIAL_TITLES: Record<string, string> = {
   'smtp-password': 'email server password',
   'oauth-client-secret': 'OAuth client secret',
-  'runpod-api-key': 'RunPod API key',
-  'huggingface-token': 'Hugging Face token',
 };
 
-/** "Updated RunPod API key" / "Cleared RunPod API key": the entry for one credential, never its value. */
+/** "Updated email server password" / "Cleared email server password": the entry for one credential, never its value. */
 export const credentialHistoryTitle = (name: string, change: ConfigHistoryCredentialChange) =>
   `${change === 'replaced' ? 'Updated' : 'Cleared'} ${CREDENTIAL_TITLES[name] ?? name}`;
 

@@ -2,8 +2,10 @@
   /**
    * Library care → Repair queues (FL-71): the template's `repairs` panel (CommandCenter.jsx), one
    * entry per repair workflow, each opening its utility. Only the tools this account may use appear.
+   * For an administrator the template's three suggestion toggles come first (FL-69).
    */
   import { goto } from '$app/navigation';
+  import LibraryCareToggles from '$lib/components/frameleaf/settings/LibraryCareToggles.svelte';
   import { utilitiesUrl, utilityToolsFor, type UtilityId } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Icon } from '@immich/ui';
@@ -34,6 +36,7 @@
   );
 </script>
 
+<LibraryCareToggles section="repair" />
 <div class="cc-repair-grid">
   {#each available as repair (repair.tool)}
     <button type="button" onclick={() => goto(utilitiesUrl(repair.tool))}>

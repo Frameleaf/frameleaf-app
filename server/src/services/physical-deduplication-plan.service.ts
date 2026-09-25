@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
@@ -7,8 +7,10 @@ import {
   PhysicalDeduplicationApplyDto,
   PhysicalDeduplicationApplyRequestDto,
   PhysicalDeduplicationPreviewResponseDto,
+  PhysicalDeduplicationRestoreRequestDto,
   PhysicalDeduplicationReviewRequestDto,
   PhysicalDeduplicationReviewResponseDto,
+  PhysicalDeduplicationVerificationDto,
 } from 'src/dtos/physical-deduplication.dto.js';
 import {
   DatabaseLock,
@@ -54,6 +56,13 @@ export const PHYSICAL_DEDUPLICATION_LEASE_MS = 10 * 60_000;
 export const PHYSICAL_DEDUPLICATION_APPLIES_SHOWN = 10;
 
 const KIND = MediaOperationKind.PhysicalDeduplication;
+
+/** Jobs no worker changes files for any more: the ones a verification can trust to hold still. */
+const FINISHED: ReadonlySet<MediaOperationStatus> = new Set([
+  MediaOperationStatus.Completed,
+  MediaOperationStatus.Cancelled,
+  MediaOperationStatus.Failed,
+]);
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -214,6 +223,48 @@ export class PhysicalDeduplicationPlanService {
     const { created } = outcome;
     this.logger.log(`Physical deduplication plan ${plan.planId} queued as ${created.id} (${plan.items.length} copies)`);
     return mapOperation(created);
+  }
+
+  /**
+   * Verify an applied plan (FL-73): hash every retained original its copies share again and check
+   * that every copy it changed still resolves to one. Any administrator may verify any applied plan;
+   * the rows answer with their visibility rules. A job still running is refused (409), since its
+   * copies are changing underneath the check.
+   */
+  async verify(auth: AuthDto, id: string): Promise<PhysicalDeduplicationVerificationDto> {
+    const { snapshot, appliedIds } = await this.finishedApply(id);
+    const report = await this.deduplication.verifyAppliedCopies(auth, snapshot, appliedIds);
+    return { operationId: id, planId: snapshot.planId, verifiedAt: new Date().toISOString(), ...report };
+  }
+
+  /**
+   * Put one copy of an applied plan back on its own file, where that file is still on disk, and
+   * answer with the plan verified again. A copy whose own file was removed cannot be restored.
+   */
+  async restore(
+    auth: AuthDto,
+    id: string,
+    dto: PhysicalDeduplicationRestoreRequestDto,
+  ): Promise<PhysicalDeduplicationVerificationDto> {
+    const { snapshot, appliedIds } = await this.finishedApply(id);
+    await this.deduplication.restoreAppliedCopy(auth, snapshot, appliedIds, dto.assetId);
+    return this.verify(auth, id);
+  }
+
+  /** A finished apply job with the copies it changed. */
+  private async finishedApply(id: string) {
+    const operation = await this.operations.getOfKind(id, KIND);
+    if (!operation) {
+      throw new NotFoundException('Applied plan not found');
+    }
+    if (!FINISHED.has(operation.status as MediaOperationStatus)) {
+      throw new ConflictException('Wait for this plan to finish before verifying it.');
+    }
+    const snapshot = parsePhysicalDeduplicationSnapshot(operation.snapshot);
+    const appliedIds = parsePhysicalDeduplicationResult(operation.result)
+      .items.filter((item) => item.state === 'applied' || item.state === 'already-applied')
+      .map((item) => item.id);
+    return { snapshot, appliedIds };
   }
 
   /**

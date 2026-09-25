@@ -206,6 +206,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'Enrichment previews, durable enrichment plans and timestamped video moments. A preview runs a draft prompt or model on chosen samples without writing anything; a plan runs chosen stages on a frozen set of assets through the destinations pinned when it was queued.',
   [ApiTag.Faces]:
     'A face is a detected human face within an asset, which can be associated with a person. Faces are normally detected via machine learning, but can also be created manually.',
+  [ApiTag.FrameleafCloudMl]:
+    'Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback.',
   [ApiTag.Integrity]: 'Endpoints for viewing and managing integrity reports.',
   [ApiTag.Jobs]:
     'Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed.',
@@ -237,8 +239,6 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.Queues]:
     'Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed.',
   [ApiTag.RenderWorkers]: 'Render workers and their admitted media operations.',
-  [ApiTag.RunPod]:
-    'Provision the Immich machine-learning container on RunPod cloud GPUs. The integration manages a single pod, transparently routes ML jobs to it, and stops it when idle to control cost.',
   [ApiTag.Search]:
     'Endpoints related to searching assets via text, smart search, optical character recognition (OCR), and other filters like person, album, and other metadata. Search endpoints usually support pagination and sorting.',
   [ApiTag.Server]:

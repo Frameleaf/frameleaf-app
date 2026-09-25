@@ -20,6 +20,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -71,6 +72,7 @@ const setup = () => {
     photoTools,
     new StorageRepository(logger()),
     new SystemMetadataRepository(database),
+    new MediaOperationRepository(database),
   );
   const presets = new PhotoToolsService(logger(), photoTools);
   return { ctx, sut, presets, job, develop, integrity: new IntegrityRepository(database) };

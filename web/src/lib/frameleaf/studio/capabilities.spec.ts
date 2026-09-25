@@ -1,11 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { probeStudioCapabilities, toStudioCapabilities } from '$lib/frameleaf/studio/capabilities';
+import {
+  probeStudioCapabilities,
+  probeStudioHost,
+  toStudioCapabilities,
+  toStudioRenderEvidence,
+} from '$lib/frameleaf/studio/capabilities';
 import { emptyStudioCapabilities } from '$lib/frameleaf/studio/host-contract';
 
 const snapshot = (studio: Record<string, boolean>) => ({
   workloads: [],
-  studio: { gpuWorker: false, renderWorker: false, restorationWorker: false, transcriptionWorker: false, ...studio },
+  studio: {
+    gpuWorker: false,
+    renderWorker: false,
+    restorationWorker: false,
+    transcriptionWorker: false,
+    render: [],
+    ...studio,
+  },
   probedAt: '2026-09-22T12:00:00.000Z',
 });
 
@@ -40,6 +52,7 @@ describe('probeStudioCapabilities (FL-110)', () => {
         renderWorker: undefined as unknown as boolean,
         restorationWorker: true,
         transcriptionWorker: false,
+        render: [],
       }),
     ).toEqual({
       analysisWorker: false,
@@ -49,5 +62,28 @@ describe('probeStudioCapabilities (FL-110)', () => {
       restorationWorker: true,
       transcriptionWorker: false,
     });
+  });
+
+  it('passes on the render evidence of the same snapshot and drops malformed rows (FL-42)', async () => {
+    const row = {
+      destination: 'lan',
+      sessions: 1,
+      gpuMemoryBytes: 8_589_934_592,
+      codecs: ['hevc_nvenc'],
+      maxBitDepth: 10,
+      hdr10: true,
+      dolbyVision: false,
+    };
+    sdkMock.getMlCapabilities.mockResolvedValue({
+      ...snapshot({ renderWorker: true }),
+      studio: { ...snapshot({ renderWorker: true }).studio, render: [row] },
+    } as never);
+    await expect(probeStudioHost()).resolves.toMatchObject({ renderEvidence: [row] });
+
+    expect(toStudioRenderEvidence({ render: [row, { ...row, hdr10: 'yes' }, null] as never })).toEqual([row]);
+    expect(toStudioRenderEvidence({} as never)).toEqual([]);
+
+    sdkMock.getMlCapabilities.mockRejectedValue(new Error('offline'));
+    await expect(probeStudioHost()).resolves.toEqual({ capabilities: expect.any(Object), renderEvidence: [] });
   });
 });

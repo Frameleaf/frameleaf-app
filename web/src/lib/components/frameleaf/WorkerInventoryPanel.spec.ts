@@ -55,10 +55,10 @@ const entry = (overrides: Partial<WorkerInventoryEntryDto> = {}): WorkerInventor
   ...overrides,
 });
 
-const runPod = entry({
+const cloud = entry({
   id: '22222222-2222-4222-8222-222222222222',
-  name: 'RunPod',
-  kind: MlDestinationKind.Runpod,
+  name: 'Frameleaf Cloud',
+  kind: MlDestinationKind.FrameleafCloud,
   url: null,
   readiness: MlWorkerReadiness.Unreachable,
   acceleration: MlWorkerAcceleration.Unknown,
@@ -72,7 +72,7 @@ const runPod = entry({
       workload: MlWorkload.Enrichment,
       admitted: false,
       refusal: MlAdmissionRefusal.EndpointUnresolved,
-      detail: 'RunPod has no running pod or ready serverless worker',
+      detail: 'Frameleaf Cloud is not linked to this server',
     },
   ],
 });
@@ -99,13 +99,13 @@ const restoration = entry({
 });
 
 const inventory = (overrides: Partial<WorkerInventoryResponseDto> = {}): WorkerInventoryResponseDto => ({
-  entries: [entry(), runPod, restoration],
+  entries: [entry(), cloud, restoration],
   runners: [],
   libraryRoutes: [
     { workload: MlWorkload.Face, destinationId: entry().id, queues: [QueueName.FaceDetection] },
     { workload: MlWorkload.Clip, destinationId: null, queues: [QueueName.SmartSearch] },
     { workload: MlWorkload.Ocr, destinationId: null, queues: [QueueName.Ocr] },
-    { workload: MlWorkload.Enrichment, destinationId: runPod.id, queues: [QueueName.ImageDescription] },
+    { workload: MlWorkload.Enrichment, destinationId: cloud.id, queues: [QueueName.ImageDescription] },
   ],
   libraryQueues: [
     { queue: QueueName.FaceDetection, active: 1, waiting: 12, paused: false },
@@ -149,11 +149,11 @@ describe('WorkerInventoryPanel (FL-72)', () => {
     expect(within(video).getByText(/waiting for library analysis/)).toBeInTheDocument();
   });
 
-  it('shows RunPod-first routing as RunPod, never as local', () => {
+  it('shows routing to Frameleaf Cloud as Frameleaf Cloud, never as local', () => {
     render(WorkerInventoryPanel, { inventory: inventory(), destinations: [] });
 
     const routes = screen.getByRole('region', { name: 'Library analysis routes' });
-    expect(within(routes).getByText('RunPod · RunPod (cloud)')).toBeInTheDocument();
+    expect(within(routes).getByText('Frameleaf Cloud · Frameleaf Cloud')).toBeInTheDocument();
     expect(within(routes).getAllByText('Not routed: jobs are refused').length).toBe(2);
   });
 

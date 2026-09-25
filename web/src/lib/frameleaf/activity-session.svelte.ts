@@ -7,6 +7,7 @@ import {
   searchMediaOperations,
 } from '@immich/sdk';
 import type { MediaOperationDto } from '@immich/sdk';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**
  * The live view of the durable job feed (FL-104).
@@ -24,8 +25,13 @@ import type { MediaOperationDto } from '@immich/sdk';
 const ACTIVE_POLL_MS = 3000;
 /** How often to look again once everything has settled, in case something new was submitted. */
 const IDLE_POLL_MS = 30_000;
-/** The page shows the recent history, not the whole archive. */
+/**
+ * The page shows the recent history, not the whole archive. The server lists unfinished jobs first
+ * (FL-43), so every job still running is on this page however many have finished since.
+ */
 const PAGE_SIZE = 100;
+/** Job updates arrive in bursts (a stage, then its progress); one read answers a burst. */
+const UPDATE_COALESCE_MS = 250;
 
 const isRunning = (operation: MediaOperationDto) =>
   ['queued', 'preparing', 'rendering', 'validating', 'cancelling'].includes(operation.status);
@@ -46,6 +52,7 @@ export class ActivitySession {
   #subscribers = 0;
   #inFlight: Promise<void> | null = null;
   #unlisten: (() => void) | null = null;
+  #nudge: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Ask the server for the current state.
@@ -99,16 +106,42 @@ export class ActivitySession {
   }
 
   /**
-   * Reconnect recovers the exact jobs (FL-43): the moment the browser is back online, or the tab is
-   * shown again, the list is asked for afresh instead of waiting out the idle interval. The rows are
-   * the server's, so what comes back is exactly where every job got to while this tab was away.
+   * Reconnect recovers the exact jobs (FL-43): the moment the browser is back online, the tab is
+   * shown again or the server's socket connects again, the list is asked for afresh instead of
+   * waiting out the idle interval. The rows are the server's, so what comes back is exactly where
+   * every job got to while this tab was away.
+   *
+   * While connected, the server says when one of this account's jobs changed
+   * (`on_media_operation_update`, the job's id and nothing else), and the list is read again then.
    */
   #listen() {
+    const again = () => void this.refresh().then(() => this.#schedule());
+    const soon = () => {
+      if (this.#nudge !== null) {
+        return;
+      }
+      this.#nudge = setTimeout(() => {
+        this.#nudge = null;
+        again();
+      }, UPDATE_COALESCE_MS);
+    };
+    const unsubscribe = eventManager.on({ WebsocketConnect: again, MediaOperationUpdate: soon });
+    const stopNudge = () => {
+      if (this.#nudge === null) {
+        return;
+      }
+      clearTimeout(this.#nudge);
+      this.#nudge = null;
+    };
+
     if (typeof document === 'undefined') {
+      this.#unlisten = () => {
+        unsubscribe();
+        stopNudge();
+      };
       return;
     }
 
-    const again = () => void this.refresh().then(() => this.#schedule());
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
         again();
@@ -117,6 +150,8 @@ export class ActivitySession {
     addEventListener('online', again);
     document.addEventListener('visibilitychange', onVisibility);
     this.#unlisten = () => {
+      unsubscribe();
+      stopNudge();
       removeEventListener('online', again);
       document.removeEventListener('visibilitychange', onVisibility);
     };

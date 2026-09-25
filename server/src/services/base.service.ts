@@ -32,12 +32,18 @@ import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
@@ -52,7 +58,6 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
-import { RunPodRepository } from 'src/repositories/runpod.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -110,6 +115,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   MachineLearningRepository,
   MapRepository,
   MediaRepository,
+  MediaOperationRepository,
   MemoryRepository,
   MetadataRepository,
   MlDestinationRepository,
@@ -123,7 +129,11 @@ export const BASE_SERVICE_DEPENDENCIES = [
   PluginRepository,
   ProcessRepository,
   RenderWorkerRepository,
-  RunPodRepository,
+  FrameleafCloudRepository,
+  FrameleafCloudMlRepository,
+  FrameleafConsentRepository,
+  HardwareProbeRepository,
+  InstanceIdentityRepository,
   SearchRepository,
   ServerInfoRepository,
   SmartAlbumRepository,
@@ -179,6 +189,7 @@ export class BaseService {
     protected machineLearningRepository: MachineLearningRepository,
     protected mapRepository: MapRepository,
     protected mediaRepository: MediaRepository,
+    protected mediaOperationRepository: MediaOperationRepository,
     protected memoryRepository: MemoryRepository,
     protected metadataRepository: MetadataRepository,
     protected mlDestinationRepository: MlDestinationRepository,
@@ -192,7 +203,11 @@ export class BaseService {
     protected pluginRepository: PluginRepository,
     protected processRepository: ProcessRepository,
     protected renderWorkerRepository: RenderWorkerRepository,
-    protected runPodRepository: RunPodRepository,
+    protected frameleafCloudRepository: FrameleafCloudRepository,
+    protected frameleafCloudMlRepository: FrameleafCloudMlRepository,
+    protected frameleafConsentRepository: FrameleafConsentRepository,
+    protected hardwareProbeRepository: HardwareProbeRepository,
+    protected instanceIdentityRepository: InstanceIdentityRepository,
     protected searchRepository: SearchRepository,
     protected serverInfoRepository: ServerInfoRepository,
     protected smartAlbumRepository: SmartAlbumRepository,
@@ -257,6 +272,7 @@ export class BaseService {
       ctx.machineLearningRepository,
       ctx.mapRepository,
       ctx.mediaRepository,
+      ctx.mediaOperationRepository,
       ctx.memoryRepository,
       ctx.metadataRepository,
       ctx.mlDestinationRepository,
@@ -270,7 +286,11 @@ export class BaseService {
       ctx.pluginRepository,
       ctx.processRepository,
       ctx.renderWorkerRepository,
-      ctx.runPodRepository,
+      ctx.frameleafCloudRepository,
+      ctx.frameleafCloudMlRepository,
+      ctx.frameleafConsentRepository,
+      ctx.hardwareProbeRepository,
+      ctx.instanceIdentityRepository,
       ctx.searchRepository,
       ctx.serverInfoRepository,
       ctx.smartAlbumRepository,

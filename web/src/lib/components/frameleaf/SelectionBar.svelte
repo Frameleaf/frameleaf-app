@@ -7,6 +7,7 @@
   import BulkLocationDialog from '$lib/components/frameleaf/BulkLocationDialog.svelte';
   import BulkOperationStatus from '$lib/components/frameleaf/BulkOperationStatus.svelte';
   import BulkTagDialog from '$lib/components/frameleaf/BulkTagDialog.svelte';
+  import PreservationExportDialog from '$lib/components/frameleaf/PreservationExportDialog.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import {
     bulkActionById,
@@ -21,10 +22,11 @@
     type BulkAsset,
   } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { selectionForPreservation } from '$lib/frameleaf/preservation';
   import { canSendCopies, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
   import { SharedLinkType } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { Icon, toastManager } from '@immich/ui';
   import {
     mdiArchiveArrowUpOutline,
     mdiArchiveOutline,
@@ -53,6 +55,7 @@
     mdiMotionPauseOutline,
     mdiMotionPlayOutline,
     mdiMovieEditOutline,
+    mdiPackageVariantClosed,
     mdiPlaylistRemove,
     mdiShieldLockOutline,
     mdiShieldOutline,
@@ -94,6 +97,7 @@
     mdiMotionPauseOutline,
     mdiMotionPlayOutline,
     mdiMovieEditOutline,
+    mdiPackageVariantClosed,
     mdiPlaylistRemove,
     mdiShieldLockOutline,
     mdiShieldOutline,
@@ -503,6 +507,23 @@
   <BulkAlbumDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('add-to-album', payload)} />
 {:else if dialog === 'delete-permanently'}
   <BulkConfirmDialog {count} bind:open={dialogOpen} onConfirm={() => submitDialog('delete-permanently')} />
+{:else if dialog === 'export-preservation'}
+  <!--
+    FL-74: the Preservation export workflow (CommandCenter.jsx `preservation`, settings-catalog.mjs
+    "Originals & preservation") opened on this selection. The dialog starts its own durable job, so
+    nothing is dispatched to the bulk runner; only the viewer's own items are sent.
+  -->
+  <PreservationExportDialog
+    bind:open={dialogOpen}
+    selection={selectionForPreservation(selectedIds, assets, context.currentUserId)}
+    includeLockedDefault={locked}
+    onCreated={() => {
+      dialog = null;
+      dialogOpen = false;
+      onDialogSettled?.('export-preservation', true);
+      toastManager.info($t('frameleaf_preservation_export_started'));
+    }}
+  />
 {:else if dialog === 'create-shared-link'}
   <!-- The form creates the link itself, so nothing is dispatched to the bulk runner. -->
   <SharedLinkForm

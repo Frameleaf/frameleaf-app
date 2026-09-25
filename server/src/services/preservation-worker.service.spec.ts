@@ -302,6 +302,87 @@ describe(PreservationWorkerService.name, () => {
       });
     });
 
+    describe('hidden text evidence (FL-74)', () => {
+      const region = (left: number, top: number) => ({
+        x1: left,
+        y1: top,
+        x2: left + 0.2,
+        y2: top,
+        x3: left + 0.2,
+        y3: top + 0.1,
+        x4: left,
+        y4: top + 0.1,
+      });
+      const noRegion = { x1: null, y1: null, x2: null, y2: null, x3: null, y3: null, x4: null, y4: null };
+      const exportAsset = (overrides: Record<string, unknown> = {}) => ({
+        id: newUuid(),
+        ownerId,
+        type: 'IMAGE',
+        originalFileName: 'receipt.jpg',
+        fileCreatedAt: new Date('2024-06-01T10:00:00.000Z'),
+        fileModifiedAt: new Date('2024-06-01T10:00:00.000Z'),
+        localDateTime: new Date('2024-06-01T10:00:00.000Z'),
+        dateTimeOriginal: null,
+        timeZone: null,
+        isFavorite: false,
+        visibility: AssetVisibility.Timeline,
+        livePhotoVideoId: null,
+        stackId: null,
+        isEdited: true,
+        isLocked: false,
+        width: 1000,
+        height: 1000,
+        exifImageWidth: 1000,
+        exifImageHeight: 1000,
+        latitude: null,
+        longitude: null,
+        description: null,
+        rating: null,
+        ...overrides,
+      });
+      const documents = [
+        { key: 'total', action: 'correct', value: '12.50', ...region(0.1, 0.1) },
+        { key: 'address', action: 'correct', value: '1 Cropped Street', ...region(0.7, 0.8) },
+        { key: 'kind', action: 'confirm', value: null, ...noRegion },
+      ];
+
+      beforeEach(() => {
+        Object.assign(repository, {
+          getLock: vi.fn(),
+          getTagValues: vi.fn().mockResolvedValue([]),
+          getOwnedAlbumIds: vi.fn().mockResolvedValue([]),
+          getNamedFaces: vi.fn().mockResolvedValue([]),
+          // Cropped to the top-left quarter: the address was cut out of the picture.
+          getEditRecipe: vi
+            .fn()
+            .mockResolvedValue([{ action: 'crop', parameters: { x: 0, y: 0, width: 500, height: 500 } }]),
+          getDocumentEdits: vi.fn().mockResolvedValue(documents),
+          getMoments: vi.fn().mockResolvedValue([]),
+          getStackPrimary: vi.fn(),
+          getEnrichmentMetadata: vi.fn().mockResolvedValue(undefined),
+        });
+      });
+
+      it('leaves out a document decision whose text was cropped away, and never copies recognized text', async () => {
+        const sidecar = (await worker().buildSidecar(ownerId, exportAsset(), { sha1, sha256 })) as PreservationSidecar;
+
+        expect(sidecar.documents.map((document) => document.key)).toEqual(['total', 'kind']);
+        const written = JSON.stringify(sidecar);
+        expect(written).not.toContain('Cropped Street');
+        // Only the owner's own decisions travel: no recognized-text lines, boxes or scores.
+        expect(sidecar).not.toHaveProperty('ocr');
+        expect(written).not.toMatch(/"(boxScore|textScore|ocr)"/);
+      });
+
+      it('keeps every located decision out when a crop meets unknown image geometry', async () => {
+        const asset = exportAsset({ width: null, height: null, exifImageWidth: null, exifImageHeight: null });
+
+        const sidecar = (await worker().buildSidecar(ownerId, asset, { sha1, sha256 })) as PreservationSidecar;
+
+        expect(sidecar.documents.map((document) => document.key)).toEqual(['kind']);
+      });
+    });
+
     it('stops the whole job when the disk is full, after recording the item', async () => {
       const item = itemOf();
       repository.getExportAsset.mockResolvedValue({
@@ -422,6 +503,32 @@ describe(PreservationWorkerService.name, () => {
 
       await worker().restoreItem(contextOf(), restoreItemOf({ decisions: { description: 'replace' } }));
       expect(assets.update).toHaveBeenCalledWith(expect.anything(), existing, { description: 'Our first trip' });
+    });
+
+    it('applies a choice made before a failed attempt when the item is retried (FL-74)', async () => {
+      const existing = newUuid();
+      repository.findByChecksum.mockResolvedValue([
+        { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
+      ]);
+      repository.getLibraryState.mockResolvedValue(library({ description: 'Mine now' }));
+      // A failed item handed back by the retry: attempts reset, the owner's choice still on the row.
+      const retried = restoreItemOf({
+        state: 'failed',
+        attempts: 0,
+        error: 'The server restarted',
+        decisions: { description: 'replace' },
+      });
+
+      expect(await worker().restoreItem(contextOf({ conflictDefault: 'keep' }), retried)).toBe('matched');
+
+      expect(assets.update).toHaveBeenCalledWith(
+        expect.anything(),
+        existing,
+        expect.objectContaining({ description: 'Our first trip' }),
+      );
+      for (const [, patch] of repository.updateRestoreItem.mock.calls) {
+        expect(patch).not.toHaveProperty('decisions');
+      }
     });
 
     it('locks a matched original the package says is Locked, and never unlocks one', async () => {

@@ -211,7 +211,7 @@ class ImageDescriptionModel(InferenceModel):
         # Scope cache directory by acceleration backend so CUDA (full-precision
         # PyTorch weights) and OpenVINO (int4 IR) snapshots do not collide on
         # the same path. Without this scoping, switching acceleration with a
-        # persistent /cache volume (RunPod-style deployments) silently loads
+        # persistent /cache volume (remote GPU deployments) silently loads
         # the wrong weights and the loader crashes opaquely. See ml.md Critical #2.
         base = settings.cache_folder / self.model_task.value / self.model_name
         scoped = base / str(self.acceleration)

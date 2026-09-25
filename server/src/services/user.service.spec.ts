@@ -441,24 +441,20 @@ describe(UserService.name, () => {
 
       await sut.handleUserDelete({ id: user.id });
 
-      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
-        expect.stringContaining('/data/library/deleted-user'),
-        options,
-      );
-      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
-        expect.stringContaining('/data/upload/deleted-user'),
-        options,
-      );
+      // FL-44: media folders are emptied file by file through the reference guard, never recursively
+      for (const folder of ['library', 'upload', 'thumbs', 'encoded-video']) {
+        expect(mocks.storage.walkFiles).toHaveBeenCalledWith(expect.stringContaining(`/data/${folder}/deleted-user`));
+        expect(mocks.storage.removeEmptyDirs).toHaveBeenCalledWith(
+          expect.stringContaining(`/data/${folder}/deleted-user`),
+          true,
+        );
+        expect(mocks.storage.unlinkDir).not.toHaveBeenCalledWith(
+          expect.stringContaining(`/data/${folder}/deleted-user`),
+          expect.anything(),
+        );
+      }
       expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
         expect.stringContaining('/data/profile/deleted-user'),
-        options,
-      );
-      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
-        expect.stringContaining('/data/thumbs/deleted-user'),
-        options,
-      );
-      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
-        expect.stringContaining('/data/encoded-video/deleted-user'),
         options,
       );
       expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
@@ -484,9 +480,51 @@ describe(UserService.name, () => {
 
       await sut.handleUserDelete({ id: user.id });
 
-      const options = { force: true, recursive: true };
+      expect(mocks.storage.walkFiles).toHaveBeenCalledWith(expect.stringContaining('data/library/admin'));
+    });
 
-      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining('data/library/admin'), options);
+    it('keeps files another account still references and deletes the rest (FL-44)', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      const shared = '/data/library/deleted-user/2024/shared.jpg';
+      const own = '/data/library/deleted-user/2024/own.jpg';
+      mocks.storage.walkFiles.mockImplementation((folder: string) =>
+        (async function* () {
+          yield* await Promise.resolve(folder.endsWith('/library/deleted-user') ? [shared, own] : []);
+        })(),
+      );
+      mocks.physicalFile.deleteUnreferencedPath.mockImplementation(async (path, unlink) => {
+        if (path === shared) {
+          return { deleted: false, references: 1 };
+        }
+        await unlink();
+        return { deleted: true, references: 0 };
+      });
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(shared, expect.any(Function));
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(own, expect.any(Function));
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(own);
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(shared);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Kept 1 file(s)'));
+      expect(mocks.user.delete).toHaveBeenCalledWith(user, true);
+    });
+
+    it('never deletes the account physical deduplication retains originals in (FL-44)', async () => {
+      const user = { id: 'retained-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.systemMetadata.get.mockResolvedValue({
+        physicalDeduplication: { enabled: true, masterUserId: user.id },
+      });
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
+      expect(mocks.storage.walkFiles).not.toHaveBeenCalled();
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.user.delete).not.toHaveBeenCalled();
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('retains the originals'));
     });
 
     it('removes an account an administrator removed now (force) at once (FL-71)', async () => {

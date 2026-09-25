@@ -48,6 +48,11 @@ export interface ClientEventMap {
   on_session_delete: [string];
   /** FL-34: the elevated (PIN-unlocked) access of the receiving session(s) was revoked. */
   on_session_lock: [];
+  /**
+   * FL-43: one of the receiving account's jobs changed state. Only the id travels; the client asks the
+   * owner-scoped job list again, so nothing about the job is revealed by the event itself.
+   */
+  on_media_operation_update: [string];
 
   AssetUploadReadyV2: [{ asset: SyncAssetV2; exif: SyncAssetExifV1 }];
   AppRestartV1: [AppRestartEvent];

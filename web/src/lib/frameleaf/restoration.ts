@@ -153,11 +153,8 @@ export const destinationKindKey = (kind: MlDestinationKind) => {
     case MlDestinationKind.Lan: {
       return 'frameleaf_activity_destination_lan';
     }
-    case MlDestinationKind.Runpod: {
-      return 'frameleaf_activity_destination_runpod';
-    }
-    case MlDestinationKind.RunpodVideo: {
-      return 'frameleaf_activity_destination_runpod_video';
+    case MlDestinationKind.FrameleafCloud: {
+      return 'frameleaf_activity_destination_frameleaf_cloud';
     }
   }
 };
@@ -165,8 +162,7 @@ export const destinationKindKey = (kind: MlDestinationKind) => {
 const KIND_ORDER: Record<MlDestinationKind, number> = {
   [MlDestinationKind.Local]: 0,
   [MlDestinationKind.Lan]: 1,
-  [MlDestinationKind.Runpod]: 2,
-  [MlDestinationKind.RunpodVideo]: 2,
+  [MlDestinationKind.FrameleafCloud]: 2,
 };
 
 /**

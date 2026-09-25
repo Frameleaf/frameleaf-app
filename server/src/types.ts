@@ -1,5 +1,6 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
+import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
@@ -288,6 +289,11 @@ export interface IPersonJob {
   personGroupId: string;
 }
 
+/** FL-43: the `media_operation` row an edit render runs under, when it was recorded as a job. */
+export interface IEditOperationJob {
+  operationId?: string;
+}
+
 /**
  * FL-57: face or person changes that may make generated text name the wrong people. The owner's assets
  * showing `personGroupIds`, and `assetIds`, have their stale generated descriptions regenerated and
@@ -452,7 +458,7 @@ export type JobItem =
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
   | { name: JobName.AssetEncodeVideo; data: IEntityJob }
-  | { name: JobName.AssetVideoEditGeneration; data: IEntityJob & { versionId?: string } }
+  | { name: JobName.AssetVideoEditGeneration; data: IEntityJob & IEditOperationJob & { versionId?: string } }
 
   // Thumbnails
   | { name: JobName.AssetGenerateThumbnailsQueueAll; data: IBaseJob }
@@ -564,7 +570,11 @@ export type JobItem =
 
   // Image enrichment
   | { name: JobName.ImageDescriptionQueueAll; data: IBaseJob }
-  | { name: JobName.ImageDescription; data: IEntityJob }
+  | {
+      name: JobName.ImageDescription;
+      /** `onlyAffected`: a full rerun under Library care's "Reprocess only affected outputs" (FL-69). */
+      data: IEntityJob & { onlyAffected?: boolean };
+    }
   | { name: JobName.NsfwDetectionQueueAll; data: IBaseJob }
   | { name: JobName.NsfwDetection; data: IEntityJob }
 
@@ -614,8 +624,8 @@ export type JobItem =
   | { name: JobName.IntegrityDeleteReports; data: IIntegrityDeleteReportsJob }
 
   // Editor
-  | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob }
-  | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob };
+  | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }
+  | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob & IEditOperationJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
 
@@ -729,85 +739,67 @@ export type MemoriesState = {
 };
 export type MediaLocation = { location: string };
 
-export type RunPodPersistedState =
-  | { status: 'idle'; instanceTag?: string }
-  | {
-      status: 'provisioning' | 'starting';
-      podId: string;
-      podCreatedAt: string;
-      gpuTypeId: string;
-      imageName: string;
-      authToken: string;
-      instanceTag: string;
-    }
-  | {
-      status: 'running';
-      podId: string;
-      podCreatedAt: string;
-      gpuTypeId: string;
-      imageName: string;
-      mlUrl: string;
-      authToken: string;
-      runningSince: string;
-      lastBusyAt: string;
-      maxRuntimeHours: number;
-      instanceTag: string;
-      unhealthySince?: string;
-    }
-  | {
-      status: 'stopping';
-      podId: string;
-      podCreatedAt?: string;
-      gpuTypeId: string;
-      imageName: string;
-      authToken: string;
-      instanceTag: string;
-      stopAttempts: number;
-      lastStopAttemptAt?: string;
-    }
-  | {
-      status: 'stopped';
-      podId: string;
-      podCreatedAt: string;
-      gpuTypeId: string;
-      imageName: string;
-      authToken: string;
-      stoppedAt: string;
-      instanceTag: string;
-    }
-  | {
-      status: 'error';
-      podId?: string;
-      gpuTypeId?: string;
-      imageName?: string;
-      message: string;
-      errorAt: string;
-      instanceTag: string;
-    }
-  // Serverless variants — runtime is fully managed by RunPod so the lifecycle
-  // is much simpler than pod mode: we just create the template + endpoint once
-  // and the endpoint scales workers 0→N on demand. No "running"/"stopped"
-  // distinction because the endpoint itself is always "there"; only the
-  // workers scale.
-  | {
-      status: 'serverless-provisioning';
-      instanceTag: string;
-      imageName: string;
-      attemptedAt: string;
-    }
-  | {
-      status: 'serverless-ready';
-      instanceTag: string;
-      templateId: string;
-      endpointId: string;
-      endpointUrl: string;
-      imageName: string;
-      gpuTypeIds: string[];
-      workersMin: number;
-      workersMax: number;
-      idleTimeoutSeconds: number;
-      createdAt: string;
-    };
+/**
+ * FL-159: the Frameleaf Cloud link as written by linking the server (FL-155, CLD-002). Cloud processing
+ * only reads it: without `status: 'linked'` and an `instanceId`, nothing is contacted and every Frameleaf
+ * Cloud admission is refused with `cloud-unavailable`.
+ */
+export type FrameleafCloudLink = {
+  status: 'unlinked' | 'pending' | 'linked' | 'revoked';
+  /** The cloud base address this link was made against; a different FRAMELEAF_CLOUD_URL voids it. */
+  cloudUrl: string;
+  instanceId?: string;
+  accountId?: string;
+  accountLabel?: string;
+  /** The account's data region (`eu`, `na`); it selects the regional processing gateway. */
+  dataRegion?: string;
+  linkedAt?: string;
+  lastContactAt?: string;
+  revoked?: { at: string; reason: string };
+  lastError?: string;
+};
+
+/** FL-159: the public half of this server's identity; the private key stays in a 0600 file. */
+export type FrameleafInstanceIdentity = {
+  instanceId: string;
+  kid: string;
+  publicJwk: { kty: 'OKP'; crv: 'Ed25519'; x: string };
+  keyFile: string;
+  createdAt: string;
+};
+
+/** FL-159: the cached discovery document (`/.well-known/frameleaf-services`). */
+export type FrameleafServiceDiscovery = {
+  fetchedAt: string;
+  validUntil: string;
+  cloudUrl: string;
+  document: {
+    version: number;
+    issuer: string;
+    api: string;
+    ml: Record<string, string>;
+  };
+};
+
+/** FL-159: the last AI Wallet read (USD display). `topUpUrl` only when the cloud returned one. */
+export type FrameleafMlWallet = {
+  balanceUsd: number;
+  heldUsd: number;
+  dailyCapUsd: number | null;
+  spentTodayUsd: number;
+  topUpUrl: string | null;
+  /** Automatic top-up is on for the account (read from Frameleaf Cloud). */
+  autoTopUp?: boolean;
+  updatedAt: string;
+};
+
+/** FL-159: what migration 2100000000620 removed, so administrators are told once in plain language. */
+export type FrameleafCloudMigrationNotice = {
+  removedDestinations: Array<{ name: string; workloads: string[] }>;
+  cancelledOperations: number;
+  revokedRenderWorkers?: number;
+  createdAt: string;
+};
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
@@ -821,8 +813,12 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemFlags]: DeepPartial<SystemFlags>;
   [SystemMetadataKey.VersionCheckState]: VersionCheckMetadata;
   [SystemMetadataKey.MemoriesState]: MemoriesState;
-  [SystemMetadataKey.RunPodState]: RunPodPersistedState;
-  [SystemMetadataKey.RunPodOrphans]: { orphanTemplateIds: string[] };
+  [SystemMetadataKey.FrameleafCloudLink]: FrameleafCloudLink;
+  [SystemMetadataKey.FrameleafInstance]: FrameleafInstanceIdentity;
+  [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
+  [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
+  [SystemMetadataKey.HardwareCheck]: HardwareCheck;
+  [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;

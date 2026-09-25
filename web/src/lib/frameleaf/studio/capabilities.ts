@@ -15,7 +15,7 @@
  * because a capability the server did not confirm is not one the route may claim.
  */
 import { getMlCapabilities, type StudioCapabilitiesDto } from '@immich/sdk';
-import { emptyStudioCapabilities, type StudioCapabilities } from './host-contract';
+import { emptyStudioCapabilities, type StudioCapabilities, type StudioRenderEvidence } from './host-contract';
 
 /**
  * Only a literal `true` confirms a capability: a missing or malformed field is absent. The server
@@ -33,11 +33,34 @@ export const toStudioCapabilities = (studio: StudioCapabilitiesDto): StudioCapab
   transcriptionWorker: confirmed(studio.transcriptionWorker),
 });
 
-export const probeStudioCapabilities = async (): Promise<StudioCapabilities> => {
+export const probeStudioCapabilities = async (): Promise<StudioCapabilities> => (await probeStudioHost()).capabilities;
+
+/**
+ * FL-42: the render evidence of the same snapshot, for the export sheet. A row whose fields are not
+ * what the contract says is dropped rather than trusted, so nothing unverified enables an export.
+ */
+export const toStudioRenderEvidence = (studio: Pick<StudioCapabilitiesDto, 'render'>): StudioRenderEvidence[] =>
+  (Array.isArray(studio.render) ? studio.render : []).filter(
+    (row) =>
+      !!row &&
+      typeof row.destination === 'string' &&
+      typeof row.sessions === 'number' &&
+      (row.gpuMemoryBytes === null || typeof row.gpuMemoryBytes === 'number') &&
+      Array.isArray(row.codecs) &&
+      typeof row.maxBitDepth === 'number' &&
+      typeof row.hdr10 === 'boolean' &&
+      typeof row.dolbyVision === 'boolean',
+  );
+
+/** Capabilities and render evidence from one request; a failure reports neither. */
+export const probeStudioHost = async (): Promise<{
+  capabilities: StudioCapabilities;
+  renderEvidence: StudioRenderEvidence[];
+}> => {
   try {
     const { studio } = await getMlCapabilities();
-    return toStudioCapabilities(studio);
+    return { capabilities: toStudioCapabilities(studio), renderEvidence: toStudioRenderEvidence(studio) };
   } catch {
-    return emptyStudioCapabilities();
+    return { capabilities: emptyStudioCapabilities(), renderEvidence: [] };
   }
 };

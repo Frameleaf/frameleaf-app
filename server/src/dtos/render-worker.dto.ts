@@ -154,6 +154,14 @@ const RenderWorkerAdmissionSchema = z
     softwareRenderer: z.boolean().describe('True when the renderer is a software or fallback device'),
     gpuMemoryBytes: BigIntString.nullable().describe('GPU memory measured by the conformance check'),
     codecs: z.array(z.string().max(60)).max(64).optional().describe('Encoder and decoder names the check verified'),
+    colorPrecision: z
+      .object({
+        maxBitDepth: z.int().min(8).max(16).describe('Highest bit depth the check rendered and verified'),
+        hdr10: z.boolean().describe('The check verified HDR10 (PQ, BT.2020) output'),
+        dolbyVision: z.boolean().describe('The check verified Dolby Vision output'),
+      })
+      .optional()
+      .describe('Colour precision the conformance check verified; absent means 8-bit SDR only (FL-42)'),
     formats: z
       .array(z.string().max(30))
       .max(32)

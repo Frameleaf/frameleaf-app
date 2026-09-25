@@ -59,13 +59,12 @@ const setup = () => {
   // Library workloads are routed to a healthy local destination, as in the unit tests (FL-110).
   const mlDestinations = automock(MlDestinationRepository);
   mlDestinations.getRoute.mockImplementation((workload) =>
-    Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() }),
+    Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
   );
   mlDestinations.getById.mockResolvedValue(mlDestinationStub.local);
   mlDestinations.getAll.mockResolvedValue([mlDestinationStub.local]);
   mlDestinations.getRoutes.mockResolvedValue([]);
   const machineLearning = automock(MachineLearningRepository, { args: [{ setContext: () => {} }] });
-  machineLearning.getRunPodEndpoint.mockReturnValue(null);
 
   const operations = ctx.get(MediaOperationRepository);
   const sut = new EnrichmentPlanService(

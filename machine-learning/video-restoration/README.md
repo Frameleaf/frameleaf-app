@@ -3,7 +3,7 @@
 The restoration worker serves the **Faithful** and **Creative** restoration workloads
 (`restoration-faithful`, `restoration-creative`). It is a separate process from the
 `/predict` machine-learning container and is added to the server as a local or LAN
-destination (or reached through RunPod) under **Processing destinations**. The server only
+destination under **Processing destinations** (Frameleaf Cloud runs restoration as its own cloud jobs). The server only
 sends it work after an explicit destination choice; a cloud destination additionally needs
 the administrator's recorded consent and a per-request acknowledgement that media leaves
 the network.

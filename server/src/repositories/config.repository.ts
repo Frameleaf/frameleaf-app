@@ -131,6 +131,12 @@ export interface EnvData {
   /** Signed release destinations of this installation's apps (FL-82). */
   appReleases: AppReleaseConfig;
 
+  /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
+  frameleafCloud: {
+    url: string | null;
+    identityDir: string | null;
+  };
+
   noColor: boolean;
   nodeVersion?: string;
 }
@@ -343,6 +349,11 @@ const getEnv = (): EnvData => {
     },
 
     appReleases: parseAppReleases(dto),
+
+    frameleafCloud: {
+      url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,
+      identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
+    },
 
     storage: {
       ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,

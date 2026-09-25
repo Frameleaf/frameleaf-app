@@ -8,6 +8,7 @@ import {
   type PhysicalDeduplicationPlanDto,
   type PhysicalDeduplicationRetainedDto,
   type PhysicalDeduplicationReviewResponseDto,
+  type PhysicalDeduplicationVerificationItemDto,
 } from '@immich/sdk';
 
 /**
@@ -19,6 +20,12 @@ import {
  */
 
 export const DEDUP_SCOPE_ALL = 'all';
+
+/**
+ * The `openSetting` value that opens Storage at the account shared originals are retained in: the
+ * prototype's `advanced-dedup-owner` setting (settings-catalog.mjs:1860, CommandCenter.jsx:2599).
+ */
+export const DEDUP_OWNER_SETTING = 'dedup-owner';
 
 export type DedupGroup = {
   key: string;
@@ -74,16 +81,38 @@ export const isDecidableGroup = (group: DedupGroup) => group.retained !== null &
 export type DedupMetrics = {
   copiesToShare: number;
   retainedOriginals: number;
+  /** Estimate: what applying the plan would free. */
   reclaimableBytes: number;
   skippedCopies: number;
+  /** What the assets that reference a shared original add up to, each at its own size (FL-73). */
+  logicalBytes: number;
+  /** The shared originals those assets use on disk, each file counted once (FL-73). */
+  sharedOriginalBytes: number;
+  /** Measured: bytes actually removed by applying this plan, or null before it was applied (FL-73). */
+  measuredReclaimedBytes: number | null;
 };
 
-export const planMetrics = (plan: PhysicalDeduplicationPlanDto): DedupMetrics => {
+/**
+ * The plan's headline numbers (prototype PhysicalDedupManager.jsx:636-660) and, kept apart from the
+ * estimate (FL-73), the logical asset bytes, the physical shared-original bytes and the bytes an
+ * apply measurably removed. `apply` is the newest job applying this plan, if any.
+ */
+export const planMetrics = (
+  plan: PhysicalDeduplicationPlanDto,
+  apply: Pick<PhysicalDeduplicationApplyDto, 'reclaimedBytes'> | null = null,
+): DedupMetrics => {
   const sharing = plan.copies.filter((copy) => copy.decision === PhysicalDeduplicationDecision.Share);
   return {
     copiesToShare: plan.eligibleAssets,
     retainedOriginals: new Set(sharing.map((copy) => copy.retainedAssetId)).size,
     reclaimableBytes: plan.reclaimableBytes,
+    logicalBytes: plan.logicalBytes ?? 0,
+    sharedOriginalBytes: plan.sharedOriginalBytes ?? 0,
+    measuredReclaimedBytes: apply
+      ? apply.reclaimedBytes
+      : plan.mode === PhysicalDeduplicationPlanMode.Apply
+        ? plan.deletedBytes
+        : null,
     // The server counters cover external and unmatched copies; copies that already share the
     // retained original are only visible in the copy list.
     skippedCopies:
@@ -91,6 +120,134 @@ export const planMetrics = (plan: PhysicalDeduplicationPlanDto): DedupMetrics =>
       plan.skippedMissingMaster +
       plan.copies.filter((copy) => copy.reason === PhysicalDeduplicationSkipReason.AlreadyShared).length,
   };
+};
+
+export type DedupConfigError = 'disabled' | 'no-master';
+
+/**
+ * Why no plan can be prepared right now (FL-73, UT-23), from the prototype's
+ * `dedupConfigurationError` (physical-dedup-data.mjs:76-86): file reuse must be enabled, and an
+ * account to retain shared originals in must be saved or, until one is, chosen on the page.
+ */
+export const dedupConfigurationError = ({
+  enabled,
+  masterUserId,
+  accountIds,
+}: {
+  enabled: boolean;
+  masterUserId: string | null | undefined;
+  accountIds: readonly string[];
+}): DedupConfigError | null => {
+  if (!enabled) {
+    return 'disabled';
+  }
+  if (!masterUserId || !accountIds.includes(masterUserId)) {
+    return 'no-master';
+  }
+  return null;
+};
+
+const pad = (value: number) => String(value).padStart(2, '0');
+
+/** A video's length as the prototype writes it: `1:12`, or `1:02:05` past an hour. */
+export const formatDuration = (milliseconds: number) => {
+  const total = Math.round(milliseconds / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+};
+
+/** The resolution name a video's detail line uses, from its larger side; null below HD. */
+export const videoResolutionLabel = (width: number, height: number) => {
+  const side = Math.max(width, height);
+  if (side >= 7680) {
+    return '8K';
+  }
+  if (side >= 3840) {
+    return '4K';
+  }
+  if (side >= 1920) {
+    return '1080p';
+  }
+  if (side >= 1280) {
+    return '720p';
+  }
+  return null;
+};
+
+/**
+ * The detail after owner and size on a preview row (FL-73, UT-25; prototype
+ * PhysicalDedupManager.jsx:315-318, 359-362): `6000 × 4000` for a photo, `1:12 · 4K` for a video.
+ * Empty when the asset has neither recorded.
+ */
+export const mediaDetail = (item: {
+  type: string;
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
+}) => {
+  const hasSize = !!item.width && !!item.height;
+  if (item.type === 'VIDEO') {
+    const parts = [
+      item.duration ? formatDuration(item.duration) : null,
+      hasSize ? videoResolutionLabel(item.width!, item.height!) : null,
+    ].filter((part): part is string => !!part);
+    return parts.join(' · ');
+  }
+  return hasSize ? `${item.width} × ${item.height}` : '';
+};
+
+/** Whether an applied plan can be verified: its job has finished and it changed at least one copy. */
+export const canVerifyApply = (apply: Pick<PhysicalDeduplicationApplyDto, 'status' | 'applied' | 'alreadyApplied'>) =>
+  !isApplyActive(apply) && apply.applied + apply.alreadyApplied > 0;
+
+export type DedupVerificationItemKey =
+  | 'frameleaf_dedup_verify_item_verified'
+  | 'frameleaf_dedup_verify_item_restored'
+  | 'frameleaf_dedup_verify_item_retained_missing'
+  | 'frameleaf_dedup_verify_item_retained_changed'
+  | 'frameleaf_dedup_verify_item_not_linked';
+
+/** One verified copy's result, most serious first. */
+export const verificationItemKey = (
+  item: Pick<PhysicalDeduplicationVerificationItemDto, 'retainedFile' | 'linked' | 'restored'>,
+): DedupVerificationItemKey => {
+  if (item.restored) {
+    return 'frameleaf_dedup_verify_item_restored';
+  }
+  if (!item.linked) {
+    return 'frameleaf_dedup_verify_item_not_linked';
+  }
+  if (item.retainedFile === 'missing') {
+    return 'frameleaf_dedup_verify_item_retained_missing';
+  }
+  if (item.retainedFile === 'changed') {
+    return 'frameleaf_dedup_verify_item_retained_changed';
+  }
+  return 'frameleaf_dedup_verify_item_verified';
+};
+
+export type DedupUndoKey =
+  | 'frameleaf_dedup_undo_removed'
+  | 'frameleaf_dedup_undo_restorable'
+  | 'frameleaf_dedup_undo_changed'
+  | 'frameleaf_dedup_undo_restored';
+
+/**
+ * What can be undone for one copy, stated plainly (FL-73): a copy whose own file was removed cannot
+ * go back, a copy whose own file is still there can.
+ */
+export const undoKey = (
+  item: Pick<PhysicalDeduplicationVerificationItemDto, 'copyFile' | 'restored' | 'restorable'>,
+): DedupUndoKey => {
+  if (item.restored) {
+    return 'frameleaf_dedup_undo_restored';
+  }
+  if (item.restorable) {
+    return 'frameleaf_dedup_undo_restorable';
+  }
+  return item.copyFile === 'removed' ? 'frameleaf_dedup_undo_removed' : 'frameleaf_dedup_undo_changed';
 };
 
 export type DedupSelection = {

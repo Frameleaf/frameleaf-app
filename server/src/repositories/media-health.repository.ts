@@ -763,8 +763,16 @@ export class MediaHealthRepository {
         await trx
           .withSchema(schema)
           .updateTable('asset_health')
-          .set({ status: MediaHealthStatus.Dismissed, dismissedAt })
+          // The status it had is kept on the finding, so the dismissal can be undone (FL-69, UT-2).
+          .set({
+            status: MediaHealthStatus.Dismissed,
+            dismissedAt,
+            resolution: sql<
+              Record<string, unknown>
+            >`coalesce(resolution, '{}'::jsonb) || jsonb_build_object('dismissedFrom', status)`,
+          })
           .where('id', '=', anyUuid(ids))
+          .where('status', '!=', MediaHealthStatus.Dismissed)
           .$if(!!ownerId, (qb) =>
             qb.where(
               sql<boolean>`EXISTS (
@@ -775,6 +783,33 @@ export class MediaHealthRepository {
           )
           .execute();
       }
+    });
+  }
+
+  /**
+   * Put a settled finding back to `to` (FL-69, UT-2: undoing a dismissal, or damage whose trash move
+   * was reversed). Only while it is still `from`, so a finding something else changed since is left
+   * alone. Returns whether it was reopened.
+   */
+  async reopenFinding(id: string, from: MediaHealthStatus, to: MediaHealthStatus): Promise<boolean> {
+    const phase = await getForkSchemaPhase(this.db);
+    return this.db.transaction().execute(async (trx) => {
+      let reopened = false;
+      for (const schema of this.writeSchemas(phase)) {
+        const result = await trx
+          .withSchema(schema)
+          .updateTable('asset_health')
+          .set({
+            status: to,
+            dismissedAt: null,
+            resolution: sql<Record<string, unknown>>`coalesce(resolution, '{}'::jsonb) - 'dismissedFrom'`,
+          })
+          .where('id', '=', asUuid(id))
+          .where('status', '=', from)
+          .executeTakeFirst();
+        reopened ||= Number(result.numUpdatedRows) > 0;
+      }
+      return reopened;
     });
   }
 
@@ -928,16 +963,23 @@ export class MediaHealthRepository {
    * records the last id it finished as its cursor, so a paused, restarted or retried scan carries on
    * from there instead of starting again.
    */
-  getAssetPage(options: { ownerId: string; afterId?: string | null; limit: number }): Promise<MediaHealthAsset[]> {
+  getAssetPage(options: {
+    ownerId: string;
+    afterId?: string | null;
+    limit: number;
+    /** An incremental scan (FL-69): only assets changed since then. */
+    changedSince?: Date;
+  }): Promise<MediaHealthAsset[]> {
     return this.scanAssetQuery({ ownerId: options.ownerId })
       .$if(!!options.afterId, (qb) => qb.where('asset.id', '>', asUuid(options.afterId!)))
+      .$if(!!options.changedSince, (qb) => qb.where('asset.updatedAt', '>', options.changedSince!))
       .orderBy('asset.id', 'asc')
       .limit(options.limit)
       .execute();
   }
 
   /** How many assets an owner's scan covers, for its progress. */
-  async countScanAssets(ownerId: string): Promise<number> {
+  async countScanAssets(ownerId: string, changedSince?: Date): Promise<number> {
     const row = await this.db
       .withSchema('public')
       .selectFrom('asset')
@@ -945,6 +987,7 @@ export class MediaHealthRepository {
       .where('asset.deletedAt', 'is', null)
       .where('asset.status', '!=', sql.lit(AssetStatus.Deleted))
       .where('asset.ownerId', '=', asUuid(ownerId))
+      .$if(!!changedSince, (qb) => qb.where('asset.updatedAt', '>', changedSince!))
       .executeTakeFirst();
     return Number(row?.count ?? 0);
   }

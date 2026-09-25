@@ -12,14 +12,14 @@ Every settings page edits one draft. Changes you make on one page are kept while
 - Leaving the settings page with unsaved changes asks you to keep editing or discard them. Reloading the tab brings the draft back, except passwords, keys and addresses that contain credentials, which are never stored in the browser.
 - **Export as JSON** and **Copy to clipboard** leave out passwords, secrets and keys. **Import from JSON** puts the file's settings into the draft for you to review; settings this server does not have are listed and ignored, and credentials in the file are never applied.
 - **Change history** lists every change saved from these settings pages (including credential changes), newest first, with the administrator who saved it, the time, and each setting before and after. It is kept on the server, so every administrator sees the same history (the latest 50 saves). Credentials appear only as replaced or cleared, and credentials inside addresses are removed.
-- Actions that start or change something on the server, such as sending a test email, launching a RunPod GPU or unlinking OAuth accounts, run on their own. Sending a test email also saves the email settings, and nothing else. RunPod actions use the saved RunPod settings, so save or discard RunPod changes first.
+- Actions that start or change something on the server, such as sending a test email or unlinking OAuth accounts, run on their own. Sending a test email also saves the email settings, and nothing else.
 
 ## Server credentials
 
-The OAuth client secret, the SMTP password, the RunPod API key and the Hugging Face token are **write-only**. Their settings show whether a value is stored (**Stored** or **Not set**), never the value itself:
+The OAuth client secret and the SMTP password are **write-only**. Their settings show whether a value is stored (**Stored** or **Not set**), never the value itself:
 
 - **Replace credential** opens a dialog with a single field. The value is sent once, checked like any settings change (for example, the mail server is verified with a new SMTP password), and cleared from the dialog when it closes.
-- **Clear** removes the stored value after a confirmation. The RunPod API key can only be cleared while RunPod is turned off, so a running pod or endpoint can always be stopped.
+- **Clear** removes the stored value after a confirmation.
 - Saving any other setting, **Copy to clipboard**, **Export as JSON** and **Import from JSON** never carry a credential. A configuration file that contains credentials is imported without them, and the page says so.
 - **Send test email** uses the stored SMTP password as long as the server, port, username and security settings on the page match the saved ones.
 - A stored secret never follows a server change: saving a different mail server host or username clears the SMTP password, and saving a different OAuth issuer URL clears the client secret. Replace the credential for the new server. If sending email is on and the new server needs a password, turn email off, save the new server, replace the password, then turn email on again.
