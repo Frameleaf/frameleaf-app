@@ -34,6 +34,9 @@ describe(FrameleafAuthService.name, () => {
   let idClaims: Record<string, unknown>;
   let issuerKey: CryptoKey;
   let issuerJwk: JWK;
+  let edKey: CryptoKey;
+  let edJwk: JWK;
+  let idTokenAlg: 'RS256' | 'EdDSA';
   let assertions: Record<string, unknown>[];
 
   const issuer = () => `${cloud.url}/id`;
@@ -60,12 +63,18 @@ describe(FrameleafAuthService.name, () => {
         jwks_uri: `${issuer()}/jwks`,
         response_types_supported: ['code'],
         code_challenge_methods_supported: ['S256'],
+        id_token_signing_alg_values_supported: ['RS256', 'EdDSA'],
         token_endpoint_auth_methods_supported: ['private_key_jwt', 'client_secret_post'],
       },
     }));
     cloud.on('GET /id/jwks', () => ({
       status: 200,
-      body: { keys: [{ ...issuerJwk, kid: 'issuer-1', alg: 'RS256' }] },
+      body: {
+        keys: [
+          { ...issuerJwk, kid: 'issuer-1', alg: 'RS256' },
+          { ...edJwk, kid: 'issuer-ed', alg: 'EdDSA' },
+        ],
+      },
     }));
     cloud.on('POST /id/token', async (request) => {
       const form = request.form();
@@ -82,13 +91,15 @@ describe(FrameleafAuthService.name, () => {
       }
       const now = Math.floor(Date.now() / 1000);
       const idToken = await new SignJWT({ sid: 'fl-sid', auth_time: now, ...idClaims })
-        .setProtectedHeader({ alg: 'RS256', kid: 'issuer-1' })
+        .setProtectedHeader(
+          idTokenAlg === 'EdDSA' ? { alg: 'EdDSA', kid: 'issuer-ed' } : { alg: 'RS256', kid: 'issuer-1' },
+        )
         .setIssuer(issuer())
         .setAudience(INSTANCE)
         .setSubject('fl-sub')
         .setIssuedAt(now)
         .setExpirationTime(now + 300)
-        .sign(issuerKey);
+        .sign(idTokenAlg === 'EdDSA' ? edKey : issuerKey);
       return {
         status: 200,
         body: { access_token: 'access', token_type: 'Bearer', expires_in: 300, id_token: idToken },
@@ -106,6 +117,9 @@ describe(FrameleafAuthService.name, () => {
     const pair = await generateKeyPair('RS256', { extractable: true });
     issuerKey = pair.privateKey;
     issuerJwk = await exportJWK(pair.publicKey);
+    const ed = await generateKeyPair('EdDSA', { crv: 'Ed25519', extractable: true });
+    edKey = ed.privateKey;
+    edJwk = await exportJWK(ed.publicKey);
   });
 
   beforeEach(async () => {
@@ -114,6 +128,7 @@ describe(FrameleafAuthService.name, () => {
     metadata = new Map([[SystemMetadataKey.FrameleafCloudLink, linkRecord()]]);
     idClaims = { email: 'Remote@Example.test', email_verified: true, name: 'Remote Person', frameleaf_role: 'user' };
     assertions = [];
+    idTokenAlg = 'RS256';
     clearConfigCache();
     ({ sut, mocks } = newTestService(FrameleafAuthService, {
       frameleafCloud: new FrameleafCloudRepository(LoggingRepository.create()),
@@ -208,6 +223,15 @@ describe(FrameleafAuthService.name, () => {
       expect(mocks.systemMetadata.set).not.toHaveBeenCalledWith(SystemMetadataKey.SystemConfig, expect.anything());
     });
 
+    it('accepts an EdDSA-signed ID token as well (the cloud uses Ed25519 keys)', async () => {
+      idTokenAlg = 'EdDSA';
+      const existing = UserFactory.create({ email: 'remote@example.test' });
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+      mocks.user.getByEmail.mockResolvedValue(existing as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue(void 0);
+      await expect(sut.callback(callbackDto, {}, loginDetails)).resolves.toMatchObject({ userId: existing.id });
+    });
+
     it('makes an administrator of a person Frameleaf Cloud names as one', async () => {
       idClaims.frameleaf_role = 'admin';
       const created = UserFactory.create({ isAdmin: true });
@@ -254,6 +278,28 @@ describe(FrameleafAuthService.name, () => {
     it('does not finish when the cloud refuses the client assertion', async () => {
       cloud.on('POST /id/token', () => ({ status: 401, body: { error: 'invalid_client' } }));
       await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('did not finish');
+    });
+  });
+
+  describe('back-channel logout tokens', () => {
+    it('verifies an EdDSA-signed logout token against the Frameleaf JWKS', async () => {
+      const config = await (sut as unknown as { config: () => Promise<never> }).config();
+      const now = Math.floor(Date.now() / 1000);
+      const token = await new SignJWT({
+        sid: 'fl-sid',
+        // the event name the back-channel logout specification defines
+        // eslint-disable-next-line unicorn/prefer-https
+        events: { 'http://schemas.openid.net/event/backchannel-logout': {} },
+      })
+        .setProtectedHeader({ alg: 'EdDSA', kid: 'issuer-ed', typ: 'logout+jwt' })
+        .setIssuer(issuer())
+        .setAudience(INSTANCE)
+        .setSubject('fl-sub')
+        .setIssuedAt(now)
+        .setJti('logout-1')
+        .sign(edKey);
+      const repository = (sut as unknown as { oauthRepository: OAuthRepository }).oauthRepository;
+      await expect(repository.validateLogoutToken(config, token)).resolves.toEqual({ sid: 'fl-sid', sub: 'fl-sub' });
     });
   });
 

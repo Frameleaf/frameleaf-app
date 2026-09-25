@@ -117,7 +117,8 @@ export const frameleafOAuthConfig = async (
     profileSigningAlgorithm: 'none',
     prompt: '',
     scope: client.scope || FRAMELEAF_SCOPE,
-    signingAlgorithm: 'RS256',
+    // the issuer's advertised ID token algorithms (RS256 today, EdDSA accepted too), never a fixed one
+    signingAlgorithm: '',
     tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethod.ClientSecretPost,
     timeout: 10_000,
     // only a deployment that configured an http Frameleaf Cloud address (development) allows http
