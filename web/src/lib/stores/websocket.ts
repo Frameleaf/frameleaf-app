@@ -40,6 +40,8 @@ export interface Events {
   // FL-34: this session's elevated (PIN-unlocked) access was revoked, here or in another tab
   on_session_lock: () => void;
   on_notification: (notification: NotificationDto) => void;
+  /** FL-43: one of this account's jobs changed. Only the id arrives; Activity asks for the list again. */
+  on_media_operation_update: (id: string) => void;
 
   AppRestartV1: (event: AppRestartEvent) => void;
 
@@ -96,6 +98,7 @@ websocket
   .on('on_asset_update', (asset) => eventManager.emit('AssetUpdate', asset))
   .on('on_person_thumbnail', (id) => eventManager.emit('PersonThumbnailReady', { id }))
   .on('on_notification', () => notificationManager.refresh())
+  .on('on_media_operation_update', (id) => eventManager.emit('MediaOperationUpdate', { id }))
   // FL-53: a role change made elsewhere reaches this page as the same event a local change raises.
   .on('PartnerRevokeV1', (data) => eventManager.emit('PartnerRevoke', data))
   .on('AlbumUserUpdateV1', ({ albumId, userId, role }) =>
