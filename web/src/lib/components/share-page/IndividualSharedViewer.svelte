@@ -10,7 +10,7 @@
   import { Route } from '$lib/route';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { handlePromiseError } from '$lib/utils';
-  import { downloadArchive, navigateToAsset } from '$lib/utils/asset-utils';
+  import { downloadArchive, ignoreCancelledDownload, navigateToAsset } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
@@ -61,7 +61,9 @@
     dragAndDropFilesStore.set({ isDragging: false, files: [] });
   });
 
-  const download = (assetIds: string[]) => handlePromiseError(downloadArchive(sharedDownloadFileName, { assetIds }));
+  // A cancelled download is the user's choice, not an error to log.
+  const download = (assetIds: string[]) =>
+    handlePromiseError(downloadArchive(sharedDownloadFileName, { assetIds }).catch(ignoreCancelledDownload));
 
   const handleUploadAssets = async (files: File[] = []) => {
     try {
