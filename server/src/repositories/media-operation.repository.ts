@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { PostgresError } from 'postgres';
 import { DatabaseLock, MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
@@ -16,6 +17,9 @@ import {
   RESUMABLE_MEDIA_OPERATION_KINDS,
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
+
+/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
+export const MEDIA_OPERATION_HANDOFF_REFUSAL = 'Media operations are unavailable during database handoff';
 
 export type MediaOperation = Selectable<MediaOperationTable>;
 
@@ -183,8 +187,15 @@ const LIST_COLUMNS = [
 export class MediaOperationRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    return withPublicForkWrites(this.db, query, MEDIA_OPERATION_HANDOFF_REFUSAL);
+  }
+
   async create(operation: MediaOperationCreate): Promise<MediaOperation> {
-    const row = await this.db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
+    const row = await this.write((db) =>
+      db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow(),
+    );
     return row as unknown as MediaOperation;
   }
 
@@ -310,6 +321,7 @@ export class MediaOperationRepository {
     lock: DatabaseLock,
   ): Promise<{ created: MediaOperation } | { active: { id: string; ownerId: string; fingerprint: string | null } }> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       await sql`SELECT pg_advisory_xact_lock(${lock})`.execute(trx);
 
       const active = await trx
@@ -345,6 +357,7 @@ export class MediaOperationRepository {
     subject: { key: string; value: string; lock: DatabaseLock },
   ): Promise<{ created: MediaOperation } | { active: MediaOperation }> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       await sql`SELECT pg_advisory_xact_lock(${subject.lock}::int, hashtext(${subject.value}))`.execute(trx);
 
       const active = await trx
@@ -456,12 +469,14 @@ export class MediaOperationRepository {
 
   /** Replace the result of a job no worker holds. Used by sweeps on finished jobs only. */
   async setFinishedResult(id: string, result: Record<string, unknown>): Promise<boolean> {
-    const updated = await this.db
-      .updateTable('media_operation')
-      .set({ result })
-      .where('id', '=', id)
-      .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
-      .executeTakeFirst();
+    const updated = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ result })
+        .where('id', '=', id)
+        .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .executeTakeFirst(),
+    );
     return Number(updated.numUpdatedRows) === 1;
   }
 
@@ -609,14 +624,16 @@ export class MediaOperationRepository {
    * cleaned up. Only the owner's view of it changes.
    */
   async dismiss(id: string, ownerId: string): Promise<boolean> {
-    const result = await this.db
-      .updateTable('media_operation')
-      .set({ dismissedAt: sql<Date>`now()` })
-      .where('id', '=', id)
-      .where('ownerId', '=', ownerId)
-      .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
-      .where('dismissedAt', 'is', null)
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ dismissedAt: sql<Date>`now()` })
+        .where('id', '=', id)
+        .where('ownerId', '=', ownerId)
+        .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .where('dismissedAt', 'is', null)
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows) === 1;
   }
@@ -649,57 +666,61 @@ export class MediaOperationRepository {
         ? options.holdBack
         : undefined;
 
-    const row = await this.db
-      .updateTable('media_operation')
-      .set({
-        status: MediaOperationStatus.Preparing,
-        claimToken,
-        claimedBy: options.workerId,
-        claimExpiresAt: sql<Date>`now() + ${sql.lit(options.leaseMs)} * interval '1 millisecond'`,
-        heartbeatAt: sql<Date>`now()`,
-        startedAt: sql<Date>`coalesce("startedAt", now())`,
-        attempt: sql<number>`"attempt" + 1`,
-        retryAt: null,
-      })
-      .where(
-        'id',
-        '=',
-        this.db
-          .selectFrom('media_operation')
-          .select('id')
-          .where('status', '=', MediaOperationStatus.Queued)
-          .where('kind', 'in', [...options.kinds])
-          .where('cancelRequestedAt', 'is', null)
-          // A requeued job waits out its retry delay before anybody may take it.
-          .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
-          .$if(!!holdBack, (qb) =>
-            qb.where(
-              sql<boolean>`not ("kind" = any(${[...holdBack!.kinds]}::text[]) and coalesce("snapshot"->>'destinationId', '') = any(${[...holdBack!.destinationIds]}::text[]))`,
-            ),
-          )
-          .orderBy('createdAt', 'asc')
-          .limit(1)
-          .forUpdate()
-          .skipLocked(),
-      )
-      .returningAll()
-      .executeTakeFirst();
+    const row = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Preparing,
+          claimToken,
+          claimedBy: options.workerId,
+          claimExpiresAt: sql<Date>`now() + ${sql.lit(options.leaseMs)} * interval '1 millisecond'`,
+          heartbeatAt: sql<Date>`now()`,
+          startedAt: sql<Date>`coalesce("startedAt", now())`,
+          attempt: sql<number>`"attempt" + 1`,
+          retryAt: null,
+        })
+        .where(
+          'id',
+          '=',
+          this.db
+            .selectFrom('media_operation')
+            .select('id')
+            .where('status', '=', MediaOperationStatus.Queued)
+            .where('kind', 'in', [...options.kinds])
+            .where('cancelRequestedAt', 'is', null)
+            // A requeued job waits out its retry delay before anybody may take it.
+            .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
+            .$if(!!holdBack, (qb) =>
+              qb.where(
+                sql<boolean>`not ("kind" = any(${[...holdBack!.kinds]}::text[]) and coalesce("snapshot"->>'destinationId', '') = any(${[...holdBack!.destinationIds]}::text[]))`,
+              ),
+            )
+            .orderBy('createdAt', 'asc')
+            .limit(1)
+            .forUpdate()
+            .skipLocked(),
+        )
+        .returningAll()
+        .executeTakeFirst(),
+    );
 
     return row ? { operation: row as unknown as MediaOperation, claimToken } : undefined;
   }
 
   /** Extend the lease. Returns false when the claim has already been taken away. */
   async heartbeat(id: string, claimToken: string, leaseMs: number): Promise<boolean> {
-    const result = await this.db
-      .updateTable('media_operation')
-      .set({
-        heartbeatAt: sql<Date>`now()`,
-        claimExpiresAt: sql<Date>`now() + ${sql.lit(leaseMs)} * interval '1 millisecond'`,
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          heartbeatAt: sql<Date>`now()`,
+          claimExpiresAt: sql<Date>`now() + ${sql.lit(leaseMs)} * interval '1 millisecond'`,
+        })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows) === 1;
   }
@@ -721,21 +742,23 @@ export class MediaOperationRepository {
       return false;
     }
 
-    const result = await this.db
-      .updateTable('media_operation')
-      .set({
-        status: patch.status,
-        processedUnits: String(patch.processedUnits),
-        totalUnits: patch.totalUnits === null ? null : String(patch.totalUnits),
-        progress: patch.progress,
-        heartbeatAt: sql<Date>`now()`,
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      // Stages only move forward (FL-43): a job checking its output is never reported as rendering
-      // again, and nothing reaches validating except through the stages before it.
-      .where('status', 'in', [...from])
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: patch.status,
+          processedUnits: String(patch.processedUnits),
+          totalUnits: patch.totalUnits === null ? null : String(patch.totalUnits),
+          progress: patch.progress,
+          heartbeatAt: sql<Date>`now()`,
+        })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        // Stages only move forward (FL-43): a job checking its output is never reported as rendering
+        // again, and nothing reaches validating except through the stages before it.
+        .where('status', 'in', [...from])
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows) === 1;
   }
@@ -763,21 +786,23 @@ export class MediaOperationRepository {
       leaseMs: number;
     },
   ): Promise<MediaOperationWriteState | undefined> {
-    const row = await this.db
-      .updateTable('media_operation')
-      .set({
-        result: patch.result,
-        processedUnits: String(patch.processedUnits),
-        totalUnits: String(patch.totalUnits),
-        progress: patch.progress,
-        heartbeatAt: sql<Date>`now()`,
-        claimExpiresAt: sql<Date>`now() + ${sql.lit(patch.leaseMs)} * interval '1 millisecond'`,
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-      .returning(['status', 'cancelRequestedAt', 'pauseRequestedAt'])
-      .executeTakeFirst();
+    const row = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          result: patch.result,
+          processedUnits: String(patch.processedUnits),
+          totalUnits: String(patch.totalUnits),
+          progress: patch.progress,
+          heartbeatAt: sql<Date>`now()`,
+          claimExpiresAt: sql<Date>`now() + ${sql.lit(patch.leaseMs)} * interval '1 millisecond'`,
+        })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .returning(['status', 'cancelRequestedAt', 'pauseRequestedAt'])
+        .executeTakeFirst(),
+    );
 
     return row
       ? {
@@ -803,38 +828,42 @@ export class MediaOperationRepository {
     id: string,
     claimToken: string,
     result: { resultAssetId: string | null; progress?: number },
-    executor: Kysely<DB> = this.db,
+    executor?: Kysely<DB>,
   ): Promise<boolean> {
-    const updated = await executor
-      .updateTable('media_operation')
-      .set({
-        status: MediaOperationStatus.Completed,
-        resultAssetId: result.resultAssetId,
-        progress: result.progress ?? 100,
-        finishedAt: sql<Date>`now()`,
-        claimToken: null,
-        claimExpiresAt: null,
-        error: null,
-        errorCode: null,
-        // A pause that arrived too late to be reached has nothing left to hold.
-        pauseRequestedAt: null,
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', '=', MediaOperationStatus.Validating)
-      .$if(result.resultAssetId !== null, (qb) =>
-        qb.where((eb) =>
-          eb.exists(
-            eb
-              .selectFrom('asset')
-              .select('asset.id')
-              .where('asset.id', '=', result.resultAssetId!)
-              .whereRef('asset.ownerId', '=', 'media_operation.ownerId')
-              .where('asset.deletedAt', 'is', null),
+    // FL-44: a caller's transaction took the handoff guard already (publishValidated); alone, this
+    // write takes it itself.
+    const run = (db: Kysely<DB>) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Completed,
+          resultAssetId: result.resultAssetId,
+          progress: result.progress ?? 100,
+          finishedAt: sql<Date>`now()`,
+          claimToken: null,
+          claimExpiresAt: null,
+          error: null,
+          errorCode: null,
+          // A pause that arrived too late to be reached has nothing left to hold.
+          pauseRequestedAt: null,
+        })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', '=', MediaOperationStatus.Validating)
+        .$if(result.resultAssetId !== null, (qb) =>
+          qb.where((eb) =>
+            eb.exists(
+              eb
+                .selectFrom('asset')
+                .select('asset.id')
+                .where('asset.id', '=', result.resultAssetId!)
+                .whereRef('asset.ownerId', '=', 'media_operation.ownerId')
+                .where('asset.deletedAt', 'is', null),
+            ),
           ),
-        ),
-      )
-      .executeTakeFirst();
+        )
+        .executeTakeFirst();
+    const updated = await (executor ? run(executor) : this.write(run));
 
     return Number(updated.numUpdatedRows) === 1;
   }
@@ -874,6 +903,7 @@ export class MediaOperationRepository {
     publish: (trx: Kysely<DB>) => Promise<boolean>,
   ): Promise<'completed' | 'rejected' | 'lost'> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       const held = await trx
         .selectFrom('media_operation')
         .select('id')
@@ -901,13 +931,15 @@ export class MediaOperationRepository {
 
   /** Move a claimed job to `validating`. The last gate before anything is published. */
   async beginValidation(id: string, claimToken: string): Promise<boolean> {
-    const result = await this.db
-      .updateTable('media_operation')
-      .set({ status: MediaOperationStatus.Validating, heartbeatAt: sql<Date>`now()` })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ status: MediaOperationStatus.Validating, heartbeatAt: sql<Date>`now()` })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows) === 1;
   }
@@ -934,46 +966,50 @@ export class MediaOperationRepository {
     claimToken: string,
     failure: { error: string; errorCode: string },
   ): Promise<MediaOperationFailOutcome> {
-    const requeued = await this.db
-      .updateTable('media_operation')
-      .set({
-        // The owner asked to pause: the retry waits for them instead of running by itself.
-        status: pausedIfRequested(),
-        error: failure.error,
-        errorCode: failure.errorCode,
-        autoRetries: sql<number>`"autoRetries" + 1`,
-        retryAt: nowPlus(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS),
-        claimToken: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', 'in', WORKING_STATUSES)
-      .where('cancelRequestedAt', 'is', null)
-      .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
-      .executeTakeFirst();
+    const requeued = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          // The owner asked to pause: the retry waits for them instead of running by itself.
+          status: pausedIfRequested(),
+          error: failure.error,
+          errorCode: failure.errorCode,
+          autoRetries: sql<number>`"autoRetries" + 1`,
+          retryAt: nowPlus(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS),
+          claimToken: null,
+          claimedBy: null,
+          claimExpiresAt: null,
+        })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'in', WORKING_STATUSES)
+        .where('cancelRequestedAt', 'is', null)
+        .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
+        .executeTakeFirst(),
+    );
 
     if (Number(requeued.numUpdatedRows) === 1) {
       return 'retrying';
     }
 
-    const result = await this.db
-      .updateTable('media_operation')
-      .set({
-        status: MediaOperationStatus.Failed,
-        error: failure.error,
-        errorCode: failure.errorCode,
-        finishedAt: sql<Date>`now()`,
-        retryAt: null,
-        claimToken: null,
-        claimExpiresAt: null,
-        pauseRequestedAt: null,
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Failed,
+          error: failure.error,
+          errorCode: failure.errorCode,
+          finishedAt: sql<Date>`now()`,
+          retryAt: null,
+          claimToken: null,
+          claimExpiresAt: null,
+          pauseRequestedAt: null,
+        })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows) === 1 ? 'failed' : false;
   }
@@ -995,22 +1031,24 @@ export class MediaOperationRepository {
     claimToken: string,
     options: { delayMs: number; returnAttempt?: boolean },
   ): Promise<boolean> {
-    const result = await this.db
-      .updateTable('media_operation')
-      .set({
-        // A pause asked for during the pass holds the job here rather than at its next claim.
-        status: pausedIfRequested(),
-        retryAt: nowPlus(options.delayMs),
-        claimToken: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-        ...(options.returnAttempt && { attempt: sql<number>`greatest("attempt" - 1, 0)` }),
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', 'in', WORKING_STATUSES)
-      .where('cancelRequestedAt', 'is', null)
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          // A pause asked for during the pass holds the job here rather than at its next claim.
+          status: pausedIfRequested(),
+          retryAt: nowPlus(options.delayMs),
+          claimToken: null,
+          claimedBy: null,
+          claimExpiresAt: null,
+          ...(options.returnAttempt && { attempt: sql<number>`greatest("attempt" - 1, 0)` }),
+        })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'in', WORKING_STATUSES)
+        .where('cancelRequestedAt', 'is', null)
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows) === 1;
   }
@@ -1031,46 +1069,48 @@ export class MediaOperationRepository {
    * leave the job stuck at `cancelling` with nobody able to settle it.
    */
   async requestCancel(id: string, ownerId: string, claimToken?: string): Promise<MediaOperation | undefined> {
-    return (await this.db
-      .updateTable('media_operation')
-      .set((eb) => ({
-        // A paused job has no worker either (FL-104), so it is cancelled outright like a queued one.
-        status: eb
-          .case()
-          .when('status', 'in', UNCLAIMED_STATUSES)
-          .then(MediaOperationStatus.Cancelled)
-          .else(MediaOperationStatus.Cancelling)
-          .end(),
-        cancelRequestedAt: sql<Date>`coalesce("cancelRequestedAt", now())`,
-        cancelAcknowledgedAt: eb
-          .case()
-          .when('status', 'in', UNCLAIMED_STATUSES)
-          .then(sql<Date>`now()`)
-          .else(eb.ref('cancelAcknowledgedAt'))
-          .end(),
-        finishedAt: eb
-          .case()
-          .when('status', 'in', UNCLAIMED_STATUSES)
-          .then(sql<Date>`now()`)
-          .else(eb.ref('finishedAt'))
-          .end(),
-        // Only a queued or paused job had no worker to revoke.
-        claimToken: eb.case().when('status', 'in', UNCLAIMED_STATUSES).then(null).else(eb.ref('claimToken')).end(),
-        claimExpiresAt: eb
-          .case()
-          .when('status', 'in', UNCLAIMED_STATUSES)
-          .then(null)
-          .else(eb.ref('claimExpiresAt'))
-          .end(),
-        // Stopping outranks holding: a pause waiting to be reached is dropped.
-        pauseRequestedAt: null,
-      }))
-      .where('id', '=', id)
-      .where('ownerId', '=', ownerId)
-      .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
-      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
-      .returningAll()
-      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+    return (await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set((eb) => ({
+          // A paused job has no worker either (FL-104), so it is cancelled outright like a queued one.
+          status: eb
+            .case()
+            .when('status', 'in', UNCLAIMED_STATUSES)
+            .then(MediaOperationStatus.Cancelled)
+            .else(MediaOperationStatus.Cancelling)
+            .end(),
+          cancelRequestedAt: sql<Date>`coalesce("cancelRequestedAt", now())`,
+          cancelAcknowledgedAt: eb
+            .case()
+            .when('status', 'in', UNCLAIMED_STATUSES)
+            .then(sql<Date>`now()`)
+            .else(eb.ref('cancelAcknowledgedAt'))
+            .end(),
+          finishedAt: eb
+            .case()
+            .when('status', 'in', UNCLAIMED_STATUSES)
+            .then(sql<Date>`now()`)
+            .else(eb.ref('finishedAt'))
+            .end(),
+          // Only a queued or paused job had no worker to revoke.
+          claimToken: eb.case().when('status', 'in', UNCLAIMED_STATUSES).then(null).else(eb.ref('claimToken')).end(),
+          claimExpiresAt: eb
+            .case()
+            .when('status', 'in', UNCLAIMED_STATUSES)
+            .then(null)
+            .else(eb.ref('claimExpiresAt'))
+            .end(),
+          // Stopping outranks holding: a pause waiting to be reached is dropped.
+          pauseRequestedAt: null,
+        }))
+        .where('id', '=', id)
+        .where('ownerId', '=', ownerId)
+        .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
+        .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .returningAll()
+        .executeTakeFirst(),
+    )) as unknown as MediaOperation | undefined;
   }
 
   /**
@@ -1154,24 +1194,26 @@ export class MediaOperationRepository {
     ownerId: string,
     kinds: readonly MediaOperationKind[],
   ): Promise<MediaOperation | undefined> {
-    return (await this.db
-      .updateTable('media_operation')
-      .set((eb) => ({
-        status: eb
-          .case()
-          .when('status', '=', MediaOperationStatus.Queued)
-          .then(MediaOperationStatus.Paused)
-          .else(eb.ref('status'))
-          .end(),
-        pauseRequestedAt: sql<Date>`coalesce("pauseRequestedAt", now())`,
-      }))
-      .where('id', '=', id)
-      .where('ownerId', '=', ownerId)
-      .where('kind', 'in', [...kinds])
-      .where('status', 'in', [...PAUSABLE_MEDIA_OPERATION_STATUSES])
-      .where('cancelRequestedAt', 'is', null)
-      .returningAll()
-      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+    return (await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set((eb) => ({
+          status: eb
+            .case()
+            .when('status', '=', MediaOperationStatus.Queued)
+            .then(MediaOperationStatus.Paused)
+            .else(eb.ref('status'))
+            .end(),
+          pauseRequestedAt: sql<Date>`coalesce("pauseRequestedAt", now())`,
+        }))
+        .where('id', '=', id)
+        .where('ownerId', '=', ownerId)
+        .where('kind', 'in', [...kinds])
+        .where('status', 'in', [...PAUSABLE_MEDIA_OPERATION_STATUSES])
+        .where('cancelRequestedAt', 'is', null)
+        .returningAll()
+        .executeTakeFirst(),
+    )) as unknown as MediaOperation | undefined;
   }
 
   /**
@@ -1183,28 +1225,30 @@ export class MediaOperationRepository {
    * still pending simply keeps running.
    */
   async resume(id: string, ownerId: string): Promise<MediaOperation | undefined> {
-    return (await this.db
-      .updateTable('media_operation')
-      .set((eb) => ({
-        status: eb
-          .case()
-          .when('status', '=', MediaOperationStatus.Paused)
-          .then(MediaOperationStatus.Queued)
-          .else(eb.ref('status'))
-          .end(),
-        pauseRequestedAt: null,
-      }))
-      .where('id', '=', id)
-      .where('ownerId', '=', ownerId)
-      .where('cancelRequestedAt', 'is', null)
-      .where((eb) =>
-        eb.or([
-          eb('status', '=', MediaOperationStatus.Paused),
-          eb.and([eb('pauseRequestedAt', 'is not', null), eb('status', 'in', WORKING_STATUSES)]),
-        ]),
-      )
-      .returningAll()
-      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+    return (await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set((eb) => ({
+          status: eb
+            .case()
+            .when('status', '=', MediaOperationStatus.Paused)
+            .then(MediaOperationStatus.Queued)
+            .else(eb.ref('status'))
+            .end(),
+          pauseRequestedAt: null,
+        }))
+        .where('id', '=', id)
+        .where('ownerId', '=', ownerId)
+        .where('cancelRequestedAt', 'is', null)
+        .where((eb) =>
+          eb.or([
+            eb('status', '=', MediaOperationStatus.Paused),
+            eb.and([eb('pauseRequestedAt', 'is not', null), eb('status', 'in', WORKING_STATUSES)]),
+          ]),
+        )
+        .returningAll()
+        .executeTakeFirst(),
+    )) as unknown as MediaOperation | undefined;
   }
 
   /**
@@ -1215,23 +1259,25 @@ export class MediaOperationRepository {
    * it recorded, and the attempt it was on is given back, because it did not fail.
    */
   async settlePause(id: string, claimToken: string): Promise<boolean> {
-    const result = await this.db
-      .updateTable('media_operation')
-      .set({
-        status: MediaOperationStatus.Paused,
-        claimToken: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-        attempt: sql<number>`greatest("attempt" - 1, 0)`,
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      // Never while validating: that output is about to be adopted, and a runner that moved there
-      // after it last looked must not have it thrown away by a late settle.
-      .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
-      .where('pauseRequestedAt', 'is not', null)
-      .where('cancelRequestedAt', 'is', null)
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Paused,
+          claimToken: null,
+          claimedBy: null,
+          claimExpiresAt: null,
+          attempt: sql<number>`greatest("attempt" - 1, 0)`,
+        })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        // Never while validating: that output is about to be adopted, and a runner that moved there
+        // after it last looked must not have it thrown away by a late settle.
+        .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
+        .where('pauseRequestedAt', 'is not', null)
+        .where('cancelRequestedAt', 'is', null)
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows) === 1;
   }
@@ -1271,84 +1317,94 @@ export class MediaOperationRepository {
     // is what the owner wanted, and resuming it later picks up from its checkpoints like a requeue.
     // Unlike `settlePause`, the attempt is not given back: the worker vanished, which is what
     // attempts count, whether or not a pause was also waiting.
-    const paused = await this.db
-      .updateTable('media_operation')
-      .set({ status: MediaOperationStatus.Paused, claimToken: null, claimedBy: null, claimExpiresAt: null })
-      .where('status', 'in', WORKING_STATUSES)
-      .where('claimExpiresAt', 'is not', null)
-      .where('claimExpiresAt', '<', sql<Date>`now()`)
-      .where('pauseRequestedAt', 'is not', null)
-      .where('cancelRequestedAt', 'is', null)
-      .executeTakeFirst();
+    const paused = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ status: MediaOperationStatus.Paused, claimToken: null, claimedBy: null, claimExpiresAt: null })
+        .where('status', 'in', WORKING_STATUSES)
+        .where('claimExpiresAt', 'is not', null)
+        .where('claimExpiresAt', '<', sql<Date>`now()`)
+        .where('pauseRequestedAt', 'is not', null)
+        .where('cancelRequestedAt', 'is', null)
+        .executeTakeFirst(),
+    );
 
     // The steps below also land on `paused` if a pause arrived after the step above ran: the steps
     // are separate statements, and a pause request between them must not leave a queued job with a
     // pause pending that nothing would ever settle.
-    const requeued = await this.db
-      .updateTable('media_operation')
-      .set({ status: pausedIfRequested(), claimToken: null, claimedBy: null, claimExpiresAt: null })
-      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-      .where('claimExpiresAt', 'is not', null)
-      .where('claimExpiresAt', '<', sql<Date>`now()`)
-      .where(resumesLostClaim())
-      // A cancel already requested must not be resurrected as a queued job.
-      .where('cancelRequestedAt', 'is', null)
-      .executeTakeFirst();
+    const requeued = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ status: pausedIfRequested(), claimToken: null, claimedBy: null, claimExpiresAt: null })
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .where('claimExpiresAt', 'is not', null)
+        .where('claimExpiresAt', '<', sql<Date>`now()`)
+        .where(resumesLostClaim())
+        // A cancel already requested must not be resurrected as a queued job.
+        .where('cancelRequestedAt', 'is', null)
+        .executeTakeFirst(),
+    );
 
     // Out of attempts is a failure, and every failure gets its one automatic retry first (FL-104).
-    const retried = await this.db
-      .updateTable('media_operation')
-      .set({
-        status: pausedIfRequested(),
-        error: options.error,
-        errorCode: options.errorCode,
-        autoRetries: sql<number>`"autoRetries" + 1`,
-        retryAt: nowPlus(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS),
-        claimToken: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-      })
-      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-      .where('claimExpiresAt', 'is not', null)
-      .where('claimExpiresAt', '<', sql<Date>`now()`)
-      .where(sql<boolean>`not ${resumesLostClaim()}`)
-      .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
-      .where('cancelRequestedAt', 'is', null)
-      .executeTakeFirst();
+    const retried = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: pausedIfRequested(),
+          error: options.error,
+          errorCode: options.errorCode,
+          autoRetries: sql<number>`"autoRetries" + 1`,
+          retryAt: nowPlus(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS),
+          claimToken: null,
+          claimedBy: null,
+          claimExpiresAt: null,
+        })
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .where('claimExpiresAt', 'is not', null)
+        .where('claimExpiresAt', '<', sql<Date>`now()`)
+        .where(sql<boolean>`not ${resumesLostClaim()}`)
+        .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
+        .where('cancelRequestedAt', 'is', null)
+        .executeTakeFirst(),
+    );
 
-    const failed = await this.db
-      .updateTable('media_operation')
-      .set({
-        status: MediaOperationStatus.Failed,
-        error: options.error,
-        errorCode: options.errorCode,
-        finishedAt: sql<Date>`now()`,
-        claimToken: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-      })
-      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-      .where('claimExpiresAt', 'is not', null)
-      .where('claimExpiresAt', '<', sql<Date>`now()`)
-      .where(sql<boolean>`not ${resumesLostClaim()}`)
-      .where('autoRetries', '>=', MEDIA_OPERATION_AUTO_RETRIES)
-      .where('cancelRequestedAt', 'is', null)
-      .executeTakeFirst();
+    const failed = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Failed,
+          error: options.error,
+          errorCode: options.errorCode,
+          finishedAt: sql<Date>`now()`,
+          claimToken: null,
+          claimedBy: null,
+          claimExpiresAt: null,
+        })
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .where('claimExpiresAt', 'is not', null)
+        .where('claimExpiresAt', '<', sql<Date>`now()`)
+        .where(sql<boolean>`not ${resumesLostClaim()}`)
+        .where('autoRetries', '>=', MEDIA_OPERATION_AUTO_RETRIES)
+        .where('cancelRequestedAt', 'is', null)
+        .executeTakeFirst(),
+    );
 
-    const abandonedCancels = await this.db
-      .updateTable('media_operation')
-      .set({
-        status: MediaOperationStatus.Cancelled,
-        finishedAt: sql<Date>`coalesce("finishedAt", now())`,
-        claimToken: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-      })
-      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-      .where('claimExpiresAt', 'is not', null)
-      .where('claimExpiresAt', '<', sql<Date>`now()`)
-      .where('cancelRequestedAt', 'is not', null)
-      .executeTakeFirst();
+    const abandonedCancels = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Cancelled,
+          finishedAt: sql<Date>`coalesce("finishedAt", now())`,
+          claimToken: null,
+          claimedBy: null,
+          claimExpiresAt: null,
+        })
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .where('claimExpiresAt', 'is not', null)
+        .where('claimExpiresAt', '<', sql<Date>`now()`)
+        .where('cancelRequestedAt', 'is not', null)
+        .executeTakeFirst(),
+    );
 
     return {
       requeued: Number(requeued.numUpdatedRows),
@@ -1370,6 +1426,7 @@ export class MediaOperationRepository {
     chunk: Insertable<MediaOperationCheckpointTable>,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       // The claim check and the write are one unit (FL-43): the share lock holds off recovery's
       // requeue of this row until the chunk is recorded, so a lease that lapses between the two
       // cannot let a presumed-dead worker re-plan a chunk its replacement already owns.
@@ -1420,6 +1477,7 @@ export class MediaOperationRepository {
     chunk: { sequence: number; chunkKey: string; outputPath: string; outputChecksum: Buffer; sizeInBytes: number },
   ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       if (!(await this.lockClaim(trx, operationId, claimToken))) {
         return false;
       }
@@ -1445,12 +1503,14 @@ export class MediaOperationRepository {
 
   /** Retire chunks that can no longer describe the work. Invalid chunks are never reused. */
   async invalidateCheckpointsFrom(operationId: string, sequence: number): Promise<void> {
-    await this.db
-      .updateTable('media_operation_checkpoint')
-      .set({ state: MediaOperationCheckpointState.Invalid })
-      .where('operationId', '=', operationId)
-      .where('sequence', '>=', sequence)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('media_operation_checkpoint')
+        .set({ state: MediaOperationCheckpointState.Invalid })
+        .where('operationId', '=', operationId)
+        .where('sequence', '>=', sequence)
+        .execute(),
+    );
   }
 
   /**
