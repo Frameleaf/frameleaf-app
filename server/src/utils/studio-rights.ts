@@ -86,14 +86,28 @@ export const studioProducerModels: Readonly<Record<string, readonly string[]>> =
   ],
 };
 
+/** Producers that run no licensed model: the editor's own derived files. */
+export const STUDIO_LOCAL_PRODUCERS: ReadonlySet<string> = new Set(['proxy', 'waveform', 'reverse-conform', 'chunk']);
+
+/**
+ * The rights verdict for a generated file's producer. Null for the editor's own derived files; a
+ * producer this server does not know is refused, never admitted by default.
+ */
 export const checkStudioProducerRights = (
   producer: string,
   use: StudioRightsUse,
   table: Readonly<Record<string, StudioResourceRights>> = studioResourceRights,
 ): StudioRightsVerdict | null => {
-  const models = studioProducerModels[producer];
-  if (!models) {
+  if (STUDIO_LOCAL_PRODUCERS.has(producer)) {
     return null;
+  }
+  const models = Object.hasOwn(studioProducerModels, producer) ? studioProducerModels[producer] : undefined;
+  if (!models) {
+    return {
+      allowed: false,
+      id: `producer:${producer}`,
+      detail: `${producer} is not a producer this server knows, so its output is not used.`,
+    };
   }
   const admitted = models.map((id) => checkStudioRights(id, use, table)).find((verdict) => verdict.allowed);
   return (
