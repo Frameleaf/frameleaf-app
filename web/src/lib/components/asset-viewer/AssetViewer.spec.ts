@@ -1,4 +1,4 @@
-import { AssetTypeEnum, getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
@@ -106,6 +106,68 @@ describe('AssetViewer', () => {
     expect(onAssetUpdate).not.toHaveBeenCalled();
   });
 
+  describe('the open item removed elsewhere (FL-35)', () => {
+    const setup = (props: Record<string, unknown> = {}) => {
+      const user = userAdminFactory.build();
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const current = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+      const nextAsset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+      const onClose = vi.fn();
+      renderWithTooltips(AssetViewer, {
+        cursor: { current, nextAsset },
+        showNavigation: true,
+        onNavigateToAsset,
+        onClose,
+        ...props,
+      });
+      return { current, nextAsset, onNavigateToAsset, onClose };
+    };
+
+    it('moves to a neighbour that is still there', async () => {
+      const { current, nextAsset, onNavigateToAsset, onClose } = setup();
+      eventManager.emit('AssetsDelete', [current.id]);
+      await waitFor(() => expect(onNavigateToAsset).toHaveBeenCalledWith(nextAsset));
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('closes when the neighbours went too', async () => {
+      const { current, nextAsset, onNavigateToAsset, onClose } = setup();
+      eventManager.emit('AssetsDelete', [current.id, nextAsset.id]);
+      await waitFor(() => expect(onClose).toHaveBeenCalledWith(current.id));
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
+
+    it('moves on when the open item is Locked elsewhere and this session has not unlocked', async () => {
+      const { current, nextAsset, onNavigateToAsset } = setup();
+      eventManager.emit('AssetUpdate', { ...current, visibility: AssetVisibility.Locked });
+      await waitFor(() => expect(onNavigateToAsset).toHaveBeenCalledWith(nextAsset));
+    });
+
+    it('ignores deletions of other items', async () => {
+      const { onNavigateToAsset, onClose } = setup();
+      eventManager.emit('AssetsDelete', ['someone-else']);
+      await Promise.resolve();
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
+  it('puts the Live badge on a Live Photo (V-16)', () => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const asset = assetFactory.build({
+      ownerId: user.id,
+      type: AssetTypeEnum.Image,
+      livePhotoVideoId: 'motion',
+      exifInfo: { projectionType: null },
+    });
+    const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+    expect(view.getByTestId('viewer-live-badge')).toBeInTheDocument();
+  });
+
   it('refreshes the asset when the video editor explicitly requests it', async () => {
     const user = userAdminFactory.build();
     const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
@@ -179,15 +241,15 @@ describe('AssetViewer', () => {
       showNavigation: false,
     });
 
-    expect(getByLabelText('to_favorite')).toBeInTheDocument();
-    expect(queryByLabelText('unfavorite')).toBeNull();
+    expect(getByLabelText('frameleaf_viewer_add_to_favorites')).toBeInTheDocument();
+    expect(queryByLabelText('frameleaf_viewer_remove_from_favorites')).toBeNull();
 
-    await fireEvent.click(getByLabelText('to_favorite'));
+    await fireEvent.click(getByLabelText('frameleaf_viewer_add_to_favorites'));
 
     await waitFor(() =>
       expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { isFavorite: true } }),
     );
-    await waitFor(() => expect(getByLabelText('unfavorite')).toBeInTheDocument());
+    await waitFor(() => expect(getByLabelText('frameleaf_viewer_remove_from_favorites')).toBeInTheDocument());
   });
 
   // FL-35 hands-on viewer (apple-style.css:366-407, MediaViewer.jsx:524-578).

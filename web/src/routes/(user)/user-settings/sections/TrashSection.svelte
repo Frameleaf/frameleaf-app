@@ -12,6 +12,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { onDestroy } from 'svelte';
   import { resolveTrashNeighbours } from './trash-neighbours';
+  import { trashFilmstripAsset } from '$lib/frameleaf/trash';
 
   /**
    * Trash (FL-47): the Frameleaf trash browser, the design template's Trash area of the Command
@@ -73,6 +74,11 @@
 
   const cursor = $derived({ current: assetViewerManager.asset!, ...neighbours });
 
+  // V-17: the trash viewer's filmstrip is the page's own list, in the order the trash shows it.
+  const filmstripAssets = $derived(
+    authManager.authenticated ? items.map((item) => trashFilmstripAsset(item, authManager.user.id)) : [],
+  );
+
   const closeViewer = () => {
     assetViewerManager.showAssetViewer(false);
     handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
@@ -110,6 +116,7 @@
       <AssetViewer
         {cursor}
         showNavigation={items.length > 1}
+        {filmstripAssets}
         {preAction}
         {onAction}
         onClose={closeViewer}
