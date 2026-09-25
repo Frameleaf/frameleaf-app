@@ -226,6 +226,8 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       await expect(titleCard).toBeVisible();
       await expect(titleCard.getByText('Memory', { exact: true })).toBeVisible();
       await expect(titleCard.getByText(`${firstMemory.assets.length} items`)).toBeVisible();
+      // data-initial-focus (MemoryPlayer.jsx:343)
+      await expect(titleCard.getByRole('button', { name: 'Play' })).toBeFocused();
 
       await titleCard.getByRole('button', { name: 'Play' }).click();
       await expect(titleCard).toHaveCount(0);
@@ -257,7 +259,8 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       const endCard = viewer.locator('.fmp-end-card');
       await expect(endCard).toBeVisible();
       await expect(endCard.getByText('That was', { exact: true })).toBeVisible();
-      await expect(endCard.getByRole('button', { name: 'Play again' })).toBeVisible();
+      // data-initial-focus (MemoryPlayer.jsx:414)
+      await expect(endCard.getByRole('button', { name: 'Play again' })).toBeFocused();
       await expect(endCard.getByRole('button', { name: 'Back to memories' })).toBeVisible();
       await expect(endCard.getByRole('button', { name: /^Next memory: / })).toBeVisible();
       await memoryAssetViewerUtils.expectCurrentAssetId(page, lastAsset.id);
