@@ -31,6 +31,21 @@ describe('map clusters (MapView.jsx clusterRadius, FL-147)', () => {
     expect(placeLabelLayout()['text-variable-anchor'][0]).toBe('left');
   });
 
+  const countryLayer = {
+    id: 'place_country',
+    type: 'symbol',
+    source: 'vector',
+    'source-layer': 'place',
+    layout: { 'text-field': '{name}' },
+  } as LayerSpecification;
+  const townLayer = {
+    id: 'settlements',
+    type: 'symbol',
+    source: 'vector',
+    'source-layer': 'place',
+    filter: ['==', ['get', 'class'], 'town'],
+    layout: { 'text-field': '{name}' },
+  } as LayerSpecification;
   const placeLayer = {
     id: 'place_city',
     type: 'symbol',
@@ -46,8 +61,12 @@ describe('map clusters (MapView.jsx clusterRadius, FL-147)', () => {
     layout: { 'text-field': '{name}' },
   } as LayerSpecification;
 
-  it('recognises only the base map place-name layers', () => {
+  it('recognises only the base map city, town and village names', () => {
     expect(isPlaceLabelLayer(placeLayer)).toBe(true);
+    expect(isPlaceLabelLayer(townLayer)).toBe(true);
+    expect(isPlaceLabelLayer(countryLayer)).toBe(false);
+    expect(isPlaceLabelLayer({ ...countryLayer, id: 'place_state' } as LayerSpecification)).toBe(false);
+    expect(isPlaceLabelLayer({ ...countryLayer, id: 'place_continent' } as LayerSpecification)).toBe(false);
     expect(isPlaceLabelLayer(roadLayer)).toBe(false);
     expect(isPlaceLabelLayer({ id: 'bg', type: 'background' } as LayerSpecification)).toBe(false);
   });
@@ -57,7 +76,7 @@ describe('map clusters (MapView.jsx clusterRadius, FL-147)', () => {
     const layers = new Set<string>();
     const images = new Set<string>();
     const map = {
-      getStyle: () => ({ layers: [placeLayer, roadLayer] }),
+      getStyle: vi.fn(() => ({ layers: [placeLayer, countryLayer, roadLayer] })),
       getSource: (id: string) => (id === 'geojson' ? {} : undefined),
       hasImage: (id: string) => images.has(id),
       addImage: vi.fn((id: string) => images.add(id)),
@@ -68,7 +87,7 @@ describe('map clusters (MapView.jsx clusterRadius, FL-147)', () => {
         layout.set(`${id}.${property}`, value),
       ),
     };
-    return { map, layout };
+    return { map, layout, layers };
   };
 
   it('adds the bubble obstacles once and moves place names clear of them', () => {
@@ -82,7 +101,18 @@ describe('map clusters (MapView.jsx clusterRadius, FL-147)', () => {
     expect(map.addLayer.mock.calls[0][0]).toMatchObject({ id: CLUSTER_OBSTACLE_LAYER, source: 'geojson' });
     expect(layout.get('place_city.text-radial-offset')).toBe(0.5);
     expect(layout.get('road_label.text-radial-offset')).toBeUndefined();
+    expect(layout.get('place_country.text-radial-offset')).toBeUndefined();
     expect(map.setLayoutProperty).toHaveBeenCalledTimes(3);
+    // once applied, later style and source events return before reading the style
+    expect(map.getStyle).toHaveBeenCalledOnce();
+  });
+
+  it('applies again when a new style has dropped the obstacle layer', () => {
+    const { map, layers } = fakeMap();
+    applyClusterLabelLayout(map as unknown as MapLibreMap, 'geojson');
+    layers.clear();
+    applyClusterLabelLayout(map as unknown as MapLibreMap, 'geojson');
+    expect(map.addLayer).toHaveBeenCalledTimes(2);
   });
 
   it('waits for the markers source', () => {
