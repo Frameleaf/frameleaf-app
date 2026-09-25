@@ -28,6 +28,7 @@ export const ML_WORKLOAD_ORDER: readonly MlWorkload[] = [
   MlWorkload.StudioAi,
   MlWorkload.Upscale,
   MlWorkload.Interpolation,
+  MlWorkload.StudioRender,
 ];
 
 export const mlWorkloadLabelKey = (workload: MlWorkload): Translations => {
