@@ -573,6 +573,20 @@ describe(AssetService.name, () => {
       });
     });
 
+    it('removes the location for null coordinates and rewrites the sidecars (FL-51)', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], latitude: null, longitude: null });
+
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['asset-1', 'asset-2']);
+      expect(mocks.asset.updateAllExif).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SidecarWrite, data: { id: 'asset-1' } },
+        { name: JobName.SidecarWrite, data: { id: 'asset-2' } },
+      ]);
+    });
+
     it('should keep album membership when assets are locked (FL-32, FL-34)', async () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
