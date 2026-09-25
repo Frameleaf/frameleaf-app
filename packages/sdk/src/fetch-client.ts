@@ -2948,6 +2948,10 @@ export type AssetEditsCreateDto = {
     /** List of edit actions to apply */
     edits: AssetEditActionItemDto[];
 };
+export type AssetEditKeyframesResponseDto = {
+    /** Times of the original's video keyframes in milliseconds from its start, ascending. A fast trim starts at the last one at or before its in point. */
+    keyframesMs: number[];
+};
 export type ImageDescriptionEnrichmentResponseDto = {
     appliedDescription: boolean;
     appliedTags: boolean;
@@ -11162,6 +11166,19 @@ export function editAsset({ id, assetEditsCreateDto }: {
         method: "PUT",
         body: assetEditsCreateDto
     })));
+}
+/**
+ * List the original video's keyframes
+ */
+export function getAssetEditKeyframes({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetEditKeyframesResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/edits/keyframes`, {
+        ...opts
+    }));
 }
 /**
  * Get image enrichment metadata

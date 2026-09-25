@@ -26,6 +26,7 @@ import {
 import {
   AssetEditAction,
   AssetEditActionItem,
+  AssetEditKeyframesResponseDto,
   AssetEditsCreateDto,
   AssetEditsResponseDto,
   VideoEditVersionResponseDto,
@@ -861,6 +862,34 @@ export class AssetService extends BaseService {
     const edits = await this.assetEditRepository.getAll(id);
 
     return { assetId: id, edits, ...(originalVideo && { originalVideo }) };
+  }
+
+  /**
+   * FL-113 (VID-105, "exact versus fast trim shows actual boundaries"): the original's keyframes,
+   * read from its packets without decoding, so the editor can show where a fast trim cuts.
+   */
+  async getAssetEditKeyframes(auth: AuthDto, id: string): Promise<AssetEditKeyframesResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AssetEditGet, ids: [id] });
+    const asset = await this.assetRepository.getById(id);
+    if (!asset || asset.type !== AssetType.Video) {
+      throw new BadRequestException('Asset not found or asset is not a video');
+    }
+    const { videoStreams } = await this.mediaRepository.probe(asset.originalPath);
+    const video = videoStreams[0];
+    const ticks = video?.timeBaseRational ?? (video?.timeBase ? { num: 1, den: video.timeBase } : null);
+    if (!video || !ticks) {
+      throw new BadRequestException('Original video keyframes are not available');
+    }
+    const packets = await this.mediaRepository.probePackets(asset.originalPath, video.index);
+    const start = packets?.startPts ?? 0;
+    const keyframesMs = [
+      ...new Set(
+        (packets?.keyframePts ?? []).map((pts) =>
+          Math.max(0, Math.round(((pts - start) * Number(ticks.num) * 1000) / Number(ticks.den))),
+        ),
+      ),
+    ].sort((a, b) => a - b);
+    return { keyframesMs };
   }
 
   private async getOriginalVideoMetadata(path: string): Promise<NonNullable<AssetEditsResponseDto['originalVideo']>> {
