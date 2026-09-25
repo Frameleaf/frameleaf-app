@@ -103,7 +103,20 @@
       danger: true,
     });
 
-  const save = async () => {
+  /**
+   * "Remove location" asks first and only then empties the coordinates, so Keep leaves every field
+   * exactly as it was.
+   */
+  const removeLocation = async () => {
+    if (saving || !(await confirmRemoval())) {
+      return;
+    }
+    latitude = '';
+    longitude = '';
+    await save({ confirmed: true });
+  };
+
+  const save = async ({ confirmed = false } = {}) => {
     if (patch === 'invalid' || saving) {
       return;
     }
@@ -111,7 +124,7 @@
       open = false;
       return;
     }
-    if (isLocationRemoval(patch) && !(await confirmRemoval())) {
+    if (isLocationRemoval(patch) && !confirmed && !(await confirmRemoval())) {
       return;
     }
     saving = true;
@@ -219,16 +232,7 @@
   </form>
   {#snippet actions()}
     {#if initial.latitude}
-      <button
-        type="button"
-        class="button remove"
-        disabled={saving}
-        onclick={() => {
-          latitude = '';
-          longitude = '';
-          void save();
-        }}
-      >
+      <button type="button" class="button remove" disabled={saving} onclick={() => void removeLocation()}>
         {$t('frameleaf_info_remove_location')}
       </button>
     {/if}
