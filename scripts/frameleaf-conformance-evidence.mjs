@@ -498,7 +498,7 @@ const actions = {
   "open-full-workspace-retaining-draft-and-playhead": [
     "partial",
     ["E-1", "MPY-10"],
-    "Open in Studio from the editor (fix-editor-albums); Studio handoff is studio-parked",
+    "Open in Studio from the editor (fix-editor-albums, FL-113); keeping the draft and playhead in the workspace is studio-parked",
   ],
   "persistent-render-status-cancel-retry-reload-revision-supersession": [
     "match",
@@ -1126,8 +1126,8 @@ const routes = {
   ],
   "/activity": [
     "fixed",
-    ["A-1", "A-6"],
-    'The indicator and filter count say "jobs" (A-1) and rows carry the status line with percent, ETA, "Paused at N%" and "Waiting for connection" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port',
+    ["A-1", "A-6", "A-8", "A-9", "A-10"],
+    'The indicator and filter count say "jobs" (A-1) and rows carry the status line with percent, ETA, "Paused at N%" and "Waiting for connection" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port. FL-104 adds the completion live region (A-8), the Reduce Motion guard (A-9) and Pause disabled with its reason (A-10)',
     [`${P}/Activity.jsx`],
     [
       `${W}/routes/(user)/activity/+page.svelte`,
@@ -1758,7 +1758,7 @@ const routes = {
   "/studio": [
     "studio-parked",
     ["ST-1", "ST-2", "ST-3", "ST-4", "ST-5", "ST-6"],
-    "Studio workspace waits on the parked engine",
+    "The header is done (ST-2…ST-7, FL-88: rename, Library back, review count, Basic/Advanced, avatar, export dialog; the workspace layout is stored per account, FL-91). The workspace itself waits on the parked engine (ST-1)",
     [`${P}/Studio.jsx`, `${P}/studio-project.mjs`],
     [
       `${W}/routes/(user)/studio/+page.svelte`,
