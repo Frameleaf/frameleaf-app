@@ -46,6 +46,7 @@ import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
 import { call, connectToHost, post } from './host-port'
 import { VirtualWorkspace } from './virtual-workspace'
+import { shouldReloadFromHost, shouldResendDraft } from './draft-sync'
 import { createLibraryMediaSeeder, type LibraryMediaSeeder } from './library-media'
 import { canonicalJson } from './canonical-commands'
 import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
@@ -122,6 +123,8 @@ interface Session {
   render: () => void
   unsubscribe: Array<() => void>
   draftTimer: ReturnType<typeof setTimeout> | null
+  /** The host refused the last draft; it goes again when the host can take it. */
+  pendingSend: boolean
   disposed: boolean
 }
 
@@ -290,9 +293,12 @@ async function sendDraft(state: Session) {
   )
   if (result.status === 'staged') {
     state.hostContent = content
+    state.pendingSend = false
     post({ type: 'dirty', dirty: false })
   } else {
-    // Kept in the editor, not stored: the host's banner already says why (lease, access, network).
+    // Kept in the editor and sent again when the host can take it (see `update`); the host's
+    // banner already says why (lease, access, network).
+    state.pendingSend = true
     post({ type: 'dirty', dirty: true })
   }
 }
@@ -389,6 +395,7 @@ async function mount(context: StudioHostContext): Promise<void> {
     render: () => undefined,
     unsubscribe: [],
     draftTimer: null,
+    pendingSend: false,
     disposed: false,
   }
   session = state
@@ -426,8 +433,12 @@ async function update(context: StudioHostContext): Promise<void> {
   const incoming = contentOf(context.project.graph)
   if (
     context.project.graph &&
-    incoming !== state.hostContent &&
-    incoming !== contentOf(await currentGraph(state))
+    shouldReloadFromHost({
+      incoming,
+      hostContent: state.hostContent,
+      current: contentOf(await currentGraph(state)),
+      draftHeld: context.draftHeld === true,
+    })
   ) {
     // A revision this editor did not write: a restore, a reload after a conflict, or a canonical
     // command applied by the host. Reload the editor from it.
@@ -438,8 +449,17 @@ async function update(context: StudioHostContext): Promise<void> {
     )
     usePlaybackStore.getState().pause()
     state.generation += 1
-  } else if (context.project.graph) {
+  } else if (context.project.graph && context.draftHeld !== true) {
     state.hostContent = incoming
+  }
+  if (
+    shouldResendDraft({
+      pending: state.pendingSend,
+      online: context.online,
+      hasLease: context.project.hasLease,
+    })
+  ) {
+    void sendDraft(state)
   }
   state.render()
 }
