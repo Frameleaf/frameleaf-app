@@ -211,6 +211,10 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(screen.getByText('Licensed')).toBeInTheDocument();
       expect(screen.getByText('•••• 8ELH')).toBeInTheDocument();
       expect(screen.queryByText('Enter a licence key')).toBeNull();
+      const supporterChip = within(screen.getByRole('list', { name: /included/i }))
+        .getByText(/Supporter/)
+        .closest('li');
+      expect(supporterChip).toHaveClass('is-on');
 
       await fireEvent.click(screen.getByRole('button', { name: 'Remove your supporter key…' }));
       const dialog = await screen.findByRole('dialog');
