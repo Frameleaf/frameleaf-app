@@ -551,9 +551,7 @@ Anything short of `PASS` names the specific assets still missing, both on screen
 Run `node packages/cli/dist/index.js migrate --help` for the full list. The step-by-step operator guide, including how to review the audit report in **Settings → Storage & originals → Move or export your library**, is [Server-to-server migration](docs/docs/administration/server-migration.md).
 
 <br/>
-<a href="https://immich.app">
-<img src="design/immich-screenshots.png" title="Main Screenshot">
-</a>
+<img src="design/frameleaf/references/desktop-dark.jpg" title="Frameleaf library">
 <br/>
 
 <p align="center">
