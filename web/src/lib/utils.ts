@@ -24,6 +24,7 @@ import { DateTime } from 'luxon';
 import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
+import { recordOAuthRequest } from '$lib/frameleaf/auth-session-preference';
 import { eventStoryPlace, formatLocalDateRange, isEventStory, isYearInReview } from '$lib/frameleaf/memory-stories';
 import { playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -357,6 +358,8 @@ export const oauth = {
     try {
       const redirectUri = location.href.split('?', 1)[0];
       const { url } = await startOAuth({ oAuthConfigDto: { redirectUri } });
+      // FL-80: the callback may arrive in another tab; keep this sign-in's choices for it
+      recordOAuthRequest(url);
       globalThis.location.assign(url);
       return true;
     } catch (error) {

@@ -1150,9 +1150,9 @@ const routes = {
     [`${W}/routes/admin/jobs-status/+page.ts`],
   ],
   "/admin/library-management": [
-    "in-flight",
+    "fixed",
     ["CC-34"],
-    "FL-78 external libraries",
+    "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)",
     [`${P}/AccountsLibraries.jsx`],
     [
       `${W}/routes/admin/library-management/(list)/+page.ts`,
@@ -1160,9 +1160,9 @@ const routes = {
     ],
   ],
   "/admin/library-management/[id]": [
-    "in-flight",
+    "fixed",
     ["CC-34"],
-    "FL-78 external libraries",
+    "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)",
     [`${P}/AccountsLibraries.jsx`],
     [
       `${W}/routes/admin/library-management/[id]/+page.ts`,
@@ -1170,9 +1170,9 @@ const routes = {
     ],
   ],
   "/admin/library-management/[id]/edit": [
-    "in-flight",
+    "fixed",
     ["CC-34"],
-    "FL-78 external libraries",
+    "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)",
     [`${P}/AccountsLibraries.jsx`],
     [
       `${W}/routes/admin/library-management/[id]/edit/+page.ts`,
@@ -1180,9 +1180,9 @@ const routes = {
     ],
   ],
   "/admin/library-management/new": [
-    "in-flight",
+    "fixed",
     ["CC-34"],
-    "FL-78 external libraries",
+    "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)",
     [`${P}/AccountsLibraries.jsx`],
     [
       `${W}/routes/admin/library-management/(list)/new/+page.ts`,
@@ -1210,9 +1210,9 @@ const routes = {
     ],
   ],
   "/admin/physical-deduplication": [
-    "partial",
-    ["UT-23", "UT-24"],
-    "Configuration-error state; file availability",
+    "fixed",
+    ["UT-23", "UT-24", "UT-25"],
+    "Configuration-error state with Open settings; per-read file availability with the unavailable overlay; detail line, picker and Change link (FL-71, September 25)",
     [`${P}/PhysicalDedupManager.jsx`, `${P}/physical-dedup-data.mjs`],
     [
       `${W}/routes/admin/physical-deduplication/+page.ts`,
@@ -1280,7 +1280,7 @@ const routes = {
       "CC-11",
       "CC-12",
     ],
-    "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); open: the platform shortcut hint (CC-7, shared with the top bar); configuration transfer fixed by FL-71 (CC-46..CC-48)",
+    "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); the platform shortcut hint fixed (CC-7, September 25); configuration transfer fixed by FL-71 (CC-46..CC-48)",
     [
       `${P}/CommandCenter.jsx`,
       `${P}/settings-catalog.mjs`,
@@ -1404,9 +1404,9 @@ const routes = {
     [`${W}/routes/auth/logout/+page.svelte`],
   ],
   "/auth/onboarding": [
-    "partial",
+    "fixed",
     ["O-8", "O-12"],
-    "Version check stays off by privacy policy; app store links await the owner. Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)",
+    "Store links only when configured (O-12, FL-135); the version check stays off under the FL-146 privacy default (O-8, intentional). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)",
     [`${P}/AuthScreens.jsx`, `${P}/system-data.mjs`],
     [`${W}/routes/auth/onboarding/+page.svelte`],
   ],
@@ -1833,9 +1833,9 @@ const routes = {
     ],
   ],
   "/user-settings": [
-    "partial",
+    "fixed",
     ["CC-49", "AL-46", "US-2"],
-    "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54)",
+    "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54, AL-46); server key product name fixed (US-2)",
     [
       `${P}/AccountPreferences.jsx`,
       `${P}/AccountsLibraries.jsx`,
@@ -1844,9 +1844,9 @@ const routes = {
     [`${W}/routes/(user)/user-settings/+page.svelte`],
   ],
   "/utilities": [
-    "partial",
+    "match",
     ["UT-12"],
-    "Hub scope line (UT-12). PL-0, UT-1 and UT-1a are fixed on claude/frameleaf-implementation: utilities are the Command Center utilities area and application setup is a utility",
+    "UT-12 obsolete: the September 24 prototype has no hub cards, utilities are Command Center directory rows. PL-0, UT-1 and UT-1a are fixed on claude/frameleaf-implementation: utilities are the Command Center utilities area and application setup is a utility",
     [`${P}/UtilitiesManager.jsx`, `${P}/utilities-data.mjs`],
     [
       `${W}/routes/(user)/utilities/+page.ts`,

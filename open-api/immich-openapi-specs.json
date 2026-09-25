@@ -37208,6 +37208,25 @@
         },
         "type": "object"
       },
+      "AdminConfigAnalyticsDto": {
+        "properties": {
+          "enabled": {
+            "description": "Collect local analytics history every night",
+            "type": "boolean"
+          },
+          "historyDays": {
+            "description": "Days of local analytics history to keep",
+            "maximum": 800,
+            "minimum": 30,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "historyDays"
+        ],
+        "type": "object"
+      },
       "AdminConfigAskSearchDto": {
         "properties": {
           "enabled": {
@@ -37286,6 +37305,9 @@
       "AdminConfigDto": {
         "description": "Configuration properties that are visible to the admin",
         "properties": {
+          "analytics": {
+            "$ref": "#/components/schemas/AdminConfigAnalyticsDto"
+          },
           "backup": {
             "$ref": "#/components/schemas/AdminConfigBackupsDto"
           },
@@ -57738,6 +57760,10 @@
             "description": "Hex-encoded SHA-1 checksum of the original file",
             "type": "string"
           },
+          "fileAvailable": {
+            "description": "Whether the retained original file is on disk now, checked on every read (FL-71 UT-24)",
+            "type": "boolean"
+          },
           "hiddenCopies": {
             "description": "Copies this retained original would share that are Locked media of another account; counted, never named (FL-73)",
             "maximum": 9007199254740991,
@@ -57784,6 +57810,7 @@
           "assetId",
           "canView",
           "checksum",
+          "fileAvailable",
           "hiddenCopies",
           "originalFileName",
           "originalPath",
@@ -64399,6 +64426,10 @@
               },
               "signingCertificateSha256": {
                 "description": "SHA-256 fingerprint of the release signing certificate, as AA:BB:...",
+                "type": "string"
+              },
+              "storeUrl": {
+                "description": "Store listing of the Android app, when the operator configured one (FL-135)",
                 "type": "string"
               }
             },
@@ -74588,6 +74619,10 @@
           "folders": {
             "$ref": "#/components/schemas/FoldersResponse"
           },
+          "lockedRulesRevealed": {
+            "description": "Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67)",
+            "type": "boolean"
+          },
           "memories": {
             "$ref": "#/components/schemas/MemoriesResponse"
           },
@@ -74636,6 +74671,7 @@
           "download",
           "emailNotifications",
           "folders",
+          "lockedRulesRevealed",
           "memories",
           "people",
           "privacy",

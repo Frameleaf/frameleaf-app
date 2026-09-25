@@ -25,7 +25,7 @@
   import { handleCreateUserAdmin, handleUpdateUserAdmin } from '$lib/services/user-admin.service';
   import { userInteraction } from '$lib/stores/user.svelte';
   import { ByteUnit, convertFromBytes, convertToBytes } from '$lib/utils/byte-units';
-  import { UserAvatarColor, type UserAdminResponseDto } from '@immich/sdk';
+  import { getUserAdmin, UserAvatarColor, type UserAdminResponseDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
 
   let {
@@ -57,15 +57,26 @@
   let password = $state('');
   let passwordConfirm = $state('');
   let pinCode = $state('');
+  /** FL-76: a field this form edits changed elsewhere (another administrator or tab) since it opened. */
+  let stale = $state(false);
+  /** FL-76: the account could not be re-read before saving, so the save was not attempted. */
+  let checkFailed = $state(false);
 
   const colors = Object.values(UserAvatarColor);
   const editing = $derived(!!user);
   const withPassword = $derived(!editing && authentication === 'password');
 
-  // The DTO takes whole bytes, so a fractional GiB is rounded rather than rejected by the server.
-  const quotaSizeInBytes = $derived(
-    String(quota ?? '').trim() === '' ? null : Math.round(convertToBytes(Number(quota), ByteUnit.GiB)),
+  // The DTO takes whole bytes (a safe integer), so a fractional GiB is rounded rather than rejected by
+  // the server. The largest quota is capped: a huge value would round to Infinity, and an Infinity
+  // must never reach the request, where it would serialize to null and mean "unlimited".
+  const maxQuotaBytes = Number.MAX_SAFE_INTEGER;
+  const maxQuotaGiB = Math.floor(convertFromBytes(maxQuotaBytes, ByteUnit.GiB));
+  const quotaEmpty = $derived(String(quota ?? '').trim() === '');
+  const quotaBytesRaw = $derived(quotaEmpty ? null : Math.round(convertToBytes(Number(quota), ByteUnit.GiB)));
+  const quotaInvalid = $derived(
+    quotaBytesRaw !== null && (!Number.isFinite(quotaBytesRaw) || quotaBytesRaw < 0 || quotaBytesRaw > maxQuotaBytes),
   );
+  const quotaSizeInBytes = $derived(quotaInvalid ? null : quotaBytesRaw);
   const quotaOverCapacity = $derived(
     !!quotaSizeInBytes && !!userInteraction.serverInfo && quotaSizeInBytes > userInteraction.serverInfo.diskSizeRaw,
   );
@@ -77,6 +88,7 @@
       email.trim().length > 0 &&
       !passwordMismatch &&
       !pinIncomplete &&
+      !quotaInvalid &&
       (!withPassword || password.length > 0),
   );
 
@@ -94,15 +106,38 @@
     onClose(created);
   });
 
+  const editedFieldsChanged = (opened: UserAdminResponseDto, latest: UserAdminResponseDto) =>
+    opened.name !== latest.name ||
+    opened.email !== latest.email ||
+    opened.isAdmin !== latest.isAdmin ||
+    (opened.avatarColor ?? null) !== (latest.avatarColor ?? null) ||
+    (opened.storageLabel ?? null) !== (latest.storageLabel ?? null) ||
+    (opened.quotaSizeInBytes ?? null) !== (latest.quotaSizeInBytes ?? null) ||
+    opened.shouldChangePassword !== latest.shouldChangePassword;
+
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
-    if (!valid || working) {
+    if (!valid || working || quotaInvalid) {
       return;
     }
 
     working = true;
     try {
       if (user) {
+        // FL-76: an edit is a whole-form update, so a change made meanwhile (a role, a quota, a
+        // label) would be overwritten silently; check the account first and say so instead. Only the
+        // fields this form edits are compared: `updatedAt` also moves on every upload and usage sync,
+        // so an account that is backing up could otherwise never be saved.
+        checkFailed = false;
+        const latest = await getUserAdmin({ id: user.id }).catch(() => undefined);
+        if (!latest) {
+          checkFailed = true;
+          return;
+        }
+        if (editedFieldsChanged(user, latest)) {
+          stale = true;
+          return;
+        }
         const success = await handleUpdateUserAdmin(user, {
           name,
           email,
@@ -179,7 +214,16 @@
       </label>
       <label>
         <span>{$t('frameleaf_users_field_quota')}</span>
-        <input type="number" min="0" step="1" placeholder={$t('unlimited')} bind:value={quota} disabled={working} />
+        <!-- `step="any"`: a fractional GiB (or an existing quota that is not whole GiB) must not block the form. -->
+        <input
+          type="number"
+          min="0"
+          max={maxQuotaGiB}
+          step="any"
+          placeholder={$t('unlimited')}
+          bind:value={quota}
+          disabled={working}
+        />
       </label>
       <label>
         <span>{$t('frameleaf_users_field_storage_label')}</span>
@@ -213,6 +257,9 @@
 
     {#if editing && storageLabel !== (user?.storageLabel ?? '')}
       <p class="notice">{$t('frameleaf_users_storage_label_notice')}</p>
+    {/if}
+    {#if quotaInvalid}
+      <p class="error" role="alert">{$t('frameleaf_users_quota_invalid', { values: { max: maxQuotaGiB } })}</p>
     {/if}
     {#if quotaOverCapacity}
       <p class="notice">{$t('frameleaf_users_quota_over_capacity')}</p>
@@ -251,9 +298,16 @@
       </label>
     {/if}
 
+    {#if stale}
+      <p class="stale" role="alert">{$t('frameleaf_users_edit_stale')}</p>
+    {/if}
+    {#if checkFailed}
+      <p class="stale" role="alert">{$t('frameleaf_users_edit_check_failed')}</p>
+    {/if}
+
     <footer>
       <Button type="button" disabled={working} onclick={() => (open = false)}>{$t('cancel')}</Button>
-      <Button type="submit" variant="primary" disabled={!valid || working}>
+      <Button type="submit" variant="primary" disabled={!valid || working || stale}>
         {editing ? $t('frameleaf_users_save') : $t('frameleaf_users_create')}
       </Button>
     </footer>
@@ -261,6 +315,14 @@
 </Dialog>
 
 <style>
+  .stale {
+    margin: 0.75rem 0 0;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--fl-warning);
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
+  }
   form {
     margin-top: 0.75rem;
     min-width: min(32rem, 100%);
