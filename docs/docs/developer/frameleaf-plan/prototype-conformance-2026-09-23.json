@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 61,
-      "partial": 68,
+      "partial": 67,
       "missing": 1,
-      "fixed": 80,
+      "fixed": 81,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 8,
@@ -600,10 +600,13 @@
       "requirementId": "action:quick-edit:ai-preview-full-job-faithful-creative-local-lan-versus-runpod",
       "title": "AI preview/full job, Faithful/Creative, local/LAN versus RunPod",
       "prototype": ["design/frameleaf/template/src/Studio.jsx"],
-      "production": ["web/src/lib/components/frameleaf/editor/RestorationPanel.svelte"],
-      "status": "partial",
+      "production": [
+        "web/src/lib/components/frameleaf/editor/RestorationPanel.svelte",
+        "web/src/lib/components/frameleaf/editor/RestorationCompare.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["R-1", "R-2", "R-3"],
-      "followUp": "Cost/size estimate, loupe, labels"
+      "followUp": "Estimate Output and Cloud cost rows, 100% loupe, Use current frame and the video labels (fixed in FL-115)"
     },
     {
       "requirementId": "action:quick-edit:audio-mute-gain-channel-timing-preservation",

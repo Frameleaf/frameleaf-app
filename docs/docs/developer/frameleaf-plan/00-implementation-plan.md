@@ -108,6 +108,10 @@ Library/quick-edit releases can be delivered while Studio is disabled, provided 
 
 The backlog contains acceptance-sized implementation packages, not estimates or invented dates. When a package cannot fit one reviewable change, create linked child tasks with unchanged parent acceptance; do not call a broad epic complete after scaffolding. Jira status and evidence track execution; the repo plan defines the technical contract.
 
+## Frameleaf Cloud workstream
+
+The `cloud` workstream (Plan IDs `CLD-*`, Jira epics CLD-E01 to CLD-E04) adds the optional Frameleaf account link, license certificates and supporter keys, Frameleaf sign-in, remote access through a per-server certificate and a blind relay, the Frameleaf Cloud processing destination that replaces the previous GPU-provider integration, and cloud backup to one dedicated bucket per server. Its contract is the [Frameleaf Cloud integration guide](15-frameleaf-cloud-integration.md) and the approved design record is `docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md`. Everything in it is opt-in: a server with no account and no license keeps every existing feature, the cloud base address is deployment configuration rather than a setting, and every item is `planned-not-qualified` until its own acceptance evidence exists. The cloud services themselves are planned in Jira project FC and Confluence space FC.
+
 ## Definition of ready and done
 
 Ready requires named source routes/actions, current implementation inspected, agreed behavior, prerequisites resolved or explicitly isolated, data ownership and API contracts identified, and test fixtures available. An agent can start investigation work when hardware/vendor inputs are absent, but cannot certify the dependent result.

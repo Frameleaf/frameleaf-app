@@ -25,6 +25,7 @@ import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
 import { eventStoryPlace, formatLocalDateRange, isEventStory, isYearInReview } from '$lib/frameleaf/memory-stories';
+import { playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
 import { isWebCompatibleImage } from '$lib/utils/asset-utils';
@@ -203,7 +204,8 @@ export const getAssetUrl = ({
     return;
   }
   const id = asset.id;
-  const cacheKey = asset.thumbhash;
+  // FL-115: the preview and full-size files follow the owner's playback choice, so their cache key does too.
+  const cacheKey = playbackCacheKey(asset);
   if (sharedLink && (!sharedLink.allowDownload || !sharedLink.showMetadata)) {
     return getAssetMediaUrl({ id, size: AssetMediaSize.Preview, cacheKey });
   }

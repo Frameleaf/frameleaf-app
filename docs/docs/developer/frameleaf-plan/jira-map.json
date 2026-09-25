@@ -96,6 +96,106 @@
       "key": "FL-111",
       "url": "https://heroit.atlassian.net/browse/FL-111"
     },
+    "CLD-000": {
+      "id": "23982",
+      "key": "FL-153",
+      "url": "https://heroit.atlassian.net/browse/FL-153"
+    },
+    "CLD-001": {
+      "id": "23983",
+      "key": "FL-154",
+      "url": "https://heroit.atlassian.net/browse/FL-154"
+    },
+    "CLD-002": {
+      "id": "23985",
+      "key": "FL-155",
+      "url": "https://heroit.atlassian.net/browse/FL-155"
+    },
+    "CLD-003": {
+      "id": "23986",
+      "key": "FL-156",
+      "url": "https://heroit.atlassian.net/browse/FL-156"
+    },
+    "CLD-004": {
+      "id": "23987",
+      "key": "FL-157",
+      "url": "https://heroit.atlassian.net/browse/FL-157"
+    },
+    "CLD-005": {
+      "id": "23988",
+      "key": "FL-158",
+      "url": "https://heroit.atlassian.net/browse/FL-158"
+    },
+    "CLD-006": {
+      "id": "24004",
+      "key": "FL-168",
+      "url": "https://heroit.atlassian.net/browse/FL-168"
+    },
+    "CLD-101": {
+      "id": "23994",
+      "key": "FL-161",
+      "url": "https://heroit.atlassian.net/browse/FL-161"
+    },
+    "CLD-102": {
+      "id": "24000",
+      "key": "FL-165",
+      "url": "https://heroit.atlassian.net/browse/FL-165"
+    },
+    "CLD-103": {
+      "id": "24001",
+      "key": "FL-166",
+      "url": "https://heroit.atlassian.net/browse/FL-166"
+    },
+    "CLD-104": {
+      "id": "24003",
+      "key": "FL-167",
+      "url": "https://heroit.atlassian.net/browse/FL-167"
+    },
+    "CLD-201": {
+      "id": "23990",
+      "key": "FL-159",
+      "url": "https://heroit.atlassian.net/browse/FL-159"
+    },
+    "CLD-202": {
+      "id": "23995",
+      "key": "FL-162",
+      "url": "https://heroit.atlassian.net/browse/FL-162"
+    },
+    "CLD-203": {
+      "id": "23997",
+      "key": "FL-163",
+      "url": "https://heroit.atlassian.net/browse/FL-163"
+    },
+    "CLD-301": {
+      "id": "23992",
+      "key": "FL-160",
+      "url": "https://heroit.atlassian.net/browse/FL-160"
+    },
+    "CLD-302": {
+      "id": "23998",
+      "key": "FL-164",
+      "url": "https://heroit.atlassian.net/browse/FL-164"
+    },
+    "CLD-E01": {
+      "id": "23977",
+      "key": "FL-149",
+      "url": "https://heroit.atlassian.net/browse/FL-149"
+    },
+    "CLD-E02": {
+      "id": "23978",
+      "key": "FL-150",
+      "url": "https://heroit.atlassian.net/browse/FL-150"
+    },
+    "CLD-E03": {
+      "id": "23979",
+      "key": "FL-151",
+      "url": "https://heroit.atlassian.net/browse/FL-151"
+    },
+    "CLD-E04": {
+      "id": "23980",
+      "key": "FL-152",
+      "url": "https://heroit.atlassian.net/browse/FL-152"
+    },
     "FN-101": {
       "id": "23640",
       "key": "FL-25",
@@ -713,8 +813,8 @@
     }
   },
   "linkEvidence": [],
-  "linkEvidenceStatus": "Live Jira comparison details are recorded in delivery-backlog-evidence.json; the 275 Blocks links matched this transitive reduction on 2026-09-20. Workflow and link publication are not implementation qualification.",
-  "linkStrategy": "Transitive reduction: 275 Blocks links preserve all 408 declared dependency relationships.",
+  "linkEvidenceStatus": "Live Jira comparison details are recorded in delivery-backlog-evidence.json; the 298 Blocks links matched this transitive reduction on 2026-09-25. Workflow and link publication are not implementation qualification.",
+  "linkStrategy": "Transitive reduction: 298 Blocks links preserve all 434 declared dependency relationships.",
   "links": [
     ["FN-101", "FN-102"],
     ["FN-102", "FN-103"],
@@ -990,7 +1090,30 @@
     ["FN-101", "REL-201"],
     ["REL-201", "REL-202"],
     ["FN-301", "REL-202"],
-    ["QA-105", "REL-203"]
+    ["QA-105", "REL-203"],
+    ["FN-101", "CLD-000"],
+    ["CLD-000", "CLD-001"],
+    ["CLD-001", "CLD-002"],
+    ["CLD-001", "CLD-003"],
+    ["CLD-003", "CLD-004"],
+    ["CLD-002", "CLD-005"],
+    ["ADM-103", "CLD-005"],
+    ["CLD-004", "CLD-006"],
+    ["CLD-104", "CLD-006"],
+    ["CLD-203", "CLD-006"],
+    ["CLD-302", "CLD-006"],
+    ["CLD-005", "CLD-101"],
+    ["CLD-101", "CLD-102"],
+    ["CLD-102", "CLD-103"],
+    ["CLD-103", "CLD-104"],
+    ["CLD-002", "CLD-201"],
+    ["CLD-003", "CLD-201"],
+    ["AI-101", "CLD-201"],
+    ["CLD-201", "CLD-202"],
+    ["CLD-201", "CLD-203"],
+    ["CLD-002", "CLD-301"],
+    ["CLD-003", "CLD-301"],
+    ["CLD-301", "CLD-302"]
   ],
   "projectKey": "FL"
 }
