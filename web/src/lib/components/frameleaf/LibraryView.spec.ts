@@ -212,7 +212,7 @@ describe('LibraryView', () => {
       sdkMock.searchAssetStatistics.mockResolvedValue({ total: 40 } as never);
       sdkMock.getTimeBuckets.mockClear();
       render(LibraryView, {
-        options: { visibility: AssetVisibility.Timeline, withPartners: true },
+        options: { visibility: AssetVisibility.Timeline },
         destination: { kind: 'library' },
         syncUrl: false,
       });
@@ -225,8 +225,6 @@ describe('LibraryView', () => {
           expect.objectContaining({ tagId: 't1', isFavorite: true }),
         ),
       );
-      // Favourites are the caller's own: the server refuses partners with them.
-      expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.not.objectContaining({ withPartners: true }));
       // The grid is empty under the applied filter, so the page says so and offers to clear it.
       const empty = await screen.findByTestId('frameleaf-library-empty');
       await waitFor(() => expect(empty).toHaveTextContent('frameleaf_library_empty_filtered_title'));

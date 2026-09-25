@@ -2912,6 +2912,7 @@
   "frameleaf_bulk_change_location": "Change location",
   "frameleaf_bulk_create_shared_link": "Share link",
   "frameleaf_bulk_date_amount": "Amount",
+  "frameleaf_bulk_date_choose_zone": "Choose a time zone.",
   "frameleaf_bulk_date_direction": "Direction",
   "frameleaf_bulk_date_earlier": "Earlier",
   "frameleaf_bulk_date_how": "How to change the date",

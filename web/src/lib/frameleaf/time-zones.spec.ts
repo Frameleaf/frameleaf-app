@@ -5,6 +5,8 @@ import {
   timeZoneChoices,
   timeZoneCity,
   timeZoneLabel,
+  captureTimeOf,
+  isIanaZone,
   wallTimeInZone,
   zoneForOffset,
 } from './time-zones';
@@ -64,5 +66,25 @@ describe('friendly time zones (FL-32, T-19)', () => {
     expect(zoneForOffset(choices, -480, 'America/Vancouver')?.value).toBe('America/Vancouver');
     expect(zoneForOffset(choices, -480, 'Asia/Tokyo')?.value).toBe('America/Los_Angeles');
     expect(zoneForOffset(choices, 0, 'Asia/Tokyo')?.value).toBe('UTC');
+  });
+
+  it('reads an item’s real capture time and IANA zone from its details (review N1/N3)', () => {
+    expect(
+      captureTimeOf({
+        localDateTime: '2019-01-05T09:30:00.000Z',
+        fileCreatedAt: '2019-01-05T17:30:00.000Z',
+        exifInfo: { timeZone: 'America/Vancouver' },
+      }),
+    ).toEqual({ localDateTime: '2019-01-05T09:30', offsetMinutes: -480, timeZone: 'America/Vancouver' });
+    // A bare offset such as "UTC+2" names no place; the offset alone is kept.
+    expect(
+      captureTimeOf({
+        localDateTime: '2019-01-05T19:30:00Z',
+        fileCreatedAt: '2019-01-05T17:30:00Z',
+        exifInfo: { timeZone: 'UTC+2' },
+      }),
+    ).toEqual({ localDateTime: '2019-01-05T19:30', offsetMinutes: 120 });
+    expect(isIanaZone('Nowhere/Land')).toBe(false);
+    expect(captureTimeOf({ localDateTime: 'bad', fileCreatedAt: 'bad' })).toBeNull();
   });
 });

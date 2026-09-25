@@ -335,8 +335,15 @@ describe('TimelineManager', () => {
       expect((await getAssets(timelineManager)).map(({ id }) => id)).toEqual([a.id, c.id, b.id]);
       expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(1);
 
+      const scroller = document.createElement('div');
+      Object.defineProperty(scroller, 'scrollTop', { value: 420, configurable: true });
+      const scrollTo = vi.fn();
+      scroller.scrollTo = scrollTo as never;
+      timelineManager.scrollableElement = scroller;
       timelineManager.update([b.id], (asset) => void (asset.rating = 5));
       await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
+      // The reload keeps the place in the list rather than jumping to the top.
+      await vi.waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 420 }));
       timelineManager.destroy();
     });
 
