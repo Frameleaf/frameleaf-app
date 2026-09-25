@@ -74,6 +74,15 @@ describe('AssetTile', () => {
     expect(text).toContain('4');
   });
 
+  it('badges an offline item from its own flag and never draws an Archived badge (T-17)', () => {
+    const { container } = tile({ asset: asset({ isOffline: true, visibility: AssetVisibility.Archive }) });
+    const text = screen.getByTestId('frameleaf-asset-tile').textContent ?? '';
+    expect(text).toContain('asset_offline');
+    expect(text).not.toContain('archived');
+    // T-16: the badges sit on the photo's bottom-left plates, the durable job state keeps the top corner
+    expect(container.querySelector('.fl-tile-badges .fl-tile-job-slot')).toBeNull();
+  });
+
   it('scrubs the preview transcode on hover and never the original file', async () => {
     vi.useFakeTimers();
     try {

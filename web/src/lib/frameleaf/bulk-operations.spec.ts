@@ -752,6 +752,19 @@ describe('durable jobs on the page', () => {
     expect(removesFromView('unmark-sensitive', locked)).toBe(true);
   });
 
+  it('takes an archived item out of a Timeline view and an unarchived one out of Archive (T-17)', () => {
+    const timeline = { isLocked: false, revealsLocks: false, visibility: AssetVisibility.Timeline };
+    const archive = { isLocked: false, revealsLocks: false, visibility: AssetVisibility.Archive };
+    const album = { isLocked: false, revealsLocks: false };
+
+    expect(removesFromView('archive', timeline)).toBe(true);
+    expect(removesFromView('archive', archive)).toBe(false);
+    expect(removesFromView('archive', album)).toBe(false);
+    expect(removesFromView('unarchive', archive)).toBe(true);
+    expect(removesFromView('unarchive', timeline)).toBe(false);
+    expect(removesFromView('unarchive', album)).toBe(false);
+  });
+
   it('reads answered items as done and the rest as pending while the job runs', () => {
     const states = durableItemStates(ids, detail({ processedUnits: '2' }));
 

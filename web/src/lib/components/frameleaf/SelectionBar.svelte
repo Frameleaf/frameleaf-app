@@ -369,9 +369,16 @@
       {#if undoLabel && onUndo}
         <button type="button" class="text" onclick={onUndo}>{$t('undo')}: {undoLabel}</button>
       {/if}
-      <button type="button" class="clear" onclick={onClear} title={$t('frameleaf_selection_deselect_hint')}>
+      <!-- T-20 (SelectionBar.jsx:204-212): reads "Deselect", named "Deselect all". -->
+      <button
+        type="button"
+        class="clear"
+        onclick={onClear}
+        aria-label={$t('frameleaf_selection_deselect_all')}
+        title={$t('frameleaf_selection_deselect_hint')}
+      >
         <Icon icon={mdiClose} size="1.125rem" />
-        <span>{$t('deselect_all')}</span>
+        <span>{$t('frameleaf_selection_deselect')}</span>
       </button>
     </div>
 
