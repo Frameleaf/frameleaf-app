@@ -3657,6 +3657,7 @@
   "frameleaf_editor_preparing_preview": "Preparing preview",
   "frameleaf_editor_preset_applied": "{name} applied",
   "frameleaf_editor_preset_apply": "Apply {name}",
+  "frameleaf_editor_preset_bw": "B&W",
   "frameleaf_editor_preset_cool": "Cool",
   "frameleaf_editor_preset_delete": "Delete {name}",
   "frameleaf_editor_preset_delete_error": "Could not delete the preset",
