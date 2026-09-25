@@ -10,6 +10,7 @@ import {
   FRAMELEAF_CLOUD_TOKEN_REFRESH_MARGIN_MS,
   FrameleafCloudError,
   FrameleafDiscoveryDocument,
+  discoveryProblem,
   discoverySchema,
   errorEnvelopeSchema,
   refusalFromCloudError,
@@ -54,6 +55,11 @@ export class FrameleafCloudRepository {
     const document = await this.requestJson(discoverySchema, {
       url: `${cloudUrl}/.well-known/frameleaf-services`,
     });
+    // No token request or assertion ever goes to an address outside the configured cloud.
+    const problem = discoveryProblem(cloudUrl, document);
+    if (problem) {
+      throw new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, `Frameleaf Cloud refused: ${problem}`);
+    }
     this.discoveryCache = { cloudUrl, document, validUntil: now + document.validFor * 1000 };
     return document;
   }

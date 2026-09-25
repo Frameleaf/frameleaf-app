@@ -239,6 +239,31 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     expect(cloud.requests.filter((request) => request.path === '/.well-known/frameleaf-services')).toHaveLength(1);
   });
 
+  it('refuses a discovery document whose token issuer is on another host, and asks it for nothing (FL-159)', async () => {
+    cloud.respond = ({ path }) =>
+      path === '/.well-known/frameleaf-services'
+        ? {
+            status: 200,
+            body: {
+              version: 1,
+              validFor: 3600,
+              // eslint-disable-next-line unicorn/prefer-https -- the refused address
+              issuer: 'http://id.attacker.example/id',
+              api: `${cloud.url}/api`,
+              ml: { eu: `${cloud.url}/ml-eu` },
+            },
+          }
+        : undefined;
+    metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
+    const resolution = await resolveCloudGateway(deps);
+    expect(resolution.state).not.toBe(CloudConnectionState.Ready);
+    expect('detail' in resolution ? resolution.detail : '').toMatch(
+      /issuer http:\/\/id\.attacker\.example\/id is not on/,
+    );
+    // Nothing else was asked: no signed assertion and no token request left the server.
+    expect(cloud.requests.map((request) => request.path)).toEqual(['/.well-known/frameleaf-services']);
+  });
+
   it('refuses a region discovery does not offer, never choosing another one', async () => {
     metadata.set(SystemMetadataKey.FrameleafCloudLink, link({ dataRegion: 'ca' }));
     await expect(resolveCloudGateway(deps)).resolves.toMatchObject({
