@@ -105,6 +105,7 @@ const makeApi = () => {
     comments: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     addComment: vi.fn(),
     updateComment: vi.fn(),
+    rename: vi.fn(),
   };
   api.get.mockResolvedValue(detail());
   api.acquireLease.mockResolvedValue(lease());
@@ -528,5 +529,47 @@ describe('studio project session', () => {
       expect(timers.pending()).toEqual([]);
       expect(states.length).toBe(before);
     });
+  });
+});
+
+describe('rename (Studio.jsx renameProject)', () => {
+  const make = (projectId: string | null) => {
+    const api = makeApi();
+    const timers = makeTimers();
+    const session = createStudioProjectSession({
+      api,
+      clientId: 'tab-a',
+      projectId,
+      name: 'Untitled project',
+      engineRevision: 'rev',
+      onChange: () => {},
+      now: () => 1000,
+      setTimer: timers.setTimer,
+      isOnline: () => true,
+      newKey: () => 'key',
+    });
+    return { api, session };
+  };
+
+  it('renames a saved project on the server and keeps the stored name when refused', async () => {
+    const { api, session } = make('p-1');
+    await session.open();
+    api.rename.mockResolvedValue({ name: 'Lake trip' });
+    await expect(session.rename('  Lake trip  ')).resolves.toBe(true);
+    expect(api.rename).toHaveBeenCalledWith('p-1', 'Lake trip');
+    expect(session.state.project.name).toBe('Lake trip');
+
+    api.rename.mockRejectedValue(new Error('403'));
+    await expect(session.rename('Other')).resolves.toBe(false);
+    expect(session.state.project.name).toBe('Lake trip');
+    await expect(session.rename(' '.repeat(3))).resolves.toBe(false);
+  });
+
+  it('names a draft for its first save without asking the server', async () => {
+    const { api, session } = make(null);
+    await session.open();
+    await expect(session.rename('Lake trip')).resolves.toBe(true);
+    expect(api.rename).not.toHaveBeenCalled();
+    expect(session.state.project.name).toBe('Lake trip');
   });
 });
