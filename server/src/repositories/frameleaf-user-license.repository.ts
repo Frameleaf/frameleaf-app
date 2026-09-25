@@ -18,7 +18,7 @@ export type FrameleafUserLicenseRow = {
 
 /**
  * Personal Frameleaf supporter keys (FL-156) in `immich_fork.frameleaf_user_license` (fork migration
- * 0000000000190): one row per account, and one active activation of a key on this server. The key
+ * 0000000000204): one row per account, and one active activation of a key on this server. The key
  * itself is never stored; only its hash, its last four symbols and the verified certificate.
  */
 @Injectable()
