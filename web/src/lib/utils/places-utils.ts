@@ -1,17 +1,5 @@
-import { type AssetResponseDto } from '@immich/sdk';
 import { get } from 'svelte/store';
 import { PlacesGroupBy, placesViewSettings, type PlacesViewSettings } from '$lib/stores/preferences.store';
-
-/**
- * --------------
- * Places Grouping
- * --------------
- */
-export interface PlacesGroup {
-  id: string;
-  name: string;
-  places: AssetResponseDto[];
-}
 
 /**
  * ----------------------------

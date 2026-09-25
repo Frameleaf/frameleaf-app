@@ -194,6 +194,20 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(result.undo).toEqual({ action: 'untag', ids: ['a'], payload: { tagIds: ['tag-1', 'tag-new'] } });
   });
 
+  it('removes the location with null coordinates and never as a durable job (FL-51)', async () => {
+    const api = gateway();
+    const result = await runBulkAction('change-location', ['a', 'b'], {
+      gateway: api,
+      payload: { clearLocation: true },
+    });
+    expect(api.updateAssets).toHaveBeenCalledWith({
+      assetBulkUpdateDto: { ids: ['a', 'b'], latitude: null, longitude: null },
+    });
+    expect(result.succeeded).toEqual(['a', 'b']);
+    expect(shouldRunDurably('change-location', DURABLE_BULK_THRESHOLD + 1, { clearLocation: true })).toBe(false);
+    expect(shouldRunDurably('change-location', DURABLE_BULK_THRESHOLD + 1, { latitude: 1, longitude: 2 })).toBe(true);
+  });
+
   it('stacks with the chosen primary first and undoes by deleting the stack', async () => {
     const result = await runBulkAction('stack', ['a', 'b', 'c'], { gateway: api, payload: { primaryId: 'b' } });
     expect(api.createStack).toHaveBeenCalledWith({ stackCreateDto: { assetIds: ['b', 'a', 'c'] } });

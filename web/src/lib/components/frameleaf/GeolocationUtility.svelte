@@ -21,7 +21,8 @@
   let query = $state('');
   let account = $state('all');
   let show = $state('open');
-  let review = $state<{ ids: string[]; latitude: number; longitude: number } | null>(null);
+  /** `latitude`/`longitude` null: the review removes the location (FL-51). */
+  let review = $state<{ ids: string[]; latitude: number | null; longitude: number | null } | null>(null);
   let reviewOpen = $state(false);
   let mapElement = $state<ReturnType<typeof MapComponent>>();
   const bulk = new BulkController({ dispatch: () => {} });
@@ -123,6 +124,18 @@
     review = { ids, latitude: latitude!, longitude: longitude! };
     reviewOpen = true;
   };
+  /**
+   * FL-51: "Remove location" clears the selected items' coordinates (and the place names read from
+   * them). It goes through the same review, bulk run and per-item results as Apply location.
+   */
+  const locatedActionable = $derived(actionable.filter((asset) => hasLocation(asset)));
+  const askRemove = () => {
+    if (bulk.busy || locatedActionable.length === 0) {
+      return;
+    }
+    review = { ids: locatedActionable.map((asset) => asset.id), latitude: null, longitude: null };
+    reviewOpen = true;
+  };
   const apply = async () => {
     if (!review || bulk.busy) {
       return;
@@ -130,10 +143,13 @@
     const frozen = review;
     error = false;
     try {
-      const result = await bulk.run('change-location', frozen.ids, {
-        latitude: frozen.latitude,
-        longitude: frozen.longitude,
-      });
+      const result = await bulk.run(
+        'change-location',
+        frozen.ids,
+        frozen.latitude === null || frozen.longitude === null
+          ? { clearLocation: true }
+          : { latitude: frozen.latitude, longitude: frozen.longitude },
+      );
       if (result) {
         const refreshed = await Promise.all(result.succeeded.map((id) => getAssetInfo({ ...authManager.params, id })));
         const byId = new Map(refreshed.map((asset) => [asset.id, asset]));
@@ -193,9 +209,14 @@
     <div class="coordinates">
       <label>{$t('latitude')}<input type="number" min="-90" max="90" step="any" bind:value={latitude} /></label>
       <label>{$t('longitude')}<input type="number" min="-180" max="180" step="any" bind:value={longitude} /></label>
-      <Button variant="primary" disabled={!valid || actionable.length === 0 || bulk.busy} onclick={ask}
-        >{$t('frameleaf_utilities_apply_location', { values: { count: actionable.length } })}</Button
-      >
+      <div class="coordinate-actions">
+        <Button variant="primary" disabled={!valid || actionable.length === 0 || bulk.busy} onclick={ask}
+          >{$t('frameleaf_utilities_apply_location', { values: { count: actionable.length } })}</Button
+        >
+        <Button disabled={locatedActionable.length === 0 || bulk.busy} onclick={askRemove}
+          >{$t('frameleaf_utilities_remove_location', { values: { count: locatedActionable.length } })}</Button
+        >
+      </div>
     </div>
   </div>
   <div class="photo-grid">
@@ -238,11 +259,17 @@
 </div>
 
 {#if review}
-  <Dialog title={$t('change_location')} closeLabel={$t('cancel')} bind:open={reviewOpen}>
+  <Dialog
+    title={review.latitude === null ? $t('frameleaf_utilities_remove_location_title') : $t('change_location')}
+    closeLabel={$t('cancel')}
+    bind:open={reviewOpen}
+  >
     <p>
-      {$t('frameleaf_utilities_location_review', {
-        values: { count: review.ids.length, latitude: review.latitude, longitude: review.longitude },
-      })}
+      {review.latitude === null || review.longitude === null
+        ? $t('frameleaf_utilities_remove_location_review', { values: { count: review.ids.length } })
+        : $t('frameleaf_utilities_location_review', {
+            values: { count: review.ids.length, latitude: review.latitude, longitude: review.longitude },
+          })}
     </p>
     <Button variant="primary" disabled={bulk.busy} onclick={() => void apply()}
       >{$t('apply_count', { values: { count: review.ids.length } })}</Button
@@ -293,6 +320,11 @@
   }
   .coordinates label {
     margin-bottom: 0.8125rem;
+  }
+  .coordinate-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
   .map-picker {
     overflow: hidden;
