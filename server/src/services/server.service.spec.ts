@@ -165,7 +165,9 @@ describe(ServerService.name, () => {
 
       const about = await sut.getAboutInfo();
 
-      expect(about.versionUrl).toBe(`https://github.com/Frameleaf/frameleaf-app/releases/tag/${about.version}`);
+      expect(about.versionUrl).toBe(
+        `https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-${about.version}&expanded=true`,
+      );
       expect(about.version).toMatch(/^v\d+\.\d+\.\d+/);
       expect(about.versionUrl).not.toContain('immich-app');
     });
