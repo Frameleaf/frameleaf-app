@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { UserAdmin } from 'src/database.js';
 import { AssetVisibility, CacheControl, CalendarHeatmapType, JobName, UserMetadataKey } from 'src/enum.js';
-import { UserService } from 'src/services/user.service.js';
+import { UserService, describePreferenceChanges } from 'src/services/user.service.js';
 import { UserMetadataItem } from 'src/types.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
@@ -389,11 +389,25 @@ describe(UserService.name, () => {
       expect(mocks.user.getDeletedAfter).toHaveBeenCalled();
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.UserDelete, data: { id: user.id } }]);
     });
+
+    it('sweeps fork rows of removed accounts, and warns while the fork schema is not writable (FL-71)', async () => {
+      mocks.user.getDeletedAfter.mockResolvedValue([]);
+      mocks.user.sweepRemovedAccountForkRows.mockResolvedValue({ preferenceHistory: 2, recipientGroups: 1 });
+
+      await sut.handleUserDeleteCheck();
+      expect(mocks.user.sweepRemovedAccountForkRows).toHaveBeenCalled();
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
+
+      mocks.user.sweepRemovedAccountForkRows.mockResolvedValue(undefined);
+      await sut.handleUserDeleteCheck();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('not swept'));
+    });
   });
 
   describe('handleUserDelete', () => {
     beforeEach(() => {
       mocks.albumUser.forgetRecipient.mockResolvedValue();
+      mocks.user.deletePreferenceHistory.mockResolvedValue(true);
     });
 
     it('should skip users not ready for deletion', async () => {
@@ -442,6 +456,8 @@ describe(UserService.name, () => {
       expect(mocks.album.deleteAll).toHaveBeenCalledWith(user.id);
       // FL-55: the account's recipient groups go, and it leaves everyone else's.
       expect(mocks.albumUser.forgetRecipient).toHaveBeenCalledWith(user.id);
+      // FL-71 (CC-10): and its own preference history.
+      expect(mocks.user.deletePreferenceHistory).toHaveBeenCalledWith(user.id);
       expect(mocks.asset.deleteAll).toHaveBeenCalledWith(user.id);
       expect(mocks.user.delete).toHaveBeenCalledWith(user, true);
       expect(mocks.asset.deleteAll.mock.invocationCallOrder[0]).toBeLessThan(
@@ -696,6 +712,101 @@ describe(UserService.name, () => {
       await sut.handleUserSyncUsage();
 
       expect(mocks.user.syncUsage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('preference history (FL-71 CC-10)', () => {
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+    });
+
+    it('records what a save changed with the device that saved it', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.session.getByUserId.mockResolvedValue([
+        { id: authStub.user1.session!.id, deviceOS: 'macOS', deviceType: 'Web' },
+      ] as never);
+
+      await sut.updateMyPreferences(authStub.user1, { memories: { enabled: false } });
+
+      expect(mocks.user.addPreferenceHistory).toHaveBeenCalledWith({
+        userId: authStub.user1.user.id,
+        deviceLabel: 'macOS · Web',
+        changes: [{ path: 'memories.enabled', before: 'true', after: 'false' }],
+        omittedChanges: 0,
+      });
+    });
+
+    it('records nothing when nothing changed', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+
+      await sut.updateMyPreferences(authStub.user1, {});
+
+      expect(mocks.user.addPreferenceHistory).not.toHaveBeenCalled();
+    });
+
+    it('never records the values of Locked-content rules, only that they changed', () => {
+      const before = getPreferences([]);
+      const after = {
+        ...before,
+        privacy: {
+          ...before.privacy,
+          suppression: { ...before.privacy.suppression, personIds: ['secret-person'] },
+        },
+      };
+
+      const changes = describePreferenceChanges(before, after);
+
+      expect(changes).toEqual([{ path: 'privacy.suppression', before: null, after: null, protected: true }]);
+      expect(JSON.stringify(changes)).not.toContain('secret-person');
+    });
+
+    it('keeps the save when the history cannot be written', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.user.addPreferenceHistory.mockRejectedValue(new Error('down'));
+
+      await expect(sut.updateMyPreferences(authStub.user1, { tags: { enabled: true } })).resolves.toMatchObject({
+        tags: { enabled: true },
+      });
+    });
+
+    it("serves only the signed-in account's own history", async () => {
+      mocks.user.getPreferenceHistory.mockResolvedValue([
+        {
+          id: 'entry-1',
+          createdAt: new Date('2026-09-24T10:00:00.000Z'),
+          deviceLabel: null,
+          changes: [{ path: 'tags.enabled', before: 'false', after: 'true' }],
+          omittedChanges: 0,
+        },
+      ]);
+
+      await expect(sut.getMyPreferenceHistory(authStub.user1)).resolves.toEqual({
+        entries: [
+          {
+            id: 'entry-1',
+            createdAt: '2026-09-24T10:00:00.000Z',
+            deviceLabel: null,
+            changes: [{ path: 'tags.enabled', before: 'false', after: 'true' }],
+            omittedChanges: 0,
+          },
+        ],
+      });
+      expect(mocks.user.getPreferenceHistory).toHaveBeenCalledWith(authStub.user1.user.id);
+    });
+  });
+
+  describe('skipped fork writes are logged (FL-71)', () => {
+    it('warns when the preference history is not recorded because the fork schema is not writable', async () => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.session.getByUserId.mockResolvedValue([]);
+      mocks.user.addPreferenceHistory.mockResolvedValue(false);
+
+      await sut.updateMyPreferences(authStub.user1, { tags: { enabled: true } });
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Preference history not recorded'));
     });
   });
 });

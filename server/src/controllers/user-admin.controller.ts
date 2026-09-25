@@ -11,6 +11,7 @@ import {
   UserAdminDeleteDto,
   UserAdminHistoryResponseDto,
   UserAdminHistorySearchDto,
+  UserAdminPinCodeStateResponseDto,
   UserAdminResponseDto,
   UserAdminSearchDto,
   UserAdminSessionParamDto,
@@ -165,6 +166,20 @@ export class UserAdminController {
   })
   deleteUserSessionAdmin(@Auth() auth: AuthDto, @Param() { id, sessionId }: UserAdminSessionParamDto): Promise<void> {
     return this.service.deleteSession(auth, id, sessionId);
+  }
+
+  @Get(':id/pin-code')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve whether a user has a PIN',
+    description: 'Retrieve whether a specific user has a PIN code set, never the PIN itself.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getUserPinCodeStateAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+  ): Promise<UserAdminPinCodeStateResponseDto> {
+    return this.service.getPinCodeState(auth, id);
   }
 
   @Get(':id/statistics')

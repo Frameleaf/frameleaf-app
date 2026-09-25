@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { UserAdminController } from 'src/controllers/user-admin.controller.js';
 import { UserAdminCreateDto } from 'src/dtos/user.dto.js';
+import { Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { errorDto } from 'test/medium/responses.js';
@@ -170,6 +171,37 @@ describe(UserAdminController.name, () => {
         .set('Authorization', `Bearer token`);
       expect(status).toBe(400);
       expect(body).toEqual(errorDto.validationError([{ path: ['sessionId'], message: 'Invalid UUID' }]));
+    });
+  });
+
+  describe('GET /admin/users/:id/pin-code (FL-76)', () => {
+    it('returns whether the account has a PIN', async () => {
+      const id = factory.uuid();
+      service.getPinCodeState.mockResolvedValue({ pinCode: true });
+
+      const { status, body } = await request(ctx.getHttpServer()).get(`/admin/users/${id}/pin-code`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ pinCode: true });
+      expect(service.getPinCodeState).toHaveBeenCalledWith(undefined, id);
+    });
+
+    it('asks for an administrator with adminUser.read', async () => {
+      service.getPinCodeState.mockResolvedValue({ pinCode: false });
+      await request(ctx.getHttpServer()).get(`/admin/users/${factory.uuid()}/pin-code`);
+
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ adminRoute: true, permission: Permission.AdminUserRead }),
+        }),
+      );
+    });
+
+    it('requires a uuid', async () => {
+      const { status } = await request(ctx.getHttpServer()).get(`/admin/users/not-a-uuid/pin-code`);
+
+      expect(status).toBe(400);
+      expect(service.getPinCodeState).not.toHaveBeenCalled();
     });
   });
 });

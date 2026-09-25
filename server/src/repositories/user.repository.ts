@@ -7,6 +7,7 @@ import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
+import { canWriteFork } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { bestPhotoRank, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
@@ -28,6 +29,25 @@ export interface UserStatsQueryResponse {
   usageVideos: number;
   quotaSizeInBytes: number | null;
 }
+
+/** FL-71: the account that owns a queue job's subject (an asset, person, library or the account itself). */
+export interface JobSubjectOwner {
+  subjectId: string;
+  ownerId: string;
+  ownerName: string;
+}
+
+/** FL-71 (CC-10): one saved change of an account's own preferences. */
+export interface UserPreferenceHistoryRow {
+  id: string;
+  createdAt: Date;
+  deviceLabel: string | null;
+  changes: Array<{ path: string; before: string | null; after: string | null; protected?: boolean }>;
+  omittedChanges: number;
+}
+
+/** How many preference history entries an account keeps. */
+export const USER_PREFERENCE_HISTORY_LIMIT = 50;
 
 export interface UserFindOptions {
   withDeleted?: boolean;
@@ -99,6 +119,149 @@ export class UserRepository {
       .executeTakeFirst();
 
     return !!admin;
+  }
+
+  /**
+   * FL-76: whether an account has a Locked PIN, for the administrator's account detail. Only the
+   * presence is read, never the hash; deleted accounts are included so their detail still says it.
+   */
+  async hasPinCode(id: string): Promise<boolean | undefined> {
+    const row = await this.db
+      .selectFrom('user')
+      .select((eb) => eb('user.pinCode', 'is not', null).as('hasPinCode'))
+      .where('user.id', '=', id)
+      .executeTakeFirst();
+    return row === undefined ? undefined : Boolean(row.hasPinCode);
+  }
+
+  /**
+   * FL-71: the owning account of each id that names an asset, person (its group), library or account,
+   * for the Job manager's Account column. Ids naming nothing, or a person several accounts share, are
+   * left out.
+   */
+  async getJobSubjectOwners(ids: string[]): Promise<JobSubjectOwner[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    // One array parameter for every table, so a long job list never approaches the protocol's
+    // 65,535-parameter limit.
+    const { rows } = await sql<JobSubjectOwner & { owners: number }>`
+      WITH "ids" AS (SELECT unnest(${ids}::uuid[]) AS "id"),
+      "subject" AS (
+        SELECT "asset"."id" AS "subjectId", "asset"."ownerId" FROM "asset" JOIN "ids" ON "ids"."id" = "asset"."id"
+        UNION ALL
+        SELECT "person"."personGroupId", "person"."ownerId" FROM "person" JOIN "ids" ON "ids"."id" = "person"."personGroupId"
+        UNION ALL
+        SELECT "library"."id", "library"."ownerId" FROM "library" JOIN "ids" ON "ids"."id" = "library"."id"
+        UNION ALL
+        SELECT "user"."id", "user"."id" FROM "user" JOIN "ids" ON "ids"."id" = "user"."id"
+      )
+      SELECT DISTINCT "subject"."subjectId", "subject"."ownerId", "user"."name" AS "ownerName",
+        count(*) OVER (PARTITION BY "subject"."subjectId") AS "owners"
+      FROM (SELECT DISTINCT "subjectId", "ownerId" FROM "subject") AS "subject"
+      JOIN "user" ON "user"."id" = "subject"."ownerId"
+    `.execute(this.db);
+    // A person shared through a cluster group belongs to each of its members: no one account.
+    return rows
+      .filter(({ owners }) => Number(owners) === 1)
+      .map(({ subjectId, ownerId, ownerName }) => ({ subjectId, ownerId, ownerName }));
+  }
+
+  /**
+   * FL-71 (CC-10): adds one preferences change to the account's own history and keeps only its
+   * newest USER_PREFERENCE_HISTORY_LIMIT entries.
+   */
+  async addPreferenceHistory(entry: {
+    userId: string;
+    deviceLabel: string | null;
+    changes: UserPreferenceHistoryRow['changes'];
+    omittedChanges: number;
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      // Skipped (never blocking the save) while the fork schema is not writable, as recipient groups are.
+      if (!(await canWriteFork(trx))) {
+        return false;
+      }
+      await sql`
+        INSERT INTO immich_fork.user_preference_history ("userId", "deviceLabel", changes, "omittedChanges")
+        VALUES (${entry.userId}::uuid, ${entry.deviceLabel}, ${JSON.stringify(entry.changes)}::text::jsonb, ${entry.omittedChanges})
+      `.execute(trx);
+      await sql`
+        DELETE FROM immich_fork.user_preference_history
+        WHERE "userId" = ${entry.userId}::uuid
+          AND id NOT IN (
+            SELECT id FROM immich_fork.user_preference_history
+            WHERE "userId" = ${entry.userId}::uuid
+            ORDER BY "createdAt" DESC, id DESC
+            LIMIT ${USER_PREFERENCE_HISTORY_LIMIT}
+          )
+      `.execute(trx);
+      return true;
+    });
+  }
+
+  /**
+   * FL-71 (CC-10): a deleted account leaves no preference history behind. Skipped (never blocking
+   * the delete) while the fork schema is not writable, like `forgetRecipient`.
+   */
+  async deletePreferenceHistory(userId: string): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      if (!(await canWriteFork(trx))) {
+        return false;
+      }
+      await sql`DELETE FROM immich_fork.user_preference_history WHERE "userId" = ${userId}::uuid`.execute(trx);
+      return true;
+    });
+  }
+
+  /**
+   * FL-71 (CC-10), FL-55: fork rows of accounts that no longer exist, left behind when an account
+   * was removed while the fork schema was not writable. Preference history of a removed account
+   * goes; recipient groups it owned go, and it leaves everyone else's. Returns what was removed,
+   * or undefined while the fork schema is still not writable.
+   */
+  async sweepRemovedAccountForkRows(): Promise<{ preferenceHistory: number; recipientGroups: number } | undefined> {
+    return this.db.transaction().execute(async (trx) => {
+      if (!(await canWriteFork(trx))) {
+        return;
+      }
+      const history = await sql`
+        DELETE FROM immich_fork.user_preference_history AS history
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = history."userId")
+      `.execute(trx);
+      const groups = await sql`
+        DELETE FROM immich_fork.recipient_group AS recipient_group
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = recipient_group."ownerId")
+      `.execute(trx);
+      await sql`
+        UPDATE immich_fork.recipient_group
+        SET "userIds" = ARRAY(
+              SELECT member FROM unnest("userIds") AS member
+              WHERE EXISTS (SELECT 1 FROM "user" WHERE "user".id = member)
+            ),
+            "updatedAt" = clock_timestamp()
+        WHERE EXISTS (
+          SELECT 1 FROM unnest("userIds") AS member
+          WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = member)
+        )
+      `.execute(trx);
+      return {
+        preferenceHistory: Number(history.numAffectedRows ?? 0),
+        recipientGroups: Number(groups.numAffectedRows ?? 0),
+      };
+    });
+  }
+
+  /** FL-71 (CC-10): the account's own preference history, newest first. */
+  async getPreferenceHistory(userId: string): Promise<UserPreferenceHistoryRow[]> {
+    const { rows } = await sql<UserPreferenceHistoryRow>`
+      SELECT id, "createdAt", "deviceLabel", changes, "omittedChanges"
+      FROM immich_fork.user_preference_history
+      WHERE "userId" = ${userId}::uuid
+      ORDER BY "createdAt" DESC, id DESC
+      LIMIT ${USER_PREFERENCE_HISTORY_LIMIT}
+    `.execute(this.db);
+    return rows;
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

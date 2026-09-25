@@ -22,7 +22,11 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
 import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
-import { UserPreferencesResponseDto, UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
+import {
+  UserPreferenceHistoryResponseDto,
+  UserPreferencesResponseDto,
+  UserPreferencesUpdateDto,
+} from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
@@ -105,6 +109,18 @@ export class UserController {
   })
   getMyPreferences(@Auth() auth: AuthDto): Promise<UserPreferencesResponseDto> {
     return this.service.getMyPreferences(auth);
+  }
+
+  @Get('me/preferences/history')
+  @Authenticated({ permission: Permission.UserPreferenceRead })
+  @Endpoint({
+    summary: 'Get my preference history',
+    description:
+      'The newest changes to the current user’s own preferences, with the device that saved each. Locked-content rules appear only as changed.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getMyPreferenceHistory(@Auth() auth: AuthDto): Promise<UserPreferenceHistoryResponseDto> {
+    return this.service.getMyPreferenceHistory(auth);
   }
 
   @Put('me/preferences')

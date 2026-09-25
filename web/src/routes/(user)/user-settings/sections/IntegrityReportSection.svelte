@@ -2,7 +2,7 @@
   /**
    * One integrity report (FL-81 CC-23) inside Maintenance → Integrity checks (FL-71): the prototype's
    * `ReportViewer` (`design/frameleaf/template/src/Maintenance.jsx:756-893`) — a summary line,
-   * "Download CSV", "Delete report" behind a Frameleaf confirmation, a findings filter and table — in
+   * "Download CSV", "Download report file" (a text file of every finding), "Delete report" behind a Frameleaf confirmation, a findings filter and table — in
    * place of the upstream `Table` and context menus. The old
    * `/admin/maintenance/integrity-report/<type>` page only redirects here.
    *
@@ -12,15 +12,22 @@
    * findings that no longer apply.
    */
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import { filterMaintenanceReportItems, summarizeMaintenanceReportFilter } from '$lib/frameleaf/maintenance-report';
+  import {
+    filterMaintenanceReportItems,
+    maintenanceReportFileName,
+    maintenanceReportText,
+    summarizeMaintenanceReportFilter,
+  } from '$lib/frameleaf/maintenance-report';
   import { Route } from '$lib/route';
   import {
     handleRemoveAllIntegrityReportItems,
     handleRemoveIntegrityReportItem,
   } from '$lib/services/integrity.service';
   import { handleCreateJob } from '$lib/services/job.service';
-  import { asyncTimeout } from '$lib/utils';
+  import { asyncTimeout, downloadBlob } from '$lib/utils';
+  import { handleError } from '$lib/utils/handle-error';
   import {
+    getIntegrityCheckRuns,
     getIntegrityReport,
     getQueuesLegacy,
     IntegrityReport,
@@ -28,7 +35,7 @@
     type IntegrityReportResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiArrowLeft, mdiDeleteOutline, mdiDownload, mdiRefresh } from '@mdi/js';
+  import { mdiArrowLeft, mdiDeleteOutline, mdiDownload, mdiFileDocumentOutline, mdiRefresh } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -63,6 +70,32 @@
 
     integrityReport.items.push(...items);
     integrityReport.nextCursor = nextCursor;
+  };
+
+  // The template's "Download report file": every finding of the check, every page, as text.
+  let exporting = $state(false);
+  const downloadReportFile = async () => {
+    exporting = true;
+    try {
+      const paths: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const result = await getIntegrityReport({ $type: type, cursor });
+        paths.push(...result.items.map((item) => item.path));
+        cursor = result.nextCursor;
+      } while (cursor);
+      const runs = await getIntegrityCheckRuns().catch(() => undefined);
+      const text = maintenanceReportText({
+        title: $t(`admin.maintenance_integrity_${type}`),
+        lastRunAt: runs?.[type],
+        paths,
+      });
+      downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), maintenanceReportFileName(type, new Date()));
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+    } finally {
+      exporting = false;
+    }
   };
 
   let running = true;
@@ -150,6 +183,10 @@
         <Icon icon={mdiDownload} size="16" aria-hidden={true} />
         {$t('admin.download_csv')}
       </a>
+      <button type="button" class="button" disabled={exporting} onclick={() => void downloadReportFile()}>
+        <Icon icon={mdiFileDocumentOutline} size="16" aria-hidden={true} />
+        {$t('admin.frameleaf_maintenance_report_download_file')}
+      </button>
       <button
         type="button"
         class="button danger"

@@ -28,6 +28,7 @@ import {
   RenderWorkerCheckpointPlanDto,
   RenderWorkerClaimDto,
   RenderWorkerClaimRequestDto,
+  RenderWorkerCompatibilityResponseDto,
   RenderWorkerCompleteDto,
   RenderWorkerCreateDto,
   RenderWorkerCreateResponseDto,
@@ -150,6 +151,18 @@ export class RenderWorkerAdminController {
   })
   searchRenderWorkerAudit(@Query() dto: RenderWorkerAuditSearchDto): Promise<RenderWorkerAuditDto[]> {
     return this.service.searchAudit(dto);
+  }
+
+  @Get('compatibility')
+  @Authenticated({ admin: true })
+  @Endpoint({
+    summary: 'Get render worker compatibility',
+    description:
+      'Which render kinds a qualified GPU worker (live session, fresh conformance, pinned engine) can take right now.',
+    history: history(),
+  })
+  getRenderWorkerCompatibility(): Promise<RenderWorkerCompatibilityResponseDto> {
+    return this.service.getCompatibility();
   }
 
   @Get(':id')

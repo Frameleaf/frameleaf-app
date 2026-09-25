@@ -15,6 +15,8 @@ const PUBLIC_PROPERTIES = [
   'oauth.enabled',
   'passwordLogin.enabled',
   'server.loginPageMessage',
+  // FL-71 (CC-4): the server name is shown on the sign-in screen and in the Command Center.
+  'server.name',
   'theme.customCss',
 ];
 

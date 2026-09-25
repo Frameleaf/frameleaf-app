@@ -69,6 +69,7 @@ const ADMIN_ROUTES = new Set([
   'GET queues',
   'GET queues/:name',
   'GET queues/:name/jobs',
+  'GET queues/:name/statistics',
   'GET server/license',
   'GET server/statistics',
   'GET system-config',
@@ -85,6 +86,8 @@ const ADMIN_ROUTES = new Set([
   'POST libraries/:id/scan',
   'POST libraries/:id/validate',
   'POST preservation/server-packages',
+  // FL-71: the Job manager's Retry failed.
+  'POST queues/:name/jobs/retry-failed',
   'POST system-metadata/admin-onboarding',
   'PUT jobs/:name',
   'PUT libraries/:id',

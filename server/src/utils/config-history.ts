@@ -30,9 +30,19 @@ export type ConfigHistoryChange = {
   credential?: ConfigHistoryCredentialChange;
 };
 
+/**
+ * FL-71 (CC-10): what an entry records. A settings save lists its changes ("n settings changed"); a
+ * credential entry names the credential and never its value; a review names the reviewed workflow
+ * (`CommandCenter.jsx:1447, 2495`). Entries saved before FL-71 have neither title nor kind.
+ */
+export type ConfigHistoryKind = 'settings' | 'credential' | 'review';
+
 export type ConfigHistoryEntry = {
   id: string;
   createdAt: string;
+  /** The entry's own title, such as "Updated RunPod API key"; absent for a settings save. */
+  title?: string | null;
+  kind?: ConfigHistoryKind;
   actorId: string | null;
   /** The administrator's name when the change was saved. */
   actorName: string | null;
@@ -139,6 +149,31 @@ const credentialValue = (config: SystemConfig, path: string) => {
 };
 
 /**
+ * FL-71: what changed between two plain objects (an account's preferences), leaf by leaf, with the
+ * same redaction as the settings history: secret-looking keys are left out and values are
+ * redacted and shortened.
+ */
+export const describeObjectChanges = (before: unknown, after: unknown): ConfigHistoryChange[] => {
+  const previous = leaves(before);
+  const next = leaves(after);
+  const changes: ConfigHistoryChange[] = [];
+  const seen = new Set<string>();
+  for (const path of [...next.keys(), ...previous.keys()]) {
+    if (seen.has(path) || isSecretPath(path)) {
+      continue;
+    }
+    seen.add(path);
+    const was = encode(previous.get(path) ?? null);
+    const now = encode(next.get(path) ?? null);
+    // A change that redaction hides (a URL's password alone) is not shown as a change of nothing.
+    if (!isEqual(previous.get(path), next.get(path)) && was !== now) {
+      changes.push({ path, before: was, after: now });
+    }
+  }
+  return changes;
+};
+
+/**
  * What changed between two saved configurations, ready for the history: settings with their
  * values (redacted) and credentials as replaced or cleared, never with a value. Server-kept
  * bookkeeping (the re-queue reminder) is not a change.
@@ -204,3 +239,18 @@ export const appendConfigHistory = (
     ),
   };
 };
+
+/** FL-71 (CC-10): how the history names each write-only credential in its entries. */
+export const CREDENTIAL_TITLES: Record<string, string> = {
+  'smtp-password': 'email server password',
+  'oauth-client-secret': 'OAuth client secret',
+  'runpod-api-key': 'RunPod API key',
+  'huggingface-token': 'Hugging Face token',
+};
+
+/** "Updated RunPod API key" / "Cleared RunPod API key": the entry for one credential, never its value. */
+export const credentialHistoryTitle = (name: string, change: ConfigHistoryCredentialChange) =>
+  `${change === 'replaced' ? 'Updated' : 'Cleared'} ${CREDENTIAL_TITLES[name] ?? name}`;
+
+/** "Reviewed: Recovery readiness" (`CommandCenter.jsx:2495`). */
+export const reviewHistoryTitle = (title: string) => `Reviewed: ${title}`;

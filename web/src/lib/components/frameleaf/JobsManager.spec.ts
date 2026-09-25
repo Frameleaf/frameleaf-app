@@ -6,8 +6,12 @@ import {
   JobName,
   QueueCommand,
   QueueJobStatus,
+  QueueJobWorkerKind,
   QueueName,
+  getQueueOwnerStatistics,
+  retryFailedQueueJobs,
   runQueueCommandLegacy,
+  searchUsersAdmin,
   updateQueue,
   type QueueResponseDto,
 } from '@immich/sdk';
@@ -35,6 +39,9 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   emptyQueue: vi.fn(),
   getQueue: vi.fn(),
   createJob: vi.fn(),
+  retryFailedQueueJobs: vi.fn(),
+  searchUsersAdmin: vi.fn(),
+  getQueueOwnerStatistics: vi.fn(),
 }));
 vi.mock('$lib/frameleaf/job-history', async (importOriginal) => {
   const original = await importOriginal<typeof import('$lib/frameleaf/job-history')>();
@@ -99,13 +106,17 @@ beforeEach(() => {
     queue(QueueName.BackgroundTask, { active: 1 }),
   ];
   vi.mocked(getQueueJobs).mockResolvedValue([]);
+  vi.mocked(searchUsersAdmin).mockResolvedValue([
+    { id: 'ada', name: 'Ada Lovelace' },
+    { id: 'grace', name: 'Grace Hopper' },
+  ] as never);
 });
 
 describe('Job manager (FL-71, JobsManager.jsx)', () => {
   it("shows the template's header, metrics and queue table on the server's queues", () => {
     render(JobsManager);
 
-    expect(screen.getByText('PROCESSING')).toBeInTheDocument();
+    expect(screen.getByText('Compute & jobs')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Queues & jobs' })).toBeInTheDocument();
     for (const label of ['Concurrency', 'Enrichment tasks', 'Create job', 'Resume 1 paused']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
@@ -164,6 +175,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
         data: { id: 'asset-1' },
         attemptsMade: 3,
         failedReason: 'Machine learning is unreachable',
+        worker: { kind: QueueJobWorkerKind.Server, name: null },
       },
     ]);
     render(JobsManager);
@@ -278,5 +290,142 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(screen.getByRole('dialog', { name: 'Remove failed records' })).toBeInTheDocument();
     expect(runQueueCommandLegacy).not.toHaveBeenCalled();
     expect(emptyQueue).not.toHaveBeenCalled();
+  });
+
+  it("names each job's account and worker, as the template's jobs table does", async () => {
+    at('&queue=face-detection&tab=failed');
+    vi.mocked(getQueueJobs).mockResolvedValue([
+      {
+        id: 'job-1',
+        name: JobName.AssetDetectFaces,
+        timestamp: Date.UTC(2026, 8, 23, 10),
+        data: { id: 'asset-1' },
+        attemptsMade: 1,
+        account: { id: 'user-1', name: 'Ada Lovelace' },
+        worker: { kind: QueueJobWorkerKind.Runpod, name: 'Studio pod' },
+      },
+      {
+        id: 'job-2',
+        name: JobName.AssetDetectFaces,
+        timestamp: Date.UTC(2026, 8, 23, 9),
+        data: {},
+        worker: { kind: QueueJobWorkerKind.Lan, name: 'Workshop GPU' },
+      },
+    ]);
+    render(JobsManager);
+
+    await screen.findAllByRole('button', { name: /^Detect faces/ });
+    const table = screen.getByRole('table');
+    expect(within(table).getByRole('columnheader', { name: 'Account' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Worker' })).toBeInTheDocument();
+    const [, first, second] = within(table).getAllByRole('row');
+    expect(within(first).getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(within(first).getByText('RunPod').closest('span')).toHaveAttribute('title', 'Studio pod');
+    expect(within(second).getByText('No account')).toBeInTheDocument();
+    expect(within(second).getByText('Local / LAN')).toBeInTheDocument();
+
+    await fireEvent.click(within(first).getByRole('button', { name: /^Detect faces/ }));
+    const detail = screen.getByRole('dialog', { name: 'Detect faces' });
+    expect(within(detail).getByText('Account').nextElementSibling).toHaveTextContent('Ada Lovelace');
+    expect(within(detail).getByText('Worker').nextElementSibling).toHaveTextContent('RunPod · Studio pod');
+  });
+
+  it('retries the failed jobs after the review, without an acknowledgement', async () => {
+    at('&queue=face-detection&tab=failed');
+    vi.mocked(retryFailedQueueJobs).mockResolvedValue({ count: 3 });
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry failed' }));
+    const review = screen.getByRole('dialog', { name: 'Retry failed jobs' });
+    expect(within(review).getByText(/Put failed jobs back in the queue/)).toBeInTheDocument();
+    expect(within(review).getByText('3 items')).toBeInTheDocument();
+    expect(within(review).queryByRole('checkbox')).not.toBeInTheDocument();
+    await fireEvent.click(within(review).getByRole('button', { name: 'Retry failed jobs' }));
+
+    await waitFor(() => expect(retryFailedQueueJobs).toHaveBeenCalledWith({ name: QueueName.FaceDetection }));
+    expect(await screen.findByText('Retry failed jobs: request sent to the server.')).toBeInTheDocument();
+  });
+
+  it('offers no retry while no job has failed', () => {
+    queues.list = [queue(QueueName.FaceDetection)];
+    at('&queue=face-detection&tab=failed');
+    render(JobsManager);
+
+    expect(screen.getByRole('button', { name: 'Retry failed' })).toBeDisabled();
+  });
+
+  it("narrows the counts and the jobs to one account's items (JobsManager.jsx 341-355, 838-840)", async () => {
+    at('&queue=face-detection&tab=failed');
+    vi.mocked(getQueueOwnerStatistics).mockResolvedValue({
+      active: 0,
+      completed: 0,
+      delayed: 0,
+      failed: 1,
+      paused: 0,
+      waiting: 0,
+      truncated: true,
+    });
+    render(JobsManager);
+
+    const filter = await screen.findByRole('combobox', { name: 'Account filter' });
+    await screen.findByRole('option', { name: 'Grace Hopper' });
+    await fireEvent.change(filter, { target: { value: 'grace' } });
+
+    await waitFor(() =>
+      expect(getQueueOwnerStatistics).toHaveBeenCalledWith({ name: QueueName.FaceDetection, ownerId: 'grace' }),
+    );
+    expect(await screen.findByRole('tab', { name: /Failed\s*1/ })).toBeInTheDocument();
+    expect(screen.getByText(/Counts and job details: Grace Hopper\./)).toBeInTheDocument();
+    expect(screen.getByText(/newest 1,000 jobs of each state/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(getQueueJobs).toHaveBeenCalledWith({
+        name: QueueName.FaceDetection,
+        status: [QueueJobStatus.Failed],
+        ownerId: 'grace',
+      }),
+    );
+    expect(
+      await screen.findByText('No matching jobs for Grace Hopper. Other accounts may still have work in this queue.'),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a dash, not 0, while an account's counts load", async () => {
+    vi.mocked(getQueueOwnerStatistics).mockReturnValue(new Promise(() => {}));
+    render(JobsManager);
+
+    const filter = await screen.findByRole('combobox', { name: 'Account filter' });
+    await screen.findByRole('option', { name: 'Grace Hopper' });
+    await fireEvent.change(filter, { target: { value: 'grace' } });
+
+    const failed = screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling;
+    expect(failed).toHaveTextContent('—');
+    expect(screen.getByText('Failed', { selector: '.jm-metric span' }).closest('.jm-metrics')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+  });
+
+  it("shows a queue's counts as unknown, not 0, when they cannot be read for an account", async () => {
+    vi.mocked(getQueueOwnerStatistics).mockImplementation(({ name }) =>
+      name === QueueName.FaceDetection
+        ? Promise.reject(new Error('down'))
+        : Promise.resolve({ active: 1, completed: 0, delayed: 0, failed: 0, paused: 0, waiting: 2, truncated: false }),
+    );
+    render(JobsManager);
+
+    const filter = await screen.findByRole('combobox', { name: 'Account filter' });
+    await screen.findByRole('option', { name: 'Grace Hopper' });
+    await fireEvent.change(filter, { target: { value: 'grace' } });
+
+    expect(
+      await screen.findByText('Some counts for Grace Hopper could not be loaded. They show as unknown.'),
+    ).toBeInTheDocument();
+    const table = within(screen.getByRole('region', { name: 'Processing queues' }));
+    const faces = table.getAllByRole('button', { name: /^Face detection/ })[0].closest('tr')!;
+    expect(within(faces).getAllByText('—').length).toBeGreaterThan(0);
+    const thumbnails = table.getAllByRole('button', { name: /^Thumbnails/ })[0].closest('tr')!;
+    expect(within(thumbnails).getByText('2')).toBeInTheDocument();
+    // The totals would be partial, so they are unknown too.
+    expect(screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling).toHaveTextContent('—');
   });
 });

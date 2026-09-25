@@ -397,16 +397,21 @@ export interface IIntegrityDeleteReportsJob {
 export interface IIntegrityUntrackedFilesJob {
   type: 'asset' | 'asset_file';
   paths: string[];
+  /** FL-81: the full run this batch belongs to; its last batch records "Last run". */
+  runId?: string;
 }
 
 export interface IIntegrityMissingFilesJob {
   items: ({ path: string; reportId: string | null } & (
     { assetId: string; fileAssetId: null } | { assetId: null; fileAssetId: string }
   ))[];
+  /** FL-81: the full run this batch belongs to; its last batch records "Last run". */
+  runId?: string;
 }
 
 export interface IIntegrityPathWithReportJob {
   items: { path: string; reportId: string | null }[];
+  runId?: string;
 }
 
 export interface IIntegrityPathWithChecksumJob {
@@ -799,7 +804,23 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.RunPodOrphans]: { orphanTemplateIds: string[] };
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
+  [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
+  [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
 }
+
+/** FL-71: the last recorded restore test of each part of a backup (ISO date-times), and who recorded it. */
+export type BackupRestoreVerification = {
+  metadataVerifiedAt?: string | null;
+  originalsVerifiedAt?: string | null;
+  verifiedBy?: string | null;
+};
+
+/**
+ * FL-81: per integrity check, when its last full run completed (ISO date-time), and the run in
+ * progress: its batches once all are queued (null until then) and how many have finished.
+ */
+export type IntegrityCheckRun = { runId: string; startedAt: string; batches: number | null; done: number };
+export type IntegrityCheckRuns = Partial<Record<IntegrityReport, { lastRunAt?: string; current?: IntegrityCheckRun }>>;
 
 export type UserPreferences = {
   albums: {

@@ -1644,4 +1644,35 @@ describe(RenderWorkerService.name, () => {
       expect(studioExports.acknowledgeRemoteReference).toHaveBeenCalledWith('ref-1', workerB.id);
     });
   });
+
+  describe('getCompatibility (FL-71 CC-9)', () => {
+    const live = (worker: RenderWorker, session: RenderWorkerSession) => ({ worker, session });
+
+    it('lists the render kinds a qualified worker can take, and the rest as unavailable', async () => {
+      (workers as unknown as { listLiveSessions: ReturnType<typeof vi.fn> }).listLiveSessions = vi
+        .fn()
+        .mockResolvedValue([live(workerA, sessionA)]);
+
+      await expect(sut.getCompatibility()).resolves.toEqual({
+        qualified: [MediaOperationKind.StudioExport, MediaOperationKind.Restoration],
+        unavailable: [
+          MediaOperationKind.StudioPreview,
+          MediaOperationKind.RestorationPreview,
+          MediaOperationKind.QuickEdit,
+        ],
+      });
+    });
+
+    it('does not count a session whose conformance is stale', async () => {
+      (workers as unknown as { listLiveSessions: ReturnType<typeof vi.fn> }).listLiveSessions = vi
+        .fn()
+        .mockResolvedValue([
+          live(workerA, { ...sessionA, conformanceReportedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }),
+        ]);
+
+      const { qualified, unavailable } = await sut.getCompatibility();
+      expect(qualified).toEqual([]);
+      expect(unavailable).toHaveLength(5);
+    });
+  });
 });
