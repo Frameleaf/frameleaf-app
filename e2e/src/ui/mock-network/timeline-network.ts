@@ -12,6 +12,7 @@ import {
   randomThumbnail,
   TimelineData,
 } from 'src/ui/generators/timeline';
+import { toColumnarFormat } from 'src/ui/generators/timeline/rest-response.js';
 import { sleep } from 'src/ui/specs/timeline/utils.js';
 import { MINIMAL_MP4_BUFFER } from './face-editor-network';
 
@@ -57,6 +58,30 @@ export const setupTimelineMockApiRoutes = async (
           param('albumId') || undefined,
           changes,
         ),
+      });
+    }
+    if (pathname === '/api/timeline/ordered') {
+      // FL-30 (S-15): the library's own assets in a flat order; the mock names each file by its id.
+      const skip = Number(url.searchParams.get('skip') ?? 0);
+      const take = Number(url.searchParams.get('take') ?? 500);
+      const sort = url.searchParams.get('sort');
+      const assets = timelineRestData.buckets
+        .values()
+        .toArray()
+        .flat()
+        .filter(
+          (asset) =>
+            !asset.isTrashed &&
+            asset.visibility === AssetVisibility.Timeline &&
+            !changes.assetDeletions.includes(asset.id) &&
+            !changes.assetArchivals.includes(asset.id),
+        )
+        .toSorted((a, b) => (sort === 'filename' ? a.id.localeCompare(b.id) : 0))
+        .slice(skip, skip + take);
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        json: { ...toColumnarFormat(assets), originalFileName: assets.map((asset) => `${asset.id}.jpg`) },
       });
     }
     if (pathname === '/api/timeline/bucket') {

@@ -27,8 +27,8 @@ export const THUMBNAIL_SIZE_STEP = 30;
  */
 export const THUMBNAIL_SIZE_DEFAULT = 200;
 
-/** The layouts a library tile is drawn in. */
-export type TileLayout = 'timeline' | 'browse' | 'work';
+/** The layouts a library tile is drawn in. `list` is Browse's and Work's List view (S-15). */
+export type TileLayout = 'timeline' | 'browse' | 'work' | 'list';
 
 /** Clamp a size into range and snap it to the step scale (140, 170, 200, 230, 260, 290). */
 export const clampThumbnailSize = (value: unknown): number => {
@@ -59,6 +59,8 @@ export type CellGridOptions = {
   captionHeight: number;
   /** A fixed column count (phones), overriding `minCellWidth`. */
   columns?: number;
+  /** A fixed image height (the list view's rows), overriding `aspect`. */
+  imageHeight?: number;
 };
 
 export type CellGrid = {
@@ -86,8 +88,17 @@ export type CellGrid = {
 /** The caption row under a Work tile: 6px margin and one 12px line at 1.4 line height, rounded. */
 export const WORK_CAPTION_HEIGHT = 24;
 
+/**
+ * The List view's row (template asset-tile.css `.asset-tile[data-layout="list"]`): a 96px 3:2
+ * thumbnail with 6px padding above and below and a hairline between rows.
+ */
+export const LIST_ROW_HEIGHT = 77;
+
 /** The geometry for the Browse or Work grid, per layout, device class and Thumbnail size. */
-export const cellGridOptions = (layout: 'browse' | 'work', size: number, phone: boolean): CellGridOptions => {
+export const cellGridOptions = (layout: 'browse' | 'work' | 'list', size: number, phone: boolean): CellGridOptions => {
+  if (layout === 'list') {
+    return { minCellWidth: 1, aspect: 1, gap: 0, captionHeight: 0, columns: 1, imageHeight: LIST_ROW_HEIGHT };
+  }
   const thumb = clampThumbnailSize(size);
   if (layout === 'browse') {
     // apple-style.css: minmax(calc(var(--thumb-size) * 0.8), 1fr); gap 2px; 3 columns ≤ 700px.
@@ -113,7 +124,8 @@ export const cellGrid = (count: number, containerWidth: number, options: CellGri
   const fixed = options.columns && options.columns > 0 ? Math.floor(options.columns) : 0;
   const columns = Math.max(1, fixed || Math.floor((width + gap) / (minCell + gap)));
   const cellWidth = width > 0 ? Math.max(1, (width - gap * (columns - 1)) / columns) : 0;
-  const imageHeight = cellWidth > 0 ? Math.max(1, Math.round(cellWidth / Math.max(0.1, options.aspect))) : 0;
+  const imageHeight =
+    cellWidth > 0 ? Math.max(1, Math.round(options.imageHeight ?? cellWidth / Math.max(0.1, options.aspect))) : 0;
   const cellHeight = imageHeight + Math.max(0, options.captionHeight);
   const rowPitch = cellHeight + gap;
   const rows = cellWidth > 0 ? Math.ceil(total / columns) : 0;

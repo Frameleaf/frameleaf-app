@@ -60,3 +60,16 @@ export const requestFilterPanel = (
   section: DiscoveryFilterSection,
   target: Pick<Window, 'dispatchEvent'> = globalThis,
 ) => target.dispatchEvent(new CustomEvent<FilterPanelRequest>(FILTER_PANEL_EVENT, { detail: { section } }));
+
+/** The search entry says whether the filter panel it opened for the toolbar is showing. */
+export const FILTER_PANEL_STATE_EVENT = 'frameleaf:filters-state';
+/** The toolbar's Filter asks the open filter panel to close (prototype Filter toggles the panel). */
+export const FILTER_PANEL_CLOSE_EVENT = 'frameleaf:close-filters';
+
+export type FilterPanelState = { open: boolean };
+
+export const announceFilterPanel = (open: boolean, target: Pick<Window, 'dispatchEvent'> = globalThis) =>
+  target.dispatchEvent(new CustomEvent<FilterPanelState>(FILTER_PANEL_STATE_EVENT, { detail: { open } }));
+
+export const requestFilterPanelClose = (target: Pick<Window, 'dispatchEvent'> = globalThis) =>
+  target.dispatchEvent(new CustomEvent(FILTER_PANEL_CLOSE_EVENT));

@@ -10,6 +10,7 @@ import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import AssetGrid from './AssetGrid.svelte';
 import AssetTile from './AssetTile.svelte';
 import LibraryDayGroup from './LibraryDayGroup.svelte';
+import LibraryLayoutSwitch from './LibraryLayoutSwitch.svelte';
 import ResultsToolbar from './ResultsToolbar.svelte';
 import ShowMore from './ShowMore.svelte';
 
@@ -315,6 +316,43 @@ describe('AssetTile quick actions and captions (FL-33)', () => {
     expect(locked?.textContent).not.toContain('private');
   });
 
+  it('draws a list row: thumbnail, name, date, kind and pixel size, duration or file size (S-15)', () => {
+    const { unmount } = tile({
+      asset: asset({ originalFileName: 'IMG_0042.HEIC', width: 4000, height: 3000 }),
+      layout: 'list',
+      width: 900,
+      height: 77,
+    });
+    const row = screen.getByTestId('frameleaf-asset-tile');
+    expect(row).toHaveAttribute('data-layout', 'list');
+    expect(row.querySelector('.fl-list-name')?.textContent).toBe('IMG_0042');
+    expect(row.querySelector('.fl-list-kind')?.textContent?.trim()).toBe('frameleaf_library_list_photo');
+    expect(row.textContent).toContain('4000 × 3000');
+    unmount();
+
+    const video = tile({
+      asset: asset({ isVideo: true, isImage: false, duration: 96_000 }),
+      layout: 'list',
+      height: 77,
+    });
+    expect(screen.getByTestId('frameleaf-asset-tile').textContent).toContain('1:36');
+    video.unmount();
+
+    tile({ asset: asset({ fileSizeInByte: 2_500_000 }), layout: 'list', height: 77 });
+    expect(screen.getByTestId('frameleaf-asset-tile').textContent).toContain('2.5 MB');
+  });
+
+  it('never names a Locked item in the list', () => {
+    tile({
+      asset: asset({ originalFileName: 'private.jpg', visibility: AssetVisibility.Locked }),
+      layout: 'list',
+      height: 77,
+    });
+    const row = screen.getByTestId('frameleaf-asset-tile');
+    expect(row.querySelector('.fl-list-name')?.textContent).toBe('frameleaf_library_list_locked_item');
+    expect(row.getHTML()).not.toContain('private');
+  });
+
   it('draws no caption in Browse', () => {
     tile({ layout: 'browse', captionHeight: 24 });
     expect(screen.getByTestId('frameleaf-asset-tile').querySelector('.fl-tile-caption')).toBeNull();
@@ -601,17 +639,54 @@ describe('ResultsToolbar', () => {
     expect(session.state.sort).toBe('captured-asc');
   });
 
+  it('lists the prototype’s six filter sections, without Pets, and toggles a host panel closed (S-16)', async () => {
+    const onOpenFilterPanel = vi.fn();
+    const onCloseFilterPanel = vi.fn();
+    const { rerender } = render(ResultsToolbar, {
+      session,
+      onOpenFilterPanel,
+      filterPanelOpen: false,
+      onCloseFilterPanel,
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_choose_filter' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      'people',
+      'date',
+      'places',
+      'media',
+      'tags',
+      'frameleaf_library_filter_section_all',
+    ]);
+    await fireEvent.keyDown(globalThis as unknown as Window, { key: 'Escape' });
+
+    await rerender({ session, onOpenFilterPanel, filterPanelOpen: true, onCloseFilterPanel });
+    const filter = screen.getByRole('button', { name: 'filter' });
+    expect(filter).toHaveAttribute('aria-expanded', 'true');
+    await fireEvent.click(filter);
+    expect(onCloseFilterPanel).toHaveBeenCalled();
+    expect(onOpenFilterPanel).not.toHaveBeenCalled();
+  });
+
+  it('switches Grid and List where the page offers them (S-15)', async () => {
+    const onViewChange = vi.fn();
+    render(ResultsToolbar, { session, view: 'grid', onViewChange });
+    expect(screen.getByRole('button', { name: 'frameleaf_library_grid_view' })).toHaveAttribute('aria-pressed', 'true');
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_list_view' }));
+    expect(onViewChange).toHaveBeenCalledWith('list');
+  });
+
   it('draws no Slideshow, Sort or More control where the page offers none', () => {
     render(ResultsToolbar, { session });
     expect(screen.queryByRole('button', { name: 'slideshow' })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'frameleaf_library_sort' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'frameleaf_library_more_actions' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'frameleaf_library_list_view' })).toBeNull();
   });
 
   it('switches layout without touching anything else in the session', async () => {
     session.select('asset-1');
     session.open('asset-2', 12);
-    render(ResultsToolbar, { session });
+    render(LibraryLayoutSwitch, { session });
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_layout_timeline' }));
     expect(session.layout).toBe('timeline');
     expect(session.selection).toEqual(['asset-1']);
