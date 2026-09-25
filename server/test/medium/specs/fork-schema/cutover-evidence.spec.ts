@@ -392,6 +392,8 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
         'immich_fork.album_position',
         'immich_fork.recipient_group',
         'immich_fork.user_preference_history',
+        'immich_fork.memory_curation',
+        'immich_fork.memory_show_less',
       ]),
     );
   });
