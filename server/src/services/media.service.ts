@@ -585,6 +585,12 @@ export class MediaService extends BaseService {
         },
         fullsizeFile.path,
       );
+      // FL-54: the embedded preview carries the camera's GPS; a derived image never keeps it. If it cannot
+      // be removed, drop the fullsize file and let viewers fall back to the preview.
+      if (!(await this.mediaRepository.removeLocation(fullsizeFile.path))) {
+        await this.storageRepository.unlink(fullsizeFile.path);
+        fullsizeFile = undefined;
+      }
     }
 
     const outputs = await Promise.all(promises);
