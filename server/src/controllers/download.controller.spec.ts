@@ -63,6 +63,37 @@ describe(DownloadController.name, () => {
       await vi.waitFor(() => expect(stream.destroyed).toBe(true));
     });
 
+    it('destroys the archive stream when the client left before it was ready (FL-54 follow-up)', async () => {
+      const stream = new Readable({ read() {} });
+      let clientGone!: () => void;
+      const gone = new Promise<void>((resolve) => (clientGone = resolve));
+      service.downloadArchive.mockImplementation(async () => {
+        await gone; // the queries finish only after the client has disconnected
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return { stream };
+      });
+
+      const server = ctx.getHttpServer();
+      if (!server.listening) {
+        await new Promise<void>((resolve) => server.listen(0, resolve));
+      }
+      const { port } = server.address() as AddressInfo;
+
+      const req = httpRequest({
+        port,
+        method: 'POST',
+        path: '/download/archive',
+        headers: { 'content-type': 'application/json' },
+      });
+      req.on('error', () => {});
+      req.end(JSON.stringify({ assetIds: [factory.uuid()] }));
+      await vi.waitFor(() => expect(service.downloadArchive).toHaveBeenCalled());
+      req.destroy();
+      clientGone();
+
+      await vi.waitFor(() => expect(stream.destroyed).toBe(true));
+    });
+
     it('should accept assetIds array', async () => {
       const downloadArchiveSpy = vi.spyOn(service, 'downloadArchive');
       service.downloadArchive.mockResolvedValue({ stream: Readable.from('') });

@@ -43,11 +43,16 @@ export class DownloadController {
   ): Promise<StreamableFile> {
     const archive = await this.service.downloadArchive(auth, dto);
     // FL-54: a client that goes away must not leave the archive, and any copy it is writing, waiting forever
-    res.once('close', () => {
+    const abandon = () => {
       if (!archive.stream.readableEnded) {
         archive.stream.destroy();
       }
-    });
+    };
+    res.once('close', abandon);
+    // a client that dropped while the archive was being prepared has already closed: stop at once
+    if (res.destroyed || res.writableEnded) {
+      abandon();
+    }
     return asStreamableFile(archive);
   }
 }

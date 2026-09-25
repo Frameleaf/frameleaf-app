@@ -39,7 +39,10 @@ const setup = () => {
     real: [],
     mock: [LoggingRepository],
   });
-  return { sut: ctx.get(MetadataRepository) };
+  const sut = ctx.get(MetadataRepository);
+  // the repository's own logger, so a spec can see what an admin would read
+  const logger = { error: vi.spyOn(sut['logger'], 'error') };
+  return { sut, logger };
 };
 
 const sha1 = (path: string) => createHash('sha1').update(readFileSync(path)).digest('hex');
@@ -182,8 +185,8 @@ describe('MetadataRepository.acquireLocationFreeOriginal', () => {
     await sut.teardown();
   });
 
-  it('refuses a copy directory another user could read (review P1)', async () => {
-    const { sut } = setup();
+  it('refuses a copy directory another user could read, and tells the admin once (review P1, item 6)', async () => {
+    const { sut, logger } = setup();
     const source = await newGpsJpeg();
     const directory = join(mediaLocation, 'tmp', 'location-free');
     mkdirSync(directory, { recursive: true });
@@ -191,9 +194,36 @@ describe('MetadataRepository.acquireLocationFreeOriginal', () => {
 
     try {
       await expect(sut.acquireLocationFreeOriginal(source)).rejects.toThrow(/not a private directory/);
+      await expect(sut.acquireLocationFreeOriginal(source)).rejects.toThrow(/mode is 755/);
+      const reports = logger.error.mock.calls.filter(([message]) => String(message).includes('are refused'));
+      expect(reports).toHaveLength(1);
+      expect(String(reports[0][0])).toContain('mode 700');
     } finally {
       chmodSync(directory, 0o700);
       await sut.teardown();
+    }
+  });
+
+  it('never lets a failing clean-up take the server down (follow-up item 1)', async () => {
+    const { sut, logger } = setup();
+    const source = await newGpsJpeg();
+    const lease = await sut.acquireLocationFreeOriginal(source);
+    const directory = join(mediaLocation, 'tmp', 'location-free');
+    const leftover = join(directory, 'locked-leftover.jpg');
+    writeFileSync(leftover, 'x');
+    const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+    utimesSync(leftover, old, old);
+    lease.release();
+
+    // a read-only directory makes every unlink fail (EACCES), as EBUSY/EPERM would on a busy mount
+    chmodSync(directory, 0o500);
+    try {
+      await expect(sut.sweepLocationFree(directory)).resolves.toBeUndefined();
+      await expect(sut.teardown()).resolves.toBeUndefined();
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Unable to remove location-free copy'));
+      expect(existsSync(lease.path)).toBe(true);
+    } finally {
+      chmodSync(directory, 0o700);
     }
   });
 
