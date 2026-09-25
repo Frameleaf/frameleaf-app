@@ -14,7 +14,7 @@
 <h3 align="center">Frameleaf - Yüksek performanslı, kendine ait barındırılan fotoğraf ve video yedekleme çözümü</h3>
 <br/>
 <a href="https://immich.app">
-<img src="../design/immich-screenshots.png" title="Main Screenshot">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="Main Screenshot">
 </a>
 <br/>
 <p align="center">

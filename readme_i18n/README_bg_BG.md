@@ -14,7 +14,7 @@
 <h3 align="center">Високопроизводително самостоятелно хоствано решение за управление на снимки и видеа</h3>
 <br/>
 <a href="https://immich.app">
-<img src="../design/immich-screenshots.png" title="Основна снимка на екрана">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="Основна снимка на екрана">
 </a>
 <br/>
 <p align="center">

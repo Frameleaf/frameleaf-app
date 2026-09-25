@@ -14,7 +14,7 @@
 <h3 align="center">Soluzione ad alte prestazioni per la gestione self-hosted di foto e video</h3>
 <br/>
 <a href="https://immich.app">
-<img src="../design/immich-screenshots.png" title="Screenshot Principale">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="Screenshot Principale">
 </a>
 <br/>
 
