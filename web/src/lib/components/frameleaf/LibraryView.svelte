@@ -72,6 +72,7 @@
   import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
   import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
   import { tileActionAvailability, type TileQuickActions } from '$lib/frameleaf/tile-actions';
+  import { captureTimeOf, type CaptureTime } from '$lib/frameleaf/time-zones';
   import { maxStudioHandoffAssets } from '$lib/frameleaf/studio/handoff';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { Route } from '$lib/route';
@@ -85,6 +86,8 @@
   import {
     AssetOrder,
     AssetVisibility,
+    AssetOrderBy,
+    getAssetInfo,
     TimeBucketDateType,
     TimelineOrderedSort,
     updateAsset,
@@ -481,9 +484,45 @@
     isLivePhoto: !!asset.livePhotoVideoId,
     isLocked: asset.visibility === AssetVisibility.Locked,
     stackId: asset.stack?.id ?? null,
-    localDateTime: plainDateTime(asset),
-    utcOffsetMinutes: utcOffsetMinutes(asset),
+    // In an Added-date view the bucket's dates are upload times, never offered as capture times.
+    ...(!addedDateSource && { localDateTime: plainDateTime(asset), utcOffsetMinutes: utcOffsetMinutes(asset) }),
   });
+
+  /** The time buckets date this view by upload (Recently added, "Added — newest"), not by capture. */
+  const addedDateSource = $derived(
+    sortedOptions?.dateType === TimeBucketDateType.Added || sortedOptions?.orderBy === AssetOrderBy.CreatedAt,
+  );
+
+  /** At most this many items have their capture times read one by one for Change date. */
+  const CAPTURE_TIME_LIMIT = 200;
+
+  /**
+   * The selection's real capture times and zones, read from each item's details (FL-32 review
+   * N1/N3). Null when there are too many to read or a read fails; the dialog then falls back.
+   */
+  const resolveCaptureTimes = async (ids: string[]): Promise<Record<string, CaptureTime> | null> => {
+    if (ids.length === 0 || ids.length > CAPTURE_TIME_LIMIT) {
+      return null;
+    }
+    try {
+      const result: Record<string, CaptureTime> = {};
+      for (let index = 0; index < ids.length; index += 10) {
+        const infos = await Promise.all(
+          ids.slice(index, index + 10).map((id) => getAssetInfo({ ...authManager.params, id })),
+        );
+        for (const info of infos) {
+          const capture = captureTimeOf(info);
+          if (!capture) {
+            return null;
+          }
+          result[info.id] = capture;
+        }
+      }
+      return result;
+    } catch {
+      return null;
+    }
+  };
 
   /** Minutes east of UTC: the bucket's local wall time less its UTC instant. */
   const utcOffsetMinutes = ({ localDateTime: local, fileCreatedAt: utc }: TimelineAsset) =>
@@ -1415,6 +1454,7 @@
       <SelectionBar
         bind:this={selectionBarRef}
         onDialogSettled={(_id, submitted) => onBarDialogSettled(submitted)}
+        {resolveCaptureTimes}
         count={session.selection.length}
         total={selectAll === 'loaded' ? (manager.assetCount ?? null) : session.total}
         assets={selectedAssets}

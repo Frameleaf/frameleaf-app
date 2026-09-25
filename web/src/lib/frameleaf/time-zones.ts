@@ -130,3 +130,42 @@ export const wallTimeInZone = (wallTime: string, zone: string): string | null =>
   const local = DateTime.fromISO(wallTime, { zone });
   return local.isValid ? local.toISO({ suppressMilliseconds: true, includeOffset: true }) : null;
 };
+
+/**
+ * An item's real capture time (FL-32 review N1/N3): its wall time, its UTC offset then, and its
+ * IANA zone where its metadata names one. The timeline's own dates are not this in an Added-date
+ * view, where they are the upload time.
+ */
+export type CaptureTime = { localDateTime: string; offsetMinutes: number; timeZone?: string };
+
+/** A zone name the browser can use and that names a place (or UTC), not a bare offset. */
+export const isIanaZone = (zone: string | null | undefined): zone is string => {
+  if (!zone || !(zone === 'UTC' || zone.includes('/'))) {
+    return false;
+  }
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** An asset's capture time from its details: `localDateTime` is the wall time, `fileCreatedAt` the instant. */
+export const captureTimeOf = (asset: {
+  localDateTime: string;
+  fileCreatedAt: string;
+  exifInfo?: { timeZone?: string | null } | null;
+}): CaptureTime | null => {
+  const local = Date.parse(asset.localDateTime);
+  const instant = Date.parse(asset.fileCreatedAt);
+  if (!Number.isFinite(local) || !Number.isFinite(instant)) {
+    return null;
+  }
+  const zone = asset.exifInfo?.timeZone;
+  return {
+    localDateTime: new Date(local).toISOString().slice(0, 16),
+    offsetMinutes: Math.round((local - instant) / 60_000),
+    ...(isIanaZone(zone) && { timeZone: zone }),
+  };
+};

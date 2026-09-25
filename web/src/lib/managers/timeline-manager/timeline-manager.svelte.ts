@@ -707,7 +707,13 @@ export class TimelineManager extends VirtualScrollManager {
         return outcome;
       });
       if (reordered) {
-        void this.refresh();
+        // Read the new order, and stay where the person was rather than jumping to the top.
+        const top = this.#scrollableElement?.scrollTop ?? 0;
+        void this.refresh().then(() => {
+          if (top > 0) {
+            this.scrollTo(top);
+          }
+        });
       }
       return result;
     }
@@ -797,19 +803,35 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   async retrieveRange(start: AssetDescriptor, end: AssetDescriptor) {
-    return retrieveRangeUtil(this, start, end, this.ordered ? this.#orderedPosition : undefined);
+    return retrieveRangeUtil(this, start, end, this.ordered ? this.#orderedPositions() : undefined);
   }
 
-  /** Where an item sits in a flat order: page, then place on the page. */
-  #orderedPosition = (asset: TimelineAsset): number => {
-    for (const [page, month] of this.months.entries()) {
-      const index = month.timelineDays[0]?.viewerAssets.findIndex((viewerAsset) => viewerAsset.id === asset.id) ?? -1;
-      if (index !== -1) {
-        return page * ORDERED_PAGE_SIZE + index;
+  /**
+   * Where each item sits in a flat order (page, then place on the page), as one id → index map for a
+   * whole range. Pages the range loads on the way are indexed when first asked about, not rescanned.
+   */
+  #orderedPositions() {
+    const positions = new Map<string, number>();
+    const indexed = new Set<TimelineMonth>();
+    const index = () => {
+      for (const [page, month] of this.months.entries()) {
+        if (indexed.has(month) || !month.isLoaded) {
+          continue;
+        }
+        indexed.add(month);
+        for (const [place, viewerAsset] of (month.timelineDays[0]?.viewerAssets ?? []).entries()) {
+          positions.set(viewerAsset.id, page * ORDERED_PAGE_SIZE + place);
+        }
       }
-    }
-    return Infinity;
-  };
+    };
+    index();
+    return (asset: TimelineAsset): number => {
+      if (!positions.has(asset.id)) {
+        index();
+      }
+      return positions.get(asset.id) ?? Infinity;
+    };
+  }
 
   /**
    * FL-34: an unlocked session reveals the owner's own sensitive marks and detections in the timeline
