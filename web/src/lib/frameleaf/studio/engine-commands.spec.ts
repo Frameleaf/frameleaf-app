@@ -100,6 +100,49 @@ describe('studio engine commands (FL-92)', () => {
     expect(staged).toEqual([]);
   });
 
+  it('never overwrites a newer editor draft with a result computed from an older graph', async () => {
+    let graph: unknown = { step: 0 };
+    let release: () => void = () => {};
+    const engine: StudioCommandEngine = {
+      apply: vi.fn(
+        () =>
+          new Promise<StudioCommandApplication>((resolve) => {
+            release = () => resolve({ status: 'applied', graph: { step: 'from-command' }, digest: 'd' });
+          }),
+      ),
+      dispose: vi.fn(),
+    };
+    const stage = vi.fn();
+    const bridge = createStudioBridge({
+      context: () => context(),
+      handlers: createStudioEngineCommandHandlers({
+        graph: () => graph,
+        revision: () => 4,
+        assets: () => [],
+        stage,
+        restore: vi.fn(),
+        engine: async () => engine,
+        history: createStudioGraphHistory(),
+      }),
+    });
+    const envelope = createStudioCommandEnvelope('track.add', { kind: 'video' }, 4, { idempotencyKey: 'k-race' });
+    const pending = bridge.submit([envelope]);
+    await vi.waitFor(() => expect(engine.apply).toHaveBeenCalled());
+    // The editor autosaved a newer draft meanwhile.
+    graph = { step: 'from-editor' };
+    release();
+
+    const [result] = await pending;
+    expect(result).toMatchObject({ status: 'rejected', reason: 'stale-revision', revision: 4 });
+    expect(stage).not.toHaveBeenCalled();
+    // Not settled: the same intent can be sent again against the new graph.
+    vi.mocked(engine.apply).mockResolvedValueOnce({ status: 'applied', graph: { step: 'both' }, digest: 'd' });
+    const [retried] = await bridge.submit([envelope]);
+    expect(engine.apply).toHaveBeenCalledTimes(2);
+    expect(retried).toMatchObject({ status: 'accepted' });
+    expect(stage).toHaveBeenCalledWith({ step: 'both' }, ['track.add'], [envelope]);
+  });
+
   it('rejects a stale revision before the engine is asked', async () => {
     const { bridge, engine } = setup();
     const [result] = await bridge.submit([createStudioCommandEnvelope('track.add', { kind: 'audio' }, 3)]);

@@ -56,7 +56,7 @@ export type StudioCommandHandler = (envelope: StudioCommandEnvelope) => Promise<
  */
 export class StudioCommandRejectedError extends Error {
   constructor(
-    readonly reason: 'invalid' | 'not-implemented' | 'failed',
+    readonly reason: 'invalid' | 'not-implemented' | 'failed' | 'stale-revision',
     message: string,
   ) {
     super(message);
@@ -154,6 +154,11 @@ export const createStudioBridge = ({ context, handlers = {} }: StudioBridgeOptio
       return result;
     } catch (error) {
       if (error instanceof StudioCommandRejectedError) {
+        // The graph moved while the command was applied: not settled, so the editor can reconcile
+        // and send the same intent again against the new state.
+        if (error.reason === 'stale-revision') {
+          return studioCommandRejection(envelope.idempotencyKey, 'stale-revision', context().revision);
+        }
         return reject(error.reason);
       }
       // Not settled: a transport failure leaves the outcome unknown, and the editor may
