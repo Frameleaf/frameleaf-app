@@ -44,6 +44,17 @@ vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => (
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
   getAdminConfigHistory: vi.fn().mockResolvedValue({ entries: [] }),
+  getMyPreferenceHistory: vi.fn().mockResolvedValue({
+    entries: [
+      {
+        id: 'pref-1',
+        createdAt: '2026-09-24T10:00:00.000Z',
+        deviceLabel: 'iOS · Mobile',
+        changes: [{ path: 'tags.enabled', before: 'false', after: 'true' }],
+        omittedChanges: 0,
+      },
+    ],
+  }),
   getAnalyticsScopes: vi.fn().mockResolvedValue({
     scopes: [
       { kind: 'host', value: 'all', label: '', libraryId: null, removed: false, userId: null },
@@ -307,12 +318,21 @@ describe('the Command Center (FL-71)', () => {
       'Access & security',
       'Notifications',
       'Your preferences',
+      'Change history',
     ]);
     // A server area falls back to the first area the account may open.
     expect(screen.getByRole('button', { name: 'Import & protection' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: /Database backups/ })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Account or library scope' })).toBeNull();
     expect(screen.getByText('Ada’s library')).toBeInTheDocument();
+  });
+
+  it('shows an account without administration its own preference history (FL-71 CC-10)', async () => {
+    open('/user-settings?area=history', false);
+    render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
+
+    expect(await screen.findByText('1 preference changed')).toBeInTheDocument();
+    expect(screen.getByText('Ada · iOS · Mobile')).toBeInTheDocument();
   });
 
   it('searches areas, sections and utility tools, and clears an empty search', async () => {
