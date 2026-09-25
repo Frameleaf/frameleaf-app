@@ -869,7 +869,12 @@ export type FrameleafInstanceIdentity = {
   keyFile: string;
   createdAt: string;
   /** FL-155: the key replaced by the last rotation; the cloud keeps accepting it until `until`. */
-  retiring?: { kid: string; keyFile: string; until: string };
+  retiring?: { kid: string; keyFile: string; until: string; rotationId: string };
+  /**
+   * FL-155: a new key whose registration with the cloud may or may not have landed (the answer was
+   * lost). Kept for at most a day; tried when the cloud stops accepting the current key.
+   */
+  candidate?: { kid: string; keyFile: string; since: string };
 };
 
 /** FL-159: the cached discovery document (`/.well-known/frameleaf-services`). */

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { type KeyObject, createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, link, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { access, chmod, copyFile, link, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { v7 as uuidv7 } from 'uuid';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
@@ -17,6 +17,14 @@ export const RETIRING_KEY_FILE = 'instance-key.retiring.pem';
 export const PROVEN_KEY_FILE = 'instance-key.proven.pem';
 /** How long a retiring key found while recovering an interrupted rotation is kept. */
 const RECOVERED_RETIRE_HOURS = 24;
+/** A new key whose registration answer was lost; see `FrameleafInstanceIdentity.candidate`. */
+export const CANDIDATE_KEY_FILE = 'instance-key.candidate.pem';
+/** How long a candidate key is kept (the cloud's retire window). */
+export const CANDIDATE_HOURS = 24;
+/** The rotation that retired the current retiring key: `{rotationId, kid, until}`. */
+const RETIRING_META_FILE = 'instance-key.retiring.json';
+/** `link()` failures where the file system cannot hard-link (SMB/CIFS, FUSE, another device). */
+const NO_HARD_LINK = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV']);
 
 const exists = (path: string) =>
   access(path)
@@ -59,7 +67,7 @@ export class InstanceIdentityRepository {
     now = Date.now(),
   ): Promise<FrameleafInstanceIdentity> {
     const keyFile = join(dir, INSTANCE_KEY_FILE);
-    await this.recoverRotation(dir);
+    await this.recoverRotation(dir, now);
     let privateKey: KeyObject;
     let created = false;
     try {
@@ -92,7 +100,8 @@ export class InstanceIdentityRepository {
     }
     this.cached = { keyFile, privateKey };
     const publicJwk = publicJwkOf(privateKey);
-    const retiring = created ? undefined : await this.retiringOf(dir, existing?.retiring, now);
+    const retiring = created ? undefined : await this.retiringOf(dir, now);
+    const candidate = created ? undefined : await this.candidateOf(dir, now);
     return {
       instanceId: !created && existing ? existing.instanceId : uuidv7(),
       kid: ed25519Thumbprint(publicJwk),
@@ -100,46 +109,95 @@ export class InstanceIdentityRepository {
       keyFile,
       createdAt: !created && existing ? existing.createdAt : new Date().toISOString(),
       ...(retiring && { retiring }),
+      ...(candidate && { candidate }),
     };
   }
 
   /**
-   * Finish or undo a rotation a crash interrupted (FL-155). A key the cloud accepted is renamed to
+   * Finish a rotation a crash interrupted (FL-155). A key the cloud accepted is renamed to
    * `instance-key.proven.pem` before anything else changes, so on the next load a proven key always
-   * replaces the current one (keeping the current one as retiring), and a key that was never proven
-   * is discarded. The key file itself is only ever replaced by an atomic rename.
+   * replaces the current one (keeping the current one as retiring). A new key whose registration was
+   * still in flight (`instance-key.next.pem`) may have reached the cloud, so it is kept as the
+   * candidate rather than deleted. The key file itself is only ever replaced by an atomic rename.
    */
-  private async recoverRotation(dir: string) {
+  private async recoverRotation(dir: string, now: number) {
     if (await exists(join(dir, PROVEN_KEY_FILE))) {
-      await this.finishRotation(dir);
+      await this.finishRotation(dir, { rotationId: randomUUID(), until: this.hoursFrom(now, RECOVERED_RETIRE_HOURS) });
     }
-    await rm(join(dir, NEXT_KEY_FILE), { force: true });
+    await rename(join(dir, NEXT_KEY_FILE), join(dir, CANDIDATE_KEY_FILE)).catch(ignore(['ENOENT']));
   }
 
-  /** Keep the current key as retiring (a hard link), then atomically put the proven key in place. */
-  private async finishRotation(dir: string) {
+  /**
+   * Keep the current key as retiring, then atomically put the proven key in place. The retiring
+   * key's rotation id, kid and expiry are written first (a sidecar, replaced atomically), so metadata
+   * can always be rebuilt for exactly this rotation. The retiring copy is a hard link, or a 0600 copy
+   * where the file system cannot link (SMB/CIFS, FUSE, another device).
+   */
+  private async finishRotation(dir: string, rotation: { rotationId: string; until: string }) {
     const keyFile = join(dir, INSTANCE_KEY_FILE);
     const retiringFile = join(dir, RETIRING_KEY_FILE);
+    const current = createPrivateKey(await readFile(keyFile));
+    const sidecar = join(dir, RETIRING_META_FILE);
+    await writeFile(`${sidecar}.tmp`, JSON.stringify({ ...rotation, kid: ed25519Thumbprint(publicJwkOf(current)) }), {
+      mode: 0o600,
+    });
+    await rename(`${sidecar}.tmp`, sidecar);
     await rm(retiringFile, { force: true });
-    await link(keyFile, retiringFile).catch(ignore(['EEXIST', 'ENOENT']));
+    await link(keyFile, retiringFile).catch(async (error: NodeJS.ErrnoException) => {
+      if (NO_HARD_LINK.has(error.code ?? '')) {
+        await copyFile(keyFile, retiringFile);
+        await chmod(retiringFile, 0o600);
+        return;
+      }
+      ignore(['EEXIST', 'ENOENT'])(error);
+    });
     await rename(join(dir, PROVEN_KEY_FILE), keyFile).catch(ignore(['ENOENT']));
   }
 
-  /** The retiring key's metadata: kept when known, rebuilt when a recovered rotation left one. */
-  private async retiringOf(dir: string, known: FrameleafInstanceIdentity['retiring'] | undefined, now: number) {
+  /**
+   * The retiring key's metadata, always rebuilt from disk: its kid from the key file, its rotation
+   * id and expiry from the sidecar when that describes this very key. Stale metadata of an older
+   * rotation can therefore never survive a crash between the swap and the metadata save.
+   */
+  private async retiringOf(dir: string, now: number) {
     const retiringFile = join(dir, RETIRING_KEY_FILE);
     if (!(await exists(retiringFile))) {
       return;
     }
-    if (known?.keyFile === retiringFile) {
-      return known;
+    const kid = ed25519Thumbprint(publicJwkOf(createPrivateKey(await readFile(retiringFile))));
+    const sidecarFile = join(dir, RETIRING_META_FILE);
+    type Sidecar = { rotationId?: unknown; kid?: unknown; until?: unknown };
+    const sidecar = await readFile(sidecarFile, 'utf8')
+      .then((text) => JSON.parse(text) as Sidecar)
+      .catch((): Sidecar | null => null);
+    if (sidecar?.kid === kid && typeof sidecar.rotationId === 'string' && typeof sidecar.until === 'string') {
+      return { kid, keyFile: retiringFile, until: sidecar.until, rotationId: sidecar.rotationId };
     }
-    const retired = createPrivateKey(await readFile(retiringFile));
-    return {
-      kid: ed25519Thumbprint(publicJwkOf(retired)),
-      keyFile: retiringFile,
-      until: new Date(now + RECOVERED_RETIRE_HOURS * 60 * 60 * 1000).toISOString(),
-    };
+    const rebuilt = { rotationId: randomUUID(), kid, until: this.hoursFrom(now, RECOVERED_RETIRE_HOURS) };
+    await writeFile(`${sidecarFile}.tmp`, JSON.stringify(rebuilt), { mode: 0o600 });
+    await rename(`${sidecarFile}.tmp`, sidecarFile);
+    return { kid, keyFile: retiringFile, until: rebuilt.until, rotationId: rebuilt.rotationId };
+  }
+
+  /** The candidate key, while its question is open (at most `CANDIDATE_HOURS`); older ones go. */
+  private async candidateOf(dir: string, now: number) {
+    const keyFile = join(dir, CANDIDATE_KEY_FILE);
+    let since: Date;
+    try {
+      since = (await stat(keyFile)).mtime;
+    } catch {
+      return;
+    }
+    if (now - since.getTime() > CANDIDATE_HOURS * 60 * 60 * 1000) {
+      await rm(keyFile, { force: true });
+      return;
+    }
+    const kid = ed25519Thumbprint(publicJwkOf(createPrivateKey(await readFile(keyFile))));
+    return { kid, keyFile, since: since.toISOString() };
+  }
+
+  private hoursFrom(now: number, hours: number) {
+    return new Date(now + hours * 60 * 60 * 1000).toISOString();
   }
 
   /**
@@ -179,13 +237,17 @@ export class InstanceIdentityRepository {
     ) => Promise<void>,
     retireHours: number,
     now = Date.now(),
+    /**
+     * Whether a failure of `prove` is a definite refusal. Otherwise (a timeout or a lost answer) the
+     * cloud may already hold the new key, so it is kept as the candidate instead of deleted.
+     */
+    isRefusal: (error: unknown) => boolean = () => true,
   ): Promise<FrameleafInstanceIdentity> {
     if (!this.cached || this.cached.keyFile !== identity.keyFile) {
       throw new Error('The Frameleaf identity key is not loaded');
     }
     const dir = dirname(identity.keyFile);
     const nextFile = join(dir, NEXT_KEY_FILE);
-    const retiringFile = join(dir, RETIRING_KEY_FILE);
     await rm(nextFile, { force: true });
     const pair = generateKeyPairSync('ed25519');
     const handle = await open(nextFile, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
@@ -199,22 +261,64 @@ export class InstanceIdentityRepository {
     try {
       await prove({ ...publicJwk, kid }, (payload) => this.signJws(identity.kid, payload));
     } catch (error) {
-      await rm(nextFile, { force: true });
+      await (isRefusal(error) ? rm(nextFile, { force: true }) : rename(nextFile, join(dir, CANDIDATE_KEY_FILE)));
       throw error;
     }
     // accepted by the cloud: from here a crash finishes the rotation on the next load
     await rename(nextFile, join(dir, PROVEN_KEY_FILE));
-    await this.finishRotation(dir);
-    this.cached = { keyFile: identity.keyFile, privateKey: pair.privateKey };
+    return this.swapIn(identity, pair.privateKey, retireHours, now);
+  }
+
+  /**
+   * The cloud accepted the candidate key after all (FL-155): make it the current key, exactly as a
+   * rotation that got its answer would have.
+   */
+  async promoteCandidate(identity: FrameleafInstanceIdentity, retireHours: number, now = Date.now()) {
+    if (!identity.candidate) {
+      throw new Error('There is no candidate key');
+    }
+    const dir = dirname(identity.keyFile);
+    const privateKey = createPrivateKey(await readFile(identity.candidate.keyFile));
+    await rename(identity.candidate.keyFile, join(dir, PROVEN_KEY_FILE));
+    return this.swapIn(identity, privateKey, retireHours, now);
+  }
+
+  /** The cloud does not hold the candidate key: forget it. */
+  async discardCandidate(identity: FrameleafInstanceIdentity): Promise<FrameleafInstanceIdentity> {
+    if (identity.candidate) {
+      await rm(identity.candidate.keyFile, { force: true });
+    }
+    const { candidate: _candidate, ...rest } = identity;
+    return rest;
+  }
+
+  /** A signer that uses the candidate key, to ask the cloud whether it holds it. */
+  async candidateSigner(identity: FrameleafInstanceIdentity) {
+    const candidate = identity.candidate;
+    if (!candidate) {
+      throw new Error('There is no candidate key');
+    }
+    const privateKey = createPrivateKey(await readFile(candidate.keyFile));
+    return (payload: Record<string, unknown>) => this.signWith(privateKey, candidate.kid, payload);
+  }
+
+  private async swapIn(
+    identity: FrameleafInstanceIdentity,
+    privateKey: KeyObject,
+    retireHours: number,
+    now: number,
+  ): Promise<FrameleafInstanceIdentity> {
+    const dir = dirname(identity.keyFile);
+    const rotation = { rotationId: randomUUID(), until: this.hoursFrom(now, retireHours) };
+    await this.finishRotation(dir, rotation);
+    this.cached = { keyFile: identity.keyFile, privateKey };
+    const publicJwk = publicJwkOf(privateKey);
+    const { candidate: _candidate, ...rest } = identity;
     return {
-      ...identity,
-      kid,
+      ...rest,
+      kid: ed25519Thumbprint(publicJwk),
       publicJwk,
-      retiring: {
-        kid: identity.kid,
-        keyFile: retiringFile,
-        until: new Date(now + retireHours * 60 * 60 * 1000).toISOString(),
-      },
+      retiring: { kid: identity.kid, keyFile: join(dir, RETIRING_KEY_FILE), ...rotation },
     };
   }
 
@@ -232,9 +336,13 @@ export class InstanceIdentityRepository {
     if (!this.cached) {
       throw new Error('The Frameleaf identity key is not loaded');
     }
+    return this.signWith(this.cached.privateKey, kid, payload, type);
+  }
+
+  private signWith(privateKey: KeyObject, kid: string, payload: Record<string, unknown>, type = 'JWT') {
     const header = base64url(JSON.stringify({ alg: 'EdDSA', typ: type, kid }));
     const body = base64url(JSON.stringify(payload));
-    const signature = sign(null, Buffer.from(`${header}.${body}`), this.cached.privateKey);
+    const signature = sign(null, Buffer.from(`${header}.${body}`), privateKey);
     return `${header}.${body}.${base64url(signature)}`;
   }
 }
