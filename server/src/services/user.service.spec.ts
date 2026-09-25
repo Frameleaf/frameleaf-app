@@ -394,6 +394,7 @@ describe(UserService.name, () => {
   describe('handleUserDelete', () => {
     beforeEach(() => {
       mocks.albumUser.forgetRecipient.mockResolvedValue();
+      mocks.user.deletePreferenceHistory.mockResolvedValue();
     });
 
     it('should skip users not ready for deletion', async () => {
@@ -442,6 +443,8 @@ describe(UserService.name, () => {
       expect(mocks.album.deleteAll).toHaveBeenCalledWith(user.id);
       // FL-55: the account's recipient groups go, and it leaves everyone else's.
       expect(mocks.albumUser.forgetRecipient).toHaveBeenCalledWith(user.id);
+      // FL-71 (CC-10): and its own preference history.
+      expect(mocks.user.deletePreferenceHistory).toHaveBeenCalledWith(user.id);
       expect(mocks.asset.deleteAll).toHaveBeenCalledWith(user.id);
       expect(mocks.user.delete).toHaveBeenCalledWith(user, true);
       expect(mocks.asset.deleteAll.mock.invocationCallOrder[0]).toBeLessThan(
