@@ -117,7 +117,7 @@ export interface StudioEngineCommandOptions {
   history: StudioGraphHistory;
 }
 
-const rejectedBy = (reason: 'invalid' | 'not-implemented' | 'failed', detail: string) =>
+const rejectedBy = (reason: 'invalid' | 'not-implemented' | 'failed' | 'stale-revision', detail: string) =>
   new StudioCommandRejectedError(reason, detail);
 
 export const createStudioEngineCommandHandlers = (
@@ -135,6 +135,11 @@ export const createStudioEngineCommandHandlers = (
     const outcome = await engine.apply(graph, [envelope], options.assets());
     if (outcome.status === 'rejected') {
       throw rejectedBy(outcome.reason, outcome.detail);
+    }
+    // The editor may have saved a newer draft while the engine worked; this result was computed
+    // from the older graph and must not overwrite it.
+    if (options.graph() !== graph) {
+      throw rejectedBy('stale-revision', 'The project changed while the command was applied');
     }
     options.history.record(graph, outcome.graph);
     options.stage(outcome.graph, [envelope.id], [envelope]);
