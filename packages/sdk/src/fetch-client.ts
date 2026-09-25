@@ -2961,7 +2961,7 @@ export type AssetEditActionItemResponseDto = {
 };
 export type AssetEditsOriginalVideoDto = {
     /** FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged */
-    colorPolicy?: ColorPolicy;
+    colorPolicy?: AssetEditsColorPolicy;
     /** Why, in plain words, for the person editing */
     colorReason?: string;
     /** Duration of the original in milliseconds */
@@ -19338,7 +19338,7 @@ export enum VideoEditVersionStatus {
 export enum VideoEditExportProfile {
     Master = "master"
 }
-export enum ColorPolicy {
+export enum AssetEditsColorPolicy {
     Preserve = "preserve",
     ToneMap = "tone-map",
     Unsupported = "unsupported"
