@@ -66781,6 +66781,16 @@
                 "state": "Added"
               }
             ]
+          },
+          "prereleaseName": {
+            "description": "Full pre-release identifier (for example rc.1 or beta.2), present only for a pre-release (FL-80)",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
           }
         },
         "required": [
