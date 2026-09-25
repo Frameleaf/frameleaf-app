@@ -403,6 +403,39 @@ export class StudioProjectRepository {
     return Number(result.numDeletedRows);
   }
 
+  /**
+   * FL-90: the projects whose current revision names any of these assets. The graph is opaque
+   * jsonb, so the id is matched as text; only well-formed UUIDs are searched, so a match is the
+   * id itself and never a pattern.
+   */
+  async getIdsReferencingAssets(assetIds: readonly string[]): Promise<string[]> {
+    const patterns = [...new Set(assetIds)]
+      .filter((id) => /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id))
+      .map((id) => `%${id.toLowerCase()}%`);
+    if (patterns.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom('studio_project')
+      .innerJoin('studio_project_revision', (join) =>
+        join
+          .onRef('studio_project_revision.projectId', '=', 'studio_project.id')
+          .onRef('studio_project_revision.revision', '=', 'studio_project.currentRevision'),
+      )
+      .select('studio_project.id')
+      .where(
+        sql<boolean>`lower("studio_project_revision"."envelope"::text) like any(array[${sql.join(patterns)}]::text[])`,
+      )
+      .execute();
+    return rows.map((row) => row.id);
+  }
+
+  /** FL-90: the projects placed in an album or shared space. */
+  async getIdsInSpace(spaceId: string): Promise<string[]> {
+    const rows = await this.db.selectFrom('studio_project').select('id').where('spaceId', '=', spaceId).execute();
+    return rows.map((row) => row.id);
+  }
+
   /** The retention sweep: trashed projects whose deadline has passed. Returns the ids removed. */
   async deletePurgeable(now: Date, limit = 500): Promise<string[]> {
     const rows = await this.db

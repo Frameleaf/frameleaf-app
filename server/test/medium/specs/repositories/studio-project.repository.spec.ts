@@ -263,6 +263,35 @@ describe(StudioProjectRepository.name, () => {
     });
   });
 
+  describe('revocation lookups (FL-90)', () => {
+    it('finds the projects whose current revision names an asset, and the projects in a space', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const assetId = '0195e2a0-0000-7000-8000-00000000a001';
+      const named = await leasedProject(sut, user.id);
+      await sut.appendRevision(
+        append(named.id, user.id, {
+          envelope: {
+            schemaVersion: 1,
+            engine: 'freecut',
+            engineRevision: 'r',
+            graph: { tracks: [{ clips: [{ assetId: assetId.toUpperCase() }] }] },
+          },
+        }),
+      );
+      const other = await leasedProject(sut, user.id, 'tab-b');
+      await sut.appendRevision(append(other.id, user.id, { leaseClientId: 'tab-b' }));
+
+      expect(await sut.getIdsReferencingAssets([assetId])).toEqual([named.id]);
+      // Only well-formed ids are searched, so a wildcard can never match every project.
+      expect(await sut.getIdsReferencingAssets(['%', '_'])).toEqual([]);
+
+      const { album } = await ctx.newAlbum({ ownerId: user.id, kind: AlbumKind.Space });
+      await sut.update(other.id, { spaceId: album.id });
+      expect(await sut.getIdsInSpace(album.id)).toEqual([other.id]);
+    });
+  });
+
   describe('comments', () => {
     it('stores exact rational time and refuses a duplicate request key', async () => {
       const { ctx, sut } = setup();
