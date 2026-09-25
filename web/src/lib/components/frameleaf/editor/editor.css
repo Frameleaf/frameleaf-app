@@ -1598,3 +1598,332 @@
   color: var(--fl-danger);
   font-size: var(--fl-font-small);
 }
+
+/* Video (VE-1 … VE-12): transport, filmstrip, text overlays and the Speed, Text, Audio and Enhance
+   panels, from design/frameleaf/template/src/editor.css. Selected radios use aria-checked, which is
+   what the markup sets (the prototype's CSS names aria-pressed there). */
+.ed-transport {
+  display: grid;
+  gap: 10px;
+  padding: 10px 18px 12px;
+  background: var(--fl-viewer-panel);
+  border-top: 1px solid var(--fl-viewer-border);
+}
+.ed-transport-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ed-timecode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--fl-font-small);
+  color: #cfd3d9;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ed-scrub {
+  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.ed-scrub::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #ffffff22;
+}
+.ed-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 1px solid #0006;
+  background: #f1f1f2;
+}
+.ed-scrub::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #ffffff22;
+}
+.ed-scrub::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #0006;
+  background: #f1f1f2;
+}
+.ed-rate {
+  min-width: 42px;
+  text-align: center;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #ffffff10;
+  color: #cfd3d9;
+  font-size: var(--fl-font-micro);
+  font-variant-numeric: tabular-nums;
+}
+.ed-strip {
+  position: relative;
+  height: 56px;
+  border-radius: var(--fl-radius-control);
+  background: #000;
+  touch-action: none;
+  cursor: pointer;
+}
+.ed-frames {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  border-radius: var(--fl-radius-control);
+}
+.ed-frames img {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.95;
+}
+.ed-frames.loading img {
+  filter: grayscale(0.4) brightness(0.7);
+}
+.ed-dim {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #0b0c0ea6;
+  pointer-events: none;
+  border-radius: var(--fl-radius-control);
+}
+.ed-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 2px solid #f1f1f2;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.ed-segment {
+  position: absolute;
+  bottom: 0;
+  height: 7px;
+  background: var(--fl-blue);
+  border-radius: 2px 2px 0 0;
+  pointer-events: none;
+}
+.ed-segment span {
+  position: absolute;
+  left: 4px;
+  bottom: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #101114db;
+  color: #dfe3e8;
+  font-size: var(--fl-font-micro);
+}
+.ed-trim-handle {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 16px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: 4px;
+  background: #f1f1f2;
+  cursor: ew-resize;
+  touch-action: none;
+  padding: 0;
+  z-index: 2;
+}
+.ed-trim-handle::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 4px;
+  height: 16px;
+  margin-top: -8px;
+  border-left: 1px solid #0007;
+  border-right: 1px solid #0007;
+}
+.ed-playhead {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #0008;
+  pointer-events: none;
+  z-index: 3;
+}
+.ed-playhead::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -5px;
+  border: 6px solid transparent;
+  border-top: 7px solid #fff;
+  border-bottom: 0;
+}
+.ed-ruler {
+  display: flex;
+  justify-content: space-between;
+  color: var(--fl-viewer-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--fl-font-micro);
+}
+.ed-text-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  padding: 4%;
+  pointer-events: none;
+}
+.ed-overlay-text {
+  display: flex;
+  min-width: 0;
+  color: #fff;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.ed-overlay-text.with-shadow span {
+  text-shadow:
+    0 2px 6px #000c,
+    0 0 1px #0008;
+}
+.ed-ranges-head {
+  margin-top: 18px;
+}
+.ed-ranges-head h3 {
+  margin: 0;
+}
+.ed-grow {
+  flex: 1;
+}
+.ed-toggle {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: start;
+  padding: 12px 0;
+  border-top: 1px solid var(--fl-viewer-border);
+}
+.ed-toggle strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 550;
+}
+.ed-toggle p {
+  grid-column: 1;
+  margin: 0;
+}
+.ed-switch {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--ed-ink) 16%, transparent);
+  background: color-mix(in srgb, var(--ed-ink) 10%, transparent);
+  padding: 0;
+  transition: background var(--fl-motion) var(--fl-ease);
+}
+.ed-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f1f1f2;
+  box-shadow: 0 1px 3px #0006;
+  transition: transform var(--fl-duration) var(--fl-spring);
+}
+.ed-switch[aria-checked='true'] {
+  background: var(--fl-accent);
+  border-color: var(--fl-accent);
+}
+.ed-switch[aria-checked='true']::after {
+  transform: translateX(18px);
+}
+.ed-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--fl-viewer-border);
+  border-radius: var(--fl-radius-card);
+  background: color-mix(in srgb, var(--ed-ink) 2%, transparent);
+}
+.ed-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fl-font-small);
+  color: var(--fl-viewer-text);
+}
+.ed-nine {
+  display: grid;
+  grid-template-columns: repeat(3, 24px);
+  gap: 3px;
+}
+.ed-nine button {
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--ed-ink) 13%, transparent);
+  border-radius: 3px;
+  background: transparent;
+  padding: 0;
+}
+.ed-nine button[aria-checked='true'] {
+  background: var(--ed-ink);
+  border-color: var(--ed-ink);
+}
+.ed-swatches {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ed-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--ed-ink) 27%, transparent);
+  padding: 0;
+}
+.ed-swatch[aria-checked='true'] {
+  outline: 2px solid var(--ed-ink);
+  outline-offset: 1px;
+}
+.ed-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  color: var(--fl-viewer-text);
+  font-size: var(--fl-font-small);
+}
+@media (max-width: 700px) {
+  .ed-transport {
+    padding: 8px 12px 10px;
+  }
+}
+/* Reduce Motion: the switch snaps instead of sliding (tokens.json motion). */
+@media (prefers-reduced-motion: reduce) {
+  .ed-switch,
+  .ed-switch::after {
+    transition: none;
+  }
+}

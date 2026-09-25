@@ -67,3 +67,89 @@ test.describe('Quick editor', () => {
     await expect(reopened.getByRole('menuitemradio', { name: /Version 1/ })).toBeVisible();
   });
 });
+
+/**
+ * FL-113 VE-1 … VE-12: the video half of the same editor. The clip's original metadata and the
+ * saved recipe are answered by the test so the spec does not depend on a decodable fixture; the
+ * page, the editor and the request it sends are real.
+ */
+test.describe('Video quick editor', () => {
+  let admin: LoginResponseDto;
+  let clip: AssetMediaResponseDto;
+
+  test.beforeAll(async () => {
+    utils.initSdk();
+    await utils.resetDatabase();
+    admin = await utils.adminSetup();
+    clip = await utils.createAsset(admin.accessToken, { assetData: { filename: 'clip.mp4' } });
+  });
+
+  test.beforeEach(async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.route(`**/api/assets/${clip.id}/edits`, async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          json: { assetId: clip.id, edits: [], originalVideo: { width: 1920, height: 1080, durationMs: 24_000 } },
+        });
+        return;
+      }
+      await route.fulfill({ json: { assetId: clip.id, edits: route.request().postDataJSON().edits } });
+    });
+    await page.goto(`/photos/${clip.id}`);
+    await page.keyboard.press('e');
+    await expect(page.getByRole('dialog', { name: /Edit/ })).toBeVisible();
+  });
+
+  test('opens on Trim with the transport and filmstrip, and the prototype tools', async ({ page }) => {
+    const editor = page.getByRole('dialog', { name: /Edit/ });
+    await expect(editor.getByRole('tab', { name: 'Trim' })).toHaveAttribute('aria-selected', 'true');
+    for (const tool of ['Speed', 'Adjust', 'Crop', 'Audio', 'Text', 'Enhance', 'Presets']) {
+      await expect(editor.getByRole('tab', { name: tool })).toBeVisible();
+    }
+    await expect(editor.getByRole('slider', { name: 'Trim in' })).toBeVisible();
+    await expect(editor.getByRole('slider', { name: 'Playhead' })).toBeVisible();
+    await expect(editor.getByRole('button', { name: 'Save version' })).toBeEnabled();
+  });
+
+  test('saves trim, speed and a title as one version', async ({ page }) => {
+    const editor = page.getByRole('dialog', { name: /Edit/ });
+    await editor.getByLabel('In (seconds)').fill('2');
+    await editor.getByLabel('In (seconds)').blur();
+    await editor.getByRole('tab', { name: 'Speed' }).click();
+    await editor.getByRole('radio', { name: '2×' }).first().click();
+    await editor.getByRole('tab', { name: 'Text' }).click();
+    await editor.getByRole('button', { name: 'Add text' }).click();
+    await editor.getByRole('radio', { name: 'Top left' }).click();
+
+    const saved = page.waitForRequest(
+      (request) => request.method() === 'PUT' && request.url().endsWith(`/api/assets/${clip.id}/edits`),
+    );
+    await editor.getByRole('button', { name: 'Save version' }).click();
+    const request = await saved;
+    const { edits } = request.postDataJSON();
+    expect(edits).toEqual(
+      expect.arrayContaining([
+        { action: 'trim', parameters: { startMs: 2000, endMs: 24_000 } },
+        { action: 'speed', parameters: { rate: 2 } },
+        expect.objectContaining({
+          action: 'textOverlay',
+          parameters: expect.objectContaining({ text: 'Title', position: 'top-left', shadow: true }),
+        }),
+      ]),
+    );
+    await expect(editor).toBeHidden();
+  });
+
+  test('undoes with the keyboard and marks the in point with I', async ({ page }) => {
+    const editor = page.getByRole('dialog', { name: /Edit/ });
+    await editor.getByRole('tab', { name: 'Audio' }).click();
+    const mute = editor.getByRole('switch', { name: 'Mute clip' });
+    await mute.click();
+    await expect(mute).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(mute).toHaveAttribute('aria-checked', 'false');
+    await editor.getByRole('tab', { name: 'Trim' }).click();
+    await page.keyboard.press('i');
+    await expect(editor.getByRole('status').last()).toHaveText(/In point 00:00\.0/);
+  });
+});
