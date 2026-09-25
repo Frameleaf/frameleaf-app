@@ -1339,7 +1339,11 @@
                 {values}
                 preset={recipe.preset}
                 onSelect={(preset) =>
-                  change({ preset, presetStrength: recipe.preset === preset ? recipe.presetStrength : 100 })}
+                  // A photo is offered photo looks only (`presetsFor('photo')`).
+                  change({
+                    preset: preset as AssetDevelopPreset,
+                    presetStrength: recipe.preset === preset ? recipe.presetStrength : 100,
+                  })}
               />
               <EditorSlider
                 id="presetStrength"

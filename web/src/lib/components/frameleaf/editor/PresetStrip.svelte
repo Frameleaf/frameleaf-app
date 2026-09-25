@@ -4,8 +4,7 @@
    * approximation over the asset's thumbnail; the chosen preset is rendered for real by the
    * server preview on the stage. A radio group, so arrow keys move between looks.
    */
-  import { PRESETS, cssFilterFor, type DevelopValues } from '$lib/frameleaf/develop';
-  import type { AssetDevelopPreset } from '@immich/sdk';
+  import { cssFilterFor, presetsFor, type DevelopLookId, type DevelopValues } from '$lib/frameleaf/develop';
   import { t } from 'svelte-i18n';
 
   let {
@@ -13,16 +12,19 @@
     values,
     preset,
     onSelect,
+    kind = 'photo',
   }: {
     thumbnailUrl: string;
     values: DevelopValues;
-    preset: AssetDevelopPreset;
-    onSelect: (preset: AssetDevelopPreset) => void;
+    preset: DevelopLookId;
+    onSelect: (preset: DevelopLookId) => void;
+    /** Clips also offer the video-only looks (`develop.mjs` presetsFor). */
+    kind?: 'photo' | 'video';
   } = $props();
 </script>
 
 <div class="ed-presets" role="radiogroup" aria-label={$t('frameleaf_editor_presets_label')}>
-  {#each PRESETS as item (item.id)}
+  {#each presetsFor(kind) as item (item.id)}
     {@const look = cssFilterFor({ ...values, preset: item.id, presetStrength: 100 })}
     <button
       type="button"
