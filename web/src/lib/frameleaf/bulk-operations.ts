@@ -916,9 +916,13 @@ export const runBulkAction = async (
       );
     }
 
-    /* The share sheet runs in the selection bar (FL-35 / FL-54); nothing reaches the server from here. */
+    /*
+     * The share sheet runs in the selection bar (FL-35 / FL-54, `sendCopiesWithFeedback`); nothing
+     * reaches the server from here. Reaching this branch is a wiring mistake, so it fails loudly
+     * instead of reporting an empty success.
+     */
     case 'send-copy': {
-      return finish({ outcomes: [], cancelled: false });
+      throw new Error('send-copy is not a bulk operation: send copies through the selection bar');
     }
 
     /*
