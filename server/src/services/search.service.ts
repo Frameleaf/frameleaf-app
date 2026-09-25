@@ -79,6 +79,21 @@ export class SearchService extends BaseService {
         ? await this.searchSmart(auth, { ...plan.filters, query: plan.normalizedQuery, language: dto.language })
         : await this.searchMetadata(auth, plan.filters);
 
+    // FL-31: "Most answers shown" caps the whole answer, not each page: the page that reaches the
+    // limit is trimmed and ends the answer, and nothing past it is ever returned.
+    const maxResults = localFeatures.askSearch.maxResults;
+    const offset = ((plan.filters.page ?? 1) - 1) * (plan.filters.size ?? maxResults);
+    const items = results.assets.items.slice(0, Math.max(0, maxResults - offset));
+    const reachedCap = offset + items.length >= maxResults;
+    results.assets = {
+      ...results.assets,
+      items,
+      count: items.length,
+      total: Math.min(results.assets.total, maxResults),
+      nextPage: reachedCap ? null : results.assets.nextPage,
+      nextCursor: reachedCap ? null : results.assets.nextCursor,
+    };
+
     return {
       query: dto.query,
       explanation: this.describeAskSearchPlan(plan),

@@ -11,6 +11,8 @@ import {
   TrashReviewDto,
   TrashReviewResponseDto,
   TrashSummaryResponseDto,
+  UtilityActivityQueryDto,
+  UtilityActivityResponseDto,
 } from 'src/dtos/trash.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -43,6 +45,21 @@ export class TrashController {
   })
   getTrashItems(@Auth() auth: AuthDto, @Query() dto: TrashItemsDto): Promise<TrashItemsResponseDto> {
     return this.service.getItems(auth, dto);
+  }
+
+  @Get('activity')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Get utility activity',
+    description:
+      'Your own history of moves to the trash and their undos made from a utility such as Large files, newest first, kept for a year. An item is named only while this session may still see it.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getUtilityActivity(
+    @Auth() auth: AuthDto,
+    @Query() dto: UtilityActivityQueryDto,
+  ): Promise<UtilityActivityResponseDto> {
+    return this.service.getUtilityActivity(auth, dto);
   }
 
   @Post('review')

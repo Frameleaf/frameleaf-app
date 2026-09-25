@@ -22,6 +22,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
+import { FRAMELEAF_RELEASES_API } from 'src/utils/frameleaf-release.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
 
@@ -317,7 +318,8 @@ const getEnv = (): EnvData => {
     licensePublicKey: isProd ? productionKeys : stagingKeys,
 
     versionCheck: {
-      url: isProd ? 'https://version.immich.cloud/version' : 'https://version.dev.immich.cloud/version',
+      // FL-80: Frameleaf's own release feed only; no Immich version service, in any environment.
+      url: FRAMELEAF_RELEASES_API,
     },
 
     network: {

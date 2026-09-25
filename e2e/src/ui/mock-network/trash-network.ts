@@ -29,6 +29,10 @@ export const setupTrashMockApiRoutes = async (
   await context.route('**/api/trash/summary', async (route) => {
     await route.fulfill({ json: { bytes: 0, count: trashed().length, offline: 0, pendingDeletion: 0 } });
   });
+  // FL-47: the Large files activity history; these specs start with none.
+  await context.route('**/api/trash/activity*', async (route) => {
+    await route.fulfill({ json: { entries: [] } });
+  });
   await context.route('**/api/trash/review', async (route, request) => {
     const { action, ids } = request.postDataJSON() as { action: string; ids?: string[] };
     const chosen = ids ?? trashed().map(({ id }) => id);
