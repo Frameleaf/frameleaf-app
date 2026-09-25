@@ -74,6 +74,7 @@
   import {
     AssetMediaSize,
     AssetTypeEnum,
+    AssetVisibility,
     MemoryExportStatus,
     cancelMemoryExport,
     createMemoryExport,
@@ -177,12 +178,18 @@
       : '',
   );
   /**
-   * The title card opens a memory once, before its first item (MemoryPlayer.jsx index -1), and
-   * holds the progress until it has shown for MEMORY_TITLE_MS or Play is pressed.
+   * The title card opens every memory before its first item (MemoryPlayer.jsx:124-160, index -1):
+   * it shows whenever the memory changes to its first item, Previous from the first item returns
+   * to it, and it stays for MEMORY_TITLE_MS of playing time (the timer holds while paused) or
+   * until Play or Next.
    */
   let titleCardFor = $state<string | undefined>();
-  const titleCardsShown = new Set<string>();
+  let titleCardMemoryId: string | undefined;
   let titleCardTimer: ReturnType<typeof setTimeout> | undefined;
+  let titleCardRemaining = MEMORY_TITLE_MS;
+  let titleCardStartedAt = 0;
+  /** MemoryPlayer.jsx:339-341: the cover behind the title card; never a Locked item. */
+  const titleCover = $derived(current?.memory.assets.find((asset) => asset.visibility !== AssetVisibility.Locked));
   const currentMemoryAssetFull = $derived.by(async () =>
     currentAssetId ? await getAssetInfo({ ...authManager.params, id: currentAssetId }) : undefined,
   );
@@ -255,6 +262,17 @@
   const handleSelectAll = () => librarySession.selectAll((current?.memory.assets ?? []).map((asset) => asset.id));
 
   const handleAction = async (callingContext: string, action: 'reset' | 'pause' | 'play') => {
+    // on the title card, play and pause run its timer rather than an item
+    if (titleCardFor) {
+      if (action === 'pause') {
+        paused = true;
+        holdTitleCardTimer();
+      } else if (action === 'play') {
+        paused = false;
+        runTitleCardTimer();
+      }
+      return;
+    }
     if (!progressBarController) {
       return;
     }
@@ -365,30 +383,96 @@
     handlePromiseError(handleAction('resetAndPlay', 'play'));
   };
 
-  const dismissTitleCard = () => {
+  function runTitleCardTimer() {
+    if (titleCardTimer || !titleCardFor) {
+      return;
+    }
+    titleCardStartedAt = performance.now();
+    titleCardTimer = setTimeout(dismissTitleCard, titleCardRemaining);
+  }
+
+  function holdTitleCardTimer() {
+    if (!titleCardTimer) {
+      return;
+    }
+    clearTimeout(titleCardTimer);
+    titleCardTimer = undefined;
+    titleCardRemaining = Math.max(0, titleCardRemaining - (performance.now() - titleCardStartedAt));
+  }
+
+  const showTitleCard = () => {
+    if (!current) {
+      return;
+    }
+    clearTimeout(titleCardTimer);
+    titleCardTimer = undefined;
+    titleCardRemaining = MEMORY_TITLE_MS;
+    titleCardFor = current.memory.id;
+    videoPlayer?.pause();
+    handlePromiseError(progressBarController?.set(0) ?? Promise.resolve());
+    if (!paused && !galleryInView && !assetViewerManager.isViewing) {
+      runTitleCardTimer();
+    }
+  };
+
+  function dismissTitleCard() {
     clearTimeout(titleCardTimer);
     titleCardTimer = undefined;
     if (!titleCardFor) {
       return;
     }
     titleCardFor = undefined;
-    if (!galleryInView && !assetViewerManager.isViewing) {
+    if (!paused && !galleryInView && !assetViewerManager.isViewing) {
       resetAndPlay();
     }
+  }
+
+  const playFromTitleCard = () => {
+    paused = false;
+    dismissTitleCard();
   };
 
+  // A new memory opened at its first item starts on its title card (MemoryPlayer.jsx:124-130).
   $effect(() => {
     const memoryId = current?.memory.id;
-    if (!memoryId || assetIndex !== 0 || titleCardsShown.has(memoryId)) {
+    if (memoryId === titleCardMemoryId) {
       return;
     }
+    titleCardMemoryId = memoryId;
+    const atFirst = assetIndex === 0;
     untrack(() => {
-      titleCardsShown.add(memoryId);
-      titleCardFor = memoryId;
-      handlePromiseError(handleAction('titleCard', 'pause'));
-      titleCardTimer = setTimeout(dismissTitleCard, MEMORY_TITLE_MS);
+      clearTimeout(titleCardTimer);
+      titleCardTimer = undefined;
+      titleCardFor = undefined;
+      if (memoryId && atFirst) {
+        showTitleCard();
+      }
     });
   });
+
+  /** Previous from the first item returns to the title card (MemoryPlayer.jsx:560-565). */
+  const goPrevious = () => {
+    if (assetViewerManager.isViewing) {
+      return;
+    }
+    if (current && assetIndex === 0 && !titleCardFor) {
+      showTitleCard();
+      return;
+    }
+    handlePromiseError(handleNavigate(current?.previousHref));
+  };
+
+  /** Next from the title card goes on to the first item. */
+  const goNext = () => {
+    if (assetViewerManager.isViewing) {
+      return;
+    }
+    if (titleCardFor) {
+      dismissTitleCard();
+      return;
+    }
+    handlePromiseError(handleNavigate(current?.nextHref));
+  };
 
   $effect(() => () => clearTimeout(titleCardTimer));
 
@@ -596,10 +680,10 @@
   use:shortcuts={assetViewerManager.isViewing
     ? []
     : [
-        { shortcut: { key: 'ArrowRight' }, onShortcut: () => handleNavigate(current?.nextHref) },
-        { shortcut: { key: 'd' }, onShortcut: () => handleNavigate(current?.nextHref) },
-        { shortcut: { key: 'ArrowLeft' }, onShortcut: () => handleNavigate(current?.previousHref) },
-        { shortcut: { key: 'a' }, onShortcut: () => handleNavigate(current?.previousHref) },
+        { shortcut: { key: 'ArrowRight' }, onShortcut: goNext },
+        { shortcut: { key: 'd' }, onShortcut: goNext },
+        { shortcut: { key: 'ArrowLeft' }, onShortcut: goPrevious },
+        { shortcut: { key: 'a' }, onShortcut: goPrevious },
         { shortcut: { key: 'Escape' }, onShortcut: () => handleEscape() },
       ]}
 />
@@ -735,6 +819,14 @@
             {#if titleCard && titleCardFor === current.memory.id}
               <!-- MemoryPlayer.jsx:338-363, memories.css:44-75 -->
               <section class="fmp-title-card" aria-label={titleCard.title}>
+                {#if titleCover}
+                  <img
+                    class="fmp-title-bg"
+                    src={getAssetMediaUrl({ id: titleCover.id, size: AssetMediaSize.Preview })}
+                    alt=""
+                    draggable="false"
+                  />
+                {/if}
                 <div class="fmp-title-copy">
                   <span class="fmp-overline">{$t(titleCard.overlineKey)}</span>
                   <h2>{titleCard.title}</h2>
@@ -744,7 +836,7 @@
                   <p class="fmp-title-count">
                     {$t('frameleaf_memories_item_count', { values: { count: titleCard.count } })}
                   </p>
-                  <button type="button" class="fmp-play-large" onclick={dismissTitleCard}>
+                  <button type="button" class="fmp-play-large" onclick={playFromTitleCard}>
                     <Icon icon={mdiPlay} size="22" aria-hidden="true" />
                     {$t('frameleaf_memories_play')}
                   </button>
@@ -841,17 +933,17 @@
               {/if}
             </div>
 
-            {#if current.previousHref}
+            {#if current.previousHref || (assetIndex === 0 && titleCardFor !== current.memory.id)}
               <div class="fmp-nav prev">
-                <IconButton label={$t('previous_memory')} onclick={() => handleNavigate(current?.previousHref)}>
+                <IconButton label={$t('previous_memory')} onclick={goPrevious}>
                   <Icon icon={mdiChevronLeft} size="28" />
                 </IconButton>
               </div>
             {/if}
 
-            {#if current.nextHref}
+            {#if current.nextHref || titleCardFor === current.memory.id}
               <div class="fmp-nav next">
-                <IconButton label={$t('next_memory')} onclick={() => handleNavigate(current?.nextHref)}>
+                <IconButton label={$t('next_memory')} onclick={goNext}>
                   <Icon icon={mdiChevronRight} size="28" />
                 </IconButton>
               </div>
@@ -1169,6 +1261,8 @@
   }
   .fmp-nav {
     position: absolute;
+    /* above the title card, so Previous and Next stay reachable from it */
+    z-index: 4;
     top: 50%;
     translate: 0 -50%;
   }
@@ -1201,7 +1295,19 @@
     background: #000a;
     animation: fmp-fade 600ms ease both;
   }
+  /* discovery.css:1225-1233 */
+  .fmp-title-bg {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: blur(18px) brightness(0.45) saturate(0.9);
+    transform: scale(1.1);
+  }
   .fmp-title-copy {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
