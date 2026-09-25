@@ -54,7 +54,13 @@ const newItem = async (
   ctx: Ctx,
   ownerId: string,
   exif: { city?: string; country?: string; make?: string; model?: string; lensModel?: string; rating?: number } = {},
-  asset: { type?: AssetType; isFavorite?: boolean; visibility?: AssetVisibility; localDateTime?: Date } = {},
+  asset: {
+    type?: AssetType;
+    isFavorite?: boolean;
+    visibility?: AssetVisibility;
+    localDateTime?: Date;
+    fileCreatedAt?: Date;
+  } = {},
 ) => {
   const { asset: created } = await ctx.newAsset({ ownerId, ...asset });
   await ctx.newExif({ assetId: created.id, make: exif.make ?? 'Canon', ...exif });
@@ -281,5 +287,56 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
       filter: { type: { eq: AssetType.Video } },
     });
     expect(structured).toEqual({ total: 0, capped: false });
+  });
+
+  it("covers each value with its newest match in the count's own scope, never an archived or Locked item (FL-50)", async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+    const older = await newItem(ctx, user.id, { city: 'Lisbon' }, { fileCreatedAt: new Date('2024-01-01T10:00:00Z') });
+    const newer = await newItem(ctx, user.id, { city: 'Lisbon' }, { fileCreatedAt: new Date('2024-06-01T10:00:00Z') });
+    const archived = await newItem(
+      ctx,
+      user.id,
+      { city: 'Lisbon' },
+      { visibility: AssetVisibility.Archive, fileCreatedAt: new Date('2025-01-01T10:00:00Z') },
+    );
+    const locked = await newItem(
+      ctx,
+      user.id,
+      { city: 'Lisbon' },
+      { visibility: AssetVisibility.Locked, fileCreatedAt: new Date('2025-02-01T10:00:00Z') },
+    );
+    const [beach] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['beach'] });
+    await ctx.newTagAsset({ tagIds: [beach.id], assetIds: [older.id, archived.id, locked.id] });
+    const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Emma' });
+    await ctx.newAssetFace({ assetId: older.id, personGroupId: person.personGroupId });
+    await ctx.newAssetFace({ assetId: archived.id, personGroupId: person.personGroupId });
+
+    const facets = await sut.searchFacets(auth, {
+      visibility: AssetVisibility.Timeline,
+      facets: [SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags],
+      facetCovers: true,
+    });
+    expect(facets.total).toBe(2);
+    expect(counts(facets, SearchFacetField.City)).toEqual([{ value: 'Lisbon', count: 2, coverAssetId: newer.id }]);
+    expect(counts(facets, SearchFacetField.Tags)).toEqual([
+      { value: beach.id, label: 'beach', count: 1, coverAssetId: older.id },
+    ]);
+    expect(counts(facets, SearchFacetField.People)).toEqual([
+      { value: person.personGroupId, label: 'Emma', count: 1, coverAssetId: older.id },
+    ]);
+    // the count is the number of results the same body finds
+    expect(await sut.searchStatistics(auth, { visibility: AssetVisibility.Timeline, city: 'Lisbon' })).toEqual({
+      total: 2,
+    });
+
+    // covers are only returned when asked for
+    const plain = await sut.searchFacets(auth, {
+      visibility: AssetVisibility.Timeline,
+      facets: [SearchFacetField.City],
+    });
+    expect(counts(plain, SearchFacetField.City)).toEqual([{ value: 'Lisbon', count: 2 }]);
   });
 });

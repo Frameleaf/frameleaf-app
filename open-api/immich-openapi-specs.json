@@ -61394,6 +61394,17 @@
             "minimum": 0,
             "type": "integer"
           },
+          "coverAssetId": {
+            "description": "The newest matching asset with this value (by capture time), when `facetCovers` was asked for",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "label": {
             "description": "Display name when the value is an id (a person or a tag); the viewer's own name for it",
             "nullable": true,
@@ -61584,6 +61595,16 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "facetCovers": {
+            "description": "Also return, per value, the newest matching asset (by capture time) as its cover",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
           },
           "facetLimit": {
             "description": "Most frequent values per facet (default 10)",

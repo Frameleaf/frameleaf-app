@@ -1,6 +1,8 @@
 import {
   AssetTypeEnum,
+  AssetVisibility,
   SearchFacetField,
+  type SearchFacetsDto,
   type AssetResponseDto,
   type PersonResponseDto,
   type SearchFacetResponseDto,
@@ -104,18 +106,27 @@ export const buildExploreShortcuts = (counts: ExploreShortcutCounts): ExploreSho
   },
 ];
 
-/**
- * T-12: the facets Explore counts its People, Places and "Things in your photos" cards with. They
- * come from one `POST /search/facets` over an empty (legacy, flat) body, which resolves through the
- * same `SearchService` scope as the search the cards open (`Route.search({ personIds })`,
- * `{ city }`, `{ tagIds }`), so the count on a card is the number of results it lands on. The
- * server leaves out hidden and suppressed people, suppressed tags, Locked items without an unlocked
- * session and the places of partners who hide their locations, so none of those can reach a card.
- */
-export const EXPLORE_FACETS = [SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags];
-
 /** Enough values that the People row can skip unnamed people and still fill its twelve cards. */
 export const EXPLORE_FACET_LIMIT = 30;
+
+export const EXPLORE_FACETS = [SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags];
+
+/**
+ * T-12: the one `POST /search/facets` body Explore counts and covers its People, Places and "Things
+ * in your photos" cards with. Each card opens a flat search (`Route.search({ personIds })`,
+ * `{ city }`, `{ tagIds }`), and the search session sends every flat search with Timeline visibility
+ * (`library-search-session.svelte.ts`), so this body carries the same visibility: the count on a
+ * card is the number of results it opens, and nothing archived, Locked (even in an unlocked session)
+ * or a Live Photo's video part is counted or chosen as a cover. The server also leaves out hidden and
+ * suppressed people, suppressed tags and the places of partners who hide their locations, and takes
+ * each cover (`facetCovers`, the newest match) from the same matched set as the count.
+ */
+export const exploreFacetsBody: SearchFacetsDto = {
+  visibility: AssetVisibility.Timeline,
+  facets: EXPLORE_FACETS,
+  facetLimit: EXPLORE_FACET_LIMIT,
+  facetCovers: true,
+};
 
 /** Cards per section, as `ExploreLibrary.jsx` slices them. */
 export const EXPLORE_PEOPLE_LIMIT = 12;
@@ -127,6 +138,7 @@ export interface ExploreFacetCount {
   value: string;
   label?: string | null;
   count: number;
+  coverAssetId?: string | null;
 }
 
 /** A facet's counts, busiest first as the server sorts them; none when the facet is missing. */
@@ -170,44 +182,47 @@ export interface ExploreCoverCard {
   label: string;
   count: number;
   href: string;
-  cover: AssetResponseDto | null;
+  /** The newest match of the card's own search, from the facet request; null when it has none. */
+  coverAssetId: string | null;
 }
 
 /** Places cards: cities by count, each opening the search for that city. */
-export const buildExplorePlaces = (
-  counts: ExploreFacetCount[],
-  covers: ReadonlyMap<string, AssetResponseDto>,
-  limit = EXPLORE_PLACE_LIMIT,
-): ExploreCoverCard[] =>
-  counts.slice(0, limit).map(({ value, count }) => ({
+export const buildExplorePlaces = (counts: ExploreFacetCount[], limit = EXPLORE_PLACE_LIMIT): ExploreCoverCard[] =>
+  counts.slice(0, limit).map(({ value, count, coverAssetId }) => ({
     id: value,
     label: value,
     count,
     href: Route.search({ city: value }),
-    cover: covers.get(value) ?? null,
+    coverAssetId: coverAssetId ?? null,
   }));
 
 /** "Things in your photos" (`ExploreLibrary.jsx:196-220`): the account's tags by count. */
-export const buildExploreThings = (
-  counts: ExploreFacetCount[],
-  covers: ReadonlyMap<string, AssetResponseDto>,
-  limit = EXPLORE_THING_LIMIT,
-): ExploreCoverCard[] =>
-  counts.slice(0, limit).map(({ value, label, count }) => ({
+export const buildExploreThings = (counts: ExploreFacetCount[], limit = EXPLORE_THING_LIMIT): ExploreCoverCard[] =>
+  counts.slice(0, limit).map(({ value, label, count, coverAssetId }) => ({
     id: value,
     label: label || value,
     count,
     href: Route.search({ tagIds: [value] }),
-    cover: covers.get(value) ?? null,
+    coverAssetId: coverAssetId ?? null,
   }));
 
 /**
  * The recorded local calendar day of a capture (`explore-timeline.mjs` `captureDate(...).day`),
- * read from `localDateTime` without passing through the browser's time zone; null when unknown.
+ * read from `localDateTime` without passing through the browser's time zone; null when unknown or
+ * when the day does not exist (a 31 February is rejected, as the prototype rejects it).
  */
 export const captureDay = (asset: Pick<AssetResponseDto, 'localDateTime'>): string | null => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(asset.localDateTime ?? '');
-  return match && Number(match[1]) > 0 ? `${match[1]}-${match[2]}-${match[3]}` : null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T|$)/.exec(asset.localDateTime ?? '');
+  if (!match || Number(match[1]) < 1) {
+    return null;
+  }
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return null;
+  }
+  return `${match[1]}-${match[2]}-${match[3]}`;
 };
 
 export const isVideoAsset = (asset: Pick<AssetResponseDto, 'type'>) => asset.type === AssetTypeEnum.Video;

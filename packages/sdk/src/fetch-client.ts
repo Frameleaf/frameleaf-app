@@ -6381,6 +6381,8 @@ export type AskSearchPlanDto = {
 export type SearchFacetCountResponseDto = {
     /** Number of assets with this facet value */
     count: number;
+    /** The newest matching asset with this value (by capture time), when `facetCovers` was asked for */
+    coverAssetId?: string | null;
     /** Display name when the value is an id (a person or a tag); the viewer's own name for it */
     label?: string | null;
     /** Facet value */
@@ -6454,6 +6456,8 @@ export type SearchFacetsDto = {
     createdBefore?: string;
     /** Filter by description text */
     description?: string;
+    /** Also return, per value, the newest matching asset (by capture time) as its cover */
+    facetCovers?: boolean;
     /** Most frequent values per facet (default 10) */
     facetLimit?: number;
     /** Facets to count, each once (repeats are ignored); every facet when omitted */

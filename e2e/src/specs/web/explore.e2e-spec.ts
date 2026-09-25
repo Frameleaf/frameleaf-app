@@ -5,7 +5,7 @@ import { asBearerAuth, utils } from 'src/utils.js';
 /**
  * T-12 (ExploreLibrary.jsx:60-274): Explore's cards carry counts taken in the same scope as the
  * search they open, "Things in your photos" lists the account's tags, and "Recent captures" names
- * each item and its capture day. Hidden people never appear.
+ * each item and its capture day. Hidden people and archived items never appear.
  */
 test.describe('Explore', () => {
   let admin: LoginResponseDto;
@@ -23,10 +23,16 @@ test.describe('Explore', () => {
       assetData: { filename: 'harbour.png' },
       fileCreatedAt: '2026-08-01T09:00:00.000Z',
     });
+    // Archived: tagged too, but outside the Timeline scope the search opens, so never counted.
+    const archived = await utils.createAsset(admin.accessToken, {
+      assetData: { filename: 'archived.png' },
+      fileCreatedAt: '2026-08-03T09:00:00.000Z',
+    });
     await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+    await utils.archiveAssets(admin.accessToken, [archived.id]);
 
     const [beach] = await utils.upsertTags(admin.accessToken, ['beach']);
-    await utils.tagAssets(admin.accessToken, beach.id, [first.id, second.id]);
+    await utils.tagAssets(admin.accessToken, beach.id, [first.id, second.id, archived.id]);
 
     const jamie = await utils.createPerson(admin.accessToken, { name: 'Jamie' });
     await utils.createFace({ assetId: first.id, personGroupId: jamie.id });
@@ -52,6 +58,7 @@ test.describe('Explore', () => {
 
     await beach.click();
     await page.waitForURL(/\/search\?query=.*tagIds/);
+    // B1: the archived tagged item is neither counted nor found, so the count is the result count
     await expect(page.locator('[data-asset-id]')).toHaveCount(2);
   });
 
