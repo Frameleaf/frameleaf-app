@@ -242,4 +242,19 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(within(row).getByText(/9 min GPU time · 5 workers/)).toBeInTheDocument();
     expect(within(row).getByText('Completed')).toBeInTheDocument();
   });
+
+  it('applies settled charges with the explicit usage refresh before listing them', async () => {
+    useDraft(true);
+    sdkMock.getCloudMlStatus.mockResolvedValue(
+      status({ enabled: true, consent: consent('2026-10-01'), destination: { id: 'cloud-1' } as never }),
+    );
+    sdkMock.reconcileCloudMlUsage.mockResolvedValue();
+    render(CloudMlSection);
+
+    await vi.waitFor(() => expect(sdkMock.getCloudMlSettlements).toHaveBeenCalled());
+    expect(sdkMock.reconcileCloudMlUsage).toHaveBeenCalledTimes(1);
+    expect(sdkMock.reconcileCloudMlUsage.mock.invocationCallOrder[0]).toBeLessThan(
+      sdkMock.getCloudMlSettlements.mock.invocationCallOrder[0],
+    );
+  });
 });

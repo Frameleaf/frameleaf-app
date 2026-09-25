@@ -85,6 +85,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000188-MemoryShowLess' },
       { name: '0000000000191-UtilityActivity' },
       { name: '0000000000200-FrameleafConsents' },
+      { name: '0000000000201-MlWorkloadAccountingCloudJobIndex' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

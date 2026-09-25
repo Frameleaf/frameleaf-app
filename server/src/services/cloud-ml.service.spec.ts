@@ -334,7 +334,9 @@ describe(CloudMlService.name, () => {
         consent: { requiredVersion: '2026-10-01', acceptedVersion: '2026-09-25', outdated: true },
         wallet: { balanceUsd: 12, heldUsd: 2, availableUsd: 10, topUpUrl: 'https://account.cloud.test/wallet' },
       });
-      expect(mocks.frameleafCloudMl.getUsage).toHaveBeenCalled();
+      // A read never writes: settlements are applied by the explicit usage refresh only.
+      expect(mocks.frameleafCloudMl.getUsage).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.applySettlements).not.toHaveBeenCalled();
     });
 
     it('shows the top-up link only when the cloud returned one', async () => {
