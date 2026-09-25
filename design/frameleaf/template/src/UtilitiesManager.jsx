@@ -400,6 +400,7 @@ export function UtilitiesManager({
     );
   }
   return (
+    <>
     <div className="utilities-manager">
       {error && (
         <p role="alert" className="um-message error">
@@ -870,29 +871,6 @@ export function UtilitiesManager({
       {["downloads", "obtainium"].includes(tool) && (
         <ApplicationSetup tool={tool} onNavigate={onNavigate} />
       )}
-      {restoreDialog?.kind === "item" && (
-        <ItemRestoreDialog
-          item={{
-            name: restoreDialog.row.name,
-            path: restoreDialog.row.path,
-            newest: restoreDialog.row.backup.newest,
-          }}
-          close={() => setRestoreDialog(null)}
-          onRestore={() => {
-            setRestoreDialog(null);
-            restoreRows([restoreDialog.row]);
-          }}
-        />
-      )}
-      {restoreDialog?.kind === "key" && (
-        <RestoreKeyPrompt
-          close={() => setRestoreDialog(null)}
-          done={() => {
-            setRestoreDialog(null);
-            restoreRows(restoreDialog.rows);
-          }}
-        />
-      )}
       {recovery && (
         <UtilityRecovery
           state={state}
@@ -1096,6 +1074,31 @@ export function UtilitiesManager({
         </details>
       )}
     </div>
+      {/* Outside the manager so its form styles don’t reach the dialog. */}
+      {restoreDialog?.kind === "item" && (
+        <ItemRestoreDialog
+          item={{
+            name: restoreDialog.row.name,
+            path: restoreDialog.row.path,
+            newest: restoreDialog.row.backup.newest,
+          }}
+          close={() => setRestoreDialog(null)}
+          onRestore={() => {
+            setRestoreDialog(null);
+            restoreRows([restoreDialog.row]);
+          }}
+        />
+      )}
+      {restoreDialog?.kind === "key" && (
+        <RestoreKeyPrompt
+          close={() => setRestoreDialog(null)}
+          done={() => {
+            setRestoreDialog(null);
+            restoreRows(restoreDialog.rows);
+          }}
+        />
+      )}
+    </>
   );
 }
 function ICloudPanel({ state, commit, onNavigate }) {

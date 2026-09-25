@@ -2476,7 +2476,7 @@ export function ItemRestoreDialog({ item, close, onRestore }) {
           ))}
         </select>
       </label>
-      <fieldset className="fc-choices">
+      <fieldset className="fc-choices" style={{ marginTop: 16 }}>
         <legend>Details</legend>
         {restoreDetailsOptions.map((option) => (
           <label key={option.id} className={details === option.id ? "is-selected" : ""}>
@@ -2713,7 +2713,7 @@ function BackupRestore({ state, run }) {
                       </td>
                       <td>
                         <Button
-                          icon={album.status === "deleted" ? "mdiDeleteRestore" : "mdiWrenchOutline"}
+                          icon={album.status === "deleted" ? "mdiRestore" : "mdiWrenchOutline"}
                           disabled={active}
                           onClick={() =>
                             withKey(
