@@ -39,6 +39,8 @@ export class CloudManager {
   #listeners = 0;
   #poll?: ReturnType<typeof setTimeout>;
   #pollFailures = 0;
+  /** Bumped by every request that can change the link; an older answer is dropped when it lands. */
+  #generation = 0;
   #pollError = $state<unknown>(null);
 
   get status() {
@@ -97,12 +99,18 @@ export class CloudManager {
 
   async refresh() {
     this.#loading = true;
+    const generation = ++this.#generation;
     // each loads on its own, so a licence or price failure never hides a status that loaded
     const [status, license, products] = await Promise.allSettled([
       getCloudStatus(),
       getLicenseStatus(),
       getLicenseProducts(),
     ]);
+    if (generation !== this.#generation) {
+      // a Cancel, Unlink or other change started meanwhile; its answer is the current one
+      this.#loading = false;
+      return;
+    }
     if (license.status === 'fulfilled') {
       this.#license = license.value;
     }
@@ -142,8 +150,12 @@ export class CloudManager {
   }
 
   async #run(call: () => Promise<CloudStatusResponseDto>) {
+    const generation = ++this.#generation;
+    this.#stopPolling();
     const status = await call();
-    this.#apply(status);
+    if (generation === this.#generation) {
+      this.#apply(status);
+    }
     return status;
   }
 
@@ -171,9 +183,16 @@ export class CloudManager {
    * made meanwhile is still picked up.
    */
   async #pollOnce() {
+    const generation = this.#generation;
     try {
-      this.#apply(await getCloudLink());
+      const status = await getCloudLink();
+      if (generation === this.#generation) {
+        this.#apply(status);
+      }
     } catch (error) {
+      if (generation !== this.#generation) {
+        return;
+      }
       this.#pollError = error;
       const pending = this.#status?.state === 'pending' ? this.#status.pending : null;
       if (pending) {
