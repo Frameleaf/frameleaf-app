@@ -1,6 +1,5 @@
 import {
   AssetJobName,
-  AssetMediaSize,
   AssetTypeEnum,
   AssetVisibility,
   getAssetInfo,
@@ -61,8 +60,8 @@ import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
 import { Route } from '$lib/route';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
-import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
-import { downloadUrl } from '$lib/utils';
+import { getSharedLink } from '$lib/utils';
+import { downloadAssetFile } from '$lib/utils/asset-utils';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
@@ -370,13 +369,11 @@ export const getAssetActions = (
 };
 
 export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: { edited: boolean }) => {
-  const $t = await getFormatter();
-
-  const assets = [
+  const assets: { filename: string; id: string; size?: number }[] = [
     {
       filename: asset.originalFileName,
       id: asset.id,
-      cacheKey: asset.thumbhash,
+      size: asset.exifInfo?.fileSizeInByte ?? undefined,
     },
   ];
 
@@ -399,23 +396,15 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
       assets.push({
         filename: motionDownloadFilename,
         id: asset.livePhotoVideoId,
-        cacheKey: motionAsset.thumbhash,
+        size: motionAsset.exifInfo?.fileSizeInByte ?? undefined,
       });
     }
   }
 
-  for (const [i, { filename, id, cacheKey }] of assets.entries()) {
-    if (i !== 0) {
-      // play nice with Safari
-      await sleep(500);
-    }
-
-    try {
-      toastManager.primary($t('downloading_asset_filename', { values: { filename } }));
-      downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, cacheKey }), filename);
-    } catch (error) {
-      handleError(error, $t('errors.error_downloading', { values: { filename } }));
-    }
+  // FL-45 D-3: each file is its own row in the download panel, with progress, Cancel and Retry,
+  // and is saved from there (UploadPanel.jsx `DownloadPanel`).
+  for (const { filename, id, size } of assets) {
+    downloadAssetFile({ id, filename, edited, size });
   }
 };
 

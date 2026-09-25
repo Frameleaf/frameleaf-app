@@ -4,7 +4,8 @@ import {
   createStack,
   deleteAssets,
   deleteStacks,
-  getBaseUrl,
+  downloadArchive as requestArchive,
+  downloadAsset as requestAsset,
   getDownloadInfo,
   getStack,
   untagAssets,
@@ -12,7 +13,9 @@ import {
   updateAssets,
   type AssetResponseDto,
   type AssetTypeEnum,
+  type DownloadArchiveInfo,
   type DownloadInfoDto,
+  type DownloadResponseDto,
   type ExifResponseDto,
   type StackResponseDto,
   type UserResponseDto,
@@ -22,15 +25,17 @@ import { DateTime } from 'luxon';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { authManager } from '$lib/managers/auth-manager.svelte';
-import { downloadManager } from '$lib/managers/download-manager.svelte';
+import {
+  downloadManager,
+  EmptyDownloadError,
+  progressFetch,
+  type DownloadTask,
+} from '$lib/managers/download-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-import { locale } from '$lib/stores/preferences.store';
-import { downloadUrlPost, withError } from '$lib/utils';
 import { getByteUnitString } from '$lib/utils/byte-units';
 import { getFormatter } from '$lib/utils/i18n';
 import { navigate } from '$lib/utils/navigation';
-import { asQueryString } from '$lib/utils/shared-links';
 import { toTimelineAsset } from '$lib/utils/timeline-util';
 import { handleError } from './handle-error';
 
@@ -74,54 +79,111 @@ export const removeTag = async ({
   return assetIds;
 };
 
-export const downloadArchive = async (fileName: string, options: Omit<DownloadInfoDto, 'archiveSize'>) => {
+/**
+ * Hands a failure to the shared error handler without a toast: the download row shows the error
+ * (FL-45 D-2), while a public share still gets its revoked-link handling from a 401 (FL-56).
+ */
+const reportDownloadError = (error: unknown) => {
+  if (error instanceof EmptyDownloadError) {
+    return;
+  }
+  handleError(error, get(t)('errors.unable_to_download_files'), { notify: false });
+};
+
+const withDownloadErrors =
+  (task: DownloadTask): DownloadTask =>
+  async (context) => {
+    try {
+      return await task(context);
+    } catch (error) {
+      if (!context.signal.aborted) {
+        reportDownloadError(error);
+      }
+      throw error;
+    }
+  };
+
+/**
+ * Downloads photos and videos as zip archives through the download panel (FL-45 D-1/D-3): one row
+ * appears at once while the server plans the archives, then each archive is fetched with progress
+ * and can be cancelled or retried. A plan larger than the account's archive size limit becomes
+ * one row per archive. The signature is unchanged from the legacy helper.
+ */
+export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto, 'archiveSize'>): Promise<void> => {
   const archiveSize = authManager.authenticated ? authManager.preferences.download.archiveSize : undefined;
   const dto = { ...options, archiveSize };
-  const [error, downloadInfo] = await withError(() => getDownloadInfo({ ...authManager.params, downloadInfoDto: dto }));
-  if (error) {
-    const $t = get(t);
-    handleError(error, $t('errors.unable_to_download_files'));
-    return;
-  }
+  const params = authManager.params;
+  const stamp = DateTime.now().toFormat('yyyyLLdd_HHmmss');
+  const nameOf = (index: number, count: number) => `${fileName}${count > 1 ? `+${index + 1}` : ''}-${stamp}`;
 
-  if (!downloadInfo) {
-    return;
-  }
+  const fetchArchive =
+    (archive: DownloadArchiveInfo, archiveName: string): DownloadTask =>
+    ({ signal, onProgress }) =>
+      requestArchive(
+        { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited: true } },
+        { signal, fetch: progressFetch(onProgress) },
+      );
 
-  for (let index = 0; index < downloadInfo.archives.length; index++) {
-    const archive = downloadInfo.archives[index];
-    const suffix = downloadInfo.archives.length > 1 ? `+${index + 1}` : '';
-    const archiveName = `${fileName}${suffix}-${DateTime.now().toFormat('yyyyLLdd_HHmmss')}`;
-    const queryParams = asQueryString(authManager.params);
+  const describeArchive = (archive: DownloadArchiveInfo, archiveName: string) => ({
+    name: `${archiveName}.zip`,
+    assetIds: archive.assetIds,
+    count: archive.assetIds.length,
+    total: archive.size,
+  });
 
-    const downloadKey =
-      downloadInfo.archives.length > 1
-        ? `${archiveName} (${index + 1}/${downloadInfo.archives.length})`
-        : `${archiveName} `;
+  // Kept after the first successful plan so a retry of the first archive does not plan (and add
+  // the other archives) again.
+  let plan: DownloadResponseDto | undefined;
 
-    const url = getBaseUrl() + '/download/archive' + (queryParams ? `?${queryParams}` : '');
-
-    try {
-      if (downloadInfo.archives.length > 1) {
-        downloadManager.add(downloadKey, url, archive.assetIds, archiveName, archive.size);
-      } else {
-        downloadUrlPost(url, archive.assetIds, archiveName);
-        const $t = await getFormatter();
-        const $locale = get(locale);
-        toastManager.primary(
-          $t('downloading_archive_filename_size', {
-            values: { size: getByteUnitString(archive.size, $locale), filename: archiveName },
-          }),
-          { timeout: 10_000 },
-        );
+  downloadManager.start(
+    { name: `${nameOf(0, 1)}.zip`, assetIds: options.assetIds ?? [], count: options.assetIds?.length ?? 0 },
+    withDownloadErrors(async (context) => {
+      if (!plan) {
+        const response = await getDownloadInfo({ ...params, downloadInfoDto: dto }, { signal: context.signal });
+        if (response.archives.length === 0) {
+          throw new EmptyDownloadError();
+        }
+        plan = response;
+        const count = plan.archives.length;
+        for (const [offset, archive] of plan.archives.slice(1).entries()) {
+          const archiveName = nameOf(offset + 1, count);
+          downloadManager.start(
+            describeArchive(archive, archiveName),
+            withDownloadErrors(fetchArchive(archive, archiveName)),
+          );
+        }
       }
-    } catch (error) {
-      const $t = get(t);
-      handleError(error, $t('errors.unable_to_download_files'));
-      return;
-    }
-  }
+      const archiveName = nameOf(0, plan.archives.length);
+      context.describe(describeArchive(plan.archives[0], archiveName));
+      return fetchArchive(plan.archives[0], archiveName)(context);
+    }),
+  );
+
+  // Still a promise for existing callers; the work continues in the download panel.
+  return Promise.resolve();
 };
+
+/**
+ * Downloads one file (an original, its edited version or a Live Photo's motion part) through the
+ * download panel, with progress, Cancel and Retry (FL-45 D-3). Returns the panel row's key.
+ */
+export const downloadAssetFile = ({
+  id,
+  filename,
+  edited,
+  size,
+}: {
+  id: string;
+  filename: string;
+  edited: boolean;
+  size?: number;
+}) =>
+  downloadManager.start(
+    { name: filename, assetIds: [id], count: 1, total: size ?? 0 },
+    withDownloadErrors(({ signal, onProgress }) =>
+      requestAsset({ ...authManager.params, id, edited }, { signal, fetch: progressFetch(onProgress) }),
+    ),
+  );
 
 /**
  * Returns the lowercase filename extension without a dot (.) and
