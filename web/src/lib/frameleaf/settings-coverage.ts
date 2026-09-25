@@ -874,9 +874,9 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'newVersionCheck.enabled',
-    kind: 'policy',
+    kind: 'control',
     file: 'src/routes/admin/system-settings/NewVersionCheckSettings.svelte',
-    evidence: 'admin.version_check_disabled_by_privacy_policy',
+    evidence: 'newVersionCheck.enabled',
   },
   {
     pattern: 'nightlyTasks.clusterNewFaces',
