@@ -30,7 +30,8 @@
   import Breadcrumbs from '$lib/components/shared-components/tree/Breadcrumbs.svelte';
   import TreeItemThumbnails from '$lib/components/shared-components/tree/TreeItemThumbnails.svelte';
   import TreeItems from '$lib/components/shared-components/tree/TreeItems.svelte';
-  import { createLibrarySession, writeLibraryView } from '$lib/frameleaf/library-session';
+  import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
+  import { viewInLibraryHref } from '$lib/frameleaf/library-query-options';
   import { TAG_COLOR_SWATCHES, buildTagTree, flattenTagTree } from '$lib/frameleaf/tag-tree';
   import { Route } from '$lib/route';
   import { getAssetUrls } from '$lib/utils';
@@ -132,10 +133,10 @@
     if (!selected) {
       return;
     }
-    const session = createLibrarySession();
-    session.state.query.filter = { tagIds: { any: [selected.id] } };
-    const url = writeLibraryView(new URL(Route.photos(), location.origin), session.state);
-    void goto(`${url.pathname}${url.search}`);
+    // The Photos page when the buckets apply the whole condition, else the search results (M3).
+    void goto(
+      viewInLibraryHref({ ...emptyDiscoveryQuery(), filter: { tagIds: { any: [selected.id] } } }, location.origin),
+    );
   };
 
   const openCreate = (parentId: string | null) => {
