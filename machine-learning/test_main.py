@@ -2234,7 +2234,7 @@ def test_bearer_auth_open_when_no_token() -> None:
     # request, including inference paths. This matches upstream Immich (the ML
     # service ships without auth) and is the default for local / same-LAN
     # deployments. A token is only expected when something sets
-    # IMMICH_ML_AUTH_TOKEN, e.g. RunPod Pod mode.
+    # IMMICH_ML_AUTH_TOKEN, e.g. a LAN worker behind a proxy.
     from starlette.applications import Starlette
     from starlette.responses import PlainTextResponse as _PR
     from starlette.routing import Route
@@ -2419,11 +2419,14 @@ def test_hardware_endpoint_reports_cuda(deployed_app: TestClient, monkeypatch: M
         lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     monkeypatch.setattr("immich_ml.main._torch_cuda_info", lambda: (True, 1))
+    container = {"image": "cuda", "backend": "CUDA", "gpus": [], "driver": None, "nvidiaError": None, "devices": {}}
+    monkeypatch.setattr("immich_ml.main.container_report", lambda _providers, _ids: container)
 
     response = deployed_app.get("http://localhost:3003/hardware")
 
     assert response.status_code == 200
     assert response.json() == {
+        "container": container,
         "providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
         "openvinoDeviceIds": [],
         "torchCudaAvailable": True,
@@ -2530,3 +2533,55 @@ class TestPredictionEndpoints:
             parsed_embedding = orjson.loads(embedding)
             assert np.allclose(expected_face["embedding"], parsed_embedding)
             assert np.allclose(expected_face["score"], actual_face["score"])
+
+
+def test_hardware_report_names_the_gpu_torch_uses_and_the_devices_passed_in(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from immich_ml import hardware_report
+
+    monkeypatch.setattr(
+        hardware_report,
+        "_torch_gpus",
+        lambda: (
+            [{"name": "NVIDIA GeForce RTX 3060", "vendor": "NVIDIA", "memoryTotalBytes": 12884901888}],
+            "CUDA 12.4",
+            "CUDA",
+        ),
+    )
+    monkeypatch.setattr(
+        hardware_report, "_nvidia_smi", lambda: {"name": "x", "memoryTotalBytes": 1, "driver": "550.107"}
+    )
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: [])
+    monkeypatch.setenv("DEVICE", "cuda")
+
+    report = hardware_report.container_report(["CUDAExecutionProvider"], [])
+
+    assert report["backend"] == "CUDA"
+    assert report["image"] == "cuda"
+    assert report["gpus"][0]["name"] == "NVIDIA GeForce RTX 3060"
+    assert report["driver"] == "Driver 550.107 · CUDA 12.4"
+
+
+def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from immich_ml import hardware_report
+
+    dev = tmp_path / "dri"
+    dev.mkdir()
+    (dev / "renderD128").write_text("")
+    sys_drm = tmp_path / "drm"
+    (sys_drm / "renderD128" / "device").mkdir(parents=True)
+    (sys_drm / "renderD128" / "device" / "vendor").write_text("0x8086\n")
+
+    nodes = hardware_report._render_nodes(dev, sys_drm)
+    assert nodes == [{"node": "renderD128", "vendor": "Intel", "accessible": True, "memoryTotalBytes": None}]
+
+    monkeypatch.setattr(hardware_report, "_torch_gpus", lambda: ([], None, None))
+    monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: nodes)
+    report = hardware_report.container_report(["CPUExecutionProvider"], ["CPU"])
+    assert report["backend"] == "CPU"
+    assert report["gpus"] == []
+    assert report["devices"]["renderNodes"] == nodes

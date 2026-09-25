@@ -12,6 +12,8 @@ import {
   PhysicalDeduplicationPreviewResponseDto,
   PhysicalDeduplicationRetainedState,
   PhysicalDeduplicationReviewRequestDto,
+  PhysicalDeduplicationVerificationDto,
+  PhysicalDeduplicationVerificationItem,
 } from 'src/dtos/physical-deduplication.dto.js';
 import {
   AssetFileType,
@@ -32,6 +34,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import {
   PhysicalDeduplicationApplySnapshot,
+  PhysicalDeduplicationEvidenceRow,
   PhysicalDeduplicationItemOutcome,
   PhysicalDeduplicationItemReason,
   PhysicalDeduplicationPlanItem,
@@ -39,6 +42,7 @@ import {
   copyEvidenceProblem,
   currentReferences,
   normalizeExcluded,
+  physicalDeduplicationByteAccounting,
   physicalDeduplicationConfirmation,
   physicalDeduplicationFingerprint,
   physicalDeduplicationPlanId,
@@ -58,6 +62,13 @@ const generatedFileTypes = new Set([
 
 const asAssetType = (type: string): AssetType =>
   Object.values(AssetType).includes(type as AssetType) ? (type as AssetType) : AssetType.Other;
+
+/** Dimensions and length for the preview's detail line (FL-73); null when the asset has none recorded. */
+const mediaDetailOf = (row: { width?: number | null; height?: number | null; duration?: number | null }) => ({
+  width: row.width ?? null,
+  height: row.height ?? null,
+  duration: row.duration ?? null,
+});
 
 /** What a copy of a reviewed plan came to, before the worker stamps it with the id and time. */
 export type PhysicalDeduplicationItemResult = Omit<PhysicalDeduplicationItemOutcome, 'id' | 'at'>;
@@ -87,6 +98,18 @@ export type PreparedPhysicalDeduplicationPlan = {
   /** Copies in the plan that are Locked media the requester may not be shown. Counted, never named. */
   hiddenCopies: number;
 };
+
+/** Whether a copy's asset still resolves to the retained original's shared physical file. */
+const isLinkedToRetained = (
+  row: PhysicalDeduplicationEvidenceRow | undefined,
+  retainedRow: PhysicalDeduplicationEvidenceRow | undefined,
+) =>
+  !!row &&
+  !row.deletedAt &&
+  !!retainedRow &&
+  !!row.physicalOriginalFileId &&
+  row.physicalOriginalFileId === retainedRow.physicalOriginalFileId &&
+  row.originalPath === retainedRow.originalPath;
 
 const skipped = (reasonKey: PhysicalDeduplicationItemReason): PhysicalDeduplicationItemResult => ({
   state: 'skipped',
@@ -175,6 +198,11 @@ export class PhysicalDeduplicationService extends BaseService {
   /** Queue a preview. Validation happens here so the page gets an immediate answer; the job re-checks. */
   async requestPreview(dto: PhysicalDeduplicationPreviewRequestDto): Promise<void> {
     const { physicalDeduplication } = await this.getConfig({ withCache: false });
+    // The page's configuration error (FL-73, prototype physical-dedup-data.mjs:76-86): file reuse
+    // must be on before a plan is prepared. The queued job itself stays lenient for old queues.
+    if (!physicalDeduplication.enabled) {
+      throw new BadRequestException('Enable file reuse before preparing a plan.');
+    }
     const masterUserId = dto.masterUserId ?? physicalDeduplication.masterUserId;
     if (!masterUserId) {
       throw new BadRequestException('Choose an account to retain originals in before preparing a preview');
@@ -259,6 +287,7 @@ export class PhysicalDeduplicationService extends BaseService {
     );
 
     const fingerprint = physicalDeduplicationFingerprint(state);
+    const bytes = physicalDeduplicationByteAccounting(state.retained ?? []);
     const plan: PhysicalDeduplicationPlanDto = {
       mode: state.mode === 'apply' ? PhysicalDeduplicationPlanMode.Apply : PhysicalDeduplicationPlanMode.DryRun,
       ranAt: state.ranAt,
@@ -272,8 +301,11 @@ export class PhysicalDeduplicationService extends BaseService {
       skippedMissingMaster: state.skippedMissingMaster,
       reclaimableBytes: state.reclaimableBytes,
       deletedBytes: state.deletedBytes,
+      logicalBytes: bytes.logicalBytes,
+      sharedOriginalBytes: bytes.sharedOriginalBytes,
       retained: retained.map((item, index) => ({
         ...item,
+        ...mediaDetailOf(item),
         ownerName: nameOf(item.ownerId),
         canView: viewable.has(item.assetId),
         fileAvailable: available[index],
@@ -281,6 +313,7 @@ export class PhysicalDeduplicationService extends BaseService {
       })),
       copies: copies.map((item) => ({
         ...item,
+        ...mediaDetailOf(item),
         ownerName: nameOf(item.ownerId),
         canView: viewable.has(item.assetId),
       })),
@@ -560,6 +593,181 @@ export class PhysicalDeduplicationService extends BaseService {
     return { state: 'applied', reasonKey: null, message: null, reclaimedBytes: reclaimed + generated };
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Verification and rollback of an applied plan (FL-73)                */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Verify the copies an applied plan changed: every retained original they share is hashed again
+   * against its reviewed checksum and size, and every copy is checked to still resolve to it. For
+   * each copy the report also says what is at its own former path, because that decides what can
+   * be undone: a copy whose own file was removed cannot go back (the bytes are gone; the retained
+   * original is the only copy), while a copy whose own file is still there can.
+   *
+   * Nothing is written. Rows of another account's Locked media are counted, never listed (FL-34).
+   */
+  async verifyAppliedCopies(
+    auth: AuthDto,
+    snapshot: PhysicalDeduplicationApplySnapshot,
+    appliedIds: readonly string[],
+  ): Promise<Omit<PhysicalDeduplicationVerificationDto, 'operationId' | 'planId' | 'verifiedAt'>> {
+    const applied = new Set(appliedIds);
+    const items = snapshot.items.filter((item) => applied.has(item.assetId));
+    const retainedIds = [...new Set(items.map((item) => item.retainedAssetId))];
+    const rows = await this.physicalFileRepository.getPlanEvidence([
+      ...items.map((item) => item.assetId),
+      ...retainedIds,
+    ]);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    const retainedFiles = new Map<string, PhysicalDeduplicationVerificationItem['retainedFile']>();
+    for (const retainedId of retainedIds) {
+      const original = snapshot.retained.find((entry) => entry.assetId === retainedId);
+      if (!original) {
+        retainedFiles.set(retainedId, 'changed');
+        continue;
+      }
+      const path = byId.get(retainedId)?.originalPath ?? original.originalPath;
+      const disk = await this.checkOnDisk(path, original.checksum, original.sizeInBytes);
+      retainedFiles.set(retainedId, disk === 'match' ? 'intact' : disk === 'missing' ? 'missing' : 'changed');
+    }
+
+    const isShown = await this.verificationVisibility(auth, snapshot, items);
+    const shownItems = items.filter((item) => isShown(item));
+    const users = shownItems.length > 0 ? await this.userRepository.getList({ withDeleted: true }) : [];
+    const viewable =
+      shownItems.length > 0
+        ? await this.checkAccess({
+            auth,
+            permission: Permission.AssetRead,
+            ids: shownItems.map((item) => item.assetId),
+          })
+        : new Set<string>();
+
+    const retainedStates = retainedFiles.values().toArray();
+    const report = {
+      copies: items.length,
+      verified: 0,
+      retainedOriginals: retainedIds.length,
+      retainedIntact: retainedStates.filter((state) => state === 'intact').length,
+      retainedMissing: retainedStates.filter((state) => state === 'missing').length,
+      retainedChanged: retainedStates.filter((state) => state === 'changed').length,
+      notLinked: 0,
+      restored: 0,
+      restorable: 0,
+      removed: 0,
+      hiddenCopies: items.length - shownItems.length,
+      items: [] as PhysicalDeduplicationVerificationItem[],
+    };
+
+    for (const item of items) {
+      const row = byId.get(item.assetId);
+      const retainedFile = retainedFiles.get(item.retainedAssetId) ?? 'changed';
+      const linked = isLinkedToRetained(row, byId.get(item.retainedAssetId));
+      const restored = !!row && !row.deletedAt && !linked && row.originalPath === item.originalPath;
+      const copyFile = await this.copyFileState(item);
+      const restorable = linked && copyFile === 'present';
+
+      report.verified += linked && retainedFile === 'intact' ? 1 : 0;
+      report.notLinked += linked || restored ? 0 : 1;
+      report.restored += restored ? 1 : 0;
+      report.restorable += restorable ? 1 : 0;
+      report.removed += copyFile === 'removed' ? 1 : 0;
+
+      if (isShown(item)) {
+        report.items.push({
+          assetId: item.assetId,
+          ownerName: users.find((user) => user.id === item.ownerId)?.name ?? '',
+          originalFileName: row?.originalFileName ?? '',
+          type: asAssetType(row?.type ?? AssetType.Other),
+          canView: viewable.has(item.assetId),
+          retainedFile,
+          linked,
+          copyFile,
+          restored,
+          restorable,
+        });
+      }
+    }
+
+    report.items.sort((a, b) => a.originalFileName.localeCompare(b.originalFileName));
+    return report;
+  }
+
+  /**
+   * Put one copy of an applied plan back on its own file (FL-73), where the source guarantees it:
+   * the copy must still share the retained original, and its own former file must still be on disk
+   * holding exactly the reviewed bytes. Only the asset's record changes; no file is written or
+   * removed. Its generated files keep using the retained original's, which show the same bytes.
+   */
+  async restoreAppliedCopy(
+    auth: AuthDto,
+    snapshot: PhysicalDeduplicationApplySnapshot,
+    appliedIds: readonly string[],
+    assetId: string,
+  ): Promise<void> {
+    const item = appliedIds.includes(assetId) ? snapshot.items.find((entry) => entry.assetId === assetId) : undefined;
+    // Not listed and not restorable are one answer, so the endpoint never tells which ids are Locked.
+    const notRestorable = () => new BadRequestException('This copy is not one this plan changed.');
+    if (!item) {
+      throw notRestorable();
+    }
+    const isShown = await this.verificationVisibility(auth, snapshot, [item]);
+    if (!isShown(item)) {
+      throw notRestorable();
+    }
+
+    await this.databaseRepository.withLock(DatabaseLock.StorageTemplateMigration, async () => {
+      const rows = await this.physicalFileRepository.getPlanEvidence([item.assetId, item.retainedAssetId]);
+      const row = rows.find((entry) => entry.id === item.assetId);
+      const retainedRow = rows.find((entry) => entry.id === item.retainedAssetId);
+      if (!isLinkedToRetained(row, retainedRow)) {
+        throw new ConflictException('This copy no longer uses the retained original. Verify the plan again.');
+      }
+      if ((await this.copyFileState(item)) !== 'present') {
+        throw new ConflictException("This copy's own file is no longer on disk, so it can't go back to it.");
+      }
+
+      await this.physicalFileRepository.restoreOriginalPhysicalFile(item.assetId, {
+        path: item.originalPath,
+        checksum: Buffer.from(item.checksum, 'hex'),
+        sizeInBytes: item.sizeInBytes,
+      });
+      this.logger.log(`Physical deduplication: copy ${item.assetId} is back on its own file`);
+    });
+  }
+
+  /** What is at a copy's own former path now. A copy that never had its own path has nothing to restore. */
+  private async copyFileState(
+    item: PhysicalDeduplicationPlanItem,
+  ): Promise<PhysicalDeduplicationVerificationItem['copyFile']> {
+    if (item.originalPath === item.retainedPath) {
+      return 'removed';
+    }
+    const disk = await this.checkOnDisk(item.originalPath, item.checksum, item.sizeInBytes);
+    return disk === 'match' ? 'present' : disk === 'missing' ? 'removed' : 'changed';
+  }
+
+  /**
+   * Which copies of an applied plan the requester may be shown, by the rule `visibleRows` uses for
+   * a preview: a Locked copy of another account is hidden, and so is every copy of a Locked
+   * retained original of another account.
+   */
+  private async verificationVisibility(
+    auth: AuthDto,
+    snapshot: PhysicalDeduplicationApplySnapshot,
+    items: readonly PhysicalDeduplicationPlanItem[],
+  ) {
+    const lockedIds = await this.assetRepository.getLockedAssetIds([
+      ...items.map((item) => item.assetId),
+      ...items.map((item) => item.retainedAssetId),
+    ]);
+    const lockedOwnerId = getLockedOwnerId(auth);
+    return (item: PhysicalDeduplicationPlanItem) =>
+      (!lockedIds.has(item.assetId) || item.ownerId === lockedOwnerId) &&
+      (!lockedIds.has(item.retainedAssetId) || snapshot.masterUserId === lockedOwnerId);
+  }
+
   /** A file on disk against the checksum and size it was reviewed with. */
   private async checkOnDisk(path: string, checksum: string, sizeInBytes: number): Promise<DiskEvidence> {
     if (!(await this.storageRepository.checkFileExists(path))) {
@@ -696,6 +904,7 @@ export class PhysicalDeduplicationService extends BaseService {
         checksumMatch: false,
         decision: PhysicalDeduplicationDecision.Skip,
         reason: null,
+        ...mediaDetailOf(candidate),
       };
 
       if (candidate.isExternal || candidate.libraryId || candidate.isOffline) {
@@ -724,11 +933,12 @@ export class PhysicalDeduplicationService extends BaseService {
       copy.retainedAssetId = master.id;
       copy.checksumMatch = true;
 
-      if (!retainedById.has(master.id)) {
+      let retained = retainedById.get(master.id);
+      if (!retained) {
         const referencesBefore = master.physicalOriginalFileId
           ? await this.physicalFileRepository.countOriginalReferences(master.physicalOriginalFileId)
           : 1;
-        retainedById.set(master.id, {
+        retained = {
           assetId: master.id,
           ownerId: masterUserId,
           originalFileName: master.originalFileName,
@@ -738,12 +948,23 @@ export class PhysicalDeduplicationService extends BaseService {
           checksum: master.checksum.toString('hex'),
           referencesBefore: Math.max(referencesBefore, 1),
           referencesAfter: Math.max(referencesBefore, 1),
-        });
+          // Checked once per retained original (FL-73): a copy is never shared onto a file that is
+          // not there, and the page says which retained originals are unavailable.
+          fileAvailable: await this.storageRepository.checkFileExists(master.originalPath),
+          ...mediaDetailOf(master),
+        };
+        retainedById.set(master.id, retained);
       }
 
       // A copy that already points at the retained original has nothing left to reclaim.
       if (candidate.physicalOriginalFileId && candidate.physicalOriginalFileId === master.physicalOriginalFileId) {
         this.addCopy(summary, { ...copy, reason: PhysicalDeduplicationSkipReason.AlreadyShared });
+        continue;
+      }
+
+      if (!retained.fileAvailable) {
+        summary.skippedMissingMaster++;
+        this.addCopy(summary, { ...copy, reason: PhysicalDeduplicationSkipReason.RetainedFileMissing });
         continue;
       }
 

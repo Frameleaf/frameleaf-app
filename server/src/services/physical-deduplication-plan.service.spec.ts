@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DatabaseLock, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -102,6 +102,7 @@ describe(PhysicalDeduplicationPlanService.name, () => {
         .mockImplementation((values) => Promise.resolve({ created: operationOf({ ...values, id: 'created-1' }) })),
       getActiveOfKind: vi.fn().mockResolvedValue(undefined),
       getForOwner: vi.fn(),
+      getOfKind: vi.fn(),
       listRecentOfKind: vi.fn().mockResolvedValue([]),
       claimNext: vi.fn().mockResolvedValue(undefined),
       heartbeat: vi.fn().mockResolvedValue(true),
@@ -132,6 +133,8 @@ describe(PhysicalDeduplicationPlanService.name, () => {
       canApplyPlans: vi.fn().mockResolvedValue(true),
       applyPlanItem: vi.fn().mockResolvedValue(applied),
       recordPlanApplied: vi.fn().mockResolvedValue(undefined),
+      verifyAppliedCopies: vi.fn().mockResolvedValue({ copies: 1, items: [] }),
+      restoreAppliedCopy: vi.fn().mockResolvedValue(undefined),
     };
     sut = new PhysicalDeduplicationPlanService(
       mocks.logger as never,
@@ -478,6 +481,87 @@ describe(PhysicalDeduplicationPlanService.name, () => {
 
       expect(deduplication.applyPlanItem).not.toHaveBeenCalled();
       expect(operations.fail).toHaveBeenCalled();
+    });
+  });
+
+  describe('verify and restore (FL-73)', () => {
+    const outcome = (id: string, state: string) => ({
+      id,
+      state,
+      reasonKey: null,
+      message: null,
+      reclaimedBytes: 0,
+      at: '',
+    });
+
+    it('verifies only the copies an interrupted (cancelled) apply actually changed', async () => {
+      operations.getOfKind.mockResolvedValue(
+        operationOf({
+          status: MediaOperationStatus.Cancelled,
+          result: { version: 1, items: [outcome('copy-1', 'applied')], inFlight: null, retry: null },
+        } as never),
+      );
+
+      const report = await sut.verify(authStub.admin, 'operation-1');
+
+      expect(operations.getOfKind).toHaveBeenCalledWith('operation-1', MediaOperationKind.PhysicalDeduplication);
+      expect(deduplication.verifyAppliedCopies).toHaveBeenCalledWith(
+        authStub.admin,
+        expect.objectContaining({ planId: prepared.planId }),
+        ['copy-1'],
+      );
+      expect(report).toEqual(
+        expect.objectContaining({ operationId: 'operation-1', planId: prepared.planId, copies: 1 }),
+      );
+    });
+
+    it('counts already-applied copies from a resumed attempt, never skipped or failed ones', async () => {
+      operations.getOfKind.mockResolvedValue(
+        operationOf({
+          status: MediaOperationStatus.Completed,
+          result: {
+            version: 1,
+            items: [outcome('copy-1', 'already-applied'), outcome('copy-2', 'skipped'), outcome('copy-3', 'failed')],
+          },
+        } as never),
+      );
+
+      await sut.verify(authStub.admin, 'operation-1');
+
+      expect(deduplication.verifyAppliedCopies).toHaveBeenCalledWith(authStub.admin, expect.anything(), ['copy-1']);
+    });
+
+    it('refuses to verify a plan still being applied', async () => {
+      operations.getOfKind.mockResolvedValue(operationOf({ status: MediaOperationStatus.Rendering }));
+
+      await expect(sut.verify(authStub.admin, 'operation-1')).rejects.toBeInstanceOf(ConflictException);
+      expect(deduplication.verifyAppliedCopies).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for an id that is not an applied plan', async () => {
+      operations.getOfKind.mockResolvedValue(undefined);
+
+      await expect(sut.verify(authStub.admin, 'nope')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('restores one copy and answers with the plan verified again', async () => {
+      operations.getOfKind.mockResolvedValue(
+        operationOf({
+          status: MediaOperationStatus.Completed,
+          result: { version: 1, items: [outcome('copy-1', 'applied')] },
+        } as never),
+      );
+
+      const report = await sut.restore(authStub.admin, 'operation-1', { assetId: 'copy-1' });
+
+      expect(deduplication.restoreAppliedCopy).toHaveBeenCalledWith(
+        authStub.admin,
+        expect.objectContaining({ planId: prepared.planId }),
+        ['copy-1'],
+        'copy-1',
+      );
+      expect(deduplication.verifyAppliedCopies).toHaveBeenCalledAfter(deduplication.restoreAppliedCopy);
+      expect(report.operationId).toBe('operation-1');
     });
   });
 });

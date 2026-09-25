@@ -1,6 +1,7 @@
 import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique, UpdateDateColumn } from '@immich/sql-tools';
 import type { Generated, Timestamp } from '@immich/sql-tools';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
+import type { RenderColorPrecision } from 'src/utils/render-admission.js';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerAuditEvent, RenderWorkerStatus } from 'src/enum.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -132,6 +133,17 @@ export class RenderWorkerSessionTable {
 
   @Column({ type: 'timestamp with time zone' })
   conformanceReportedAt!: Timestamp;
+
+  /**
+   * FL-42: the encoders and decoders the conformance check verified, and the colour precision it
+   * verified. Exports are offered only to what a live session verified. Added by fork migration
+   * 0000000000172-RenderSessionOutputEvidence, not the schema generator.
+   */
+  @Column({ array: true, type: 'character varying', nullable: true, synchronize: false })
+  codecs!: string[] | null;
+
+  @Column({ type: 'jsonb', nullable: true, synchronize: false })
+  colorPrecision!: RenderColorPrecision | null;
 
   @Column({ type: 'timestamp with time zone' })
   expiresAt!: Timestamp;

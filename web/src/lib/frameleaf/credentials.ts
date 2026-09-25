@@ -1,6 +1,5 @@
 /**
- * Write-only server credentials (FL-67): the SMTP password, the OAuth client secret, the RunPod
- * API key and the Hugging Face token.
+ * Write-only server credentials (FL-67): the SMTP password, and the OAuth client secret.
  *
  * The server never returns these values, only whether each one is stored (`...Configured`).
  * They are replaced or cleared one at a time through `/admin/config/credentials/:name` from a
@@ -31,16 +30,6 @@ export const CREDENTIALS: Record<ConfigCredential, CredentialDefinition> = {
     labelKey: 'frameleaf_credentials_oauth_client_secret',
     helpKey: 'frameleaf_credentials_oauth_client_secret_help',
   },
-  [ConfigCredential.RunpodApiKey]: {
-    name: ConfigCredential.RunpodApiKey,
-    labelKey: 'frameleaf_credentials_runpod_api_key',
-    helpKey: 'frameleaf_credentials_runpod_api_key_help',
-  },
-  [ConfigCredential.HuggingfaceToken]: {
-    name: ConfigCredential.HuggingfaceToken,
-    labelKey: 'frameleaf_credentials_huggingface_token',
-    helpKey: 'frameleaf_credentials_huggingface_token_help',
-  },
 };
 
 /** The same limit the server applies. */
@@ -61,12 +50,6 @@ export const isCredentialConfigured = (config: PartialConfig, name: ConfigCreden
     case ConfigCredential.OauthClientSecret: {
       return !!config.oauth?.clientSecretConfigured;
     }
-    case ConfigCredential.RunpodApiKey: {
-      return !!config.machineLearning?.runpod?.apiKeyConfigured;
-    }
-    case ConfigCredential.HuggingfaceToken: {
-      return !!config.machineLearning?.runpod?.hfTokenConfigured;
-    }
   }
 };
 
@@ -83,10 +66,6 @@ export const withoutCredentialValues = <T extends PartialConfig>(config: T): T =
   if (copy.oauth) {
     copy.oauth.clientSecret = '';
   }
-  if (copy.machineLearning?.runpod) {
-    copy.machineLearning.runpod.apiKey = '';
-    copy.machineLearning.runpod.hfToken = '';
-  }
   return copy;
 };
 
@@ -99,19 +78,12 @@ export const forConfigSave = <T extends PartialConfig>(config: T): T => {
   const copy = withoutCredentialValues(config);
   delete copy.notifications?.smtp?.transport?.passwordConfigured;
   delete copy.oauth?.clientSecretConfigured;
-  delete copy.machineLearning?.runpod?.apiKeyConfigured;
-  delete copy.machineLearning?.runpod?.hfTokenConfigured;
   return copy;
 };
 
 /** Whether a configuration (for example an imported file) carries any credential value. */
 export const hasCredentialValues = (config: PartialConfig): boolean =>
-  !!(
-    config.notifications?.smtp?.transport?.password ||
-    config.oauth?.clientSecret ||
-    config.machineLearning?.runpod?.apiKey ||
-    config.machineLearning?.runpod?.hfToken
-  );
+  !!(config.notifications?.smtp?.transport?.password || config.oauth?.clientSecret);
 
 /**
  * The configuration after a credential change, for the shared settings state: the flag follows
@@ -130,18 +102,6 @@ export const withCredentialState = (
     }
     case ConfigCredential.OauthClientSecret: {
       next.oauth.clientSecretConfigured = configured;
-      break;
-    }
-    case ConfigCredential.RunpodApiKey: {
-      if (next.machineLearning.runpod) {
-        next.machineLearning.runpod.apiKeyConfigured = configured;
-      }
-      break;
-    }
-    case ConfigCredential.HuggingfaceToken: {
-      if (next.machineLearning.runpod) {
-        next.machineLearning.runpod.hfTokenConfigured = configured;
-      }
       break;
     }
   }

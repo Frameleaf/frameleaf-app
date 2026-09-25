@@ -114,10 +114,9 @@ const toOperationDestination = (kind: MlDestinationKind | undefined): MediaOpera
     case MlDestinationKind.Lan: {
       return MediaOperationDestination.Lan;
     }
-    // FL-72: both RunPod kinds are cloud; neither is ever labelled local.
-    case MlDestinationKind.RunPod:
-    case MlDestinationKind.RunPodVideo: {
-      return MediaOperationDestination.RunPod;
+    // FL-72, FL-159: the cloud destination is never labelled local.
+    case MlDestinationKind.FrameleafCloud: {
+      return MediaOperationDestination.FrameleafCloud;
     }
     default: {
       return MediaOperationDestination.Local;
@@ -870,7 +869,7 @@ export class EnrichmentPlanService {
     const verdict = evaluateAdmission({
       destination: row,
       workload,
-      endpoint: resolveEndpoint(row, this.machineLearning.getRunPodEndpoint()),
+      endpoint: resolveEndpoint(row),
       probe: this.probeFromRow(row),
       spentUsd: 0,
     });

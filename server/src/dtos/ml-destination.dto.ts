@@ -1,9 +1,11 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import {
+  MediaOperationDestinationSchema,
   MlAdmissionRefusalSchema,
   MlDestinationHealthSchema,
   MlDestinationKindSchema,
+  MlWorkerAccelerationSchema,
   MlWorkerRoleSchema,
   MlWorkloadSchema,
 } from 'src/enum.js';
@@ -11,9 +13,9 @@ import {
 /**
  * Machine-learning destinations and workload capabilities (FL-110).
  *
- * The API never returns a LAN bearer token; `authTokenConfigured` says one is stored. A
- * RunPod destination's `url` is whatever the RunPod state machine currently publishes and
- * is null while no pod or serverless worker is ready.
+ * The API never returns a LAN bearer token; `authTokenConfigured` says one is stored. The
+ * Frameleaf Cloud destination (FL-159) has no URL or token at all: `url` is always null for it,
+ * and its gateway facts (entitlement, consent version, AI Wallet) are in `cloud`.
  */
 
 const MlDestinationConsentSchema = z
@@ -21,8 +23,26 @@ const MlDestinationConsentSchema = z
     required: z.boolean().describe('Whether this destination sends media off the network and needs consent'),
     acknowledgedAt: z.string().nullable().describe('When an administrator recorded consent, or null'),
     acknowledgedBy: z.string().nullable().describe('Administrator who recorded consent, or null'),
+    version: z.string().nullable().describe('Frameleaf Cloud: the consent version accepted, or null'),
+    requiredVersion: z
+      .string()
+      .nullable()
+      .describe('Frameleaf Cloud: the consent version the cloud requires now, from the last check, or null'),
   })
   .meta({ id: 'MlDestinationConsentDto' });
+
+const MlDestinationCloudSchema = z
+  .object({
+    region: z.string().nullable().describe('Frameleaf Cloud data region'),
+    entitled: z.boolean().describe('The Frameleaf account has the cloud processing entitlement'),
+    balanceUsd: z.number().meta({ format: 'double' }).describe('AI Wallet balance, USD'),
+    heldUsd: z.number().meta({ format: 'double' }).describe('AI Wallet amount held by running jobs, USD'),
+    dailyCapUsd: z.number().meta({ format: 'double' }).nullable().describe('Daily AI Wallet limit, USD, or null'),
+    spentTodayUsd: z.number().meta({ format: 'double' }).describe('AI Wallet spend today, USD'),
+    refusal: MlAdmissionRefusalSchema.nullable().describe('Why the last check refused, or null'),
+    refusalDetail: z.string().nullable(),
+  })
+  .meta({ id: 'MlDestinationCloudDto' });
 
 const MlDestinationCostControlsSchema = z
   .object({
@@ -57,12 +77,12 @@ const MlDestinationHealthStateSchema = z
   })
   .meta({ id: 'MlDestinationHealthStateDto' });
 
-const MlDestinationResponseSchema = z
+export const MlDestinationResponseSchema = z
   .object({
     id: z.uuidv4(),
     kind: MlDestinationKindSchema,
     name: z.string(),
-    url: z.string().nullable().describe('Endpoint URL; null for a RunPod destination with no ready worker'),
+    url: z.string().nullable().describe('Endpoint URL; always null for Frameleaf Cloud'),
     authTokenConfigured: z.boolean().describe('Whether a bearer token is stored for this destination'),
     enabled: z.boolean(),
     workloads: z.array(MlWorkloadSchema).describe('Workloads the administrator allows on this destination'),
@@ -73,6 +93,9 @@ const MlDestinationResponseSchema = z
     consent: MlDestinationConsentSchema,
     costControls: MlDestinationCostControlsSchema,
     health: MlDestinationHealthStateSchema,
+    cloud: MlDestinationCloudSchema.nullable().describe(
+      'Frameleaf Cloud facts from the last check; null for other kinds',
+    ),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -96,8 +119,10 @@ const MlDestinationCreateSchema = z
     url: z
       .url()
       .optional()
-      .describe('Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod'),
-    authToken: z.string().max(4096).optional().describe('Bearer token for a LAN or RunPod video worker (write-only)'),
+      .describe(
+        'Required for a LAN destination, optional for a local one; Frameleaf Cloud is added from its own endpoint',
+      ),
+    authToken: z.string().max(4096).optional().describe('Bearer token for a LAN worker (write-only)'),
     workloads: z.array(MlWorkloadSchema).max(16).default([]),
     enabled: z.boolean().default(true),
     sharesLibraryHardware: sharesLibraryHardwareField,
@@ -127,6 +152,20 @@ const MlDestinationConsentRequestSchema = z
     acknowledgeMediaLeavesNetwork: z
       .literal(true)
       .describe('The administrator confirms that media sent to this destination leaves the network'),
+    version: z
+      .string()
+      .min(1)
+      .max(64)
+      .optional()
+      .describe('Frameleaf Cloud: the consent version being accepted; required for Frameleaf Cloud'),
+    features: z
+      .object({
+        identityNames: z.boolean().default(false).describe('Allow people names in cloud description prompts'),
+        medicalSignals: z.boolean().default(false).describe('Allow medical signals in cloud descriptions'),
+        ocrAddon: z.boolean().default(false).describe('Allow the cloud text-recognition add-on'),
+      })
+      .optional()
+      .describe('Frameleaf Cloud: per-feature choices; every feature is off unless chosen'),
   })
   .meta({ id: 'MlDestinationConsentRequestDto' });
 
@@ -134,6 +173,7 @@ const MlWorkloadRouteSchema = z
   .object({
     workload: MlWorkloadSchema,
     destinationId: z.uuidv4().nullable().describe('Destination the workload is routed to, or null when unrouted'),
+    modelId: z.string().nullable().describe('Frameleaf Cloud catalogue model for this workload, or null'),
   })
   .meta({ id: 'MlWorkloadRouteDto' });
 
@@ -146,6 +186,13 @@ const MlWorkloadRoutesResponseSchema = z
 const MlWorkloadRouteUpdateSchema = z
   .object({
     destinationId: z.uuidv4().nullable().describe('Destination to route the workload to; null removes the route'),
+    modelId: z
+      .string()
+      .min(1)
+      .max(200)
+      .nullable()
+      .optional()
+      .describe('Frameleaf Cloud only: the catalogue model this workload uses'),
   })
   .meta({ id: 'MlWorkloadRouteUpdateDto' });
 
@@ -194,7 +241,25 @@ const MlCapabilityDestinationSchema = z
     name: z.string(),
     health: MlDestinationHealthSchema,
     consentGranted: z.boolean().describe('True when the destination needs no consent or consent is recorded'),
-    available: z.boolean().describe('Enabled, healthy on the last probe, consented and reporting this workload'),
+    available: z
+      .boolean()
+      .describe('Enabled, healthy on a check that is not stale, consented and reporting this workload'),
+    leavesNetwork: z.boolean().describe('Work sent here leaves this network (Frameleaf Cloud)'),
+    region: z.string().nullable().describe('Frameleaf Cloud data region, or null'),
+    checkedAt: z.string().nullable().describe('When the destination was last checked, or null'),
+    stale: z
+      .boolean()
+      .describe('The last check is too old to count as evidence; the destination is checked again first'),
+    acceleration: MlWorkerAccelerationSchema.describe('CPU or accelerator, from the last check; unknown without facts'),
+    gpuMemoryBytes: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('Largest GPU memory the worker reported, or null'),
+    servedWorkloads: z
+      .array(MlWorkloadSchema)
+      .nullable()
+      .describe('Workloads the last check verified, or null when it never answered'),
   })
   .meta({ id: 'MlCapabilityDestinationDto' });
 
@@ -207,12 +272,31 @@ const MlWorkloadCapabilitySchema = z
   })
   .meta({ id: 'MlWorkloadCapabilityDto' });
 
+const StudioRenderEvidenceSchema = z
+  .object({
+    destination: MediaOperationDestinationSchema,
+    gpuMemoryBytes: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('Largest GPU memory a qualified session verified, or null'),
+    codecs: z.array(z.string()).describe('Encoders and decoders qualified sessions verified'),
+    maxBitDepth: z.int().describe('Highest bit depth a qualified session verified (8 when none said more)'),
+    hdr10: z.boolean().describe('A qualified session verified HDR10 output'),
+    dolbyVision: z.boolean().describe('A qualified session verified Dolby Vision output'),
+    sessions: z.int().describe('Qualified live render sessions for this destination'),
+  })
+  .meta({ id: 'StudioRenderEvidenceDto' });
+
 const StudioCapabilitiesSchema = z
   .object({
     gpuWorker: z.boolean().describe('False until the Studio render worker admission (FL-95, FL-104) reports one'),
     renderWorker: z.boolean().describe('False until the Studio render worker admission (FL-95, FL-104) reports one'),
     restorationWorker: z.boolean().describe('A destination can serve a restoration workload right now'),
     transcriptionWorker: z.boolean().describe('A destination can serve the Studio AI workload right now'),
+    render: z
+      .array(StudioRenderEvidenceSchema)
+      .describe('FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision)'),
   })
   .meta({ id: 'StudioCapabilitiesDto' });
 

@@ -197,7 +197,7 @@ describe('Command Center measured Overview', () => {
     it('reads the ML endpoint and cloud destination from the routed destinations', async () => {
       sdk.listMlDestinations.mockResolvedValue([
         destination('local', 'local', 'healthy'),
-        destination('pod', 'runpod', 'healthy'),
+        destination('pod', 'frameleaf-cloud', 'healthy'),
       ]);
       sdk.getMlWorkloadRoutes.mockResolvedValue({
         routes: [
@@ -209,7 +209,7 @@ describe('Command Center measured Overview', () => {
       render(CommandCenterOverview);
 
       await waitFor(() => expect(screen.getByRole('link', { name: /ML endpoint/ })).toHaveTextContent('Reachable'));
-      expect(screen.getByRole('link', { name: /Cloud destination/ })).toHaveTextContent('RunPod selected');
+      expect(screen.getByRole('link', { name: /Cloud destination/ })).toHaveTextContent('Frameleaf Cloud selected');
       expect(screen.getByRole('link', { name: /GPU Studio/ })).toHaveTextContent('Qualified');
       expect(screen.queryByRole('link', { name: /Check worker compatibility/ })).toBeNull();
     });

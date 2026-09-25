@@ -15,6 +15,7 @@ import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
+import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
@@ -27,6 +28,7 @@ import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verifi
 import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
 import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
 import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
+import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
@@ -44,6 +46,7 @@ import { MapService } from 'src/services/map.service.js';
 import { MediaHealthOperationService } from 'src/services/media-health-operation.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
+import { MediaOperationEventService } from 'src/services/media-operation-event.service.js';
 import { MediaOperationSweepService } from 'src/services/media-operation-sweep.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
@@ -68,7 +71,6 @@ import { QueueService } from 'src/services/queue.service.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { RunningJobService } from 'src/services/running-job.service.js';
-import { RunPodService } from 'src/services/runpod.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
@@ -106,6 +108,8 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  CloudMlService,
+  HardwareCheckService,
   ICloudMetadataService,
   ICloudRelationsService,
   ICloudAlbumService,
@@ -153,6 +157,7 @@ export const services = [
   MediaHealthOperationService,
   MediaHealthService,
   MediaOperationService,
+  MediaOperationEventService,
   MediaOperationSweepService,
   PhotoToolsService,
   RenderWorkerService,
@@ -175,7 +180,6 @@ export const services = [
   PreservationService,
   PreservationWorkerService,
   QueueService,
-  RunPodService,
   RestorationWorkerService,
   RunningJobService,
   SearchService,

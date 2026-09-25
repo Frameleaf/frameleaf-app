@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Readable } from 'node:stream';
+import type { PhysicalDeduplicationMigrationState } from 'src/types.js';
 import {
   AssetStatus,
   DatabaseLock,
@@ -137,6 +138,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.database.withLock.mockImplementation((_lock, callback) => callback());
       mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
       mocks.physicalFile.getGeneratedFiles.mockResolvedValue([]);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
       return { sut, mocks };
     };
 
@@ -281,6 +283,85 @@ describe(PhysicalDeduplicationService.name, () => {
       const [, summary] = mocks.systemMetadata.set.mock.calls[0] as [unknown, Record<string, unknown>];
       expect(summary).toEqual(expect.objectContaining({ scopeUserId: 'emma', eligibleAssets: 1 }));
       expect(summary.copies).toEqual([expect.objectContaining({ assetId: 'copy-2', ownerId: 'emma' })]);
+    });
+  });
+
+  describe('handleDryRun fixtures (FL-73)', () => {
+    const setup = () => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      mocks.forkSchema.getState.mockResolvedValue(forkSchemaActive);
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback());
+      mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
+      mocks.physicalFile.getGeneratedFiles.mockResolvedValue([]);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      mockConfig(mocks, { enabled: true, masterUserId: 'master-user' });
+      return { sut, mocks };
+    };
+    const saved = (mocks: ServiceMocks) =>
+      (mocks.systemMetadata.set.mock.calls[0] as [unknown, PhysicalDeduplicationMigrationState])[1];
+
+    it('shares one retained original with copies from several owners and counts every reference', async () => {
+      const { sut, mocks } = setup();
+      mocks.physicalFile.getMigrationCandidates.mockReturnValue(
+        stream(
+          candidate({ id: 'copy-jamie', ownerId: 'jamie' }),
+          candidate({ id: 'copy-emma', ownerId: 'emma' }),
+          candidate({ id: 'copy-alex', ownerId: 'alex', type: 'VIDEO', width: 3840, height: 2160, duration: 72_000 }),
+        ) as never,
+      );
+      mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master({ width: 6000, height: 4000 }) as never);
+      mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
+
+      await sut.handleDryRun({});
+
+      const summary = saved(mocks);
+      expect(summary.eligibleAssets).toBe(3);
+      expect(summary.retained).toEqual([
+        expect.objectContaining({
+          assetId: 'master-1',
+          referencesBefore: 1,
+          referencesAfter: 4,
+          fileAvailable: true,
+          width: 6000,
+          height: 4000,
+          duration: null,
+        }),
+      ]);
+      expect(summary.copies!.map((copy) => copy.ownerId)).toEqual(['jamie', 'emma', 'alex']);
+      expect(summary.copies![2]).toEqual(expect.objectContaining({ width: 3840, height: 2160, duration: 72_000 }));
+      // The retained original's file is looked for once, however many copies share it.
+      expect(mocks.storage.checkFileExists).toHaveBeenCalledTimes(1);
+      expect(mocks.storage.checkFileExists).toHaveBeenCalledWith('/upload/library/taylor/master-1.jpg');
+    });
+
+    it('skips every copy of a retained original whose file is missing, and says why', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      mocks.physicalFile.getMigrationCandidates.mockReturnValue(
+        stream(candidate(), candidate({ id: 'copy-2', ownerId: 'emma' })) as never,
+      );
+      mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
+      mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
+
+      await sut.handleDryRun({});
+
+      const summary = saved(mocks);
+      expect(summary).toEqual(
+        expect.objectContaining({ eligibleAssets: 0, reclaimableBytes: 0, skippedMissingMaster: 2 }),
+      );
+      expect(summary.retained).toEqual([
+        expect.objectContaining({ assetId: 'master-1', fileAvailable: false, referencesAfter: 1 }),
+      ]);
+      expect(summary.copies).toEqual([
+        expect.objectContaining({
+          decision: PhysicalDeduplicationDecision.Skip,
+          reason: PhysicalDeduplicationSkipReason.RetainedFileMissing,
+          retainedAssetId: 'master-1',
+          checksumMatch: true,
+        }),
+        expect.objectContaining({ reason: PhysicalDeduplicationSkipReason.RetainedFileMissing }),
+      ]);
+      expect(mocks.physicalFile.getGeneratedFiles).not.toHaveBeenCalled();
     });
   });
 
@@ -760,9 +841,18 @@ describe(PhysicalDeduplicationService.name, () => {
       );
     });
 
+    it('rejects a preview while file reuse is off (FL-73 configuration error)', async () => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      mockConfig(mocks, { enabled: false, masterUserId: 'master-user' }, null);
+      mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
+
+      await expect(sut.requestPreview({})).rejects.toThrow('Enable file reuse before preparing a plan.');
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
     it('queues the dry run with the chosen account and scope', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mockConfig(mocks, { enabled: false, masterUserId: null }, null);
+      mockConfig(mocks, { enabled: true, masterUserId: null }, null);
       mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
 
       await sut.requestPreview({ masterUserId: 'taylor', scopeUserId: 'emma' });
@@ -1031,6 +1121,240 @@ describe(PhysicalDeduplicationService.name, () => {
       expect(plan).toEqual(
         expect.objectContaining({ fingerprint, planId: physicalDeduplicationPlanId(fingerprint), applicableCopies: 0 }),
       );
+    });
+  });
+
+  describe('getPreview byte accounting (FL-73)', () => {
+    const counts = { active: 0, completed: 0, failed: 0, delayed: 0, waiting: 0, paused: 0 };
+    const retainedOf = (assetId: string, sizeInBytes: number, referencesAfter: number, extra = {}) => ({
+      assetId,
+      ownerId: 'master-user',
+      originalFileName: `${assetId}.jpg`,
+      originalPath: `/${assetId}.jpg`,
+      type: 'IMAGE',
+      sizeInBytes,
+      checksum: 'aa',
+      referencesBefore: 1,
+      referencesAfter,
+      ...extra,
+    });
+
+    it('separates logical asset bytes, shared-original bytes, the estimate and the measured bytes', async () => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      mockConfig(
+        mocks,
+        { enabled: true, masterUserId: 'master-user' },
+        {
+          ...lastDryRun,
+          reclaimableBytes: 300,
+          deletedBytes: 120,
+          // Three assets share a 100-byte original; a 50-byte original's only copy was skipped.
+          retained: [retainedOf('shared', 100, 3), retainedOf('alone', 50, 1, { fileAvailable: false })],
+          copies: [],
+          copiesTruncated: false,
+        },
+      );
+      mocks.job.getJobCounts.mockResolvedValue(counts);
+      mocks.user.getList.mockResolvedValue([] as never);
+
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/shared.jpg'));
+
+      const { plan } = await sut.getPreview(authStub.admin);
+
+      expect(plan).toEqual(
+        expect.objectContaining({
+          logicalBytes: 300,
+          sharedOriginalBytes: 100,
+          reclaimableBytes: 300,
+          deletedBytes: 120,
+        }),
+      );
+      expect(plan?.retained).toEqual([
+        // FL-71 UT-24: availability is read from disk now, not trusted from the stored preview.
+        expect.objectContaining({ assetId: 'shared', fileAvailable: true, width: null, height: null, duration: null }),
+        expect.objectContaining({ assetId: 'alone', fileAvailable: false }),
+      ]);
+    });
+  });
+
+  describe('verifyAppliedCopies and restoreAppliedCopy (FL-73)', () => {
+    const hex = 'aa'.repeat(20);
+    const item = (assetId: string, ownerId = 'jamie') => ({
+      assetId,
+      ownerId,
+      originalPath: `/upload/${ownerId}/${assetId}.jpg`,
+      checksum: hex,
+      sizeInBytes: 10,
+      retainedAssetId: MASTER_ID,
+      retainedPath: '/upload/master/a.jpg',
+      retainedChecksum: hex,
+    });
+    const snapshot = {
+      version: 1 as const,
+      planId: 'PD-ABCDEF12',
+      fingerprint: 'ab'.repeat(32),
+      reviewToken: 'cd'.repeat(32),
+      ranAt: new Date().toISOString(),
+      masterUserId: 'master-user',
+      scopeUserId: null,
+      excludedRetainedAssetIds: [],
+      items: [item(COPY_1), item(COPY_2, 'emma')],
+      retained: [
+        {
+          assetId: MASTER_ID,
+          originalPath: '/upload/master/a.jpg',
+          checksum: hex,
+          sizeInBytes: 10,
+          referencesBefore: 1,
+        },
+      ],
+      estimatedBytes: 20,
+    };
+    const row = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      ownerId: id === MASTER_ID ? 'master-user' : id === COPY_2 ? 'emma' : 'jamie',
+      originalPath: '/upload/master/a.jpg',
+      originalFileName: id === COPY_2 ? 'b.jpg' : 'a.jpg',
+      type: 'IMAGE',
+      checksum: Buffer.from(hex, 'hex'),
+      sizeInBytes: 10,
+      deletedAt: null,
+      status: AssetStatus.Active,
+      isExternal: false,
+      isOffline: false,
+      libraryId: null,
+      physicalOriginalFileId: 'pf-1',
+      ...overrides,
+    });
+
+    const setup = (onDisk: string[], rows = [row(MASTER_ID), row(COPY_1), row(COPY_2)]) => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      const disk = new Set(onDisk);
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback());
+      mocks.physicalFile.getPlanEvidence.mockResolvedValue(rows as never);
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(disk.has(path)));
+      mocks.storage.stat.mockResolvedValue({ size: 10 } as never);
+      mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from(hex, 'hex'));
+      mocks.user.getList.mockResolvedValue([
+        { id: 'jamie', name: 'Jamie' },
+        { id: 'emma', name: 'Emma' },
+      ] as never);
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set());
+      return { sut, mocks };
+    };
+
+    it('hashes the retained original again and confirms every copy still resolves to it', async () => {
+      const { sut, mocks } = setup(['/upload/master/a.jpg']);
+
+      const report = await sut.verifyAppliedCopies(authStub.admin, snapshot, [COPY_1, COPY_2]);
+
+      expect(mocks.crypto.hashFileMatching).toHaveBeenCalledWith('/upload/master/a.jpg', Buffer.from(hex, 'hex'));
+      expect(report).toEqual(
+        expect.objectContaining({
+          copies: 2,
+          verified: 2,
+          retainedOriginals: 1,
+          retainedIntact: 1,
+          notLinked: 0,
+          restorable: 0,
+          removed: 2,
+          hiddenCopies: 0,
+        }),
+      );
+      expect(report.items).toEqual([
+        expect.objectContaining({
+          assetId: COPY_1,
+          ownerName: 'Jamie',
+          retainedFile: 'intact',
+          linked: true,
+          copyFile: 'removed',
+          restorable: false,
+        }),
+        expect.objectContaining({ assetId: COPY_2, ownerName: 'Emma', copyFile: 'removed' }),
+      ]);
+      // Verifying never writes.
+      expect(mocks.physicalFile.restoreOriginalPhysicalFile).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('reports a retained original missing on disk and only verifies the copies listed as applied', async () => {
+      const { sut } = setup([]);
+
+      const report = await sut.verifyAppliedCopies(authStub.admin, snapshot, [COPY_1]);
+
+      expect(report).toEqual(expect.objectContaining({ copies: 1, verified: 0, retainedMissing: 1 }));
+      expect(report.items).toEqual([expect.objectContaining({ assetId: COPY_1, retainedFile: 'missing' })]);
+    });
+
+    it('offers to restore a copy whose own file is still on disk (interrupted removal)', async () => {
+      const { sut } = setup(['/upload/master/a.jpg', '/upload/jamie/' + COPY_1 + '.jpg']);
+
+      const report = await sut.verifyAppliedCopies(authStub.admin, snapshot, [COPY_1, COPY_2]);
+
+      expect(report).toEqual(expect.objectContaining({ restorable: 1, removed: 1 }));
+      expect(report.items[0]).toEqual(
+        expect.objectContaining({ assetId: COPY_1, copyFile: 'present', restorable: true }),
+      );
+    });
+
+    it('counts a copy that no longer resolves to the retained original (shared path changed)', async () => {
+      const { sut } = setup(
+        ['/upload/master/a.jpg'],
+        [row(MASTER_ID), row(COPY_1, { originalPath: '/moved/a.jpg', physicalOriginalFileId: 'pf-2' }), row(COPY_2)],
+      );
+
+      const report = await sut.verifyAppliedCopies(authStub.admin, snapshot, [COPY_1, COPY_2]);
+
+      expect(report).toEqual(expect.objectContaining({ verified: 1, notLinked: 1 }));
+      expect(report.items[0]).toEqual(expect.objectContaining({ assetId: COPY_1, linked: false, restored: false }));
+    });
+
+    it("counts, but never lists, another account's Locked copy", async () => {
+      const { sut, mocks } = setup(['/upload/master/a.jpg']);
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set([COPY_2]));
+
+      const report = await sut.verifyAppliedCopies(authStub.admin, snapshot, [COPY_1, COPY_2]);
+
+      expect(report).toEqual(expect.objectContaining({ copies: 2, verified: 2, hiddenCopies: 1 }));
+      expect(report.items.map((entry) => entry.assetId)).toEqual([COPY_1]);
+    });
+
+    it('restores a linked copy onto its own file when that file still holds the reviewed bytes', async () => {
+      const ownPath = `/upload/jamie/${COPY_1}.jpg`;
+      const { sut, mocks } = setup(['/upload/master/a.jpg', ownPath]);
+
+      await sut.restoreAppliedCopy(authStub.admin, snapshot, [COPY_1], COPY_1);
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.StorageTemplateMigration, expect.any(Function));
+      expect(mocks.crypto.hashFileMatching).toHaveBeenCalledWith(ownPath, Buffer.from(hex, 'hex'));
+      expect(mocks.physicalFile.restoreOriginalPhysicalFile).toHaveBeenCalledWith(COPY_1, {
+        path: ownPath,
+        checksum: Buffer.from(hex, 'hex'),
+        sizeInBytes: 10,
+      });
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('cannot restore a copy whose own file was removed', async () => {
+      const { sut, mocks } = setup(['/upload/master/a.jpg']);
+
+      await expect(sut.restoreAppliedCopy(authStub.admin, snapshot, [COPY_1], COPY_1)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(mocks.physicalFile.restoreOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+
+    it('refuses a copy the plan did not change, and a hidden one, with the same answer', async () => {
+      const { sut, mocks } = setup(['/upload/master/a.jpg', `/upload/emma/${COPY_2}.jpg`]);
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set([COPY_2]));
+
+      await expect(sut.restoreAppliedCopy(authStub.admin, snapshot, [COPY_1], COPY_2)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(sut.restoreAppliedCopy(authStub.admin, snapshot, [COPY_2], COPY_2)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.physicalFile.restoreOriginalPhysicalFile).not.toHaveBeenCalled();
     });
   });
 });

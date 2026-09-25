@@ -21,9 +21,14 @@ import {
   reasonKey,
   restoreState,
   restoreStep,
+  PRESERVATION_MAX_SELECTED,
   scopeToRequest,
+  searchScope,
+  selectionForPreservation,
+  selectionShortfall,
   supportLevelKey,
 } from './preservation';
+import { emptyPaletteCatalog } from './search-palette';
 
 const operation = (status: MediaOperationStatus, kind = MediaOperationKind.PreservationExport) =>
   ({ status, kind }) as MediaOperationDto;
@@ -67,6 +72,85 @@ describe('scopeToRequest', () => {
     expect(defaultPackageName({ ...emptyScope(), kind: 'dates', from: '2024-01-01', to: '2024-12-31' }, today)).toBe(
       'Photos 2024-01-01 to 2024-12-31',
     );
+  });
+});
+
+describe('search scope (FL-74 “select an authorized query”)', () => {
+  const catalog = { ...emptyPaletteCatalog(), people: [{ id: 'p1', name: 'Jamie' }], years: [{ value: '2024' }] };
+
+  it('compiles the search palette’s operators against the account’s own vocabulary', () => {
+    const scope = searchScope('person:Jamie is:favorite', catalog);
+    expect(scope.filter).toMatchObject({ personIds: { all: ['p1'] }, isFavorite: { eq: true } });
+    expect(scope.tokens.map((token) => token.key)).toEqual(['person', 'is']);
+    expect(scope.text).toBe('');
+    expect(scopeToRequest({ ...emptyScope(), kind: 'search', searchFilter: scope.filter })).toEqual({
+      filter: scope.filter,
+    });
+  });
+
+  it('searches free text in every text field, recognized text included, as Search’s “All text” does', () => {
+    const scope = searchScope('  lake   louise ', catalog);
+    expect(scope.text).toBe('lake louise');
+    expect(scope.filter?.or).toEqual([
+      { originalFileName: { like: 'lake louise' } },
+      { description: { like: 'lake louise' } },
+      { ocr: { matches: 'lake louise' } },
+      { originalPath: { like: 'lake louise' } },
+    ]);
+  });
+
+  it('keeps an operator it cannot resolve as text instead of widening the search', () => {
+    const scope = searchScope('person:Nobody', catalog);
+    expect(scope.tokens).toEqual([]);
+    expect(scope.text).toBe('person:Nobody');
+    expect(scope.filter?.personIds).toBeUndefined();
+  });
+
+  it('asks nothing of an empty search', () => {
+    const scope = searchScope(' '.repeat(3), catalog);
+    expect(scope.filter).toBeNull();
+    expect(scopeToRequest({ ...emptyScope(), kind: 'search', searchFilter: scope.filter })).toBeNull();
+  });
+
+  it('says when text was cut to what a search takes', () => {
+    const scope = searchScope('a'.repeat(600), catalog);
+    expect(scope.truncated).toBe(true);
+    expect(scope.text).toHaveLength(500);
+  });
+
+  it('names a package after a search or a selection', () => {
+    const today = new Date('2026-09-23T10:00:00.000Z');
+    expect(defaultPackageName({ ...emptyScope(), kind: 'search' }, today)).toBe('Search 2026-09-23');
+    expect(defaultPackageName({ ...emptyScope(), kind: 'selection' }, today)).toBe('Selection 2026-09-23');
+  });
+});
+
+describe('selection scope (FL-74 “Export for preservation…”)', () => {
+  it('sends the viewer’s own items and counts the ones known to be someone else’s', () => {
+    const assets = [
+      { id: 'mine', ownerId: 'me' },
+      { id: 'partner', ownerId: 'partner' },
+      { id: 'shared', ownerId: 'friend' },
+    ];
+    expect(selectionForPreservation(['mine', 'partner', 'offscreen', 'mine', 'shared'], assets, 'me')).toEqual({
+      assetIds: ['mine', 'offscreen'],
+      leftOut: 2,
+    });
+  });
+
+  it('asks for exactly the chosen items, and nothing for an empty or oversized selection', () => {
+    expect(scopeToRequest({ ...emptyScope(), kind: 'selection', assetIds: ['a', 'b'] })).toEqual({
+      assetIds: ['a', 'b'],
+    });
+    expect(scopeToRequest({ ...emptyScope(), kind: 'selection' })).toBeNull();
+    const tooMany = Array.from({ length: PRESERVATION_MAX_SELECTED + 1 }, (_, index) => String(index));
+    expect(scopeToRequest({ ...emptyScope(), kind: 'selection', assetIds: tooMany })).toBeNull();
+  });
+
+  it('counts the items the server did not include without naming them', () => {
+    expect(selectionShortfall(10, { items: 7, lockedItems: 1 })).toBe(2);
+    expect(selectionShortfall(3, { items: 3, lockedItems: 0 })).toBe(0);
+    expect(selectionShortfall(1, { items: 2, lockedItems: 0 })).toBe(0);
   });
 });
 

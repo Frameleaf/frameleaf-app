@@ -7,8 +7,9 @@
    * asset access on its own; otherwise a labelled placeholder stands in, so an administrator
    * never sees another account's photo just because it appears in an operational aggregate.
    *
-   * A retained original that is no longer on disk (`unavailable`, FL-71 UT-24) is dimmed with the
-   * template's "Unavailable" overlay (`PhysicalDedupManager.jsx` `Thumb`, `.pd-thumb-unavailable`).
+   * `unavailable` marks a retained original whose file was not on disk when the preview ran (FL-73,
+   * UT-24): the prototype's `.pd-thumb.unavailable` with its "Unavailable" overlay
+   * (PhysicalDedupManager.jsx:80-97, physical-dedup-manager.css:322-349).
    */
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, AssetTypeEnum } from '@immich/sdk';
@@ -36,16 +37,16 @@
 <span class="thumb {size}" class:hidden-media={!canView} class:unavailable>
   {#if src}
     <img {src} alt="" loading="lazy" draggable="false" />
-  {:else}
+  {:else if !unavailable}
     <span class="placeholder">
       <Icon icon={mdiEyeOffOutline} size="1.125rem" aria-hidden={true} />
       <span>{$t('frameleaf_dedup_hidden_thumbnail')}</span>
     </span>
   {/if}
   {#if unavailable}
-    <span class="unavailable-overlay">
+    <span class="unavailable-label">
       <Icon icon={mdiFileAlertOutline} size="1.125rem" aria-hidden={true} />
-      <span>{$t('frameleaf_dedup_thumb_unavailable')}</span>
+      <span>{$t('frameleaf_dedup_unavailable')}</span>
     </span>
   {/if}
   {#if type === AssetTypeEnum.Video}
@@ -100,15 +101,13 @@
     font-weight: 600;
   }
   .cell .placeholder span,
-  .copy .placeholder span,
-  .cell .unavailable-overlay span {
+  .copy .placeholder span {
     display: none;
   }
-  /* The template's `.pd-thumb.unavailable img` and `.pd-thumb-unavailable` (physical-dedup-manager.css). */
   .unavailable img {
     filter: grayscale(1) brightness(0.45);
   }
-  .unavailable-overlay {
+  .unavailable-label {
     position: absolute;
     inset: 0;
     display: flex;
@@ -116,10 +115,19 @@
     align-items: center;
     justify-content: center;
     gap: 0.25rem;
-    color: #f3f5f6;
+    padding: 0.25rem;
+    text-align: center;
+    color: var(--fl-text);
     font-size: var(--fl-font-micro);
     font-weight: 600;
-    text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+  }
+  .unavailable:has(img) .unavailable-label {
+    color: #f3f5f6;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+  .cell .unavailable-label span,
+  .copy .unavailable-label span {
+    display: none;
   }
   .kind {
     position: absolute;

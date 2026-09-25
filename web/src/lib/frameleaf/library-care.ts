@@ -192,12 +192,52 @@ export const trashable = (rows: readonly LibraryCareRow[]) =>
     (row) => row.status === MediaHealthStatus.CorruptConfirmed || row.status === MediaHealthStatus.TrashQueued,
   );
 
-/** Rows a search for originals can cover. */
-export const locatable = (rows: readonly LibraryCareRow[]) =>
+/** RAW originals, by the extensions the server reads as RAW (server/src/utils/mime-types.ts `raw`). */
+const RAW_EXTENSIONS: ReadonlySet<string> = new Set([
+  '3fr',
+  'ari',
+  'arw',
+  'cap',
+  'cin',
+  'cr2',
+  'cr3',
+  'crw',
+  'dcr',
+  'dng',
+  'erf',
+  'fff',
+  'iiq',
+  'k25',
+  'kdc',
+  'mrw',
+  'nef',
+  'nrw',
+  'orf',
+  'ori',
+  'pef',
+  'psd',
+  'raf',
+  'raw',
+  'rw2',
+  'rwl',
+  'sr2',
+  'srf',
+  'srw',
+  'x3f',
+]);
+
+export const isRawName = (name: string) => RAW_EXTENSIONS.has(name.split('.').pop()?.toLowerCase() ?? '');
+
+/**
+ * Rows a search for originals can cover. With Library care's "Suggest recoverable RAW sources" off,
+ * RAW originals are not searched for (the server refuses them too).
+ */
+export const locatable = (rows: readonly LibraryCareRow[], { rawRecovery = true }: { rawRecovery?: boolean } = {}) =>
   rows.filter(
     (row) =>
-      (row.category === MediaHealthCategory.Missing && needsAttention(row.status)) ||
-      row.status === MediaHealthStatus.CorruptConfirmed,
+      ((row.category === MediaHealthCategory.Missing && needsAttention(row.status)) ||
+        row.status === MediaHealthStatus.CorruptConfirmed) &&
+      (rawRecovery || !isRawName(row.name)),
   );
 
 /**
@@ -328,3 +368,62 @@ export const LIBRARY_CARE_POLL_MS = 3000;
 /** The label of one Library Care activity action the server reports. */
 export const libraryCareActivityKey = (action: string): Translations =>
   `library_care_activity_${action.replaceAll('-', '_')}` as Translations;
+
+/* ------------------------------------------------------------------ */
+/* Whose findings (UT-13)                                              */
+/* ------------------------------------------------------------------ */
+
+/** `all`, or one account's id. */
+export type LibraryCareOwner = string;
+
+export type AccountOption = { value: LibraryCareOwner; name: string | null };
+
+/**
+ * The Account select (UtilitiesManager.jsx:158-172): "All accounts" and then every account by name,
+ * the administrator's own included. Somebody who is not an administrator reviews only their own
+ * findings, so they are offered only themselves. `name: null` is "All accounts".
+ */
+export const accountOptions = (
+  users: readonly { id: string; name: string }[],
+  self: { id: string; name: string },
+  isAdmin: boolean,
+): AccountOption[] => {
+  if (!isAdmin) {
+    return [{ value: self.id, name: self.name }];
+  }
+  const everyone = users.some(({ id }) => id === self.id) ? users : [self, ...users];
+  return [{ value: 'all', name: null }, ...everyone.map(({ id, name }) => ({ value: id, name }))];
+};
+
+/**
+ * Whose findings the page opens on: the account the Command Center's "Viewing" scope names
+ * (`?scope=user:<id>`), or — as the template defaults — all accounts. Only ever the reader's own for
+ * somebody who is not an administrator.
+ */
+export const initialOwner = (
+  scope: string | null,
+  users: readonly { id: string }[],
+  selfId: string,
+  isAdmin: boolean,
+): LibraryCareOwner => {
+  if (!isAdmin) {
+    return selfId;
+  }
+  const id = scope?.startsWith('user:') ? scope.slice('user:'.length) : null;
+  return id && (id === selfId || users.some((user) => user.id === id)) ? id : 'all';
+};
+
+/** The owner choice as the query the server reads. */
+export const ownerScope = (owner: LibraryCareOwner, selfId: string) =>
+  owner === 'all' ? { allAccounts: true } : owner === selfId ? {} : { ownerId: owner };
+
+/* ------------------------------------------------------------------ */
+/* Undo (UT-2)                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Whether moving these rows to the trash can be undone from this page: the viewer can restore only
+ * their own items from the trash, so a set that includes another account's items offers no Undo.
+ */
+export const trashUndoable = (rows: readonly Pick<LibraryCareRow, 'ownerId'>[], selfId: string) =>
+  rows.length > 0 && rows.every((row) => row.ownerId === selfId);

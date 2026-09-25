@@ -23,7 +23,7 @@ This fork is not a replacement for backups, access control, or careful human rev
 ### Telemetry and Automatic Reporting
 
 Telemetry is disabled in code and cannot be enabled through application settings or deployment
-variables. This applies to local and RunPod machine-learning images built from this fork.
+variables. This applies to every machine-learning image built from this fork.
 
 - Hugging Face reporting is disabled before importing ML libraries. Its direct telemetry sender
   is also blocked, including when the host imported the Hub first. Download headers use a
@@ -41,7 +41,7 @@ variables. This applies to local and RunPod machine-learning images built from t
 - Transformers loads downloaded model files locally. Required model downloads remain enabled;
   no global offline mode or network block is imposed.
 
-Photo uploads, sharing, model downloads, configured remote ML/RunPod inference, OAuth, email,
+Photo uploads, sharing, model downloads, configured remote ML and Frameleaf Cloud processing, OAuth, email,
 and map tiles remain functional. Download hosts necessarily receive the requested model/file,
 network address, and any required download credentials. Configured remote inference providers
 receive the images/prompts needed for that inference. These are functional requests, not usage
@@ -50,7 +50,7 @@ or library analytics.
 Console logs, local job progress, and health checks remain available. The policy covers this
 fork's application and bundled dependencies; it is not a network sandbox for administrator-added
 plugins, arbitrary downloaded Python code, host agents, or the infrastructure provider.
-Rebuild and redeploy both server and ML images, including RunPod images, to apply this policy.
+Rebuild and redeploy both server and ML images to apply this policy.
 If an older bundled Compose stack started Prometheus or Grafana, stop and remove those orphaned
 containers when updating the stack; removing their service definitions does not stop an already
 running container.

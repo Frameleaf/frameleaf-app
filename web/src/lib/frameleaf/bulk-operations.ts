@@ -940,6 +940,11 @@ export const runBulkAction = async (
       throw new Error('send-copy is not a bulk operation: send copies through the selection bar');
     }
 
+    /* The preservation export dialog creates its own durable job (FL-74); like send-copy, never here. */
+    case 'export-preservation': {
+      throw new Error('export-preservation is not a bulk operation: export through the preservation dialog');
+    }
+
     /*
      * POST /download/info and /download/archive, through the web client's download manager. The
      * gateway settles when every archive is ready to save (FL-45), so a failed or cancelled

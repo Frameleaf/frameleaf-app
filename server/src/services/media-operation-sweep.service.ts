@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from 'src/decorators.js';
 import { ImmichWorker } from 'src/enum.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRecovery, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 
 /** How often lapsed claims are recovered. */
 export const MEDIA_OPERATION_SWEEP_MS = 60_000;
@@ -32,11 +34,15 @@ export class MediaOperationSweepService {
   private timer?: ReturnType<typeof setInterval>;
   private active?: Promise<MediaOperationRecovery | undefined>;
 
+  private edits: EditOperationTracker;
+
   constructor(
     private logger: LoggingRepository,
     private operations: MediaOperationRepository,
+    jobs: JobRepository,
   ) {
     this.logger.setContext(MediaOperationSweepService.name);
+    this.edits = new EditOperationTracker(operations, jobs, logger);
   }
 
   /** Starts at once as well as on the interval, so a restart settles what it left behind promptly. */
@@ -75,6 +81,13 @@ export class MediaOperationSweepService {
       this.logger.log(
         `Recovered media operations: ${requeued} requeued, ${retried} retrying, ${failed} failed, ${abandonedCancels} cancelled, ${paused} paused`,
       );
+    }
+
+    // FL-43: an edit the job queue runs has no worker polling for it. Recovery above, a failure's
+    // automatic retry and a manual retry leave its row queued without a job; this puts one back.
+    const dispatched = await this.edits.dispatch();
+    if (dispatched > 0) {
+      this.logger.log(`Dispatched ${dispatched} edit render(s) to the job queue`);
     }
     return recovered;
   }

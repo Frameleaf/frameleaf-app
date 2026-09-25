@@ -131,13 +131,13 @@ Use available Jira/Confluence connectors or authenticated APIs. Discover their c
 | Machine learning | `ghcr.io/frameleaf/frameleaf-machine-learning` |
 | CLI              | `ghcr.io/frameleaf/frameleaf-cli`              |
 
-Registry names are explicitly lowercase. Server and ML images carry source metadata for `Frameleaf/frameleaf-app`. The ML hardware suffixes are `-cuda`, `-cuda-runpod`, `-openvino`, `-armnn`, `-rknn` and `-rocm`; CPU has no hardware suffix. Architecture support is declared in the build matrix. Regular ML builds select `prod`; only the RunPod variant selects `prod-runpod`.
+Registry names are explicitly lowercase. Server and ML images carry source metadata for `Frameleaf/frameleaf-app`. The ML hardware suffixes are `-cuda`, `-openvino`, `-armnn`, `-rknn` and `-rocm`; CPU has no hardware suffix. Architecture support is declared in the build matrix. Every ML build selects `prod`.
 
 CLI builds are read-only by default. Publication additionally requires the repository variable `FRAMELEAF_ENABLE_CLI_PUBLISH=true`. [Release events created with `GITHUB_TOKEN` do not trigger another release workflow](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows), so the container release workflow cannot be assumed to trigger CLI publication. The **CLI Build** manual dispatch provides an explicit fallback: select `fork/main` and request publication; it verifies the exact current commit and publishes its SHA tag. It does not turn a manual build into a stable release. This variable is not enabled during setup.
 
 Compose's visible container names use Frameleaf. Existing service keys, project/volume identities, mount paths, database settings, environment variables and internal ML DNS remain compatible. Updating image references must not allocate a new empty database or detach an existing upload directory. Official dependencies and compatibility-test images retain their upstream names. See [Docker installation and migration](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/README.md).
 
-The RunPod default points to the Frameleaf CUDA RunPod image. Explicitly configured custom images remain unchanged. Existing provider resource names and adoption identifiers stay intact so renaming the application does not strand an existing pod.
+Cloud processing is Frameleaf Cloud (see [Workers and Endpoints](/administration/workers-and-endpoints#frameleaf-cloud)); no machine-learning image variant is built for it.
 
 ## Build and release flow
 
@@ -155,7 +155,7 @@ Runtime API versions still come from `server/package.json`; a Frameleaf release 
 
 GHCR publishing uses the repository `GITHUB_TOKEN` with job-scoped package write permission; no Docker Hub credentials are required. New GHCR packages may initially be private. After an authorized first publication, an organization administrator must confirm package visibility and repository access before advertising anonymous installation. No image publication, home-server upgrade or production deployment is performed by preparing this infrastructure PR.
 
-Keep distinct evidence for (1) merged source and current checks, (2) complete image manifests/digests and release assets, (3) the actual deployed revision and health, and (4) application/media acceptance. A registry tag or healthy HTTP response proves only its own step. Record previous image digests and migration compatibility before an authorized upgrade; reverting containers does not undo database migrations. Compose, Unraid/rootless installations, local/LAN workers and optional RunPod remain valid Frameleaf targets. There is no implied Kubernetes/Argo, Ubicloud, Infisical or HeroNet production endpoint requirement.
+Keep distinct evidence for (1) merged source and current checks, (2) complete image manifests/digests and release assets, (3) the actual deployed revision and health, and (4) application/media acceptance. A registry tag or healthy HTTP response proves only its own step. Record previous image digests and migration compatibility before an authorized upgrade; reverting containers does not undo database migrations. Compose, Unraid/rootless installations, local/LAN workers and optional Frameleaf Cloud processing remain valid Frameleaf targets. There is no implied Kubernetes/Argo, Ubicloud, Infisical or HeroNet production endpoint requirement.
 
 Use Frameleaf's existing release sequence and runtime-version contract. Do not create HeroNet-style Jira Versions or adopt another repository's tag format. If release tracking is later added to Jira, explicitly map it to the qualified Frameleaf artifacts without substituting it for release evidence.
 

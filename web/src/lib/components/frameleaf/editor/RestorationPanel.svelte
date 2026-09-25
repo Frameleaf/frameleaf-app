@@ -579,6 +579,8 @@
           <Icon icon={mdiCloudOutline} size="14" />
           {$t('frameleaf_restoration_leaves_network')}
         </p>
+        <!-- FL-72: a cloud job's cost is only known once Frameleaf Cloud settles it. -->
+        <p class="rs-help">{$t('frameleaf_restoration_cloud_cost_uncertain')}</p>
       {:else}
         <p class="rs-help">{$t('frameleaf_restoration_stays_on_network')}</p>
       {/if}

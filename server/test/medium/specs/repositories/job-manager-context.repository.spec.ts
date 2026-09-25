@@ -134,7 +134,7 @@ describe('Job manager context', () => {
         maxUploadBytes: null,
       });
       const pod = await destinations.create({
-        kind: MlDestinationKind.RunPod,
+        kind: MlDestinationKind.FrameleafCloud,
         name: `pod ${randomUUID()}`,
         url: null,
         authToken: null,
@@ -174,7 +174,7 @@ describe('Job manager context', () => {
           {
             jobId: first,
             jobName: JobName.SmartSearch,
-            destinationKind: MlDestinationKind.RunPod,
+            destinationKind: MlDestinationKind.FrameleafCloud,
             destinationName: pod.name,
           },
           {
@@ -191,7 +191,7 @@ describe('Job manager context', () => {
         {
           jobId: first,
           jobName: JobName.SmartSearch,
-          destinationKind: MlDestinationKind.RunPod,
+          destinationKind: MlDestinationKind.FrameleafCloud,
           destinationName: null,
         },
       ]);

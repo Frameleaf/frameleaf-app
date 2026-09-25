@@ -27,7 +27,7 @@
   import { registerFrameStudioEngine } from '$lib/frameleaf/studio/frame-engine';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
   import { createStudioCommandEnvelope, type StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
-  import { probeStudioCapabilities } from '$lib/frameleaf/studio/capabilities';
+  import { probeStudioHost } from '$lib/frameleaf/studio/capabilities';
   import { loadStudioEngine, pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
   import {
     emptyStudioCapabilities,
@@ -35,6 +35,7 @@
     type StudioCapabilities,
     type StudioCommandEngine,
     type StudioDraftResult,
+    type StudioRenderEvidence,
     type StudioHostServices,
     type StudioProjectHandle,
     type StudioWorkspaceMode,
@@ -58,7 +59,8 @@
   import { reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
   import { getProfileImageUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { createStudioExport } from '@immich/sdk';
+  import { createStudioExport, isHttpError } from '@immich/sdk';
+  import { studioRenderRefusalFromError, studioRenderRefusalKey } from '$lib/frameleaf/studio/render-output';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';
 
@@ -69,6 +71,7 @@
   registerFrameStudioEngine();
 
   let capabilities = $state<StudioCapabilities>(emptyStudioCapabilities());
+  let renderEvidence = $state<StudioRenderEvidence[]>([]);
   let online = $state(true);
   let dirty = $state(false);
   let accessLost = $state(false);
@@ -562,7 +565,6 @@
         id: project.id,
         studioExportCreateDto: {
           ...choice,
-          cloudConsent: choice.cloudConsent || undefined,
           expectedRevision: revision,
           requestKey: crypto.randomUUID(),
         },
@@ -571,7 +573,13 @@
       queuedJobs += 1;
       toastManager.primary($t('frameleaf_studio_export_queued', { values: { name: project.name } }));
     } catch (error) {
-      handleError(error, $t('frameleaf_studio_export_failed'));
+      // A 409 studio_export_unsupported names why no qualified render worker can take it (FL-42).
+      const refusal = isHttpError(error) ? studioRenderRefusalFromError(error.data) : null;
+      if (refusal) {
+        toastManager.danger($t(studioRenderRefusalKey(refusal)));
+      } else {
+        handleError(error, $t('frameleaf_studio_export_failed'));
+      }
     } finally {
       exporting = false;
     }
@@ -618,8 +626,9 @@
   });
 
   $effect(() => {
-    void probeStudioCapabilities().then((next) => {
-      capabilities = next;
+    void probeStudioHost().then((next) => {
+      capabilities = next.capabilities;
+      renderEvidence = next.renderEvidence;
     });
 
     // Losing the session or relocking must clear private editor state immediately, not on
@@ -690,6 +699,7 @@
   {handoffAssetIds}
   {auth}
   {capabilities}
+  {renderEvidence}
   {services}
   {onBack}
   {onBackToEditor}
@@ -722,6 +732,7 @@
   bind:open={videoExportOpen}
   sequenceName={project.name}
   busy={exporting}
+  {renderEvidence}
   onExport={(choice) => void onExportVideo(choice)}
 />
 

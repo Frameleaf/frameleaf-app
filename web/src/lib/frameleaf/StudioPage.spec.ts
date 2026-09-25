@@ -285,6 +285,8 @@ describe('Studio route, engine present', () => {
       // FL-96: the preview reaches the engine as data. There is still no transport here.
       'preview',
       'project',
+      // FL-42: what qualified render workers verified, for the export sheet (no credentials).
+      'renderEvidence',
       // FL-96: the adapter's own chrome speaks the host's language; words only.
       'strings',
       'theme',

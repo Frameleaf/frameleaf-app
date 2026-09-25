@@ -6,6 +6,8 @@ import {
   MediaHealthStatus,
   searchUsersAdmin,
 } from '@immich/sdk';
+import { initialOwner, ownerScope } from '$lib/frameleaf/library-care';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 
@@ -23,11 +25,16 @@ export const loadLibraryCareHealth = async (url: URL, category: MediaHealthCateg
     ? (requested as MediaHealthStatus)
     : undefined;
 
-  const [mediaHealth, summary, roots, users] = await Promise.all([
-    listMediaHealth({ category, status, needsAttention: status ? undefined : true, size: 200 }),
-    getSummary({}),
+  // Whose findings: the Command Center's "Viewing" account, or all accounts (UT-13).
+  const users = await searchUsersAdmin({});
+  const self = authManager.user;
+  const owner = initialOwner(url.searchParams.get('scope'), users, self.id, self.isAdmin);
+  const scope = ownerScope(owner, self.id);
+
+  const [mediaHealth, summary, roots] = await Promise.all([
+    listMediaHealth({ category, status, needsAttention: status ? undefined : true, size: 200, ...scope }),
+    getSummary(scope),
     getRoots(),
-    searchUsersAdmin({}),
   ]);
 
   return {
@@ -36,6 +43,7 @@ export const loadLibraryCareHealth = async (url: URL, category: MediaHealthCateg
     summary,
     roots: roots.roots,
     users,
+    owner,
     status,
     meta: {
       title:

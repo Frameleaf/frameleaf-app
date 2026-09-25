@@ -12,6 +12,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ActivityView from '$lib/components/frameleaf/ActivityView.svelte';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
 import { downloadManager } from '$lib/managers/download-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
 
@@ -22,7 +23,7 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     id: '0195e2a0-0000-7000-8000-000000000001',
     kind: MediaOperationKind.StudioExport,
     status: MediaOperationStatus.Rendering,
-    destination: MediaOperationDestination.Runpod,
+    destination: MediaOperationDestination.FrameleafCloud,
     destinationDetail: null,
     label: 'Summer in the Rockies',
     assetId: null,
@@ -81,7 +82,7 @@ describe('Frameleaf Activity page', () => {
   it('names the destination on every job so cloud work is never implicit', async () => {
     await mount([operation()]);
 
-    await vi.waitFor(() => expect(screen.getByText(/RunPod/)).toBeInTheDocument());
+    await vi.waitFor(() => expect(screen.getByText(/Frameleaf Cloud/)).toBeInTheDocument());
     expect(screen.getByRole('heading', { name: 'Summer in the Rockies' })).toBeInTheDocument();
   });
 
@@ -149,6 +150,73 @@ describe('Frameleaf Activity page', () => {
 
     await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Summer in the Rockies' })).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
+  });
+
+  it('recovers on its own when the server’s socket reconnects (FL-43)', async () => {
+    sdkMock.searchMediaOperations.mockRejectedValueOnce(new Error('offline'));
+    const { unmount } = render(ActivityView, { props: { filter: 'all' } });
+    await screen.findByRole('button', { name: 'Reconnect' });
+
+    // Nobody presses Reconnect: the socket coming back is enough, and the job is where the server left it.
+    sdkMock.searchMediaOperations.mockResolvedValue({
+      items: [operation({ status: MediaOperationStatus.Validating, progress: 97 })],
+      total: 1,
+    });
+    eventManager.emit('WebsocketConnect');
+
+    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Summer in the Rockies' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: /summer in the rockies/i }).getAttribute('aria-valuenow')).toBe(
+      '97',
+    );
+
+    // Leaving the page stops listening.
+    unmount();
+    const calls = sdkMock.searchMediaOperations.mock.calls.length;
+    eventManager.emit('WebsocketConnect');
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(calls);
+  });
+
+  it('shows a job queued elsewhere as soon as the server says it changed (FL-43)', async () => {
+    await mount([]);
+    await screen.findByRole('heading', { name: 'Nothing processing' });
+
+    sdkMock.searchMediaOperations.mockResolvedValue({
+      items: [
+        operation({
+          id: '0195e2a0-0000-7000-8000-000000000031',
+          kind: MediaOperationKind.QuickEdit,
+          status: MediaOperationStatus.Queued,
+          label: 'IMG_0042.jpg',
+          settings: { edit: 'photo_version' },
+          pausable: false,
+          progress: 0,
+          processedUnits: '0',
+          totalUnits: null,
+        }),
+      ],
+      total: 1,
+    });
+    eventManager.emit('MediaOperationUpdate', { id: '0195e2a0-0000-7000-8000-000000000031' });
+
+    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'IMG_0042.jpg' })).toBeInTheDocument());
+    expect(screen.getByText(/Photo version/)).toBeInTheDocument();
+  });
+
+  it('names edits by what was edited and offers cancel only where the server allows it (FL-43)', async () => {
+    await mount([
+      operation({
+        kind: MediaOperationKind.QuickEdit,
+        label: 'IMG_0100.MOV',
+        settings: { edit: 'video_edit' },
+        destination: MediaOperationDestination.Local,
+        pausable: false,
+      }),
+    ]);
+
+    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'IMG_0100.MOV' })).toBeInTheDocument());
+    expect(screen.getByText(/Video edit/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
   });
 
   it('shows pause disabled, with its reason, for a kind that runs in one go (A-10)', async () => {

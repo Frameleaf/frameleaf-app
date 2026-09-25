@@ -71,12 +71,12 @@ export const SYSTEM_CONFIG_CHANGED_MESSAGE =
  * FL-66: a digest of the effective system configuration (stored values merged over the
  * defaults, including the fork's configuration sidecar), reported to the settings editor as
  * `revision`. It changes whenever a saved value changes, so a save made against settings that
- * another administrator (or a resource action such as RunPod provisioning) changed since they
+ * another administrator (or a server action) changed since they
  * were loaded can be refused instead of silently overwriting them. The revision is never
  * stored, so no schema change is needed.
  *
  * It digests exactly what an administrator can read (`mapAdminConfig`): write-only credentials
- * (FL-67: the SMTP password, the OAuth client secret, the RunPod API key and the HuggingFace token)
+ * (FL-67: the SMTP password and the OAuth client secret)
  * only count through their "configured" flags, so the revision can never be used to test guesses
  * of a secret the API does not show. A credential replaced by another value therefore leaves the
  * revision unchanged; saves resolve "keep the stored credential" again under the settings lock

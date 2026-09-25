@@ -114,6 +114,25 @@ describe('bulk action descriptors', () => {
     expect(archived.unarchive?.available).toBe(true);
   });
 
+  it('offers Export for preservation on a resolved selection holding any item of the viewer’s own (FL-74)', () => {
+    const mine = photo('a', { ownerId: 'me' });
+    const theirs = photo('b', { ownerId: 'partner' });
+    expect(available({ assets: [mine, theirs], currentUserId: 'me' })).toContain('export-preservation');
+    expect(available({ assets: [theirs], currentUserId: 'me' })).not.toContain('export-preservation');
+    // Unlocked Locked view: exported as Locked items, from the session that can see them.
+    expect(available({ assets: [mine], currentUserId: 'me', locked: true })).toContain('export-preservation');
+    for (const context of [
+      { assets: [mine], currentUserId: 'me', trash: true },
+      { assets: [mine], currentUserId: 'me', readOnly: true },
+      // A matching set is preserved as a Search scope, not as a list of ids the page never loaded.
+      { count: 4000, snapshot: true, currentUserId: 'me' },
+    ]) {
+      expect(available(context)).not.toContain('export-preservation');
+    }
+    const action = bulkActionById(bulkActions({ assets: [mine], currentUserId: 'me' }))['export-preservation'];
+    expect(action).toMatchObject({ group: 'jobs', dialog: true, labelKey: 'frameleaf_bulk_export_preservation' });
+  });
+
   it('withholds the actions that need the individual items from a snapshot selection', () => {
     const ids = available({ count: 4000, snapshot: true });
     expect(ids).toEqual(expect.arrayContaining(['favorite', 'archive', 'tag', 'delete', 'mark-sensitive']));

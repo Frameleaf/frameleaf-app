@@ -9,7 +9,11 @@ import { cloudDestinationState, gpuStudioState, mlEndpointState } from '$lib/fra
 
 const destination = (id: string, kind: MlDestinationKind, status: MlDestinationHealth) =>
   ({ id, kind, health: { status } }) as MlDestinationResponseDto;
-const route = (workload: MlWorkload, destinationId: string | null): MlWorkloadRouteDto => ({ workload, destinationId });
+const route = (workload: MlWorkload, destinationId: string | null): MlWorkloadRouteDto => ({
+  workload,
+  destinationId,
+  modelId: null,
+});
 
 describe('Overview readiness (FL-71 CC-9)', () => {
   it('reads the ML endpoint from the destinations library analysis is routed to', () => {
@@ -26,11 +30,11 @@ describe('Overview readiness (FL-71 CC-9)', () => {
     expect(mlEndpointState([lan], [route(MlWorkload.RestorationFaithful, 'lan')])).toBe('none');
   });
 
-  it('names RunPod only when library analysis is routed to it', () => {
-    const pod = destination('pod', MlDestinationKind.Runpod, MlDestinationHealth.Healthy);
+  it('names Frameleaf Cloud only when library analysis is routed to it', () => {
+    const pod = destination('pod', MlDestinationKind.FrameleafCloud, MlDestinationHealth.Healthy);
     const local = destination('local', MlDestinationKind.Local, MlDestinationHealth.Healthy);
     expect(cloudDestinationState([pod, local], [route(MlWorkload.Clip, 'local')])).toBe('local');
-    expect(cloudDestinationState([pod, local], [route(MlWorkload.Enrichment, 'pod')])).toBe('runpod');
+    expect(cloudDestinationState([pod, local], [route(MlWorkload.Enrichment, 'pod')])).toBe('frameleaf');
   });
 
   it('asks for a compatibility check while any render kind lacks a qualified worker', () => {

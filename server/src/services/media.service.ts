@@ -53,6 +53,7 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { straightenScale } from 'src/utils/develop-recipe.js';
+import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import {
   type DecodeQualification,
@@ -272,7 +273,25 @@ export class MediaService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetEditThumbnailGeneration, queue: QueueName.Editor })
-  async handleAssetEditThumbnailGeneration({ id }: JobOf<JobName.AssetEditThumbnailGeneration>): Promise<JobStatus> {
+  async handleAssetEditThumbnailGeneration({
+    id,
+    operationId,
+  }: JobOf<JobName.AssetEditThumbnailGeneration>): Promise<JobStatus> {
+    // FL-43: a saved edit's render runs under its Activity job, when it was queued with one.
+    return this.editOperations.execute(operationId, (run) => this.renderEditThumbnails(id, run));
+  }
+
+  private editTracker?: EditOperationTracker;
+
+  private get editOperations() {
+    return (this.editTracker ??= new EditOperationTracker(
+      this.mediaOperationRepository,
+      this.jobRepository,
+      this.logger,
+    ));
+  }
+
+  private async renderEditThumbnails(id: string, run?: EditOperationRun): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForGenerateThumbnailJob(id);
     const config = await this.getConfig({ withCache: true });
 
@@ -282,6 +301,10 @@ export class MediaService extends BaseService {
     }
 
     const generated = await this.generateEditedThumbnails(asset, config);
+    // FL-43: the asset's files change only under the job's claim; a stale or cancelled run stops here.
+    if (run && !(await run.validate())) {
+      return JobStatus.Skipped;
+    }
     await this.syncFiles(
       asset.files.filter((file) => file.isEdited),
       generated?.files ?? [],
@@ -1060,7 +1083,16 @@ export class MediaService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetVideoEditGeneration, queue: QueueName.VideoConversion })
-  async handleAssetVideoEditGeneration({ id, versionId }: JobOf<JobName.AssetVideoEditGeneration>): Promise<JobStatus> {
+  async handleAssetVideoEditGeneration({
+    id,
+    versionId,
+    operationId,
+  }: JobOf<JobName.AssetVideoEditGeneration>): Promise<JobStatus> {
+    // FL-43: a video edit or export runs under its Activity job, when it was queued with one.
+    return this.editOperations.execute(operationId, (run) => this.renderVideoEdit(id, versionId, run));
+  }
+
+  private async renderVideoEdit(id: string, versionId: string | undefined, run?: EditOperationRun): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForVideoConversion(id);
     if (!asset) {
       return JobStatus.Failed;
@@ -1101,13 +1133,16 @@ export class MediaService extends BaseService {
       if (version.status === 'ready') {
         return JobStatus.Skipped;
       }
-      return this.renderVideoVersion(version, { ...thumbnailAsset, files: asset.files }, config);
+      return this.renderVideoVersion(version, { ...thumbnailAsset, files: asset.files }, config, run);
     }
 
     const edits = (await this.assetEditRepository.getAll(id)) as AssetEditActionItem[];
     const editedFiles = this.toExistingAssetFiles(asset.files.filter((file) => file.isEdited));
 
     if (edits.length === 0) {
+      if (run && !(await run.validate())) {
+        return JobStatus.Skipped;
+      }
       await this.syncFiles(editedFiles, []);
       const generated = await this.generateVideoThumbnails(thumbnailAsset, config);
       await this.syncFiles(
@@ -1161,7 +1196,13 @@ export class MediaService extends BaseService {
       colorDecision,
     });
     if (!rendered) {
+      run?.noteError('The edited video could not be encoded');
       return JobStatus.Failed;
+    }
+
+    // FL-43: the edited master is adopted only under the job's claim; a stale run leaves the last one.
+    if (run && !(await run.validate())) {
+      return JobStatus.Skipped;
     }
 
     // FL-39: an edited master is a new file that records where it came from — the source asset and
@@ -1323,8 +1364,13 @@ export class MediaService extends BaseService {
     version: VideoEditVersion,
     asset: VideoThumbnailAsset & { files: Array<{ path: string; type: AssetFileType; isEdited: boolean }> },
     config: SystemConfig,
+    run?: EditOperationRun,
   ): Promise<JobStatus> {
     const suffix = `${version.id}_${randomUUID()}`;
+    // FL-43: a version is published only under its job's claim. A run that lost its claim, or whose
+    // job was cancelled, stops before publishing: its files are removed below and the version that
+    // is current stays current.
+    const mayPublish = async () => !run || (await run.validate());
     const { dir, name } = path.parse(this.getEditedEncodedVideoPath(asset));
     const master = path.join(dir, `${name}.${suffix}.master.mp4`);
     const proxy = path.join(dir, `${name}.${suffix}.proxy.mp4`);
@@ -1344,6 +1390,9 @@ export class MediaService extends BaseService {
 
       if (edits.length === 0 && version.purpose !== 'export') {
         const originalPreview = asset.files.find((file) => file.type === AssetFileType.Preview && !file.isEdited);
+        if (!(await mayPublish())) {
+          return JobStatus.Skipped;
+        }
         published = await this.publishVideoVersion(version, {
           files: [],
           masterPath: null,
@@ -1446,6 +1495,9 @@ export class MediaService extends BaseService {
       );
 
       if (version.purpose === 'export') {
+        if (!(await mayPublish())) {
+          return JobStatus.Skipped;
+        }
         published = await this.publishVideoVersion(version, {
           masterPath: master,
           files: [proxyFile],
@@ -1460,6 +1512,9 @@ export class MediaService extends BaseService {
         config,
         { sourcePath: master, isEdited: true, fullsizeDimensions: dimensions, pathSuffix: suffix, candidates },
       );
+      if (!(await mayPublish())) {
+        return JobStatus.Skipped;
+      }
       published = await this.publishVideoVersion(version, {
         masterPath: master,
         files: [proxyFile, ...generated.files],
@@ -1471,6 +1526,7 @@ export class MediaService extends BaseService {
     } catch (error: any) {
       this.logger.error(`Video version ${version.id} render failed for asset ${asset.id}: ${error?.message ?? error}`);
       await this.assetEditRepository.failVideoVersion(version.assetId, version.id);
+      run?.noteError(error);
       return JobStatus.Failed;
     } finally {
       if (!published) {

@@ -184,7 +184,7 @@ const SystemConfigHistoryEntrySchema = z
       .string()
       .nullable()
       .optional()
-      .describe('The entry title, such as "Updated RunPod API key"; absent for a settings save'),
+      .describe('The entry title, such as "Updated email server password"; absent for a settings save'),
     kind: z
       .enum(['settings', 'credential', 'review'])
       .optional()

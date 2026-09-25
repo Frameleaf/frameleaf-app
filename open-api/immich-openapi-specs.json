@@ -333,6 +333,393 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/cloud/ml": {
+      "get": {
+        "description": "Whether Frameleaf Cloud is configured and linked, the destination once added, the consent version it requires and the AI Wallet. Nothing is contacted unless the server is linked.",
+        "operationId": "getCloudMlStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get Frameleaf Cloud processing status",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/catalog": {
+      "get": {
+        "description": "The models Frameleaf Cloud offers now, with their prices, for choosing a model per workload.",
+        "operationId": "getCloudMlCatalog",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlCatalogResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Frameleaf Cloud models",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/consent": {
+      "get": {
+        "description": "Every consent recorded for the Frameleaf Cloud destination, newest first.",
+        "operationId": "getCloudMlConsentHistory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlConsentHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Frameleaf Cloud consent records",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/destination": {
+      "post": {
+        "description": "The only way the Frameleaf Cloud destination is created. It has no URL or token, is not routed automatically, and refuses all work until consent is recorded.",
+        "operationId": "createCloudMlDestination",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudMlDestinationCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlDestinationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add Frameleaf Cloud as a processing destination",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/settlements": {
+      "get": {
+        "description": "The charges Frameleaf Cloud settled for this server, newest first, as recorded against the jobs that incurred them.",
+        "operationId": "getCloudMlSettlements",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlSettlementsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List settled Frameleaf Cloud charges",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/usage": {
+      "post": {
+        "description": "Reads settled charges from Frameleaf Cloud and records them against the jobs that incurred them.",
+        "operationId": "reconcileCloudMlUsage",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply Frameleaf Cloud settlements",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/wallet": {
+      "get": {
+        "description": "The AI Wallet balance and holds, read now from Frameleaf Cloud (USD).",
+        "operationId": "getCloudMlWallet",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlWalletDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the AI Wallet",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Changes the daily spending cap or automatic top-up on the linked Frameleaf account. Payment details stay on frameleaf.cloud.",
+        "operationId": "updateCloudMlWallet",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudMlWalletUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlWalletDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change the AI Wallet daily cap or automatic top-up",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/config": {
       "get": {
         "description": "Retrieve admin configuration.",
@@ -1137,6 +1524,147 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/hardware": {
+      "get": {
+        "description": "The last check of the GPU the server container and the ML container can each use, with any set-up problems found and the last benchmark. Runs a first check when there is none.",
+        "operationId": "getHardwareCheck",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardwareCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Hardware & GPU check",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/hardware/benchmark": {
+      "post": {
+        "description": "Times a few search embeddings and a test transcode, and keeps how this hardware compares with the estimates so the model sliders show measured times.",
+        "operationId": "runHardwareBenchmark",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardwareCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run a short benchmark",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/hardware/check": {
+      "post": {
+        "description": "Checks both containers again: devices, driver, backend and a short test job in each.",
+        "operationId": "runHardwareCheck",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardwareCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check the GPU again",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/integrity/report": {
       "get": {
         "description": "Get all flagged items by integrity report type",
@@ -1838,6 +2366,132 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/admin/physical-deduplication/applies/{id}/restore": {
+      "post": {
+        "description": "Point one copy back at its own former file, only while that file is still on disk with the reviewed checksum and size, and answer with the plan verified again. A copy whose own file was removed cannot be restored.",
+        "operationId": "restorePhysicalDeduplicationCopy",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhysicalDeduplicationRestoreRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhysicalDeduplicationVerificationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a copy of an applied physical deduplication plan",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/physical-deduplication/applies/{id}/verify": {
+      "post": {
+        "description": "Hash every retained original the applied plan shares again and check that every copy it changed still resolves to one. Reports, per copy, whether its own former file is gone (which cannot be undone) or still on disk (which can be restored). Nothing is written.",
+        "operationId": "verifyPhysicalDeduplicationApply",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhysicalDeduplicationVerificationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Verify an applied physical deduplication plan",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/admin/physical-deduplication/plan/apply": {
@@ -15951,6 +16605,61 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/media-health/reopen": {
+      "post": {
+        "description": "Undo a dismissal, or reopen confirmed damage whose item was restored from the trash, putting the findings back in review.",
+        "operationId": "reopen",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthBulkActionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthBulkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reopen media health findings",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/media-health/roots": {
       "get": {
         "description": "Locations the caller may search for exact copies of missing or damaged originals.",
@@ -17804,7 +18513,7 @@
         "x-immich-state": "Alpha"
       },
       "post": {
-        "description": "Add a LAN worker or the RunPod destination. A RunPod destination is created without consent and cannot serve anything until consent is recorded.",
+        "description": "Add a LAN worker. Frameleaf Cloud is added from its own endpoint (POST admin/cloud/ml/destination).",
         "operationId": "createMlDestination",
         "parameters": [],
         "requestBody": {
@@ -24127,447 +24836,6 @@
           }
         ],
         "x-immich-state": "Alpha"
-      }
-    },
-    "/runpod/backfill": {
-      "post": {
-        "description": "Queues smart-search, face detection, duplicates, OCR, image description, and NSFW detection.",
-        "operationId": "backfill",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodBackfillResultDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Enqueue all ML backfill jobs",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/connect": {
-      "post": {
-        "description": "Verify that a RunPod API key works. Pass `apiKey` to test a candidate key without saving.",
-        "operationId": "testConnection",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RunPodConnectionTestDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodConnectionResultDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Test RunPod connection",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/endpoint": {
-      "delete": {
-        "description": "Deletes the serverless endpoint and template owned by this Immich instance. Soft-fails when resources are already gone on RunPod.",
-        "operationId": "teardownServerlessEndpoint",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Tear down the serverless endpoint",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/endpoint/setup": {
-      "post": {
-        "description": "Idempotently creates the RunPod template + serverless endpoint for this Immich instance. Reuses an existing endpoint tagged with our instance prefix when one is found.",
-        "operationId": "setupServerlessEndpoint",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Set up (or verify) the serverless endpoint",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/gpus": {
-      "get": {
-        "description": "Returns the GPU types currently offered by RunPod, with pricing.",
-        "operationId": "listGpus",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/RunPodGpuTypeDto"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "List RunPod GPU types",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.read"
-      }
-    },
-    "/runpod/pods": {
-      "post": {
-        "description": "Launch the ML container on RunPod and inject the proxy URL into the live ML config.",
-        "operationId": "provision",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RunPodProvisionDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Provision a RunPod pod",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/pods/current": {
-      "delete": {
-        "description": "Destroys the pod and its persistent volume. Next launch is a full cold-start.",
-        "operationId": "terminate",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Terminate the current RunPod pod",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      },
-      "get": {
-        "description": "Returns the current managed RunPod pod state (idle / provisioning / running / etc).",
-        "operationId": "getCurrent",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Get current RunPod state",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.read"
-      }
-    },
-    "/runpod/pods/current/start": {
-      "post": {
-        "description": "Start a previously stopped pod, reusing its model cache.",
-        "operationId": "start",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Resume the current RunPod pod",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/pods/current/stop": {
-      "post": {
-        "description": "Stops the pod but keeps the model-cache volume so a future start is fast.",
-        "operationId": "stop",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Stop the current RunPod pod",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
       }
     },
     "/search/ask": {
@@ -37760,6 +38028,10 @@
       "description": "A face is a detected human face within an asset, which can be associated with a person. Faces are normally detected via machine learning, but can also be created manually."
     },
     {
+      "name": "Frameleaf Cloud processing (admin)",
+      "description": "Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback."
+    },
+    {
       "name": "Integrity (admin)",
       "description": "Endpoints for viewing and managing integrity reports."
     },
@@ -37834,10 +38106,6 @@
     {
       "name": "Render workers",
       "description": "Render workers and their admitted media operations."
-    },
-    {
-      "name": "RunPod (admin)",
-      "description": "Provision the Immich machine-learning container on RunPod cloud GPUs. The integration manages a single pod, transparently routes ML jobs to it, and stops it when idle to control cost."
     },
     {
       "name": "Search",
@@ -38360,6 +38628,9 @@
           "ffmpeg": {
             "$ref": "#/components/schemas/AdminConfigFFmpegDto"
           },
+          "frameleafCloud": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudDto"
+          },
           "image": {
             "$ref": "#/components/schemas/AdminConfigImageDto"
           },
@@ -38371,6 +38642,9 @@
           },
           "library": {
             "$ref": "#/components/schemas/AdminConfigLibraryDto"
+          },
+          "libraryCare": {
+            "$ref": "#/components/schemas/AdminConfigLibraryCareDto"
           },
           "localFeatures": {
             "$ref": "#/components/schemas/AdminConfigLocalFeaturesDto"
@@ -38748,6 +39022,150 @@
         },
         "required": [
           "concurrency"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudAutoDescribeDto": {
+        "properties": {
+          "dailyBudgetUsd": {
+            "description": "Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0.5,
+            "type": "number"
+          },
+          "enabled": {
+            "description": "Describe new photos automatically on Frameleaf Cloud",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dailyBudgetUsd",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudDto": {
+        "properties": {
+          "cloudMl": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudMlDto"
+          }
+        },
+        "required": [
+          "cloudMl"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudFacesDto": {
+        "properties": {
+          "enabled": {
+            "description": "Faces never run on Frameleaf Cloud",
+            "enum": [
+              false
+            ],
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudMlDto": {
+        "properties": {
+          "autoDescribe": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudAutoDescribeDto"
+          },
+          "enabled": {
+            "description": "Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation)",
+            "type": "boolean"
+          },
+          "faces": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudFacesDto"
+          },
+          "models": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudModelsDto"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudRoutingDto"
+          },
+          "startWith": {
+            "description": "The destination a job preselects when its kind of work may run in both places",
+            "enum": [
+              "local",
+              "cloud"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "autoDescribe",
+          "enabled",
+          "faces",
+          "models",
+          "routing",
+          "startWith"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudModelsDto": {
+        "description": "The model slider position per kind of work; empty = the heaviest that runs well here",
+        "properties": {
+          "descriptions": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "interpolation": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "restoration": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "studio": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "upscale": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "descriptions",
+          "interpolation",
+          "restoration",
+          "studio",
+          "upscale"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudRoutingDto": {
+        "description": "Where each kind of work may run",
+        "properties": {
+          "descriptions": {
+            "$ref": "#/components/schemas/CloudRouteMode"
+          },
+          "interpolation": {
+            "$ref": "#/components/schemas/CloudRouteMode"
+          },
+          "restoration": {
+            "$ref": "#/components/schemas/CloudRouteMode"
+          },
+          "studio": {
+            "$ref": "#/components/schemas/CloudRouteMode"
+          },
+          "upscale": {
+            "$ref": "#/components/schemas/CloudRouteMode"
+          }
+        },
+        "required": [
+          "descriptions",
+          "interpolation",
+          "restoration",
+          "studio",
+          "upscale"
         ],
         "type": "object"
       },
@@ -39298,6 +39716,58 @@
         ],
         "type": "object"
       },
+      "AdminConfigLibraryCareDto": {
+        "properties": {
+          "checksumScan": {
+            "description": "Health scans verify each original against its recorded checksum",
+            "type": "boolean"
+          },
+          "duplicateReview": {
+            "description": "Group near-duplicates for review; deletion stays explicit",
+            "type": "boolean"
+          },
+          "healthScan": {
+            "description": "Schedule incremental health scans of every account; each resumes from its recorded checkpoints",
+            "type": "boolean"
+          },
+          "healthScanCronExpression": {
+            "description": "When the scheduled health scan starts",
+            "type": "string"
+          },
+          "incrementalEnrichment": {
+            "description": "A full description rerun reprocesses only results that are missing, failed or out of date",
+            "type": "boolean"
+          },
+          "integrityAudit": {
+            "description": "Run the scheduled database and file reference audits (missing and untracked files)",
+            "type": "boolean"
+          },
+          "livePhotoRepair": {
+            "description": "Suggest Live Photo pairs to relink; ambiguous pairs stay in review",
+            "type": "boolean"
+          },
+          "manualMetadata": {
+            "description": "A description rerun replaces only generated text and keeps manual text",
+            "type": "boolean"
+          },
+          "rawRecovery": {
+            "description": "Search for recoverable copies of RAW originals when locating originals",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "checksumScan",
+          "duplicateReview",
+          "healthScan",
+          "healthScanCronExpression",
+          "incrementalEnrichment",
+          "integrityAudit",
+          "livePhotoRepair",
+          "manualMetadata",
+          "rawRecovery"
+        ],
+        "type": "object"
+      },
       "AdminConfigLibraryDto": {
         "properties": {
           "scan": {
@@ -39503,9 +39973,6 @@
           },
           "ocr": {
             "$ref": "#/components/schemas/AdminConfigOcrDto"
-          },
-          "runpod": {
-            "$ref": "#/components/schemas/AdminConfigRunPodDto"
           },
           "urls": {
             "description": "ML service URLs",
@@ -39906,184 +40373,6 @@
         "required": [
           "config",
           "expectedRevision"
-        ],
-        "type": "object"
-      },
-      "AdminConfigRunPodDto": {
-        "properties": {
-          "apiKey": {
-            "description": "RunPod API key (write-only; empty preserves the existing key)",
-            "type": "string"
-          },
-          "apiKeyConfigured": {
-            "description": "Read-only indicator that a key is currently stored. Set by the server; ignored on write.",
-            "type": "boolean"
-          },
-          "autoBackfillOnLaunch": {
-            "description": "Auto-run ML backfill on pod ready (Pod mode)",
-            "type": "boolean"
-          },
-          "autoStopEnabled": {
-            "description": "Auto-stop when idle (Pod mode)",
-            "type": "boolean"
-          },
-          "autoStopGraceMinutes": {
-            "description": "Idle minutes before auto-stop (Pod mode)",
-            "maximum": 1440,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "containerDiskGb": {
-            "description": "Container disk size (GB) (Pod mode)",
-            "maximum": 2000,
-            "minimum": 10,
-            "type": "integer"
-          },
-          "dataPrivacyAcknowledged": {
-            "description": "User accepted that image previews leave the network",
-            "type": "boolean"
-          },
-          "defaultGpuTypeId": {
-            "description": "Preferred GPU type ID (Pod mode)",
-            "minLength": 1,
-            "type": "string"
-          },
-          "enabled": {
-            "description": "Enabled",
-            "type": "boolean"
-          },
-          "hfToken": {
-            "default": "",
-            "description": "HuggingFace token forwarded to worker as HF_TOKEN (write-only; empty preserves the existing token)",
-            "type": "string"
-          },
-          "hfTokenConfigured": {
-            "description": "Read-only indicator that an HF token is currently stored. Set by the server; ignored on write.",
-            "type": "boolean"
-          },
-          "imageName": {
-            "description": "Container image to launch",
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxRuntimeHours": {
-            "description": "Hard runtime ceiling (hours) (Pod mode)",
-            "maximum": 168,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "mode": {
-            "default": "disabled",
-            "description": "disabled = off, pod = manually launched dedicated GPU, serverless = auto-managed scale-to-zero endpoint. Optional for back-compat with legacy clients.",
-            "enum": [
-              "disabled",
-              "pod",
-              "serverless"
-            ],
-            "type": "string"
-          },
-          "provisionTimeoutMinutes": {
-            "default": 5,
-            "description": "How long to wait for the pod to reach RUNNING + healthy /ping before giving up (Pod mode)",
-            "maximum": 60,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "serverless": {
-            "$ref": "#/components/schemas/AdminConfigRunPodServerlessDto",
-            "default": {
-              "executionTimeoutMs": 600000,
-              "gpuTypeIds": [
-                "AMPERE_48",
-                "ADA_48_PRO",
-                "AMPERE_80"
-              ],
-              "idleTimeoutSeconds": 30,
-              "scalerType": "REQUEST_COUNT",
-              "scalerValue": 4,
-              "workersMax": 3,
-              "workersMin": 0
-            }
-          },
-          "volumeGb": {
-            "description": "Persistent volume size (GB) (Pod mode)",
-            "maximum": 2000,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "apiKey",
-          "autoBackfillOnLaunch",
-          "autoStopEnabled",
-          "autoStopGraceMinutes",
-          "containerDiskGb",
-          "dataPrivacyAcknowledged",
-          "defaultGpuTypeId",
-          "enabled",
-          "imageName",
-          "maxRuntimeHours",
-          "volumeGb"
-        ],
-        "type": "object"
-      },
-      "AdminConfigRunPodServerlessDto": {
-        "properties": {
-          "executionTimeoutMs": {
-            "description": "Max time per request (ms)",
-            "maximum": 3600000,
-            "minimum": 5000,
-            "type": "integer"
-          },
-          "gpuTypeIds": {
-            "description": "Ranked GPU pool IDs the endpoint can use (cheapest first). At least one required.",
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "type": "array"
-          },
-          "idleTimeoutSeconds": {
-            "description": "Seconds before an idle worker scales down",
-            "maximum": 3600,
-            "minimum": 5,
-            "type": "integer"
-          },
-          "scalerType": {
-            "description": "Worker autoscaler strategy",
-            "enum": [
-              "QUEUE_DELAY",
-              "REQUEST_COUNT"
-            ],
-            "type": "string"
-          },
-          "scalerValue": {
-            "description": "Scaler threshold (queue seconds or request count)",
-            "maximum": 60,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "workersMax": {
-            "description": "Max concurrent workers",
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "workersMin": {
-            "description": "Always-warm workers (0 = scale to zero)",
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "executionTimeoutMs",
-          "gpuTypeIds",
-          "idleTimeoutSeconds",
-          "scalerType",
-          "scalerValue",
-          "workersMax",
-          "workersMin"
         ],
         "type": "object"
       },
@@ -48304,6 +48593,445 @@
         ],
         "type": "object"
       },
+      "CloudMlCatalogResponseDto": {
+        "properties": {
+          "models": {
+            "description": "Models Frameleaf Cloud offers now; retired models are left out",
+            "items": {
+              "$ref": "#/components/schemas/CloudMlModelDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "type": "object"
+      },
+      "CloudMlConnection": {
+        "description": "not-configured: FRAMELEAF_CLOUD_URL is unset; not-linked: the server is not linked to a Frameleaf account; ready: the regional gateway answered; unavailable: linked but the cloud did not answer",
+        "enum": [
+          "not-configured",
+          "not-linked",
+          "ready",
+          "unavailable"
+        ],
+        "type": "string"
+      },
+      "CloudMlConsentFeaturesDto": {
+        "properties": {
+          "identityNames": {
+            "type": "boolean"
+          },
+          "medicalSignals": {
+            "type": "boolean"
+          },
+          "ocrAddon": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "identityNames",
+          "medicalSignals",
+          "ocrAddon"
+        ],
+        "type": "object"
+      },
+      "CloudMlConsentHistoryResponseDto": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/CloudMlConsentRecordDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "records"
+        ],
+        "type": "object"
+      },
+      "CloudMlConsentRecordDto": {
+        "properties": {
+          "acceptedAt": {
+            "type": "string"
+          },
+          "acceptedBy": {
+            "type": "string"
+          },
+          "features": {
+            "$ref": "#/components/schemas/CloudMlConsentFeaturesDto"
+          },
+          "revokedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "acceptedAt",
+          "acceptedBy",
+          "features",
+          "revokedAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "CloudMlConsentStateDto": {
+        "properties": {
+          "acceptedVersion": {
+            "description": "The version an administrator accepted on this server",
+            "nullable": true,
+            "type": "string"
+          },
+          "documentUrl": {
+            "description": "The full consent text, when Frameleaf Cloud links one",
+            "nullable": true,
+            "type": "string"
+          },
+          "features": {
+            "$ref": "#/components/schemas/CloudMlConsentFeaturesDto",
+            "description": "The feature choices on record"
+          },
+          "outdated": {
+            "description": "Consent was given, but for an older version; processing is refused until renewed",
+            "type": "boolean"
+          },
+          "recordedVersion": {
+            "description": "The version Frameleaf Cloud has on record for this server",
+            "nullable": true,
+            "type": "string"
+          },
+          "requiredVersion": {
+            "description": "The consent version Frameleaf Cloud requires now",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What the consent covers, as Frameleaf Cloud words it",
+            "type": "string"
+          }
+        },
+        "required": [
+          "acceptedVersion",
+          "documentUrl",
+          "features",
+          "outdated",
+          "recordedVersion",
+          "requiredVersion",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "CloudMlDestinationCreateDto": {
+        "properties": {
+          "budgetLimitUsd": {
+            "format": "double",
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "name": {
+            "default": "Frameleaf Cloud",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workloads": {
+            "description": "The workloads Frameleaf Cloud may run; faces, search and text recognition are refused",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "workloads"
+        ],
+        "type": "object"
+      },
+      "CloudMlModelDto": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "priceUsd": {
+            "description": "Price per unit, USD",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "pricingUnit": {
+            "description": "What one price unit is (for example an image or a video minute)",
+            "nullable": true,
+            "type": "string"
+          },
+          "workload": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlWorkload"
+              }
+            ],
+            "description": "The workload this model serves, or null for one this server does not know",
+            "nullable": true
+          }
+        },
+        "required": [
+          "description",
+          "fingerprint",
+          "id",
+          "name",
+          "priceUsd",
+          "pricingUnit",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "CloudMlSettlementDto": {
+        "properties": {
+          "cloudJobId": {
+            "description": "The job id Frameleaf Cloud settled",
+            "type": "string"
+          },
+          "costUsd": {
+            "description": "The settled charge, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "credits": {
+            "description": "Credits the charge used, when reported",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "estimateUsd": {
+            "description": "The estimate shown before the job, USD",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "finishedAt": {
+            "type": "string"
+          },
+          "gpuSeconds": {
+            "description": "Metered GPU time, seconds, when reported",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "jobName": {
+            "description": "The server job that sent the work, when recorded",
+            "nullable": true,
+            "type": "string"
+          },
+          "modelId": {
+            "description": "The catalogue model the job used, when reported",
+            "nullable": true,
+            "type": "string"
+          },
+          "succeeded": {
+            "description": "The request finished successfully",
+            "type": "boolean"
+          },
+          "workers": {
+            "description": "Workers the job ran on (each paid a start fee), when reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "cloudJobId",
+          "costUsd",
+          "credits",
+          "estimateUsd",
+          "finishedAt",
+          "gpuSeconds",
+          "jobName",
+          "modelId",
+          "succeeded",
+          "workers",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "CloudMlSettlementsResponseDto": {
+        "properties": {
+          "items": {
+            "description": "Settled charges, newest first (at most 50)",
+            "items": {
+              "$ref": "#/components/schemas/CloudMlSettlementDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "CloudMlStatusResponseDto": {
+        "properties": {
+          "checkedAt": {
+            "type": "string"
+          },
+          "connection": {
+            "$ref": "#/components/schemas/CloudMlConnection"
+          },
+          "consent": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlConsentStateDto"
+              }
+            ],
+            "nullable": true
+          },
+          "destination": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlDestinationResponseDto"
+              }
+            ],
+            "description": "The Frameleaf Cloud destination, once added",
+            "nullable": true
+          },
+          "detail": {
+            "description": "Why the connection is not ready, in plain words",
+            "nullable": true,
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Frameleaf Cloud processing is turned on in settings",
+            "type": "boolean"
+          },
+          "entitled": {
+            "description": "Cloud processing entitlement, when the cloud answered",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "region": {
+            "description": "The Frameleaf account's data region",
+            "nullable": true,
+            "type": "string"
+          },
+          "wallet": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlWalletDto"
+              }
+            ],
+            "description": "The last AI Wallet read, or null",
+            "nullable": true
+          }
+        },
+        "required": [
+          "checkedAt",
+          "connection",
+          "consent",
+          "destination",
+          "detail",
+          "enabled",
+          "entitled",
+          "region",
+          "wallet"
+        ],
+        "type": "object"
+      },
+      "CloudMlWalletDto": {
+        "properties": {
+          "autoTopUp": {
+            "description": "Automatic top-up with the payment method saved on the account",
+            "type": "boolean"
+          },
+          "availableUsd": {
+            "description": "Balance minus holds, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "balanceUsd": {
+            "description": "AI Wallet balance, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "dailyCapUsd": {
+            "description": "Daily limit, USD, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "heldUsd": {
+            "description": "Held by running jobs, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "spentTodayUsd": {
+            "description": "Spent today, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "topUpUrl": {
+            "description": "Where to add credit; only when Frameleaf Cloud returned one",
+            "nullable": true,
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "When this balance was read",
+            "type": "string"
+          }
+        },
+        "required": [
+          "autoTopUp",
+          "availableUsd",
+          "balanceUsd",
+          "dailyCapUsd",
+          "heldUsd",
+          "spentTodayUsd",
+          "topUpUrl",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "CloudMlWalletUpdateDto": {
+        "properties": {
+          "autoTopUp": {
+            "description": "Top up automatically when available credit runs low",
+            "type": "boolean"
+          },
+          "dailyCapUsd": {
+            "description": "Daily spending cap, USD",
+            "format": "double",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "CloudRouteMode": {
+        "description": "local: this server or a home-network worker only; both: each job lets the person pick; cloud: Frameleaf Cloud only",
+        "enum": [
+          "local",
+          "both",
+          "cloud"
+        ],
+        "type": "string"
+      },
       "ClusterGroupRequestCreateDto": {
         "properties": {
           "userId": {
@@ -48366,9 +49094,7 @@
         "description": "A server secret that can be replaced or cleared but never read back",
         "enum": [
           "smtp-password",
-          "oauth-client-secret",
-          "runpod-api-key",
-          "huggingface-token"
+          "oauth-client-secret"
         ],
         "type": "string"
       },
@@ -50988,6 +51714,188 @@
         },
         "type": "object"
       },
+      "HardwareBackend": {
+        "enum": [
+          "CUDA",
+          "ROCm",
+          "OpenVINO",
+          "NVENC",
+          "VA-API",
+          "QSV",
+          "CPU"
+        ],
+        "type": "string"
+      },
+      "HardwareBenchmarkDto": {
+        "properties": {
+          "embeddingMs": {
+            "description": "Median time of a search embedding",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "mlFactor": {
+            "description": "Measured ÷ estimated time for AI work here (applied to the local estimates)",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "ranAt": {
+            "type": "string"
+          },
+          "serverFactor": {
+            "description": "Measured ÷ estimated time for video encoding here",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "transcodeSpeed": {
+            "description": "1080p test transcode, × real time",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "embeddingMs",
+          "mlFactor",
+          "ranAt",
+          "serverFactor",
+          "transcodeSpeed"
+        ],
+        "type": "object"
+      },
+      "HardwareCheckResponseDto": {
+        "properties": {
+          "benchmark": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HardwareBenchmarkDto"
+              }
+            ],
+            "description": "The last benchmark on this hardware, if any",
+            "nullable": true
+          },
+          "checkedAt": {
+            "type": "string"
+          },
+          "issues": {
+            "description": "Set-up problems the check found, by problem id",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ml": {
+            "$ref": "#/components/schemas/HardwareContainerCheckDto",
+            "description": "The ML container: search, faces, descriptions and restoration"
+          },
+          "mlImage": {
+            "description": "The ML image flavour (cpu, cuda, rocm, openvino), when reported",
+            "nullable": true,
+            "type": "string"
+          },
+          "server": {
+            "$ref": "#/components/schemas/HardwareContainerCheckDto",
+            "description": "The server container: video playback and Studio export"
+          }
+        },
+        "required": [
+          "benchmark",
+          "checkedAt",
+          "issues",
+          "ml",
+          "mlImage",
+          "server"
+        ],
+        "type": "object"
+      },
+      "HardwareContainerCheckDto": {
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/HardwareBackend"
+          },
+          "driver": {
+            "description": "Driver and runtime, or what the driver reported instead",
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "nullable": true,
+            "type": "string"
+          },
+          "reachable": {
+            "description": "The container answered the check",
+            "type": "boolean"
+          },
+          "test": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HardwareContainerTestDto"
+              }
+            ],
+            "nullable": true
+          },
+          "vendor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "vramGb": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "backend",
+          "driver",
+          "model",
+          "reachable",
+          "test",
+          "vendor",
+          "vramGb"
+        ],
+        "type": "object"
+      },
+      "HardwareContainerTestDto": {
+        "properties": {
+          "error": {
+            "description": "What failed, as the container reported it",
+            "nullable": true,
+            "type": "string"
+          },
+          "gpu": {
+            "description": "The test ran on the GPU",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "transcode: the server container; embedding: the ML container",
+            "enum": [
+              "transcode",
+              "embedding"
+            ],
+            "type": "string"
+          },
+          "ok": {
+            "description": "The test finished without falling back",
+            "type": "boolean"
+          },
+          "value": {
+            "description": "transcode: 1080p real-time multiple; embedding: milliseconds; null when it did not run",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "error",
+          "gpu",
+          "kind",
+          "ok",
+          "value"
+        ],
+        "type": "object"
+      },
       "HlsVideoResolution": {
         "description": "HLS video resolution",
         "enum": [
@@ -52541,6 +53449,10 @@
             },
             "type": "array"
           },
+          "suggestionsEnabled": {
+            "description": "Library care suggests Live Photo pairs; when false no pairs are looked for",
+            "type": "boolean"
+          },
           "total": {
             "description": "Total number of candidate pairs found",
             "maximum": 9007199254740991,
@@ -52550,6 +53462,7 @@
         },
         "required": [
           "candidates",
+          "suggestionsEnabled",
           "total"
         ],
         "type": "object"
@@ -53280,6 +54193,13 @@
             "description": "The candidate has exactly the checksum recorded for the original",
             "type": "boolean"
           },
+          "checksums": {
+            "description": "The checksums the candidate matched, as measured",
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthChecksumDto"
+            },
+            "type": "array"
+          },
           "chosen": {
             "description": "The reviewer chose this candidate for the finding",
             "type": "boolean"
@@ -53336,6 +54256,7 @@
           "candidatePath",
           "checkedAt",
           "checksumMatch",
+          "checksums",
           "chosen",
           "decodeValid",
           "evidence",
@@ -53349,6 +54270,38 @@
         ],
         "type": "object"
       },
+      "MediaHealthCareSettingsDto": {
+        "properties": {
+          "checksumScan": {
+            "description": "Health scans verify original checksums",
+            "type": "boolean"
+          },
+          "duplicateReview": {
+            "description": "Near-duplicates are grouped for review",
+            "type": "boolean"
+          },
+          "healthScan": {
+            "description": "Incremental health scans run on a schedule",
+            "type": "boolean"
+          },
+          "integrityAudit": {
+            "description": "Database and file reference audits run on their schedules",
+            "type": "boolean"
+          },
+          "rawRecovery": {
+            "description": "Searches for originals include RAW originals",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "checksumScan",
+          "duplicateReview",
+          "healthScan",
+          "integrityAudit",
+          "rawRecovery"
+        ],
+        "type": "object"
+      },
       "MediaHealthCategory": {
         "description": "Media health category",
         "enum": [
@@ -53356,6 +54309,30 @@
           "corrupt"
         ],
         "type": "string"
+      },
+      "MediaHealthChecksumAlgorithm": {
+        "description": "Checksum algorithm",
+        "enum": [
+          "sha1",
+          "sha256"
+        ],
+        "type": "string"
+      },
+      "MediaHealthChecksumDto": {
+        "properties": {
+          "algorithm": {
+            "$ref": "#/components/schemas/MediaHealthChecksumAlgorithm"
+          },
+          "value": {
+            "description": "Checksum as lowercase hex",
+            "type": "string"
+          }
+        },
+        "required": [
+          "algorithm",
+          "value"
+        ],
+        "type": "object"
       },
       "MediaHealthChooseCandidatesDto": {
         "properties": {
@@ -53430,6 +54407,13 @@
             "additionalProperties": {},
             "type": "object"
           },
+          "expectedChecksums": {
+            "description": "The checksums recorded for the original, which a copy must match exactly",
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthChecksumDto"
+            },
+            "type": "array"
+          },
           "id": {
             "description": "Media health finding ID",
             "format": "uuid",
@@ -53443,6 +54427,14 @@
           "originalPath": {
             "description": "Original media path",
             "type": "string"
+          },
+          "provenance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthProvenanceDto"
+              }
+            ],
+            "nullable": true
           },
           "resolution": {
             "additionalProperties": {},
@@ -53468,9 +54460,11 @@
           "checkedAt",
           "dismissedAt",
           "evidence",
+          "expectedChecksums",
           "id",
           "originalFileName",
           "originalPath",
+          "provenance",
           "resolution",
           "resolvedAt",
           "severity",
@@ -53623,6 +54617,71 @@
           "locate"
         ],
         "type": "string"
+      },
+      "MediaHealthProvenanceAction": {
+        "description": "What was done",
+        "enum": [
+          "relinked",
+          "recovered"
+        ],
+        "type": "string"
+      },
+      "MediaHealthProvenanceDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/MediaHealthProvenanceAction"
+          },
+          "at": {
+            "description": "When it was done",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "previousPath": {
+            "description": "The path the original had before",
+            "nullable": true,
+            "type": "string"
+          },
+          "rootId": {
+            "description": "Search location the copy came from",
+            "nullable": true,
+            "type": "string"
+          },
+          "rootKind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthRootKind"
+              }
+            ],
+            "nullable": true
+          },
+          "rootLabel": {
+            "description": "Name of the search location",
+            "nullable": true,
+            "type": "string"
+          },
+          "sourcePath": {
+            "description": "The verified copy that was used",
+            "nullable": true,
+            "type": "string"
+          },
+          "userId": {
+            "description": "The account that did it",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "at",
+          "previousPath",
+          "rootId",
+          "rootKind",
+          "rootLabel",
+          "sourcePath",
+          "userId"
+        ],
+        "type": "object"
       },
       "MediaHealthQueuesDto": {
         "properties": {
@@ -53890,6 +54949,9 @@
       },
       "MediaHealthSummaryResponseDto": {
         "properties": {
+          "care": {
+            "$ref": "#/components/schemas/MediaHealthCareSettingsDto"
+          },
           "operation": {
             "allOf": [
               {
@@ -53916,6 +54978,7 @@
           }
         },
         "required": [
+          "care",
           "operation",
           "queues",
           "recent",
@@ -54292,7 +55355,7 @@
         "enum": [
           "local",
           "lan",
-          "runpod"
+          "frameleaf-cloud"
         ],
         "type": "string"
       },
@@ -56502,6 +57565,12 @@
           "endpoint-unresolved",
           "destination-unhealthy",
           "role-conflict",
+          "cloud-unavailable",
+          "entitlement-missing",
+          "consent-version-outdated",
+          "wallet-insufficient",
+          "quota-exceeded",
+          "model-mismatch",
           "insufficient-memory"
         ],
         "type": "string"
@@ -56576,13 +57645,28 @@
       },
       "MlCapabilityDestinationDto": {
         "properties": {
+          "acceleration": {
+            "$ref": "#/components/schemas/MlWorkerAcceleration",
+            "description": "CPU or accelerator, from the last check; unknown without facts"
+          },
           "available": {
-            "description": "Enabled, healthy on the last probe, consented and reporting this workload",
+            "description": "Enabled, healthy on a check that is not stale, consented and reporting this workload",
             "type": "boolean"
+          },
+          "checkedAt": {
+            "description": "When the destination was last checked, or null",
+            "nullable": true,
+            "type": "string"
           },
           "consentGranted": {
             "description": "True when the destination needs no consent or consent is recorded",
             "type": "boolean"
+          },
+          "gpuMemoryBytes": {
+            "description": "Largest GPU memory the worker reported, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
           },
           "health": {
             "$ref": "#/components/schemas/MlDestinationHealth"
@@ -56595,17 +57679,103 @@
           "kind": {
             "$ref": "#/components/schemas/MlDestinationKind"
           },
+          "leavesNetwork": {
+            "description": "Work sent here leaves this network (Frameleaf Cloud)",
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
+          },
+          "region": {
+            "description": "Frameleaf Cloud data region, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "servedWorkloads": {
+            "description": "Workloads the last check verified, or null when it never answered",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "stale": {
+            "description": "The last check is too old to count as evidence; the destination is checked again first",
+            "type": "boolean"
           }
         },
         "required": [
+          "acceleration",
           "available",
+          "checkedAt",
           "consentGranted",
+          "gpuMemoryBytes",
           "health",
           "id",
           "kind",
-          "name"
+          "leavesNetwork",
+          "name",
+          "region",
+          "servedWorkloads",
+          "stale"
+        ],
+        "type": "object"
+      },
+      "MlDestinationCloudDto": {
+        "properties": {
+          "balanceUsd": {
+            "description": "AI Wallet balance, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "dailyCapUsd": {
+            "description": "Daily AI Wallet limit, USD, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "entitled": {
+            "description": "The Frameleaf account has the cloud processing entitlement",
+            "type": "boolean"
+          },
+          "heldUsd": {
+            "description": "AI Wallet amount held by running jobs, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlAdmissionRefusal"
+              }
+            ],
+            "description": "Why the last check refused, or null",
+            "nullable": true
+          },
+          "refusalDetail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "region": {
+            "description": "Frameleaf Cloud data region",
+            "nullable": true,
+            "type": "string"
+          },
+          "spentTodayUsd": {
+            "description": "AI Wallet spend today, USD",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "balanceUsd",
+          "dailyCapUsd",
+          "entitled",
+          "heldUsd",
+          "refusal",
+          "refusalDetail",
+          "region",
+          "spentTodayUsd"
         ],
         "type": "object"
       },
@@ -56624,12 +57794,24 @@
           "required": {
             "description": "Whether this destination sends media off the network and needs consent",
             "type": "boolean"
+          },
+          "requiredVersion": {
+            "description": "Frameleaf Cloud: the consent version the cloud requires now, from the last check, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "version": {
+            "description": "Frameleaf Cloud: the consent version accepted, or null",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
           "acknowledgedAt",
           "acknowledgedBy",
-          "required"
+          "required",
+          "requiredVersion",
+          "version"
         ],
         "type": "object"
       },
@@ -56641,6 +57823,33 @@
               true
             ],
             "type": "boolean"
+          },
+          "features": {
+            "description": "Frameleaf Cloud: per-feature choices; every feature is off unless chosen",
+            "properties": {
+              "identityNames": {
+                "default": false,
+                "description": "Allow people names in cloud description prompts",
+                "type": "boolean"
+              },
+              "medicalSignals": {
+                "default": false,
+                "description": "Allow medical signals in cloud descriptions",
+                "type": "boolean"
+              },
+              "ocrAddon": {
+                "default": false,
+                "description": "Allow the cloud text-recognition add-on",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "version": {
+            "description": "Frameleaf Cloud: the consent version being accepted; required for Frameleaf Cloud",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
@@ -56693,7 +57902,7 @@
       "MlDestinationCreateDto": {
         "properties": {
           "authToken": {
-            "description": "Bearer token for a LAN or RunPod video worker (write-only)",
+            "description": "Bearer token for a LAN worker (write-only)",
             "maxLength": 4096,
             "type": "string"
           },
@@ -56733,7 +57942,7 @@
             "type": "boolean"
           },
           "url": {
-            "description": "Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod",
+            "description": "Required for a LAN destination, optional for a local one; Frameleaf Cloud is added from its own endpoint",
             "format": "uri",
             "type": "string"
           },
@@ -56798,8 +58007,7 @@
         "enum": [
           "local",
           "lan",
-          "runpod",
-          "runpod-video"
+          "frameleaf-cloud"
         ],
         "type": "string"
       },
@@ -56808,6 +58016,15 @@
           "authTokenConfigured": {
             "description": "Whether a bearer token is stored for this destination",
             "type": "boolean"
+          },
+          "cloud": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlDestinationCloudDto"
+              }
+            ],
+            "description": "Frameleaf Cloud facts from the last check; null for other kinds",
+            "nullable": true
           },
           "consent": {
             "$ref": "#/components/schemas/MlDestinationConsentDto"
@@ -56846,7 +58063,7 @@
             "type": "string"
           },
           "url": {
-            "description": "Endpoint URL; null for a RunPod destination with no ready worker",
+            "description": "Endpoint URL; always null for Frameleaf Cloud",
             "nullable": true,
             "type": "string"
           },
@@ -56860,6 +58077,7 @@
         },
         "required": [
           "authTokenConfigured",
+          "cloud",
           "consent",
           "costControls",
           "createdAt",
@@ -57059,6 +58277,9 @@
           "restoration-faithful",
           "restoration-creative",
           "studio-ai",
+          "upscale",
+          "interpolation",
+          "studio-render",
           "pet-recognition"
         ],
         "type": "string"
@@ -57103,12 +58324,18 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "modelId": {
+            "description": "Frameleaf Cloud catalogue model for this workload, or null",
+            "nullable": true,
+            "type": "string"
+          },
           "workload": {
             "$ref": "#/components/schemas/MlWorkload"
           }
         },
         "required": [
           "destinationId",
+          "modelId",
           "workload"
         ],
         "type": "object"
@@ -57120,6 +58347,13 @@
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "modelId": {
+            "description": "Frameleaf Cloud only: the catalogue model this workload uses",
+            "maxLength": 200,
+            "minLength": 1,
+            "nullable": true,
             "type": "string"
           }
         },
@@ -58051,6 +59285,8 @@
           "server.storage",
           "server.statistics",
           "server.versionCheck",
+          "adminCloudMl.read",
+          "adminCloudMl.update",
           "serverLicense.read",
           "serverLicense.update",
           "serverLicense.delete",
@@ -59161,7 +60397,13 @@
           "endpoint-unresolved",
           "destination-unhealthy",
           "role-conflict",
-          "insufficient-memory"
+          "insufficient-memory",
+          "cloud-unavailable",
+          "entitlement-missing",
+          "consent-version-outdated",
+          "wallet-insufficient",
+          "quota-exceeded",
+          "model-mismatch"
         ],
         "type": "string"
       },
@@ -59509,6 +60751,20 @@
           "decision": {
             "$ref": "#/components/schemas/PhysicalDeduplicationDecision"
           },
+          "duration": {
+            "description": "Video length in milliseconds, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "height": {
+            "description": "Height in pixels, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "originalFileName": {
             "type": "string"
           },
@@ -59544,6 +60800,13 @@
           },
           "type": {
             "$ref": "#/components/schemas/AssetTypeEnum"
+          },
+          "width": {
+            "description": "Width in pixels, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           }
         },
         "required": [
@@ -59552,6 +60815,8 @@
           "checksum",
           "checksumMatch",
           "decision",
+          "duration",
+          "height",
           "originalFileName",
           "originalPath",
           "ownerId",
@@ -59559,9 +60824,19 @@
           "reason",
           "retainedAssetId",
           "sizeInBytes",
-          "type"
+          "type",
+          "width"
         ],
         "type": "object"
+      },
+      "PhysicalDeduplicationCopyFile": {
+        "description": "The copy's own former file: removed from disk, still the reviewed bytes, or different bytes now",
+        "enum": [
+          "removed",
+          "present",
+          "changed"
+        ],
+        "type": "string"
       },
       "PhysicalDeduplicationDecision": {
         "description": "Physical deduplication plan decision for a duplicate copy",
@@ -59590,6 +60865,7 @@
             "type": "boolean"
           },
           "deletedBytes": {
+            "description": "Measured: bytes actually removed from disk by applying this plan so far",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -59610,6 +60886,12 @@
             "type": "integer"
           },
           "linkedAssets": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "logicalBytes": {
+            "description": "Logical asset bytes (FL-73): the sizes of every asset that references a shared original once this plan is applied, counted once per asset",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -59636,6 +60918,7 @@
             "type": "string"
           },
           "reclaimableBytes": {
+            "description": "Estimate: bytes of the copies to share, with their generated files, that applying would free",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -59654,6 +60937,12 @@
           "scopeUserName": {
             "nullable": true,
             "type": "string"
+          },
+          "sharedOriginalBytes": {
+            "description": "Physical shared-original bytes (FL-73): the retained originals those assets share, counted once per file",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           },
           "skippedExternal": {
             "maximum": 9007199254740991,
@@ -59675,6 +60964,7 @@
           "fingerprint",
           "hiddenCopies",
           "linkedAssets",
+          "logicalBytes",
           "masterUserId",
           "masterUserName",
           "mode",
@@ -59684,6 +60974,7 @@
           "retained",
           "scopeUserId",
           "scopeUserName",
+          "sharedOriginalBytes",
           "skippedExternal",
           "skippedMissingMaster"
         ],
@@ -59760,6 +61051,20 @@
         ],
         "type": "object"
       },
+      "PhysicalDeduplicationRestoreRequestDto": {
+        "properties": {
+          "assetId": {
+            "description": "A copy of the applied plan whose own file is still on disk",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "type": "object"
+      },
       "PhysicalDeduplicationRetainedDto": {
         "properties": {
           "assetId": {
@@ -59774,9 +61079,23 @@
             "description": "Hex-encoded SHA-1 checksum of the original file",
             "type": "string"
           },
+          "duration": {
+            "description": "Video length in milliseconds, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "fileAvailable": {
             "description": "Whether the retained original file is on disk now, checked on every read (FL-71 UT-24)",
             "type": "boolean"
+          },
+          "height": {
+            "description": "Height in pixels, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           },
           "hiddenCopies": {
             "description": "Copies this retained original would share that are Locked media of another account; counted, never named (FL-73)",
@@ -59818,13 +61137,22 @@
           },
           "type": {
             "$ref": "#/components/schemas/AssetTypeEnum"
+          },
+          "width": {
+            "description": "Width in pixels, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           }
         },
         "required": [
           "assetId",
           "canView",
           "checksum",
+          "duration",
           "fileAvailable",
+          "height",
           "hiddenCopies",
           "originalFileName",
           "originalPath",
@@ -59833,9 +61161,19 @@
           "referencesAfter",
           "referencesBefore",
           "sizeInBytes",
-          "type"
+          "type",
+          "width"
         ],
         "type": "object"
+      },
+      "PhysicalDeduplicationRetainedFile": {
+        "description": "The retained original on disk: still the reviewed bytes, gone, or different bytes",
+        "enum": [
+          "intact",
+          "missing",
+          "changed"
+        ],
+        "type": "string"
       },
       "PhysicalDeduplicationReviewRequestDto": {
         "properties": {
@@ -59934,6 +61272,156 @@
           "retained-file-missing"
         ],
         "type": "string"
+      },
+      "PhysicalDeduplicationVerificationDto": {
+        "properties": {
+          "copies": {
+            "description": "Copies the plan applied, listed or not",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hiddenCopies": {
+            "description": "Copies that are Locked media of another account; counted, never named",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PhysicalDeduplicationVerificationItemDto"
+            },
+            "type": "array"
+          },
+          "notLinked": {
+            "description": "Copies that no longer resolve to the retained original",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "removed": {
+            "description": "Copies whose own file is gone: that cannot be undone",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "restorable": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "restored": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedChanged": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedIntact": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedMissing": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedOriginals": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verified": {
+            "description": "Copies that resolve to a retained original still holding the reviewed bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verifiedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "copies",
+          "hiddenCopies",
+          "items",
+          "notLinked",
+          "operationId",
+          "planId",
+          "removed",
+          "restorable",
+          "restored",
+          "retainedChanged",
+          "retainedIntact",
+          "retainedMissing",
+          "retainedOriginals",
+          "verified",
+          "verifiedAt"
+        ],
+        "type": "object"
+      },
+      "PhysicalDeduplicationVerificationItemDto": {
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "canView": {
+            "description": "Whether the requesting administrator may view this asset and its thumbnail",
+            "type": "boolean"
+          },
+          "copyFile": {
+            "$ref": "#/components/schemas/PhysicalDeduplicationCopyFile"
+          },
+          "linked": {
+            "description": "Whether the asset still resolves to the retained original",
+            "type": "boolean"
+          },
+          "originalFileName": {
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "restorable": {
+            "description": "Whether the asset can go back to its own file: it is linked and that file still holds the reviewed bytes",
+            "type": "boolean"
+          },
+          "restored": {
+            "description": "Whether the asset is back on its own former file",
+            "type": "boolean"
+          },
+          "retainedFile": {
+            "$ref": "#/components/schemas/PhysicalDeduplicationRetainedFile"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          }
+        },
+        "required": [
+          "assetId",
+          "canView",
+          "copyFile",
+          "linked",
+          "originalFileName",
+          "ownerName",
+          "restorable",
+          "restored",
+          "retainedFile",
+          "type"
+        ],
+        "type": "object"
       },
       "PinCodeChangeDto": {
         "properties": {
@@ -61575,7 +63063,7 @@
           "server",
           "local",
           "lan",
-          "runpod"
+          "frameleaf-cloud"
         ],
         "type": "string"
       },
@@ -62836,6 +64324,31 @@
             "maxItems": 64,
             "type": "array"
           },
+          "colorPrecision": {
+            "description": "Colour precision the conformance check verified; absent means 8-bit SDR only (FL-42)",
+            "properties": {
+              "dolbyVision": {
+                "description": "The check verified Dolby Vision output",
+                "type": "boolean"
+              },
+              "hdr10": {
+                "description": "The check verified HDR10 (PQ, BT.2020) output",
+                "type": "boolean"
+              },
+              "maxBitDepth": {
+                "description": "Highest bit depth the check rendered and verified",
+                "maximum": 16,
+                "minimum": 8,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "maxBitDepth",
+              "hdr10",
+              "dolbyVision"
+            ],
+            "type": "object"
+          },
           "conformanceReportedAt": {
             "description": "When the conformance check ran",
             "format": "date-time",
@@ -64091,215 +65604,6 @@
         },
         "required": [
           "angle"
-        ],
-        "type": "object"
-      },
-      "RunPodBackfillResultDto": {
-        "properties": {
-          "enqueued": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "skipped": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "enqueued",
-          "skipped"
-        ],
-        "type": "object"
-      },
-      "RunPodConnectionResultDto": {
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "ok": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "type": "object"
-      },
-      "RunPodConnectionTestDto": {
-        "properties": {
-          "apiKey": {
-            "description": "API key to verify (overrides the stored key for the test)",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "RunPodGpuTypeDto": {
-        "properties": {
-          "communityCloud": {
-            "type": "boolean"
-          },
-          "displayName": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "memoryInGb": {
-            "format": "double",
-            "type": "number"
-          },
-          "pricePerHour": {
-            "format": "double",
-            "nullable": true,
-            "type": "number"
-          },
-          "secureCloud": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "displayName",
-          "id",
-          "memoryInGb"
-        ],
-        "type": "object"
-      },
-      "RunPodProvisionDto": {
-        "properties": {
-          "acknowledgeDataPrivacy": {
-            "description": "User confirms image previews will be sent to RunPod (must be true to launch)",
-            "enum": [
-              true
-            ],
-            "type": "boolean"
-          },
-          "gpuCount": {
-            "maximum": 8,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "gpuTypeId": {
-            "description": "RunPod GPU type ID, e.g. \"NVIDIA RTX A5000\"",
-            "minLength": 1,
-            "type": "string"
-          },
-          "imageName": {
-            "description": "Override the configured image",
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxRuntimeHours": {
-            "maximum": 168,
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "acknowledgeDataPrivacy",
-          "gpuTypeId"
-        ],
-        "type": "object"
-      },
-      "RunPodStateDto": {
-        "properties": {
-          "endpointId": {
-            "type": "string"
-          },
-          "endpointUrl": {
-            "type": "string"
-          },
-          "errorMessage": {
-            "type": "string"
-          },
-          "estimatedCostUsd": {
-            "format": "double",
-            "type": "number"
-          },
-          "gpuTypeId": {
-            "type": "string"
-          },
-          "idleTimeoutSeconds": {
-            "description": "Serverless idle timeout; may be null when not yet provisioned.",
-            "format": "double",
-            "nullable": true,
-            "type": "number"
-          },
-          "imageName": {
-            "type": "string"
-          },
-          "instanceTag": {
-            "type": "string"
-          },
-          "lastBusyAt": {
-            "type": "string"
-          },
-          "maxRuntimeHours": {
-            "format": "double",
-            "type": "number"
-          },
-          "mlUrl": {
-            "type": "string"
-          },
-          "podCreatedAt": {
-            "type": "string"
-          },
-          "podId": {
-            "type": "string"
-          },
-          "pricePerHour": {
-            "format": "double",
-            "type": "number"
-          },
-          "runningSince": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "idle",
-              "provisioning",
-              "starting",
-              "running",
-              "stopping",
-              "stopped",
-              "error",
-              "serverless-provisioning",
-              "serverless-ready"
-            ],
-            "type": "string"
-          },
-          "stoppedAt": {
-            "type": "string"
-          },
-          "templateId": {
-            "type": "string"
-          },
-          "unhealthySince": {
-            "type": "string"
-          },
-          "workerReady": {
-            "type": "boolean"
-          },
-          "workersMax": {
-            "description": "Serverless workersMax; may be null when not yet provisioned.",
-            "format": "double",
-            "nullable": true,
-            "type": "number"
-          },
-          "workersMin": {
-            "description": "Serverless workersMin; may be null when not yet provisioned.",
-            "format": "double",
-            "nullable": true,
-            "type": "number"
-          }
-        },
-        "required": [
-          "status"
         ],
         "type": "object"
       },
@@ -70078,6 +71382,13 @@
             "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
             "type": "boolean"
           },
+          "render": {
+            "description": "FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision)",
+            "items": {
+              "$ref": "#/components/schemas/StudioRenderEvidenceDto"
+            },
+            "type": "array"
+          },
           "renderWorker": {
             "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
             "type": "boolean"
@@ -70093,6 +71404,7 @@
         },
         "required": [
           "gpuWorker",
+          "render",
           "renderWorker",
           "restorationWorker",
           "transcriptionWorker"
@@ -71652,6 +72964,56 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "StudioRenderEvidenceDto": {
+        "properties": {
+          "codecs": {
+            "description": "Encoders and decoders qualified sessions verified",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "dolbyVision": {
+            "description": "A qualified session verified Dolby Vision output",
+            "type": "boolean"
+          },
+          "gpuMemoryBytes": {
+            "description": "Largest GPU memory a qualified session verified, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "hdr10": {
+            "description": "A qualified session verified HDR10 output",
+            "type": "boolean"
+          },
+          "maxBitDepth": {
+            "description": "Highest bit depth a qualified session verified (8 when none said more)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "sessions": {
+            "description": "Qualified live render sessions for this destination",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "codecs",
+          "destination",
+          "dolbyVision",
+          "gpuMemoryBytes",
+          "hdr10",
+          "maxBitDepth",
+          "sessions"
+        ],
         "type": "object"
       },
       "StudioTimeDto": {
@@ -73771,7 +75133,7 @@
             "type": "integer"
           },
           "title": {
-            "description": "The entry title, such as \"Updated RunPod API key\"; absent for a settings save",
+            "description": "The entry title, such as \"Updated email server password\"; absent for a settings save",
             "nullable": true,
             "type": "string"
           }

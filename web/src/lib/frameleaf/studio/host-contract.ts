@@ -104,6 +104,17 @@ export interface StudioCapabilities {
   transcriptionWorker: boolean;
 }
 
+/** One destination's verified render facts, as `GET /ml-destinations/capabilities` publishes them (FL-42). */
+export interface StudioRenderEvidence {
+  destination: string;
+  sessions: number;
+  gpuMemoryBytes: number | null;
+  codecs: readonly string[];
+  maxBitDepth: number;
+  hdr10: boolean;
+  dolbyVision: boolean;
+}
+
 export const emptyStudioCapabilities = (): StudioCapabilities => ({
   analysisWorker: false,
   generationWorker: false,
@@ -151,6 +162,14 @@ export interface StudioHostContext {
   auth: StudioAuthContext;
   theme: StudioThemeTokens;
   capabilities: StudioCapabilities;
+  /**
+   * What qualified render workers verified, per destination (FL-42): GPU memory, encoders and colour
+   * precision. The export sheet judges each format, colour and resolution with
+   * `studioRenderChoices` (`render-output.ts`) and shows a choice the server would refuse as
+   * disabled with its reason; the server still decides when the export is submitted. Absent or
+   * empty means no qualified render worker is live, so every export would be refused.
+   */
+  renderEvidence?: readonly StudioRenderEvidence[];
   /**
    * The remote preview, as data (FL-96).
    *

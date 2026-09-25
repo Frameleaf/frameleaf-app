@@ -11,6 +11,7 @@ import {
   canRouteTo,
   formatThroughput,
   isConsentBlocking,
+  isConsentOutdated,
   isOverBudget,
   ML_WORKLOAD_ORDER,
   mlDestinationKindLabelKey,
@@ -33,7 +34,8 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
   workloads: [MlWorkload.Face, MlWorkload.Clip],
   role: MlWorkerRole.LibraryAnalysis,
   sharesLibraryHardware: false,
-  consent: { required: false, acknowledgedAt: null, acknowledgedBy: null },
+  consent: { required: false, acknowledgedAt: null, acknowledgedBy: null, requiredVersion: null, version: null },
+  cloud: null,
   costControls: {
     budgetLimitUsd: null,
     maxRuntimeMinutes: null,
@@ -47,34 +49,43 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
   ...overrides,
 });
 
-const runPod = (acknowledgedAt: string | null) =>
+/** Frameleaf Cloud (FL-159): no URL or token, versioned consent, and it may mix roles. */
+const cloud = (acknowledgedAt: string | null, version = '2026-10-01', requiredVersion = '2026-10-01') =>
   destination({
-    id: 'runpod',
-    kind: MlDestinationKind.Runpod,
-    name: 'RunPod',
+    id: 'cloud',
+    kind: MlDestinationKind.FrameleafCloud,
+    name: 'Frameleaf Cloud',
     url: null,
-    workloads: [MlWorkload.Face, MlWorkload.Enrichment],
-    consent: { required: true, acknowledgedAt, acknowledgedBy: acknowledgedAt ? 'admin' : null },
+    workloads: [MlWorkload.Enrichment, MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+    role: MlWorkerRole.Mixed,
+    consent: {
+      required: true,
+      acknowledgedAt,
+      acknowledgedBy: acknowledgedAt ? 'admin' : null,
+      requiredVersion,
+      version: acknowledgedAt ? version : null,
+    },
   });
 
-/** The persistent RunPod restoration worker (FL-72). */
-const runPodVideo = (acknowledgedAt: string | null) =>
+/** A restoration worker on this network (FL-72). */
+const restorationWorker = () =>
   destination({
-    id: 'runpod-video',
-    kind: MlDestinationKind.RunpodVideo,
-    name: 'RunPod video worker',
-    url: 'https://video-worker.proxy.runpod.net',
+    id: 'restoration',
+    kind: MlDestinationKind.Lan,
+    name: 'Restoration worker',
+    url: 'http://restoration:3004',
     workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
     role: MlWorkerRole.Restoration,
-    consent: { required: true, acknowledgedAt, acknowledgedBy: acknowledgedAt ? 'admin' : null },
   });
+
+const AT = '2026-09-22T00:00:00.000Z';
 
 describe('ml-destinations presentation rules (FL-110)', () => {
   it('lists every workload once, library work first', () => {
     expect(ML_WORKLOAD_ORDER).toHaveLength(Object.values(MlWorkload).length);
     expect(new Set(ML_WORKLOAD_ORDER).size).toBe(ML_WORKLOAD_ORDER.length);
     expect(ML_WORKLOAD_ORDER[0]).toBe(MlWorkload.Face);
-    expect(ML_WORKLOAD_ORDER.at(-1)).toBe(MlWorkload.StudioAi);
+    expect(ML_WORKLOAD_ORDER.at(-1)).toBe(MlWorkload.StudioRender);
   });
 
   it('has a label key for every workload and refusal', () => {
@@ -87,9 +98,18 @@ describe('ml-destinations presentation rules (FL-110)', () => {
   });
 
   it('treats an unconsented cloud destination as blocked and a local one as never needing consent', () => {
-    expect(isConsentBlocking(runPod(null))).toBe(true);
-    expect(isConsentBlocking(runPod('2026-09-22T00:00:00.000Z'))).toBe(false);
+    expect(isConsentBlocking(cloud(null))).toBe(true);
+    expect(isConsentBlocking(cloud(AT))).toBe(false);
     expect(isConsentBlocking(destination())).toBe(false);
+  });
+
+  it('blocks Frameleaf Cloud when consent was given for an older version (FL-159)', () => {
+    const outdated = cloud(AT, '2026-09-25', '2026-10-01');
+    expect(isConsentOutdated(outdated)).toBe(true);
+    expect(isConsentBlocking(outdated)).toBe(true);
+    expect(canRouteTo(outdated, MlWorkload.Enrichment)).toBe(false);
+    expect(isConsentOutdated(cloud(AT))).toBe(false);
+    expect(isConsentOutdated(cloud(null))).toBe(false);
   });
 
   it('offers a route only where the server would accept it', () => {
@@ -97,13 +117,14 @@ describe('ml-destinations presentation rules (FL-110)', () => {
     expect(canRouteTo(local, MlWorkload.Face)).toBe(true);
     expect(canRouteTo(local, MlWorkload.Ocr)).toBe(false);
     expect(canRouteTo(destination({ enabled: false }), MlWorkload.Face)).toBe(false);
-    expect(canRouteTo(runPod(null), MlWorkload.Face)).toBe(false);
-    expect(canRouteTo(runPod('2026-09-22T00:00:00.000Z'), MlWorkload.Face)).toBe(true);
+    expect(canRouteTo(cloud(null), MlWorkload.Enrichment)).toBe(false);
+    expect(canRouteTo(cloud(AT), MlWorkload.Enrichment)).toBe(true);
+    expect(canRouteTo(cloud(AT), MlWorkload.Face)).toBe(false);
   });
 
   it('never lists a cloud destination without consent as routable, even when it is the only one', () => {
-    expect(routableDestinations([runPodVideo(null)], MlWorkload.RestorationFaithful)).toEqual([]);
-    const consented = runPodVideo('2026-09-22T00:00:00.000Z');
+    expect(routableDestinations([cloud(null)], MlWorkload.RestorationFaithful)).toEqual([]);
+    const consented = cloud(AT);
     expect(routableDestinations([destination(), consented], MlWorkload.RestorationFaithful)).toEqual([consented]);
   });
 
@@ -139,7 +160,7 @@ describe('ml-destinations presentation rules (FL-110)', () => {
     expect(parseOptionalNumber('abc')).toBeUndefined();
   });
 
-  it('labels every destination kind, the RunPod video worker included', () => {
+  it('labels every destination kind, Frameleaf Cloud included', () => {
     for (const kind of Object.values(MlDestinationKind)) {
       expect(mlDestinationKindLabelKey(kind)).toMatch(/^admin\.frameleaf_ml_destination_kind_/);
     }
@@ -147,14 +168,7 @@ describe('ml-destinations presentation rules (FL-110)', () => {
 });
 
 describe('separate library-analysis and restoration workers (FL-72)', () => {
-  it('never offers restoration on the managed RunPod pod or on a worker that also runs library analysis', () => {
-    const legacyPod = destination({
-      ...runPod('2026-09-22T00:00:00.000Z'),
-      workloads: [MlWorkload.RestorationFaithful],
-      role: MlWorkerRole.Restoration,
-    });
-    expect(canRouteTo(legacyPod, MlWorkload.RestorationFaithful)).toBe(false);
-
+  it('never offers restoration on a worker of this network that also runs library analysis', () => {
     const mixed = destination({
       workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful],
       role: MlWorkerRole.Mixed,
@@ -162,15 +176,19 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
     expect(canRouteTo(mixed, MlWorkload.RestorationFaithful)).toBe(false);
     expect(canRouteTo(mixed, MlWorkload.Face)).toBe(true);
 
-    expect(canRouteTo(runPodVideo('2026-09-22T00:00:00.000Z'), MlWorkload.RestorationCreative)).toBe(true);
+    expect(canRouteTo(restorationWorker(), MlWorkload.RestorationCreative)).toBe(true);
+    // Frameleaf Cloud gives each job its own capacity, so it may run both (FL-159).
+    expect(canRouteTo(cloud(AT), MlWorkload.RestorationCreative)).toBe(true);
   });
 
   it('offers each kind only the work it may run', () => {
-    expect(workloadsForKind(MlDestinationKind.Runpod)).not.toContain(MlWorkload.RestorationFaithful);
-    expect(workloadsForKind(MlDestinationKind.Runpod)).toContain(MlWorkload.Enrichment);
-    expect(workloadsForKind(MlDestinationKind.RunpodVideo)).toEqual([
+    expect(workloadsForKind(MlDestinationKind.FrameleafCloud)).toEqual([
+      MlWorkload.Enrichment,
       MlWorkload.RestorationFaithful,
       MlWorkload.RestorationCreative,
+      MlWorkload.StudioAi,
+      MlWorkload.Upscale,
+      MlWorkload.Interpolation,
     ]);
     expect(workloadsForKind(MlDestinationKind.Lan)).toEqual([...ML_WORKLOAD_ORDER]);
   });
@@ -185,6 +203,9 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
     expect(
       workloadBlockedInDraft(lan, [MlWorkload.Face, MlWorkload.RestorationFaithful], MlWorkload.RestorationFaithful),
     ).toBe(false);
-    expect(workloadBlockedInDraft(MlDestinationKind.Runpod, [], MlWorkload.RestorationCreative)).toBe(true);
+    // Frameleaf Cloud never offers faces, search or text recognition, and may mix roles.
+    const cloudKind = MlDestinationKind.FrameleafCloud;
+    expect(workloadBlockedInDraft(cloudKind, [], MlWorkload.Face)).toBe(true);
+    expect(workloadBlockedInDraft(cloudKind, [MlWorkload.Enrichment], MlWorkload.RestorationCreative)).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -12,6 +13,7 @@ describe(LivePhotoService.name, () => {
   let livePhotoRepository: LivePhotoRepository;
 
   beforeEach(() => {
+    clearConfigCache();
     mocks = getMocks();
     livePhotoRepository = {
       getUnlinkedByContentId: vi.fn().mockResolvedValue([]),
@@ -24,6 +26,8 @@ describe(LivePhotoService.name, () => {
       mocks.album as never,
       mocks.event as never,
       livePhotoRepository,
+      mocks.config as never,
+      mocks.systemMetadata as never,
     );
   });
 
@@ -32,6 +36,17 @@ describe(LivePhotoService.name, () => {
   });
 
   describe('getCandidates', () => {
+    it('suggests no pairs while Library care → Suggest Live Photo relinking is off (FL-69)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ libraryCare: { livePhotoRepair: false } });
+
+      await expect(sut.getCandidates(AuthFactory.create())).resolves.toEqual({
+        candidates: [],
+        total: 0,
+        suggestionsEnabled: false,
+      });
+      expect(livePhotoRepository.getUnlinkedByContentId).not.toHaveBeenCalled();
+    });
+
     it('returns high-confidence CID pairs and fills gaps with low-confidence filename pairs', async () => {
       const auth = AuthFactory.create();
       const ownerId = auth.user.id;

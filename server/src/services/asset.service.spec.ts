@@ -1646,6 +1646,93 @@ describe(AssetService.name, () => {
       });
     });
 
+    it('records a video edit as a job in Activity, naming the version it will render (FL-43)', async () => {
+      const edit: AssetEditActionItem = { action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 5000 } };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 10_000,
+        livePhotoVideoId: null,
+        originalPath: '/upload/video.mp4',
+        originalFileName: 'video.mp4',
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      mocks.assetEdit.replaceAll.mockResolvedValue([{ id: 'edit-1', ...edit }]);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue({ id: 'version-1' } as never);
+      mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
+
+      await sut.editAsset(authStub.admin, 'asset-1', { edits: [edit] });
+
+      expect(mocks.mediaOperation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerId: authStub.admin.user.id,
+          kind: 'quick_edit',
+          label: 'video.mp4',
+          assetId: 'asset-1',
+          revisionId: 'version-1',
+          settings: { edit: 'video_edit' },
+        }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: 'asset-1', operationId: 'op-1' },
+      });
+    });
+
+    it('records a photo edit as a job in Activity (FL-43)', async () => {
+      const edit: AssetEditActionItem = { action: AssetEditAction.Rotate, parameters: { angle: 90 } };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Image,
+        duration: null,
+        livePhotoVideoId: null,
+        originalPath: '/upload/photo.jpg',
+        originalFileName: 'photo.jpg',
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      mocks.assetEdit.replaceAll.mockResolvedValue([{ id: 'edit-1', ...edit }]);
+      mocks.mediaOperation.create.mockResolvedValue({ id: 'op-2' } as never);
+
+      await sut.editAsset(authStub.admin, 'asset-1', { edits: [edit] });
+
+      expect(mocks.mediaOperation.create).toHaveBeenCalledWith(
+        expect.objectContaining({ label: 'photo.jpg', revisionId: null, settings: { edit: 'photo_edit' } }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetEditThumbnailGeneration,
+        data: { id: 'asset-1', operationId: 'op-2' },
+      });
+    });
+
+    it('records a video export as its own job, pointing at the exported version (FL-43)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.createVideoExport.mockResolvedValue({
+        id: 'version-2',
+        purpose: 'export',
+        status: 'pending',
+        createdAt: new Date('2026-09-25T10:00:00.000Z'),
+        recipe: [],
+      } as never);
+      mocks.asset.getById.mockResolvedValue({ id: 'asset-1', originalFileName: 'video.mp4' } as never);
+      mocks.mediaOperation.create.mockResolvedValue({ id: 'op-3' } as never);
+
+      await sut.exportVideoEditVersion(authStub.admin, 'asset-1');
+
+      expect(mocks.mediaOperation.create).toHaveBeenCalledWith(
+        expect.objectContaining({ label: 'video.mp4', revisionId: 'version-2', settings: { edit: 'video_export' } }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: 'asset-1', versionId: 'version-2', operationId: 'op-3' },
+      });
+    });
+
     it('should reject video trim parameters outside the duration', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
       mocks.asset.getForEdit.mockResolvedValue({
