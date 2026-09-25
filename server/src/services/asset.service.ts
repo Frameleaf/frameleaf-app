@@ -267,10 +267,12 @@ export class AssetService extends BaseService {
       { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
       isUndefined,
     );
+    // FL-51: null coordinates remove the location (the geolocation utility's "Remove location")
+    const clearLocation = latitude === null && longitude === null;
     const exifDto = omitBy(
       {
-        latitude,
-        longitude,
+        latitude: clearLocation ? undefined : (latitude ?? undefined),
+        longitude: clearLocation ? undefined : (longitude ?? undefined),
         rating,
         description,
         dateTimeOriginal,
@@ -280,6 +282,12 @@ export class AssetService extends BaseService {
 
     if (Object.keys(exifDto).length > 0) {
       await this.assetRepository.updateAllExif(ids, exifDto);
+    }
+
+    // FL-51: a Live Photo's paired video carries the same location, so it goes with the photo's
+    const locationVideoIds = clearLocation ? await this.getLivePhotoVideoIds(ids) : [];
+    if (clearLocation) {
+      await this.assetRepository.clearLocation([...ids, ...locationVideoIds]);
     }
 
     const extractedTimeZone = extractTimeZone(dateTimeOriginal);
@@ -311,7 +319,20 @@ export class AssetService extends BaseService {
     // and every album read hides it from everyone but its owner's elevated session, so it is back in
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
-    await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+    await this.jobRepository.queueAll(
+      [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
+    );
+  }
+
+  /** FL-51: the paired videos of these Live Photos that are not already among them. */
+  private async getLivePhotoVideoIds(ids: string[]): Promise<string[]> {
+    const assets = await this.assetRepository.getByIds(ids);
+    const named = new Set(ids);
+    return [
+      ...new Set(
+        assets.map(({ livePhotoVideoId }) => livePhotoVideoId).filter((id): id is string => !!id && !named.has(id)),
+      ),
+    ];
   }
 
   /**
@@ -816,22 +837,36 @@ export class AssetService extends BaseService {
     id: string;
     description?: string;
     dateTimeOriginal?: string;
-    latitude?: number;
-    longitude?: number;
+    latitude?: number | null;
+    longitude?: number | null;
     rating?: number | null;
   }) {
     const { id, description, dateTimeOriginal, latitude, longitude, rating } = dto;
+    // FL-51: null coordinates remove the location
+    const clearLocation = latitude === null && longitude === null;
     const writes = omitBy(
       {
         description,
         dateTimeOriginal,
         timeZone: extractTimeZone(dateTimeOriginal)?.name,
-        latitude,
-        longitude,
+        latitude: clearLocation ? undefined : (latitude ?? undefined),
+        longitude: clearLocation ? undefined : (longitude ?? undefined),
         rating,
       },
       isUndefined,
     );
+
+    if (clearLocation) {
+      // FL-51: the Live Photo's paired video loses its location with the photo
+      const videoIds = await this.getLivePhotoVideoIds([id]);
+      await this.assetRepository.clearLocation([id, ...videoIds]);
+      if (Object.keys(writes).length === 0) {
+        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+      }
+      for (const videoId of videoIds) {
+        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id: videoId } });
+      }
+    }
 
     if (Object.keys(writes).length > 0) {
       await this.assetRepository.upsertExif({

@@ -19,6 +19,7 @@
   import NsfwDetectionSection from './machine-learning/NsfwDetectionSection.svelte';
   import OcrSection from './machine-learning/OcrSection.svelte';
   import RunPodSection from './machine-learning/RunPodSection.svelte';
+  import SearchLabelsSection from './machine-learning/SearchLabelsSection.svelte';
   import SmartSearchSection from './machine-learning/SmartSearchSection.svelte';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
@@ -150,6 +151,12 @@
         {disabled}
       />
 
+      <SearchLabelsSection
+        workingConfig={configToEdit.machineLearning}
+        savedConfig={config.machineLearning}
+        {disabled}
+      />
+
       <DuplicateDetectionSection
         workingConfig={configToEdit.machineLearning}
         savedConfig={config.machineLearning}
@@ -182,7 +189,7 @@
         {disabled}
       />
 
-      <SettingActions keys={['machineLearning']} {disabled} />
+      <SettingActions keys={['machineLearning', 'localFeatures']} {disabled} />
     </form>
   </div>
 </div>

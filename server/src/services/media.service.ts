@@ -55,6 +55,7 @@ import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { straightenScale } from 'src/utils/develop-recipe.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import {
+  type DecodeQualification,
   DecodeSupport,
   assertDecodeQualified,
   qualifySourceDecode,
@@ -1155,6 +1156,7 @@ export class MediaService extends BaseService {
       checksum: asset.checksum,
       edits,
       colorDecision,
+      decode: qualifySourceDecode(videoStream, config.ffmpeg),
     });
 
     await this.assetRepository.upsertFile({
@@ -1399,6 +1401,7 @@ export class MediaService extends BaseService {
         checksum: version.sourceChecksum,
         edits,
         colorDecision,
+        decode: qualifySourceDecode(videoStream, config.ffmpeg),
       });
 
       // The playback proxy follows the playback policy. A packet-preserving master keeps its
@@ -1532,6 +1535,7 @@ export class MediaService extends BaseService {
     checksum,
     edits,
     colorDecision,
+    decode,
   }: {
     masterPath: string;
     assetId: string;
@@ -1539,6 +1543,8 @@ export class MediaService extends BaseService {
     checksum?: Buffer | null;
     edits: AssetEditActionItem[];
     colorDecision: EditedMasterColorDecision;
+    /** FL-101: the source's decode qualification, recorded for video masters. */
+    decode?: DecodeQualification;
   }) {
     const lineage = buildEditedMasterLineage({
       sourceAssetId: assetId,
@@ -1546,6 +1552,7 @@ export class MediaService extends BaseService {
       sourceChecksum: checksum ? checksum.toString('base64') : null,
       edits,
       color: colorDecision,
+      decode,
     });
 
     try {

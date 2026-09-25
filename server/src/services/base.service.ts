@@ -479,6 +479,10 @@ export class BaseService {
     }
     if (payload.storageLabel) {
       payload.storageLabel = sanitize(payload.storageLabel.replaceAll('.', ''));
+      // FL-76: the label is unique, as on update; refuse a duplicate before the insert fails on it
+      if (await this.userRepository.getByStorageLabel(payload.storageLabel, true)) {
+        throw new BadRequestException('Storage label already in use by another account');
+      }
     }
 
     const clusterGroup = await this.clusterGroupRepository.create();

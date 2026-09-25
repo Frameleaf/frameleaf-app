@@ -44,7 +44,8 @@
             ignoreCert: configToEdit.notifications.smtp.transport.ignoreCert,
           },
           from: configToEdit.notifications.smtp.from,
-          replyTo: configToEdit.notifications.smtp.from,
+          // FL-71: the test uses the reply-to address being edited, as a real email would
+          replyTo: configToEdit.notifications.smtp.replyTo,
         },
       });
 
@@ -140,6 +141,16 @@
               disabled={disabled || !configToEdit.notifications.smtp.enabled}
               bind:value={configToEdit.notifications.smtp.from}
               isEdited={configToEdit.notifications.smtp.from !== config.notifications.smtp.from}
+            />
+
+            <!-- FL-71: the template's "Email reply routing" (`settings-advanced.mjs` mail-reply). -->
+            <SettingField
+              inputType={SettingInputFieldType.EMAIL}
+              label={$t('frameleaf_notification_reply_to')}
+              description={$t('frameleaf_notification_reply_to_description')}
+              disabled={disabled || !configToEdit.notifications.smtp.enabled}
+              bind:value={configToEdit.notifications.smtp.replyTo}
+              isEdited={configToEdit.notifications.smtp.replyTo !== config.notifications.smtp.replyTo}
             />
 
             <div class="flex place-items-center gap-2">

@@ -80,3 +80,35 @@ export const maintenancePageState = (
     }
   }
 };
+
+/**
+ * FL-81 version compatibility of a backup with the running server, read from the backup's file name
+ * (`immich-db-backup-<date>-v<version>-pg<pg>.sql.gz`). Migrations only move a database forward, so a
+ * backup from a newer server cannot be restored here (the server refuses it as well); an older one is
+ * migrated after the restore.
+ */
+export type BackupVersionCompatibility = 'same' | 'older' | 'newer' | 'unknown';
+
+const parseVersion = (value: string | undefined) => {
+  const match = value?.match(/^(\d+)\.(\d+)\.(\d+)/);
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+};
+
+export const backupFileVersion = (filename: string) => filename.match(/-v(.*)-/)?.[1];
+
+export const backupVersionCompatibility = (
+  backupVersion: string | undefined,
+  serverVersion: string,
+): BackupVersionCompatibility => {
+  const backup = parseVersion(backupVersion);
+  const server = parseVersion(serverVersion);
+  if (!backup || !server || serverVersion === '0.0.0') {
+    return 'unknown';
+  }
+  for (let index = 0; index < 3; index++) {
+    if (backup[index] !== server[index]) {
+      return backup[index] > server[index] ? 'newer' : 'older';
+    }
+  }
+  return 'same';
+};

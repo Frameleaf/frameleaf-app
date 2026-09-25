@@ -129,6 +129,8 @@ export type BulkPayload = {
   description?: string;
   latitude?: number;
   longitude?: number;
+  /** FL-51: remove the location instead of setting one (the geolocation utility's "Remove location"). */
+  clearLocation?: boolean;
   primaryId?: string;
   stackIds?: string[];
   photoId?: string;
@@ -164,6 +166,12 @@ export type BulkRunContext = {
 export type BulkView = {
   isLocked: boolean;
   revealsLocks: boolean;
+  /**
+   * The visibility the view lists, when it lists only one (T-17): archiving takes an item out of a
+   * Timeline view and unarchiving out of the Archive view, as the template's library scope does
+   * (`App.jsx`: the library leaves `visibility === "archive"` out, Archive shows only those).
+   */
+  visibility?: AssetVisibility;
 };
 
 export type BulkRunOptions = {
@@ -685,6 +693,13 @@ export const runBulkAction = async (
       );
     }
     case 'change-location': {
+      if (payload?.clearLocation) {
+        return finish(
+          await runInChunks(runner, (batch) =>
+            gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, latitude: null, longitude: null } }),
+          ),
+        );
+      }
       const latitude = Number(requirePayload(payload, 'latitude'));
       const longitude = Number(requirePayload(payload, 'longitude'));
       return finish(
@@ -1078,7 +1093,11 @@ export const durableBulkAction = (action: BulkActionId): MediaOperationBulkActio
 
 /** Whether an explicit selection of this size goes to the server as a durable job. */
 export const shouldRunDurably = (action: BulkActionId, count: number, payload?: BulkPayload): boolean =>
-  !!durableBulkAction(action) && count > DURABLE_BULK_THRESHOLD && !payload?.offsetMinutesById;
+  !!durableBulkAction(action) &&
+  count > DURABLE_BULK_THRESHOLD &&
+  !payload?.offsetMinutesById &&
+  // the durable change-location job only sets coordinates; removing them runs from here in chunks
+  !payload?.clearLocation;
 
 /** `yyyy-MM-ddTHH:mm` or with seconds → with seconds. */
 const wallTimeWithSeconds = (wall: string) => (/T\d{2}:\d{2}$/.test(wall) ? `${wall}:00` : wall);
@@ -1240,7 +1259,8 @@ const REMOVES_FROM_VIEW: ReadonlySet<BulkActionId> = new Set<BulkActionId>([
 /**
  * Whether a finished item has left `view`. Marking sensitive (FL-34) hides an item everywhere except
  * the Locked view and a view that reveals the owner's marks, where it stays; unmarking only takes it
- * out of the Locked view.
+ * out of the Locked view. Archiving leaves a Timeline view and unarchiving leaves the Archive view
+ * (T-17), so an archived item never lingers in the library with an "Archived" badge.
  */
 const ORDINARY_VIEW: BulkView = { isLocked: false, revealsLocks: false };
 
@@ -1250,6 +1270,12 @@ export const removesFromView = (action: BulkActionId, view: BulkView = ORDINARY_
   }
   if (action === 'unmark-sensitive') {
     return view.isLocked;
+  }
+  if (action === 'archive') {
+    return view.visibility === AssetVisibility.Timeline;
+  }
+  if (action === 'unarchive') {
+    return view.visibility === AssetVisibility.Archive;
   }
   return REMOVES_FROM_VIEW.has(action);
 };

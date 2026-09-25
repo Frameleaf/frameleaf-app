@@ -12,7 +12,7 @@
     mdiSync,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   /**
    * One notification, in the prototype's row design (`SystemPanels.jsx`): a tinted icon, the title
@@ -89,8 +89,8 @@
       if (!date.isValid) {
         return dateString; // Return original string if parsing fails
       }
-      // Use Luxon's toRelative with the current locale
-      return date.setLocale('en').toRelative() || dateString;
+      // S-29: relative time in the display language, not always English.
+      return date.setLocale($locale ?? 'en').toRelative() || dateString;
     } catch (error) {
       console.error('Error formatting relative time:', error);
       return dateString; // Fallback to original string on error

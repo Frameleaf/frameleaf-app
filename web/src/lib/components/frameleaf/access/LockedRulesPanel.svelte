@@ -14,6 +14,11 @@
    *   if the rules themselves changed in another tab or device the draft stays and the owner
    *   decides to reload. A session locked during the save drops the draft and asks to unlock again.
    * - Coming back to the page checks whether the rules changed elsewhere.
+   * - Every read checks `lockedRulesRevealed`: rules the server blanked (the session locked between
+   *   the status check and the read) are never shown or edited, so they can never be saved back.
+   * - As in the template, People lists the account's people (filtered by "Find a person"; a name
+   *   beyond the loaded list is found by a search), and Save is disabled only by a conflict.
+   * - Pets are a production extension of the template (`privacy.suppression.petIds`, FL-58).
    *
    * The Locked ids are never written into the session-wide preferences store.
    */
@@ -27,7 +32,6 @@
     emptyLockedRules,
     lockedRulesFrom,
     lockedRulesUpdate,
-    sameLockedRules,
     tagRuleEntries,
     toggleLockedRule,
     withoutLockedRuleIds,
@@ -40,6 +44,7 @@
   import { Route } from '$lib/route';
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import {
+    getAllPeople,
     getAllPets,
     getAllTags,
     getAuthStatus,
@@ -65,6 +70,9 @@
   const RULES_SECTION = 'suppressed-content';
   const PIN_SECTION = 'user-pin-code-settings';
 
+  /** How many of the account's people the list loads before a search is needed (UT-26). */
+  const PEOPLE_PAGE_SIZE = 500;
+
   let phase = $state<Phase>('loading');
   let baseline = $state<LockedRules>(emptyLockedRules());
   let draft = $state<LockedRules>(emptyLockedRules());
@@ -82,12 +90,13 @@
   let tagQuery = $state('');
   let personQuery = $state('');
   let personResults = $state<PersonResponseDto[]>([]);
+  /** The account's people, listed before any search as the template does (UT-26). */
+  let allPeople = $state<PersonResponseDto[]>([]);
   let searchingPeople = $state(false);
   let creatingTag = $state(false);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let searchController: AbortController | undefined;
 
-  const dirty = $derived(!sameLockedRules(baseline, draft));
   const tagEntries = $derived(tagRuleEntries(tags, draft.tagIds, tagQuery));
   const showCreateTag = $derived(canCreateTag(tags, tagQuery));
   const petIds = $derived(new Set(pets.map((pet) => pet.id)));
@@ -108,6 +117,7 @@
     tagQuery = '';
     personQuery = '';
     personResults = [];
+    allPeople = [];
     error = '';
   };
 
@@ -150,19 +160,23 @@
         return;
       }
 
-      const [preferences, allTags, allPets] = await Promise.all([
+      const [preferences, allTags, allPets, peoplePage] = await Promise.all([
         getMyPreferences(),
         getAllTags(),
         getAllPets({ withHidden: true }),
+        getAllPeople({ withHidden: true, size: PEOPLE_PAGE_SIZE }),
       ]);
       const after = await getAuthStatus();
-      if (!after.isElevated) {
+      // The read itself says whether it named the rules: a session that locked and unlocked again
+      // between the two status checks still gets blanked rules here, never an editable empty draft.
+      if (!after.isElevated || !preferences.lockedRulesRevealed) {
         relock($t('frameleaf_locked_rules_unlock_again'));
         return;
       }
 
       tags = allTags;
       pets = allPets;
+      allPeople = peoplePage.people;
       await applyLoaded(preferences);
       tagQuery = '';
       personQuery = '';
@@ -200,7 +214,12 @@
         if (!isStatus(error_, 409)) {
           throw error_;
         }
-        const decision = decideAfterConflict(baseline, await getMyPreferences());
+        const latest = await getMyPreferences();
+        if (!latest.lockedRulesRevealed) {
+          relock($t('frameleaf_locked_rules_unlock_again'));
+          return;
+        }
+        const decision = decideAfterConflict(baseline, latest);
         if (decision.action === 'conflict') {
           conflict = true;
           return;
@@ -208,6 +227,10 @@
         response = await updateMyPreferences({ userPreferencesUpdateDto: lockedRulesUpdate(draft, decision.revision) });
       }
 
+      if (!response.lockedRulesRevealed) {
+        relock($t('frameleaf_locked_rules_unlock_again'));
+        return;
+      }
       baseline = lockedRulesFrom(response);
       draft = lockedRulesFrom(response);
       revision = response.revision;
@@ -238,6 +261,10 @@
         return;
       }
       const latest = await getMyPreferences();
+      if (!latest.lockedRulesRevealed) {
+        relock($t('frameleaf_locked_rules_unlock_again'));
+        return;
+      }
       if (latest.revision === revision) {
         return;
       }
@@ -320,6 +347,19 @@
     }
     searchTimer = setTimeout(() => void runPersonSearch(name), 250);
   };
+
+  /**
+   * People offered for a rule (UT-26): the loaded list filtered by the query, as the template
+   * filters its list, plus any match the search found beyond the loaded page.
+   */
+  const personOptions = $derived.by(() => {
+    const query = personQuery.trim().toLocaleLowerCase();
+    const listed = allPeople.filter((person) => !query || personName(person).toLocaleLowerCase().includes(query));
+    const seen = new Set(listed.map((person) => person.id));
+    return [...listed, ...personResults.filter((person) => !seen.has(person.id))].filter(
+      (person) => !draft.personIds.includes(person.id),
+    );
+  });
 
   const togglePerson = (person: PersonResponseDto) => {
     people = { ...people, [person.id]: person };
@@ -428,14 +468,14 @@
         {#if searchingPeople}
           <p class="muted" role="status">{$t('loading')}</p>
         {/if}
-        {#each personResults.filter((person) => !draft.personIds.includes(person.id)) as person (person.id)}
+        {#each personOptions as person (person.id)}
           <label class="option">
             <input type="checkbox" checked={false} onchange={() => togglePerson(person)} />
             <img class="fl-squircle" src={getPeopleThumbnailUrl(person)} alt="" loading="lazy" />
             <span>{personName(person)}</span>
           </label>
         {/each}
-        {#if draft.personIds.length === 0 && !personQuery.trim()}
+        {#if draft.personIds.length === 0 && personOptions.length === 0 && !searchingPeople}
           <p class="muted">{$t('frameleaf_locked_rules_people_empty')}</p>
         {/if}
       </section>
@@ -446,7 +486,6 @@
           <span>{$t('frameleaf_locked_rules_find_tag')}</span>
           <input type="search" autocomplete="off" maxlength={100} bind:value={tagQuery} />
         </label>
-        <p class="muted">{$t('frameleaf_locked_rules_tags_nested')}</p>
         {#each tagEntries as entry (entry.id)}
           <label class="option">
             <input
@@ -502,7 +541,7 @@
 
     <div class="section-action end">
       <Button disabled={saving} onclick={() => void load()}>{$t('frameleaf_locked_rules_discard')}</Button>
-      <Button variant="primary" disabled={conflict || saving || !dirty} onclick={save}>
+      <Button variant="primary" disabled={conflict || saving} onclick={save}>
         {$t('frameleaf_locked_rules_save')}
       </Button>
     </div>

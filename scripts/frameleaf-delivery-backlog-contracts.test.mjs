@@ -20,6 +20,7 @@ const contractFiles = [
   `${plan}/03-studio-rendering-and-restoration.md`,
   `${plan}/04-native-and-release.md`,
   `${plan}/05-delivery-and-backlog.md`,
+  `${plan}/15-frameleaf-cloud-integration.md`,
   `${plan}/backlog.json`,
   `${plan}/delivery-backlog-evidence.json`,
   `${plan}/jira-map.json`,
@@ -47,18 +48,18 @@ async function mutateJson(root, file, mutate) {
 
 test("delivery and backlog contract matches the reviewed checkpoint", async () => {
   assert.deepEqual(await validateContracts(), {
-    declaredEdges: 408,
-    done: 1,
-    epics: 24,
-    inProgress: 1,
-    issues: 142,
+    declaredEdges: 434,
+    done: 29,
+    epics: 28,
+    inProgress: 54,
+    issues: 162,
     libraryGuideRows: 53,
     nativeGuideRows: 33,
     pendingGuideRows: 0,
-    reducedBlocksLinks: 275,
-    stories: 118,
+    reducedBlocksLinks: 298,
+    stories: 134,
     studioGuideRows: 40,
-    toDo: 140,
+    toDo: 79,
   });
 });
 
@@ -93,7 +94,7 @@ test("missing or contradictory dependency edges are rejected", async (t) => {
     const row = backlog.items.find(({ id }) => id === "FN-102");
     row.dependencies = [];
   });
-  await assert.rejects(validateContracts(root), /408|Blocks links/u);
+  await assert.rejects(validateContracts(root), /434|Blocks links/u);
 });
 
 test("false implementation and qualification claims are rejected", async (t) => {
