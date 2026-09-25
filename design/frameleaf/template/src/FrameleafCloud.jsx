@@ -69,7 +69,7 @@ import {
   WALLET_MAX_TOP_UP_USD,
 } from "./frameleaf-cloud-data.mjs";
 import { DefaultModelSlider, WorkloadRoutingTable } from "./WorkloadRouting";
-import { billingSentence, perUnitText, renderModels } from "./cloud-jobs.mjs";
+import { billingSentence, perUnitText } from "./cloud-jobs.mjs";
 import { formatDuration, formatRate, gpuClasses, startFees } from "./gpu-model-catalog.mjs";
 import "./frameleaf-cloud.css";
 
@@ -96,9 +96,8 @@ const WORKLOADS = [
   ["restoration", "Video restoration"],
   ["studio", "Studio captions"],
   ["interpolation", "Smooth motion"],
-  ["render", "Studio export"],
 ];
-const ESTIMATE_MODELS = [...cloudModels, ...renderModels];
+const ESTIMATE_MODELS = cloudModels;
 const startFeeRange = () => {
   const fees = Object.values(startFees).map((fee) => fee.customerUsd);
   return `$${Math.min(...fees).toFixed(2)}–$${Math.max(...fees).toFixed(2)}`;
@@ -789,12 +788,12 @@ function Discount({ license, onNavigate }) {
   return isLicensed(license) ? (
     <p className="fc-note">
       <Icon name="mdiTagOutline" /> This server is licensed: Frameleaf Cloud
-      plans and AI credit cost {pct} less.
+      plans cost {pct} less. AI credit is priced the same for everyone.
     </p>
   ) : (
     <p className="fc-note">
       <Icon name="mdiTagOutline" /> Licensed servers get {pct} off Frameleaf
-      Cloud plans and AI credit.{" "}
+      Cloud plans.{" "}
       {onNavigate && (
         <button className="fc-link" onClick={() => onNavigate("cloud", "cloud-license")}>
           Activate a licence
@@ -1076,7 +1075,7 @@ function License({ state, run, onNavigate, setError }) {
             <Icon name="mdiTagOutline" />
             <span>
               <strong>{Math.round(LICENSED_DISCOUNT * 100)}% off Frameleaf Cloud</strong>{" "}
-              plans and AI credit for as long as the server stays licensed.
+              plans for as long as the server stays licensed.
             </span>
           </li>
           <li>
