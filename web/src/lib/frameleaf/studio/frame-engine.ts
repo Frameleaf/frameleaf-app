@@ -10,8 +10,10 @@
  *   loader reports `not-built`, and the route shows the unavailable state it always has.
  * - **Pinned engine.** A manifest or a frame announcing any other Freecut revision, or another
  *   protocol version, is refused before anything mounts.
- * - **No credentials.** The frame receives the host context (data) and nothing else. Every service
- *   call it makes is answered here, by the same `StudioHostServices` the route built.
+ * - **Data only, not a sandbox.** The frame is posted the host context (data) and nothing else, and
+ *   every service call it makes is answered here, by the same `StudioHostServices` the route built,
+ *   after its shape is checked. The frame is same-origin and shares the session's cookies, so this
+ *   is not a security boundary; the engine is trusted as the pinned, hash-verified build.
  * - **Complete disposal.** `dispose` asks the editor to release what it holds, then removes the
  *   frame, which ends every AudioContext, GPU device, worker and object URL it created.
  */
