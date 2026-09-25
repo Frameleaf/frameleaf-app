@@ -417,6 +417,7 @@
             max="100"
             step="0.5"
             bind:value={cloudMl.autoDescribe.dailyBudgetUsd}
+            aria-label={$t('admin.frameleaf_cloud_ml_setting_daily_budget')}
             disabled={configDisabled || !cloudMl.autoDescribe.enabled}
           />
           <span>USD</span>
