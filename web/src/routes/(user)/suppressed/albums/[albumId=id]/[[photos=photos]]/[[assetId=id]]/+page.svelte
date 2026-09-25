@@ -64,7 +64,6 @@
 
   <LibraryView
     enableRouting
-    syncUrl={false}
     selectAll="loaded"
     bind:timelineManager
     {options}

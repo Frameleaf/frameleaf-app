@@ -8412,6 +8412,8 @@ export type TimeBucketAssetResponseDto = {
     isFavorite: boolean[];
     /** Array indicating whether each asset is an image (false for videos) */
     isImage: boolean[];
+    /** Array indicating whether each asset is offline (its file is missing from an external library) */
+    isOffline?: boolean[];
     /** Array indicating whether each asset is in the trash */
     isTrashed: boolean[];
     /** Array of latitude coordinates extracted from EXIF GPS data */

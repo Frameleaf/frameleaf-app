@@ -433,4 +433,20 @@ describe(AssetService.name, () => {
       expect((resultEdited as ImmichFileResponse).path).toBe('/edited/thumbnail.jpg');
     });
   });
+
+  // FL-34: "administrator status never grants another owner's originals", however elevated the session
+  describe('an administrator reading another account’s media', () => {
+    it('is refused the original, the thumbnail and the video, even with an unlocked session', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: admin } = await ctx.newUser({ isAdmin: true });
+      const { asset } = await ctx.newAsset({ ownerId: owner.id, originalPath: '/owner/original.jpg' });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: '/owner/preview.jpg' });
+      const auth = factory.auth({ user: { id: admin.id, isAdmin: true }, session: { hasElevatedPermission: true } });
+
+      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toThrow();
+      await expect(sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW })).rejects.toThrow();
+      await expect(sut.playbackVideo(auth, asset.id)).rejects.toThrow();
+    });
+  });
 });
