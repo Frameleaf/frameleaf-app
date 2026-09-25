@@ -95,7 +95,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
       contentType: 'application/json',
       json: {
         version: 'v2.2.3',
-        versionUrl: 'https://github.com/immich-app/immich/releases/tag/v2.2.3',
+        versionUrl: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/v2.2.3',
         licensed: false,
         build: '1234567890',
         buildUrl: 'https://github.com/immich-app/immich/actions/runs/1234567890',
