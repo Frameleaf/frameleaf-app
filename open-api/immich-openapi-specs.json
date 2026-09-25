@@ -66430,6 +66430,10 @@
       },
       "ServerFeaturesDto": {
         "properties": {
+          "askSearch": {
+            "description": "Whether Ask Search (natural-language questions about the library) is enabled and can answer",
+            "type": "boolean"
+          },
           "configFile": {
             "description": "Whether config file is available",
             "type": "boolean"
@@ -66512,6 +66516,7 @@
           }
         },
         "required": [
+          "askSearch",
           "configFile",
           "duplicateDetection",
           "email",
