@@ -87,4 +87,36 @@ describe('admin readiness', () => {
       expect(forbidden.status).toBe(403);
     });
   });
+
+  describe('change history (CC-10)', () => {
+    it("records each account's own preference changes and serves them to that account only", async () => {
+      await request(app)
+        .put('/users/me/preferences')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ memories: { enabled: false } })
+        .expect(200);
+
+      const own = await request(app)
+        .get('/users/me/preferences/history')
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(own.status).toBe(200);
+      expect(own.body.entries[0].changes).toEqual(
+        expect.arrayContaining([{ path: 'memories.enabled', before: 'true', after: 'false' }]),
+      );
+
+      const admins = await request(app)
+        .get('/users/me/preferences/history')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(admins.body.entries).toEqual([]);
+    });
+
+    it('titles a review entry in the settings history', async () => {
+      const { body } = await request(app)
+        .get('/admin/config/history')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body.entries).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: 'review', title: 'Reviewed: Recovery readiness' })]),
+      );
+    });
+  });
 });

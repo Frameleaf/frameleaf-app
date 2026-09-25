@@ -133,6 +133,8 @@ describe('Frameleaf settings areas', () => {
         'preferences',
         'utilities',
         'trash',
+        // FL-71 (CC-10): every account's own preference history.
+        'history',
       ]);
       expect(SETTINGS_AREAS.every((item) => isAreaAvailable(item, true))).toBe(true);
     });
@@ -233,7 +235,7 @@ describe('Frameleaf settings areas', () => {
     });
 
     it('keeps the change history as its own personal area without settings forms (FL-66)', () => {
-      expect(area('history')).toEqual({ id: 'history', group: 'personal', sections: [], adminOnly: true });
+      expect(area('history')).toEqual({ id: 'history', group: 'personal', sections: [] });
       expect(sectionsForArea(sections, 'history')).toEqual([]);
       expect(resolveSettingsArea({ area: 'history' })).toBe('history');
     });

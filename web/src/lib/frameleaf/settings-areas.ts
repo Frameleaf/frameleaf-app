@@ -141,7 +141,8 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'trash', group: 'library', sections: [], personal: ['contents'] },
   // FL-66: the template's "Change history" area. It holds no settings form; the host shows the
   // saved settings changes there.
-  { id: 'history', group: 'personal', sections: [], adminOnly: true },
+  // FL-71 (CC-10): every account has its own preference history here; administrators also see the settings history.
+  { id: 'history', group: 'personal', sections: [] },
 ]);
 
 /**
