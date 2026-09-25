@@ -182,8 +182,9 @@ describe(JobService.name, () => {
         stub: [AssetFactory.create({ id: 'asset-1', type: AssetType.Video })],
       },
       {
+        // FL-58: a fresh CLIP embedding is read by pet recognition
         item: { name: JobName.SmartSearch, data: { id: 'asset-1' } },
-        jobs: [],
+        jobs: [JobName.PetRecognition],
       },
       {
         item: { name: JobName.AssetDetectFaces, data: { id: 'asset-1' } },

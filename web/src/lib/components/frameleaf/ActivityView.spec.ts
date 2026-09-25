@@ -7,6 +7,7 @@ import {
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ActivityView from '$lib/components/frameleaf/ActivityView.svelte';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
@@ -14,6 +15,8 @@ import { downloadManager } from '$lib/managers/download-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn(() => Promise.resolve()) }));
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -216,11 +219,21 @@ describe('Frameleaf Activity page', () => {
     expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
   });
 
-  it('offers no pause for a kind that runs in one go', async () => {
-    await mount([operation({ kind: MediaOperationKind.StudioPreview, pausable: false })]);
+  it('shows pause disabled, with its reason, for a kind that runs in one go (A-10)', async () => {
+    await mount([operation({ kind: MediaOperationKind.StudioPreview, pausable: false, projectId: 'project-1' })]);
 
     await vi.waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /^pause/i })).not.toBeInTheDocument();
+    const pause = screen.getByRole('button', { name: /pause/i });
+    expect(pause).toHaveAttribute('aria-disabled', 'true');
+    expect(pause).toHaveAccessibleDescription("This kind of job runs in one go and can't be paused");
+    await fireEvent.click(pause);
+    expect(sdkMock.pauseMediaOperation).not.toHaveBeenCalled();
+  });
+
+  it('opens a Studio render in Studio (FL-104)', async () => {
+    await mount([operation({ kind: MediaOperationKind.StudioExport, projectId: 'project-1' })]);
+    await fireEvent.click(await screen.findByRole('button', { name: /open in studio/i }));
+    expect(goto).toHaveBeenCalledWith(expect.stringContaining('project-1'));
   });
 
   it('keeps the last known list when the server cannot be reached', async () => {

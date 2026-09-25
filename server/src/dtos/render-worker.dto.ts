@@ -162,6 +162,11 @@ const RenderWorkerAdmissionSchema = z
       })
       .optional()
       .describe('Colour precision the conformance check verified; absent means 8-bit SDR only (FL-42)'),
+    formats: z
+      .array(z.string().max(30))
+      .max(32)
+      .optional()
+      .describe('Containers the check verified writing, such as `mp4`, `webm` or `mov`'),
   })
   .meta({ id: 'RenderWorkerAdmissionDto' });
 

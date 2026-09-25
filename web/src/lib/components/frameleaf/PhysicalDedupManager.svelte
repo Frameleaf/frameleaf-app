@@ -1514,6 +1514,17 @@
     border-color: var(--fl-danger);
     color: var(--fl-danger-text);
   }
+  /* The template's `.jm-message.jm-error` with its "Open settings" button (UT-23). */
+  .config-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .unavailable-text {
+    color: var(--fl-danger-text);
+  }
   .message :global(svg) {
     vertical-align: -0.125em;
   }

@@ -95,6 +95,7 @@ describe(AssetRestorationService.name, () => {
       getForOwner: vi.fn(),
       listByAsset: vi.fn().mockResolvedValue([]),
       getCurrent: vi.fn(),
+      listRestoredForPlayback: vi.fn().mockResolvedValue([]),
       update: vi
         .fn()
         .mockImplementation((id: string, patch: Partial<AssetRestoration>) => Promise.resolve(row({ id, ...patch }))),
@@ -106,6 +107,7 @@ describe(AssetRestorationService.name, () => {
       setCurrent: vi.fn().mockResolvedValue(void 0),
       listExpiredPreviews: vi.fn().mockResolvedValue([]),
       listExpiredResults: vi.fn().mockResolvedValue([]),
+      clearExpiredResult: vi.fn(),
       alignWithOperations: vi.fn().mockResolvedValue({ preview: 0, full: 0 }),
       getFilePaths: vi.fn().mockResolvedValue([]),
       deleteByAsset: vi.fn().mockResolvedValue(void 0),
@@ -361,6 +363,8 @@ describe(AssetRestorationService.name, () => {
             upscale: 2,
             sourceChecksumHex: asset.checksum.toString('hex'),
             output: { width: 3240, height: 2160, scale: 0.54, capped: true },
+            // The model the reviewed preview ran (FL-115).
+            model: { name: 'faithful-v1', version: null },
           }),
           settings: expect.objectContaining({ preview: false }),
         }),
@@ -512,6 +516,70 @@ describe(AssetRestorationService.name, () => {
       expect(parseDurationSeconds(null)).toBeNull();
       expect(parseDurationSeconds('abc')).toBeNull();
       expect(parseDurationSeconds(0)).toBeNull();
+    });
+  });
+  describe('getPlaybackChoice (FL-115)', () => {
+    const restored = (overrides: Record<string, unknown> = {}) => ({
+      id: RESTORATION_ID,
+      isCurrent: true,
+      resultPath: '/data/thumbs/result.mp4',
+      resultPreviewPath: '/data/thumbs/result-preview.jpg',
+      sourceType: 'video',
+      ...overrides,
+    });
+
+    it('serves the chosen restored video to its owner, revalidated', async () => {
+      restorations.listRestoredForPlayback.mockResolvedValue([restored()]);
+
+      const choice = await sut.getPlaybackChoice(authStub.user1, asset.id, 'video');
+
+      expect(restorations.listRestoredForPlayback).toHaveBeenCalledWith(asset.id, authStub.user1.user.id);
+      expect(choice.revalidate).toBe(true);
+      expect(choice.file).toEqual(
+        expect.objectContaining({ path: '/data/thumbs/result.mp4', cacheControl: 'private_without_cache' }),
+      );
+    });
+
+    it('serves a restored photo as its preview and full-size view, never its thumbnail', async () => {
+      restorations.listRestoredForPlayback.mockResolvedValue([
+        restored({ sourceType: 'image', resultPath: '/r.png', resultPreviewPath: '/r.jpg' }),
+      ]);
+
+      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'preview')).file?.path).toBe('/r.jpg');
+      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'fullsize')).file?.path).toBe('/r.png');
+      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'video')).file).toBeNull();
+    });
+
+    it('keeps the ordinary version, revalidated, while a restoration exists but the original is chosen', async () => {
+      restorations.listRestoredForPlayback.mockResolvedValue([restored({ isCurrent: false })]);
+
+      expect(await sut.getPlaybackChoice(authStub.user1, asset.id, 'video')).toEqual({ file: null, revalidate: true });
+    });
+
+    it('changes nothing when there is no finished restoration', async () => {
+      expect(await sut.getPlaybackChoice(authStub.user1, asset.id, 'video')).toEqual({
+        file: null,
+        revalidate: false,
+      });
+    });
+
+    it('never serves the AI version through a shared link', async () => {
+      restorations.listRestoredForPlayback.mockResolvedValue([restored()]);
+
+      expect(await sut.getPlaybackChoice(authStub.adminSharedLink, asset.id, 'video')).toEqual({
+        file: null,
+        revalidate: false,
+      });
+      expect(restorations.listRestoredForPlayback).not.toHaveBeenCalled();
+    });
+
+    it('refuses a session that may not view the asset', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.getPlaybackChoice(authStub.user1, asset.id, 'video')).rejects.toThrow();
+      expect(restorations.listRestoredForPlayback).not.toHaveBeenCalled();
     });
   });
 });

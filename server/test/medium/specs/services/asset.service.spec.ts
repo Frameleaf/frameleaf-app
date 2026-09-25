@@ -254,7 +254,7 @@ describe(AssetService.name, () => {
       ctx.getMock(EventRepository).emit.mockResolvedValue();
       ctx.getMock(JobRepository).queue.mockResolvedValue();
       const { user } = await ctx.newUser();
-      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
       const thumbnailPath = '/path/to/thumbnail.jpg';
       const previewPath = '/path/to/preview.jpg';
       const sidecarPath = '/path/to/sidecar.xmp';
@@ -277,7 +277,7 @@ describe(AssetService.name, () => {
       ctx.getMock(EventRepository).emit.mockResolvedValue();
       ctx.getMock(JobRepository).queue.mockResolvedValue();
       const { user } = await ctx.newUser();
-      const { asset: asset1 } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: asset1 } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
       const { asset: asset2 } = await ctx.newAsset({ ownerId: user.id });
       const { stack, result } = await ctx.newStack({ ownerId: user.id }, [asset1.id, asset2.id]);
 
@@ -296,7 +296,7 @@ describe(AssetService.name, () => {
       ctx.getMock(EventRepository).emit.mockResolvedValue();
       ctx.getMock(JobRepository).queue.mockResolvedValue();
       const { user } = await ctx.newUser();
-      const { asset: asset1 } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: asset1 } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
       const { asset: asset2 } = await ctx.newAsset({ ownerId: user.id });
       const { asset: asset3 } = await ctx.newAsset({ ownerId: user.id });
       const { stack, result } = await ctx.newStack({ ownerId: user.id }, [asset1.id, asset2.id, asset3.id]);
@@ -337,7 +337,7 @@ describe(AssetService.name, () => {
       ctx.getMock(EventRepository).emit.mockResolvedValue();
       ctx.getMock(JobRepository).queue.mockResolvedValue();
       const { user } = await ctx.newUser();
-      const { asset } = await ctx.newAsset({ ownerId: user.id, isOffline: true });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, isOffline: true, deletedAt: new Date() });
       const thumbnailPath = '/path/to/thumbnail.jpg';
       const previewPath = '/path/to/preview.jpg';
       await Promise.all([
@@ -352,6 +352,21 @@ describe(AssetService.name, () => {
         name: JobName.FileDelete,
         data: { files: [thumbnailPath, previewPath] },
       });
+    });
+
+    it('skips an asset restored after its deletion was queued (FL-71)', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ id: asset.id });
+      expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalledWith(
+        expect.objectContaining({ name: JobName.FileDelete }),
+      );
     });
   });
 
@@ -489,6 +504,29 @@ describe(AssetService.name, () => {
       ).resolves.toEqual({
         lockedProperties: ['timeZone', 'rating', 'description', 'latitude', 'longitude', 'dateTimeOriginal'],
       });
+    });
+
+    it('should release typed place names when the items move (FL-36, V-24)', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, city: 'Paris', country: 'France' });
+      await ctx.database
+        .updateTable('asset_exif')
+        .set({ lockedProperties: ['city', 'country', 'description'] })
+        .where('assetId', '=', asset.id)
+        .execute();
+
+      await sut.updateAll(auth, { ids: [asset.id], latitude: 35.68, longitude: 139.69 });
+
+      const { lockedProperties } = await ctx.database
+        .selectFrom('asset_exif')
+        .select('lockedProperties')
+        .where('assetId', '=', asset.id)
+        .executeTakeFirstOrThrow();
+      expect([...(lockedProperties ?? [])].sort()).toEqual(['description', 'latitude', 'longitude']);
     });
 
     it('should relatively update assets', async () => {

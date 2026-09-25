@@ -78,21 +78,24 @@ export const exposureParts = (exif: ExifResponseDto | undefined): string[] => {
   ].filter((part): part is string => !!part);
 };
 
+/** `29.97 fps`, or null when the frame rate is unknown. */
+export const frameRateLabel = (fps: number | null | undefined): string | null =>
+  typeof fps === 'number' && Number.isFinite(fps) && fps > 0 ? `${Number(fps.toFixed(2))} fps` : null;
+
 /**
- * The headline parts, in the production viewer's order: camera, lens, exposure (stills
- * only), dimensions, duration (video only), file size.
+ * The headline parts, in the template's order (`viewerHeadline`, media-viewer.mjs:265-277): camera,
+ * lens, exposure (stills only), dimensions, frame rate and duration (video only), file size (V-26).
  */
 export function viewerHeadline(asset: AssetResponseDto): string[] {
   const exif = asset.exifInfo;
   const isVideo = asset.type === AssetTypeEnum.Video;
-  const { width, height } = assetDimensions(asset);
 
   return [
     cameraLabel(exif),
     exif?.lensModel || null,
     ...(isVideo ? [] : exposureParts(exif)),
     dimensionsLabel(asset),
-    isVideo ? null : megapixels(width, height),
+    isVideo ? frameRateLabel(exif?.fps) : null,
     isVideo ? formatDuration(asset.duration) : null,
     formatFileSize(exif?.fileSizeInByte),
   ].filter((part): part is string => !!part);

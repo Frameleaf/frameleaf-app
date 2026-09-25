@@ -371,3 +371,31 @@ export class StudioCommentListResponseDto extends createZodDto(StudioCommentList
 export class StudioCommentCreateDto extends createZodDto(StudioCommentCreateSchema) {}
 export class StudioCommentUpdateDto extends createZodDto(StudioCommentUpdateSchema) {}
 export class StudioCommentParamDto extends createZodDto(StudioCommentParamSchema) {}
+
+/* Workspace layout (FL-91) */
+
+/** The largest layout document accepted, measured as JSON. A layout is panels and sizes, not media. */
+export const STUDIO_WORKSPACE_MAX_BYTES = 256 * 1024;
+
+const StudioWorkspaceSchema = z
+  .object({
+    layout: JsonObjectSchema.nullable().describe(
+      'The engine layout as the same JSON value it was saved as (key order and spacing are not kept); null when none is stored',
+    ),
+    engineRevision: z.string().nullable().describe('The engine revision that wrote the layout'),
+    savedAt: z.string().meta({ format: 'date-time' }).nullable(),
+  })
+  .meta({ id: 'StudioWorkspaceDto' });
+
+const StudioWorkspaceSaveSchema = z
+  .object({
+    layout: JsonObjectSchema.refine(
+      (value) => JSON.stringify(value).length <= STUDIO_WORKSPACE_MAX_BYTES,
+      'The layout is larger than 256 KiB',
+    ).describe('The engine layout; stored and returned as the same JSON value (key order and spacing are not kept)'),
+    engineRevision: z.string().min(1).max(200).describe('The pinned engine revision writing it'),
+  })
+  .meta({ id: 'StudioWorkspaceSaveDto' });
+
+export class StudioWorkspaceDto extends createZodDto(StudioWorkspaceSchema) {}
+export class StudioWorkspaceSaveDto extends createZodDto(StudioWorkspaceSaveSchema) {}

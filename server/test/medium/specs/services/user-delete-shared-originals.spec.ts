@@ -31,7 +31,7 @@ import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
  */
 let database: Kysely<DB>;
 let mediaLocation: string;
-let previousMediaLocation: string;
+let previousMediaLocation: string | undefined;
 
 beforeAll(async () => {
   database = await getKyselyDB();
@@ -42,13 +42,19 @@ beforeAll(async () => {
       ('smartAlbums', ${JSON.stringify(defaults.smartAlbums)}::jsonb)
     ON CONFLICT (key) DO NOTHING
   `.execute(database);
-  previousMediaLocation = StorageCore.getMediaLocation();
+  try {
+    previousMediaLocation = StorageCore.getMediaLocation();
+  } catch {
+    // no media location configured for this run
+  }
   mediaLocation = await mkdtemp(join(tmpdir(), 'fl44-user-delete-'));
   StorageCore.setMediaLocation(mediaLocation);
 });
 
 afterAll(async () => {
-  StorageCore.setMediaLocation(previousMediaLocation);
+  if (previousMediaLocation !== undefined) {
+    StorageCore.setMediaLocation(previousMediaLocation);
+  }
   await rm(mediaLocation, { recursive: true, force: true });
 });
 

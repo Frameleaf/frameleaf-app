@@ -158,7 +158,7 @@ export function ProtectedContent({
       setNotice("Locked rules saved.");
     } catch {
       setNotice(
-        "Changes could not be saved. Your draft is still here; try again.",
+        "Changes couldn't be saved. They're still here; try again.",
       );
     }
   };
@@ -203,8 +203,8 @@ export function ProtectedContent({
       </div>
       {conflict && (
         <p role="alert" className="cc-notice">
-          These rules changed elsewhere. Your draft is kept until you reload.
-          <Button onClick={load}>Discard draft and reload rules</Button>
+          These rules changed somewhere else. Your changes stay until you reload.
+          <Button onClick={load}>Discard my changes and reload</Button>
         </p>
       )}
       {notice && (

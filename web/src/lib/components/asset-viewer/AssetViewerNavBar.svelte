@@ -11,23 +11,16 @@
   import { languageManager } from '$lib/managers/language-manager.svelte';
   import { getGlobalActions } from '$lib/services/app.service';
   import { getAssetActions } from '$lib/services/asset.service';
-  import { getSharedLink, withoutIcons } from '$lib/utils';
+  import { getSharedLink, isEnabled, withoutIcons } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
-  import {
-    AssetTypeEnum,
-    type AlbumResponseDto,
-    type AssetResponseDto,
-    type PersonResponseDto,
-    type StackResponseDto,
-  } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, Tooltip, type ActionItem } from '@immich/ui';
-  import { mdiArrowLeft, mdiArrowRight, mdiDotsHorizontal, mdiVideoOutline } from '@mdi/js';
+  import { AssetTypeEnum, type AlbumResponseDto, type AssetResponseDto, type StackResponseDto } from '@immich/sdk';
+  import { ActionButton, CommandPaletteDefaultProvider, IconButton, Tooltip, type ActionItem } from '@immich/ui';
+  import { mdiArrowLeft, mdiArrowRight, mdiDotsHorizontal, mdiInformationOutline, mdiVideoOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
     asset: AssetResponseDto;
     album?: AlbumResponseDto;
-    person?: PersonResponseDto | null;
     stack?: StackResponseDto | null;
     preAction: PreAction;
     onAction: OnAction;
@@ -44,7 +37,6 @@
   let {
     asset,
     album,
-    person = null,
     stack = null,
     preAction,
     onAction,
@@ -76,16 +68,25 @@
   });
 
   const Actions = $derived(getAssetActions($t, { ...asset, stackPrimaryAssetId: stack?.primaryAssetId }, album));
+  // V-5: the top row's own labels (MediaViewer.jsx:1045-1137); the command palette keeps the shared titles.
+  const Favorite: ActionItem = $derived({ ...Actions.Favorite, title: $t('frameleaf_viewer_add_to_favorites') });
+  const Unfavorite: ActionItem = $derived({
+    ...Actions.Unfavorite,
+    title: $t('frameleaf_viewer_remove_from_favorites'),
+  });
+  const Edit: ActionItem = $derived({ ...Actions.Edit, title: $t('frameleaf_viewer_edit') });
+  const CopyImage: ActionItem = $derived({ ...Actions.Copy, title: $t('frameleaf_viewer_menu_copy_image') });
   const sharedLink = getSharedLink();
 
   /**
    * A shared link's viewer has no More menu, so its one slideshow entry point sits in the bar itself
-   * (FL-83; `action:viewer:slideshow-play-pause-previous-next-repeat-shuffle`). It keeps the gate the
-   * old public header had: only when the link allows downloads, and only with something to move to.
+   * (FL-83; `action:viewer:slideshow-play-pause-previous-next-repeat-shuffle`), whenever there is
+   * something to move to. FL-56 (AL-37): a slideshow shows the same previews the link already shows,
+   * so it no longer depends on the link allowing downloads; the viewer footer's Play offers it too.
    */
   const SharedLinkSlideshow: ActionItem = $derived({
     ...Actions.PlaySlideshow,
-    $if: () => !!sharedLink?.allowDownload && canNavigateCollection && (Actions.PlaySlideshow.$if?.() ?? true),
+    $if: () => !!sharedLink && canNavigateCollection && (Actions.PlaySlideshow.$if?.() ?? true),
   });
 
   /**
@@ -119,7 +120,9 @@
 <!--
   FL-35: the frosted viewer header (apple-style.css:383-403, 504-507). The actions follow the template's
   top row (MediaViewer.jsx:1023-1200): Share, Cast, Copy image (wide screens only), Information,
-  Favorite, Rating, Edit, Trash and More. The legacy Offline button is gone (audit V-6): the offline
+  Favorite, Rating, Edit, Trash and More; in the trash, Restore and Delete permanently replace Favorite,
+  Rating, Edit and Move to trash (MediaViewer.jsx:1138-1166, audit V-4). A Live Photo plays from the
+  on-photo Live badge (audit V-16), not from here. The legacy Offline button is gone (audit V-6): the offline
   banner explains a missing original. Zoom lives in the footer, as in the template (ViewerFooter,
   MediaViewer.jsx:1765-1790). On phones the actions leave the header for a frosted bottom toolbar
   above the footer, like iPhone Photos (apple-style.css:756-790).
@@ -128,7 +131,18 @@
   <div class="fl-viewer-footer-probe" aria-hidden="true" bind:this={footerProbe}></div>
   <div class="flex min-w-0 flex-1 items-center gap-2">
     <div class="dark shrink-0">
-      <ActionButton action={Close} />
+      <!-- V-5: "Close viewer", titled with its key (MediaViewer.jsx:998-1007). -->
+      {#if isEnabled(Close)}
+        <IconButton
+          color="secondary"
+          shape="round"
+          variant="ghost"
+          icon={Close.icon ?? mdiArrowLeft}
+          aria-label={$t('frameleaf_viewer_close_label')}
+          title={$t('frameleaf_viewer_close')}
+          onclick={() => Close.onAction(Close)}
+        />
+      {/if}
     </div>
 
     <!-- FL-35: file name with the short EXIF line underneath. -->
@@ -152,27 +166,42 @@
         </Tooltip>
       {/if}
       <ActionButton action={Actions.Share} />
-      <ActionButton action={Cast} />
+      {#if !asset.isTrashed}
+        <ActionButton action={Cast} />
+      {/if}
       <span class="fl-wide-only">
-        <ActionButton action={Actions.Copy} />
+        <ActionButton action={CopyImage} />
       </span>
-      <ActionButton action={Actions.PlayMotionPhoto} />
-      <ActionButton action={Actions.StopMotionPhoto} />
       {#if sharedLink}
         <!-- A shared link has no More menu, so its download and its copy through the share sheet sit here. -->
         <ActionButton action={Actions.SharedLinkDownload} />
         <ActionButton action={Actions.SendCopy} />
         <ActionButton action={SharedLinkSlideshow} />
       {/if}
-      <ActionButton action={Actions.Info} />
-      <ActionButton action={Actions.Favorite} />
-      <ActionButton action={Actions.Unfavorite} />
+      <!-- V-5: "Information", titled with its key, pressed while the card is open (MediaViewer.jsx:1055-1065). -->
+      {#if isEnabled(Actions.Info)}
+        <IconButton
+          color="secondary"
+          shape="round"
+          variant="ghost"
+          icon={mdiInformationOutline}
+          aria-label={$t('frameleaf_viewer_information_heading')}
+          title={$t('frameleaf_viewer_information')}
+          aria-pressed={assetViewerManager.isShowDetailPanel}
+          data-viewer-info
+          onclick={() => Actions.Info.onAction(Actions.Info)}
+        />
+      {/if}
+      {#if !asset.isTrashed}
+        <ActionButton action={Favorite} />
+        <ActionButton action={Unfavorite} />
+      {/if}
 
-      {#if isOwner}
+      {#if isOwner && !asset.isTrashed}
         <RatingAction {asset} {onAction} />
       {/if}
 
-      <ActionButton action={Actions.Edit} />
+      <ActionButton action={Edit} />
 
       {#if isOwner}
         <DeleteAction {asset} {onAction} {preAction} {onUndoDelete} />
@@ -198,17 +227,7 @@
             Viewer). Every entry maps to an existing asset action and a group that has no
             supported entry in this context is not rendered at all.
           -->
-          <ViewerMoreMenu
-            {asset}
-            {album}
-            {person}
-            {stack}
-            {preAction}
-            {onAction}
-            {canNavigateCollection}
-            {canShowFilmstrip}
-            playOriginalVideo={PlayOriginalVideo}
-          />
+          <ViewerMoreMenu {asset} {album} {stack} {preAction} {onAction} {canNavigateCollection} {canShowFilmstrip} />
         </ButtonContextMenu>
       {/if}
     </div>

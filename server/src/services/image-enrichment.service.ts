@@ -540,7 +540,12 @@ export class ImageEnrichmentService extends BaseService {
       if (members.some((member) => isLockedRow(member))) {
         requireElevatedPermission(auth);
       }
-      const unlocked = (await this.assetRepository.unlock([id], trx)).map(({ assetId }) => assetId);
+      // Legacy compatibility kept apart (FL-34): Mark Safe answers a sensitive verdict, so it releases
+      // marked and detected locks only; an item kept in the upstream Locked folder stays Locked until
+      // its owner unlocks it.
+      const unlocked = (
+        await this.assetRepository.unlock([id], trx, [AssetLockReason.Marked, AssetLockReason.Detected])
+      ).map(({ assetId }) => assetId);
       // the unlock works the group out again: it may release only what the elevation check saw
       requireUnchangedGroup(unlocked, memberIds);
       const ownerId = members.find((member) => member.id === id)?.ownerId;
@@ -860,6 +865,91 @@ export class ImageEnrichmentService extends BaseService {
   }
 
   /**
+   * FL-57: after a face or person change (rename, hide, merge, a face moved, taken off or added), the
+   * generated text of only the affected assets is brought up to date: the owner's assets showing the
+   * changed people, and the assets named in the job. For each one whose generated text was made with
+   * other confirmed names than it has now:
+   * - a generated description is described again (the regular description job, when descriptions are
+   *   on), which replaces only the generated block and its description embedding; manual text is kept;
+   * - generated video captions are withdrawn (their text removed, so moment search no longer finds old
+   *   names) and made again by the next enrichment plan that includes captions, which stay opt-in
+   *   because each one is a model request. Manual moments and transcripts are never touched.
+   * Memories carry no person names (titles are places or years), so they need nothing.
+   */
+  @OnJob({ name: JobName.PersonIdentityRefresh, queue: QueueName.BackgroundTask })
+  async handlePersonIdentityRefresh({
+    ownerId,
+    personGroupIds = [],
+    assetIds = [],
+  }: JobOf<JobName.PersonIdentityRefresh>): Promise<JobStatus> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    const describe = isImageDescriptionEnabled(machineLearning);
+    const seen = new Set<string>();
+    let described = 0;
+    let withdrawn = 0;
+
+    const refresh = async (ids: string[]) => {
+      const jobs: JobItem[] = [];
+      for (const id of ids) {
+        if (seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        const outcome = await this.refreshAssetIdentity(id);
+        withdrawn += outcome.withdrawnCaptions;
+        if (outcome.describe && describe) {
+          jobs.push({ name: JobName.ImageDescription, data: { id } });
+        }
+      }
+      described += jobs.length;
+      await this.jobRepository.queueAll(jobs);
+    };
+
+    await refresh(assetIds);
+    let after: string | undefined;
+    for (;;) {
+      const page = await this.personRepository.getAssetIdsForPeople(ownerId, personGroupIds, {
+        after,
+        limit: JOBS_ASSET_PAGINATION_SIZE,
+      });
+      if (page.length === 0) {
+        break;
+      }
+      await refresh(page);
+      after = page.at(-1);
+    }
+
+    if (described > 0 || withdrawn > 0) {
+      this.logger.log(
+        `People changed: describing ${described} asset(s) again and withdrew ${withdrawn} generated caption(s)`,
+      );
+    }
+    return JobStatus.Success;
+  }
+
+  /**
+   * Whether an asset's generated text names other people than it shows now (FL-57). Read under the
+   * asset's metadata lock, the one a description is published under, so a description published with
+   * the old names just before is seen here, and one not yet published re-checks the names itself.
+   */
+  private async refreshAssetIdentity(id: string): Promise<{ describe: boolean; withdrawnCaptions: number }> {
+    const asset = await this.assetRepository.getById(id);
+    if (!asset || asset.deletedAt) {
+      return { describe: false, withdrawnCaptions: 0 };
+    }
+    const names = identityHash((await this.getKnownPersonsForAsset(id, asset.ownerId)).map(({ name }) => name));
+    const describe = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+      const { description } = await this.getEnrichmentMetadata(id, trx);
+      return description?.status === 'success' && description.provenance?.identityHash !== names;
+    });
+    const withdrawnCaptions =
+      asset.type === AssetType.Video && this.videoMoments
+        ? await this.videoMoments.withdrawStaleCaptions(id, names)
+        : 0;
+    return { describe, withdrawnCaptions };
+  }
+
+  /**
    * Describe one photo or video. The queue job runs it with the routed destination and the saved
    * model and prompt; an enrichment plan (FL-59) runs it with the destination and configuration it
    * pinned, so a plan never changes model or destination partway through.
@@ -1029,46 +1119,64 @@ export class ImageEnrichmentService extends BaseService {
 
     // Phase: serialize the RMW so reviewer / NSFW writes can't clobber the
     // description (and vice versa). ML inference is already done above.
-    const { metadata, previousDescription, previousTagValues, locked } =
-      await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
-        if (isNsfwHidingEnabled(machineLearning)) {
-          await this.lockGroupRows(id, trx);
-        }
-        const m = await this.getEnrichmentMetadata(id, trx);
-        const previousDescription =
-          m.description?.status === 'success' && m.description.appliedDescriptionHash
-            ? m.description.result.description
-            : undefined;
-        const previousTagValues = m.description?.status === 'success' ? (m.description.appliedTagValues ?? []) : [];
+    const published = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+      // FL-57: the names the prompt was given are checked again under the lock. A face correction or
+      // rename that landed while the model was working (its invalidation takes this same lock) means
+      // this description may name the wrong people: publish nothing and describe the asset again.
+      const namesNow = identityHash(
+        (await this.getKnownPersonsForAsset(asset.id, asset.ownerId)).map(({ name }) => name),
+      );
+      if (namesNow !== provenance.identityHash) {
+        return null;
+      }
 
-        if (nsfwIsFresh && nsfw && !this.getStoredNsfw(m)) {
-          const appliedTagHash = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagHash : undefined;
-          const appliedTagValues = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagValues : undefined;
-          m.nsfwDetection = {
-            status: 'success',
-            modelName: machineLearning.nsfwDetection.modelName,
-            updatedAt: new Date().toISOString(),
-            result: nsfw,
-            appliedTagHash,
-            appliedTagValues,
-            ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
-          };
-        }
+      if (isNsfwHidingEnabled(machineLearning)) {
+        await this.lockGroupRows(id, trx);
+      }
+      const m = await this.getEnrichmentMetadata(id, trx);
+      const previousDescription =
+        m.description?.status === 'success' && m.description.appliedDescriptionHash
+          ? m.description.result.description
+          : undefined;
+      const previousTagValues = m.description?.status === 'success' ? (m.description.appliedTagValues ?? []) : [];
 
-        m.description = {
+      if (nsfwIsFresh && nsfw && !this.getStoredNsfw(m)) {
+        const appliedTagHash = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagHash : undefined;
+        const appliedTagValues = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagValues : undefined;
+        m.nsfwDetection = {
           status: 'success',
-          modelName: machineLearning.imageDescription.modelName,
+          modelName: machineLearning.nsfwDetection.modelName,
           updatedAt: new Date().toISOString(),
-          result,
-          configHash: promptConfigHash(machineLearning.imageDescription.prompt),
-          provenance,
-          ...(identityFlags && { identityFlags }),
+          result: nsfw,
+          appliedTagHash,
+          appliedTagValues,
+          ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
         };
-        await this.saveEnrichmentMetadata(id, m, trx);
-        // a sensitive verdict from either the detector or the description locks it (FL-34)
-        const locked = await this.lockIfDetected(id, m, isNsfwHidingEnabled(machineLearning), trx);
-        return { metadata: m, previousDescription, previousTagValues, locked };
-      });
+      }
+
+      m.description = {
+        status: 'success',
+        modelName: machineLearning.imageDescription.modelName,
+        updatedAt: new Date().toISOString(),
+        result,
+        configHash: promptConfigHash(machineLearning.imageDescription.prompt),
+        provenance,
+        ...(identityFlags && { identityFlags }),
+      };
+      await this.saveEnrichmentMetadata(id, m, trx);
+      // a sensitive verdict from either the detector or the description locks it (FL-34)
+      const locked = await this.lockIfDetected(id, m, isNsfwHidingEnabled(machineLearning), trx);
+      return { metadata: m, previousDescription, previousTagValues, locked };
+    });
+    if (!published) {
+      this.logger.debug(`The people in asset ${id} changed while it was described; describing it again`);
+      // a plan retries the stage itself with its pinned destination; the queue job is queued again
+      if (!options.planRun) {
+        await this.jobRepository.queue({ name: JobName.ImageDescription, data: { id } });
+      }
+      return { status: options.planRun ? JobStatus.Failed : JobStatus.Skipped, reasonKey: 'identity-changed' };
+    }
+    const { metadata, previousDescription, previousTagValues, locked } = published;
     await this.afterSensitiveLock(locked);
 
     // A plan that pinned no search destination (search was off when it was queued) leaves the

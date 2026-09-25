@@ -712,6 +712,8 @@ export class AlbumService extends BaseService {
 
     await this.albumUserRepository.delete({ albumId: id, userId });
     this.sendAccessChange(album, userId, null);
+    // FL-90: Studio work this member was doing through the album or space stops now.
+    await this.eventRepository.emit('AlbumUserRemove', { albumId: id, userId });
 
     if (space) {
       // The feed says who left on their own and who was taken out (FL-55).

@@ -8,17 +8,19 @@ import {
   TagBulkAssetsResponseDto,
   TagCreateDto,
   TagResponseDto,
+  TagStatisticsResponseDto,
   TagUpdateDto,
   TagUpsertDto,
   mapTag,
 } from 'src/dtos/tag.dto.js';
-import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { AssetVisibility, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 @Injectable()
@@ -26,6 +28,27 @@ export class TagService extends BaseService {
   async getAll(auth: AuthDto) {
     const tags = await this.tagRepository.getAll(auth.user.id, getHiddenContentQueryOptions(auth));
     return tags.map((tag) => mapTag(tag));
+  }
+
+  /**
+   * FL-46: per-tag counts for the Tags browser, in the scope its "Show all" opens: the owner's
+   * Timeline items (tags only ever carry their owner's items), so nothing archived or Locked, even
+   * in an unlocked session, and never a hidden or suppressed item. A tag the session may not see
+   * (suppressed, or nested under a suppressed tag, while locked) is left out entirely.
+   */
+  async getStatistics(auth: AuthDto): Promise<TagStatisticsResponseDto[]> {
+    const rows = await this.searchRepository.searchTagStatistics(
+      {
+        ...getHiddenContentQueryOptions(auth),
+        visibility: AssetVisibility.Timeline,
+        lockedOwnerId: getLockedOwnerId(auth),
+        hideLockedMotion: true,
+        userIds: [auth.user.id],
+        viewingUserId: auth.user.id,
+      },
+      { viewerId: auth.user.id, suppressedTagIds: auth.hiddenContent?.tagIds ?? [] },
+    );
+    return rows.map(({ tagId, count, total }) => ({ id: tagId, count, total }));
   }
 
   async get(auth: AuthDto, id: string): Promise<TagResponseDto> {

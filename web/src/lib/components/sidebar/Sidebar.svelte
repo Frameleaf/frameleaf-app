@@ -5,7 +5,7 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { sidebarCollapsed } from '$lib/stores/preferences.store';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiMenu } from '@mdi/js';
   import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -21,6 +21,10 @@
   }
 
   let { ariaLabel, header, children }: Props = $props();
+
+  // S-28 (styles.css:291-299): the rail is the Frameleaf panel with its own edge, not the
+  // upstream `bg-light` container, and it has no end padding around its rows.
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
   const isHidden = $derived(!sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
   const isExpanded = $derived(sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
@@ -46,7 +50,8 @@
   id="sidebar"
   aria-label={ariaLabel}
   tabindex="-1"
-  class="relative z-1 w-0 immich-scrollbar overflow-x-hidden overflow-y-auto bg-light pt-8 transition-all duration-200 sidebar:w-(--sidebar-width)"
+  class="frameleaf fl-sidebar relative z-1 w-0 immich-scrollbar overflow-x-hidden overflow-y-auto transition-all duration-200 sidebar:w-(--sidebar-width)"
+  data-theme={appTheme}
   class:shadow-2xl={isExpanded}
   class:dark:border-e-immich-dark-gray={isExpanded}
   class:border-r={isExpanded}
@@ -58,7 +63,7 @@
   use:clickOutside={{ onOutclick: closeSidebar, onEscape: closeSidebar }}
   use:focusTrap={{ active: isExpanded }}
 >
-  <div class="flex h-max min-h-full flex-col gap-1 pe-6">
+  <div class="flex h-max min-h-full flex-col">
     {#if header}
       {@render header({ collapsed: isCollapsed, toggle: () => ($sidebarCollapsed = !$sidebarCollapsed) })}
     {:else}
@@ -79,6 +84,11 @@
 </nav>
 
 <style>
+  .fl-sidebar {
+    background: var(--fl-panel);
+    border-inline-end: 1px solid var(--fl-border);
+    padding-block: 18px 14px;
+  }
   /* Icon-only rail: hide NavbarItem text labels and the dropdown expand/collapse
      chevron buttons. Album tree, recent albums, group headers and bottom info are
      hidden by UserSidebar itself (it owns those components). */

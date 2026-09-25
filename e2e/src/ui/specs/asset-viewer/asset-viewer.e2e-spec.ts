@@ -185,7 +185,7 @@ test.describe('asset-viewer', () => {
       const asset = selectRandom(assets, rng);
       await page.goto(`/photos/${asset.id}`);
       await assetViewerUtils.waitForViewerLoad(page, asset);
-      await page.getByLabel('Delete').click();
+      await page.getByLabel('Move to trash', { exact: true }).click();
       const index = assets.indexOf(asset);
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 1]);
     });
@@ -193,17 +193,17 @@ test.describe('asset-viewer', () => {
       const asset = selectRandom(assets, rng);
       await page.goto(`/photos/${asset.id}`);
       await assetViewerUtils.waitForViewerLoad(page, asset);
-      await page.getByLabel('Delete').click();
+      await page.getByLabel('Move to trash', { exact: true }).click();
       const index = assets.indexOf(asset);
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 1]);
-      await page.getByLabel('Delete').click();
+      await page.getByLabel('Move to trash', { exact: true }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 2]);
     });
     test('Delete last photo advances to prev', async ({ page }) => {
       const asset = assets.at(-1)!;
       await page.goto(`/photos/${asset.id}`);
       await assetViewerUtils.waitForViewerLoad(page, asset);
-      await page.getByLabel('Delete').click();
+      await page.getByLabel('Move to trash', { exact: true }).click();
       const index = assets.indexOf(asset);
       await assetViewerUtils.waitForViewerLoad(page, assets[index - 1]);
     });
@@ -211,10 +211,10 @@ test.describe('asset-viewer', () => {
       const asset = assets.at(-1)!;
       await page.goto(`/photos/${asset.id}`);
       await assetViewerUtils.waitForViewerLoad(page, asset);
-      await page.getByLabel('Delete').click();
+      await page.getByLabel('Move to trash', { exact: true }).click();
       const index = assets.indexOf(asset);
       await assetViewerUtils.waitForViewerLoad(page, assets[index - 1]);
-      await page.getByLabel('Delete').click();
+      await page.getByLabel('Move to trash', { exact: true }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index - 2]);
     });
   });
@@ -235,7 +235,10 @@ test.describe('asset-viewer', () => {
       changes.assetDeletions.push(...deletedAssets);
       await page.goto(trashViewer(asset.id));
       await assetViewerUtils.waitForViewerLoad(page, asset);
-      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      await page
+        .getByTestId('asset-viewer-navbar-actions')
+        .getByRole('button', { name: 'Delete permanently', exact: true })
+        .click();
       // the viewer always confirms a permanent delete
       await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 1]);
@@ -247,11 +250,17 @@ test.describe('asset-viewer', () => {
       changes.assetDeletions.push(...deletedAssets);
       await page.goto(trashViewer(asset.id));
       await assetViewerUtils.waitForViewerLoad(page, asset);
-      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      await page
+        .getByTestId('asset-viewer-navbar-actions')
+        .getByRole('button', { name: 'Delete permanently', exact: true })
+        .click();
       // the viewer always confirms a permanent delete
       await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 1]);
-      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      await page
+        .getByTestId('asset-viewer-navbar-actions')
+        .getByRole('button', { name: 'Delete permanently', exact: true })
+        .click();
       // the viewer always confirms a permanent delete
       await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 2]);
@@ -263,7 +272,10 @@ test.describe('asset-viewer', () => {
       changes.assetDeletions.push(...deletedAssets);
       await page.goto(trashViewer(assets[index + 9].id));
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 9]);
-      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      await page
+        .getByTestId('asset-viewer-navbar-actions')
+        .getByRole('button', { name: 'Delete permanently', exact: true })
+        .click();
       // the viewer always confirms a permanent delete
       await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 8]);
@@ -275,11 +287,17 @@ test.describe('asset-viewer', () => {
       changes.assetDeletions.push(...deletedAssets);
       await page.goto(trashViewer(assets[index + 9].id));
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 9]);
-      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      await page
+        .getByTestId('asset-viewer-navbar-actions')
+        .getByRole('button', { name: 'Delete permanently', exact: true })
+        .click();
       // the viewer always confirms a permanent delete
       await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 8]);
-      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      await page
+        .getByTestId('asset-viewer-navbar-actions')
+        .getByRole('button', { name: 'Delete permanently', exact: true })
+        .click();
       // the viewer always confirms a permanent delete
       await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 7]);

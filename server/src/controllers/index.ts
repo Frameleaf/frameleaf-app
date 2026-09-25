@@ -58,6 +58,7 @@ import { StudioBundleController } from 'src/controllers/studio-bundle.controller
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
 import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
+import { StudioWorkspaceController } from 'src/controllers/studio-workspace.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
 import { SystemMetadataController } from 'src/controllers/system-metadata.controller.js';
@@ -135,6 +136,7 @@ export const controllers = [
   StudioExportController,
   StudioPreviewController,
   StudioProjectController,
+  StudioWorkspaceController,
   SyncController,
   SystemConfigController,
   SystemMetadataController,

@@ -211,6 +211,15 @@ export const PREVIEW_REVISIONS_PER_PROJECT = 2;
 export const previewExpiry = (now: Date, retentionMs: number = PREVIEW_RETENTION_MS): Date =>
   new Date(now.getTime() + retentionMs);
 
+/** How often the retention sweep removes the files of expired, superseded and failed frames. */
+export const PREVIEW_SWEEP_MS = 60 * 1000;
+
+/** How long an evicted row stays as a tombstone, so a client holding its id hears "gone". */
+export const PREVIEW_TOMBSTONE_MS = 24 * 60 * 60 * 1000;
+
+/** What a worker may publish as a preview frame. */
+export const PREVIEW_CONTENT_TYPES: readonly string[] = ['image/png', 'image/jpeg', 'image/webp'];
+
 export type EvictionCandidate = {
   id: string;
   revisionDigest: string;

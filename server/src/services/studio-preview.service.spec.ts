@@ -1,9 +1,11 @@
 import { ConflictException, GoneException, NotFoundException } from '@nestjs/common';
 import type { Mock } from 'vitest';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { MediaOperationKind, StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
-import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import { StudioPreviewService, studioPreviewFrameFolder } from 'src/services/studio-preview.service.js';
 import {
   StudioProjectService,
   StudioRevisionAuthorization,
@@ -79,11 +81,13 @@ const conflictOf = async (promise: Promise<unknown>): Promise<Record<string, unk
 };
 
 describe(StudioPreviewService.name, () => {
+  beforeAll(() => StorageCore.setMediaLocation('/data'));
   let sut: StudioPreviewService;
   let mocks: ServiceMocks;
   let previews: StudioPreviewRepository;
   let operations: MediaOperationRepository;
   let resources: StudioResourceService;
+  let storage: { mkdirSync: AnyMock; stat: AnyMock; unlinkDir: AnyMock };
   let projects: {
     registerRevisionListener: AnyMock;
     authorizeRevision: AnyMock;
@@ -151,8 +155,16 @@ describe(StudioPreviewService.name, () => {
       supersedeBeforeRevision: vi.fn().mockResolvedValue([]),
       evict: vi.fn().mockResolvedValue([]),
       listExpired: vi.fn().mockResolvedValue([]),
-      deleteEvictedBefore: vi.fn(),
+      listRetired: vi.fn().mockResolvedValue([]),
+      listLiveForProjects: vi.fn().mockResolvedValue([]),
+      deleteEvictedBefore: vi.fn().mockResolvedValue(0),
     } as unknown as StudioPreviewRepository;
+
+    storage = {
+      mkdirSync: vi.fn(),
+      stat: vi.fn().mockResolvedValue({ isFile: () => true, size: 2048 }),
+      unlinkDir: vi.fn().mockResolvedValue(undefined),
+    };
 
     operations = {
       create: vi.fn().mockResolvedValue({ id: '0195e2a0-0000-7000-8000-0000000000ff' }),
@@ -178,7 +190,104 @@ describe(StudioPreviewService.name, () => {
       operations,
       resources,
       projects as unknown as StudioProjectService,
+      storage as unknown as StorageRepository,
     );
+  });
+
+  describe('render worker publication (FL-96)', () => {
+    const operation = {
+      id: '0195e2a0-0000-7000-8000-0000000000ff',
+      ownerId: authStub.user1.user.id,
+      snapshot: { previewFrameId: 'frame-1' },
+    } as never;
+    let folder: string;
+    let output: { path: string; checksum: string; sizeInBytes: string; contentType: string };
+    beforeEach(() => {
+      folder = studioPreviewFrameFolder(authStub.user1.user.id, 'frame-1');
+      output = { path: `${folder}/frame.png`, checksum: 'c'.repeat(64), sizeInBytes: '2048', contentType: 'image/png' };
+    });
+
+    it('gives the claim its own frame directory', () => {
+      expect(sut.onRenderClaimed(operation)).toBe(folder);
+      expect(storage.mkdirSync).toHaveBeenCalledWith(folder);
+    });
+
+    it('publishes a frame from its own directory with the requested instant as its PTS', async () => {
+      vi.mocked(previews.getForOwner).mockResolvedValue(
+        frameStub({ id: 'frame-1', status: StudioPreviewStatus.Rendering, framePath: null }),
+      );
+      vi.mocked(previews.publish).mockResolvedValue(true);
+
+      await expect(sut.onRenderCompleted(operation, output)).resolves.toEqual({ published: true });
+      expect(previews.publish).toHaveBeenCalledWith(
+        'frame-1',
+        'rev-a',
+        expect.objectContaining({
+          framePath: output.path,
+          contentType: 'image/png',
+          frameChecksum: Buffer.from(output.checksum, 'hex'),
+          framePts: '1001',
+          framePtsTimebase: '1/30000',
+        }),
+      );
+      expect(storage.unlinkDir).not.toHaveBeenCalled();
+    });
+
+    it('refuses a path outside the frame directory, a non-image and a size mismatch', async () => {
+      await expect(sut.onRenderCompleted(operation, { ...output, path: '/etc/passwd' })).rejects.toThrow(
+        'inside the directory',
+      );
+      await expect(sut.onRenderCompleted(operation, { ...output, contentType: 'text/html' })).rejects.toThrow(
+        'PNG, JPEG or WebP',
+      );
+      storage.stat.mockResolvedValueOnce({ isFile: () => true, size: 1 });
+      await expect(sut.onRenderCompleted(operation, output)).rejects.toThrow('size does not match');
+      expect(previews.publish).not.toHaveBeenCalled();
+    });
+
+    it('discards a frame superseded or handed to another render meanwhile', async () => {
+      vi.mocked(previews.getForOwner).mockResolvedValue(frameStub({ id: 'frame-1', operationId: 'another' }));
+      await expect(sut.onRenderCompleted(operation, output)).resolves.toEqual({ published: false });
+      expect(previews.publish).not.toHaveBeenCalled();
+      expect(storage.unlinkDir).toHaveBeenCalledWith(folder, { recursive: true, force: true });
+    });
+
+    it('marks a frame failed and removes its files', async () => {
+      await sut.onRenderFailed(operation, 'gpu_lost');
+      expect(previews.markFailed).toHaveBeenCalledWith('frame-1', 'gpu_lost');
+      expect(storage.unlinkDir).toHaveBeenCalledWith(folder, { recursive: true, force: true });
+    });
+  });
+
+  describe('revocation and retention (FL-90, FL-96)', () => {
+    it('evicts live frames with their files and cancels renders still in flight', async () => {
+      const ready = frameStub({ id: 'ready-1' });
+      const rendering = frameStub({ id: 'rendering-1', status: StudioPreviewStatus.Rendering, operationId: 'op-2' });
+      vi.mocked(previews.listLiveForProjects).mockResolvedValue([ready, rendering]);
+
+      await expect(sut.revokeForProjects(['project-1'], 'user-2')).resolves.toBe(2);
+      expect(previews.listLiveForProjects).toHaveBeenCalledWith(['project-1'], 'user-2');
+      expect(operations.requestCancel).toHaveBeenCalledTimes(1);
+      expect(operations.requestCancel).toHaveBeenCalledWith('op-2', rendering.ownerId);
+      expect(previews.evict).toHaveBeenCalledWith(['ready-1', 'rendering-1']);
+      expect(storage.unlinkDir).toHaveBeenCalledTimes(2);
+    });
+
+    it('sweeps retired frames and old tombstones', async () => {
+      const expired = frameStub({ id: 'old-1' });
+      vi.mocked(previews.listRetired).mockResolvedValue([expired]);
+      const now = new Date('2026-09-25T12:00:00.000Z');
+
+      await sut.sweep(now);
+
+      expect(previews.listRetired).toHaveBeenCalledWith(now, new Date('2026-09-25T11:50:00.000Z'), 500);
+      expect(previews.evict).toHaveBeenCalledWith(['old-1']);
+      expect(storage.unlinkDir).toHaveBeenCalledWith(studioPreviewFrameFolder(expired.ownerId, 'old-1'), {
+        recursive: true,
+        force: true,
+      });
+      expect(previews.deleteEvictedBefore).toHaveBeenCalledWith(new Date('2026-09-24T12:00:00.000Z'), 500);
+    });
   });
 
   describe('request (bound to FL-89 stored revisions)', () => {

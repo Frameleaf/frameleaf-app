@@ -15,19 +15,26 @@ export function maintenanceShouldRedirect(maintenanceMode: boolean, currentUrl: 
   return maintenanceMode !== currentUrl.pathname.startsWith(Route.maintenanceMode());
 }
 
-export const loadMaintenanceAuth = async () => {
-  const query = new URLSearchParams(location.search);
+/**
+ * Signs in to maintenance with the address's `token`, or the cookie a previous sign-in left.
+ * Resolves `rejected` only when the address carried a token the server refused (expired after its
+ * 4 hours, or from an earlier maintenance session), so the page can say so (FL-81); without a token a
+ * refusal just means the visitor is not an administrator.
+ */
+export const loadMaintenanceAuth = async (): Promise<'signed-in' | 'rejected' | 'anonymous'> => {
+  const token = new URLSearchParams(location.search).get('token') ?? undefined;
 
   try {
     const auth = await maintenanceLogin({
       maintenanceLoginDto: {
-        token: query.get('token') ?? undefined,
+        token,
       },
     });
 
     maintenanceStore.auth.set(auth);
+    return 'signed-in';
   } catch {
-    // silently fail
+    return token ? 'rejected' : 'anonymous';
   }
 };
 

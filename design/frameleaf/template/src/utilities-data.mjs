@@ -29,7 +29,7 @@ export const utilityTools = [
     group: "Repair",
     icon: "mdiMovieOpenOutline",
     description:
-      "Reconnect photos with their motion clips using matching evidence.",
+      "Reconnect Live Photos with their motion clips.",
   },
   {
     id: "geolocation",
@@ -62,7 +62,7 @@ export const utilityTools = [
     group: "Repair",
     icon: "mdiShieldCheckOutline",
     description:
-      "Separate verified damage from unsupported formats before taking action.",
+      "Find damaged files, and tell them apart from ones that just can't be shown.",
     admin: true,
   },
   {
@@ -71,7 +71,7 @@ export const utilityTools = [
     group: "Automate",
     icon: "mdiTuneVariant",
     description:
-      "Build ordered rules, review matching photos and inspect run history.",
+      "Automate tidying with rules, and see what each run did.",
   },
   {
     id: "downloads",

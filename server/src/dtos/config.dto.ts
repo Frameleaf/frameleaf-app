@@ -677,6 +677,7 @@ const AdminConfigSchemaWithVisibility = z
         workflow: AdminConfigJobSettingsSchema,
         editor: AdminConfigJobSettingsSchema,
         integrityCheck: AdminConfigJobSettingsSchema,
+        petRecognition: ForkJobSettingsSchema.default({ concurrency: 1 }),
       })
       .meta({ id: 'AdminConfigJobDto' }),
     logging: z
@@ -820,6 +821,15 @@ const AdminConfigSchemaWithVisibility = z
       })
       .meta({ id: 'AdminConfigPhysicalDeduplicationDto' })
       .default({ enabled: false, masterUserId: null }),
+    // FL-71: the template's "Logs & diagnostics" local analytics rows. The nightly collector only
+    // reads counts and sizes into this server's database; external telemetry stays off regardless.
+    analytics: z
+      .object({
+        enabled: configBool.describe('Collect local analytics history every night'),
+        historyDays: z.int().min(30).max(800).describe('Days of local analytics history to keep'),
+      })
+      .meta({ id: 'AdminConfigAnalyticsDto' })
+      .default({ enabled: true, historyDays: 730 }),
     localFeatures: z
       .object({
         askSearch: z
@@ -1164,6 +1174,7 @@ export const defaults = Object.freeze<SystemConfig>({
     workflow: { concurrency: 5 },
     editor: { concurrency: 2 },
     integrityCheck: { concurrency: 1 },
+    petRecognition: { concurrency: 1 },
   },
   logging: {
     enabled: true,
@@ -1258,6 +1269,10 @@ export const defaults = Object.freeze<SystemConfig>({
   physicalDeduplication: {
     enabled: false,
     masterUserId: null,
+  },
+  analytics: {
+    enabled: true,
+    historyDays: 730,
   },
   localFeatures: {
     askSearch: {

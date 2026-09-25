@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import {
+  MediaOperationCheckpointState,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -16,6 +17,7 @@ import {
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
+import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { signInputGrant } from 'src/utils/render-admission.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -204,6 +206,7 @@ describe(RenderWorkerService.name, () => {
     | 'acknowledgeRemoteReference',
     ReturnType<typeof vi.fn>
   >;
+  let studioPreviews: Record<'onRenderClaimed' | 'onRenderCompleted' | 'onRenderFailed', ReturnType<typeof vi.fn>>;
   let studioProjects: {
     getById: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
@@ -254,6 +257,8 @@ describe(RenderWorkerService.name, () => {
       getClaimed: vi.fn().mockResolvedValue(undefined),
       getClaimedByWorker: vi.fn().mockResolvedValue(undefined),
       recordOutputBytes: vi.fn().mockResolvedValue(true),
+      recordSessionCapabilities: vi.fn().mockResolvedValue(undefined),
+      getSessionCapabilities: vi.fn().mockResolvedValue(undefined),
     } as unknown as RenderWorkerRepository;
 
     operations = {
@@ -263,6 +268,7 @@ describe(RenderWorkerService.name, () => {
       upsertCheckpoint: vi.fn().mockResolvedValue(true),
       completeCheckpoint: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
+      invalidateCheckpointsFrom: vi.fn().mockResolvedValue(undefined),
       complete: vi.fn().mockResolvedValue(true),
       fail: vi.fn().mockResolvedValue('failed'),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
@@ -287,6 +293,11 @@ describe(RenderWorkerService.name, () => {
       listRemoteReferences: vi.fn().mockResolvedValue([]),
       acknowledgeRemoteReference: vi.fn().mockResolvedValue(true),
     };
+    studioPreviews = {
+      onRenderClaimed: vi.fn().mockReturnValue('/data/exports/owner/studio-previews/frame'),
+      onRenderCompleted: vi.fn().mockResolvedValue({ published: true }),
+      onRenderFailed: vi.fn().mockResolvedValue(undefined),
+    };
     mocks.user.get.mockImplementation((id: string) =>
       Promise.resolve(id === OWNER_A ? { ...userStub.user1, id: OWNER_A } : undefined),
     );
@@ -302,6 +313,7 @@ describe(RenderWorkerService.name, () => {
       studioResources as unknown as StudioResourceService,
       studioProjects as unknown as StudioProjectRepository,
       studioExports as unknown as StudioExportService,
+      studioPreviews as unknown as StudioPreviewService,
     );
 
     installSessions({ worker: workerA, session: sessionA }, { worker: workerB, session: sessionB });
@@ -452,6 +464,20 @@ describe(RenderWorkerService.name, () => {
       expect(audits.some((entry) => entry.includes('secret-a'))).toBe(false);
     });
 
+    it('binds the codecs and containers the check verified to the new session (FL-95)', async () => {
+      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
+      vi.mocked(workers.createSession).mockImplementation((dto) =>
+        Promise.resolve({ ...dto, id: 'session-new' } as never),
+      );
+
+      await sut.admit({ ...admission, codecs: ['hevc_nvenc'], formats: ['mp4'] } as never);
+
+      expect(workers.recordSessionCapabilities).toHaveBeenCalledWith('session-new', {
+        codecs: ['hevc_nvenc'],
+        formats: ['mp4'],
+      });
+    });
+
     it('scopes the session to renders only, even for a worker enrolled with a server-side kind (FL-73)', async () => {
       const legacy = workerStub({ kinds: [MediaOperationKind.QuickEdit, MediaOperationKind.Bulk] as never });
       vi.mocked(workers.getWorkerBySecret).mockResolvedValue(legacy);
@@ -524,6 +550,20 @@ describe(RenderWorkerService.name, () => {
       expect(workers.claimQueued).toHaveBeenCalledWith(
         expect.objectContaining({ id: queued.id, workerId: workerA.id }),
       );
+    });
+
+    it('measures an export against the codecs and containers its session proved (FL-95)', async () => {
+      const hevc = operationStub({ settings: { format: 'mp4-hevc-main10', resolution: '2160p' } });
+      vi.mocked(workers.peekQueued).mockReset();
+      vi.mocked(workers.peekQueued)
+        .mockResolvedValueOnce([hevc] as never)
+        .mockResolvedValue([]);
+      vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['h264_nvenc'], formats: ['mp4'] });
+
+      await expect(sut.claim(SESSION_A, {} as never)).resolves.toBeUndefined();
+      expect(workers.getSessionCapabilities).toHaveBeenCalledWith(sessionA.id);
+      expect(workers.recordRefusal).toHaveBeenCalledWith(hevc.id, RenderWorkerRefusalReason.CodecUnsupported);
+      expect(workers.claimQueued).not.toHaveBeenCalled();
     });
 
     it('issues no grant for an input the owner has lost access to', async () => {
@@ -1173,6 +1213,86 @@ describe(RenderWorkerService.name, () => {
       );
     });
 
+    describe('server-validated chunk reuse (FL-104)', () => {
+      const chunk = (sequence: number, overrides: Record<string, unknown> = {}) => ({
+        id: `chunk-${sequence}`,
+        operationId: claimedByA.id,
+        sequence,
+        state: MediaOperationCheckpointState.Complete,
+        chunkKey: `k${sequence}`,
+        inputDigest: 'i',
+        historyDigest: 'h',
+        configDigest: 'c',
+        seed: null,
+        timebase: '30000/1001',
+        startTicks: String(sequence * 1000),
+        endTicks: String((sequence + 1) * 1000),
+        prerollTicks: '0',
+        requiresSequentialContext: false,
+        outputPath: `/render/chunk-${sequence}.mkv`,
+        ...overrides,
+      });
+      const plan = (sequence: number, overrides: Record<string, unknown> = {}) =>
+        ({
+          claimToken: 'claim-1',
+          sequence,
+          chunkKey: `k${sequence}`,
+          inputDigest: 'i',
+          historyDigest: 'h',
+          configDigest: 'c',
+          seed: null,
+          timebase: '30000/1001',
+          startTicks: String(sequence * 1000),
+          endTicks: String((sequence + 1) * 1000),
+          ...overrides,
+        }) as never;
+
+      it('keeps a finished chunk only when every digest, the timebase and the range match', async () => {
+        vi.mocked(operations.getCheckpoints).mockResolvedValue([chunk(0), chunk(1)] as never);
+
+        await expect(sut.planCheckpoint(SESSION_A, claimedByA.id, plan(0))).resolves.toEqual({
+          accepted: true,
+          refusal: null,
+        });
+        expect(operations.upsertCheckpoint).not.toHaveBeenCalled();
+
+        // A changed effect history is re-rendered, and everything after it loses its reuse.
+        await sut.planCheckpoint(SESSION_A, claimedByA.id, plan(0, { historyDigest: 'h2' }));
+        expect(operations.upsertCheckpoint).toHaveBeenCalledTimes(1);
+        expect(operations.invalidateCheckpointsFrom).toHaveBeenCalledWith(claimedByA.id, 1);
+      });
+
+      it('restarts at the first chunk of a run whose state flows into the re-rendered one', async () => {
+        vi.mocked(operations.getCheckpoints).mockResolvedValue([
+          chunk(0),
+          chunk(1, { requiresSequentialContext: true }),
+          chunk(2, { requiresSequentialContext: true }),
+          chunk(3),
+        ] as never);
+
+        await sut.planCheckpoint(SESSION_A, claimedByA.id, plan(3, { seed: '7' }));
+
+        expect(operations.invalidateCheckpointsFrom).toHaveBeenCalledWith(claimedByA.id, 1);
+        // The re-planned chunk is pending again, not invalid.
+        expect(operations.upsertCheckpoint).toHaveBeenLastCalledWith(
+          claimedByA.id,
+          'claim-1',
+          expect.objectContaining({ sequence: 3, seed: '7' }),
+        );
+      });
+
+      it('refuses validation while a chunk is invalid or unfinished', async () => {
+        vi.mocked(operations.getCheckpoints).mockResolvedValue([
+          chunk(0),
+          chunk(1, { state: MediaOperationCheckpointState.Invalid }),
+        ] as never);
+        await expect(
+          sut.beginValidation(SESSION_A, claimedByA.id, { claimToken: 'claim-1', resultAssetId: null } as never),
+        ).resolves.toEqual({ accepted: false, refusal: null });
+        expect(operations.beginValidation).not.toHaveBeenCalled();
+      });
+    });
+
     it('only acknowledges a cancel on a job that is cancelling and held by this worker', async () => {
       expect(
         await sut.acknowledgeCancel(SESSION_A, claimedByA.id, { claimToken: 'claim-1', released: true } as never),
@@ -1518,6 +1638,79 @@ describe(RenderWorkerService.name, () => {
     });
   });
 
+  describe('Studio preview frames (FL-96)', () => {
+    const rendering = operationStub({
+      kind: MediaOperationKind.StudioPreview,
+      status: MediaOperationStatus.Validating,
+      claimToken: 'claim-1',
+      claimedBy: workerA.id,
+      snapshot: { previewFrameId: 'frame-1' },
+    });
+    const output = {
+      path: '/data/exports/owner/studio-previews/frame-1/frame.png',
+      checksum: 'b'.repeat(64),
+      sizeInBytes: '2048',
+      contentType: 'image/png',
+    };
+
+    beforeEach(() => {
+      vi.mocked(workers.getClaimed).mockImplementation((id, workerId, claimToken) =>
+        Promise.resolve(
+          id === rendering.id && workerId === workerA.id && claimToken === 'claim-1' ? (rendering as never) : undefined,
+        ),
+      );
+    });
+
+    it('publishes the frame before completing the render', async () => {
+      const result = await sut.complete(SESSION_A, rendering.id, {
+        claimToken: 'claim-1',
+        resultAssetId: null,
+        output,
+      } as never);
+
+      expect(result).toEqual({ accepted: true, refusal: null });
+      expect(studioPreviews.onRenderCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({ id: rendering.id }),
+        output,
+      );
+      expect(operations.complete).toHaveBeenCalledWith(rendering.id, 'claim-1', { resultAssetId: null });
+    });
+
+    it('completes a render whose frame was superseded meanwhile, without publishing it', async () => {
+      studioPreviews.onRenderCompleted.mockResolvedValue({ published: false });
+      const result = await sut.complete(SESSION_A, rendering.id, {
+        claimToken: 'claim-1',
+        resultAssetId: null,
+        output,
+      } as never);
+      expect(result).toEqual({ accepted: true, refusal: null });
+    });
+
+    it('refuses a worker-named result and a completion without a frame', async () => {
+      await expect(
+        sut.complete(SESSION_A, rendering.id, {
+          claimToken: 'claim-1',
+          resultAssetId: '00000000-0000-4000-8000-000000000001',
+          output,
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        sut.complete(SESSION_A, rendering.id, { claimToken: 'claim-1', resultAssetId: null } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('marks the frame failed only once the render failed for good', async () => {
+      vi.mocked(operations.fail).mockResolvedValueOnce('retrying');
+      await sut.fail(SESSION_A, rendering.id, { claimToken: 'claim-1', error: 'lost', errorCode: 'gpu' } as never);
+      expect(studioPreviews.onRenderFailed).not.toHaveBeenCalled();
+
+      vi.mocked(operations.fail).mockResolvedValueOnce('failed');
+      await sut.fail(SESSION_A, rendering.id, { claimToken: 'claim-1', error: 'lost', errorCode: 'gpu' } as never);
+      expect(studioPreviews.onRenderFailed).toHaveBeenCalledWith(expect.objectContaining({ id: rendering.id }), 'gpu');
+    });
+  });
+
   describe('Studio export results (FL-106)', () => {
     const validating = operationStub({
       status: MediaOperationStatus.Validating,
@@ -1587,6 +1780,26 @@ describe(RenderWorkerService.name, () => {
 
       expect(result).toEqual({ accepted: false, refusal: null });
       expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('revokes every session of a worker whose GPU was lost, until it re-admits (FL-95)', async () => {
+      vi.mocked(workers.revokeSessions).mockResolvedValue(2);
+      await sut.fail(SESSION_A, validating.id, {
+        claimToken: 'claim-1',
+        error: 'CUDA device lost',
+        errorCode: 'device_lost',
+      } as never);
+
+      expect(operations.fail).toHaveBeenCalled();
+      expect(workers.revokeSessions).toHaveBeenCalledWith(workerA.id);
+      expect(workers.recordAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ workerId: workerA.id, event: RenderWorkerAuditEvent.DeviceLost }),
+      );
+    });
+
+    it('keeps the sessions of a worker whose job failed for another reason', async () => {
+      await sut.fail(SESSION_A, validating.id, { claimToken: 'claim-1', error: 'x', errorCode: 'encode' } as never);
+      expect(workers.revokeSessions).not.toHaveBeenCalled();
     });
 
     it('fails the version only once the render failed for good', async () => {

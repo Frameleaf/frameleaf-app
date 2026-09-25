@@ -4,9 +4,9 @@
    * SystemPanels.jsx:226-315`) — a list of help rows and the third-party notices — in place of the
    * upstream modal's "Official Immich Resources".
    *
-   * Frameleaf's own support and documentation addresses are an open owner decision, so the rows use
-   * the addresses this server is configured with (the `IMMICH_THIRD_PARTY_*` links) and a row without
-   * one is left out. The Immich project's resources stay listed under "Built on Immich", as the
+   * The help rows use the addresses this installation is configured with (`FRAMELEAF_DOCS_URL`,
+   * `FRAMELEAF_SUPPORT_URL`, … validated https by the server, FL-135) and a row without one is left
+   * out; nothing falls back to another project's sites. The Immich project's resources stay listed under "Built on Immich", as the
    * attribution requires.
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -83,12 +83,15 @@
   );
 
   const upstream: Row[] = $derived([
+    // FL-135: attribution only — the Immich project's documentation and source. The archived
+    // documentation of "this version" is not linked (Frameleaf's version is not an Immich release),
+    // and the Immich community is not offered as help with Frameleaf.
     {
       id: 'immich-documentation',
       icon: mdiBookOpenOutline,
       title: 'documentation',
       text: 'frameleaf_help_immich_documentation_text',
-      href: `https://docs.${info.version}.archive.immich.app/overview/introduction`,
+      href: 'https://docs.immich.app/overview/introduction',
     },
     {
       id: 'immich-source',
@@ -96,13 +99,6 @@
       title: 'frameleaf_help_source',
       text: 'frameleaf_help_immich_source_text',
       href: 'https://github.com/immich-app/immich/',
-    },
-    {
-      id: 'immich-community',
-      icon: mdiCommentTextOutline,
-      title: 'discord',
-      text: 'frameleaf_help_immich_community_text',
-      href: 'https://discord.immich.app',
     },
   ]);
 

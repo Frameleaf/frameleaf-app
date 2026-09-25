@@ -3,7 +3,7 @@ import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, RenderWorkerStatus } from 'src/enum.js';
-import { withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { canWriteFork, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import {
@@ -67,6 +67,10 @@ export type AuthenticatedRenderWorker = { worker: RenderWorker; session: RenderW
  * `claimQueued` — and the service runs the decision in between. `claimQueued` is still one
  * conditional UPDATE, so two admitted workers racing for the same candidate resolve in Postgres.
  */
+/** A Postgres text array literal, every element quoted and escaped. */
+const pgTextArray = (values: readonly string[]) =>
+  `{${values.map((value) => `"${value.replaceAll('\\', '\\\\').replaceAll('"', String.raw`\"`)}"`).join(',')}}`;
+
 @Injectable()
 export class RenderWorkerRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -179,6 +183,34 @@ export class RenderWorkerRepository {
     return (await this.write((db) =>
       db.insertInto('render_worker_session').values(session).returningAll().executeTakeFirstOrThrow(),
     )) as unknown as RenderWorkerSession;
+  }
+
+  /**
+   * FL-95: bind what the session's conformance check verified (codecs, containers) to the session.
+   * Stored beside the official schema in `immich_fork`, one row per session.
+   */
+  async recordSessionCapabilities(
+    sessionId: string,
+    capabilities: { codecs: readonly string[]; formats: readonly string[] },
+  ): Promise<void> {
+    // Skipped while the fork schema is not writable; the session then proved nothing, so it is
+    // given no job that names an output format (fail closed).
+    if (!(await canWriteFork(this.db))) {
+      return;
+    }
+    await sql`
+      INSERT INTO immich_fork.render_worker_session_capability ("sessionId", codecs, formats)
+      VALUES (${sessionId}::uuid, ${pgTextArray(capabilities.codecs)}::text[], ${pgTextArray(capabilities.formats)}::text[])
+      ON CONFLICT ("sessionId") DO UPDATE SET codecs = excluded.codecs, formats = excluded.formats
+    `.execute(this.db);
+  }
+
+  /** What the session proved at admission, or undefined when it proved nothing (FL-95). */
+  async getSessionCapabilities(sessionId: string): Promise<{ codecs: string[]; formats: string[] } | undefined> {
+    const { rows } = await sql<{ codecs: string[]; formats: string[] }>`
+      SELECT codecs, formats FROM immich_fork.render_worker_session_capability WHERE "sessionId" = ${sessionId}::uuid
+    `.execute(this.db);
+    return rows[0];
   }
 
   /**

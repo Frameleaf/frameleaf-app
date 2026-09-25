@@ -61,6 +61,16 @@ export const resolveEntityName = (kind: FilterEntityKind, id: string): Promise<s
 export const resolveEntityNames = (kind: FilterEntityKind, ids: string[]): Promise<(string | null)[]> =>
   Promise.all(ids.map((id) => resolveEntityName(kind, id)));
 
+/**
+ * FL-37: forget some cached names (a person renamed, hidden or merged away), so the next lookup
+ * reads the current one.
+ */
+export const forgetEntityNames = (kind: FilterEntityKind, ids: string[]) => {
+  for (const id of ids) {
+    nameCache.delete(cacheKey(kind, id));
+  }
+};
+
 /** Test seam: forget cached results so the next call looks up again. */
 export const resetFilterEntityNameCache = () => {
   nameCache.clear();

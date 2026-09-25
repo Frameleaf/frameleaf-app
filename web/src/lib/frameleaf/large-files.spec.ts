@@ -1,10 +1,11 @@
-import type { AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   canTrashLargeFile,
   filterLargeFiles,
   LARGE_FILES_ALL_ACCOUNTS,
   largeFileExport,
+  largeFileFormat,
   largeFileOwners,
   largeFileStatus,
 } from '$lib/frameleaf/large-files';
@@ -83,5 +84,51 @@ describe('large files (FL-47)', () => {
       scope: 'all',
       items: [{ id: 'huge', name: 'Lake morning.mov', owner: 'Taylor', bytes: 5000 }],
     });
+  });
+});
+
+describe('largeFileFormat (UT-15)', () => {
+  const original = (
+    originalFileName: string,
+    type: AssetTypeEnum,
+    width?: number,
+    height?: number,
+    originalMimeType?: string,
+  ) =>
+    ({
+      originalFileName,
+      originalMimeType,
+      type,
+      exifInfo: width === undefined ? undefined : { exifImageWidth: width, exifImageHeight: height },
+    }) as AssetResponseDto;
+
+  it('names a video by its type and resolution, portrait or landscape', () => {
+    expect(largeFileFormat(original('Lake morning.mov', AssetTypeEnum.Video, 3840, 2160))).toEqual({
+      type: 'MOV',
+      videoResolution: '4K',
+    });
+    expect(largeFileFormat(original('Camp.mp4', AssetTypeEnum.Video, 1080, 1920))).toEqual({
+      type: 'MP4',
+      videoResolution: '1080p',
+    });
+    expect(largeFileFormat(original('Drone.mp4', AssetTypeEnum.Video, 7680, 4320))).toEqual({
+      type: 'MP4',
+      videoResolution: '8K',
+    });
+  });
+
+  it('names a photo by its type and whole megapixels', () => {
+    expect(largeFileFormat(original('Summit panorama.tif', AssetTypeEnum.Image, 8000, 6000))).toEqual({
+      type: 'TIF',
+      megapixels: 48,
+    });
+  });
+
+  it('leaves out what is unknown, using the media type when the name has no extension', () => {
+    expect(largeFileFormat(original('scan', AssetTypeEnum.Image, undefined, undefined, 'image/heic'))).toEqual({
+      type: 'HEIC',
+    });
+    expect(largeFileFormat(original('tiny.png', AssetTypeEnum.Image, 10, 10))).toEqual({ type: 'PNG' });
+    expect(largeFileFormat(original('noext', AssetTypeEnum.Other))).toEqual({ type: undefined });
   });
 });

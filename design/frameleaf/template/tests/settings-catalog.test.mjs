@@ -267,7 +267,7 @@ test("advanced controls are integrated into canonical sections, defaults, search
 
   for (const [query, section] of [
     ["recognized names", "advanced-description-identity"],
-    ["serverless minimum", "advanced-runpod-serverless"],
+    ["endpoint health timeout", "advanced-ml-endpoints"],
     ["icloud staging", "advanced-icloud"],
     ["locked tags", "advanced-protected-suppression"],
     ["persistent worker", "advanced-video-profile"],
@@ -280,12 +280,12 @@ test("advanced controls are integrated into canonical sections, defaults, search
   const draft = {
     ...defaultSettings,
     advancedDescriptionNameCap: 7,
-    advancedServerlessMax: 5,
+    advancedMlHealthTimeout: 5000,
   };
   const changes = settingsDiff(defaultSettings, draft);
   assert.deepEqual(
     new Set(changes.map((item) => item.id)),
-    new Set(["advancedDescriptionNameCap", "advancedServerlessMax"]),
+    new Set(["advancedDescriptionNameCap", "advancedMlHealthTimeout"]),
   );
   assert.ok(
     changes.every(
@@ -377,7 +377,7 @@ test("update preferences are configurable while release infrastructure and exter
 
 test("settings explanations describe user choices without exposing development caveats or configuration paths", () => {
   const developmentCopy =
-    /\b(?:our|fork|prototype|production|proposed|upstream|DTO)\b/i;
+    /\b(?:our|fork|prototype|production|proposed|upstream|DTO|Immich|queues?|queued|admission|endpoints?|sidecars?|embeddings?|payloads?|config|drafts?|revisions?|capabilit(?:y|ies)|qualif(?:y|ied|ication))\b/i;
   const configurationPath =
     /\b(?:machineLearning|imageDescription|zeroShotTagging|localFeatures|physicalDeduplication|integrityChecks|privacy\.suppression|smartAlbums|ffmpeg|serverless|runpod)\.[a-zA-Z]/;
   for (const section of Object.values(settingsSections).flat()) {
@@ -397,21 +397,20 @@ test("settings explanations describe user choices without exposing development c
   }
 });
 
-test("integral worker and prompt counts reject fractions while GPU rates and durations remain fractional", () => {
+test("integral worker, timeout and prompt counts reject fractions while durations remain fractional", () => {
   const byId = Object.fromEntries(
     allSettings.map((field) => [field.id, field]),
   );
   for (const id of [
     "advancedDescriptionNameCap",
     "advancedDescriptionSentences",
-    "advancedServerlessMin",
+    "advancedMlHealthTimeout",
     "advancedVideoDuplicateFrames",
   ]) {
     const field = byId[id];
     assert.equal(validateSetting(field, String(field.value)), "");
     assert.notEqual(validateSetting(field, field.value + 0.5), "", id);
   }
-  assert.equal(validateSetting(byId.advancedVideoProfileRate, "0.75"), "");
   assert.equal(validateSetting(byId.advancedVideoProfileRuntime, "1.5"), "");
 });
 
@@ -456,4 +455,115 @@ test("area headlines are plain names with one-sentence subtitles", () => {
     assert.equal(area.description.split(/\.\s/).length, 1, area.id);
   }
   assert.equal(settingsAreas.find((area) => area.id === "care").title, "Library care");
+});
+
+test("Frameleaf Cloud replaces the retired GPU-provider settings in one optional area", () => {
+  const area = settingsAreas.find((item) => item.id === "cloud");
+  assert.ok(area);
+  assert.equal(area.title, "Frameleaf Cloud");
+  assert.equal(area.group, "Your server");
+  assert.deepEqual(
+    settingsSections.cloud.map((section) => section.id),
+    [
+      "cloud-account",
+      "cloud-plan",
+      "cloud-license",
+      "cloud-remote",
+      "cloud-processing",
+      "cloud-backup",
+    ],
+  );
+  for (const section of settingsSections.cloud) {
+    assert.equal(section.module, "FrameleafCloud");
+    assert.deepEqual(
+      section.fields.map((field) => field.id),
+      section.id === "cloud-remote" ? ["externalUrl"] : [],
+    );
+  }
+  assert.ok(
+    !settingsSections.server.some((section) =>
+      section.fields.some((field) => field.id === "externalUrl"),
+    ),
+    "the public server URL lives with remote access",
+  );
+  assert.ok(
+    settingsSections.security.some((section) => section.id === "frameleaf-signin"),
+  );
+  assert.ok(
+    settingsSections.preferences.some(
+      (section) => section.id === "frameleaf-account",
+    ),
+  );
+  for (const [query, section] of [
+    ["device code", "cloud-account"],
+    ["product key", "cloud-license"],
+    ["subscription", "cloud-plan"],
+    ["custom domain", "cloud-remote"],
+    ["upnp", "cloud-remote"],
+    ["ai wallet", "cloud-processing"],
+    ["recovery kit", "cloud-backup"],
+  ])
+    assert.ok(
+      findSettings(query).some(
+        (entry) => entry.area === "cloud" && entry.section === section,
+      ),
+      query,
+    );
+
+  const destination = allSettings.find((field) => field.id === "destination");
+  assert.deepEqual(
+    destination.options.map((option) => option.value ?? option),
+    ["local", "cloud"],
+  );
+  assert.equal(defaultSettings.destination, "local");
+  const sectionIds = Object.values(settingsSections)
+    .flat()
+    .map((section) => section.id);
+  for (const retired of [
+    "runpod",
+    "advanced-runpod-ordinary",
+    "advanced-runpod-pod",
+    "advanced-runpod-serverless",
+  ])
+    assert.equal(sectionIds.includes(retired), false, retired);
+  for (const section of Object.values(settingsSections).flat()) {
+    assert.doesNotMatch(
+      `${section.title} ${section.description} ${(section.credentials || [])
+        .map((item) => `${item.label} ${item.help}`)
+        .join(" ")}`,
+      /runpod/i,
+      section.id,
+    );
+  }
+  for (const field of allSettings) {
+    assert.doesNotMatch(field.id, /runpod|serverless/i, field.id);
+    assert.doesNotMatch(
+      `${field.label} ${field.help} ${JSON.stringify(field.options ?? [])} ${field.value}`,
+      /runpod/i,
+      field.id,
+    );
+  }
+});
+
+test("every settings section has a real, distinct directory icon", async () => {
+  const mdi = await import("@mdi/js");
+  const areas = settingsAreas;
+  const sections = settingsSections;
+  let count = 0;
+  for (const area of areas) {
+    const list = sections[area.id] ?? [];
+    // Library care also lists these repair tools from Utilities in its directory.
+    const shown =
+      area.id === "care"
+        ? [...list, ...(sections.utilities ?? []).filter((item) => ["duplicates", "missing-media", "corrupt-media", "live-photos"].includes(item.id))]
+        : list;
+    for (const section of list) {
+      assert.equal(typeof section.icon, "string", `${area.id}/${section.id} has an icon`);
+      assert.ok(mdi[section.icon], `${area.id}/${section.id}: ${section.icon} exists in @mdi/js`);
+      count += 1;
+    }
+    const icons = shown.map((section) => section.icon);
+    assert.equal(new Set(icons).size, icons.length, `icons are unique within ${area.id}: ${icons.join(", ")}`);
+  }
+  assert.ok(count >= 100);
 });

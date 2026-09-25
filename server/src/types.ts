@@ -293,6 +293,17 @@ export interface IEditOperationJob {
   operationId?: string;
 }
 
+/**
+ * FL-57: face or person changes that may make generated text name the wrong people. The owner's assets
+ * showing `personGroupIds`, and `assetIds`, have their stale generated descriptions regenerated and
+ * their stale generated video captions withdrawn.
+ */
+export interface IPersonIdentityRefreshJob {
+  ownerId: string;
+  personGroupIds?: string[];
+  assetIds?: string[];
+}
+
 export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
@@ -499,6 +510,7 @@ export type JobItem =
   | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
   | { name: JobName.FacialRecognition; data: IDeferrableJob }
   | { name: JobName.PersonGenerateThumbnail; data: IPersonJob }
+  | { name: JobName.PersonIdentityRefresh; data: IPersonIdentityRefreshJob }
 
   // Smart Search
   | { name: JobName.SmartSearchQueueAll; data: IBaseJob }
@@ -564,6 +576,13 @@ export type JobItem =
     }
   | { name: JobName.NsfwDetectionQueueAll; data: IBaseJob }
   | { name: JobName.NsfwDetection; data: IEntityJob }
+
+  // Pet recognition (FL-58). A queue-all without `userId` is the administrator's run over every
+  // library; with one it is that owner's run, and `runId` ties its per-asset jobs to the owner's
+  // `pet_recognition_run` so a cancel stops them.
+  | { name: JobName.PetRecognitionQueueAll; data: IBaseJob & { userId?: string } }
+  | { name: JobName.PetRecognition; data: IEntityJob & { runId?: string } }
+  | { name: JobName.PetRecognitionNearest; data: { petId: string; assetId: string } }
 
   // Smart albums. Optional `kind` scopes the re-evaluate to a single built-in
   // kind (one of the SystemConfig['smartAlbums']['builtIn'] keys); omit/undefined
@@ -714,6 +733,8 @@ export type MemoriesState = {
   lastEventStoryDate?: string;
   /** the most recent calendar year a year-in-review recap was generated for (FL-62) */
   lastYearInReviewYear?: number;
+  /** the most recent calendar year person and pet recaps were generated for (FL-62) */
+  lastPersonRecapYear?: number;
 };
 export type MediaLocation = { location: string };
 

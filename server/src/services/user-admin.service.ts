@@ -96,7 +96,7 @@ export class UserAdminService extends BaseService {
     }
 
     if (dto.storageLabel) {
-      const duplicate = await this.userRepository.getByStorageLabel(dto.storageLabel);
+      const duplicate = await this.userRepository.getByStorageLabel(dto.storageLabel, true);
       if (duplicate && duplicate.id !== id) {
         throw new BadRequestException('Storage label already in use by another account');
       }

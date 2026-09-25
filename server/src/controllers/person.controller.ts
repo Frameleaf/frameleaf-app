@@ -24,6 +24,8 @@ import {
   MergeSuggestionsResponseDto,
   PeopleResponseDto,
   PeopleUpdateDto,
+  PersonCorrectionDto,
+  PersonCorrectionSearchDto,
   PersonCorrectionsResponseDto,
   PersonCreateDto,
   PersonMergeVerdictCreateDto,
@@ -116,7 +118,7 @@ export class PersonController {
   @Endpoint({
     summary: 'Record a merge suggestion verdict',
     description:
-      'Record that a suggested pair of people are different people (never suggested again) or should be decided later (not suggested for 30 days). Replaces an earlier verdict for the same pair; the pair may be given in either order.',
+      'Answer a suggested pair of people: "same" merges them now, "different" never suggests the pair again, "later" skips it for 30 days and "ignore" stops suggesting `personId` with anyone. Replaces an earlier verdict for the same pair (a "later" never replaces a "different"); the pair may be given in either order.',
     history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
   })
   setMergeVerdict(
@@ -131,11 +133,26 @@ export class PersonController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     summary: 'Undo a merge suggestion verdict',
-    description: 'Remove the recorded verdict for a pair of people, so the pair can be suggested again.',
+    description:
+      'Remove the recorded verdict for a pair of people, so the pair can be suggested again. The same person id twice undoes "ignore" for that person.',
     history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
   })
   deleteMergeVerdict(@Auth() auth: AuthDto, @Body() dto: PersonMergeVerdictDeleteDto): Promise<void> {
     return this.service.deleteMergeVerdict(auth, dto);
+  }
+
+  @Post('corrections/:id/undo')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Undo a face correction',
+    description:
+      'Reverse one manual face decision from the correction history, while the face still stands as the decision ' +
+      'left it (same original, same place, same person). Otherwise 409 with a `reason`.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  undoCorrection(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<PersonCorrectionDto> {
+    return this.service.undoCorrection(auth, id);
   }
 
   @Get(':id')
@@ -196,12 +213,17 @@ export class PersonController {
   @Endpoint({
     summary: 'Get correction history',
     description:
-      'Retrieve the manual face corrections (reassignments) made for this person, most recent first. Faces the ' +
-      'facial-recognition job assigned on its own and nobody has since corrected are not included.',
+      'Retrieve the manual face decisions made about this person (faces moved onto or off them, "not a face of ' +
+      'anyone", merges and moved face boxes), most recent first, a page at a time. Only the owner sees them. A ' +
+      'photo that can no longer be shown (trashed, Locked, hidden) is left out of the evidence.',
     history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
   })
-  getCorrectionHistory(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<PersonCorrectionsResponseDto> {
-    return this.service.getCorrectionHistory(auth, id);
+  getCorrectionHistory(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: PersonCorrectionSearchDto,
+  ): Promise<PersonCorrectionsResponseDto> {
+    return this.service.getCorrectionHistory(auth, id, dto);
   }
 
   @Get(':id/statistics')

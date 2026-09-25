@@ -230,6 +230,12 @@ export type CloudMlSettlementsResponseDto = {
     /** Settled charges, newest first (at most 50) */
     items: CloudMlSettlementDto[];
 };
+export type AdminConfigAnalyticsDto = {
+    /** Collect local analytics history every night */
+    enabled: boolean;
+    /** Days of local analytics history to keep */
+    historyDays: number;
+};
 export type AdminConfigDatabaseBackupDto = {
     /** Cron expression */
     cronExpression: string;
@@ -392,6 +398,7 @@ export type AdminConfigJobDto = {
     notifications: AdminConfigJobSettingsDto;
     nsfwDetection?: AdminConfigForkJobSettingsDto;
     ocr: AdminConfigJobSettingsDto;
+    petRecognition?: AdminConfigForkJobSettingsDto;
     search: AdminConfigJobSettingsDto;
     sidecar: AdminConfigJobSettingsDto;
     smartSearch: AdminConfigJobSettingsDto;
@@ -792,6 +799,7 @@ export type AdminConfigUserDto = {
     deleteDelay: number;
 };
 export type AdminConfigDto = {
+    analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
@@ -1238,7 +1246,7 @@ export type PhysicalDeduplicationRetainedDto = {
     checksum: string;
     /** Video length in milliseconds, when known */
     duration: number | null;
-    /** Whether the retained original was on disk when the preview ran; copies of a missing one are skipped */
+    /** Whether the retained original file is on disk now, checked on every read (FL-71 UT-24) */
     fileAvailable: boolean;
     /** Height in pixels, when known */
     height: number | null;
@@ -1639,6 +1647,8 @@ export type UserPreferencesResponseDto = {
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
+    /** Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67) */
+    lockedRulesRevealed: boolean;
     memories: MemoriesResponse;
     people: PeopleResponse;
     privacy: PrivacyResponse;
@@ -2571,10 +2581,10 @@ export type AssetBulkUpdateDto = {
     ids: string[];
     /** Mark as favorite */
     isFavorite?: boolean;
-    /** Latitude coordinate */
-    latitude?: number;
-    /** Longitude coordinate */
-    longitude?: number;
+    /** Latitude coordinate; null together with a null longitude removes the location */
+    latitude?: number | null;
+    /** Longitude coordinate; null together with a null latitude removes the location */
+    longitude?: number | null;
     /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
     rating?: number | null;
     /** Time zone (IANA timezone) */
@@ -2683,6 +2693,8 @@ export type ExifResponseDto = {
     fileSizeInByte?: number | null;
     /** Focal length in mm */
     focalLength?: number | null;
+    /** Video frame rate (frames per second) */
+    fps?: number | null;
     /** ISO sensitivity */
     iso?: number | null;
     /** GPS latitude */
@@ -2810,20 +2822,26 @@ export type AssetResponseDto = {
     width: number | null;
 };
 export type UpdateAssetDto = {
+    /** City name; kept over reverse geocoding until the item is moved again */
+    city?: string | null;
+    /** Country name; kept over reverse geocoding until the item is moved again */
+    country?: string | null;
     /** Original date and time */
     dateTimeOriginal?: string;
     /** Asset description */
     description?: string;
     /** Mark as favorite */
     isFavorite?: boolean;
-    /** Latitude coordinate */
-    latitude?: number;
+    /** Latitude coordinate; null together with a null longitude removes the location */
+    latitude?: number | null;
     /** Live photo video ID */
     livePhotoVideoId?: string | null;
-    /** Longitude coordinate */
-    longitude?: number;
+    /** Longitude coordinate; null together with a null latitude removes the location */
+    longitude?: number | null;
     /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
     rating?: number | null;
+    /** State or region name; kept over reverse geocoding until the item is moved again */
+    state?: string | null;
     visibility?: AssetVisibility;
 };
 export type AssetDevelopCrop = {
@@ -3057,27 +3075,45 @@ export type MirrorParameters = {
 export type TrimParameters = {
     /** Trim end time in milliseconds */
     endMs: number;
+    mode?: VideoTrimMode;
     /** Trim start time in milliseconds */
     startMs: number;
 };
 export type StraightenParameters = {
     /** Straighten angle in degrees */
     angle: number;
+    /** Scale the straightened picture to fill its frame (the Frameleaf quick editor). Absent or false keeps the earlier behaviour: black corners, no zoom */
+    fill?: boolean;
 };
 export type AdjustParameters = {
     blackPoint?: number;
+    blacks?: number;
     blueTone?: number;
     brightness?: number;
+    clarity?: number;
     contrast?: number;
+    dehaze?: number;
+    /** Exposure in EV (develop model) */
+    exposure?: number;
+    grain?: number;
     hdr?: number;
     highlights?: number;
+    model?: VideoAdjustModel;
+    noiseReduction?: number;
+    preset?: VideoDevelopPreset;
+    /** Strength of the preset, 0 to 100 */
+    presetStrength?: number;
     saturation?: number;
     shadows?: number;
+    sharpen?: number;
     skinTone?: number;
+    temperature?: number;
     tint?: number;
+    vibrance?: number;
     vignette?: number;
     warmth?: number;
     whitePoint?: number;
+    whites?: number;
 };
 export type LookParameters = {
     /** Filter or effect intensity */
@@ -3088,11 +3124,19 @@ export type LookParameters = {
 export type ToggleParameters = {
     enabled?: boolean;
 };
+export type StabilizeParameters = {
+    /** Crop the corrected edges 4% and scale back (the Frameleaf quick editor). Absent or false keeps the earlier uncropped render */
+    cropEdges?: boolean;
+    enabled?: boolean;
+};
 export type TextOverlayParameters = {
     /** Text color in hex format */
     color?: string;
     /** Overlay end time in milliseconds */
     endMs?: number;
+    position?: TextOverlayPosition;
+    /** Draw a soft drop shadow behind the text */
+    shadow?: boolean;
     /** Font size as a percentage of video height */
     size?: number;
     /** Overlay start time in milliseconds */
@@ -3104,6 +3148,8 @@ export type TextOverlayParameters = {
     y: number;
 };
 export type AudioParameters = {
+    /** Limit a gain above 1 so it cannot clip (the Frameleaf quick editor). Absent or false keeps the earlier unlimited gain */
+    limit?: boolean;
     muted?: boolean;
     /** Audio volume multiplier */
     volume?: number;
@@ -3119,7 +3165,7 @@ export type SpeedParameters = {
 export type AssetEditActionItemDto = {
     action: AssetEditAction;
     /** List of edit actions to apply */
-    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | StabilizeParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type VideoEditVersionResponseDto = {
     /** Asset ID */
@@ -3145,7 +3191,7 @@ export type AssetEditActionItemResponseDto = {
     /** Asset edit ID */
     id: string;
     /** List of edit actions to apply */
-    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | StabilizeParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type AssetEditsOriginalVideoDto = {
     /** Duration of the original in milliseconds */
@@ -3166,6 +3212,10 @@ export type AssetEditsResponseDto = {
 export type AssetEditsCreateDto = {
     /** List of edit actions to apply */
     edits: AssetEditActionItemDto[];
+};
+export type AssetEditKeyframesResponseDto = {
+    /** Times of the original's video keyframes in milliseconds from its start, ascending. A fast trim starts at the last one at or before its in point. */
+    keyframesMs: number[];
 };
 export type ImageDescriptionEnrichmentResponseDto = {
     appliedDescription: boolean;
@@ -4381,6 +4431,10 @@ export type AssetFaceResponseDto = {
     boundingBoxY1: number;
     /** Bounding box Y2 coordinate */
     boundingBoxY2: number;
+    /** When a person last corrected this face (moved, resized, reassigned or unassigned it), or null */
+    correctedAt: string | null;
+    /** When the owner hid this face, or null. Hidden faces are only listed with withHidden */
+    hiddenAt: string | null;
     /** Face ID */
     id: string;
     /** Image height in pixels */
@@ -4388,11 +4442,15 @@ export type AssetFaceResponseDto = {
     /** Image width in pixels */
     imageWidth: number;
     person: (PersonResponseDto) | null;
+    /** Changes whenever this face changes; send it back as expectedRevision so a correction made against an older face is refused with 409 */
+    revision: string;
     sourceType?: SourceType;
 };
 export type AssetFaceCreateDto = {
     /** Asset ID */
     assetId: string;
+    /** The face source revision (GET /faces/source) the coordinates were drawn on. When the image, its orientation or its edits changed since, the request is refused with 409 */
+    expectedSourceRevision?: string;
     /** Face bounding box height */
     height: number;
     /** Image height in pixels */
@@ -4408,9 +4466,45 @@ export type AssetFaceCreateDto = {
     /** Face bounding box Y coordinate */
     y: number;
 };
+export type AssetFaceSourceResponseDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Changes when the image, its orientation or its edits change; send it back as expectedSourceRevision */
+    revision: string;
+};
 export type AssetFaceDeleteDto = {
+    /** The face revision the deletion was decided on; a different current revision is refused with 409 */
+    expectedRevision?: string;
     /** Force delete even if person has other faces */
     force: boolean;
+};
+export type AssetFaceBoxDto = {
+    /** Face bounding box height */
+    height: number;
+    /** Height in pixels of the image the box was drawn on */
+    imageHeight: number;
+    /** Width in pixels of the image the box was drawn on */
+    imageWidth: number;
+    /** Face bounding box width */
+    width: number;
+    /** Face bounding box X coordinate */
+    x: number;
+    /** Face bounding box Y coordinate */
+    y: number;
+};
+export type AssetFaceCorrectionDto = {
+    /** Move or resize the face, in the displayed (edited) image */
+    box?: AssetFaceBoxDto;
+    /** The person the face was assigned to when the correction was made (null when unassigned) */
+    expectedPersonId?: string | null;
+    /** The face revision this correction was made against; a different current revision is refused with 409 */
+    expectedRevision: string;
+    /** The face source revision (GET /faces/source) the coordinates were drawn on. When the image, its orientation or its edits changed since, the request is refused with 409 */
+    expectedSourceRevision?: string;
+    /** Hide the face, or show a hidden face again */
+    hidden?: boolean;
+    /** Assign the face to this person, or null to unassign it */
+    personId?: string | null;
 };
 export type FaceDto = {
     /** Face ID */
@@ -4572,6 +4666,7 @@ export type QueuesResponseLegacyDto = {
     notifications: QueueResponseLegacyDto;
     nsfwDetection: QueueResponseLegacyDto;
     ocr: QueueResponseLegacyDto;
+    petRecognition: QueueResponseLegacyDto;
     search: QueueResponseLegacyDto;
     sidecar: QueueResponseLegacyDto;
     smartSearch: QueueResponseLegacyDto;
@@ -4845,6 +4940,14 @@ export type MapReverseGeocodeResponseDto = {
     country: string | null;
     /** State/Province name */
     state: string | null;
+};
+export type MapStatisticsResponseDto = {
+    /** The viewer's own located archived items */
+    archived: number;
+    /** Located timeline items of partners who share their locations with the viewer */
+    partner: number;
+    /** The viewer's own timeline items without a location */
+    unlocated: number;
 };
 export type MediaHealthChecksumDto = {
     algorithm: MediaHealthChecksumAlgorithm;
@@ -5274,11 +5377,57 @@ export type YearInReviewDto = {
     /** Calendar year being recapped */
     year: number;
 };
+export type PetStoryDto = {
+    /** Confirmed photos of the pet that month, before the diversity pass */
+    assetCount: number;
+    /** Discriminator for a pet story */
+    kind: Kind3;
+    /** The owner's local month, 'yyyy-MM' */
+    month: string;
+    /** The pet name */
+    name: string;
+    /** The pet the story is about */
+    petId: string;
+    /** The pet species */
+    species: string;
+    /** Year of the month */
+    year: number;
+};
+export type BirthdayMemoryDto = {
+    /** Age reached on this birthday */
+    age: number | null;
+    /** The birthday this year, 'yyyy-MM-dd' */
+    date: string;
+    /** Discriminator for a birthday */
+    kind: Kind4;
+    /** Their name when the memory was made */
+    name: string;
+    /** Whether the birthday is a person's or a pet's */
+    subject: Subject;
+    /** The owner's person or pet whose birthday it is */
+    subjectId: string;
+    /** Year of this birthday */
+    year: number;
+};
+export type PersonRecapDto = {
+    /** Number of their photos and videos that year */
+    assetCount: number;
+    /** Discriminator for a person or pet recap */
+    kind: Kind5;
+    /** Their name when the memory was made */
+    name: string;
+    /** Whether the recap is about a person or a pet */
+    subject: Subject;
+    /** The owner's person or pet */
+    subjectId: string;
+    /** Calendar year being recapped */
+    year: number;
+};
 export type OnThisDayDto = {
     /** Year for on this day memory */
     year: number;
 };
-export type MemoryData = EventStoryDto | YearInReviewDto | OnThisDayDto;
+export type MemoryData = EventStoryDto | YearInReviewDto | PetStoryDto | BirthdayMemoryDto | PersonRecapDto | OnThisDayDto;
 export type MemoryResponseDto = {
     assets: AssetResponseDto[];
     /** Creation date */
@@ -5290,6 +5439,8 @@ export type MemoryResponseDto = {
     hideAt?: string;
     /** Memory ID */
     id: string;
+    /** Hidden by the owner; shown only in the hidden memories list */
+    isHidden: boolean;
     /** Is memory saved */
     isSaved: boolean;
     /** Memory date */
@@ -5300,6 +5451,8 @@ export type MemoryResponseDto = {
     seenAt?: string;
     /** Date when memory should be shown */
     showAt?: string;
+    /** The owner's own title, when they set one */
+    title: string | null;
     "type": MemoryType;
     /** Last update date */
     updatedAt: string;
@@ -5320,17 +5473,37 @@ export type MemoryCreateDto = {
     showAt?: string;
     "type": MemoryType;
 };
+export type MemoryShowLessDto = {
+    kind: MemoryShowLessKind;
+    /** A person or pet id, a date as 'MM-dd', or a memory type */
+    value: string;
+};
+export type MemoryShowLessResponseDto = {
+    /** When the rule was added */
+    createdAt: string;
+    kind: MemoryShowLessKind;
+    /** The person's or pet's name, for person and pet rules */
+    name: string | null;
+    /** A person or pet id, a date as 'MM-dd', or a memory type */
+    value: string;
+};
 export type MemoryStatisticsResponseDto = {
     /** Total number of memories */
     total: number;
 };
 export type MemoryUpdateDto = {
+    /** The memory's items in the order the owner chose; items not listed follow in capture order */
+    assetOrder?: string[];
+    /** Hide the memory from the memories list; false restores it */
+    isHidden?: boolean;
     /** Is memory saved */
     isSaved?: boolean;
     /** Memory date */
     memoryAt?: string;
     /** Date when memory was seen */
     seenAt?: string;
+    /** The owner's own title for the memory; null returns to the generated one */
+    title?: string | null;
 };
 export type MemoryExportCreateDto = {
     /** Export format, defaults to an archive of the originals */
@@ -5666,6 +5839,50 @@ export type PeopleUpdateDto = {
     /** People to update */
     people: PeopleUpdateItem[];
 };
+export type FaceEvidenceDto = {
+    /** The complete photo the face is in */
+    assetId: string;
+    /** Where the face is in the photo */
+    box: {
+        /** Height, as a fraction of the photo height */
+        height: number;
+        /** Width, as a fraction of the photo width */
+        width: number;
+        /** Left edge, as a fraction of the photo width */
+        x: number;
+        /** Top edge, as a fraction of the photo height */
+        y: number;
+    } | null;
+    /** The face, when it still exists */
+    faceId: string | null;
+};
+export type PersonCorrectionPersonDto = {
+    /** Whether the person still exists */
+    exists: boolean;
+    /** Person ID */
+    id: string;
+    /** The current name, or the name at the time when the person no longer exists */
+    name: string;
+};
+export type PersonCorrectionDto = {
+    action: PersonCorrectionAction;
+    /** When the decision was made */
+    createdAt: string;
+    /** The photo and face, when it may still be shown */
+    evidence: (FaceEvidenceDto) | null;
+    /** True when the decision was about a photo that can no longer be shown (trashed, Locked, hidden) */
+    evidenceRevoked: boolean;
+    /** Who the face belonged to before */
+    fromPerson: (PersonCorrectionPersonDto) | null;
+    /** Correction ID */
+    id: string;
+    /** Who the face belongs to after */
+    toPerson: (PersonCorrectionPersonDto) | null;
+    /** Whether this kind of decision can be undone and has not been */
+    undoable: boolean;
+    /** When the decision was undone */
+    undoneAt: string | null;
+};
 export type MergePersonDto = {
     /** Person IDs to merge */
     ids: string[];
@@ -5675,21 +5892,25 @@ export type PersonMergeSuggestionDto = {
     distance: number;
     /** The person being reviewed */
     person: PersonResponseDto;
+    /** The reviewed person's reference face and its complete photo, or null when none may be shown */
+    personEvidence: (FaceEvidenceDto) | null;
     /** The suggested match for that person */
     suggestion: PersonResponseDto;
+    /** The suggested person's reference face and its complete photo, or null when none may be shown */
+    suggestionEvidence: (FaceEvidenceDto) | null;
 };
 export type MergeSuggestionsResponseDto = {
     /** Suggested pairs of people that may be the same person */
     suggestions: PersonMergeSuggestionDto[];
 };
 export type PersonMergeVerdictDeleteDto = {
-    /** One person of the suggested pair (either order) */
+    /** One person of the suggested pair (the reviewed person, for "ignore") */
     personId: string;
     /** The other person of the suggested pair */
     suggestionId: string;
 };
 export type PersonMergeVerdictCreateDto = {
-    /** One person of the suggested pair (either order) */
+    /** One person of the suggested pair (the reviewed person, for "ignore") */
     personId: string;
     /** The other person of the suggested pair */
     suggestionId: string;
@@ -5698,9 +5919,9 @@ export type PersonMergeVerdictCreateDto = {
 export type PersonMergeVerdictResponseDto = {
     /** When the verdict was recorded */
     createdAt: string;
-    /** The person of the pair whose id sorts first */
+    /** The person of the pair whose id sorts first; the ignored person for "ignore"; the surviving person for "same" */
     personId: string;
-    /** The other person of the pair */
+    /** The other person of the pair; the ignored person again for "ignore"; the merged person for "same" */
     suggestionId: string;
     verdict: PersonMergeVerdict;
 };
@@ -5718,17 +5939,11 @@ export type PersonUpdateDto = {
     /** Person name */
     name?: string;
 };
-export type PersonCorrectionDto = {
-    /** Asset the corrected face belongs to */
-    assetId: string;
-    /** When the manual correction was made */
-    correctedAt: string;
-    /** Face ID */
-    faceId: string;
-};
 export type PersonCorrectionsResponseDto = {
-    /** Manual face corrections for this person, most recent first */
+    /** Manual face decisions for this person, most recent first */
     corrections: PersonCorrectionDto[];
+    /** Whether there are more pages */
+    hasNextPage: boolean;
 };
 export type AssetFaceUpdateItem = {
     /** Asset ID */
@@ -5743,6 +5958,10 @@ export type AssetFaceUpdateDto = {
 export type PersonStatisticsResponseDto = {
     /** Number of assets */
     assets: number;
+    /** Number of photos among the assets */
+    photos: number;
+    /** Number of videos among the assets */
+    videos: number;
 };
 export type PetResponseDto = {
     /** Number of assets with a confirmed observation of this pet */
@@ -5779,6 +5998,8 @@ export type PetCreateDto = {
     species?: PetSpecies;
 };
 export type PetCandidateResponseDto = {
+    /** Checksum (base64) of the asset now; send it back as expectedChecksum */
+    assetChecksum: string;
     /** Asset the proposal is about */
     assetId: string;
     /** Region X1, in source pixels */
@@ -5806,15 +6027,55 @@ export type PetCandidateResponseDto = {
     /** Model confidence, 0 to 1 */
     score: number;
 };
+export type PetRecognitionRunResponseDto = {
+    /** Photos the run looks at */
+    assetCount: number;
+    /** When the run was started */
+    createdAt: string;
+    /** Kind of destination the run was started on */
+    destinationKind: (MlDestinationKind) | null;
+    /** Why the run stopped, when it failed */
+    error: string | null;
+    /** When the run finished */
+    finishedAt: string | null;
+    /** Run ID */
+    id: string;
+    /** Photos looked at so far */
+    processedCount: number;
+    /** Proposals made so far */
+    proposalCount: number;
+    status: PetRecognitionRunStatus;
+};
+export type PetRecognitionStatusResponseDto = {
+    /** Whether recognition can run on the routed destination now */
+    available: boolean;
+    /** The destination pet recognition is routed to, if any */
+    destination: {
+        kind: MlDestinationKind;
+        /** Destination name */
+        name: string;
+    } | null;
+    /** The refusal in words, for display */
+    detail: string | null;
+    /** Whether any pet is confirmed in a photo, which recognition learns from */
+    hasConfirmedPhotos: boolean;
+    /** Why it cannot; null when it can */
+    reason: (PetRecognitionUnavailableReason) | null;
+    /** The latest run over this library */
+    run: (PetRecognitionRunResponseDto) | null;
+};
 export type PetCandidateListResponseDto = {
     /** Proposals awaiting review */
     candidates: PetCandidateResponseDto[];
+    recognition: PetRecognitionStatusResponseDto;
     /** Whether a pet recognition model is configured and available */
     recognitionAvailable: boolean;
     /** Why recognition is unavailable, for display; null when it is available */
     recognitionUnavailableReason: string | null;
 };
 export type PetCandidateReviewDto = {
+    /** Checksum of the original the decision was made on (base64); refused with 409 when it changed */
+    expectedChecksum?: string;
     /** Pet to assign instead of the proposed one */
     petId?: string;
 };
@@ -5840,9 +6101,17 @@ export type PetObservationResponseDto = {
     /** Pet ID */
     petId: string;
     source: PetObservationSource;
+    /** Checksum (base64) of the original when the decision was made; null for older decisions */
+    sourceChecksum: string | null;
+    /** When the original was replaced under a drawn region, which then needs review; null when current */
+    staleAt: string | null;
     state: PetObservationState;
     /** Last update date */
     updatedAt: string;
+};
+export type PetCandidateRejectDto = {
+    /** Checksum of the original the decision was made on (base64); refused with 409 when it changed */
+    expectedChecksum?: string;
 };
 export type PetUpdateDto = {
     /** Pet date of birth */
@@ -5872,6 +6141,8 @@ export type PetObservationCreateDto = {
     boundingBoxY1?: number;
     /** Region Y2, in source pixels */
     boundingBoxY2?: number;
+    /** Checksum of the original the decision was made on (base64); refused with 409 when it changed */
+    expectedChecksum?: string;
     /** Height of the image the region was drawn on */
     imageHeight?: number;
     /** Width of the image the region was drawn on */
@@ -6428,6 +6699,8 @@ export type RenderWorkerAdmissionDto = {
     /** Digest of the engine and patches actually loaded */
     engineDigest: string;
     enrolmentSecret: string;
+    /** Containers the check verified writing, such as `mp4`, `webm` or `mov` */
+    formats?: string[];
     /** GPU memory measured by the conformance check */
     gpuMemoryBytes: string | null;
     /** True when the renderer is a software or fallback device */
@@ -7294,6 +7567,8 @@ export type ServerAppReleasesResponseDto = {
         links?: ServerApkLinksDto;
         /** SHA-256 fingerprint of the release signing certificate, as AA:BB:... */
         signingCertificateSha256?: string;
+        /** Store listing of the Android app, when the operator configured one (FL-135) */
+        storeUrl?: string;
     };
     /** iOS application */
     ios: {
@@ -8281,6 +8556,23 @@ export type StudioProjectDiffDto = {
     /** More paths changed than are listed */
     truncated: boolean;
 };
+export type StudioWorkspaceDto = {
+    /** The engine revision that wrote the layout */
+    engineRevision: string | null;
+    /** The engine layout as the same JSON value it was saved as (key order and spacing are not kept); null when none is stored */
+    layout: {
+        [key: string]: any;
+    } | null;
+    savedAt: string | null;
+};
+export type StudioWorkspaceSaveDto = {
+    /** The pinned engine revision writing it */
+    engineRevision: string;
+    /** The engine layout; stored and returned as the same JSON value (key order and spacing are not kept) */
+    layout: {
+        [key: string]: any;
+    };
+};
 export type SyncAckDeleteDto = {
     /** Sync entity types to delete acks for */
     types?: SyncEntityType[];
@@ -8395,6 +8687,14 @@ export type TagBulkAssetsDto = {
 export type TagBulkAssetsResponseDto = {
     /** Number of assets tagged */
     count: number;
+};
+export type TagStatisticsResponseDto = {
+    /** Timeline items tagged with exactly this tag */
+    count: number;
+    /** Tag ID */
+    id: string;
+    /** Timeline items tagged with this tag or any tag nested under it */
+    total: number;
 };
 export type TagUpdateDto = {
     /** Tag color (hex) */
@@ -8640,6 +8940,8 @@ export type TimeBucketAssetResponseDto = {
     isFavorite: boolean[];
     /** Array indicating whether each asset is an image (false for videos) */
     isImage: boolean[];
+    /** Array indicating whether each asset is offline (its file is missing from an external library) */
+    isOffline?: boolean[];
     /** Array indicating whether each asset is in the trash */
     isTrashed: boolean[];
     /** Array of latitude coordinates extracted from EXIF GPS data */
@@ -8810,6 +9112,14 @@ export type CreateProfileImageResponseDto = {
     profileImagePath: string;
     /** User ID */
     userId: string;
+};
+export type FolderSummaryResponseDto = {
+    /** Originals directly in this folder */
+    count: number;
+    /** Folder path, without a trailing slash */
+    path: string;
+    /** Bytes of the originals directly in this folder */
+    size: number;
 };
 export type WorkflowIssueDto = {
     code: WorkflowIssueCode;
@@ -11463,6 +11773,19 @@ export function editAsset({ id, assetEditsCreateDto }: {
     })));
 }
 /**
+ * List the original video's keyframes
+ */
+export function getAssetEditKeyframes({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetEditKeyframesResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/edits/keyframes`, {
+        ...opts
+    }));
+}
+/**
  * Get image enrichment metadata
  */
 export function getAssetImageEnrichment({ id }: {
@@ -11726,7 +12049,8 @@ export function viewAsset({ edited, id, key, size, slug }: {
 /**
  * Play asset video
  */
-export function playAssetVideo({ id, key, slug }: {
+export function playAssetVideo({ edited, id, key, slug }: {
+    edited?: boolean;
     id: string;
     key?: string;
     slug?: string;
@@ -11735,6 +12059,7 @@ export function playAssetVideo({ id, key, slug }: {
         status: 200;
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/video/playback${QS.query(QS.explode({
+        edited,
         key,
         slug
     }))}`, {
@@ -12717,14 +13042,16 @@ export function updateVideoMoment({ id, momentId, videoMomentUpdateDto }: {
 /**
  * Retrieve faces for asset
  */
-export function getFaces({ id }: {
+export function getFaces({ id, withHidden }: {
     id: string;
+    withHidden?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetFaceResponseDto[];
     }>(`/faces${QS.query(QS.explode({
-        id
+        id,
+        withHidden
     }))}`, {
         ...opts
     }));
@@ -12735,11 +13062,29 @@ export function getFaces({ id }: {
 export function createFace({ assetFaceCreateDto }: {
     assetFaceCreateDto: AssetFaceCreateDto;
 }, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/faces", oazapfts.json({
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetFaceResponseDto;
+    }>("/faces", oazapfts.json({
         ...opts,
         method: "POST",
         body: assetFaceCreateDto
     })));
+}
+/**
+ * Retrieve the face source revision for an asset
+ */
+export function getFaceSource({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetFaceSourceResponseDto;
+    }>(`/faces/source${QS.query(QS.explode({
+        id
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Delete a face
@@ -12752,6 +13097,22 @@ export function deleteFace({ id, assetFaceDeleteDto }: {
         ...opts,
         method: "DELETE",
         body: assetFaceDeleteDto
+    })));
+}
+/**
+ * Correct a face
+ */
+export function correctFace({ id, assetFaceCorrectionDto }: {
+    id: string;
+    assetFaceCorrectionDto: AssetFaceCorrectionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetFaceResponseDto;
+    }>(`/faces/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: assetFaceCorrectionDto
     })));
 }
 /**
@@ -13132,6 +13493,31 @@ export function reverseGeocode({ lat, lon }: {
     }));
 }
 /**
+ * Retrieve map statistics
+ */
+export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withPartners, withSharedAlbums }: {
+    fileCreatedAfter?: string;
+    fileCreatedBefore?: string;
+    isArchived?: boolean;
+    isFavorite?: boolean;
+    withPartners?: boolean;
+    withSharedAlbums?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MapStatisticsResponseDto;
+    }>(`/map/statistics${QS.query(QS.explode({
+        fileCreatedAfter,
+        fileCreatedBefore,
+        isArchived,
+        isFavorite,
+        withPartners,
+        withSharedAlbums
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * List media health findings
  */
 export function list({ allAccounts, category, needsAttention, ownerId, page, size, status }: {
@@ -13444,9 +13830,10 @@ export function retryMediaOperation({ id }: {
 /**
  * Retrieve memories
  */
-export function searchMemories({ $for, id, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
     $for?: string;
     id?: string;
+    isHidden?: boolean;
     isSaved?: boolean;
     isTrashed?: boolean;
     isUpcoming?: boolean;
@@ -13461,6 +13848,7 @@ export function searchMemories({ $for, id, isSaved, isTrashed, isUpcoming, order
     }>(`/memories${QS.query(QS.explode({
         "for": $for,
         id,
+        isHidden,
         isSaved,
         isTrashed,
         isUpcoming,
@@ -13554,11 +13942,53 @@ export function downloadMemoryExport({ id }: {
     }));
 }
 /**
+ * Remove a memories show-less rule
+ */
+export function removeMemoryShowLess({ memoryShowLessDto }: {
+    memoryShowLessDto: MemoryShowLessDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryShowLessResponseDto[];
+    }>("/memories/show-less", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: memoryShowLessDto
+    })));
+}
+/**
+ * Retrieve memories show-less rules
+ */
+export function getMemoryShowLess(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryShowLessResponseDto[];
+    }>("/memories/show-less", {
+        ...opts
+    }));
+}
+/**
+ * Show less of a person, pet, date or kind of memory
+ */
+export function addMemoryShowLess({ memoryShowLessDto }: {
+    memoryShowLessDto: MemoryShowLessDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryShowLessResponseDto[];
+    }>("/memories/show-less", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: memoryShowLessDto
+    })));
+}
+/**
  * Retrieve memories statistics
  */
-export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
     $for?: string;
     id?: string;
+    isHidden?: boolean;
     isSaved?: boolean;
     isTrashed?: boolean;
     isUpcoming?: boolean;
@@ -13573,6 +14003,7 @@ export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, o
     }>(`/memories/statistics${QS.query(QS.explode({
         "for": $for,
         id,
+        isHidden,
         isSaved,
         isTrashed,
         isUpcoming,
@@ -14156,6 +14587,20 @@ export function updatePeople({ peopleUpdateDto }: {
     })));
 }
 /**
+ * Undo a face correction
+ */
+export function undoCorrection({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCorrectionDto;
+    }>(`/people/corrections/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Merge people
  */
 export function mergePeople({ mergePersonDto }: {
@@ -14251,13 +14696,18 @@ export function updatePerson({ id, personUpdateDto }: {
 /**
  * Get correction history
  */
-export function getCorrectionHistory({ id }: {
+export function getCorrectionHistory({ id, page, size }: {
     id: string;
+    page?: number;
+    size?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: PersonCorrectionsResponseDto;
-    }>(`/people/${encodeURIComponent(id)}/corrections`, {
+    }>(`/people/${encodeURIComponent(id)}/corrections${QS.query(QS.explode({
+        page,
+        size
+    }))}`, {
         ...opts
     }));
 }
@@ -14383,26 +14833,81 @@ export function acceptPetCandidate({ id, petCandidateReviewDto }: {
 /**
  * Reject a pet recognition candidate
  */
-export function rejectPetCandidate({ id }: {
+export function rejectPetCandidate({ id, petCandidateRejectDto }: {
     id: string;
+    petCandidateRejectDto: PetCandidateRejectDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: PetObservationResponseDto;
-    }>(`/pets/candidates/${encodeURIComponent(id)}/reject`, {
+    }>(`/pets/candidates/${encodeURIComponent(id)}/reject`, oazapfts.json({
         ...opts,
-        method: "POST"
+        method: "POST",
+        body: petCandidateRejectDto
+    })));
+}
+/**
+ * Retrieve the pet observations of an asset
+ */
+export function getAssetPetObservations({ assetId }: {
+    assetId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetObservationResponseDto[];
+    }>(`/pets/observations${QS.query(QS.explode({
+        assetId
+    }))}`, {
+        ...opts
     }));
 }
 /**
  * Remove a pet observation
  */
-export function deletePetObservation({ id }: {
+export function deletePetObservation({ expectedChecksum, id }: {
+    expectedChecksum?: string;
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText(`/pets/observations/${encodeURIComponent(id)}`, {
+    return oazapfts.ok(oazapfts.fetchText(`/pets/observations/${encodeURIComponent(id)}${QS.query(QS.explode({
+        expectedChecksum
+    }))}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * Cancel pet recognition
+ */
+export function cancelPetRecognition(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetRecognitionStatusResponseDto;
+    }>("/pets/recognition", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Retrieve pet recognition status
+ */
+export function getPetRecognition(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetRecognitionStatusResponseDto;
+    }>("/pets/recognition", {
+        ...opts
+    }));
+}
+/**
+ * Start pet recognition
+ */
+export function startPetRecognition(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PetRecognitionStatusResponseDto;
+    }>("/pets/recognition", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -16800,6 +17305,32 @@ export function restoreStudioProjectFromTrash({ id }: {
     }));
 }
 /**
+ * Get your Studio workspace layout
+ */
+export function getStudioWorkspace(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioWorkspaceDto;
+    }>("/studio/workspace", {
+        ...opts
+    }));
+}
+/**
+ * Save your Studio workspace layout
+ */
+export function saveStudioWorkspace({ studioWorkspaceSaveDto }: {
+    studioWorkspaceSaveDto: StudioWorkspaceSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioWorkspaceDto;
+    }>("/studio/workspace", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: studioWorkspaceSaveDto
+    })));
+}
+/**
  * Delete acknowledgements
  */
 export function deleteSyncAck({ syncAckDeleteDto }: {
@@ -17071,6 +17602,17 @@ export function bulkTagAssets({ tagBulkAssetsDto }: {
         method: "PUT",
         body: tagBulkAssetsDto
     })));
+}
+/**
+ * Retrieve tag statistics
+ */
+export function getTagStatistics(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TagStatisticsResponseDto[];
+    }>("/tags/statistics", {
+        ...opts
+    }));
 }
 /**
  * Delete a tag
@@ -17934,6 +18476,17 @@ export function getAssetsByOriginalPath({ path }: {
     }));
 }
 /**
+ * Retrieve folder summaries
+ */
+export function getFolderSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FolderSummaryResponseDto[];
+    }>("/view/folder/summary", {
+        ...opts
+    }));
+}
+/**
  * Retrieve unique paths
  */
 export function getUniqueOriginalPaths(opts?: Oazapfts.RequestOpts) {
@@ -18122,7 +18675,8 @@ export enum MlAdmissionRefusal {
     ConsentVersionOutdated = "consent-version-outdated",
     WalletInsufficient = "wallet-insufficient",
     QuotaExceeded = "quota-exceeded",
-    ModelMismatch = "model-mismatch"
+    ModelMismatch = "model-mismatch",
+    InsufficientMemory = "insufficient-memory"
 }
 export enum MlWorkload {
     Face = "face",
@@ -18134,7 +18688,8 @@ export enum MlWorkload {
     StudioAi = "studio-ai",
     Upscale = "upscale",
     Interpolation = "interpolation",
-    StudioRender = "studio-render"
+    StudioRender = "studio-render",
+    PetRecognition = "pet-recognition"
 }
 export enum MlDestinationHealth {
     Healthy = "healthy",
@@ -18406,7 +18961,8 @@ export enum RenderWorkerAuditEvent {
     ClaimRefused = "claim_refused",
     LimitExceeded = "limit_exceeded",
     Revoked = "revoked",
-    Updated = "updated"
+    Updated = "updated",
+    DeviceLost = "device_lost"
 }
 export enum RenderWorkerRefusalReason {
     InvalidCredential = "invalid_credential",
@@ -18425,7 +18981,8 @@ export enum RenderWorkerRefusalReason {
     WallClockExceeded = "wall_clock_exceeded",
     OutputBytesExceeded = "output_bytes_exceeded",
     DestinationUnavailable = "destination_unavailable",
-    ManifestIncomplete = "manifest_incomplete"
+    ManifestIncomplete = "manifest_incomplete",
+    CodecUnsupported = "codec_unsupported"
 }
 export enum UserStatus {
     Active = "active",
@@ -18520,7 +19077,8 @@ export enum QueueName {
     MediaHealth = "mediaHealth",
     Workflow = "workflow",
     IntegrityCheck = "integrityCheck",
-    Editor = "editor"
+    Editor = "editor",
+    PetRecognition = "petRecognition"
 }
 export enum AlbumUserRole {
     Editor = "editor",
@@ -18907,6 +19465,36 @@ export enum MirrorAxis {
     Horizontal = "horizontal",
     Vertical = "vertical"
 }
+export enum VideoTrimMode {
+    Precise = "precise",
+    Fast = "fast"
+}
+export enum VideoAdjustModel {
+    Develop = "develop"
+}
+export enum VideoDevelopPreset {
+    Original = "Original",
+    Vivid = "Vivid",
+    Natural = "Natural",
+    Warm = "Warm",
+    Cool = "Cool",
+    Mono = "Mono",
+    Silvertone = "Silvertone",
+    Noir = "Noir",
+    Fade = "Fade",
+    BW = "B&W"
+}
+export enum TextOverlayPosition {
+    TopLeft = "top-left",
+    Top = "top",
+    TopRight = "top-right",
+    Left = "left",
+    Center = "center",
+    Right = "right",
+    BottomLeft = "bottom-left",
+    Bottom = "bottom",
+    BottomRight = "bottom-right"
+}
 export enum VideoEditVersionPurpose {
     Save = "save",
     Export = "export",
@@ -19247,13 +19835,35 @@ export enum MemorySearchOrder {
 export enum MemoryType {
     OnThisDay = "on_this_day",
     EventStory = "event_story",
-    YearInReview = "year_in_review"
+    YearInReview = "year_in_review",
+    PetStory = "pet_story",
+    Birthday = "birthday",
+    PersonRecap = "person_recap"
 }
 export enum Kind {
     EventStory = "event_story"
 }
 export enum Kind2 {
     YearInReview = "year_in_review"
+}
+export enum Kind3 {
+    PetStory = "pet_story"
+}
+export enum Kind4 {
+    Birthday = "birthday"
+}
+export enum Subject {
+    Person = "person",
+    Pet = "pet"
+}
+export enum Kind5 {
+    PersonRecap = "person_recap"
+}
+export enum MemoryShowLessKind {
+    Person = "person",
+    Pet = "pet",
+    Date = "date",
+    Type = "type"
 }
 export enum RestorationDynamicRange {
     Sdr = "sdr",
@@ -19277,9 +19887,19 @@ export enum PartnerDirection {
     SharedBy = "shared-by",
     SharedWith = "shared-with"
 }
+export enum PersonCorrectionAction {
+    Reassign = "reassign",
+    NewPerson = "new-person",
+    Unassign = "unassign",
+    Remove = "remove",
+    Merge = "merge",
+    BoxMove = "box-move"
+}
 export enum PersonMergeVerdict {
+    Same = "same",
     Different = "different",
-    Later = "later"
+    Later = "later",
+    Ignore = "ignore"
 }
 export enum PetSpecies {
     Cat = "cat",
@@ -19291,6 +19911,34 @@ export enum PetSpecies {
     Fish = "fish",
     SmallMammal = "small_mammal",
     Other = "other"
+}
+export enum PetRecognitionUnavailableReason {
+    MachineLearningDisabled = "machine-learning-disabled",
+    SmartSearchDisabled = "smart-search-disabled",
+    DestinationMissing = "destination-missing",
+    DestinationDisabled = "destination-disabled",
+    WorkloadNotRouted = "workload-not-routed",
+    WorkloadNotAllowed = "workload-not-allowed",
+    WorkloadNotServed = "workload-not-served",
+    ConsentMissing = "consent-missing",
+    BudgetExceeded = "budget-exceeded",
+    EndpointUnresolved = "endpoint-unresolved",
+    DestinationUnhealthy = "destination-unhealthy",
+    RoleConflict = "role-conflict",
+    InsufficientMemory = "insufficient-memory",
+    CloudUnavailable = "cloud-unavailable",
+    EntitlementMissing = "entitlement-missing",
+    ConsentVersionOutdated = "consent-version-outdated",
+    WalletInsufficient = "wallet-insufficient",
+    QuotaExceeded = "quota-exceeded",
+    ModelMismatch = "model-mismatch"
+}
+export enum PetRecognitionRunStatus {
+    Queued = "queued",
+    Running = "running",
+    Completed = "completed",
+    Cancelled = "cancelled",
+    Failed = "failed"
 }
 export enum PetObservationSource {
     Manual = "manual",
@@ -19477,6 +20125,7 @@ export enum JobName {
     PersonCleanup = "PersonCleanup",
     PersonFileMigration = "PersonFileMigration",
     PersonGenerateThumbnail = "PersonGenerateThumbnail",
+    PersonIdentityRefresh = "PersonIdentityRefresh",
     SessionCleanup = "SessionCleanup",
     SendMail = "SendMail",
     SidecarQueueAll = "SidecarQueueAll",
@@ -19496,6 +20145,9 @@ export enum JobName {
     ImageDescription = "ImageDescription",
     NsfwDetectionQueueAll = "NsfwDetectionQueueAll",
     NsfwDetection = "NsfwDetection",
+    PetRecognitionQueueAll = "PetRecognitionQueueAll",
+    PetRecognition = "PetRecognition",
+    PetRecognitionNearest = "PetRecognitionNearest",
     SmartAlbumReevaluateAll = "SmartAlbumReevaluateAll",
     WorkflowAssetTrigger = "WorkflowAssetTrigger",
     IntegrityUntrackedFilesQueueAll = "IntegrityUntrackedFilesQueueAll",

@@ -1,11 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { JobStatus } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, JobStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagService } from 'src/services/tag.service.js';
@@ -19,7 +20,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(TagService, {
     database: db || defaultDatabase,
-    real: [AssetRepository, TagRepository, AccessRepository],
+    real: [AssetRepository, TagRepository, AccessRepository, SearchRepository],
     mock: [EventRepository, LoggingRepository],
   });
 };
@@ -236,6 +237,70 @@ describe(TagService.name, () => {
 
       await expect(sut.remove(otherAuth, tag.id)).rejects.toThrow('Tag not found');
       await expect(sut.get(auth, tag.id)).resolves.toEqual(expect.objectContaining({ id: tag.id }));
+    });
+  });
+
+  describe('getStatistics (FL-46)', () => {
+    it('counts Timeline items per tag with and without subtags, never an archived, trashed or Locked one', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const tags = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['trips/rockies', 'family'] });
+      const byValue = new Map(tags.map((tag) => [tag.value, tag]));
+      const trips = (await ctx.get(TagRepository).getByValue(user.id, 'trips'))!;
+      const rockies = byValue.get('trips/rockies')!;
+      const family = byValue.get('family')!;
+
+      const { asset: onTrip } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: onTripToo } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: tripsOnly } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: archived } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+      const { asset: trashed } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.database
+        .insertInto('asset_lock')
+        .values({ assetId: locked.id, reason: AssetLockReason.Marked, lockedBy: null })
+        .execute();
+      await ctx.newTagAsset({
+        tagIds: [rockies.id],
+        assetIds: [onTrip.id, onTripToo.id, archived.id, trashed.id, locked.id],
+      });
+      await ctx.newTagAsset({ tagIds: [trips.id], assetIds: [onTrip.id, tripsOnly.id] });
+
+      const statistics = await sut.getStatistics(factory.auth({ user }));
+      // the Locked item stays out even for a session unlocked to the Locked view
+      const unlocked = await sut.getStatistics({
+        ...factory.auth({ user }),
+        session: { id: 'session-1', hasElevatedPermission: true },
+      });
+
+      for (const result of [statistics, unlocked]) {
+        expect(result).toHaveLength(2);
+        expect(result).toEqual(
+          expect.arrayContaining([
+            // trips: two items tagged "trips" itself; three distinct items with "trips/rockies"
+            { id: trips.id, count: 2, total: 3 },
+            { id: rockies.id, count: 2, total: 2 },
+          ]),
+        );
+        expect(result.find(({ id }) => id === family.id)).toBeUndefined();
+      }
+    });
+
+    it('leaves out a suppressed tag, the tags under it and hidden items while the session is locked', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const tags = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['private/nested', 'public'] });
+      const byValue = new Map(tags.map((tag) => [tag.value, tag]));
+      const parent = (await ctx.get(TagRepository).getByValue(user.id, 'private'))!;
+      const { asset: privateAsset } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: publicAsset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newTagAsset({ tagIds: [byValue.get('private/nested')!.id], assetIds: [privateAsset.id] });
+      // an item that also carries the suppressed tag is hidden, so it never counts for "public"
+      await ctx.newTagAsset({ tagIds: [byValue.get('public')!.id], assetIds: [privateAsset.id, publicAsset.id] });
+
+      await expect(sut.getStatistics(lockedAuth(user.id, [parent.id]))).resolves.toEqual([
+        { id: byValue.get('public')!.id, count: 1, total: 1 },
+      ]);
     });
   });
 
