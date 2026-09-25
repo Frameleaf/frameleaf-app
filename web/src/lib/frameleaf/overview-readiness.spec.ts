@@ -9,7 +9,11 @@ import { cloudDestinationState, gpuStudioState, mlEndpointState } from '$lib/fra
 
 const destination = (id: string, kind: MlDestinationKind, status: MlDestinationHealth) =>
   ({ id, kind, health: { status } }) as MlDestinationResponseDto;
-const route = (workload: MlWorkload, destinationId: string | null): MlWorkloadRouteDto => ({ workload, destinationId });
+const route = (workload: MlWorkload, destinationId: string | null): MlWorkloadRouteDto => ({
+  workload,
+  destinationId,
+  modelId: null,
+});
 
 describe('Overview readiness (FL-71 CC-9)', () => {
   it('reads the ML endpoint from the destinations library analysis is routed to', () => {

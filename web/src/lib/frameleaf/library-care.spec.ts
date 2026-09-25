@@ -47,6 +47,7 @@ const candidate = (overrides: Partial<MediaHealthCandidateDto> = {}): MediaHealt
   rootId: 'managed',
   rootKind: MediaHealthRootKind.Managed,
   checksumMatch: true,
+  checksums: [],
   decodeValid: true,
   chosen: false,
   ...overrides,

@@ -37,7 +37,16 @@ const consent = (acceptedVersion: string | null, outdated = false) => ({
   outdated,
 });
 
-const wallet = { balanceUsd: 40, heldUsd: 0, spentTodayUsd: 0, dailyCapUsd: 20, autoTopUp: false };
+const wallet = {
+  balanceUsd: 40,
+  heldUsd: 0,
+  availableUsd: 40,
+  spentTodayUsd: 0,
+  dailyCapUsd: 20 as number | null,
+  autoTopUp: false,
+  topUpUrl: null,
+  updatedAt: '2026-09-25T00:00:00.000Z',
+};
 
 const status = (overrides: Partial<CloudMlStatusResponseDto> = {}) =>
   ({

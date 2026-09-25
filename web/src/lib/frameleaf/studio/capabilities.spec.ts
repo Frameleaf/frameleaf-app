@@ -10,7 +10,14 @@ import { emptyStudioCapabilities } from '$lib/frameleaf/studio/host-contract';
 
 const snapshot = (studio: Record<string, boolean>) => ({
   workloads: [],
-  studio: { gpuWorker: false, renderWorker: false, restorationWorker: false, transcriptionWorker: false, ...studio },
+  studio: {
+    gpuWorker: false,
+    renderWorker: false,
+    restorationWorker: false,
+    transcriptionWorker: false,
+    render: [],
+    ...studio,
+  },
   probedAt: '2026-09-22T12:00:00.000Z',
 });
 
@@ -45,6 +52,7 @@ describe('probeStudioCapabilities (FL-110)', () => {
         renderWorker: undefined as unknown as boolean,
         restorationWorker: true,
         transcriptionWorker: false,
+        render: [],
       }),
     ).toEqual({
       analysisWorker: false,

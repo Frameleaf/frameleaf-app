@@ -9,6 +9,8 @@ import {
   type PhysicalDeduplicationPlanDto,
   type PhysicalDeduplicationRetainedDto,
   type PhysicalDeduplicationReviewResponseDto,
+  PhysicalDeduplicationCopyFile,
+  PhysicalDeduplicationRetainedFile,
 } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
@@ -271,12 +273,12 @@ describe('Frameleaf physical deduplication helpers', () => {
 
   describe('verification (FL-73)', () => {
     const item = {
-      retainedFile: 'intact',
+      retainedFile: PhysicalDeduplicationRetainedFile.Intact,
       linked: true,
       restored: false,
-      copyFile: 'removed',
+      copyFile: PhysicalDeduplicationCopyFile.Removed,
       restorable: false,
-    } as const;
+    };
 
     it('verifies only a finished apply that changed something', () => {
       expect(canVerifyApply(apply({ status: MediaOperationStatus.Completed }))).toBe(true);
@@ -289,10 +291,10 @@ describe('Frameleaf physical deduplication helpers', () => {
 
     it('names each copy result, most serious first', () => {
       expect(verificationItemKey(item)).toBe('frameleaf_dedup_verify_item_verified');
-      expect(verificationItemKey({ ...item, retainedFile: 'missing' })).toBe(
+      expect(verificationItemKey({ ...item, retainedFile: PhysicalDeduplicationRetainedFile.Missing })).toBe(
         'frameleaf_dedup_verify_item_retained_missing',
       );
-      expect(verificationItemKey({ ...item, retainedFile: 'changed' })).toBe(
+      expect(verificationItemKey({ ...item, retainedFile: PhysicalDeduplicationRetainedFile.Changed })).toBe(
         'frameleaf_dedup_verify_item_retained_changed',
       );
       expect(verificationItemKey({ ...item, linked: false })).toBe('frameleaf_dedup_verify_item_not_linked');
@@ -303,9 +305,15 @@ describe('Frameleaf physical deduplication helpers', () => {
 
     it('says plainly what can be undone', () => {
       expect(undoKey(item)).toBe('frameleaf_dedup_undo_removed');
-      expect(undoKey({ ...item, copyFile: 'present', restorable: true })).toBe('frameleaf_dedup_undo_restorable');
-      expect(undoKey({ ...item, copyFile: 'changed' })).toBe('frameleaf_dedup_undo_changed');
-      expect(undoKey({ ...item, restored: true, copyFile: 'present' })).toBe('frameleaf_dedup_undo_restored');
+      expect(undoKey({ ...item, copyFile: PhysicalDeduplicationCopyFile.Present, restorable: true })).toBe(
+        'frameleaf_dedup_undo_restorable',
+      );
+      expect(undoKey({ ...item, copyFile: PhysicalDeduplicationCopyFile.Changed })).toBe(
+        'frameleaf_dedup_undo_changed',
+      );
+      expect(undoKey({ ...item, restored: true, copyFile: PhysicalDeduplicationCopyFile.Present })).toBe(
+        'frameleaf_dedup_undo_restored',
+      );
     });
   });
 
