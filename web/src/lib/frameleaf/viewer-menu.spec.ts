@@ -305,6 +305,8 @@ describe('viewerMenuGroups', () => {
     it('hides cast until a destination is available', () => {
       expect(idsOf(baseContext())).not.toContain('cast');
       expect(idsOf(baseContext({ hasCastDestination: true }))).toContain('cast');
+      // the trash's top row has no Cast either
+      expect(idsOf(baseContext({ hasCastDestination: true, isTrashed: true }))).not.toContain('cast');
     });
 
     it('hides the filmstrip and the slideshow for a single item', () => {

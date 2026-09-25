@@ -1,5 +1,12 @@
-import { AssetTypeEnum, AssetVisibility, getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
-import { fireEvent, waitFor } from '@testing-library/svelte';
+import {
+  AssetTypeEnum,
+  AssetVisibility,
+  deleteAssets,
+  getAssetInfo,
+  updateAsset,
+  type AssetResponseDto,
+} from '@immich/sdk';
+import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
@@ -71,6 +78,7 @@ vi.mock('@immich/sdk', async () => {
     updateAsset: vi.fn(),
     getFaces: vi.fn().mockResolvedValue([]),
     getAssetInfo: vi.fn(),
+    deleteAssets: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -107,7 +115,7 @@ describe('AssetViewer', () => {
   });
 
   describe('the open item removed elsewhere (FL-35)', () => {
-    const setup = (props: Record<string, unknown> = {}) => {
+    const setup = (props: Record<string, unknown> = {}, { alone = false } = {}) => {
       const user = userAdminFactory.build();
       authManager.setUser(user);
       authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
@@ -116,7 +124,7 @@ describe('AssetViewer', () => {
       const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
       const onClose = vi.fn();
       renderWithTooltips(AssetViewer, {
-        cursor: { current, nextAsset },
+        cursor: alone ? { current } : { current, nextAsset },
         showNavigation: true,
         onNavigateToAsset,
         onClose,
@@ -142,6 +150,29 @@ describe('AssetViewer', () => {
     it('moves on when the open item is Locked elsewhere and this session has not unlocked', async () => {
       const { current, nextAsset, onNavigateToAsset } = setup();
       eventManager.emit('AssetUpdate', { ...current, visibility: AssetVisibility.Locked });
+      await waitFor(() => expect(onNavigateToAsset).toHaveBeenCalledWith(nextAsset));
+    });
+
+    it('does not close when the page already moved on from an item removed here (trash viewer ordering)', async () => {
+      // The page's preAction navigated to the next item and reset its neighbour lookup, so until the
+      // next item loads the viewer still shows the removed one, with no neighbours.
+      const preAction = vi.fn().mockResolvedValue(undefined);
+      const { current, onNavigateToAsset, onClose } = setup({ preAction }, { alone: true });
+      await fireEvent.click(await screen.findByLabelText('frameleaf_viewer_move_to_trash'));
+      await waitFor(() => expect(deleteAssets).toHaveBeenCalled());
+      expect(preAction).toHaveBeenCalledWith(
+        expect.objectContaining({ asset: expect.objectContaining({ id: current.id }) }),
+      );
+      // the viewer's own event has fired; now the server's arrives for the same item
+      eventManager.emit('AssetsDelete', [current.id]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(onClose).not.toHaveBeenCalled();
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
+
+    it('still moves on by itself from an item removed here when no page step does', async () => {
+      const { nextAsset, onNavigateToAsset } = setup();
+      await fireEvent.click(await screen.findByLabelText('frameleaf_viewer_move_to_trash'));
       await waitFor(() => expect(onNavigateToAsset).toHaveBeenCalledWith(nextAsset));
     });
 
