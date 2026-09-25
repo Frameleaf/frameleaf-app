@@ -53001,7 +53001,7 @@
       "FrameleafPublicConfigDto": {
         "properties": {
           "localUrl": {
-            "description": "This server on the home network, when configured",
+            "description": "This server on the home network; given only to a remote-access visitor who is on it",
             "nullable": true,
             "type": "string"
           },

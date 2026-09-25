@@ -6883,7 +6883,7 @@ export type PreservationUploadCreateDto = {
     file: Blob;
 };
 export type FrameleafPublicConfigDto = {
-    /** This server on the home network, when configured */
+    /** This server on the home network; given only to a remote-access visitor who is on it */
     localUrl: string | null;
     /** The remote-access host shown on the login page, when known */
     relayHost: string | null;
