@@ -42,6 +42,7 @@ const setupQueueMocks = async (context: BrowserContext) => {
     commands: [] as Array<{ name: string; command: string }>,
     retries: [] as string[],
     ownerQueries: [] as string[],
+    enrichment: [] as Array<{ path: string; body?: unknown }>,
   };
 
   await context.route('**/api/queues', (route) => route.fulfill({ json: queues }));
@@ -120,6 +121,22 @@ const setupQueueMocks = async (context: BrowserContext) => {
     requests.jobs.push((request.postDataJSON() as { name: string }).name);
     return route.fulfill({ status: 204 });
   });
+  // FL-59 (CC-42): the enrichment tasks and their reviews.
+  await context.route('**/api/system-config/image-description/*', async (route, request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith('/requeue-estimate')) {
+      return route.fulfill({ json: { totalAssets: 120, estimatedTotalSeconds: 600, withDescription: 80 } });
+    }
+    requests.enrichment.push({ path });
+    return path.endsWith('/defer-requeue') ? route.fulfill({ status: 204 }) : route.fulfill({ json: { queued: true } });
+  });
+  await context.route('**/api/system-config/smart-albums/reevaluate', async (route, request) => {
+    requests.enrichment.push({ path: new URL(request.url()).pathname, body: request.postDataJSON() });
+    return route.fulfill({ json: { queued: true } });
+  });
+  await context.route('**/api/system-config/machine-learning/hardware*', (route) =>
+    route.fulfill({ json: { preferredAcceleration: 'cuda', providers: [], openvinoDeviceIds: [] } }),
+  );
   return requests;
 };
 
@@ -237,6 +254,44 @@ test.describe('Job manager', () => {
       .getByRole('button', { name: 'Clean up unused tags' })
       .click();
     await expect.poll(() => requests.jobs).toEqual(['tag-cleanup']);
+  });
+
+  test('runs enrichment tasks through their review and keeps a description reminder', async ({ page }) => {
+    await page.goto(jobManager);
+
+    await page.getByRole('button', { name: 'Enrichment tasks', exact: true }).click();
+    let dialog = page.getByRole('dialog', { name: 'Enrichment tasks' });
+    await dialog.getByLabel('When').selectOption('later');
+    await dialog.getByRole('button', { name: 'Review task' }).click();
+    await page
+      .getByRole('dialog', { name: 'Remind me to regenerate descriptions' })
+      .getByRole('button', { name: 'Remind me to regenerate descriptions' })
+      .click();
+    await expect
+      .poll(() => requests.enrichment.map(({ path }) => path))
+      .toEqual(['/api/system-config/image-description/defer-requeue']);
+    await expect(page.getByText('Description regeneration is waiting for your review.')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Review reminder' }).click();
+    dialog = page.getByRole('dialog', { name: 'Enrichment tasks' });
+    await dialog.getByLabel('Task').selectOption('smart-albums');
+    await dialog.getByLabel('Categories').selectOption('food');
+    await dialog.getByRole('button', { name: 'Review task' }).click();
+    await page
+      .getByRole('dialog', { name: 'Re-evaluate smart albums' })
+      .getByRole('button', { name: 'Re-evaluate smart albums' })
+      .click();
+    await expect
+      .poll(() => requests.enrichment.at(-1))
+      .toEqual({ path: '/api/system-config/smart-albums/reevaluate', body: { kind: 'food' } });
+
+    // A hardware preset joins the settings review instead of saving.
+    await page.getByRole('button', { name: 'Enrichment tasks', exact: true }).click();
+    dialog = page.getByRole('dialog', { name: 'Enrichment tasks' });
+    await dialog.getByLabel('Task').selectOption('hardware');
+    await dialog.getByLabel('Acceleration').selectOption('cuda');
+    await dialog.getByRole('button', { name: 'Add preset to settings review' }).click();
+    await expect(dialog.getByRole('status')).toHaveText(/Preset added to pending settings\./);
   });
 
   test('opens the old queue addresses in the Job manager', async ({ page }) => {
