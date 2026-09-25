@@ -793,6 +793,30 @@ where
   and "asset_face"."personGroupId" = $3
   and "asset_face"."deletedAt" is null
 
+-- PersonRepository.getFeaturedAsset
+select
+  "asset"."id",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
+  "asset"."deletedAt"
+from
+  "asset_face"
+  inner join "asset" on "asset"."id" = "asset_face"."assetId"
+where
+  "asset_face"."id" = $1
+
 -- PersonRepository.getForMergePerson
 select
   "person".*

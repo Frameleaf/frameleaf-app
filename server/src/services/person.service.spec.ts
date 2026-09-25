@@ -336,6 +336,73 @@ describe(PersonService.name, () => {
     });
   });
 
+  // FL-37: the featured-photo picker marks the photo the person's featured face is in
+  describe('featuredAssetId', () => {
+    const setup = (asset: { deletedAt?: Date | null; visibility?: AssetVisibility } | undefined) => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ faceAssetId: 'face-1' });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.person.getFeaturedAsset.mockResolvedValue(
+        asset && ({ id: 'asset-1', visibility: AssetVisibility.Timeline, deletedAt: null, ...asset } as never),
+      );
+      return { auth, person };
+    };
+
+    it("names the photo of the owner's featured face", async () => {
+      const { auth, person } = setup({});
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ featuredAssetId: 'asset-1' });
+      expect(mocks.person.getFeaturedAsset).toHaveBeenCalledWith('face-1');
+    });
+
+    it('names an archived photo too', async () => {
+      const { auth, person } = setup({ visibility: AssetVisibility.Archive });
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ featuredAssetId: 'asset-1' });
+    });
+
+    it('names no photo that was trashed, hidden or moved to Locked, and none without a featured face', async () => {
+      for (const asset of [
+        { deletedAt: new Date() },
+        { visibility: AssetVisibility.Hidden },
+        { visibility: AssetVisibility.Locked },
+        undefined,
+      ]) {
+        const { auth, person } = setup(asset);
+        await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ featuredAssetId: null });
+      }
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ faceAssetId: null });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.person.getFeaturedAsset.mockClear();
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ featuredAssetId: null });
+      expect(mocks.person.getFeaturedAsset).not.toHaveBeenCalled();
+    });
+
+    it("answers another account's person as missing, never with its featured photo", async () => {
+      const { auth, person } = setup({});
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(sut.getById(auth, person.personGroupId)).rejects.toThrow();
+      expect(mocks.person.getFeaturedAsset).not.toHaveBeenCalled();
+    });
+
+    it('names the newly chosen photo after a featured-photo change', async () => {
+      const { auth, person } = setup({});
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.person.getForFeatureFaceUpdate.mockResolvedValue({
+        id: 'face-1',
+        ownerId: auth.user.id,
+        visibility: AssetVisibility.Timeline,
+      } as never);
+      mocks.person.update.mockResolvedValue({ ...person, faceAssetId: 'face-1' });
+
+      await expect(sut.update(auth, person.personGroupId, { featureFaceAssetId: asset.id })).resolves.toMatchObject({
+        featuredAssetId: 'asset-1',
+      });
+    });
+  });
+
   describe('getThumbnail', () => {
     it('should require person.read permission', async () => {
       const auth = AuthFactory.create();
@@ -442,6 +509,7 @@ describe(PersonService.name, () => {
         isHidden: false,
         isFavorite: false,
         updatedAt: expect.any(String),
+        featuredAssetId: null,
       });
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: person.ownerId,

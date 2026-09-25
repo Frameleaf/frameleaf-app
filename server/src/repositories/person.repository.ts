@@ -1118,6 +1118,17 @@ export class PersonRepository {
     );
   }
 
+  /** FL-37: the photo a person's featured face is in, with what decides whether it may be shown. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFeaturedAsset(faceId: string) {
+    return this.db
+      .selectFrom('asset_face')
+      .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+      .select(['asset.id', effectiveVisibility('asset').as('visibility'), 'asset.deletedAt'])
+      .where('asset_face.id', '=', faceId)
+      .executeTakeFirst();
+  }
+
   @GenerateSql({ params: [[DummyValue.UUID]] })
   getForMergePerson(personGroupIds: string[]) {
     return this.db

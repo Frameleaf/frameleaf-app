@@ -57595,6 +57595,24 @@
             ],
             "x-immich-state": "Stable"
           },
+          "featuredAssetId": {
+            "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none or it may not be shown (trashed, hidden or Locked)",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
+          },
           "id": {
             "description": "Person ID",
             "format": "uuid",
@@ -58341,6 +58359,24 @@
               }
             ],
             "x-immich-state": "Stable"
+          },
+          "featuredAssetId": {
+            "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none or it may not be shown (trashed, hidden or Locked)",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
           },
           "id": {
             "description": "Person ID",
