@@ -14,10 +14,12 @@
   import LicenseKeyField from '$lib/components/frameleaf/cloud/LicenseKeyField.svelte';
   import { LICENSED_DISCOUNT, type ProductKeyCheck } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { Route } from '$lib/route';
   import { copyToClipboard } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
+  import { getMyUser, setUserLicense } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiCartOutline,
@@ -271,7 +273,9 @@
       </div>
     </CloudCard>
 
-    {#if !key}
+    <!-- as in the prototype, a key can be entered whenever the server is not licensed, also to
+         replace an expired or refused one without removing it first -->
+    {#if !licensed}
       <CloudCard
         icon={mdiKeyOutline}
         title={$t('frameleaf_license_enter_key_title')}
@@ -279,7 +283,7 @@
       >
         <LicenseKeyField
           bind:value={keyValue}
-          accept="server"
+          accept="any"
           label={$t('frameleaf_license_key')}
           help={$t('frameleaf_license_key_help')}
           onCheck={(check) => (keyCheck = check)}
@@ -292,7 +296,15 @@
             variant="primary"
             disabled={busy || !keyCheck?.valid || !license.configured}
             onclick={async () => {
-              if (await act(() => cloudManager.activateLicense(keyValue), $t('frameleaf_license_activated_notice'))) {
+              // a key for one person is that administrator's own supporter key (personal endpoint)
+              const done =
+                keyCheck?.valid && keyCheck.kind === 'individual'
+                  ? await act(async () => {
+                      await setUserLicense({ licenseActivateDto: { key: keyValue } });
+                      authManager.setUser(await getMyUser());
+                    }, $t('frameleaf_license_personal_activated_notice'))
+                  : await act(() => cloudManager.activateLicense(keyValue), $t('frameleaf_license_activated_notice'));
+              if (done) {
                 keyValue = '';
               }
             }}
