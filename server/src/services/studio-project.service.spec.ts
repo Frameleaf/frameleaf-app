@@ -315,6 +315,65 @@ describe(StudioProjectService.name, () => {
       expect(repository.appendRevision).not.toHaveBeenCalled();
     });
 
+    it('refuses canonical commands that are not the catalogue’s or not issued against this head (FL-92)', async () => {
+      const command = (overrides: Record<string, unknown> = {}) => ({
+        id: 'track.add',
+        payload: { kind: 'video' },
+        revision: 3,
+        idempotencyKey: 'k-1',
+        issuedAt: 1,
+        ...overrides,
+      });
+      await expect(
+        sut.save(owner, project.id, dto({ commands: [command({ id: 'clip.teleport' })] })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.save(owner, project.id, dto({ commands: [command({ revision: 4 })] }))).rejects.toThrow(
+        /issued against revision 4, after 3/,
+      );
+      await expect(
+        sut.save(owner, project.id, dto({ commands: [command(), command({ id: 'track.add' })] })),
+      ).rejects.toThrow(/used twice/);
+      await expect(
+        sut.save(owner, project.id, dto({ commands: [command({ id: 'preview.release', payload: {} })] })),
+      ).rejects.toThrow(/does not change the graph/);
+      await expect(
+        sut.save(owner, project.id, dto({ commands: [command({ payload: { kind: 'video', extra: 1 } })] })),
+      ).rejects.toThrow(/unknown field extra/);
+      expect(repository.getRevisionByRequestKey).not.toHaveBeenCalled();
+      expect(repository.appendRevision).not.toHaveBeenCalled();
+    });
+
+    it('counts the revision summary from the checked commands, keeping the editor’s own saves (FL-92)', async () => {
+      const saved = dto({
+        commands: [
+          // Issued while the previous autosave was in flight: an earlier head is fine.
+          { id: 'track.add', payload: { kind: 'video' }, revision: 2, idempotencyKey: 'k-1', issuedAt: 1 },
+          {
+            id: 'title.add',
+            payload: { at: { num: 1, den: 1 }, text: 'Hello' },
+            revision: 3,
+            idempotencyKey: 'k-2',
+            issuedAt: 2,
+          },
+        ],
+        // A client cannot inflate catalogue counts; its own non-catalogue entries are kept.
+        summary: { counts: { 'track.add': 40, 'editor.save': 1 }, total: 41 },
+      });
+      const digest = studioEnvelopeDigest(saved.envelope);
+      repository.appendRevision.mockResolvedValue({
+        status: 'appended',
+        revision: revisionStub({ revision: 4, digest, requestKey: 'req-4' }),
+      });
+
+      await sut.save(owner, project.id, saved);
+
+      expect(repository.appendRevision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: { counts: { 'track.add': 1, 'title.add': 1, 'editor.save': 1 }, total: 3 },
+        }),
+      );
+    });
+
     it('writes nothing for a document identical to the head', async () => {
       const result = await sut.save(owner, project.id, dto({ envelope: head.envelope }));
 

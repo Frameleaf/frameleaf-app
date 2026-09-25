@@ -257,6 +257,35 @@ describe('studio project session', () => {
       expect(last()).toMatchObject({ status: 'saved', hasDraft: false, lastSavedAt: 1000, project: { revision: 4 } });
     });
 
+    it('sends the canonical commands behind a draft so the server can check and count them (FL-92)', async () => {
+      api.save.mockResolvedValue(saved(4));
+      const session = create();
+      await session.open();
+      const envelope = (id: 'track.add' | 'title.add', key: string) => ({
+        id,
+        payload: id === 'track.add' ? { kind: 'video' } : { at: { num: 1, den: 1 }, text: 'Hi' },
+        revision: 3,
+        idempotencyKey: key,
+        issuedAt: 5,
+      });
+
+      session.stage({ step: 1 }, ['track.add'], [envelope('track.add', 'k-1') as never]);
+      session.stage({ step: 2 }, ['title.add'], [envelope('title.add', 'k-2') as never]);
+      await timers.fire((timer) => timer.ms === 1500);
+
+      expect(api.save).toHaveBeenCalledWith(
+        'p-1',
+        expect.objectContaining({
+          envelope: expect.objectContaining({ graph: { step: 2 } }),
+          summary: { counts: { 'track.add': 1, 'title.add': 1 }, total: 2 },
+          commands: [
+            expect.objectContaining({ id: 'track.add', idempotencyKey: 'k-1', revision: 3 }),
+            expect.objectContaining({ id: 'title.add', idempotencyKey: 'k-2', revision: 3 }),
+          ],
+        }),
+      );
+    });
+
     it('retries a lost response with the same key, and takes a new key for a new document', async () => {
       api.save.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValue(saved(4));
       const session = create();

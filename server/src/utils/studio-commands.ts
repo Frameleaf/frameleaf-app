@@ -205,3 +205,51 @@ export const studioBatchCapabilities = (envelopes: readonly StudioCommandEnvelop
         .filter((capability): capability is StudioCommandCapability => capability !== null),
     ),
   ].sort();
+
+/** The most canonical commands one revision may carry. */
+export const STUDIO_MAX_COMMANDS_PER_SAVE = 500;
+
+export type StudioCommandBatchCheck =
+  { ok: true; counts: Record<string, number>; total: number } | { ok: false; detail: string };
+
+/**
+ * The canonical commands a saved revision claims to contain (FL-92). The editor applied them with
+ * the engine before saving the graph they produced; the server cannot re-run the engine, but it can
+ * refuse a batch that is not one: an unknown command, a malformed payload, a command issued against
+ * a head later than the one this save builds on, a key used twice, or a command that changes nothing
+ * in the graph (those never reach a revision). A command issued against an earlier head is normal:
+ * edits made while the previous autosave was in flight travel in the next one. The revision's summary is then counted from
+ * the envelopes rather than trusted from the client.
+ */
+export const checkStudioCommandBatch = (
+  commands: readonly unknown[],
+  expectedRevision: number,
+): StudioCommandBatchCheck => {
+  if (commands.length > STUDIO_MAX_COMMANDS_PER_SAVE) {
+    return { ok: false, detail: `A revision carries at most ${STUDIO_MAX_COMMANDS_PER_SAVE} commands` };
+  }
+  const keys = new Set<string>();
+  const counts: Record<string, number> = {};
+  for (const [index, candidate] of commands.entries()) {
+    const checked = validateStudioCommandEnvelope(candidate);
+    if (!checked.valid) {
+      return { ok: false, detail: `command ${index}: ${checked.detail}` };
+    }
+    const { envelope, definition } = checked;
+    if (!definition.mutatesGraph) {
+      return { ok: false, detail: `command ${index}: ${envelope.id} does not change the graph` };
+    }
+    if (envelope.revision > expectedRevision) {
+      return {
+        ok: false,
+        detail: `command ${index}: ${envelope.id} was issued against revision ${envelope.revision}, after ${expectedRevision}`,
+      };
+    }
+    if (keys.has(envelope.idempotencyKey)) {
+      return { ok: false, detail: `command ${index}: idempotency key ${envelope.idempotencyKey} is used twice` };
+    }
+    keys.add(envelope.idempotencyKey);
+    counts[envelope.id] = (counts[envelope.id] ?? 0) + 1;
+  }
+  return { ok: true, counts, total: commands.length };
+};
