@@ -138,7 +138,10 @@
   let controlsElement = $state<HTMLElement>();
   let pointerOverControls = false;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  const focusInsideControls = () => !!controlsElement?.contains(document.activeElement);
+  // Only keyboard focus holds the controls on screen; a focused button left behind by a click
+  // must not keep them (and the pointer) up forever.
+  let keyboardModality = false;
+  const focusInsideControls = () => keyboardModality && !!controlsElement?.contains(document.activeElement);
   const setCursor = (value: string) => (document.body.style.cursor = value);
   const scheduleHide = () => {
     clearTimeout(idleTimer);
@@ -179,6 +182,7 @@
   // the state at pointerdown decides the toggle, so a swipe-down reveal in between cannot undo it
   let tap: { x: number; y: number; time: number; visible: boolean } | undefined;
   const onPointerDown = (event: PointerEvent) => {
+    keyboardModality = false;
     const target = event.target as Element | null;
     tap =
       target?.closest?.('[data-viewer-content]') && !target.closest('[data-testid="slideshow-controls"]')
@@ -274,7 +278,13 @@
 
 <svelte:document
   use:shortcuts={shortcutBindings}
-  onmousemove={showControls}
+  onpointermove={(event) => {
+    // a touch tap is followed by a compatibility mousemove; only a real mouse reveals the controls
+    if (event.pointerType === 'mouse') {
+      showControls();
+    }
+  }}
+  onkeydown={() => (keyboardModality = true)}
   onpointerdown={onPointerDown}
   onpointerup={onPointerUp}
 />
