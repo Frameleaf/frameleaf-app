@@ -148,9 +148,9 @@ const actions = {
     },
   ],
   "real-folders-and-external-library-path-browsing": [
-    "missing",
+    "fixed",
     ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6"],
-    "Browsable folder file list, sort, counts, Frameleaf tree",
+    "Folders browser: storage-folder tree, sort, counts and sizes, browsable files with the viewer and bulk actions (fixed on codex/FL-46-complete-browsers)",
     {
       prototype: [`${P}/Folders.jsx`],
       production: [`${W}/lib/components/frameleaf/FolderBrowserPanel.svelte`],
@@ -1471,9 +1471,9 @@ const routes = {
     ],
   ],
   "/folders/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
-    ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6", "FD-7"],
-    "Browsable folder files, sort, counts, tree",
+    "fixed",
+    ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6", "FD-7", "FD-8"],
+    "Folders browser ported from Folders.jsx (fixed on codex/FL-46-complete-browsers)",
     [`${P}/Folders.jsx`, `${P}/discovery-data.mjs`],
     [
       `${W}/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1791,7 +1791,7 @@ const routes = {
     ],
   ],
   "/tags/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     [
       "TG-1",
       "TG-2",
@@ -1804,8 +1804,9 @@ const routes = {
       "TG-9",
       "TG-10",
       "TG-11",
+      "TG-12",
     ],
-    "Frameleaf tag tree and actions",
+    "Tags browser ported from Tags.jsx (fixed on codex/FL-46-complete-browsers)",
     [`${P}/Tags.jsx`, `${P}/discovery-data.mjs`],
     [
       `${W}/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
