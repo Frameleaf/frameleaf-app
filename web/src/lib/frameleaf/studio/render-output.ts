@@ -9,16 +9,12 @@
  * disabled, each with the reason the server would give, before anything is submitted. It never
  * enables a choice the evidence does not support; the server still decides at submission.
  */
-import {
-  MediaOperationDestination,
-  StudioExportColor,
-  StudioExportFormat,
-  StudioExportResolution,
-  type StudioRenderEvidenceDto,
-} from '@immich/sdk';
+import { StudioExportColor, StudioExportFormat, StudioExportResolution } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
+import type { StudioRenderEvidence } from './host-contract';
 
-export type StudioRenderRefusal = 'no-qualified-worker' | 'insufficient-memory' | 'codec-unavailable' | 'incompatible-color';
+export type StudioRenderRefusal =
+  'no-qualified-worker' | 'insufficient-memory' | 'codec-unavailable' | 'incompatible-color';
 
 export type StudioRenderSettings = {
   format: StudioExportFormat;
@@ -52,7 +48,7 @@ const FORMAT_BIT_DEPTH: Readonly<Record<StudioExportFormat, number>> = {
   [StudioExportFormat.Prores422Hq]: 10,
 };
 
-const colorSupported = (settings: StudioRenderSettings, evidence: StudioRenderEvidenceDto) => {
+const colorSupported = (settings: StudioRenderSettings, evidence: StudioRenderEvidence) => {
   const depth = Math.max(FORMAT_BIT_DEPTH[settings.format], settings.color === StudioExportColor.Preserve ? 8 : 10);
   if (evidence.maxBitDepth < depth) {
     return false;
@@ -68,8 +64,8 @@ const colorSupported = (settings: StudioRenderSettings, evidence: StudioRenderEv
 
 /** The server's verdict for one combination on one destination, from the published evidence. */
 export const evaluateStudioRender = (
-  evidence: readonly StudioRenderEvidenceDto[],
-  destination: MediaOperationDestination,
+  evidence: readonly StudioRenderEvidence[],
+  destination: string,
   settings: StudioRenderSettings,
 ): StudioRenderVerdict => {
   const row = evidence.find((entry) => entry.destination === destination);
@@ -79,7 +75,7 @@ export const evaluateStudioRender = (
   if (row.gpuMemoryBytes === null || row.gpuMemoryBytes < MEMORY_BY_RESOLUTION[settings.resolution]) {
     return { supported: false, refusal: 'insufficient-memory' };
   }
-  if (!row.codecs.some((codec) => FORMAT_ENCODERS[settings.format].test(codec))) {
+  if (row.codecs.every((codec) => !FORMAT_ENCODERS[settings.format].test(codec))) {
     return { supported: false, refusal: 'codec-unavailable' };
   }
   if (!colorSupported(settings, row)) {
@@ -101,8 +97,8 @@ export type StudioRenderChoices = {
  * disabled option always names the reason that exact export would be refused.
  */
 export const studioRenderChoices = (
-  evidence: readonly StudioRenderEvidenceDto[],
-  destination: MediaOperationDestination,
+  evidence: readonly StudioRenderEvidence[],
+  destination: string,
   current: StudioRenderSettings,
 ): StudioRenderChoices => ({
   formats: Object.values(StudioExportFormat).map((format) => ({
@@ -136,6 +132,13 @@ export const studioRenderRefusalKey = (refusal: StudioRenderRefusal): Translatio
   }
 };
 
+const REFUSALS: ReadonlySet<string> = new Set<StudioRenderRefusal>([
+  'no-qualified-worker',
+  'insufficient-memory',
+  'codec-unavailable',
+  'incompatible-color',
+]);
+
 /** The refusal a `409 studio_export_unsupported` answer carries, when it is one the host knows. */
 export const studioRenderRefusalFromError = (body: unknown): StudioRenderRefusal | null => {
   if (!body || typeof body !== 'object') {
@@ -145,10 +148,5 @@ export const studioRenderRefusalFromError = (body: unknown): StudioRenderRefusal
   if (code !== 'studio_export_unsupported') {
     return null;
   }
-  return reason === 'no-qualified-worker' ||
-    reason === 'insufficient-memory' ||
-    reason === 'codec-unavailable' ||
-    reason === 'incompatible-color'
-    ? reason
-    : null;
+  return typeof reason === 'string' && REFUSALS.has(reason) ? (reason as StudioRenderRefusal) : null;
 };

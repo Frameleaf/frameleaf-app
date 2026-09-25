@@ -23,12 +23,13 @@
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
   import { createStudioCommandEnvelope, type StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
-  import { probeStudioCapabilities } from '$lib/frameleaf/studio/capabilities';
+  import { probeStudioHost } from '$lib/frameleaf/studio/capabilities';
   import { pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
   import {
     emptyStudioCapabilities,
     type StudioAuthContext,
     type StudioCapabilities,
+    type StudioRenderEvidence,
     type StudioHostServices,
     type StudioProjectHandle,
   } from '$lib/frameleaf/studio/host-contract';
@@ -52,6 +53,7 @@
   let { data }: { data: PageData } = $props();
 
   let capabilities = $state<StudioCapabilities>(emptyStudioCapabilities());
+  let renderEvidence = $state<StudioRenderEvidence[]>([]);
   let online = $state(true);
   let dirty = $state(false);
   let accessLost = $state(false);
@@ -387,8 +389,9 @@
   });
 
   $effect(() => {
-    void probeStudioCapabilities().then((next) => {
-      capabilities = next;
+    void probeStudioHost().then((next) => {
+      capabilities = next.capabilities;
+      renderEvidence = next.renderEvidence;
     });
 
     // Losing the session or relocking must clear private editor state immediately, not on
@@ -456,6 +459,7 @@
   {handoffAssetIds}
   {auth}
   {capabilities}
+  {renderEvidence}
   {services}
   {onBack}
   {onOpenActivity}
