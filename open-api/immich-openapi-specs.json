@@ -33980,6 +33980,249 @@
         "x-immich-state": "Stable"
       }
     },
+    "/system-metadata/frameleaf-setup": {
+      "get": {
+        "description": "Retrieve whether Frameleaf first-run setup is complete, its flow and the saved progress.",
+        "operationId": "getFrameleafSetup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve Frameleaf setup",
+        "tags": [
+          "System metadata"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemMetadata.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Save the per-step first-run setup progress. Passwords are never accepted.",
+        "operationId": "updateFrameleafSetup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafSetupUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save Frameleaf setup progress",
+        "tags": [
+          "System metadata"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemMetadata.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/system-metadata/frameleaf-setup/finish": {
+      "post": {
+        "description": "Finish first-run setup after checking that an admin exists and the library location is writable.",
+        "operationId": "finishFrameleafSetup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Finish Frameleaf setup",
+        "tags": [
+          "System metadata"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemMetadata.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/system-metadata/frameleaf-setup/library": {
+      "get": {
+        "description": "Retrieve the items, people, albums and size of the library for first-run setup.",
+        "operationId": "getFrameleafSetupLibrary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupLibraryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve library totals for setup",
+        "tags": [
+          "System metadata"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemMetadata.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/system-metadata/frameleaf-setup/storage": {
+      "get": {
+        "description": "Check that the library location is writable and report its free space.",
+        "operationId": "getFrameleafSetupStorage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupStorageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check library storage for setup",
+        "tags": [
+          "System metadata"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemMetadata.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/system-metadata/reverse-geocoding-state": {
       "get": {
         "description": "Retrieve the current state of the reverse geocoding import.",
@@ -53055,6 +53298,273 @@
           "signInAvailable",
           "signInRequired",
           "via"
+        ],
+        "type": "object"
+      },
+      "FrameleafSetupChoicesDto": {
+        "additionalProperties": false,
+        "properties": {
+          "accountCreated": {
+            "description": "Whether the local administrator exists",
+            "type": "boolean"
+          },
+          "adminEmail": {
+            "description": "Administrator email",
+            "maxLength": 120,
+            "type": "string"
+          },
+          "adminName": {
+            "description": "Administrator name",
+            "maxLength": 120,
+            "type": "string"
+          },
+          "language": {
+            "description": "Language chosen on the welcome step",
+            "maxLength": 12,
+            "type": "string"
+          },
+          "layout": {
+            "description": "Folder layout preset, or \"keep\"",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "linked": {
+            "description": "Whether the server is linked to a Frameleaf account",
+            "type": "boolean"
+          },
+          "map": {
+            "description": "Map tiles",
+            "type": "boolean"
+          },
+          "model": {
+            "$ref": "#/components/schemas/FrameleafSetupModelTier",
+            "description": "Model tier"
+          },
+          "nightlyBackup": {
+            "description": "Nightly database backups",
+            "type": "boolean"
+          },
+          "processing": {
+            "$ref": "#/components/schemas/FrameleafSetupProcessing",
+            "description": "Where processing runs"
+          },
+          "restore": {
+            "$ref": "#/components/schemas/FrameleafSetupRestore",
+            "description": "Choice for a found cloud backup"
+          },
+          "signIn": {
+            "$ref": "#/components/schemas/FrameleafSetupSignIn",
+            "description": "How the administrator signs in"
+          },
+          "signedIn": {
+            "description": "Whether the administrator signed in (existing library)",
+            "type": "boolean"
+          },
+          "theme": {
+            "$ref": "#/components/schemas/FrameleafSetupTheme",
+            "description": "Theme after setup"
+          },
+          "updates": {
+            "description": "Check for Frameleaf updates",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "FrameleafSetupFlow": {
+        "description": "Setup flow",
+        "enum": [
+          "new",
+          "existing"
+        ],
+        "type": "string"
+      },
+      "FrameleafSetupLibraryResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "Albums",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "bytes": {
+            "description": "Size of the originals in bytes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "items": {
+            "description": "Photos and videos on the server",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "people": {
+            "description": "Named and unnamed people",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "users": {
+            "description": "Accounts on the server",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "albums",
+          "bytes",
+          "items",
+          "people",
+          "users"
+        ],
+        "type": "object"
+      },
+      "FrameleafSetupModelTier": {
+        "enum": [
+          "light",
+          "balanced",
+          "best"
+        ],
+        "type": "string"
+      },
+      "FrameleafSetupProcessing": {
+        "enum": [
+          "local",
+          "cloud",
+          "later"
+        ],
+        "type": "string"
+      },
+      "FrameleafSetupProgressDto": {
+        "additionalProperties": false,
+        "properties": {
+          "choices": {
+            "$ref": "#/components/schemas/FrameleafSetupChoicesDto"
+          },
+          "reached": {
+            "description": "Furthest step index reached",
+            "maximum": 40,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "description": "Current step id",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "description": "Payload version (1)",
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "choices",
+          "reached",
+          "step",
+          "version"
+        ],
+        "type": "object"
+      },
+      "FrameleafSetupResponseDto": {
+        "properties": {
+          "completed": {
+            "description": "Whether Frameleaf setup is complete",
+            "type": "boolean"
+          },
+          "completedAt": {
+            "description": "When setup was completed",
+            "nullable": true,
+            "type": "string"
+          },
+          "flow": {
+            "$ref": "#/components/schemas/FrameleafSetupFlow"
+          },
+          "progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FrameleafSetupProgressDto"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "completed",
+          "completedAt",
+          "flow",
+          "progress"
+        ],
+        "type": "object"
+      },
+      "FrameleafSetupRestore": {
+        "enum": [
+          "restore",
+          "fresh"
+        ],
+        "type": "string"
+      },
+      "FrameleafSetupSignIn": {
+        "enum": [
+          "frameleaf",
+          "local"
+        ],
+        "type": "string"
+      },
+      "FrameleafSetupStorageResponseDto": {
+        "properties": {
+          "freeBytes": {
+            "description": "Free space in bytes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Where the library is stored",
+            "type": "string"
+          },
+          "totalBytes": {
+            "description": "Total space in bytes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "writable": {
+            "description": "Whether Frameleaf can write there",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "freeBytes",
+          "path",
+          "totalBytes",
+          "writable"
+        ],
+        "type": "object"
+      },
+      "FrameleafSetupTheme": {
+        "enum": [
+          "dark",
+          "light"
+        ],
+        "type": "string"
+      },
+      "FrameleafSetupUpdateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "flow": {
+            "$ref": "#/components/schemas/FrameleafSetupFlow"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/FrameleafSetupProgressDto"
+          }
+        },
+        "required": [
+          "progress"
         ],
         "type": "object"
       },

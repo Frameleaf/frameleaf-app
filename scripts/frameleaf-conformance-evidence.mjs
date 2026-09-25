@@ -1429,11 +1429,16 @@ const routes = {
     [`${W}/routes/auth/logout/+page.svelte`],
   ],
   "/auth/onboarding": [
-    "partial",
+    "fixed",
     ["FS-1", "O-8", "O-12"],
-    "FL-176 redesigned first-run setup in the prototype (two admin flows and the personal account tool, FS-1); production still runs the FL-80 onboarding port (ON-1, O-1..O-12) until the FS-1 port lands",
+    "FS-1 fixed (FL-176): the existing-library setup flow (admin sign-in, Your library is safe, account, library check, processing, protection, privacy, people, imports, Ready) on the dark stage with server-saved progress, and the one-time Set up your account tool for every other account; residue: the found-backup offer waits on Cloud discovery (FL-145)",
     [`${P}/FirstRunSetup.jsx`, `${P}/first-run-setup.mjs`],
-    [`${W}/routes/auth/onboarding/+page.svelte`],
+    [
+      `${W}/routes/auth/onboarding/+page.svelte`,
+      `${W}/lib/components/frameleaf/setup/FirstRunSetup.svelte`,
+      `${W}/lib/components/frameleaf/setup/AccountSetupTool.svelte`,
+      `${W}/lib/frameleaf/first-run-setup.ts`,
+    ],
   ],
   "/auth/pin-prompt": [
     "fixed",
@@ -1446,11 +1451,15 @@ const routes = {
     ],
   ],
   "/auth/register": [
-    "partial",
+    "fixed",
     ["FS-1", "AU-2"],
-    "FL-176 replaced Register with the new-server setup flow in the prototype (FS-1); production keeps the FL-80 register screen (AU-2 fixed) until the FS-1 port lands",
+    "FS-1 fixed (FL-176): the new-server setup flow (logo intro, sign-in choice, local admin through the sign-up API, storage check and folder layout, processing, protection, privacy, imports, Ready) replaces the FL-80 register screen; Frameleaf sign-in falls back to a local account while Frameleaf Cloud isn't reachable",
     [`${P}/FirstRunSetup.jsx`, `${P}/first-run-setup.mjs`],
-    [`${W}/routes/auth/register/+page.svelte`],
+    [
+      `${W}/routes/auth/register/+page.svelte`,
+      `${W}/lib/components/frameleaf/setup/FirstRunSetup.svelte`,
+      `${W}/lib/frameleaf/first-run-setup.ts`,
+    ],
   ],
   "/best-photos/[[photos=photos]]/[[assetId=id]]": [
     "fixed",

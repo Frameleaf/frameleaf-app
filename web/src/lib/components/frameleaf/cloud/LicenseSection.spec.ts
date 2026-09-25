@@ -1,4 +1,15 @@
-import { CloudHeartbeatField, CloudLinkState, LicenseState, type LicenseStatusResponseDto } from '@immich/sdk';
+import {
+  CloudHeartbeatField,
+  CloudLinkState,
+  Currency,
+  Kind3,
+  LicenseKind,
+  LicenseState,
+  Period,
+  Source,
+  type LicenseProductsResponseDto,
+  type LicenseStatusResponseDto,
+} from '@immich/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,8 +46,8 @@ const license = (overrides: Partial<LicenseStatusResponseDto> = {}): LicenseStat
 
 const keySlot = {
   state: LicenseState.Active,
-  kind: 'server' as const,
-  source: 'key' as const,
+  kind: LicenseKind.Server,
+  source: Source.Key,
   keyHint: 'J58U',
   activatedAt: '2026-09-25T09:00:00.000Z',
   expiresAt: null,
@@ -46,8 +57,8 @@ const keySlot = {
 
 const planSlot = {
   state: LicenseState.Active,
-  kind: 'plan' as const,
-  source: 'account' as const,
+  kind: LicenseKind.Plan,
+  source: Source.Account,
   keyHint: null,
   activatedAt: '2026-09-25T09:00:00.000Z',
   expiresAt: '2026-10-25T09:00:00.000Z',
@@ -55,31 +66,32 @@ const planSlot = {
   refreshedAt: '2026-09-25T09:00:00.000Z',
 };
 
-const products = (storeUrl: string | null = 'https://frameleaf.cloud.test/store') => ({
-  currency: 'USD' as const,
+const products = (storeUrl: string | null = 'https://frameleaf.cloud.test/store'): LicenseProductsResponseDto => ({
+  currency: Currency.Usd,
+  credit: { minimumUsd: 20, maximumUsd: 500 },
   licensedDiscount: 0.2,
   storeUrl,
   backup: { usdPerTbMonth: 7.99, minimumTb: 1 },
   products: [
     {
       id: 'cloud-monthly',
-      kind: 'plan' as const,
-      period: 'month' as const,
+      kind: Kind3.Plan,
+      period: Period.Month,
       priceUsd: 6,
       storeUrl: storeUrl && `${storeUrl}?product=cloud-monthly`,
     },
     {
       id: 'cloud-annual',
-      kind: 'plan' as const,
-      period: 'year' as const,
+      kind: Kind3.Plan,
+      period: Period.Year,
       priceUsd: 60,
       storeUrl: storeUrl && `${storeUrl}?product=cloud-annual`,
     },
-    { id: 'supporter-server', kind: 'supporter' as const, period: 'one-time' as const, priceUsd: 100, storeUrl: null },
+    { id: 'supporter-server', kind: Kind3.Supporter, period: Period.OneTime, priceUsd: 100, storeUrl: null },
     {
       id: 'supporter-individual',
-      kind: 'supporter' as const,
-      period: 'one-time' as const,
+      kind: Kind3.Supporter,
+      period: Period.OneTime,
       priceUsd: 25,
       storeUrl: null,
     },
@@ -203,7 +215,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
         license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T09:00:00.000Z' },
       } as never);
       sdkMock.getLicenseStatus.mockResolvedValue(license());
-      sdkMock.deleteUserLicense.mockResolvedValue();
+      sdkMock.deleteUserLicense.mockResolvedValue(undefined as never);
       sdkMock.getMyUser.mockResolvedValue({ id: 'admin-1', isAdmin: true, license: null } as never);
       render(LicenseSection);
 
@@ -236,7 +248,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
         license({ state: LicenseState.Expired, key: { ...keySlot, state: LicenseState.Expired }, keyHint: 'J58U' }),
       );
       sdkMock.removeLicenseKey.mockResolvedValue(license());
-      sdkMock.deleteUserLicense.mockResolvedValue();
+      sdkMock.deleteUserLicense.mockResolvedValue(undefined as never);
       sdkMock.getMyUser.mockResolvedValue({ id: 'admin-1', isAdmin: true, license: null } as never);
       render(LicenseSection);
 
