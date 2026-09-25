@@ -263,6 +263,48 @@ describe(StudioProjectRepository.name, () => {
     });
   });
 
+  describe('owner leaves the shared space (FL-146 owner decision)', () => {
+    it("keeps the owner's projects as private ones, ends the space sharing and releases a member's lease", async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { user: spaceOwner } = await ctx.newUser();
+      const { album: space } = await ctx.newAlbum({ ownerId: spaceOwner.id, kind: AlbumKind.Space });
+      await ctx.newAlbumUser({ albumId: space.id, userId: owner.id, role: AlbumUserRole.Editor });
+      await ctx.newAlbumUser({ albumId: space.id, userId: member.id, role: AlbumUserRole.Editor });
+      const kept = await sut.create({ ownerId: owner.id, name: 'Lake trip', spaceId: space.id });
+      const heldByMember = await sut.create({ ownerId: owner.id, name: 'Beach', spaceId: space.id });
+      await defaultDatabase
+        .updateTable('studio_project')
+        .set({ leaseHolderId: member.id, leaseClientId: 'tab-m', leaseExpiresAt: new Date(Date.now() + LEASE_MS) })
+        .where('id', '=', heldByMember.id)
+        .execute();
+      const others = await sut.create({ ownerId: member.id, name: "Member's", spaceId: space.id });
+
+      await defaultDatabase
+        .deleteFrom('album_user')
+        .where('albumId', '=', space.id)
+        .where('userId', '=', owner.id)
+        .execute();
+      const detached = await sut.detachOwnerFromSpace(space.id, owner.id);
+
+      expect(detached.toSorted()).toEqual([kept.id, heldByMember.id].toSorted());
+      expect(await sut.getById(kept.id)).toMatchObject({ spaceId: null, ownerId: owner.id, deletedAt: null });
+      expect(await sut.getById(heldByMember.id)).toMatchObject({
+        spaceId: null,
+        leaseHolderId: null,
+        leaseClientId: null,
+      });
+      // Another member's project in the space is untouched.
+      expect((await sut.getById(others.id))?.spaceId).toBe(space.id);
+
+      // The owner still sees both; the remaining member no longer does.
+      expect((await sut.listVisible(owner.id, { take: 10, skip: 0 })).total).toBe(2);
+      const forMember = await sut.listVisible(member.id, { take: 10, skip: 0 });
+      expect(forMember.items.map((item) => item.id)).toEqual([others.id]);
+    });
+  });
+
   describe('revocation lookups (FL-90)', () => {
     it('finds the projects whose current revision names an asset, and the projects in a space', async () => {
       const { ctx, sut } = setup();

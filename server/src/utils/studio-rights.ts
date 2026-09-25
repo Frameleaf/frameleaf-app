@@ -3,9 +3,10 @@
  *
  * Every model, voice, font, bundled weight, tool and asset service the pinned engine can reach
  * has a reviewed decision for three uses in `studio/dependency-attribution.json`, mirrored into
- * `studio-rights.generated.ts`. The owner's decision (FL-146, September 25, 2026) keeps each
- * one blocked until it is approved individually. A use is admitted only when its decision is
- * `allowed`; a resource with no reviewed row is blocked (`rightsPolicy.unknownResource`), and a
+ * `studio-rights.generated.ts`, together with the owner's approval of all 210 bundled resources
+ * (FL-146, September 25, 2026, `studio/rights-approval.json`), which is bound to each row's digest.
+ * A use is admitted only when its decision is `allowed`; a resource that is new, unknown or changed
+ * after approval is blocked (`rightsPolicy.unknownResource`), and a
  * refusal always names the row, so a blocked resource blocks the feature that needs it instead
  * of being silently dropped.
  */
@@ -118,6 +119,13 @@ export const checkStudioProducerRights = (
     }
   );
 };
+
+/**
+ * Whether any render worker has been qualified with the administrator-installed Dolby tools. The
+ * owner approved the tools' rights (FL-146, 2026-09-25), but no worker proves them yet: that is
+ * hardware and tool qualification (FL-145). Until then Dolby Vision output is refused.
+ */
+export const STUDIO_DOLBY_TOOLS_QUALIFIED = false;
 
 /** Dolby Vision output needs the administrator-installed Dolby tools (`tool:dolby-portal`). */
 export const STUDIO_DOLBY_TOOLS_ID = 'tool:dolby-portal';

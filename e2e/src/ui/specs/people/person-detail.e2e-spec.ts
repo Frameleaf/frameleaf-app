@@ -192,6 +192,8 @@ test.describe('person page', () => {
   test('a new featured photo updates the hero and the People card', async ({ context, page }) => {
     await setup(context);
     const [photo, archived] = assets;
+    // FL-37: the server names the current featured photo to the owner
+    person = { ...person, featuredAssetId: photo.id } as PersonResponseDto;
     await context.route('**/api/search/metadata', (route) =>
       route.fulfill({
         json: {
@@ -219,6 +221,12 @@ test.describe('person page', () => {
       .getByRole('button', { name: 'Featured photo' })
       .click();
     const dialog = page.getByRole('dialog', { name: 'Select featured photo' });
+    // the current featured photo is marked (People.jsx:603-628)
+    await expect(dialog.getByRole('radio', { name: 'photo.jpg, current featured photo' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await expect(dialog.getByRole('radio', { name: 'archived.jpg' })).toHaveAttribute('aria-checked', 'false');
     // an archived photo of the person can be chosen too
     await dialog.getByRole('radio', { name: 'archived.jpg' }).click();
 

@@ -399,6 +399,7 @@ describe(UserService.name, () => {
         memoryCurations: 4,
         peopleAndPets: 3,
         workspaceLayouts: 1,
+        utilityActivity: 5,
       });
 
       await sut.handleUserDeleteCheck();
@@ -407,6 +408,7 @@ describe(UserService.name, () => {
       expect(mocks.logger.log).toHaveBeenCalledWith(
         expect.stringContaining('3 memory show-less rules, 4 memory curations'),
       );
+      expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('5 utility activity entries'));
 
       mocks.user.sweepRemovedAccountForkRows.mockResolvedValue(undefined);
       await sut.handleUserDeleteCheck();

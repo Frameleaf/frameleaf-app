@@ -302,7 +302,8 @@ test("each kind of ML work can run locally, on Frameleaf Cloud or both, and neve
   assert.match(local[0].reason, /no usable GPU/);
   assert.equal(data.preferredDestination(state, "restoration"), null);
   // Search, faces and text recognition stay on this server.
-  for (const id of ["search", "faces", "ocr"]) assert.throws(() => data.setWorkloadRoute(state, id, "both"));
+  for (const id of ["search", "faces", "ocr", "render"]) assert.throws(() => data.setWorkloadRoute(state, id, "both"));
+  assert.match(data.workloadById("render").why, /home network/);
   // With a linked, consented cloud and "both", the job offers the cloud and the LAN worker.
   state = data.approveDeviceLink(data.startDeviceLink(state), { email: "taylor@example.invalid", name: "Taylor" });
   state = data.acceptCloudConsent({ ...state, processing: { ...state.processing, enabled: true } });

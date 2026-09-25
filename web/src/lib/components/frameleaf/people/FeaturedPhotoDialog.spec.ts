@@ -155,4 +155,55 @@ describe('FeaturedPhotoDialog (PD-6)', () => {
     expect(announced).toHaveBeenCalledWith(updated);
     stop();
   });
+
+  // FL-37: the person's current featured photo (`featuredAssetId`, owner-only) is marked, as in
+  // People.jsx:603-628: checked, with the accent border and check, named as the current one
+  it('marks the current featured photo', async () => {
+    sdkMock.searchAssets.mockResolvedValue(
+      page([
+        photo({ id: 'other', originalFileName: 'other.jpg' }),
+        photo({ id: 'featured', originalFileName: 'featured.jpg' }),
+      ]),
+    );
+    sdkMock.getFaces.mockResolvedValue([]);
+
+    render(FeaturedPhotoDialog, { person: { ...ada, featuredAssetId: 'featured' }, open: true });
+
+    const current = await screen.findByRole('radio', { name: 'featured.jpg, current featured photo' });
+    expect(current.getAttribute('aria-checked')).toBe('true');
+    expect(current.classList.contains('current')).toBe(true);
+    expect(current.querySelector(':scope .check')).not.toBeNull();
+    const other = screen.getByRole('radio', { name: 'other.jpg' });
+    expect(other.getAttribute('aria-checked')).toBe('false');
+    expect(other.querySelector(':scope .check')).toBeNull();
+  });
+
+  it('marks nothing when the server names no featured photo', async () => {
+    sdkMock.searchAssets.mockResolvedValue(page([photo({ id: 'only', originalFileName: 'only.jpg' })]));
+    sdkMock.getFaces.mockResolvedValue([]);
+
+    render(FeaturedPhotoDialog, { person: { ...ada, featuredAssetId: null }, open: true });
+
+    const tile = await screen.findByRole('radio', { name: 'only.jpg' });
+    expect(tile.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('radio', { checked: true })).toBeNull();
+  });
+
+  it('moves the mark to the photo just chosen', async () => {
+    sdkMock.searchAssets.mockResolvedValue(
+      page([photo({ id: 'old', originalFileName: 'old.jpg' }), photo({ id: 'new', originalFileName: 'new.jpg' })]),
+    );
+    sdkMock.getFaces.mockResolvedValue([]);
+    let resolve: (value: never) => void = () => {};
+    sdkMock.updatePerson.mockReturnValue(new Promise((done) => (resolve = done)) as never);
+
+    render(FeaturedPhotoDialog, { person: { ...ada, featuredAssetId: 'old' }, open: true });
+    await fireEvent.click(await screen.findByRole('radio', { name: 'new.jpg' }));
+
+    expect(screen.getByRole('radio', { name: 'new.jpg, current featured photo' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('radio', { name: 'old.jpg' }).getAttribute('aria-checked')).toBe('false');
+    resolve({ ...ada, featuredAssetId: 'new' } as never);
+  });
 });

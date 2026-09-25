@@ -75,7 +75,7 @@ export const walletPacks = Object.freeze([
 ]);
 
 /**
- * Models Frameleaf Cloud hosts for AI work (Studio renders live in cloud-jobs.mjs).
+ * Models Frameleaf Cloud hosts for AI work. Studio exports render locally only, so none are listed.
  * Billed by metered GPU time per GPU class plus a per-job start fee; per-unit
  * figures are estimates. Source of truth: gpu-model-catalog.mjs.
  */
@@ -209,7 +209,6 @@ export function createCloudState() {
         upscale: "local",
         restoration: "local",
         studio: "local",
-        render: "local",
         interpolation: "local",
       },
     },
@@ -693,14 +692,15 @@ export function removeProductKey(state) {
   };
 }
 
-// Licensed servers (an activated server or individual key) pay less for cloud services.
+// Licensed servers (an activated server or individual key) pay less for Frameleaf
+// Cloud plans. AI credit is always 2× our loaded GPU cost, licensed or not.
 export const LICENSED_DISCOUNT = 0.2;
 
 export function isLicensed(license) {
   return license?.entitlements?.supporter === true;
 }
 
-/** Price after the licensed-server discount; unchanged when the server is not licensed. */
+/** Plan price after the licensed-server discount (plans only, never AI credit). */
 export function cloudPrice(price, license) {
   if (!Number.isFinite(price)) return price;
   return isLicensed(license) ? Math.round(price * (1 - LICENSED_DISCOUNT) * 100) / 100 : price;
@@ -1221,8 +1221,9 @@ export const mlWorkloads = Object.freeze([
     id: "render",
     name: "Studio export",
     use: "Rendering finished videos from Studio.",
-    cloud: true,
-    localGb: 4,
+    cloud: false,
+    localGb: 0,
+    why: "Exports render on this server or another computer on your home network.",
   },
 ]);
 
