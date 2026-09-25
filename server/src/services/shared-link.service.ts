@@ -125,7 +125,9 @@ export class SharedLinkService extends BaseService {
 
   async update(auth: AuthDto, id: string, dto: SharedLinkEditDto) {
     const nsfwOptions = this.nsfwOptions(auth);
-    await this.findOrFail(auth.user.id, id, nsfwOptions);
+    const existing = await this.findOrFail(auth.user.id, id, nsfwOptions);
+    // As in create: a link that hides metadata never allows downloads, since a download carries the metadata.
+    const showExif = dto.showMetadata ?? existing.showExif;
     try {
       const updatedSharedLink = await this.sharedLinkRepository.update({
         id,
@@ -134,7 +136,7 @@ export class SharedLinkService extends BaseService {
         password: dto.password,
         expiresAt: dto.expiresAt,
         allowUpload: dto.allowUpload,
-        allowDownload: dto.allowDownload,
+        allowDownload: showExif ? dto.allowDownload : false,
         showExif: dto.showMetadata,
         slug: dto.slug || null,
       });
