@@ -22,10 +22,6 @@ declare namespace App {
   }
 }
 
-declare module '$env/static/public' {
-  export const PUBLIC_IMMICH_PAY_HOST: string;
-}
-
 interface Element {
   // Make optional, because it's unavailable on iPhones.
   requestFullscreen?(options?: FullscreenOptions): Promise<void>;

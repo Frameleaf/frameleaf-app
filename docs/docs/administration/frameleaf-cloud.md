@@ -47,3 +47,26 @@ The server checks every request against these choices and records it. A request 
 **Unlink…** on the Account & link page stops every cloud feature on this server: remote access, cloud processing and scheduled cloud backups. Local photos, albums, accounts and sign-in keep working exactly as before. If Frameleaf Cloud ends the link from its side, the page says so and why; the same features stop and nothing local is removed. You can link again at any time.
 
 Administrators receive a notification when the server is linked or unlinked, when check-ins keep failing, and when Frameleaf Cloud sees this server's identity start from two places (for example after copying a server with its identity folder). Each of these is recorded in the administrator's activity.
+
+## Plan and licence
+
+**Plan** and **Licence** are separate pages. Neither is needed to self-host, and neither ever locks a photo or a local feature.
+
+- A **Frameleaf Cloud plan** ($6 a month or $60 a year) adds remote access. Checkout happens in the Frameleaf store; the linked server picks the plan up by itself. Cloud backup is priced separately by what you store, from $7.99 a month per TB with a 1 TB minimum. **Remove from this server** takes the plan off this server only; the subscription is managed in your Frameleaf account.
+- A **licence** is a one-time supporter key: `FL-SXXX-XXXX-XXXX` for a server ($100) or `FL-IXXX-XXXX-XXXX` for one person ($25). It adds a supporter badge, and a licensed server pays 20% less for Frameleaf Cloud plans. AI credit is priced the same for everyone. Removing the key ends the badge and the discount; a plan is not affected.
+
+Every price is in US dollars. When the server was deployed without a Frameleaf Cloud address, the cards say purchasing isn't available yet.
+
+The server checks a key's format, including its check symbol, before sending it anywhere, and refuses keys of the previous product-key scheme. Keys travel only in request bodies: a key handed over by the Frameleaf store arrives in the address fragment of `/link`, is kept in the browser's session storage for **Support Frameleaf**, and is cleared from the address straight away.
+
+### Licence certificates
+
+Activating a key, or installing a licence file, gives this server a signed licence certificate. The server trusts only certificates signed by the Frameleaf keys built into it, bound to this server's instance ID. It refreshes them once a day while linked. If a refresh keeps failing, cloud features keep working through a grace period (the certificate says how long), then pause; nothing local changes. Administrators are told once when a plan enters grace and once when it ends.
+
+### Servers without internet access
+
+On **Licence**, copy this server's instance ID, download the licence file for it from your Frameleaf account on another device, and choose **Choose licence file…**. The file can carry a licence and a Frameleaf Cloud plan.
+
+### Personal supporter keys
+
+Anyone can activate their own `FL-I…` key under **Your preferences → Supporter** or on **Support Frameleaf**, and hide the supporter badge there. A person's key is tied to this server and to their account.

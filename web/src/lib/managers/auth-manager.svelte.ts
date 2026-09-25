@@ -1,5 +1,5 @@
 import {
-  getAboutInfo,
+  getServerFeatures,
   getMyPreferences,
   getMyUser,
   logout,
@@ -72,9 +72,9 @@ class AuthManager {
       if (user.license?.activatedAt) {
         this.isPurchased = true;
       } else {
-        // check server status
-        const serverInfo = await getAboutInfo().catch(() => {});
-        if (serverInfo?.licensed) {
+        // FL-156: a server supporter key (not a Frameleaf Cloud plan) gives everyone the badge
+        const features = await getServerFeatures().catch(() => {});
+        if (features?.supporter) {
           this.isPurchased = true;
         }
       }

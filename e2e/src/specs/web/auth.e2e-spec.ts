@@ -35,7 +35,8 @@ test.describe('Registration', () => {
 
     // onboarding
     // FL-80 ON-1: the prototype's onboarding — a step rail, Next through every step, then the
-    // summary's "Open Frameleaf". The server's first administrator sees all nine steps.
+    // summary's "Open Frameleaf". The server's first administrator sees all eleven steps, including
+    // the optional Frameleaf account (FL-158, "Skip" until linked) and Plan & licence (FL-157) steps.
     await expect(page).toHaveURL('/auth/onboarding');
     await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
     for (const title of [
@@ -44,15 +45,17 @@ test.describe('Registration', () => {
       'Server Privacy',
       'Your privacy',
       'Storage template',
+      'Frameleaf account',
+      'Plan & licence',
       'Back up your phone',
       'Get the mobile app',
       "You're all set",
     ]) {
-      await page.getByRole('button', { name: 'Next', exact: true }).click();
+      await page.getByRole('button', { name: /^(Next|Skip)$/ }).click();
       await expect(page.getByRole('heading', { name: title })).toBeVisible();
     }
     // The rail's compact progress line is visual only (aria-hidden); the panel announces the step.
-    await expect(page.getByRole('paragraph').filter({ hasText: 'Step 9 of 9' })).toBeAttached();
+    await expect(page.getByRole('paragraph').filter({ hasText: 'Step 11 of 11' })).toBeAttached();
     await page.getByRole('button', { name: 'Open Frameleaf' }).click();
 
     // success

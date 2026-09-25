@@ -4,8 +4,6 @@ import dotenv from 'dotenv';
 
 dotenv.config({ quiet: true });
 
-process.env.PUBLIC_IMMICH_PAY_HOST = process.env.PUBLIC_IMMICH_PAY_HOST || 'https://pay.futo.org';
-
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
   compilerOptions: {

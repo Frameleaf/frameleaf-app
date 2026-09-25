@@ -209,7 +209,9 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
     });
 
     it('strikes through the price on a licensed server (plans only)', async () => {
-      sdkMock.getLicenseStatus.mockResolvedValue(license({ licensed: true, key: keySlot }));
+      sdkMock.getLicenseStatus.mockResolvedValue(
+        license({ licensed: true, key: keySlot, entitlements: { ...entitlements, supporter: true } }),
+      );
       render(PlanSection);
 
       expect(await screen.findByText(/\$4.80/)).toBeInTheDocument();
