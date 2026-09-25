@@ -14,6 +14,11 @@
     ariaActiveDescendant?: string | undefined;
     menuScrollView?: HTMLDivElement | undefined;
     menuElement?: HTMLUListElement | undefined;
+    /**
+     * Keeps the menu at most `window height - maxHeightInset` pixels tall, scrolling inside, so it stays
+     * clear of chrome along the bottom edge (e.g. the viewer footer).
+     */
+    maxHeightInset?: number | undefined;
     onClose?: (() => void) | undefined;
     children?: Snippet;
   }
@@ -29,6 +34,7 @@
     ariaActiveDescendant = undefined,
     menuScrollView = $bindable(),
     menuElement = $bindable(),
+    maxHeightInset = undefined,
     onClose = undefined,
     children,
   }: Props = $props();
@@ -45,10 +51,11 @@
     const directionWidth = layoutDirection === 'left' ? rect.width : 0;
 
     const margin = 8;
+    const heightCap = maxHeightInset === undefined ? Infinity : Math.max(0, windowInnerHeight - maxHeightInset);
 
     const left = Math.max(margin, Math.min(windowInnerWidth - rect.width - margin, x - directionWidth));
-    const top = Math.max(margin, Math.min(windowInnerHeight - menuElement.clientHeight, y));
-    const maxHeight = windowInnerHeight - top - margin;
+    const top = Math.max(margin, Math.min(windowInnerHeight - Math.min(menuElement.clientHeight, heightCap), y));
+    const maxHeight = Math.min(windowInnerHeight - top - margin, heightCap);
 
     const needScrollBar = menuElement.clientHeight > maxHeight;
 
