@@ -1231,7 +1231,7 @@ const routes = {
   "/admin/queues": [
     "partial",
     ["CC-42", "CC-43", "CC-44"],
-    "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts); open: the enrichment dialog shell (CC-42, FL-59) and the RunPod manager and provider history (CC-43, CC-44, FL-43)",
+    "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts) and FL-59 (CC-42, the Frameleaf Enrichment tasks dialog with When and Acceleration); open: the RunPod manager and provider history (CC-43, CC-44, FL-43)",
     [`${P}/JobsManager.jsx`, `${P}/jobs-data.mjs`],
     [
       `${W}/routes/admin/queues/+page.ts`,
