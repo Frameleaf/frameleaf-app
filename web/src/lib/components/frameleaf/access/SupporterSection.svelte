@@ -8,8 +8,10 @@
    *   key reference and activation date, Register and Remove. Personal and server actions are
    *   separate buttons calling separate endpoints; a personal key is never registered for the
    *   server and the reverse.
-   * - The attribution notice says plainly that no Frameleaf purchase or activation service exists;
-   *   no purchase link is offered.
+   * - The notice explains what supporting Frameleaf gives (FL-146 owner decision, 2026-09-25): a
+   *   product key gives access to Frameleaf Cloud, the enhanced machine learning features and more.
+   *   Frameleaf Cloud replaces the inherited licensing system; key certificates and the store are
+   *   FL-156/FL-157 work, so no purchase link is offered here yet.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
@@ -197,8 +199,8 @@
   {/if}
 
   <div class="fl-access-notice">
-    <strong>{$t('frameleaf_access_supporter_attribution_title')}</strong>
-    <p>{$t('frameleaf_access_supporter_attribution')}</p>
+    <strong>{$t('frameleaf_access_supporter_cloud_title')}</strong>
+    <p>{$t('frameleaf_access_supporter_cloud')}</p>
     <p>{$t('frameleaf_access_supporter_help')}</p>
   </div>
 </section>
