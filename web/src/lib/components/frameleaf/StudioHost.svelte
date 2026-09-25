@@ -84,6 +84,7 @@
     onBack,
     onBackToEditor,
     handoffPlayhead = null,
+    draftHeld = false,
     onOpenActivity,
     onExportBundle,
     onExport,
@@ -126,6 +127,8 @@
     onBackToEditor?: () => void;
     /** Where the quick editor's playhead was (FL-113), so the engine starts at the same instant. */
     handoffPlayhead?: { num: number; den: number } | null;
+    /** The session holds undecided edits (a conflict or a lost lease): the engine keeps what it shows. */
+    draftHeld?: boolean;
     /**
      * Opens Activity (FL-104), where queued jobs such as bundle exports (FL-91) are followed.
      * When it is absent the host renders no link rather than a control that goes nowhere.
@@ -216,6 +219,7 @@
     mode,
     workspace,
     handoffPlayhead,
+    draftHeld,
     // The adapter's own chrome (its server preview panel) speaks the host's language (FL-96).
     strings: {
       previewTitle: $t('frameleaf_studio_server_preview'),

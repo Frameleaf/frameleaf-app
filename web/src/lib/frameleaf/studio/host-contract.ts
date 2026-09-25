@@ -181,6 +181,12 @@ export interface StudioHostContext {
    * starts there once, when it mounts; later updates never move the playhead.
    */
   handoffPlayhead?: { num: number; den: number } | null;
+  /**
+   * The host holds edits the person has not decided about: a conflict (the head moved, for example
+   * after a take over) or a lost lease. The engine keeps showing those edits and does not reload
+   * from `project.graph` until the person chooses Reload, Take over or Save as copy.
+   */
+  draftHeld?: boolean;
 }
 
 export type StudioAdapterString =

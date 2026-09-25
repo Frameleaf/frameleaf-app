@@ -274,6 +274,8 @@ describe('Studio route, engine present', () => {
       'assets',
       'auth',
       'capabilities',
+      // FL-88: undecided edits held by the host; the engine keeps what it shows.
+      'draftHeld',
       'handoffAssetIds',
       // FL-113: where the quick editor's playhead was, as exact seconds.
       'handoffPlayhead',
