@@ -48,6 +48,10 @@ export const LICENSE_PRODUCTS = Object.freeze([
   { id: 'cloud-annual', kind: 'plan', period: 'year', priceUsd: 60 },
   { id: 'supporter-server', kind: 'supporter', period: 'one-time', priceUsd: 100 },
   { id: 'supporter-individual', kind: 'supporter', period: 'one-time', priceUsd: 25 },
+  // AI credit presets (never discounted); the store also takes $20 to $500 (docs/ai-wallet.md)
+  { id: 'credit-25', kind: 'credit', period: 'one-time', priceUsd: 25 },
+  { id: 'credit-50', kind: 'credit', period: 'one-time', priceUsd: 50 },
+  { id: 'credit-100', kind: 'credit', period: 'one-time', priceUsd: 100 },
 ] as const);
 
 /** Cloud backup is usage based: this rate per TB per month, with a one-TB minimum (FL-146). */
@@ -151,6 +155,7 @@ export class FrameleafLicenseService extends BaseService {
         ...product,
         storeUrl: storeUrl ? `${storeUrl}?product=${encodeURIComponent(product.id)}` : null,
       })),
+      credit: { minimumUsd: 20, maximumUsd: 500 },
       backup: { ...CLOUD_BACKUP_PRICE },
     };
   }

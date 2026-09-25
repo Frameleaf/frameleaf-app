@@ -5043,6 +5043,11 @@ export type LicenseProductsResponseDto = {
         minimumTb: number;
         usdPerTbMonth: number;
     };
+    /** AI credit top-ups the store accepts; credit is never discounted */
+    credit: {
+        maximumUsd: number;
+        minimumUsd: number;
+    };
     currency: Currency;
     /** Share taken off plans on a licensed server */
     licensedDiscount: number;
@@ -20109,7 +20114,8 @@ export enum Currency {
 }
 export enum Kind2 {
     Plan = "plan",
-    Supporter = "supporter"
+    Supporter = "supporter",
+    Credit = "credit"
 }
 export enum Period {
     Month = "month",

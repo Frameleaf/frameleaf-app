@@ -53674,7 +53674,8 @@
           "kind": {
             "enum": [
               "plan",
-              "supporter"
+              "supporter",
+              "credit"
             ],
             "type": "string"
           },
@@ -53725,6 +53726,24 @@
             ],
             "type": "object"
           },
+          "credit": {
+            "description": "AI credit top-ups the store accepts; credit is never discounted",
+            "properties": {
+              "maximumUsd": {
+                "format": "double",
+                "type": "number"
+              },
+              "minimumUsd": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "minimumUsd",
+              "maximumUsd"
+            ],
+            "type": "object"
+          },
           "currency": {
             "enum": [
               "USD"
@@ -53750,6 +53769,7 @@
         },
         "required": [
           "backup",
+          "credit",
           "currency",
           "licensedDiscount",
           "products",

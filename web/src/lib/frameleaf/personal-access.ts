@@ -112,30 +112,6 @@ export const sessionDeviceName = (session: SessionResponseDto, unknown: string) 
   [session.deviceOS, session.deviceType].filter((part) => part && part.trim()).join(' · ') || unknown;
 
 /**
- * A support key shown without revealing it: the product prefix and the last group only, for
- * example `IMSV-…-4R2U`. Anything that does not look like a key is fully hidden.
- */
-export const maskLicenseKey = (key: string) => {
-  const groups = key.split('-');
-  if (groups.length < 3) {
-    return '…';
-  }
-  return `${groups[0]}-…-${groups.at(-1)}`;
-};
-
-/** Personal supporter keys start with IMCL, server support keys with IMSV. */
-export const licenseKeyKind = (key: string): 'personal' | 'server' | undefined => {
-  const normalized = key.trim().toUpperCase();
-  if (normalized.startsWith('IMCL-')) {
-    return 'personal';
-  }
-  if (normalized.startsWith('IMSV-')) {
-    return 'server';
-  }
-  return undefined;
-};
-
-/**
  * The provider account-management address, only when it is an http(s) URL. Anything else is
  * treated as not configured rather than opened.
  */
