@@ -100,7 +100,9 @@ export async function probeVideo(url: string, signal: AbortSignal): Promise<Prob
       fps: snapFrameRate(stats.averagePacketRate),
       duration: await input.computeDuration(),
       codec: (await video.getCodecParameterString()) ?? video.codec ?? 'unknown',
-      audioCodec: audio ? ((await audio.getCodecParameterString()) ?? audio.codec ?? undefined) : undefined,
+      audioCodec: audio
+        ? ((await audio.getCodecParameterString()) ?? audio.codec ?? undefined)
+        : undefined,
     }
   } catch {
     return null
@@ -110,7 +112,10 @@ export async function probeVideo(url: string, signal: AbortSignal): Promise<Prob
   }
 }
 
-async function probeImage(url: string, signal: AbortSignal): Promise<{ width: number; height: number } | null> {
+async function probeImage(
+  url: string,
+  signal: AbortSignal,
+): Promise<{ width: number; height: number } | null> {
   try {
     const response = await fetch(url, { signal, credentials: 'same-origin' })
     if (!response.ok) return null
@@ -167,7 +172,14 @@ export function createLibraryMediaSeeder(options: {
     try {
       const thumbnail = await fetchBlob(asset.thumbnailUrl, controller.signal)
       const thumbnailId = `thumb-${asset.id}`
-      await saveThumbnail({ id: thumbnailId, mediaId: asset.id, blob: thumbnail, timestamp: 0, width: 320, height: 180 })
+      await saveThumbnail({
+        id: thumbnailId,
+        mediaId: asset.id,
+        blob: thumbnail,
+        timestamp: 0,
+        width: 320,
+        height: 180,
+      })
       updates.thumbnailId = thumbnailId
     } catch {
       // The bin falls back to its own placeholder.
@@ -188,7 +200,11 @@ export function createLibraryMediaSeeder(options: {
           await createMedia(record)
         }
         // Media bytes stay on the server until something actually reads them.
-        workspace.putLazyFile([...mediaDir(asset.id), record.fileName], () => fetchBlob(sourceUrlOf(asset)), record.mimeType)
+        workspace.putLazyFile(
+          [...mediaDir(asset.id), record.fileName],
+          () => fetchBlob(sourceUrlOf(asset)),
+          record.mimeType,
+        )
         blobUrlManager.registerUrl(asset.id, sourceUrlOf(asset))
         await associateMediaWithProject(projectId, asset.id)
       }

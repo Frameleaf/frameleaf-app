@@ -72,7 +72,11 @@ async function toBytes(data: Blob | BufferSource | string): Promise<Uint8Array> 
 }
 
 export class VirtualWorkspace {
-  readonly root: DirectoryNode = { kind: 'directory', name: 'frameleaf-studio', children: new Map() }
+  readonly root: DirectoryNode = {
+    kind: 'directory',
+    name: 'frameleaf-studio',
+    children: new Map(),
+  }
   private readonly listeners = new Set<WorkspaceWriteListener>()
   private disposed = false
 
@@ -89,14 +93,28 @@ export class VirtualWorkspace {
   /** Put a file whose bytes are fetched only when first read. */
   putLazyFile(path: readonly string[], load: () => Promise<Blob>, type = ''): void {
     const { parent, name } = this.parentOf(path, true)
-    parent.children.set(name, { kind: 'file', name, data: null, load, type, lastModified: Date.now() })
+    parent.children.set(name, {
+      kind: 'file',
+      name,
+      data: null,
+      load,
+      type,
+      lastModified: Date.now(),
+    })
   }
 
   /** Put bytes directly, without notifying write listeners (seeding, not an engine write). */
   putFile(path: readonly string[], data: Blob | string): void {
     const { parent, name } = this.parentOf(path, true)
     const blob = typeof data === 'string' ? new Blob([data], { type: mimeFor(name) }) : data
-    parent.children.set(name, { kind: 'file', name, data: blob, load: null, type: blob.type, lastModified: Date.now() })
+    parent.children.set(name, {
+      kind: 'file',
+      name,
+      data: blob,
+      load: null,
+      type: blob.type,
+      lastModified: Date.now(),
+    })
   }
 
   async readText(path: readonly string[]): Promise<string | null> {
@@ -123,7 +141,10 @@ export class VirtualWorkspace {
     }
   }
 
-  private parentOf(path: readonly string[], create: boolean): { parent: DirectoryNode; name: string } {
+  private parentOf(
+    path: readonly string[],
+    create: boolean,
+  ): { parent: DirectoryNode; name: string } {
     if (path.length === 0) throw new TypeError('Empty workspace path')
     let directory = this.root
     for (const segment of path.slice(0, -1)) {
@@ -187,7 +208,14 @@ export class VirtualWorkspace {
         let child = node.children.get(name)
         if (!child) {
           if (!options?.create) throw notFound(name)
-          child = { kind: 'file', name, data: new Blob([], { type: mimeFor(name) }), load: null, type: mimeFor(name), lastModified: Date.now() }
+          child = {
+            kind: 'file',
+            name,
+            data: new Blob([], { type: mimeFor(name) }),
+            load: null,
+            type: mimeFor(name),
+            lastModified: Date.now(),
+          }
           node.children.set(name, child)
         }
         if (child.kind !== 'file') throw typeMismatch(name)
@@ -238,7 +266,11 @@ export class VirtualWorkspace {
     return handle as unknown as FileSystemDirectoryHandle
   }
 
-  private fileHandle(node: FileNode, parent: DirectoryNode, path: readonly string[]): FileSystemFileHandle {
+  private fileHandle(
+    node: FileNode,
+    parent: DirectoryNode,
+    path: readonly string[],
+  ): FileSystemFileHandle {
     const workspace = this
     let location = path
     const owner = parent
@@ -250,7 +282,10 @@ export class VirtualWorkspace {
       async getFile() {
         workspace.assertLive()
         const blob = await workspace.materialize(node)
-        return new File([blob], node.name, { type: blob.type || node.type, lastModified: node.lastModified })
+        return new File([blob], node.name, {
+          type: blob.type || node.type,
+          lastModified: node.lastModified,
+        })
       },
       async createWritable(options?: { keepExistingData?: boolean }) {
         workspace.assertLive()
