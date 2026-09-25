@@ -6,6 +6,7 @@
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { helpLinks } from '$lib/frameleaf/help-links.svelte';
+  import { appCallbacks } from '$lib/frameleaf/oauth-callbacks';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
@@ -53,6 +54,11 @@
 
   // FL-135: this installation's documentation, or no link at all
   const oauthDocs = $derived(helpLinks.docs('administration/oauth'));
+
+  // FL-131: what the identity provider must allow for each app, derived the way the server does
+  const callbacks = $derived(
+    appCallbacks(configToEdit.oauth.mobileOverrideEnabled, configToEdit.oauth.mobileRedirectUri),
+  );
 </script>
 
 <div>
@@ -282,6 +288,31 @@
                   isEdited={configToEdit.oauth.mobileRedirectUri !== config.oauth.mobileRedirectUri}
                 />
               {/if}
+
+              <!-- FL-131: both apps sign in against this server; each needs its own callback allowed.
+                   Grouped-list pattern from the prototype's settings rows (SystemPanels.jsx). -->
+              <section class="app-callbacks" aria-labelledby="app-callbacks-title">
+                <h4 id="app-callbacks-title">{$t('frameleaf_oauth_app_callbacks_title')}</h4>
+                <p>{$t('frameleaf_oauth_app_callbacks_description')}</p>
+                <dl>
+                  <div>
+                    <dt>{$t('frameleaf_oauth_app_callbacks_frameleaf')}</dt>
+                    <dd>
+                      {#if callbacks.frameleaf}
+                        <code>{callbacks.frameleaf}</code>
+                      {:else}
+                        <span class="refused" role="alert">{$t('frameleaf_oauth_app_callbacks_frameleaf_refused')}</span
+                        >
+                      {/if}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{$t('frameleaf_oauth_app_callbacks_immich')}</dt>
+                    <dd><code>{callbacks.immich}</code></dd>
+                  </div>
+                </dl>
+                <p>{$t('frameleaf_oauth_app_callbacks_independent')}</p>
+              </section>
             {/if}
           </div>
         </SettingGroup>
@@ -307,3 +338,49 @@
     </form>
   </div>
 </div>
+
+<style>
+  .app-callbacks {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.75rem 0.875rem;
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  .app-callbacks h4 {
+    margin: 0;
+    font-size: var(--fl-font-size);
+    font-weight: 600;
+    color: var(--fl-text);
+  }
+  .app-callbacks p,
+  .app-callbacks dl {
+    margin: 0;
+  }
+  .app-callbacks dl {
+    display: grid;
+    gap: 0.375rem;
+  }
+  .app-callbacks dl > div {
+    display: grid;
+    grid-template-columns: minmax(7rem, auto) 1fr;
+    gap: 0.75rem;
+    align-items: baseline;
+  }
+  .app-callbacks dt {
+    color: var(--fl-text);
+  }
+  .app-callbacks dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .app-callbacks code {
+    color: var(--fl-text);
+  }
+  .refused {
+    color: var(--fl-danger);
+  }
+</style>
