@@ -6,12 +6,20 @@
    * `CreateFaceModal.svelte`.
    *
    * Differences from the prototype, which saved into a localStorage model:
-   * - The asset's existing faces load as `detected` regions. The API can reassign
-   *   (`reassignFacesById`) or delete (`deleteFace`) a face but has no endpoint to change an
-   *   existing face's box, so a detected region's position is read-only here.
-   * - New regions are saved with `createFace` in pixels of the loaded preview; people created
-   *   in the dialog are created with `createPerson` only when a saved face uses them.
-   * - The stale-revision banner (FaceTagger.jsx:710-717) is deferred by owner decision.
+   * - The asset's existing faces load as `stored` regions with their provenance (detected,
+   *   added by a person, or corrected) and their server revision. Moving, resizing,
+   *   reassigning or unassigning one is saved with `correctFace`, removing it with
+   *   `deleteFace`, both at the revision the dialog read, so another editor's change is never
+   *   overwritten.
+   * - New regions are saved with `createFace` in pixels of the loaded preview, together with
+   *   the face source revision read on open (`getFaceSource`): a box drawn on an image that
+   *   was edited or replaced since is refused. People created in the dialog are created with
+   *   `createPerson` only when a saved face uses them.
+   * - A refused save (409) keeps the draft and shows the prototype's stale banner
+   *   (FaceTagger.jsx:94, 710-717): "Discard changes and load latest".
+   * - Close, Cancel and Escape close at once, as the prototype does (FaceTagger.jsx:316-318,
+   *   387-389, 406, 731); an Escape during a drag only cancels the drag and restores the draft
+   *   from before it (FaceTagger.jsx:242-249), and a failed save keeps every unsaved change.
    */
   import '$lib/frameleaf/tokens.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -40,6 +48,8 @@
     adjustFaceBox,
     type DraftFace,
     type DraftPerson,
+    type FaceProvenance,
+    type FailedFaceChanges,
     type FaceBox,
     type FaceBoxField,
     type Point,
@@ -52,12 +62,14 @@
     AssetMediaSize,
     AssetTypeEnum,
     AssetVisibility,
+    correctFace,
     createFace,
     createPerson,
     deleteFace,
     getAllPeople,
+    getFaceSource,
     getFaces,
-    reassignFacesById,
+    isHttpError,
     type AssetFaceResponseDto,
     type AssetResponseDto,
     type PersonResponseDto,
@@ -126,11 +138,18 @@
   let viewport = $state<Size>({ width: 0, height: 0 });
   let imageFailed = $state(false);
   let loadFailed = $state(false);
+  /** The face source revision read on open; boxes are drawn against it. */
+  let sourceRevision = $state<string>();
+  /** Set when the server refused a save because the faces or the image changed meanwhile. */
+  let stale = $state<'faces' | 'source' | null>(null);
 
   // Dialog.svelte: the dialog renders in the top layer, so it carries its own theme scope.
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const isVideo = $derived(asset.type === AssetTypeEnum.Video);
-  // A video is tagged on its preview frame (FaceTagger.jsx:397, " · Video preview").
+  // A video is tagged on its preview still (FaceTagger.jsx:397, " · Video preview"): the one
+  // representative frame the server picks from the opening of the video when it makes the
+  // preview (media.service.ts pickVideoThumbnailStartTime). Tags belong to the whole video, not
+  // to a moment in it, so the label says so.
   const source = $derived(getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }));
   const content = $derived(imageContentRect(viewport, natural));
 
@@ -163,11 +182,23 @@
   const valid = $derived(
     !!natural && !imageFailed && !loading && !loadFailed && isDraftSavable(draft, new Set(names.keys())),
   );
-  const needsPerson = $derived(draft.some((face) => !face.personId && !face.detected));
+  const needsPerson = $derived(draft.some((face) => !face.personId && !face.stored));
 
   const labelFor = (face: DraftFace) =>
     (face.personId && names.get(face.personId)) ||
-    (face.detected ? $t('frameleaf_face_tagger_unnamed_person') : $t('frameleaf_face_tagger_choose_person'));
+    (face.stored ? $t('frameleaf_face_tagger_unnamed_person') : $t('frameleaf_face_tagger_choose_person'));
+  /** A stored face the user changed in this dialog reads as corrected before it is saved. */
+  const provenanceOf = (face: DraftFace): FaceProvenance => {
+    const before = baseline.find((row) => row.id === face.id);
+    return before && (before.personId !== face.personId || JSON.stringify(before.box) !== JSON.stringify(face.box))
+      ? 'corrected'
+      : face.provenance;
+  };
+  const PROVENANCE: Record<FaceProvenance, Translations> = {
+    detected: 'frameleaf_face_provenance_detected',
+    manual: 'frameleaf_face_provenance_manual',
+    corrected: 'frameleaf_face_provenance_corrected',
+  };
   const snapshot = () => $state.snapshot(draft) as DraftFace[];
   const personsOf = (faces: AssetFaceResponseDto[]) =>
     faces.map((face) => face.person).filter((person): person is PersonResponseDto => !!person);
@@ -192,15 +223,26 @@
   };
 
   const load = async () => {
+    loading = true;
     try {
-      const [faces, list] = await Promise.all([getFaces({ id: asset.id }), loadPeople()]);
+      const [faces, list, source] = await Promise.all([
+        getFaces({ id: asset.id }),
+        loadPeople(),
+        getFaceSource({ id: asset.id }),
+      ]);
       if (!alive) {
         return;
       }
       facePeople = personsOf(faces);
       people = list;
+      sourceRevision = source.revision;
       baseline = faces.map((face) => draftFromFace(face));
       draft = faces.map((face) => draftFromFace(face));
+      addedPeople = [];
+      history = [];
+      stale = null;
+      loadFailed = false;
+      error = '';
       selectedId = draft[0]?.id ?? null;
       drawing = draft.length === 0;
     } catch {
@@ -209,6 +251,13 @@
       error = $t('frameleaf_face_tagger_error_load');
     } finally {
       loading = false;
+    }
+  };
+
+  /** FaceTagger.jsx:368-380: drop the draft and start again from what the server holds now. */
+  const loadLatest = () => {
+    if (!saving) {
+      void load();
     }
   };
 
@@ -294,7 +343,13 @@
     if (!natural || saving || loading || draft.length >= MAX_FACES) {
       return;
     }
-    const next: DraftFace = { id: `${NEW_FACE}${crypto.randomUUID()}`, personId: '', box, detected: false };
+    const next: DraftFace = {
+      id: `${NEW_FACE}${crypto.randomUUID()}`,
+      personId: '',
+      box,
+      stored: false,
+      provenance: 'manual',
+    };
     change([...draft, next]);
     selectedId = next.id;
     drawing = false;
@@ -419,6 +474,15 @@
     query = '';
   };
 
+  /** FL-38: a stored face can be left without a person (a correction the server records). */
+  const unassignSelected = () => {
+    if (!selected || saving || !selected.personId) {
+      return;
+    }
+    const id = selected.id;
+    change(draft.map((face) => (face.id === id ? { ...face, personId: '' } : face)));
+  };
+
   const removeSelected = () => {
     if (!selected) {
       return;
@@ -449,9 +513,21 @@
     }
   };
 
+  const isConflict = (caught: unknown) => isHttpError(caught) && caught.status === 409;
+
+  /** After a refused save: did the image change under the dialog, or only its faces? */
+  const staleKind = async (): Promise<'faces' | 'source'> => {
+    try {
+      const source = await getFaceSource({ id: asset.id });
+      return source.revision === sourceRevision ? 'faces' : 'source';
+    } catch {
+      return 'faces';
+    }
+  };
+
   /** FaceTagger.jsx:284-314, applied through the real face and person endpoints. */
   const save = async () => {
-    if (!valid || saving || !natural) {
+    if (!valid || saving || !natural || stale) {
       return;
     }
     const size = natural;
@@ -471,50 +547,67 @@
         // Every face that uses this person is reported as failed below.
       }
     }
-    const resolve = (id: string) => personIds.get(id) ?? (id.startsWith(NEW_PERSON) ? undefined : id);
+    const resolve = (id: string) => {
+      const resolved = personIds.get(id) ?? (id.startsWith(NEW_PERSON) ? undefined : id);
+      if (!resolved) {
+        throw new Error('person not created');
+      }
+      return resolved;
+    };
+    const drawnBox = (box: FaceBox) => ({ imageWidth: size.width, imageHeight: size.height, ...toPixelBox(box, size) });
 
-    const failed = { deletes: new Set<string>(), reassigns: new Set<string>(), creates: new Set<string>() };
-    for (const faceId of work.deletes) {
-      try {
-        // Permanent, like the People chip menu's "Remove face" (PersonFaceActions.svelte).
-        await deleteFace({ id: faceId, assetFaceDeleteDto: { force: true } });
-      } catch {
-        failed.deletes.add(faceId);
+    // Once the server refuses one change as stale, the rest are not attempted: the draft is kept
+    // whole and the stale banner offers to load the latest faces (FaceTagger.jsx:285, 710-717).
+    let conflict = false;
+    const failed: FailedFaceChanges = { deletes: new Set(), updates: new Set(), creates: new Set() };
+    const attempt = async (id: string, failures: Set<string>, action: () => Promise<unknown>) => {
+      if (conflict) {
+        failures.add(id);
+        return;
       }
+      try {
+        await action();
+      } catch (error_) {
+        failures.add(id);
+        conflict ||= isConflict(error_);
+      }
+    };
+
+    for (const { faceId, revision } of work.deletes) {
+      // Permanent, like the People chip menu's "Remove face" (PersonFaceActions.svelte).
+      await attempt(faceId, failed.deletes, () =>
+        deleteFace({ id: faceId, assetFaceDeleteDto: { force: true, expectedRevision: revision } }),
+      );
     }
-    for (const { faceId, personId } of work.reassigns) {
-      const id = resolve(personId);
-      try {
-        if (!id) {
-          throw new Error('person not created');
-        }
-        await reassignFacesById({ id, faceDto: { id: faceId } });
-      } catch {
-        failed.reassigns.add(faceId);
-      }
+    for (const change of work.updates) {
+      await attempt(change.faceId, failed.updates, () =>
+        correctFace({
+          id: change.faceId,
+          assetFaceCorrectionDto: {
+            expectedRevision: change.revision ?? '',
+            ...(change.personId !== undefined && {
+              personId: change.personId === null ? null : resolve(change.personId),
+            }),
+            ...(change.box && { box: drawnBox(change.box), expectedSourceRevision: sourceRevision }),
+          },
+        }),
+      );
     }
     for (const { faceId, personId, box } of work.creates) {
-      const id = resolve(personId);
-      try {
-        if (!id) {
-          throw new Error('person not created');
-        }
-        await createFace({
+      await attempt(faceId, failed.creates, () =>
+        createFace({
           assetFaceCreateDto: {
             assetId: asset.id,
-            personId: id,
-            imageWidth: size.width,
-            imageHeight: size.height,
-            ...toPixelBox(box, size),
+            personId: resolve(personId),
+            expectedSourceRevision: sourceRevision,
+            ...drawnBox(box),
           },
-        });
-      } catch {
-        failed.creates.add(faceId);
-      }
+        }),
+      );
     }
 
-    const failures = failed.deletes.size + failed.reassigns.size + failed.creates.size;
-    const attempted = work.deletes.length + work.reassigns.length + work.creates.length;
+    const failures = failed.deletes.size + failed.updates.size + failed.creates.size;
+    const attempted = work.deletes.length + work.updates.length + work.creates.length;
     if (created.length > 0 || failures < attempted) {
       await refreshViewer();
     }
@@ -526,9 +619,17 @@
       return;
     }
 
-    // Keep the dialog open with only the changes that still need saving (FaceTagger.jsx:299-303).
     people = [...people, ...created];
     addedPeople = addedPeople.filter((person) => !personIds.has(person.id));
+    if (conflict) {
+      // Keep every unsaved change on screen; people created for them are kept too.
+      draft = current.map((face) => ({ ...face, personId: personIds.get(face.personId) ?? face.personId }));
+      stale = await staleKind();
+      saving = false;
+      return;
+    }
+
+    // Keep the dialog open with only the changes that still need saving (FaceTagger.jsx:299-303).
     let server: DraftFace[];
     try {
       const faces = await getFaces({ id: asset.id });
@@ -562,7 +663,7 @@
       return;
     }
     const target = event.target as HTMLElement | null;
-    if (target?.closest('input,textarea') || saving || !selected || selected.detected) {
+    if (target?.closest('input,textarea') || saving || !selected) {
       return;
     }
     if (event.ctrlKey || event.metaKey) {
@@ -687,7 +788,8 @@
               <div
                 class="ft-face-box"
                 class:selected={face.id === selectedId}
-                class:detected={face.detected}
+                class:detected={face.provenance === 'detected'}
+                data-provenance={face.provenance}
                 style:left="{face.box.x * 100}%"
                 style:top="{face.box.y * 100}%"
                 style:width="{face.box.width * 100}%"
@@ -700,17 +802,11 @@
                   aria-pressed={face.id === selectedId}
                   disabled={saving}
                   onclick={() => select(face.id)}
-                  onpointerdown={(event) => {
-                    if (face.detected) {
-                      event.stopPropagation();
-                      return;
-                    }
-                    start(event, 'move', face);
-                  }}
+                  onpointerdown={(event) => start(event, 'move', face)}
                 >
                   <span>{index + 1} · {label}</span>
                 </button>
-                {#if face.id === selectedId && !face.detected}
+                {#if face.id === selectedId}
                   <button
                     type="button"
                     class="ft-resize fl-no-press"
@@ -750,6 +846,9 @@
             >
               <span>{index + 1}</span>
               {labelFor(face)}
+              <small class="ft-provenance" data-provenance={provenanceOf(face)}
+                >{$t(PROVENANCE[provenanceOf(face)])}</small
+              >
             </button>
           {/each}
         </div>
@@ -774,7 +873,7 @@
                   min={key === 'width' || key === 'height' ? '0.5' : '0'}
                   max="100"
                   value={toPercent(current.box[key])}
-                  disabled={saving || current.detected}
+                  disabled={saving}
                   oninput={(event) => {
                     const value = event.currentTarget.value;
                     if (value !== '') {
@@ -787,12 +886,18 @@
               </label>
             {/each}
           </div>
-          <p>
-            {current.detected ? $t('frameleaf_face_tagger_detected_note') : $t('frameleaf_face_tagger_position_note')}
-          </p>
+          <p>{$t('frameleaf_face_tagger_position_note')}</p>
         </section>
         <section class="ft-assign">
-          <h3>{$t('frameleaf_face_tagger_who')}</h3>
+          <!-- The unassign control follows the quiet "Remove face" pattern of the position section (FaceTagger.jsx:579-594). -->
+          <div class="ft-section-title ft-assign-title">
+            <h3>{$t('frameleaf_face_tagger_who')}</h3>
+            {#if current.stored && current.personId}
+              <Button variant="quiet" disabled={saving} onclick={unassignSelected}>
+                {$t('frameleaf_face_tagger_unassign')}
+              </Button>
+            {/if}
+          </div>
           <input
             bind:this={searchInput}
             type="search"
@@ -861,13 +966,22 @@
       {/if}
     </aside>
   </div>
+  {#if stale}
+    <!-- FaceTagger.jsx:710-717 -->
+    <div class="ft-message" role="alert">
+      {stale === 'source' ? $t('frameleaf_face_tagger_stale_source') : $t('frameleaf_face_tagger_stale')}
+      <Button variant="quiet" disabled={saving || loading} onclick={loadLatest}>
+        {$t('frameleaf_face_tagger_load_latest')}
+      </Button>
+    </div>
+  {/if}
   {#if error}
     <div class="ft-message error" role="alert">{error}</div>
   {/if}
   <footer class="ft-footer">
     <span>{statusText}</span>
     <Button disabled={saving} onclick={requestClose}>{$t('cancel')}</Button>
-    <Button variant="primary" disabled={!valid || saving} onclick={save}>
+    <Button variant="primary" disabled={!valid || saving || !!stale} onclick={save}>
       {saving ? $t('frameleaf_face_tagger_saving') : $t('frameleaf_face_tagger_save')}
     </Button>
   </footer>
@@ -978,8 +1092,16 @@
     background: #96d3a316;
     z-index: 2;
   }
+  /* FL-38 provenance: detected faces are dashed, faces a person placed or corrected are solid. */
   .ft-face-box.detected {
     border-style: dashed;
+  }
+  .ft-provenance {
+    font-size: 10px;
+    color: var(--fl-muted);
+  }
+  .ft-section-title.ft-assign-title {
+    margin: 0 0 10px;
   }
   .ft-face-move {
     position: static;
@@ -992,9 +1114,6 @@
     background: transparent;
     display: block;
     cursor: move;
-  }
-  .ft-face-box.detected .ft-face-move {
-    cursor: pointer;
   }
   .ft-face-move > span {
     position: absolute;
@@ -1119,9 +1238,6 @@
     margin-top: 20px;
     border-top: 1px solid var(--fl-border);
     padding-top: 16px;
-  }
-  .ft-assign h3 {
-    margin-bottom: 10px;
   }
   .ft-person-list {
     display: grid;
