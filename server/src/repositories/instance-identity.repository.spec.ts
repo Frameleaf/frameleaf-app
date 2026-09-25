@@ -1,5 +1,5 @@
 import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
-import { access, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -214,7 +214,24 @@ describe(InstanceIdentityRepository.name, () => {
       await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
 
       await writeFile(join(dir, CANDIDATE_KEY_FILE), newPem(), { mode: 0o600 });
-      const later = await repository.loadOrCreate(dir, identity, Date.now() + 25 * 60 * 60 * 1000);
+      const start = Date.now();
+      await expect(repository.loadOrCreate(dir, identity, start)).resolves.toHaveProperty('candidate');
+      const later = await repository.loadOrCreate(dir, identity, start + 25 * 60 * 60 * 1000);
+      expect(later.candidate).toBeUndefined();
+      await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
+    });
+
+    it('times the candidate by this server’s clock, not the file’s modification time', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      await writeFile(join(dir, CANDIDATE_KEY_FILE), newPem(), { mode: 0o600 });
+      const start = Date.now();
+      const first = await repository.loadOrCreate(dir, identity, start);
+      expect(first.candidate?.since).toBe(new Date(start).toISOString());
+      // a NAS with a clock far ahead keeps touching the file into the future
+      const future = new Date(start + 10 * 24 * 60 * 60 * 1000);
+      await utimes(join(dir, CANDIDATE_KEY_FILE), future, future);
+      const later = await repository.loadOrCreate(dir, identity, start + 25 * 60 * 60 * 1000);
       expect(later.candidate).toBeUndefined();
       await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
     });
