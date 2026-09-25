@@ -14,7 +14,7 @@
     type DevelopValues,
   } from '$lib/frameleaf/develop';
   import { Icon } from '@immich/ui';
-  import { mdiChevronDown, mdiChevronRight, mdiRestore } from '@mdi/js';
+  import { mdiChevronRight, mdiRestore } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let {
@@ -45,7 +45,8 @@
       aria-controls={bodyId}
       onclick={() => (open = !open)}
     >
-      <Icon icon={open ? mdiChevronDown : mdiChevronRight} size="18" />
+      <!-- One chevron that rotates open on a spring (editor.css `.ed-chevron`, Editor.jsx:373). -->
+      <Icon icon={mdiChevronRight} size="18" class="ed-chevron" />
       <span>{label}</span>
       {#if !isDefault}
         <i class="ed-dot" aria-hidden="true"></i>

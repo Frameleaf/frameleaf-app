@@ -6,6 +6,8 @@ import {
   evaluateRunningLimits,
   evaluateSessionAdmission,
   isWorkerRefusal,
+  provesOutput,
+  requiredOutput,
   signInputGrant,
   tightestLimits,
   verifyInputGrant,
@@ -261,6 +263,68 @@ describe(evaluateClaimAdmission.name, () => {
         }),
       ),
     ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient });
+  });
+
+  describe('codecs and containers the session proved (FL-95)', () => {
+    const proven = { codecs: ['hevc_nvenc', 'h264_nvenc'], formats: ['mp4', 'mov'] };
+    const exporting = (format: string) => ({ settings: { format, resolution: '2160p' } });
+
+    it('admits an export whose encoder and container the session verified', () => {
+      expect(
+        evaluateClaimAdmission(
+          claimInput({ session: { capabilities: proven }, operation: exporting('mp4-hevc-main10') }),
+        ),
+      ).toEqual({ admitted: true });
+      expect(
+        evaluateClaimAdmission(claimInput({ session: { capabilities: proven }, operation: exporting('mp4-h264') })),
+      ).toEqual({ admitted: true });
+    });
+
+    it('refuses an encoder or a container the session did not verify, and an unknown format', () => {
+      for (const format of ['webm-av1', 'prores-422-hq', 'gif-89a']) {
+        expect(
+          evaluateClaimAdmission(claimInput({ session: { capabilities: proven }, operation: exporting(format) })),
+          format,
+        ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported });
+      }
+      // HEVC proven but not the WebM container: still refused.
+      expect(
+        evaluateClaimAdmission(
+          claimInput({
+            session: { capabilities: { codecs: ['libaom-av1'], formats: ['mp4'] } },
+            operation: exporting('webm-av1'),
+          }),
+        ),
+      ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported });
+    });
+
+    it('gives a session that proved nothing no job that names a format, and does not stop it asking', () => {
+      const decision = evaluateClaimAdmission(claimInput({ operation: exporting('mp4-h264') }));
+      expect(decision).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported });
+      expect(isWorkerRefusal(RenderWorkerRefusalReason.CodecUnsupported)).toBe(false);
+      // A job with no output format (a restoration, a preview) needs no codec evidence.
+      expect(evaluateClaimAdmission(claimInput())).toEqual({ admitted: true });
+    });
+
+    it('matches encoder names exactly, case-insensitively, so a decoder proves nothing', () => {
+      expect(
+        provesOutput({ codecs: ['LIBX265'], formats: ['MP4'] }, requiredOutput({ format: 'mp4-hevc-main10' })!),
+      ).toBe(true);
+      for (const decoder of ['h264_cuvid', 'hevc_cuvid', 'h264', 'hevc', 'av1', 'libdav1d']) {
+        expect(
+          provesOutput({ codecs: [decoder], formats: ['mp4', 'webm'] }, requiredOutput({ format: 'mp4-h264' })!),
+          decoder,
+        ).toBe(false);
+      }
+      expect(
+        provesOutput(
+          { codecs: ['h264_cuvid', 'hevc_cuvid'], formats: ['mp4'] },
+          requiredOutput({ format: 'mp4-hevc-main10' })!,
+        ),
+      ).toBe(false);
+      expect(requiredOutput({})).toBeNull();
+      expect(requiredOutput(undefined)).toBeNull();
+    });
   });
 
   it('refuses when the worker already holds its concurrency', () => {

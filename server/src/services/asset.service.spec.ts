@@ -1445,6 +1445,25 @@ describe(AssetService.name, () => {
       mocks.assetEdit.getAll.mockResolvedValue([]);
     });
 
+    it('lists the original keyframes in milliseconds for the fast trim (FL-113)', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [
+          { index: 0, width: 1920, height: 1080, rotation: 0, timeBase: 600, timeBaseRational: { num: 1, den: 600 } },
+        ],
+      } as any);
+      mocks.media.probePackets.mockResolvedValue({ startPts: 300, keyframePts: [300, 1500, 1500, 2700] } as any);
+      await expect(sut.getAssetEditKeyframes(authStub.admin, 'asset-1')).resolves.toEqual({
+        keyframesMs: [0, 2000, 4000],
+      });
+      expect(mocks.media.probePackets).toHaveBeenCalledWith('/original.mp4', 0);
+    });
+
+    it('refuses keyframes for a photo', async () => {
+      mocks.asset.getById.mockResolvedValue({ type: AssetType.Image, originalPath: '/a.jpg' } as any);
+      await expect(sut.getAssetEditKeyframes(authStub.admin, 'asset-1')).rejects.toThrow('not a video');
+    });
+
     it('returns the rotated original raster and timeline instead of current render metadata', async () => {
       mocks.media.probe.mockResolvedValue({
         format: { duration: 30 },
@@ -1670,6 +1689,36 @@ describe(AssetService.name, () => {
         name: JobName.AssetVideoEditGeneration,
         data: { id: 'asset-1' },
       });
+    });
+
+    it('accepts a whole-clip speed with speed ranges, and refuses two whole-clip speeds (FL-113)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 10_000,
+        livePhotoVideoId: null,
+        originalPath: '/upload/video.mp4',
+        originalFileName: 'video.mp4',
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      const edits: AssetEditActionItem[] = [
+        { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+        { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 1000, endMs: 3000 } },
+      ];
+      mocks.assetEdit.replaceAll.mockResolvedValue(edits.map((edit, index) => ({ id: `edit-${index}`, ...edit })));
+      await expect(sut.editAsset(authStub.admin, 'asset-1', { edits })).resolves.toMatchObject({ assetId: 'asset-1' });
+
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [
+            { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+            { action: AssetEditAction.Speed, parameters: { rate: 4 } },
+          ],
+        }),
+      ).rejects.toThrow('Only one whole-clip speed edit is allowed');
     });
 
     it('should reject overlapping video speed segments', async () => {

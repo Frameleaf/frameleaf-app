@@ -40,6 +40,8 @@ type EventMap = {
   // album events
   AlbumUpdate: [{ id: string; userIds: string[]; recipientIds: string[] }];
   AlbumInvite: [{ id: string; userId: string; senderName: string }];
+  /** FL-90: a member left, or was taken out of, an album or shared space; their access ended. */
+  AlbumUserRemove: [{ albumId: string; userId: string }];
 
   // cluster group events
   ClusterGroupRequest: [{ clusterGroupId: string; userId: string; senderName: string }];
@@ -76,6 +78,8 @@ type EventMap = {
   AssetRestoreAll: [{ assetIds: string[]; userId: string }];
   /** FL-34: assets were locked outside a service's own lock path (the iCloud reconciler); run the follow-up */
   AssetLockAll: [{ assetIds: string[]; userId: string }];
+  /** FL-90: a move into the Locked space committed (every lock path); interactive reads must stop. */
+  AssetLocked: [{ assetIds: string[] }];
 
   /** a worker receives a job and emits this event to run it */
   JobRun: [QueueName, JobItem];

@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js';
 import { AuthSession } from 'src/database.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetFileType, AssetType, AssetVisibility } from 'src/enum.js';
@@ -20,6 +21,26 @@ import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+/**
+ * FL-86: the reviewed rights table the resolver consults. It starts as the real, all-blocked
+ * mirror; a test admits a row by writing it here.
+ */
+const rightsTable = vi.hoisted(() => ({}) as Record<string, StudioResourceRights>);
+vi.mock('src/utils/studio-rights.generated.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('src/utils/studio-rights.generated.js')>();
+  return { ...actual, studioResourceRights: rightsTable };
+});
+const admit = (id: string, uses: Partial<Pick<StudioResourceRights, 'localRuntime' | 'hostedUse'>> = {}) => {
+  rightsTable[id] = {
+    kind: id.split(':', 1)[0],
+    license: null,
+    redistribution: 'blocked',
+    localRuntime: 'allowed',
+    hostedUse: 'blocked',
+    ...uses,
+  };
+};
 
 const sequenceWith = (...clips: Record<string, unknown>[]) => ({
   id: 'seq-main',
@@ -48,9 +69,16 @@ describe(StudioResourceService.name, () => {
 
   const allowOwned = (...ids: string[]) => mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(ids));
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ({ sut, mocks } = newTestService(StudioResourceService));
     auth = AuthFactory.create();
+    const actual = await vi.importActual<typeof import('src/utils/studio-rights.generated.js')>(
+      'src/utils/studio-rights.generated.js',
+    );
+    for (const key of Object.keys(rightsTable)) {
+      delete rightsTable[key];
+    }
+    Object.assign(rightsTable, actual.studioResourceRights);
   });
 
   it('should work', () => {
@@ -387,8 +415,27 @@ describe(StudioResourceService.name, () => {
           },
         }),
       );
-      expect(bundled.refused).toEqual([]);
-      expect(bundled.manifest.entries).toEqual([
+      // Bundled is not enough: a track with no approved rights row is refused by name (FL-86).
+      expect(bundled.refused).toEqual([
+        expect.objectContaining({ id: 'mountain-dreams', reason: StudioRefusalReason.RightsBlocked }),
+      ]);
+      expect(bundled.refused[0].detail).toContain('audio:mountain-dreams');
+
+      admit('audio:mountain-dreams');
+      const approved = await sut.resolveProjectResources(
+        auth,
+        context(graph, {
+          catalog: {
+            fonts: {},
+            luts: {},
+            models: {},
+            audio: { 'mountain-dreams': { path: '/bundle/md.flac', checksum: 'abc' } },
+          },
+        }),
+      );
+      expect(approved.refused).toEqual([]);
+      const bundledEntries = approved;
+      expect(bundledEntries.manifest.entries).toEqual([
         expect.objectContaining({
           kind: StudioResourceKind.Audio,
           source: 'catalog',
@@ -590,7 +637,19 @@ describe(StudioResourceService.name, () => {
           catalog: { fonts: {}, audio: {}, models: {}, luts: { teal: { path: '/bundle/teal.cube', checksum: 't' } } },
         }),
       );
-      expect(bundled.refused).toEqual([]);
+      expect(bundled.refused).toEqual([
+        expect.objectContaining({ id: 'teal', reason: StudioRefusalReason.RightsBlocked }),
+      ]);
+
+      admit('lut:teal');
+      const approved = await sut.resolveProjectResources(
+        auth,
+        context(graph, {
+          imports,
+          catalog: { fonts: {}, audio: {}, models: {}, luts: { teal: { path: '/bundle/teal.cube', checksum: 't' } } },
+        }),
+      );
+      expect(approved.refused).toEqual([]);
     });
   });
 
@@ -616,17 +675,32 @@ describe(StudioResourceService.name, () => {
         }),
       ]);
 
-      const bundled = await sut.resolveProjectResources(
+      const catalog = {
+        fonts: { Inter: { path: '/bundle/Inter.woff2', checksum: 'f' } },
+        models: { 'kokoro-v1': { path: '/models/kokoro', checksum: 'm', revision: '1.0' } },
+        luts: {},
+        audio: {},
+      };
+      // The reviewed rows for Inter stay blocked (FL-146 default), and kokoro-v1 has no row at all.
+      const blocked = await sut.resolveProjectResources(auth, context(graph, { catalog }));
+      expect(blocked.refused.map((item) => [item.kind, item.id, item.reason])).toEqual([
+        [StudioResourceKind.Font, 'Inter', StudioRefusalReason.RightsBlocked],
+        [StudioResourceKind.Preset, 'Wiggle', StudioRefusalReason.UnknownPreset],
+        [StudioResourceKind.Model, 'kokoro-v1', StudioRefusalReason.RightsBlocked],
+      ]);
+      expect(blocked.refused[0].detail).toBe('font:Inter: use on this server is blocked until the owner approves it.');
+      expect(blocked.refused[2].detail).toBe('model:kokoro-v1 has no reviewed rights decision, so it is blocked.');
+
+      admit('font:Inter');
+      admit('model:kokoro-v1');
+      // Local use is approved but hosted use is not, so the cloud destination still refuses both.
+      const hosted = await sut.resolveProjectResources(
         auth,
-        context(graph, {
-          catalog: {
-            fonts: { Inter: { path: '/bundle/Inter.woff2', checksum: 'f' } },
-            models: { 'kokoro-v1': { path: '/models/kokoro', checksum: 'm', revision: '1.0' } },
-            luts: {},
-            audio: {},
-          },
-        }),
+        context(graph, { catalog, destination: StudioDestination.RunPod, cloudConsent: true }),
       );
+      expect(hosted.refused.filter((item) => item.reason === StudioRefusalReason.RightsBlocked)).toHaveLength(2);
+
+      const bundled = await sut.resolveProjectResources(auth, context(graph, { catalog }));
       expect(bundled.manifest.entries.map((entry) => [entry.kind, entry.grant, entry.path])).toEqual([
         [StudioResourceKind.Font, 'render', '/bundle/Inter.woff2'],
         [StudioResourceKind.Preset, 'none', null],
@@ -733,6 +807,27 @@ describe(StudioResourceService.name, () => {
         ['orphan', StudioRefusalReason.DerivedInputRefused],
       ]);
     });
+
+    it('refuses model output until a model of its family is approved for the use (FL-86)', async () => {
+      const graph = sequenceWith({ generatedId: 'music-1' }, { generatedId: 'voice-1' }, { generatedId: 'wave-1' });
+      const generated = [
+        { id: 'music-1', producer: 'musicgen', checksum: 'm1', path: '/cache/music-1.wav', derivedFrom: [] },
+        { id: 'voice-1', producer: 'tts', checksum: 'v1', path: '/cache/voice-1.wav', derivedFrom: [] },
+        { id: 'wave-1', producer: 'waveform', checksum: 'w1', path: '/cache/wave-1.bin', derivedFrom: [] },
+      ];
+
+      const blocked = await sut.resolveProjectResources(auth, context(graph, { generated }));
+      expect(blocked.refused.map((item) => [item.id, item.reason])).toEqual([
+        ['music-1', StudioRefusalReason.RightsBlocked],
+        ['voice-1', StudioRefusalReason.RightsBlocked],
+      ]);
+      expect(blocked.refused[0].detail).toContain('model:Xenova/musicgen-small');
+      expect(blocked.manifest.entries.map((entry) => entry.id)).toEqual(['wave-1']);
+
+      admit('model:supertonic-3');
+      const approved = await sut.resolveProjectResources(auth, context(graph, { generated }));
+      expect(approved.refused.map((item) => item.id)).toEqual(['music-1']);
+    });
   });
 
   describe('manifests and grants', () => {
@@ -830,6 +925,8 @@ describe(StudioResourceService.name, () => {
           scope: 'preview',
           kind: StudioResourceKind.RemotePreviewFrame,
           manifest: manifest.digest,
+          // STU-203: the previewed revision's library sources, re-checked on every frame read.
+          assetIds: [assetId],
         }),
         expect.any(String),
         { expiresIn: STUDIO_GRANT_TTL_SECONDS },
@@ -872,6 +969,30 @@ describe(StudioResourceService.name, () => {
           path: manifest.entries[0].path,
         });
         expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledTimes(2);
+      });
+
+      it('re-checks live access to every previewed source on a preview frame read (STU-203)', async () => {
+        const preview = payload({
+          scope: 'preview',
+          kind: StudioResourceKind.RemotePreviewFrame,
+          id: manifest.digest,
+          assetIds: [assetId],
+        });
+        mocks.crypto.verifyJwt.mockReturnValue(preview);
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual({
+          valid: true,
+          grant: preview,
+          path: '',
+        });
+
+        // The asset left the album, the album was deleted or unlinked, the partner share ended or the
+        // member left the space: the account no longer reaches it, and the cached frame stops.
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+        mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set());
+        mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set());
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
+          expect.objectContaining({ valid: false }),
+        );
       });
 
       it('lets a background runner reopen a Locked source that the interactive path refuses', async () => {

@@ -26,6 +26,7 @@ import {
 import {
   AssetEditAction,
   AssetEditActionItem,
+  AssetEditKeyframesResponseDto,
   AssetEditsCreateDto,
   AssetEditsResponseDto,
   VideoEditVersionResponseDto,
@@ -930,6 +931,34 @@ export class AssetService extends BaseService {
     return { assetId: id, edits, ...(originalVideo && { originalVideo }) };
   }
 
+  /**
+   * FL-113 (VID-105, "exact versus fast trim shows actual boundaries"): the original's keyframes,
+   * read from its packets without decoding, so the editor can show where a fast trim cuts.
+   */
+  async getAssetEditKeyframes(auth: AuthDto, id: string): Promise<AssetEditKeyframesResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AssetEditGet, ids: [id] });
+    const asset = await this.assetRepository.getById(id);
+    if (!asset || asset.type !== AssetType.Video) {
+      throw new BadRequestException('Asset not found or asset is not a video');
+    }
+    const { videoStreams } = await this.mediaRepository.probe(asset.originalPath);
+    const video = videoStreams[0];
+    const ticks = video?.timeBaseRational ?? (video?.timeBase ? { num: 1, den: video.timeBase } : null);
+    if (!video || !ticks) {
+      throw new BadRequestException('Original video keyframes are not available');
+    }
+    const packets = await this.mediaRepository.probePackets(asset.originalPath, video.index);
+    const start = packets?.startPts ?? 0;
+    const keyframesMs = [
+      ...new Set(
+        (packets?.keyframePts ?? []).map((pts) =>
+          Math.max(0, Math.round(((pts - start) * Number(ticks.num) * 1000) / Number(ticks.den))),
+        ),
+      ),
+    ].sort((a, b) => a - b);
+    return { keyframesMs };
+  }
+
   private async getOriginalVideoMetadata(path: string): Promise<NonNullable<AssetEditsResponseDto['originalVideo']>> {
     const source = await this.mediaRepository.probe(path);
     const video = source.videoStreams[0];
@@ -1021,15 +1050,17 @@ export class AssetService extends BaseService {
       const trimStartMs = trimEdit?.parameters.startMs ?? 0;
       const trimEndMs = trimEdit?.parameters.endMs ?? durationMs;
       const speedEdits = edits.filter((edit) => edit.action === AssetEditAction.Speed);
-      const hasGlobalSpeedEdit = speedEdits.some(
+      const globalSpeedEdits = speedEdits.filter(
         (edit) => edit.parameters.startMs === undefined && edit.parameters.endMs === undefined,
       );
       const speedSegments = speedEdits
         .filter((edit) => edit.parameters.startMs !== undefined && edit.parameters.endMs !== undefined)
         .sort((a, b) => a.parameters.startMs! - b.parameters.startMs!);
 
-      if (hasGlobalSpeedEdit && speedSegments.length > 0) {
-        throw new BadRequestException('Global and segment speed edits cannot be combined');
+      // FL-113: a whole-clip speed and speed ranges combine. The ranges override it and it plays in
+      // the gaps between them (`MediaService.getVideoEditTimeline`, `develop.mjs` speedAt).
+      if (globalSpeedEdits.length > 1) {
+        throw new BadRequestException('Only one whole-clip speed edit is allowed');
       }
 
       for (let index = 1; index < speedSegments.length; index++) {

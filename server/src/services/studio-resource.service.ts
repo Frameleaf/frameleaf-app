@@ -62,6 +62,13 @@ import {
   measureStudioGraph,
   studioReferenceKey,
 } from 'src/utils/studio-resources.js';
+import {
+  type StudioRightsCatalog,
+  checkStudioProducerRights,
+  checkStudioRights,
+  studioRightsId,
+  studioRightsUseFor,
+} from 'src/utils/studio-rights.js';
 
 /* ------------------------------------------------------------------ */
 /* Inputs                                                               */
@@ -214,6 +221,13 @@ export type StudioResourceResolution = {
   refused: StudioRefusedReference[];
 };
 
+/** Kinds whose access follows the acting user's live access to a library asset. */
+const LIBRARY_BACKED_KINDS: ReadonlySet<StudioResourceKind> = new Set([
+  StudioResourceKind.LibraryAsset,
+  StudioResourceKind.Audio,
+  StudioResourceKind.EditedMaster,
+]);
+
 export type StudioReadGrantPayload = {
   v: 1;
   scope: 'render' | 'preview';
@@ -228,6 +242,13 @@ export type StudioReadGrantPayload = {
   workerId: string;
   /** The issuing manifest, so a grant cannot outlive a re-resolution. */
   manifest: string;
+  /**
+   * Preview grants only: the library assets the previewed revision reads. Every frame read
+   * re-checks the acting user's live access to each of them (STU-203), so an asset removed from an
+   * album, a deleted or unlinked album, an ended partner share or a member leaving a space stops
+   * the preview at the next frame instead of serving a cached one.
+   */
+  assetIds?: string[];
 };
 
 export type StudioReadGrant = {
@@ -305,6 +326,8 @@ export class StudioResourceService extends BaseService {
     }
 
     const catalog = context.catalog ?? emptyStudioResourceCatalog();
+    // FL-86: a bundled entry is loaded only when its reviewed rights admit this destination's use.
+    const rightsUse = studioRightsUseFor(context.destination);
     const imports = new Map((context.imports ?? []).map((item) => [item.id, item]));
     const generated = new Map((context.generated ?? []).map((item) => [item.id, item]));
 
@@ -331,6 +354,14 @@ export class StudioResourceService extends BaseService {
         reason,
         detail,
       });
+    };
+    /** Refuses the reference by its rights row unless the reviewed decision admits the use. */
+    const rightsAdmit = (reference: StudioResourceReference, rightsCatalog: StudioRightsCatalog) => {
+      const verdict = checkStudioRights(studioRightsId(rightsCatalog, reference.id), rightsUse);
+      if (!verdict.allowed) {
+        refuse(reference, StudioRefusalReason.RightsBlocked, verdict.detail);
+      }
+      return verdict.allowed;
     };
 
     const authorize = (
@@ -491,7 +522,7 @@ export class StudioResourceService extends BaseService {
             }
             case 'catalog': {
               const entry = catalog.audio[reference.id];
-              if (entry) {
+              if (entry && rightsAdmit(reference, 'audio')) {
                 authorize(reference, {
                   ownerId: null,
                   checksum: entry.checksum,
@@ -499,7 +530,7 @@ export class StudioResourceService extends BaseService {
                   sourceAccess: 'deployment',
                   grant: 'render',
                 });
-              } else {
+              } else if (!entry) {
                 refuse(reference, StudioRefusalReason.NotBundled, 'No bundled track with this id.');
               }
               break;
@@ -590,6 +621,9 @@ export class StudioResourceService extends BaseService {
             refuse(reference, StudioRefusalReason.NotBundled, 'Only fonts bundled with the deployment resolve.');
             break;
           }
+          if (!rightsAdmit(reference, 'font')) {
+            break;
+          }
           authorize(reference, {
             ownerId: null,
             checksum: entry.checksum,
@@ -621,6 +655,9 @@ export class StudioResourceService extends BaseService {
             refuse(reference, StudioRefusalReason.NotBundled, 'No bundled LUT with this id.');
             break;
           }
+          if (!rightsAdmit(reference, 'lut')) {
+            break;
+          }
           authorize(reference, {
             ownerId: null,
             checksum: entry.checksum,
@@ -635,6 +672,9 @@ export class StudioResourceService extends BaseService {
           const entry = catalog.models[reference.id];
           if (!entry) {
             refuse(reference, StudioRefusalReason.NotBundled, 'The model is not in the admitted-model catalogue.');
+            break;
+          }
+          if (!rightsAdmit(reference, 'model')) {
             break;
           }
           authorize(reference, {
@@ -755,6 +795,12 @@ export class StudioResourceService extends BaseService {
         }
         if (!record.checksum) {
           refuse(reference, StudioRefusalReason.ChecksumMismatch, 'The generated file has no recorded checksum.');
+          progressed = true;
+          continue;
+        }
+        const producerRights = checkStudioProducerRights(record.producer, rightsUse);
+        if (producerRights && !producerRights.allowed) {
+          refuse(reference, StudioRefusalReason.RightsBlocked, producerRights.detail);
           progressed = true;
           continue;
         }
@@ -897,6 +943,14 @@ export class StudioResourceService extends BaseService {
       userId: manifest.userId,
       workerId,
       manifest: manifest.digest,
+      assetIds: [
+        // Every source that reaches the user through a library asset, whatever kind the graph uses it as.
+        ...new Set(
+          manifest.entries
+            .filter((entry) => entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared')
+            .map((entry) => entry.id),
+        ),
+      ],
     };
     return this.cryptoRepository.signJwt(payload, this.secret, { expiresIn: ttlSeconds });
   }
@@ -938,12 +992,27 @@ export class StudioResourceService extends BaseService {
     }
 
     if (grant.scope === 'preview') {
+      const assetIds = grant.assetIds ?? [];
+      if (assetIds.length > 0) {
+        const decisions = await this.decideAssets(auth, new Set(assetIds), { backgroundRunner });
+        for (const id of assetIds) {
+          const decision = decisions.get(id);
+          if (!decision) {
+            return {
+              valid: false,
+              reason: StudioRefusalReason.NotFound,
+              detail: 'A previewed source no longer exists.',
+            };
+          }
+          if (!decision.ok) {
+            return { valid: false, reason: decision.reason, detail: decision.detail };
+          }
+        }
+      }
       return { valid: true, grant, path: '' };
     }
 
-    if (
-      [StudioResourceKind.LibraryAsset, StudioResourceKind.Audio, StudioResourceKind.EditedMaster].includes(grant.kind)
-    ) {
+    if (LIBRARY_BACKED_KINDS.has(grant.kind)) {
       const decisions = await this.decideAssets(auth, new Set([grant.id]), { backgroundRunner });
       const decision = decisions.get(grant.id);
       if (!decision) {

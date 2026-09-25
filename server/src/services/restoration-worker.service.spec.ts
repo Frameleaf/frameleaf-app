@@ -207,6 +207,7 @@ describe(RestorationWorkerService.name, () => {
       beginValidation: vi.fn().mockResolvedValue(true),
       fail: vi.fn().mockResolvedValue('failed'),
       requeue: vi.fn().mockResolvedValue(true),
+      listUnfinishedForProjects: vi.fn().mockResolvedValue([]),
       setBulkResult: vi.fn(),
       getBulkByRequestId: vi.fn(),
       getActiveRetry: vi.fn(),

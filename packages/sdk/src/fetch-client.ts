@@ -2839,27 +2839,45 @@ export type MirrorParameters = {
 export type TrimParameters = {
     /** Trim end time in milliseconds */
     endMs: number;
+    mode?: VideoTrimMode;
     /** Trim start time in milliseconds */
     startMs: number;
 };
 export type StraightenParameters = {
     /** Straighten angle in degrees */
     angle: number;
+    /** Scale the straightened picture to fill its frame (the Frameleaf quick editor). Absent or false keeps the earlier behaviour: black corners, no zoom */
+    fill?: boolean;
 };
 export type AdjustParameters = {
     blackPoint?: number;
+    blacks?: number;
     blueTone?: number;
     brightness?: number;
+    clarity?: number;
     contrast?: number;
+    dehaze?: number;
+    /** Exposure in EV (develop model) */
+    exposure?: number;
+    grain?: number;
     hdr?: number;
     highlights?: number;
+    model?: VideoAdjustModel;
+    noiseReduction?: number;
+    preset?: VideoDevelopPreset;
+    /** Strength of the preset, 0 to 100 */
+    presetStrength?: number;
     saturation?: number;
     shadows?: number;
+    sharpen?: number;
     skinTone?: number;
+    temperature?: number;
     tint?: number;
+    vibrance?: number;
     vignette?: number;
     warmth?: number;
     whitePoint?: number;
+    whites?: number;
 };
 export type LookParameters = {
     /** Filter or effect intensity */
@@ -2870,11 +2888,19 @@ export type LookParameters = {
 export type ToggleParameters = {
     enabled?: boolean;
 };
+export type StabilizeParameters = {
+    /** Crop the corrected edges 4% and scale back (the Frameleaf quick editor). Absent or false keeps the earlier uncropped render */
+    cropEdges?: boolean;
+    enabled?: boolean;
+};
 export type TextOverlayParameters = {
     /** Text color in hex format */
     color?: string;
     /** Overlay end time in milliseconds */
     endMs?: number;
+    position?: TextOverlayPosition;
+    /** Draw a soft drop shadow behind the text */
+    shadow?: boolean;
     /** Font size as a percentage of video height */
     size?: number;
     /** Overlay start time in milliseconds */
@@ -2886,6 +2912,8 @@ export type TextOverlayParameters = {
     y: number;
 };
 export type AudioParameters = {
+    /** Limit a gain above 1 so it cannot clip (the Frameleaf quick editor). Absent or false keeps the earlier unlimited gain */
+    limit?: boolean;
     muted?: boolean;
     /** Audio volume multiplier */
     volume?: number;
@@ -2901,7 +2929,7 @@ export type SpeedParameters = {
 export type AssetEditActionItemDto = {
     action: AssetEditAction;
     /** List of edit actions to apply */
-    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | StabilizeParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type VideoEditVersionResponseDto = {
     /** Asset ID */
@@ -2927,7 +2955,7 @@ export type AssetEditActionItemResponseDto = {
     /** Asset edit ID */
     id: string;
     /** List of edit actions to apply */
-    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | StabilizeParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type AssetEditsOriginalVideoDto = {
     /** Duration of the original in milliseconds */
@@ -2948,6 +2976,10 @@ export type AssetEditsResponseDto = {
 export type AssetEditsCreateDto = {
     /** List of edit actions to apply */
     edits: AssetEditActionItemDto[];
+};
+export type AssetEditKeyframesResponseDto = {
+    /** Times of the original's video keyframes in milliseconds from its start, ascending. A fast trim starts at the last one at or before its in point. */
+    keyframesMs: number[];
 };
 export type ImageDescriptionEnrichmentResponseDto = {
     appliedDescription: boolean;
@@ -6384,6 +6416,8 @@ export type RenderWorkerAdmissionDto = {
     /** Digest of the engine and patches actually loaded */
     engineDigest: string;
     enrolmentSecret: string;
+    /** Containers the check verified writing, such as `mp4`, `webm` or `mov` */
+    formats?: string[];
     /** GPU memory measured by the conformance check */
     gpuMemoryBytes: string | null;
     /** True when the renderer is a software or fallback device */
@@ -8295,6 +8329,23 @@ export type StudioProjectDiffDto = {
     to: number;
     /** More paths changed than are listed */
     truncated: boolean;
+};
+export type StudioWorkspaceDto = {
+    /** The engine revision that wrote the layout */
+    engineRevision: string | null;
+    /** The engine layout as the same JSON value it was saved as (key order and spacing are not kept); null when none is stored */
+    layout: {
+        [key: string]: any;
+    } | null;
+    savedAt: string | null;
+};
+export type StudioWorkspaceSaveDto = {
+    /** The pinned engine revision writing it */
+    engineRevision: string;
+    /** The engine layout; stored and returned as the same JSON value (key order and spacing are not kept) */
+    layout: {
+        [key: string]: any;
+    };
 };
 export type SyncAckDeleteDto = {
     /** Sync entity types to delete acks for */
@@ -11387,6 +11438,19 @@ export function editAsset({ id, assetEditsCreateDto }: {
     })));
 }
 /**
+ * List the original video's keyframes
+ */
+export function getAssetEditKeyframes({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetEditKeyframesResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/edits/keyframes`, {
+        ...opts
+    }));
+}
+/**
  * Get image enrichment metadata
  */
 export function getAssetImageEnrichment({ id }: {
@@ -11650,7 +11714,8 @@ export function viewAsset({ edited, id, key, size, slug }: {
 /**
  * Play asset video
  */
-export function playAssetVideo({ id, key, slug }: {
+export function playAssetVideo({ edited, id, key, slug }: {
+    edited?: boolean;
     id: string;
     key?: string;
     slug?: string;
@@ -11659,6 +11724,7 @@ export function playAssetVideo({ id, key, slug }: {
         status: 200;
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/video/playback${QS.query(QS.explode({
+        edited,
         key,
         slug
     }))}`, {
@@ -17013,6 +17079,32 @@ export function restoreStudioProjectFromTrash({ id }: {
     }));
 }
 /**
+ * Get your Studio workspace layout
+ */
+export function getStudioWorkspace(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioWorkspaceDto;
+    }>("/studio/workspace", {
+        ...opts
+    }));
+}
+/**
+ * Save your Studio workspace layout
+ */
+export function saveStudioWorkspace({ studioWorkspaceSaveDto }: {
+    studioWorkspaceSaveDto: StudioWorkspaceSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioWorkspaceDto;
+    }>("/studio/workspace", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: studioWorkspaceSaveDto
+    })));
+}
+/**
  * Delete acknowledgements
  */
 export function deleteSyncAck({ syncAckDeleteDto }: {
@@ -18589,7 +18681,8 @@ export enum RenderWorkerAuditEvent {
     ClaimRefused = "claim_refused",
     LimitExceeded = "limit_exceeded",
     Revoked = "revoked",
-    Updated = "updated"
+    Updated = "updated",
+    DeviceLost = "device_lost"
 }
 export enum RenderWorkerRefusalReason {
     InvalidCredential = "invalid_credential",
@@ -18608,7 +18701,8 @@ export enum RenderWorkerRefusalReason {
     WallClockExceeded = "wall_clock_exceeded",
     OutputBytesExceeded = "output_bytes_exceeded",
     DestinationUnavailable = "destination_unavailable",
-    ManifestIncomplete = "manifest_incomplete"
+    ManifestIncomplete = "manifest_incomplete",
+    CodecUnsupported = "codec_unsupported"
 }
 export enum UserStatus {
     Active = "active",
@@ -19118,6 +19212,36 @@ export enum AssetEditAction {
 export enum MirrorAxis {
     Horizontal = "horizontal",
     Vertical = "vertical"
+}
+export enum VideoTrimMode {
+    Precise = "precise",
+    Fast = "fast"
+}
+export enum VideoAdjustModel {
+    Develop = "develop"
+}
+export enum VideoDevelopPreset {
+    Original = "Original",
+    Vivid = "Vivid",
+    Natural = "Natural",
+    Warm = "Warm",
+    Cool = "Cool",
+    Mono = "Mono",
+    Silvertone = "Silvertone",
+    Noir = "Noir",
+    Fade = "Fade",
+    BW = "B&W"
+}
+export enum TextOverlayPosition {
+    TopLeft = "top-left",
+    Top = "top",
+    TopRight = "top-right",
+    Left = "left",
+    Center = "center",
+    Right = "right",
+    BottomLeft = "bottom-left",
+    Bottom = "bottom",
+    BottomRight = "bottom-right"
 }
 export enum VideoEditVersionPurpose {
     Save = "save",

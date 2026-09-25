@@ -28,6 +28,7 @@ import {
   AssetMediaCreateDto,
   AssetMediaOptionsDto,
   AssetMediaSize,
+  AssetPlaybackOptionsDto,
 } from 'src/dtos/asset-media.dto.js';
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { type AuthDto } from 'src/dtos/auth.dto.js';
@@ -215,16 +216,21 @@ export class AssetMediaController {
   async playAssetVideo(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
+    @Query() { edited }: AssetPlaybackOptionsDto,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
+    // `edited=false` is the quick editor's unedited source for the owner (FL-113), so a chosen
+    // restoration does not stand in for it; every other request honours the playback choice.
     await sendFile(
       res,
       next,
       async () =>
-        (await this.withPlaybackChoice(auth, id, 'video', () =>
-          this.service.playbackVideo(auth, id),
-        )) as ImmichFileResponse,
+        edited === false
+          ? this.service.playbackVideo(auth, id, false)
+          : ((await this.withPlaybackChoice(auth, id, 'video', () =>
+              this.service.playbackVideo(auth, id, edited ?? true),
+            )) as ImmichFileResponse),
       this.logger,
     );
   }

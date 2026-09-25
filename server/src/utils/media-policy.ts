@@ -27,7 +27,7 @@ import path from 'node:path';
 import type { AudioStreamInfo, VideoColorRange, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import type { DecodeQualification } from 'src/utils/media-decode.js';
 import { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
-import { AssetEditAction, AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import { AssetEditAction, AssetEditActionItem, VideoTrimMode } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   ColorMatrix,
@@ -47,7 +47,9 @@ import { type OutputCadenceDecision, OutputCadenceMode, resolveSourceTimeBase } 
  * recognised and re-rendered from the original.
  */
 export const FRAMELEAF_RENDERER = 'frameleaf-ffmpeg';
-export const FRAMELEAF_RENDERER_VERSION = '1.0.0';
+// 1.1.0 (FL-113): the develop adjustment model, anchored and shadowed text, ranges over a whole-clip
+// speed, stream-copied fast trims and the opt-in straighten fill, stabilize edge crop and gain limit.
+export const FRAMELEAF_RENDERER_VERSION = '1.1.0';
 
 /** Version of the lineage document itself, so future fields can be added compatibly. */
 export const EDITED_MASTER_LINEAGE_SCHEMA_VERSION = 1;
@@ -693,6 +695,49 @@ export const qualifyMetadataOnlyRotation = ({
   }
 
   return { angle, displayRotation: getDisplayRotationDegrees(angle) };
+};
+
+/**
+ * FL-113 (`Editor.jsx` Trim, "Fast · keyframes"): a recipe that is only a fast trim needs no
+ * re-encode. The cut snaps to the keyframe at or before the in point, and every packet between is
+ * copied, so it finishes in seconds and loses nothing. It qualifies under the same remux rules as
+ * the metadata-only rotation; anything else, including a fast trim next to any other edit, renders
+ * the ordinary frame-accurate master.
+ */
+export const qualifyStreamCopyTrim = ({
+  edits,
+  videoStream,
+  audioStream,
+  format,
+}: {
+  edits: AssetEditActionItem[];
+  videoStream: Pick<VideoStreamInfo, 'codecName'>;
+  audioStream?: Pick<AudioStreamInfo, 'codecName'>;
+  format: Pick<VideoFormat, 'formatName'>;
+}): { startMs: number; endMs: number } | null => {
+  if (edits.length !== 1) {
+    return null;
+  }
+
+  const [edit] = edits;
+  if (edit.action !== AssetEditAction.Trim || edit.parameters.mode !== VideoTrimMode.Fast) {
+    return null;
+  }
+
+  if (!MP4_STREAM_COPYABLE_VIDEO_CODECS.has((videoStream.codecName ?? '').toLowerCase())) {
+    return null;
+  }
+
+  if (audioStream && !MP4_STREAM_COPYABLE_AUDIO_CODECS.has((audioStream.codecName ?? '').toLowerCase())) {
+    return null;
+  }
+
+  const formatNames = (format.formatName ?? '').toLowerCase().split(',');
+  if (formatNames.every((name) => !MP4_REMUXABLE_FORMATS.has(name.trim()))) {
+    return null;
+  }
+
+  return { startMs: edit.parameters.startMs, endMs: edit.parameters.endMs };
 };
 
 /**

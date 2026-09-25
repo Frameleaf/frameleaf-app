@@ -30,8 +30,9 @@
     mdiArrowLeft,
     mdiCheckCircle,
     mdiCloudOffOutline,
+    mdiCommentTextOutline,
     mdiExportVariant,
-    mdiHistory,
+    mdiPackageVariantClosed,
     mdiLockOutline,
     mdiProgressClock,
   } from '@mdi/js';
@@ -49,7 +50,10 @@
     StudioHostContext,
     StudioHostServices,
     StudioProjectHandle,
+    StudioWorkspaceMode,
+    StudioWorkspaceView,
   } from '$lib/frameleaf/studio/host-contract';
+  import type { Rational } from '$lib/frameleaf/studio/rational-time';
   import {
     initialStudioHostState,
     reduceStudioHost,
@@ -79,6 +83,12 @@
     onBack,
     onOpenActivity,
     onExportBundle,
+    onExport,
+    onRename,
+    mode = $bindable<StudioWorkspaceMode>('basic'),
+    workspace,
+    unresolvedComments = 0,
+    playhead = null,
     accessLost = false,
     dirty = false,
     queuedJobs = 0,
@@ -116,6 +126,24 @@
      * person owns a saved project, the one case the server exports; otherwise there is no button.
      */
     onExportBundle?: () => void;
+    /**
+     * Opens the video export dialog (FL-106 server, `Studio.jsx` Export). Passed only for the owner of
+     * a saved project this instance may write, the one case the server exports.
+     */
+    onExport?: () => void;
+    /**
+     * Renames the project (`Studio.jsx:2590-2607`). When absent the name is shown, not edited. Resolves
+     * false when the server refused, and the field goes back to the stored name.
+     */
+    onRename?: (name: string) => Promise<boolean>;
+    /** Basic or Advanced (`Studio.jsx:2626-2633`), handed to the engine as part of its context. */
+    mode?: StudioWorkspaceMode;
+    /** The account's stored workspace layout (FL-91), handed to the engine as part of its context. */
+    workspace?: StudioWorkspaceView;
+    /** Open review comments on the head revision, shown on the Review button (`Studio.jsx:2640-2643`). */
+    unresolvedComments?: number;
+    /** Where the engine's playhead is; new review comments are pinned there. */
+    playhead?: Rational | null;
     /** The session lost the project: sign-out, session delete or relock. */
     accessLost?: boolean;
     /** The engine reports a draft it has not persisted. */
@@ -175,6 +203,8 @@
     capabilities,
     preview,
     online,
+    mode,
+    workspace,
   });
 
   const disposeEngine = async () => {
@@ -314,6 +344,43 @@
 
   const headingKey = $derived(studioHostHeadingKey(host));
 
+  /* Project name (`Studio.jsx:2590-2607`): commit on blur or Enter, Escape puts it back. */
+  let nameDraft = $state('');
+  let editingName = false;
+  $effect(() => {
+    const stored = project.name;
+    if (!editingName) {
+      nameDraft = stored;
+    }
+  });
+  const commitName = async () => {
+    editingName = false;
+    const next = nameDraft.trim();
+    if (!onRename || !next || next === project.name) {
+      nameDraft = project.name;
+      return;
+    }
+    if (!(await onRename(next))) {
+      nameDraft = project.name;
+    }
+  };
+  const onNameKey = (event: KeyboardEvent & { currentTarget: HTMLInputElement }) => {
+    if (event.key === 'Enter') {
+      event.currentTarget.blur();
+    } else if (event.key === 'Escape') {
+      nameDraft = project.name;
+      editingName = false;
+      event.currentTarget.blur();
+    }
+  };
+  const modes: {
+    value: StudioWorkspaceMode;
+    label: 'frameleaf_studio_mode_basic' | 'frameleaf_studio_mode_advanced';
+  }[] = [
+    { value: 'basic', label: 'frameleaf_studio_mode_basic' },
+    { value: 'advanced', label: 'frameleaf_studio_mode_advanced' },
+  ];
+
   /**
    * What, if anything, the preview area has to say.
    *
@@ -342,7 +409,20 @@
     </Button>
 
     <div class="fl-studio-project">
-      <h1>{project.name}</h1>
+      {#if onRename && !accessLost}
+        <h1 class="sr-only">{project.name}</h1>
+        <input
+          class="fl-studio-project-name"
+          aria-label={$t('frameleaf_studio_project_name')}
+          maxlength="120"
+          bind:value={nameDraft}
+          onfocus={() => (editingName = true)}
+          onblur={() => void commitName()}
+          onkeydown={onNameKey}
+        />
+      {:else}
+        <h1>{project.name}</h1>
+      {/if}
       <span class="fl-studio-save" role="status" aria-live="polite">
         {#if saveStatus === 'saving'}
           <Icon icon={mdiProgressClock} size="14" />
@@ -383,21 +463,58 @@
       </Button>
     {/if}
 
+    {#if host.phase === 'ready'}
+      <!-- Basic and Advanced change the engine's layout, so the choice is offered only while it runs. -->
+      <div class="fl-studio-mode" role="radiogroup" aria-label={$t('frameleaf_studio_mode_label')}>
+        {#each modes as item (item.value)}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={mode === item.value}
+            class:is-on={mode === item.value}
+            onclick={() => (mode = item.value)}
+          >
+            {$t(item.label)}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    <span class="fl-studio-editor-as">
+      {#if auth.avatarUrl}
+        <img class="fl-studio-avatar" src={auth.avatarUrl} alt="" />
+      {:else}
+        <span class="fl-studio-avatar" aria-hidden="true">{auth.name.slice(0, 1).toUpperCase()}</span>
+      {/if}
+      {$t('frameleaf_studio_editing_as', { values: { name: auth.name } })}
+    </span>
+
     {#if onExportBundle && !accessLost}
       <Button variant="quiet" onclick={onExportBundle}>
-        <Icon icon={mdiExportVariant} size="16" />
+        <Icon icon={mdiPackageVariantClosed} size="16" />
         {$t('frameleaf_studio_bundle_export_action')}
       </Button>
     {/if}
 
     {#if hasSavedProject}
       <Button variant="quiet" pressed={historyOpen} onclick={() => (historyOpen = !historyOpen)}>
-        <Icon icon={mdiHistory} size="16" />
-        {$t('frameleaf_studio_history_title')}
+        <Icon icon={mdiCommentTextOutline} size="16" />
+        {$t('frameleaf_studio_review')}
+        {#if unresolvedComments > 0}
+          <span class="fl-studio-count">{unresolvedComments}</span>
+          <span class="sr-only"
+            >{$t('frameleaf_studio_review_open_count', { values: { count: unresolvedComments } })}</span
+          >
+        {/if}
       </Button>
     {/if}
 
-    <span class="fl-studio-editor-as">{$t('frameleaf_studio_editing_as', { values: { name: auth.name } })}</span>
+    {#if onExport && !accessLost}
+      <Button variant="primary" onclick={onExport}>
+        <Icon icon={mdiExportVariant} size="16" />
+        {$t('frameleaf_studio_export_action')}
+      </Button>
+    {/if}
   </header>
 
   {#if showBanner}
@@ -480,6 +597,7 @@
           userId={auth.userId}
           {access}
           canRestore={project.hasLease && saveStatus !== 'conflict' && saveStatus !== 'lease-lost'}
+          {playhead}
           onClose={() => (historyOpen = false)}
         />
       </div>
@@ -558,6 +676,72 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* studio.css `.fls-project-name`: the name reads as a title until it is edited. */
+  .fl-studio-project-name {
+    min-width: 8rem;
+    max-width: 22rem;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: var(--fl-radius-control);
+    background: transparent;
+    color: var(--fl-text);
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+  }
+  .fl-studio-project-name:hover,
+  .fl-studio-project-name:focus {
+    border-color: var(--fl-border);
+    background: var(--fl-canvas);
+  }
+  /* studio.css `.fls-mode`: a two-segment control. */
+  .fl-studio-mode {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--fl-border);
+    border-radius: 999px;
+    background: var(--fl-canvas);
+  }
+  .fl-studio-mode button {
+    min-height: 26px;
+    padding: 0 0.75rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+  .fl-studio-mode button.is-on {
+    background: var(--fl-panel);
+    color: var(--fl-text);
+    box-shadow: var(--fl-shadow-1);
+  }
+  /* A person's round avatar (people photos are the squircles), as `PersonAvatar` draws it. */
+  .fl-studio-avatar {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .fl-studio-count {
+    min-width: 1.25rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
   }
   .fl-studio-save,
   .fl-studio-dropped,

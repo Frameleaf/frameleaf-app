@@ -453,11 +453,12 @@ export class UserService extends BaseService {
         swept.recipientGroups +
         swept.memoryShowLess +
         swept.memoryCurations +
-        swept.peopleAndPets >
+        swept.peopleAndPets +
+        swept.workspaceLayouts >
       0
     ) {
       this.logger.log(
-        `Swept fork rows of removed accounts: ${swept.preferenceHistory} preference history entries, ${swept.recipientGroups} recipient groups, ${swept.memoryShowLess} memory show-less rules, ${swept.memoryCurations} memory curations, ${swept.peopleAndPets} face correction, merge answer and pet recognition rows`,
+        `Swept fork rows of removed accounts: ${swept.preferenceHistory} preference history entries, ${swept.recipientGroups} recipient groups, ${swept.memoryShowLess} memory show-less rules, ${swept.memoryCurations} memory curations, ${swept.peopleAndPets} face correction, merge answer and pet recognition rows, ${swept.workspaceLayouts} Studio workspace layouts`,
       );
     }
     return JobStatus.Success;
