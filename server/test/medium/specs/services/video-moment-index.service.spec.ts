@@ -12,6 +12,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -81,6 +82,7 @@ const setup = () => {
     ctx.get(PersonRepository),
     ctx.get(ConfigRepository),
     ctx.get(SystemMetadataRepository),
+    automock(JobRepository, { args: [undefined, undefined, undefined, { setContext: () => {} }] }),
   );
 
   const newOwner = async () => {

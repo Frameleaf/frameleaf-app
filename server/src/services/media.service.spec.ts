@@ -694,6 +694,52 @@ describe(MediaService.name, () => {
       );
     });
 
+    it("cuts a video's thumbnail at the cover its owner chose, without scoring candidates (FL-59)", async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        coverTimestampMs: 64_500,
+      });
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.scoreThumbnailCandidate).not.toHaveBeenCalled();
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
+      for (const call of [1, 2]) {
+        expect(mocks.media.transcode).toHaveBeenNthCalledWith(
+          call,
+          '/original/path.ext',
+          expect.any(String),
+          expect.objectContaining({
+            outputOptions: expect.arrayContaining([expect.stringContaining('start_time=64.5')]),
+          }),
+        );
+      }
+    });
+
+    it('keeps a cover chosen near the end of a video clear of its final stretch (FL-59)', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        coverTimestampMs: 119_900,
+      });
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.transcode).toHaveBeenNthCalledWith(
+        1,
+        '/original/path.ext',
+        expect.any(String),
+        expect.objectContaining({
+          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=115')]),
+        }),
+      );
+    });
+
     it('should ignore obviously mismatched duration units when picking video thumbnail candidates', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
