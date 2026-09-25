@@ -32,7 +32,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
@@ -364,10 +364,18 @@ export class MlDestinationService extends BaseService {
     });
   }
 
+  /**
+   * Withdraw consent. For Frameleaf Cloud the consent records and the destination are cleared here
+   * first, in one transaction (refused with 409 during a handoff, like recording it), then with
+   * Frameleaf Cloud; whatever happens there, the withdrawal stands on this server, which refuses
+   * every cloud job without consent, and a miss is logged.
+   */
   async revokeConsent(id: string): Promise<MlDestinationResponseDto> {
     const current = await this.require(id);
     if (current.kind === MlDestinationKind.FrameleafCloud) {
       await this.frameleafConsentRepository.revoke(id);
+      await this.revokeCloudConsent(current);
+      return this.toDto(await this.require(id));
     }
     const row = await this.mlDestinationRepository.update(id, {
       consentAcknowledgedAt: null,
@@ -375,6 +383,24 @@ export class MlDestinationService extends BaseService {
       consentVersion: null,
     });
     return this.toDto(row);
+  }
+
+  private async revokeCloudConsent(destination: MlDestinationRow) {
+    try {
+      const resolution = await resolveCloudGateway(this.cloudGatewayDeps());
+      if (resolution.state !== CloudConnectionState.Ready) {
+        this.logger.warn(
+          `Consent for ${destination.name} was withdrawn on this server only; Frameleaf Cloud is not reachable (${resolution.detail})`,
+        );
+        return;
+      }
+      await this.frameleafCloudMlRepository.revokeConsent(resolution.gateway);
+    } catch (error) {
+      // Never undoes the local withdrawal, whatever went wrong on the way to the cloud.
+      this.logger.warn(
+        `Consent for ${destination.name} was withdrawn on this server only; Frameleaf Cloud did not record it: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private cloudGatewayDeps(): CloudGatewayDeps {
@@ -543,6 +569,9 @@ export class MlDestinationService extends BaseService {
     if (modelId !== null) {
       if (destination.kind !== MlDestinationKind.FrameleafCloud) {
         throw new BadRequestException('Only Frameleaf Cloud work names a catalogue model');
+      }
+      if (isLocalOnlyModel(modelId)) {
+        throw new BadRequestException(`The model ${modelId} runs on this server only`);
       }
       if (!(destination.lastProbeCloud?.modelIds ?? []).includes(modelId)) {
         throw new BadRequestException(`The model ${modelId} is not in the Frameleaf Cloud catalogue`);

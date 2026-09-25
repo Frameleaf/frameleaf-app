@@ -1,72 +1,73 @@
 <script lang="ts">
   /**
-   * Frameleaf Cloud consent (FL-159): the prototype's `ProviderReview` (JobsManager.jsx:1761-1800),
-   * a sheet that says what will happen and cannot be confirmed until the administrator ticks the
-   * acknowledgement (`.jm-confirm`). It records the version Frameleaf Cloud requires now, with a
-   * choice for each optional feature; every feature is off unless chosen, so names and medical
-   * signals never reach a cloud prompt by default. The server refuses a version that is not the
-   * current one, so an outdated sheet cannot be accepted.
+   * Cloud processing terms (FL-159, handoff §3.1; prototype FrameleafCloud.jsx `ConsentDialog`): the
+   * version Frameleaf Cloud requires now, the five promises (previews only with metadata stripped,
+   * zero retention, no training, the account's region, nothing without confirmation), faces never
+   * sent, and the optional features, which stay off unless chosen (recognised names, medical
+   * signals). "Accept and turn on" stays disabled until the terms are marked as read. Accepting
+   * records the version on this server and with Frameleaf Cloud; when the Frameleaf Cloud destination
+   * does not exist yet it is added first, and it still runs only the work routed to it.
    */
+  import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import Toggle from '$lib/components/frameleaf/Toggle.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import { CONSENT_TERM_KEYS } from '$lib/frameleaf/cloud-ml';
+  import { FRAMELEAF_CLOUD_WORKLOADS } from '$lib/frameleaf/ml-destinations';
   import { handleError } from '$lib/utils/handle-error';
-  import { grantMlDestinationConsent, type CloudMlConsentFeaturesDto, type CloudMlConsentStateDto } from '@immich/sdk';
+  import { createCloudMlDestination, grantMlDestinationConsent, type CloudMlConsentStateDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiOpenInNew } from '@mdi/js';
-  import { t, type Translations } from 'svelte-i18n';
+  import { mdiOpenInNew, mdiShieldCheckOutline } from '@mdi/js';
+  import { t } from 'svelte-i18n';
 
   type Props = {
     open?: boolean;
-    destinationId: string;
+    /** The Frameleaf Cloud destination, or null when it has not been added yet. */
+    destinationId: string | null;
     consent: CloudMlConsentStateDto;
+    region: string | null;
     onRecorded?: () => void;
   };
 
-  let { open = $bindable(false), destinationId, consent, onRecorded }: Props = $props();
+  let { open = $bindable(false), destinationId, consent, region, onRecorded }: Props = $props();
 
-  const FEATURES: ReadonlyArray<{ key: keyof CloudMlConsentFeaturesDto; label: Translations; help: Translations }> = [
-    {
-      key: 'identityNames',
-      label: 'admin.frameleaf_cloud_ml_consent_feature_names',
-      help: 'admin.frameleaf_cloud_ml_consent_feature_names_help',
-    },
-    {
-      key: 'medicalSignals',
-      label: 'admin.frameleaf_cloud_ml_consent_feature_medical',
-      help: 'admin.frameleaf_cloud_ml_consent_feature_medical_help',
-    },
-    {
-      key: 'ocrAddon',
-      label: 'admin.frameleaf_cloud_ml_consent_feature_ocr',
-      help: 'admin.frameleaf_cloud_ml_consent_feature_ocr_help',
-    },
-  ];
-
-  let features = $state<CloudMlConsentFeaturesDto>({ identityNames: false, medicalSignals: false, ocrAddon: false });
-  let acknowledged = $state(false);
+  let identityNames = $state(false);
+  let medicalSignals = $state(false);
+  let read = $state(false);
   let saving = $state(false);
+  // The destination this dialog added, kept so a retry after a failed consent does not add it twice.
+  let createdId = $state<string | null>(null);
 
-  // Every opening starts from the choices on record for the version being renewed, never ticked.
+  // Every opening starts from the choices on record, with the terms not yet marked as read.
   $effect(() => {
-    if (open) {
-      features = { ...consent.features };
-      acknowledged = false;
+    if (!open) {
+      return;
     }
+    identityNames = consent.features.identityNames;
+    medicalSignals = consent.features.medicalSignals;
+    read = false;
   });
 
-  const record = async () => {
-    if (!acknowledged) {
+  const accept = async () => {
+    if (!read) {
       return;
     }
     saving = true;
     try {
+      const id =
+        destinationId ??
+        createdId ??
+        (createdId = (
+          await createCloudMlDestination({
+            cloudMlDestinationCreateDto: { workloads: [...FRAMELEAF_CLOUD_WORKLOADS] },
+          })
+        ).id);
       await grantMlDestinationConsent({
-        id: destinationId,
+        id,
         mlDestinationConsentRequestDto: {
           acknowledgeMediaLeavesNetwork: true,
           version: consent.requiredVersion,
-          features: { ...features },
+          features: { identityNames, medicalSignals, ocrAddon: false },
         },
       });
       open = false;
@@ -79,143 +80,59 @@
   };
 </script>
 
-<Dialog title={$t('admin.frameleaf_cloud_ml_consent_title')} closeLabel={$t('close')} bind:open>
-  <div class="review">
-    <p>{consent.summary}</p>
-    <dl>
-      <div>
-        <dt>{$t('admin.frameleaf_cloud_ml_consent_version')}</dt>
-        <dd>{consent.requiredVersion}</dd>
-      </div>
-      {#if consent.acceptedVersion}
-        <div>
-          <dt>{$t('admin.frameleaf_cloud_ml_consent_accepted_version')}</dt>
-          <dd>{consent.acceptedVersion}</dd>
-        </div>
-      {/if}
-    </dl>
-    {#if consent.outdated}
-      <p class="warning" role="status">{$t('admin.frameleaf_cloud_ml_consent_outdated')}</p>
+<Dialog
+  title={$t('admin.frameleaf_cloud_ml_consent_title', { values: { version: consent.requiredVersion } })}
+  closeLabel={$t('close')}
+  wide
+  bind:open
+>
+  <div class="frameleaf-cloud fc-consent">
+    <ul class="fc-terms">
+      {#each CONSENT_TERM_KEYS as key (key)}
+        <li><Icon icon={mdiShieldCheckOutline} size="16" aria-hidden={true} /> {$t(key)}</li>
+      {/each}
+    </ul>
+    {#if consent.summary}
+      <p class="fc-muted">{consent.summary}</p>
     {/if}
+    <dl class="fc-facts">
+      <dt>{$t('admin.frameleaf_cloud_ml_region_label')}</dt>
+      <dd>
+        {region
+          ? $t('admin.frameleaf_cloud_ml_region_value', { values: { region } })
+          : $t('admin.frameleaf_cloud_ml_region_unknown')}
+      </dd>
+      <dt>{$t('admin.frameleaf_cloud_ml_faces_label')}</dt>
+      <dd>{$t('admin.frameleaf_cloud_ml_faces_never_sent')}</dd>
+    </dl>
     {#if consent.documentUrl}
-      <a href={consent.documentUrl} target="_blank" rel="noopener noreferrer">
+      <a class="fc-link" href={consent.documentUrl} target="_blank" rel="noopener noreferrer">
         {$t('admin.frameleaf_cloud_ml_consent_document')}
         <Icon icon={mdiOpenInNew} size="14" aria-hidden={true} />
       </a>
     {/if}
-    <fieldset>
-      <legend>{$t('admin.frameleaf_cloud_ml_consent_features')}</legend>
-      {#each FEATURES as feature (feature.key)}
-        <div class="feature">
-          <div>
-            <strong>{$t(feature.label)}</strong>
-            <small>{$t(feature.help)}</small>
-          </div>
-          <Toggle
-            label={$t(feature.label)}
-            bind:checked={features[feature.key]}
-            onLabel={$t('admin.frameleaf_cloud_ml_consent_feature_on')}
-            offLabel={$t('admin.frameleaf_cloud_ml_consent_feature_off')}
-            disabled={saving}
-          />
-        </div>
-      {/each}
-    </fieldset>
-    <p class="muted">{$t('admin.frameleaf_cloud_ml_consent_scope')}</p>
-    <label class="confirm">
-      <input type="checkbox" bind:checked={acknowledged} disabled={saving} />
-      {$t('admin.frameleaf_cloud_ml_consent_acknowledge')}
+    <h3 class="fc-subhead">{$t('admin.frameleaf_cloud_ml_consent_features')}</h3>
+    <SettingToggle
+      title={$t('admin.frameleaf_cloud_ml_consent_feature_names')}
+      subtitle={$t('admin.frameleaf_cloud_ml_consent_feature_names_help')}
+      bind:checked={identityNames}
+      disabled={saving}
+    />
+    <SettingToggle
+      title={$t('admin.frameleaf_cloud_ml_consent_feature_medical')}
+      subtitle={$t('admin.frameleaf_cloud_ml_consent_feature_medical_help')}
+      bind:checked={medicalSignals}
+      disabled={saving}
+    />
+    <label class="fc-confirm">
+      <input type="checkbox" bind:checked={read} disabled={saving} />
+      {$t('admin.frameleaf_cloud_ml_consent_read')}
     </label>
   </div>
   {#snippet actions()}
-    <Button onclick={() => (open = false)} disabled={saving}>{$t('cancel')}</Button>
-    <Button variant="primary" onclick={record} disabled={!acknowledged || saving}>
-      {$t('admin.frameleaf_cloud_ml_consent_action')}
+    <Button onclick={() => (open = false)} disabled={saving}>{$t('admin.frameleaf_cloud_ml_consent_not_now')}</Button>
+    <Button variant="primary" onclick={accept} disabled={!read || saving}>
+      {$t('admin.frameleaf_cloud_ml_consent_accept')}
     </Button>
   {/snippet}
 </Dialog>
-
-<style>
-  /* jobs-manager.css:519-566 `.jm-review` and `.jm-confirm`. */
-  .review {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    font-size: var(--fl-font-small);
-    line-height: 1.6;
-    color: var(--fl-text);
-  }
-  p {
-    margin: 0;
-  }
-  dl {
-    margin: 0;
-  }
-  dl > div {
-    display: flex;
-    justify-content: space-between;
-    gap: 18px;
-    padding: 7px 0;
-    border-bottom: 1px solid var(--fl-border);
-  }
-  dt {
-    color: var(--fl-muted);
-  }
-  dd {
-    margin: 0;
-    text-align: right;
-    overflow-wrap: anywhere;
-    min-width: 0;
-  }
-  a {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--fl-accent);
-  }
-  fieldset {
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    padding: 8px 12px;
-    margin: 0;
-  }
-  legend {
-    padding-inline: 4px;
-  }
-  .feature {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 0;
-  }
-  .feature + .feature {
-    border-top: 1px solid var(--fl-border);
-  }
-  .feature strong,
-  .feature small {
-    display: block;
-  }
-  .feature small,
-  .muted {
-    color: var(--fl-muted);
-  }
-  .warning {
-    color: var(--fl-warning);
-  }
-  .confirm {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 13px;
-    background: color-mix(in srgb, var(--fl-danger) 8%, transparent);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-  }
-  .confirm input {
-    margin-top: 5px;
-    width: 16px;
-    height: 16px;
-    flex: none;
-  }
-</style>

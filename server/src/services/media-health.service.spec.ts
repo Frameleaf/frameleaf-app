@@ -2595,6 +2595,7 @@ describe(MediaHealthService.name, () => {
     });
 
     it('scans each account for what changed since its last completed scan, or everything', async () => {
+      vi.useFakeTimers({ now: new Date('2026-09-25T02:00:00.000Z'), toFake: ['Date'] });
       care({ healthScan: true });
       vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-a' }, { id: 'user-b' }] as never);
       vi.mocked(mediaHealthRepository.createRun).mockImplementation((category) =>
@@ -2628,6 +2629,53 @@ describe(MediaHealthService.name, () => {
       ]);
       expect(snapshots[1]).not.toHaveProperty('changedSince');
       expect(vi.mocked(mediaOperationRepository.create).mock.calls[0][0].label).toBe('Scheduled library health scan');
+      vi.useRealTimers();
+    });
+
+    it('makes a scheduled scan full at least weekly, so files removed or damaged later are found (FL-69)', async () => {
+      vi.useFakeTimers({ now: new Date('2026-09-25T02:00:00.000Z'), toFake: ['Date'] });
+      care({ healthScan: true });
+      vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'recent' }, { id: 'stale' }, { id: 'no-full' }] as never);
+      vi.mocked(mediaHealthRepository.createRun).mockImplementation((category) =>
+        Promise.resolve({ id: `run-${category}` } as never),
+      );
+      const scan = (userId: string, createdAt: string, changedSince?: string) => ({
+        id: `op-${userId}-${createdAt}`,
+        snapshot: { mode: 'scan', userId, missingRunId: 'm', corruptRunId: 'c', ...(changedSince && { changedSince }) },
+        createdAt: new Date(createdAt),
+      });
+      const history: Record<string, unknown[]> = {
+        // Incremental yesterday, full three days ago: incremental from yesterday.
+        recent: [
+          scan('recent', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
+          scan('recent', '2026-09-22T02:00:00.000Z'),
+        ],
+        // Last full scan eight days ago: full, whatever the incremental ones since.
+        stale: [
+          scan('stale', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
+          scan('stale', '2026-09-17T02:00:00.000Z'),
+        ],
+        // Only incremental scans in reach: full.
+        'no-full': [scan('no-full', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z')],
+      };
+      vi.mocked(mediaOperationRepository.list).mockImplementation(
+        (options: any) =>
+          Promise.resolve(
+            options.statuses?.includes(MediaOperationStatus.Completed)
+              ? { items: history[options.ownerId] ?? [], total: 0 }
+              : { items: [], total: 0 },
+          ) as never,
+      );
+
+      await expect(sut.startScheduledScans()).resolves.toBe(3);
+
+      const snapshots = vi.mocked(mediaOperationRepository.create).mock.calls.map(([operation]) => operation.snapshot);
+      expect(snapshots[0]).toMatchObject({ userId: 'recent', changedSince: '2026-09-24T02:00:00.000Z' });
+      expect(snapshots[1]).toMatchObject({ userId: 'stale' });
+      expect(snapshots[1]).not.toHaveProperty('changedSince');
+      expect(snapshots[2]).toMatchObject({ userId: 'no-full' });
+      expect(snapshots[2]).not.toHaveProperty('changedSince');
+      vi.useRealTimers();
     });
 
     it('keeps a scan an account already has instead of starting a second one', async () => {

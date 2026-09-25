@@ -88,11 +88,9 @@ describe('/system-config', () => {
         expect.arrayContaining([
           { name: 'smtp-password', configured: false },
           { name: 'oauth-client-secret', configured: false },
-          { name: 'runpod-api-key', configured: false },
-          { name: 'huggingface-token', configured: false },
         ]),
       );
-      expect(body).toHaveLength(4);
+      expect(body).toHaveLength(2);
     });
 
     // FL-67: a stored secret is write-only: the configuration only reports that it is configured
@@ -158,46 +156,6 @@ describe('/system-config', () => {
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({ value: ' '.repeat(3) });
       expect(status).toBe(400);
-    });
-
-    // FL-67: the RunPod key cannot be cleared while RunPod is on, so a running pod can still be stopped
-    it('should refuse to clear the RunPod API key while RunPod is on', async () => {
-      const stored = await request(app)
-        .put('/admin/config/credentials/runpod-api-key')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ value: 'fl67-runpod-key' });
-      expect(stored.status).toBe(200);
-
-      const config = await getSystemConfig(admin.accessToken);
-      const runpod = config.machineLearning.runpod;
-      const enabled = await request(app)
-        .put('/system-config')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ ...config, machineLearning: { ...config.machineLearning, runpod: { ...runpod, mode: 'pod' } } });
-      expect(enabled.status).toBe(200);
-
-      try {
-        const { status, body } = await clearCredential(admin.accessToken, 'runpod-api-key');
-        expect(status).toBe(400);
-        expect(body).toEqual(errorDto.badRequest('Turn RunPod off before clearing its API key.'));
-        expect(await getCredentials(admin.accessToken)).toContainEqual({ name: 'runpod-api-key', configured: true });
-      } finally {
-        const current = await getSystemConfig(admin.accessToken);
-        await request(app)
-          .put('/system-config')
-          .set('Authorization', `Bearer ${admin.accessToken}`)
-          .send({
-            ...current,
-            machineLearning: {
-              ...current.machineLearning,
-              runpod: { ...current.machineLearning.runpod, enabled: false, mode: 'disabled' },
-            },
-          });
-      }
-
-      const cleared = await clearCredential(admin.accessToken, 'runpod-api-key');
-      expect(cleared.status).toBe(200);
-      expect(cleared.body).toEqual({ name: 'runpod-api-key', configured: false });
     });
 
     // FL-67: only administrators can list, replace or clear server credentials

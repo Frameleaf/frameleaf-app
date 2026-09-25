@@ -77,6 +77,7 @@
     mdiChevronDoubleLeft,
     mdiChevronDoubleRight,
     mdiChevronRight,
+    mdiCloudOutline,
     mdiDesktopTowerMonitor,
     mdiFolderOutline,
     mdiHarddisk,
@@ -88,7 +89,6 @@
     mdiShieldCheckOutline,
     mdiShieldLockOutline,
     mdiTools,
-    mdiCloudOutline,
   } from '@mdi/js';
   import { untrack, type Snippet } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
@@ -269,8 +269,9 @@
     'workers',
     'routing',
     'render-workers',
-    'cloud-ml',
-    // FL-155..FL-157: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
+    'cloud-processing',
+    'hardware',
+    // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
     'cloud-account',
     'cloud-plan',
     'cloud-license',

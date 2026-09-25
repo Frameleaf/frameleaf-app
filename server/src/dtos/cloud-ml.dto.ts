@@ -43,6 +43,7 @@ const CloudMlWalletSchema = z
     dailyCapUsd: z.number().meta({ format: 'double' }).nullable().describe('Daily limit, USD, or null'),
     spentTodayUsd: z.number().meta({ format: 'double' }).describe('Spent today, USD'),
     topUpUrl: z.string().nullable().describe('Where to add credit; only when Frameleaf Cloud returned one'),
+    autoTopUp: z.boolean().describe('Automatic top-up with the payment method saved on the account'),
     updatedAt: z.string().describe('When this balance was read'),
   })
   .meta({ id: 'CloudMlWalletDto' });
@@ -116,8 +117,19 @@ const CloudMlSettlementSchema = z
     costUsd: z.number().meta({ format: 'double' }).describe('The settled charge, USD'),
     credits: z.number().meta({ format: 'double' }).nullable().describe('Credits the charge used, when reported'),
     finishedAt: z.string(),
+    modelId: z.string().nullable().describe('The catalogue model the job used, when reported'),
+    gpuSeconds: z.number().meta({ format: 'double' }).nullable().describe('Metered GPU time, seconds, when reported'),
+    workers: z.number().int().nullable().describe('Workers the job ran on (each paid a start fee), when reported'),
+    estimateUsd: z.number().meta({ format: 'double' }).nullable().describe('The estimate shown before the job, USD'),
   })
   .meta({ id: 'CloudMlSettlementDto' });
+
+const CloudMlWalletUpdateSchema = z
+  .object({
+    dailyCapUsd: z.number().min(1).max(1000).meta({ format: 'double' }).optional().describe('Daily spending cap, USD'),
+    autoTopUp: z.boolean().optional().describe('Top up automatically when available credit runs low'),
+  })
+  .meta({ id: 'CloudMlWalletUpdateDto' });
 
 const CloudMlSettlementsResponseSchema = z
   .object({ items: z.array(CloudMlSettlementSchema).describe('Settled charges, newest first (at most 50)') })
@@ -129,4 +141,5 @@ export class CloudMlCatalogResponseDto extends createZodDto(CloudMlCatalogRespon
 export class CloudMlModelDto extends createZodDto(CloudMlModelSchema) {}
 export class CloudMlDestinationCreateDto extends createZodDto(CloudMlDestinationCreateSchema) {}
 export class CloudMlConsentHistoryResponseDto extends createZodDto(CloudMlConsentHistoryResponseSchema) {}
+export class CloudMlWalletUpdateDto extends createZodDto(CloudMlWalletUpdateSchema) {}
 export class CloudMlSettlementsResponseDto extends createZodDto(CloudMlSettlementsResponseSchema) {}

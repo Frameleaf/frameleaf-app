@@ -7,7 +7,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import z from 'zod';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
-import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
+import type { MlContainerReport } from 'src/utils/hardware-check.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import {
   RESTORATION_MAX_OUTPUT_EDGE,
@@ -32,6 +32,7 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { CLOUD_DESCRIPTION_DEFAULT_MODEL, type CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 // Restoration's selection registry and inference types live with the rest of restoration's
 // rules; that module only needs this one's types, so the import cycle is inert at load time.
 import {
@@ -259,6 +260,11 @@ export type MlSelection = {
   kind: MlDestinationKind;
   workload: MlWorkload;
   endpoint: MlEndpoint;
+  /**
+   * FL-146: the catalogue model a Frameleaf Cloud job names (the routed choice or the licensed
+   * default); null for this server and home-network workers, which use the local settings.
+   */
+  cloudModelId?: string | null;
   record: (usage: MlUsage) => void;
 };
 
@@ -281,11 +287,52 @@ export type MlEndpointProbe = {
 
 type CapabilitiesResponse = { workloads?: unknown };
 
+const renderNodeSchema = z.object({
+  node: z.string().max(40),
+  vendor: z.string().max(40).nullable(),
+  accessible: z.boolean(),
+  memoryTotalBytes: z.number().int().min(0).nullable(),
+});
+
+/** FL-159: what the container reached for AI work (`machine-learning/immich_ml/hardware_report.py`). */
+const mlContainerSchema = z.object({
+  image: z.string().max(40),
+  backend: z.string().max(40),
+  gpus: z
+    .array(
+      z.object({
+        name: z.string().max(200),
+        vendor: z.string().max(40).nullable(),
+        memoryTotalBytes: z.number().int().min(0).nullable(),
+      }),
+    )
+    .max(16),
+  driver: z.string().max(300).nullable(),
+  nvidiaError: z.string().max(300).nullable().default(null),
+  devices: z.object({
+    renderNodes: z.array(renderNodeSchema).max(16),
+    kfd: z.boolean(),
+    kfdAccessible: z.boolean(),
+    nvidia: z.boolean(),
+    nvidiaRequested: z.boolean(),
+  }),
+});
+
 const diagnosticHardwareSchema = MachineLearningHardwareResponseDto.schema.extend({
   providers: z.array(z.string().max(100)).max(32),
   openvinoDeviceIds: z.array(z.string().max(100)).max(32),
   cudaDeviceCount: z.int().min(0).max(1024),
 });
+
+/**
+ * FL-159: the container report of `GET /hardware`, or null for a worker that does not send one (an
+ * older image) or sends one this server cannot read.
+ */
+export const parseMlContainerReport = (body: unknown): MlContainerReport | null => {
+  const container = (body as { container?: unknown } | null)?.container;
+  const parsed = mlContainerSchema.safeParse(container);
+  return parsed.success ? parsed.data : null;
+};
 
 const RESTORATION_WORKLOAD_SET: ReadonlySet<MlWorkload> = new Set([
   MlWorkload.RestorationFaithful,
@@ -651,13 +698,17 @@ export class MachineLearningRepository implements RestorationInference {
       acceleration !== MachineLearningHardwareAcceleration.Cuda &&
       !!fallbackModelName &&
       isFlorenceImageDescriptionModel(fallbackModelName);
+    // A Frameleaf Cloud job names only its cloud model, never the local description setting (FL-146).
+    if (selection.kind === MlDestinationKind.FrameleafCloud) {
+      const body = await this.predict<ImageDescriptionResponse>(
+        selection,
+        { imagePath },
+        buildRequest(selection.cloudModelId ?? CLOUD_DESCRIPTION_DEFAULT_MODEL),
+      );
+      return body[ModelTask.IMAGE_DESCRIPTION];
+    }
     const candidateModels: string[] = [modelName];
-    if (
-      selection.kind !== MlDestinationKind.FrameleafCloud &&
-      fallbackModelName &&
-      fallbackModelName !== modelName &&
-      !florenceUnavailable
-    ) {
+    if (fallbackModelName && fallbackModelName !== modelName && !florenceUnavailable) {
       candidateModels.push(fallbackModelName);
     }
 
@@ -971,6 +1022,32 @@ export class MachineLearningRepository implements RestorationInference {
     }
 
     return defaultMachineLearningHardware;
+  }
+  /**
+   * FL-159: the container report of a worker's `GET /hardware`, for Hardware & GPU. Null when the
+   * worker does not answer or sends no report.
+   */
+  async getContainerHardware(endpoint: MlEndpoint): Promise<MlContainerReport | null> {
+    if (endpoint.cloud) {
+      return null;
+    }
+    try {
+      const response = await fetch(new URL('hardware', endpoint.url), {
+        headers: this.authHeaders(endpoint),
+        signal: AbortSignal.timeout(Math.min(10_000, Math.max(250, this.timeout()))),
+        redirect: 'error',
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        return null;
+      }
+      return parseMlContainerReport(await this.readDiagnosticJson(response));
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Machine learning hardware request to "${endpoint.url}" failed: ${error instanceof Error ? error.message : error}`,
+      );
+      return null;
+    }
   }
 
   private async getFormData(payload: ModelPayload, config: MachineLearningRequest): Promise<FormData> {

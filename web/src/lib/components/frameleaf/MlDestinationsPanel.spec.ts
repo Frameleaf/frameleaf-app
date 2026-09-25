@@ -98,6 +98,7 @@ const routes: MlWorkloadRouteDto[] = Object.values(MlWorkload).map((workload) =>
   destinationId: [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment].includes(workload)
     ? destination().id
     : null,
+  modelId: null,
 }));
 
 describe('MlDestinationsPanel (FL-110)', () => {
@@ -151,9 +152,9 @@ describe('MlDestinationsPanel (FL-110)', () => {
     await fireEvent.click(within(row).getByRole('button', { name: 'Review consent' }));
     // Every Dialog is labelled by its title, so the open one is addressed by name rather than
     // by relying on closed dialogs being hidden from the accessibility tree.
-    const dialog = await screen.findByRole('dialog', { name: 'Frameleaf Cloud consent' });
+    const dialog = await screen.findByRole('dialog', { name: 'Cloud processing terms · version 2026-10-01' });
     expect(within(dialog).getByText(cloudStatus.consent.summary)).toBeInTheDocument();
-    const action = within(dialog).getByRole('button', { name: 'Record consent' });
+    const action = within(dialog).getByRole('button', { name: 'Accept and turn on' });
     expect(action).toBeDisabled();
     expect(sdkMock.grantMlDestinationConsent).not.toHaveBeenCalled();
 
@@ -205,7 +206,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     render(MlDestinationsPanel, { destinations: [destination()], routes });
     expect(screen.getByRole('link', { name: 'Add Frameleaf Cloud' })).toHaveAttribute(
       'href',
-      expect.stringContaining('section=cloud-ml'),
+      expect.stringContaining('section=cloud-processing'),
     );
   });
 

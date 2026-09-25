@@ -894,6 +894,61 @@
         ],
         "x-immich-permission": "adminCloudMl.read",
         "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Changes the daily spending cap or automatic top-up on the linked Frameleaf account. Payment details stay on frameleaf.cloud.",
+        "operationId": "updateCloudMlWallet",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudMlWalletUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlWalletDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change the AI Wallet daily cap or automatic top-up",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/admin/cloud/permissions": {
@@ -1858,6 +1913,147 @@
           }
         ],
         "x-immich-permission": "backup.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/hardware": {
+      "get": {
+        "description": "The last check of the GPU the server container and the ML container can each use, with any set-up problems found and the last benchmark. Runs a first check when there is none.",
+        "operationId": "getHardwareCheck",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardwareCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Hardware & GPU check",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/hardware/benchmark": {
+      "post": {
+        "description": "Times a few search embeddings and a test transcode, and keeps how this hardware compares with the estimates so the model sliders show measured times.",
+        "operationId": "runHardwareBenchmark",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardwareCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run a short benchmark",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/hardware/check": {
+      "post": {
+        "description": "Checks both containers again: devices, driver, backend and a short test job in each.",
+        "operationId": "runHardwareCheck",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardwareCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check the GPU again",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
         "x-immich-state": "Alpha"
       }
     },
@@ -39741,33 +39937,22 @@
         ],
         "type": "object"
       },
-      "AdminConfigFrameleafCloudDescriptionsDto": {
+      "AdminConfigFrameleafCloudAutoDescribeDto": {
         "properties": {
-          "autoBatch": {
-            "description": "Run background description batches automatically (needs a daily budget)",
-            "type": "boolean"
-          },
           "dailyBudgetUsd": {
-            "description": "Daily spending limit for background batches, USD",
+            "description": "Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap",
             "format": "double",
-            "maximum": 100000,
-            "minimum": 0,
+            "maximum": 100,
+            "minimum": 0.5,
             "type": "number"
           },
-          "defaultModel": {
-            "description": "Catalogue model id used for descriptions; empty = none chosen",
-            "maxLength": 200,
-            "type": "string"
-          },
           "enabled": {
-            "description": "Allow image descriptions on Frameleaf Cloud",
+            "description": "Describe new photos automatically on Frameleaf Cloud",
             "type": "boolean"
           }
         },
         "required": [
-          "autoBatch",
           "dailyBudgetUsd",
-          "defaultModel",
           "enabled"
         ],
         "type": "object"
@@ -39789,7 +39974,7 @@
       "AdminConfigFrameleafCloudFacesDto": {
         "properties": {
           "enabled": {
-            "description": "Faces never run on Frameleaf Cloud in this version",
+            "description": "Faces never run on Frameleaf Cloud",
             "enum": [
               false
             ],
@@ -39803,43 +39988,99 @@
       },
       "AdminConfigFrameleafCloudMlDto": {
         "properties": {
-          "descriptions": {
-            "$ref": "#/components/schemas/AdminConfigFrameleafCloudDescriptionsDto"
+          "autoDescribe": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudAutoDescribeDto"
           },
           "enabled": {
-            "description": "Allow Frameleaf Cloud processing at all (the destination still needs consent)",
+            "description": "Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation)",
             "type": "boolean"
           },
           "faces": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudFacesDto"
           },
+          "models": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudModelsDto"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudRoutingDto"
+          },
+          "startWith": {
+            "description": "The destination a job preselects when its kind of work may run in both places",
+            "enum": [
+              "local",
+              "cloud"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "autoDescribe",
+          "enabled",
+          "faces",
+          "models",
+          "routing",
+          "startWith"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudModelsDto": {
+        "description": "The model slider position per kind of work; empty = the heaviest that runs well here",
+        "properties": {
+          "descriptions": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "interpolation": {
+            "maxLength": 200,
+            "type": "string"
+          },
           "restoration": {
-            "$ref": "#/components/schemas/AdminConfigFrameleafCloudRestorationDto"
+            "maxLength": 200,
+            "type": "string"
+          },
+          "studio": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "upscale": {
+            "maxLength": 200,
+            "type": "string"
           }
         },
         "required": [
           "descriptions",
-          "enabled",
-          "faces",
-          "restoration"
+          "interpolation",
+          "restoration",
+          "studio",
+          "upscale"
         ],
         "type": "object"
       },
-      "AdminConfigFrameleafCloudRestorationDto": {
+      "AdminConfigFrameleafCloudRoutingDto": {
+        "description": "Where each kind of work may run",
         "properties": {
-          "defaultModel": {
-            "description": "Catalogue model id preselected for restoration",
-            "maxLength": 200,
-            "type": "string"
+          "descriptions": {
+            "$ref": "#/components/schemas/CloudRouteMode"
           },
-          "enabled": {
-            "description": "Allow restoration and upscaling on Frameleaf Cloud",
-            "type": "boolean"
+          "interpolation": {
+            "$ref": "#/components/schemas/CloudRouteMode"
+          },
+          "restoration": {
+            "$ref": "#/components/schemas/CloudRouteMode"
+          },
+          "studio": {
+            "$ref": "#/components/schemas/CloudRouteMode"
+          },
+          "upscale": {
+            "$ref": "#/components/schemas/CloudRouteMode"
           }
         },
         "required": [
-          "defaultModel",
-          "enabled"
+          "descriptions",
+          "interpolation",
+          "restoration",
+          "studio",
+          "upscale"
         ],
         "type": "object"
       },
@@ -49562,17 +49803,41 @@
             "nullable": true,
             "type": "number"
           },
+          "estimateUsd": {
+            "description": "The estimate shown before the job, USD",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
           "finishedAt": {
             "type": "string"
+          },
+          "gpuSeconds": {
+            "description": "Metered GPU time, seconds, when reported",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
           },
           "jobName": {
             "description": "The server job that sent the work, when recorded",
             "nullable": true,
             "type": "string"
           },
+          "modelId": {
+            "description": "The catalogue model the job used, when reported",
+            "nullable": true,
+            "type": "string"
+          },
           "succeeded": {
             "description": "The request finished successfully",
             "type": "boolean"
+          },
+          "workers": {
+            "description": "Workers the job ran on (each paid a start fee), when reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
           },
           "workload": {
             "$ref": "#/components/schemas/MlWorkload"
@@ -49582,9 +49847,13 @@
           "cloudJobId",
           "costUsd",
           "credits",
+          "estimateUsd",
           "finishedAt",
+          "gpuSeconds",
           "jobName",
+          "modelId",
           "succeeded",
+          "workers",
           "workload"
         ],
         "type": "object"
@@ -49673,6 +49942,10 @@
       },
       "CloudMlWalletDto": {
         "properties": {
+          "autoTopUp": {
+            "description": "Automatic top-up with the payment method saved on the account",
+            "type": "boolean"
+          },
           "availableUsd": {
             "description": "Balance minus holds, USD",
             "format": "double",
@@ -49710,6 +49983,7 @@
           }
         },
         "required": [
+          "autoTopUp",
           "availableUsd",
           "balanceUsd",
           "dailyCapUsd",
@@ -49718,6 +49992,22 @@
           "topUpUrl",
           "updatedAt"
         ],
+        "type": "object"
+      },
+      "CloudMlWalletUpdateDto": {
+        "properties": {
+          "autoTopUp": {
+            "description": "Top up automatically when available credit runs low",
+            "type": "boolean"
+          },
+          "dailyCapUsd": {
+            "description": "Daily spending cap, USD",
+            "format": "double",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "number"
+          }
+        },
         "type": "object"
       },
       "CloudPermissionsDto": {
@@ -49758,6 +50048,15 @@
           }
         },
         "type": "object"
+      },
+      "CloudRouteMode": {
+        "description": "local: this server or a home-network worker only; both: each job lets the person pick; cloud: Frameleaf Cloud only",
+        "enum": [
+          "local",
+          "both",
+          "cloud"
+        ],
+        "type": "string"
       },
       "CloudSignInUpdateDto": {
         "properties": {
@@ -52751,6 +53050,188 @@
           "relay"
         ],
         "type": "string"
+      },
+      "HardwareBackend": {
+        "enum": [
+          "CUDA",
+          "ROCm",
+          "OpenVINO",
+          "NVENC",
+          "VA-API",
+          "QSV",
+          "CPU"
+        ],
+        "type": "string"
+      },
+      "HardwareBenchmarkDto": {
+        "properties": {
+          "embeddingMs": {
+            "description": "Median time of a search embedding",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "mlFactor": {
+            "description": "Measured ÷ estimated time for AI work here (applied to the local estimates)",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "ranAt": {
+            "type": "string"
+          },
+          "serverFactor": {
+            "description": "Measured ÷ estimated time for video encoding here",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "transcodeSpeed": {
+            "description": "1080p test transcode, × real time",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "embeddingMs",
+          "mlFactor",
+          "ranAt",
+          "serverFactor",
+          "transcodeSpeed"
+        ],
+        "type": "object"
+      },
+      "HardwareCheckResponseDto": {
+        "properties": {
+          "benchmark": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HardwareBenchmarkDto"
+              }
+            ],
+            "description": "The last benchmark on this hardware, if any",
+            "nullable": true
+          },
+          "checkedAt": {
+            "type": "string"
+          },
+          "issues": {
+            "description": "Set-up problems the check found, by problem id",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ml": {
+            "$ref": "#/components/schemas/HardwareContainerCheckDto",
+            "description": "The ML container: search, faces, descriptions and restoration"
+          },
+          "mlImage": {
+            "description": "The ML image flavour (cpu, cuda, rocm, openvino), when reported",
+            "nullable": true,
+            "type": "string"
+          },
+          "server": {
+            "$ref": "#/components/schemas/HardwareContainerCheckDto",
+            "description": "The server container: video playback and Studio export"
+          }
+        },
+        "required": [
+          "benchmark",
+          "checkedAt",
+          "issues",
+          "ml",
+          "mlImage",
+          "server"
+        ],
+        "type": "object"
+      },
+      "HardwareContainerCheckDto": {
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/HardwareBackend"
+          },
+          "driver": {
+            "description": "Driver and runtime, or what the driver reported instead",
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "nullable": true,
+            "type": "string"
+          },
+          "reachable": {
+            "description": "The container answered the check",
+            "type": "boolean"
+          },
+          "test": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HardwareContainerTestDto"
+              }
+            ],
+            "nullable": true
+          },
+          "vendor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "vramGb": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "backend",
+          "driver",
+          "model",
+          "reachable",
+          "test",
+          "vendor",
+          "vramGb"
+        ],
+        "type": "object"
+      },
+      "HardwareContainerTestDto": {
+        "properties": {
+          "error": {
+            "description": "What failed, as the container reported it",
+            "nullable": true,
+            "type": "string"
+          },
+          "gpu": {
+            "description": "The test ran on the GPU",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "transcode: the server container; embedding: the ML container",
+            "enum": [
+              "transcode",
+              "embedding"
+            ],
+            "type": "string"
+          },
+          "ok": {
+            "description": "The test finished without falling back",
+            "type": "boolean"
+          },
+          "value": {
+            "description": "transcode: 1080p real-time multiple; embedding: milliseconds; null when it did not run",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "error",
+          "gpu",
+          "kind",
+          "ok",
+          "value"
+        ],
+        "type": "object"
       },
       "HlsVideoResolution": {
         "description": "HLS video resolution",

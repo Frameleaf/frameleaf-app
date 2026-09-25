@@ -23,6 +23,7 @@ import {
   MlUsage,
 } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import { cloudModelFor, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Explicit destination selection (FL-110).
@@ -375,6 +376,12 @@ const evaluateCloudAdmission = (
       `${destination.name}: consent ${destination.consentVersion ?? 'none'} was given, Frameleaf Cloud now requires ${facts.consentRequiredVersion}`,
     );
   }
+  if (isLocalOnlyModel(modelId)) {
+    return refuse(
+      MlAdmissionRefusal.ModelMismatch,
+      `${destination.name}: the model ${modelId} runs on this server only and is never sent to Frameleaf Cloud`,
+    );
+  }
   if (modelId && !facts.modelIds.includes(modelId)) {
     return refuse(
       MlAdmissionRefusal.ModelMismatch,
@@ -577,6 +584,8 @@ export const selectMlDestination = async (
     kind: destination.kind,
     workload: request.workload,
     endpoint: endpoint as MlEndpoint,
+    cloudModelId:
+      destination.kind === MlDestinationKind.FrameleafCloud ? cloudModelFor(request.workload, modelId) : null,
     record: (usage: MlUsage) => {
       void mlDestinationRepository
         .recordAccounting({

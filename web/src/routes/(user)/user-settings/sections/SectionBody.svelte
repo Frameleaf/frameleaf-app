@@ -7,6 +7,7 @@
   import CloudAccountSection from '$lib/components/frameleaf/cloud/CloudAccountSection.svelte';
   import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
   import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
+  import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
   import LicenseSection from '$lib/components/frameleaf/cloud/LicenseSection.svelte';
   import PlanSection from '$lib/components/frameleaf/cloud/PlanSection.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
@@ -41,8 +42,10 @@
     </Loader>
   {:else if section.key === 'queues'}
     <QueuesSection />
-  {:else if section.key === 'cloud-ml'}
+  {:else if section.key === 'cloud-processing'}
     <CloudMlSection />
+  {:else if section.key === 'hardware'}
+    <HardwareSection />
   {:else if section.key === 'cloud-account'}
     <CloudAccountSection />
   {:else if section.key === 'cloud-plan'}
