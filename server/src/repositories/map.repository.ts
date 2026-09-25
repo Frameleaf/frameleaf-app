@@ -9,7 +9,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetVisibility, SystemMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -163,8 +163,27 @@ export class MapRepository {
             eb.exists((eb) =>
               eb
                 .selectFrom('album_asset')
+                .innerJoin('album_user as album_owner', (join) =>
+                  join
+                    .onRef('album_owner.albumId', '=', 'album_asset.albumId')
+                    .on('album_owner.role', '=', sql.lit(AlbumUserRole.Owner)),
+                )
                 .whereRef('asset.id', '=', 'album_asset.assetId')
-                .where('album_asset.albumId', 'in', albumIds),
+                .where('album_asset.albumId', 'in', albumIds)
+                // FL-54 owner default: an item whose owner hides locations from the album's owner puts no
+                // marker on the map through that album
+                .where((eb) =>
+                  eb.not(
+                    eb.exists(
+                      eb
+                        .selectFrom('partner')
+                        .whereRef('partner.sharedById', '=', 'asset.ownerId')
+                        .whereRef('partner.sharedWithId', '=', 'album_owner.userId')
+                        .whereRef('partner.sharedById', '!=', 'partner.sharedWithId')
+                        .where('partner.shareLocation', '=', false),
+                    ),
+                  ),
+                ),
             ),
           );
         }

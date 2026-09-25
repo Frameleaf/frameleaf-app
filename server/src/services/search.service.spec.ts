@@ -558,6 +558,38 @@ describe(SearchService.name, () => {
       expect(mocks.search.searchMetadata.mock.calls[0][1].lockedOwnerId).toBeUndefined();
     });
 
+    it('keeps owners who hide their locations out of an album search by place (FL-54)', async () => {
+      const auth = AuthFactory.create();
+      const albumId = newUuid();
+      const hidingFromAlbumOwner = newUuid();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.partner.getAll.mockResolvedValue([]);
+      mocks.partner.getLocationHiddenOwnerIdsForAlbums.mockResolvedValue([hidingFromAlbumOwner]);
+      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
+
+      await sut.searchMetadata(auth, { size: 250, albumIds: [albumId], city: 'Oslo' });
+      expect(mocks.search.searchMetadata.mock.calls[0][1].locationHiddenOwnerIds).toEqual([hidingFromAlbumOwner]);
+      expect(mocks.partner.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith([albumId]);
+
+      await sut.searchMetadata(auth, { size: 250, filter: { albumIds: { any: [albumId] }, city: { eq: 'Oslo' } } });
+      expect(mocks.search.searchMetadataV3.mock.calls[0][2]).toMatchObject({
+        locationHiddenOwnerIds: [hidingFromAlbumOwner],
+      });
+    });
+
+    it('adds no owner exclusion to an album search without a place filter (FL-54)', async () => {
+      const auth = AuthFactory.create();
+      const albumId = newUuid();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
+
+      await sut.searchMetadata(auth, { size: 250, albumIds: [albumId] });
+
+      expect(mocks.search.searchMetadata.mock.calls[0][1].locationHiddenOwnerIds).toBeUndefined();
+      expect(mocks.partner.getLocationHiddenOwnerIdsForAlbums).not.toHaveBeenCalled();
+    });
+
     it('leaves the motion parts of Locked live photos out of every search (FL-34)', async () => {
       const { auth } = partnerSetup();
       mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });

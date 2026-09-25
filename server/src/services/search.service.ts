@@ -45,7 +45,11 @@ import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
-import { applyPartnerLocationPolicy, getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
+import {
+  applyPartnerLocationPolicy,
+  getLocationHiddenOwnerIdsForView,
+  getLocationHiddenPartnerIds,
+} from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import {
@@ -148,9 +152,15 @@ export class SearchService extends BaseService {
     }
 
     let userIds: string[] | undefined;
+    let locationHiddenOwnerIds: string[] | undefined;
 
     if (dto.albumIds && dto.albumIds.length > 0) {
       await this.requireAccess({ auth, ids: dto.albumIds, permission: Permission.AlbumRead });
+      // FL-54: matching album items by place reveals it, so owners who hide their locations from the
+      // viewer (for a link, its creator) or from an album's owner never match
+      if (usesLocationFilter(dto)) {
+        locationHiddenOwnerIds = await this.getAlbumLocationHiddenOwnerIds(auth, dto.albumIds);
+      }
     } else if (auth.sharedLink) {
       throw new BadRequestException('Shared link access is only allowed in combination with an albumIds filter');
     } else {
@@ -170,6 +180,7 @@ export class SearchService extends BaseService {
         lockedOwnerId: getLockedOwnerId(auth),
         hideLockedMotion: true,
         userIds,
+        locationHiddenOwnerIds,
         viewingUserId: auth.user.id,
         orderDirection: dto.order ?? AssetOrder.Desc,
       },
@@ -560,9 +571,10 @@ export class SearchService extends BaseService {
     requirePetFilterAllowed(auth, collectFilterIds(filter, 'petIds'));
 
     const albumIds = collectFilterIds(filter, 'albumIds');
+    const usesLocation = filterUsesLocation(filter);
     const [userIds] = await Promise.all([
       // a fully confined filter searches albums only, so the unused universe can skip the partner lookup
-      fullyConfined ? [auth.user.id] : this.getUserIdsToSearch(auth, undefined, filterUsesLocation(filter)),
+      fullyConfined ? [auth.user.id] : this.getUserIdsToSearch(auth, undefined, usesLocation),
       albumIds.length > 0 ? this.requireAccess({ auth, ids: albumIds, permission: Permission.AlbumRead }) : undefined,
     ]);
 
@@ -574,8 +586,24 @@ export class SearchService extends BaseService {
         viewingUserId: auth.user.id,
         // live-photo motion parts of Locked stills: only the still's owner, when elevated (FL-34)
         lockedMotion: getLockedVisibilityOptions(auth),
+        // FL-54: album branches search other people's items; a place filter must not match owners who
+        // hide their locations from the viewer (for a link, its creator) or from an album's owner
+        ...(usesLocation &&
+          albumIds.length > 0 && {
+            locationHiddenOwnerIds: await this.getAlbumLocationHiddenOwnerIds(auth, albumIds),
+          }),
       },
     };
+  }
+
+  private async getAlbumLocationHiddenOwnerIds(auth: AuthDto, albumIds: string[]): Promise<string[]> {
+    return [
+      ...(await getLocationHiddenOwnerIdsForView({
+        viewerId: auth.sharedLink?.userId ?? auth.user.id,
+        albumIds,
+        repository: this.partnerRepository,
+      })),
+    ];
   }
 
   private async resolveEmbedding(

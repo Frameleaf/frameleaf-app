@@ -266,6 +266,10 @@ const withBoundingBox = <T>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', T
   );
 };
 
+/** FL-54: leaves out assets of owners who hide their locations from the viewer (no-op when there are none). */
+const withoutLocationHiddenOwners = <O>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', O>, ownerIds?: string[]) =>
+  ownerIds && ownerIds.length > 0 ? qb.where('asset.ownerId', 'not in', ownerIds) : qb;
+
 @Injectable()
 export class AssetRepository {
   private readonly forkPrivacy: ForkPrivacyRepository;
@@ -1518,7 +1522,8 @@ export class AssetRepository {
               sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
             );
 
-          return withBoundingBox(withBoundingCircle, bbox);
+          // FL-54: matching a place reveals it, so owners who hide their locations never match
+          return withoutLocationHiddenOwners(withBoundingBox(withBoundingCircle, bbox), options.locationHiddenOwnerIds);
         })
         .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
         .$if(!!options.visibility, (qb) =>
@@ -1779,7 +1784,11 @@ export class AssetRepository {
               sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
             );
 
-            return withBoundingBox(withBoundingCircle, bbox);
+            // FL-54: matching a place reveals it, so owners who hide their locations never match
+            return withoutLocationHiddenOwners(
+              withBoundingBox(withBoundingCircle, bbox),
+              options.locationHiddenOwnerIds,
+            );
           })
           .where(timeBucketDate, '=', timeBucket.replace(/^[+-]/, ''))
           .$if(!!options.albumId, (qb) =>
@@ -2124,7 +2133,7 @@ export class AssetRepository {
       .leftJoin('asset_file', (join) =>
         join.onRef('asset.id', '=', 'asset_file.assetId').on('asset_file.type', '=', type),
       )
-      .select(['asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
+      .select(['asset.ownerId', 'asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
   }
