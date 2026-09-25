@@ -2196,7 +2196,7 @@
       "production": ["web/src/routes/auth/onboarding/+page.svelte"],
       "status": "fixed",
       "gaps": ["O-8", "O-12"],
-      "followUp": "Store links only when configured (O-12, FL-135); the version check stays off under the FL-146 privacy default (O-8, intentional). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)"
+      "followUp": "Store links only when configured (O-12, FL-135); Check for new versions is a real switch that asks only Frameleaf's releases (O-8, FL-80). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)"
     },
     {
       "route": "/auth/pin-prompt",

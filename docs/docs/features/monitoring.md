@@ -5,8 +5,8 @@ exporters, instrumentation, metrics listener, or user/job metric collectors. The
 `IMMICH_TELEMETRY_INCLUDE`, `IMMICH_TELEMETRY_EXCLUDE`, and metrics-port variables cannot
 re-enable reporting. The bundled Compose configurations no longer start Prometheus or Grafana.
 
-Automatic external version checks are also disabled, including for existing databases and
-configuration files that previously enabled them. Local version history, health checks,
+Version checks never contact an Immich service. When they are turned on, the server asks
+only Frameleaf's own GitHub releases for a newer version. Local version history, health checks,
 job progress, and logs remain available.
 
 See [Telemetry and automatic reporting](./fork-privacy-suite.md#telemetry-and-automatic-reporting)
