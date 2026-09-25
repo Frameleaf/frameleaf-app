@@ -2,15 +2,18 @@
   /**
    * Library care → Enrichment completeness (FL-71, settings-catalog.mjs `enrichment-care`): where
    * faces, descriptions and embeddings stand. The work itself is the enrichment workbench of Search
-   * & intelligence and the Job manager (FL-59); this section opens them.
+   * & intelligence and the Job manager (FL-59); this section opens them, under the template's two
+   * rerun toggles (FL-69).
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import LibraryCareToggles from '$lib/components/frameleaf/settings/LibraryCareToggles.svelte';
   import { OpenQueryParam } from '$lib/constants';
   import { Route } from '$lib/route';
   import { t } from 'svelte-i18n';
 </script>
 
+<LibraryCareToggles section="enrichment-care" />
 <p class="help">{$t('frameleaf_cc_enrichment_help')}</p>
 <div class="cc-section-action">
   <Button
