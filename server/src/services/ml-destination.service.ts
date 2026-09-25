@@ -32,7 +32,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
@@ -543,6 +543,9 @@ export class MlDestinationService extends BaseService {
     if (modelId !== null) {
       if (destination.kind !== MlDestinationKind.FrameleafCloud) {
         throw new BadRequestException('Only Frameleaf Cloud work names a catalogue model');
+      }
+      if (isLocalOnlyModel(modelId)) {
+        throw new BadRequestException(`The model ${modelId} runs on this server only`);
       }
       if (!(destination.lastProbeCloud?.modelIds ?? []).includes(modelId)) {
         throw new BadRequestException(`The model ${modelId} is not in the Frameleaf Cloud catalogue`);

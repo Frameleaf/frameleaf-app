@@ -578,9 +578,17 @@ export const positionById = (id: string | null | undefined): ModelPosition | nul
   return null;
 };
 
-/** Positions Frameleaf Cloud may host: offered on the cloud and licensed for hosted use. */
+/**
+ * Models that stay on this server only (FL-146 owner decision, 2026-09-25): the nllb-clip search
+ * models (base and large, every variant; CC-BY-NC-4.0) and MusicGen-small. They are never offered on
+ * Frameleaf Cloud, whatever a catalogue says; the server refuses a cloud job for them too.
+ */
+const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small/i;
+export const isLocalOnlyModel = (id: string | null | undefined) => !!id && LOCAL_ONLY_MODEL.test(id);
+
+/** Positions Frameleaf Cloud may host: offered on the cloud, licensed for hosted use, not local only. */
 export const isCloudOffered = (item: ModelPosition | null | undefined): item is ModelPosition & { cloud: CloudOffer } =>
-  !!item?.cloud && item.commercialHosted !== 'no';
+  !!item?.cloud && item.commercialHosted !== 'no' && !isLocalOnlyModel(item.id);
 
 export const cloudPositions = (workload?: LadderWorkload) =>
   (workload ? ladderFor(workload) : Object.values(modelLadders).flat()).filter((item) => isCloudOffered(item));

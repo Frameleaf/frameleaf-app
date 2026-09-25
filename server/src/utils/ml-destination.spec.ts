@@ -245,6 +245,14 @@ describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
     expect(refusal({ ...cloud, modelId: 'restore-faithful' })).toBeNull();
   });
 
+  it('refuses a cloud job for the local-only nllb-clip and MusicGen-small models, even if listed (FL-146)', () => {
+    for (const modelId of ['nllb-clip-base-siglip__mrl', 'nllb-clip-large-siglip__v1', 'Xenova/musicgen-small']) {
+      expect(refusal({ ...withFacts({ modelIds: ['restore-faithful', modelId] }), modelId })).toBe(
+        MlAdmissionRefusal.ModelMismatch,
+      );
+    }
+  });
+
   it('refuses a workload the cloud does not offer this account right now', () => {
     expect(refusal({ ...cloud, probe: { ...mlProbeStub.frameleafCloud, workloads: [MlWorkload.Enrichment] } })).toBe(
       MlAdmissionRefusal.WorkloadNotServed,
