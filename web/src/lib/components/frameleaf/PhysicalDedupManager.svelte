@@ -17,6 +17,13 @@
    *   state instead of applying something nobody reviewed.
    * - Thumbnails are the requester's own asset access (`canView`), never widened by admin rights.
    *   Another account's Locked copies are counted, never listed.
+   * - No plan is prepared while file reuse is off or no account to retain originals in is saved or
+   *   chosen (FL-73, UT-23): the prototype's configuration error (PhysicalDedupManager.jsx:536-574).
+   * - The estimate, the logical asset bytes, the physical shared-original bytes and the bytes an
+   *   apply measurably removed are separate figures (FL-73).
+   * - A finished apply can be verified (FL-73): every retained original hashed again, every copy
+   *   checked to resolve to it. The page says plainly what can be undone: a copy whose own file was
+   *   removed cannot go back; a copy whose own file is still on disk can.
    */
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -26,19 +33,24 @@
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
+  import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import {
     applyBlockedReason,
     applyForPlan,
     applyStatusKey,
     blocksReview,
+    canVerifyApply,
     checksumAlgorithmKey,
     confirmationPhrase,
+    DEDUP_OWNER_SETTING,
     DEDUP_SCOPE_ALL,
+    dedupConfigurationError,
     formatBytes,
     groupPlanCopies,
     isApplyActive,
     isDecidableGroup,
     matchesConfirmation,
+    mediaDetail,
     normalizeExcluded,
     planMetrics,
     planSelection,
@@ -46,7 +58,10 @@
     reviewExport,
     reviewMatches,
     skipReasonKey,
+    undoKey,
+    verificationItemKey,
   } from '$lib/frameleaf/physical-dedup';
+  import { goto } from '$app/navigation';
   import { OpenQueryParam } from '$lib/constants';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
@@ -60,15 +75,19 @@
     PhysicalDeduplicationDecision,
     PhysicalDeduplicationPlanMode,
     requestPhysicalDeduplicationPreview,
+    restorePhysicalDeduplicationCopy,
     resumeMediaOperation,
     reviewPhysicalDeduplicationPlan,
+    verifyPhysicalDeduplicationApply,
     type PhysicalDeduplicationApplyDto,
     type PhysicalDeduplicationPreviewResponseDto,
     type PhysicalDeduplicationReviewResponseDto,
+    type PhysicalDeduplicationVerificationDto,
     type UserAdminResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
+    mdiAccountMultipleOutline,
     mdiCheckCircleOutline,
     mdiCompare,
     mdiDownload,
@@ -80,6 +99,7 @@
     mdiLockOutline,
     mdiMinusCircleOutline,
     mdiShieldCheckOutline,
+    mdiShieldSearch,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onDestroy } from 'svelte';
@@ -106,23 +126,40 @@
   let notice = $state('');
   let conflict = $state('');
   let busy = $state(false);
+  /** The latest verification of an applied plan (FL-73), and the copy being restored. */
+  let verification = $state<PhysicalDeduplicationVerificationDto | null>(null);
+  let verifying = $state<string | null>(null);
   let pollTimer: ReturnType<typeof setInterval> | undefined;
 
   const plan = $derived(preview.plan);
   const masterSaved = $derived(!!preview.savedMasterUserId);
   const effectiveMaster = $derived(preview.savedMasterUserId ?? previewMaster ?? null);
   const nameOf = (id: string | null | undefined) => users.find((user) => user.id === id)?.name ?? id ?? '';
-  const scopeOptions = $derived([
-    { label: $t('frameleaf_dedup_scope_all'), value: DEDUP_SCOPE_ALL },
-    ...users.filter((user) => user.id !== effectiveMaster).map((user) => ({ label: user.name, value: user.id })),
-  ]);
-  const masterOptions = $derived(users.map((user) => ({ label: `${user.name} (${user.email})`, value: user.id })));
+  // Prototype PhysicalDedupManager.jsx:487-531: both pickers list account names only, and a scope
+  // that is no longer offered (it became the retained account) reads "Selected account".
+  const scopeOptions = $derived.by(() => {
+    const options = [
+      { label: $t('frameleaf_dedup_scope_all'), value: DEDUP_SCOPE_ALL },
+      ...users.filter((user) => user.id !== effectiveMaster).map((user) => ({ label: user.name, value: user.id })),
+    ];
+    return options.some((option) => option.value === scope)
+      ? options
+      : [...options, { label: $t('frameleaf_dedup_selected_account'), value: scope }];
+  });
+  const masterOptions = $derived(users.map((user) => ({ label: user.name, value: user.id })));
+  const configError = $derived(
+    dedupConfigurationError({
+      enabled: preview.enabled,
+      masterUserId: effectiveMaster,
+      accountIds: users.map((user) => user.id),
+    }),
+  );
   const groups = $derived(plan ? groupPlanCopies(plan) : []);
-  const metrics = $derived(plan ? planMetrics(plan) : null);
   const selection = $derived(plan ? planSelection(plan, excluded) : null);
   const stale = $derived(plan ? planStaleReason(plan, { scope, masterUserId: effectiveMaster }) : null);
   /** The newest job applying the plan on screen. */
   const planApply = $derived(applyForPlan(preview.applies, plan));
+  const metrics = $derived(plan ? planMetrics(plan, planApply) : null);
   /** Whichever job is applying a plan right now, this one or another administrator's. */
   const activeApply = $derived(preview.applies.find((apply) => isApplyActive(apply)) ?? null);
   const applied = $derived(planApply?.status === MediaOperationStatus.Completed);
@@ -149,6 +186,12 @@
   const canConfirm = $derived(
     !!plan && reviewed && !stale && !applyBlocked && !busy && matchesConfirmation(plan, confirmation),
   );
+
+  /** Prototype PhysicalDedupManager.jsx:315-318: `{owner} · {bytes}{detail ? " · " + detail : ""}`. */
+  const detailSuffix = (item: Parameters<typeof mediaDetail>[0]) => {
+    const detail = mediaDetail(item);
+    return detail ? ` · ${detail}` : '';
+  };
 
   const time = (value: string) => DateTime.fromISO(value).toLocaleString(DateTime.DATETIME_MED);
 
@@ -217,7 +260,7 @@
   };
 
   const prepare = async () => {
-    if (!effectiveMaster) {
+    if (!effectiveMaster || configError) {
       return;
     }
     busy = true;
@@ -318,6 +361,46 @@
     }
   };
 
+  /** Verify a finished apply (FL-73): nothing is written. */
+  const verify = async (job: PhysicalDeduplicationApplyDto) => {
+    busy = true;
+    verifying = job.operationId;
+    try {
+      verification = await verifyPhysicalDeduplicationApply({ id: job.operationId });
+    } catch (error) {
+      handleError(error, $t('frameleaf_dedup_unable_to_verify'));
+    } finally {
+      busy = false;
+      verifying = null;
+    }
+  };
+
+  /** Put one copy back on its own file, where that file is still on disk (FL-73). */
+  const restore = async (assetId: string) => {
+    if (!verification) {
+      return;
+    }
+    busy = true;
+    try {
+      verification = await restorePhysicalDeduplicationCopy({
+        id: verification.operationId,
+        physicalDeduplicationRestoreRequestDto: { assetId },
+      });
+      notice = $t('frameleaf_dedup_notice_restored');
+    } catch (error) {
+      handleError(error, $t('frameleaf_dedup_unable_to_restore'));
+    } finally {
+      busy = false;
+    }
+  };
+
+  /**
+   * Storage → the retained-account setting (prototype `onNavigate("storage", "advanced-dedup-owner")`);
+   * here that control lives in the storage section's file reuse group, which scrolls to and focuses it.
+   */
+  const openOwnerSetting = () =>
+    goto(Route.systemSettings({ isOpen: OpenQueryParam.STORAGE_TEMPLATE, openSetting: DEDUP_OWNER_SETTING }));
+
   const exportReview = () => {
     if (!plan) {
       return;
@@ -386,7 +469,13 @@
     return { label: $t('frameleaf_dedup_plan_preview'), tone: 'blue' as const };
   });
 
-  const settingsHref = Route.systemSettings({ isOpen: OpenQueryParam.STORAGE_TEMPLATE });
+  const configErrorMessage = $derived(
+    configError === 'disabled'
+      ? $t('frameleaf_dedup_config_disabled')
+      : configError === 'no-master'
+        ? $t('frameleaf_dedup_config_no_master')
+        : '',
+  );
 </script>
 
 <div class="dedup">
@@ -407,7 +496,8 @@
       <div class="retained-saved">
         <span>{$t('frameleaf_dedup_retain_in')}</span>
         <strong>{nameOf(preview.savedMasterUserId)}</strong>
-        <a href={settingsHref}>{$t('frameleaf_dedup_retained_change')}</a>
+        <!-- Prototype PhysicalDedupManager.jsx:508-515: a Button to Storage → retained account. -->
+        <Button onclick={openOwnerSetting}>{$t('frameleaf_dedup_retained_change')}</Button>
       </div>
     {:else}
       <div class="toolbar-field">
@@ -424,22 +514,35 @@
       </div>
     {/if}
     <div class="toolbar-actions">
-      <Button variant="primary" disabled={!effectiveMaster || preview.running || busy} onclick={prepare}>
+      <Button variant="primary" disabled={!!configError || preview.running || busy} onclick={prepare}>
         <Icon icon={mdiFolderSearchOutline} size="1em" aria-hidden={true} />
         {plan ? $t('frameleaf_dedup_prepare_new') : $t('frameleaf_dedup_prepare')}
       </Button>
     </div>
   </div>
 
+  <!-- Prototype PhysicalDedupManager.jsx:546-574: the scope note, then the configuration error. -->
   <p class="scope-note">
-    {scope === DEDUP_SCOPE_ALL
-      ? $t('frameleaf_dedup_scope_all_body')
-      : $t('frameleaf_dedup_scope_one_body', { values: { name: nameOf(scope) } })}
-    {#if !masterSaved}
-      {$t('frameleaf_dedup_preview_uses_chosen')}
-      <a href={settingsHref}>{$t('frameleaf_dedup_apply_blocked_no_saved_master')}</a>
-    {/if}
+    <Icon icon={mdiAccountMultipleOutline} size="1.125rem" aria-hidden={true} />
+    <span>
+      {scope === DEDUP_SCOPE_ALL
+        ? $t('frameleaf_dedup_scope_all_body')
+        : $t('frameleaf_dedup_scope_one_body', { values: { name: nameOf(scope) } })}
+      {#if !masterSaved}
+        <FormatMessage key="frameleaf_dedup_preview_uses_chosen">
+          {#snippet children({ message })}
+            <button type="button" class="text-button" onclick={openOwnerSetting}>{message}</button>
+          {/snippet}
+        </FormatMessage>
+      {/if}
+    </span>
   </p>
+  {#if configErrorMessage}
+    <p class="message error config-error" role="status">
+      <span>{configErrorMessage}</span>
+      <Button onclick={openOwnerSetting}>{$t('frameleaf_dedup_open_settings')}</Button>
+    </p>
+  {/if}
 
   {#if preview.running}
     <Status message={$t('frameleaf_dedup_plan_running')} busy />
@@ -559,6 +662,26 @@
           <span>{$t('frameleaf_dedup_metric_skipped')}</span><strong>{metrics.skippedCopies}</strong>
         </div>
       </div>
+      <!-- FL-73: logical asset bytes, physical shared-original bytes and measured reclaimed bytes, apart. -->
+      <dl class="bytes" aria-label={$t('frameleaf_dedup_bytes_label')}>
+        <div>
+          <dt>{$t('frameleaf_dedup_bytes_logical')}</dt>
+          <dd>{formatBytes(metrics.logicalBytes)}</dd>
+        </div>
+        <div>
+          <dt>{$t('frameleaf_dedup_bytes_shared')}</dt>
+          <dd>{formatBytes(metrics.sharedOriginalBytes)}</dd>
+        </div>
+        <div>
+          <dt>{$t('frameleaf_dedup_bytes_measured')}</dt>
+          <dd>
+            {metrics.measuredReclaimedBytes === null
+              ? $t('frameleaf_dedup_bytes_not_applied')
+              : formatBytes(metrics.measuredReclaimedBytes)}
+          </dd>
+        </div>
+      </dl>
+      <p class="note">{$t('frameleaf_dedup_bytes_note')}</p>
     {/if}
 
     {#if staleMessage}
@@ -597,6 +720,7 @@
                   assetId={group.retained.assetId}
                   type={group.retained.type}
                   canView={group.retained.canView}
+                  unavailable={!group.retained.fileAvailable}
                   size="retained"
                 />
                 <div class="retained-text">
@@ -605,7 +729,9 @@
                     {$t('frameleaf_dedup_retained_badge')}
                   </span>
                   <strong>{group.retained.originalFileName}</strong>
-                  <small>{group.retained.ownerName} · {formatBytes(group.retained.sizeInBytes)}</small>
+                  <small>
+                    {group.retained.ownerName} · {formatBytes(group.retained.sizeInBytes)}{detailSuffix(group.retained)}
+                  </small>
                   <small class="references">
                     <Icon icon={mdiLinkVariant} size="0.8125rem" aria-hidden={true} />
                     {$t('frameleaf_dedup_references_now', { values: { count: group.retained.referencesBefore } })}
@@ -653,7 +779,7 @@
                   <PhysicalDedupThumb assetId={copy.assetId} type={copy.type} canView={copy.canView} />
                   <div class="copy-text">
                     <strong>{$t('frameleaf_dedup_copy_of', { values: { name: copy.ownerName } })}</strong>
-                    <small>{copy.originalFileName} · {formatBytes(copy.sizeInBytes)}</small>
+                    <small>{copy.originalFileName} · {formatBytes(copy.sizeInBytes)}{detailSuffix(copy)}</small>
                     <span class="decision" class:share={shares}>
                       <Icon
                         icon={shares ? mdiCheckCircleOutline : mdiMinusCircleOutline}
@@ -735,16 +861,21 @@
                     </span>
                   </span>
                   <details>
-                    <summary>{$t('frameleaf_dedup_location')}</summary>
+                    <summary>{$t('frameleaf_dedup_file_location')}</summary>
                     <code>{copy.originalPath}</code>
                   </details>
                 </th>
                 <td>
                   {#if retained}
+                    <!-- Prototype PhysicalDedupManager.jsx:418-426 (UT-24). -->
                     <strong>{retained.ownerName}</strong>
-                    <small>{$t('frameleaf_dedup_table_file_available')}</small>
+                    <small class:unavailable-text={!retained.fileAvailable}>
+                      {retained.fileAvailable
+                        ? $t('frameleaf_dedup_table_file_available')
+                        : $t('frameleaf_dedup_table_file_unavailable')}
+                    </small>
                     <details>
-                      <summary>{$t('frameleaf_dedup_location')}</summary>
+                      <summary>{$t('frameleaf_dedup_retained_location')}</summary>
                       <code>{retained.originalPath}</code>
                     </details>
                   {:else}
@@ -815,6 +946,13 @@
             <Icon icon={mdiCheckCircleOutline} size="1em" aria-hidden={true} />
             {$t('frameleaf_dedup_plan_recorded')}
           </span>
+          {#if planApply && canVerifyApply(planApply)}
+            {@const job = planApply}
+            <Button disabled={busy} onclick={() => verify(job)}>
+              <Icon icon={mdiShieldSearch} size="1em" aria-hidden={true} />
+              {$t('frameleaf_dedup_verify')}
+            </Button>
+          {/if}
         {:else if !reviewed}
           <Button disabled={!!stale || reviewBlocked || busy} onclick={markReviewed}>
             {$t('frameleaf_dedup_mark_reviewed')}
@@ -861,11 +999,85 @@
                 })}
               </span>
             </div>
-            <time datetime={entry.finishedAt ?? entry.createdAt}>{time(entry.finishedAt ?? entry.createdAt)}</time>
+            <span class="history-end">
+              <time datetime={entry.finishedAt ?? entry.createdAt}>{time(entry.finishedAt ?? entry.createdAt)}</time>
+              {#if canVerifyApply(entry)}
+                <Button disabled={busy} onclick={() => verify(entry)}>
+                  {verifying === entry.operationId ? $t('frameleaf_dedup_verifying') : $t('frameleaf_dedup_verify')}
+                </Button>
+              {/if}
+            </span>
           </li>
         {/each}
       </ol>
     </details>
+  {/if}
+
+  {#if verification}
+    {@const report = verification}
+    <!-- FL-73 verification: no prototype screen; composed from this page's apply panel and copy list. -->
+    <section class="verify-panel" aria-label={$t('frameleaf_dedup_verify_title', { values: { plan: report.planId } })}>
+      <div class="apply-head">
+        <div>
+          <Icon icon={mdiShieldSearch} size="1.125rem" aria-hidden={true} />
+          <strong>{$t('frameleaf_dedup_verify_title', { values: { plan: report.planId } })}</strong>
+          <small>{time(report.verifiedAt)}</small>
+        </div>
+        <Button onclick={() => (verification = null)}>{$t('close')}</Button>
+      </div>
+      <p class="apply-counts" role="status">
+        {$t('frameleaf_dedup_verify_counts', {
+          values: {
+            verified: report.verified,
+            copies: report.copies,
+            intact: report.retainedIntact,
+            originals: report.retainedOriginals,
+          },
+        })}
+      </p>
+      {#if report.retainedMissing + report.retainedChanged > 0}
+        <p class="message error" role="alert">
+          {$t('frameleaf_dedup_verify_retained_problem', {
+            values: { missing: report.retainedMissing, changed: report.retainedChanged },
+          })}
+        </p>
+      {/if}
+      {#if report.notLinked > 0}
+        <p class="message" role="status">
+          {$t('frameleaf_dedup_verify_not_linked', { values: { count: report.notLinked } })}
+        </p>
+      {/if}
+      <p class="note">
+        {$t('frameleaf_dedup_undo_summary', { values: { removed: report.removed, restorable: report.restorable } })}
+      </p>
+      {#if report.hiddenCopies > 0}
+        <p class="message" role="status">
+          <Icon icon={mdiLockOutline} size="1em" aria-hidden={true} />
+          {$t('frameleaf_dedup_verify_hidden', { values: { count: report.hiddenCopies } })}
+        </p>
+      {/if}
+      {#if report.items.length > 0}
+        <ul class="verify-items" aria-label={$t('frameleaf_dedup_copies_label')}>
+          {#each report.items as item (item.assetId)}
+            <li>
+              <PhysicalDedupThumb assetId={item.assetId} type={item.type} canView={item.canView} size="cell" />
+              <div>
+                <strong>{item.originalFileName}</strong>
+                <small>
+                  {$t('frameleaf_dedup_copy_of', { values: { name: item.ownerName } })} · {$t(
+                    verificationItemKey(item),
+                  )}
+                </small>
+                <small>{$t(undoKey(item))}</small>
+              </div>
+              {#if item.restorable}
+                <Button disabled={busy} onclick={() => restore(item.assetId)}>{$t('frameleaf_dedup_restore')}</Button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
   {/if}
 </div>
 
@@ -955,11 +1167,6 @@
   }
   .retained-saved > strong {
     font-weight: 550;
-  }
-  .retained-saved a,
-  .scope-note a {
-    color: var(--fl-accent);
-    text-decoration: underline;
   }
   .toolbar-actions {
     display: flex;
@@ -1416,6 +1623,100 @@
   }
   .history li span,
   .history time {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
+  }
+  .scope-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .scope-note :global(svg) {
+    flex-shrink: 0;
+    margin-block-start: 0.125rem;
+  }
+  .text-button {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fl-accent);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .config-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .bytes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 0.625rem;
+    margin: 0;
+  }
+  .bytes div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-raised);
+  }
+  .bytes dt {
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+  }
+  .bytes dd {
+    margin: 0;
+    font-weight: 600;
+  }
+  .unavailable-text {
+    color: var(--fl-danger-text) !important;
+  }
+  .history-end {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  .verify-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+  }
+  .verify-items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .verify-items li {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding-block: 0.5rem;
+    border-block-start: 1px solid var(--fl-border);
+  }
+  .verify-items li > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+    flex: 1;
+  }
+  .verify-items strong {
+    font-size: var(--fl-font-small);
+    overflow-wrap: anywhere;
+  }
+  .verify-items small {
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
   }
