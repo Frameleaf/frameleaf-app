@@ -61,9 +61,46 @@ A failed, interrupted, cancelled or stale attempt never replaces a previous vali
 - A result asset must be a live asset of the job's owner. A worker that names anything else fails the job with `result_not_owned`.
 - Checkpoint writes take a share lock on the job under the claim, so a lapsed worker cannot record or complete a chunk its replacement owns.
 
+## Edits
+
+Edits are rendered by the job queue, as they always were: `MediaService` renders a saved photo edit's previews and a video edit or export, and `AssetDevelopService` renders a photo version. Each render now also has a `media_operation` row of kind `quick_edit`, written when the render is queued (`server/src/utils/edit-operation.ts`, `server/src/utils/edit-operation-tracker.ts`):
+
+| `settings.edit` | What renders                                                     | Queued by                                        | `revisionId`          |
+| --------------- | ---------------------------------------------------------------- | ------------------------------------------------ | --------------------- |
+| `photo_edit`    | The edited previews of a saved, cleared or restored photo edit   | Saving, clearing or restoring a photo's edits    | none                  |
+| `photo_version` | A photo version: a develop recipe, or a file developed elsewhere | Saving with render, Render, bringing a file back | the develop revision  |
+| `video_edit`    | A saved, cleared or restored video edit's master and proxy       | Saving, clearing or restoring a video's edits    | the requested version |
+| `video_export`  | A video version rendered for download                            | Export                                           | the exported version  |
+
+The row is local, owned by the photo's owner, labelled with the file name and points at the photo (`assetId`) and, when there is one, the version (`revisionId`). The snapshot records `executor: job_queue` and the job that renders it.
+
+The row is held by the job queue, not by a worker that polls: `claimedBy` is `job-queue` while it waits with its job, and no polling worker or render worker is ever offered a row whose snapshot names that executor. The job carries the row's id. When it runs it takes a real claim (`beginJobQueueRun`): only a queued row the job queue holds, only once, so a second delivery of the same job, a delivery after a cancel, or one after the row finished does nothing. The run heartbeats every third of its five-minute lease, reports `rendering` and, for a photo version, its stages as progress, and moves to `validating` immediately before it publishes. Publication happens only if that step succeeds; otherwise the run stops without publishing and removes what it wrote. A run with nothing to publish, because the version was already rendered or a newer edit superseded it, completes with `result.outcome = nothing_published` and no result asset.
+
+Recovery uses the same rules as every other kind. Edits cannot resume, so a lost claim is a failure and gets the one automatic retry. A failure the executor reports also gets it, except where retrying cannot help: a missing original or a version whose source changed. A retrying row goes back to the queue with no holder, and `MediaOperationSweepService` dispatches it to the job queue with its row once its retry time has come. The same pass dispatches a row still waiting with its job fifteen minutes after it was last touched, because the queue has evidently lost the job, and a manual retry. Photo versions under a row no longer requeue themselves or get requeued at startup by `AssetDevelopService`; the row's recovery does that.
+
+What each edit can do:
+
+| Edit            | Cancel                 | Retry                            | Pause |
+| --------------- | ---------------------- | -------------------------------- | ----- |
+| `photo_edit`    | No                     | After it failed                  | No    |
+| `photo_version` | Yes, queued or running | After it failed or was cancelled | No    |
+| `video_edit`    | No                     | After it failed                  | No    |
+| `video_export`  | No                     | After it failed                  | No    |
+
+- A photo version checks for a cancel between its stages and only makes the new version current at the end, so it can stop anywhere and the previous working version stays current. A cancel from Activity reaches the render at its next stage; a cancel from the editor cancels the row too.
+- A photo edit's previews and a video edit's master render edits that are already saved. Stopping one would leave the saved edit showing stale previews, and the video encoder has no stop, so they cannot be cancelled. The server refuses the request and Activity does not offer it.
+- A retry is a new row with the same snapshot, sent straight to the job queue. A photo edit renders the saved edit again, a photo version its revision (queued afresh, as Render does), a video edit the requested version and a video export its version. A retry of an item that is Locked now needs the unlocked session.
+- Nothing pauses: every edit is a single render that starts from the beginning.
+
+Prior output survives in each case: a video version's files are written under their own names and adopted by one transaction, a photo version becomes current only after `validating`, and a photo edit's asset files and dimensions change only after `validating`. A photo edit writes its preview files where the previous edit's previews were, so a failed run can leave them partly rewritten; the saved edit is rendered again by the automatic retry. Develop exports (a record that the original went out for development elsewhere) are not jobs: nothing is rendered.
+
 ## Reload and reconnect
 
-Every client view is the server's last answer. Activity and the notifications panel poll while work is running. They ask again at once when the tab is shown or the browser comes back online, so a reload or reconnect shows exactly where each job got to. While the server cannot be reached the last list stays on screen with a Reconnect control.
+Every client view is the server's last answer. Activity and the notifications panel poll while work is running. They ask again at once when the tab is shown, the browser comes back online or the websocket reconnects, so a reload or reconnect shows exactly where each job got to. While the server cannot be reached the last list stays on screen with a Reconnect control.
+
+A job whose status, stage or progress changes through `MediaOperationRepository` sends `on_media_operation_update` with the job's id to its owner's sockets only (`MediaOperationEventService`). Activity answers it by asking for the list again, so what it shows is read through the same owner and Locked checks as any request; the event itself carries nothing else.
+
+`GET /media-operations` lists unfinished jobs before finished ones, each newest first. Activity asks for the latest hundred, so every job still running is on that page however many jobs finished since it started.
 
 ## Privacy
 

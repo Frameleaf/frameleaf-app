@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import {
+  JobName,
   MediaOperationBulkAction,
   MediaOperationDestination,
   MediaOperationItemStatus,
@@ -66,12 +67,14 @@ describe(MediaOperationService.name, () => {
   let jobs: { queue: ReturnType<typeof vi.fn> };
   let preservation: Record<string, ReturnType<typeof vi.fn>>;
   let archiveOperations: { relinkJob: ReturnType<typeof vi.fn> };
+  let develop: { get: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mocks = getMocks();
     icloud = { queueOperation: vi.fn(), endRun: vi.fn() };
     jobs = { queue: vi.fn().mockResolvedValue(undefined) };
     archiveOperations = { relinkJob: vi.fn().mockResolvedValue(true) };
+    develop = { get: vi.fn(), update: vi.fn().mockResolvedValue(undefined) };
     preservation = {
       activeOperation: vi.fn().mockResolvedValue(undefined),
       getPackage: vi.fn(),
@@ -110,6 +113,7 @@ describe(MediaOperationService.name, () => {
       jobs as never,
       preservation as never,
       archiveOperations as never,
+      develop as never,
     );
   });
 
@@ -636,14 +640,14 @@ describe(MediaOperationService.name, () => {
       const failed = operationStub({
         kind: MediaOperationKind.Restoration,
         status: MediaOperationStatus.Failed,
-        destination: MediaOperationDestination.RunPod,
+        destination: MediaOperationDestination.FrameleafCloud,
       });
       vi.mocked(repository.getForOwner).mockResolvedValue(failed);
       vi.mocked(repository.create).mockResolvedValue(
         operationStub({
           id: '0195e2a0-0000-7000-8000-000000000002',
           status: MediaOperationStatus.Queued,
-          destination: MediaOperationDestination.RunPod,
+          destination: MediaOperationDestination.FrameleafCloud,
           retryOfId: failed.id,
           progress: 0,
         }),
@@ -654,7 +658,7 @@ describe(MediaOperationService.name, () => {
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           retryOfId: failed.id,
-          destination: MediaOperationDestination.RunPod,
+          destination: MediaOperationDestination.FrameleafCloud,
           snapshot: failed.snapshot,
           resultAssetId: null,
         }),
@@ -796,6 +800,182 @@ describe(MediaOperationService.name, () => {
         await expect(sut.retry(authStub.user1, failedRun().id)).rejects.toBeInstanceOf(BadRequestException);
         expect(icloud.queueOperation).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('edits in the job contract (FL-43)', () => {
+    const assetId = '0195e2a0-0000-7000-8000-0000000000ee';
+    const editStub = (edit: string, overrides: Partial<MediaOperation> = {}) =>
+      operationStub({
+        kind: MediaOperationKind.QuickEdit,
+        status: MediaOperationStatus.Failed,
+        assetId,
+        label: 'IMG_0042.jpg',
+        projectId: null,
+        revisionId: edit === 'photo_version' ? 'revision-1' : null,
+        claimToken: null,
+        claimedBy: null,
+        settings: { edit },
+        snapshot: {
+          executor: 'job_queue',
+          edit,
+          assetId,
+          job:
+            edit === 'photo_version'
+              ? { name: JobName.AssetDevelopRender, data: { id: 'revision-1' } }
+              : { name: JobName.AssetEditThumbnailGeneration, data: { id: assetId } },
+        },
+        ...overrides,
+      });
+
+    beforeEach(() => {
+      vi.mocked(repository.create).mockImplementation((value) =>
+        Promise.resolve(operationStub({ ...(value as object), id: 'retry-1', status: MediaOperationStatus.Queued })),
+      );
+    });
+
+    it('lists unfinished jobs first, so a reload finds every job still running', async () => {
+      vi.mocked(repository.list).mockResolvedValue({ items: [], total: 0 });
+
+      await sut.search(authStub.user1, {} as never);
+
+      expect(repository.list).toHaveBeenCalledWith(expect.objectContaining({ unfinishedFirst: true }));
+    });
+
+    it.each(['photo_edit', 'video_edit', 'video_export'])('refuses to cancel a %s once queued', async (edit) => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(editStub(edit, { status: MediaOperationStatus.Rendering }));
+
+      await expect(sut.cancel(authStub.user1, 'op')).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.requestCancel).not.toHaveBeenCalled();
+    });
+
+    it('cancels a photo version, whose render stops between stages', async () => {
+      const running = editStub('photo_version', { status: MediaOperationStatus.Rendering });
+      vi.mocked(repository.getForOwner).mockResolvedValue(running);
+      vi.mocked(repository.requestCancel).mockResolvedValue({ ...running, status: MediaOperationStatus.Cancelling });
+
+      const result = await sut.cancel(authStub.user1, running.id);
+
+      expect(repository.requestCancel).toHaveBeenCalledWith(running.id, authStub.user1.user.id);
+      expect(result.status).toBe(MediaOperationStatus.Cancelling);
+    });
+
+    it('retries a failed photo edit as a new row handed straight to the job queue', async () => {
+      const failed = editStub('photo_edit');
+      vi.mocked(repository.getForOwner).mockResolvedValue(failed);
+
+      const result = await sut.retry(authStub.user1, failed.id);
+
+      expect(repository.createRetry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          retryOfId: failed.id,
+          kind: MediaOperationKind.QuickEdit,
+          assetId,
+          snapshot: failed.snapshot,
+          settings: failed.settings,
+          claimedBy: 'job-queue',
+        }),
+      );
+      expect(jobs.queue).toHaveBeenCalledWith({
+        name: JobName.AssetEditThumbnailGeneration,
+        data: { id: assetId, operationId: 'retry-1' },
+      });
+      expect(result.retryOfId).toBe(failed.id);
+    });
+
+    it('queues a photo version afresh before retrying its render', async () => {
+      const failed = editStub('photo_version');
+      vi.mocked(repository.getForOwner).mockResolvedValue(failed);
+      develop.get.mockResolvedValue({
+        id: 'revision-1',
+        assetId,
+        ownerId: authStub.user1.user.id,
+        status: 'failed',
+      });
+
+      await sut.retry(authStub.user1, failed.id);
+
+      expect(develop.update).toHaveBeenCalledWith('revision-1', {
+        status: 'queued',
+        progress: 0,
+        error: null,
+        cancelRequested: false,
+        attempts: 0,
+      });
+      expect(develop.update.mock.invocationCallOrder[0]).toBeLessThan(jobs.queue.mock.invocationCallOrder[0]);
+      expect(jobs.queue).toHaveBeenCalledWith({
+        name: JobName.AssetDevelopRender,
+        data: { id: 'revision-1', operationId: 'retry-1' },
+      });
+    });
+
+    it('refuses to retry a photo version that is gone, someone else’s, or already rendering', async () => {
+      const failed = editStub('photo_version');
+      vi.mocked(repository.getForOwner).mockResolvedValue(failed);
+
+      develop.get.mockResolvedValue(undefined);
+      await expect(sut.retry(authStub.user1, failed.id)).rejects.toBeInstanceOf(BadRequestException);
+
+      develop.get.mockResolvedValue({ id: 'revision-1', assetId, ownerId: 'someone-else', status: 'failed' });
+      await expect(sut.retry(authStub.user1, failed.id)).rejects.toBeInstanceOf(BadRequestException);
+
+      develop.get.mockResolvedValue({
+        id: 'revision-1',
+        assetId,
+        ownerId: authStub.user1.user.id,
+        status: 'rendering',
+      });
+      await expect(sut.retry(authStub.user1, failed.id)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(develop.update).not.toHaveBeenCalled();
+      expect(repository.createRetry).not.toHaveBeenCalled();
+    });
+
+    it('retries only a failed edit, and a cancelled photo version', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        editStub('video_edit', { status: MediaOperationStatus.Cancelled }),
+      );
+      await expect(sut.retry(authStub.user1, 'op')).rejects.toBeInstanceOf(BadRequestException);
+
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        editStub('photo_edit', { status: MediaOperationStatus.Completed }),
+      );
+      await expect(sut.retry(authStub.user1, 'op')).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.createRetry).not.toHaveBeenCalled();
+    });
+
+    it('needs the unlocked session to retry an edit of an item that is Locked now', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(editStub('photo_edit'));
+      vi.mocked(repository.countLockedAssets).mockResolvedValue(1);
+
+      await expect(sut.retry(authStub.user1, 'op')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repository.createRetry).not.toHaveBeenCalled();
+      expect(jobs.queue).not.toHaveBeenCalled();
+    });
+
+    it('answers a second retry with the one already queued, without queueing another job', async () => {
+      const failed = editStub('photo_edit');
+      vi.mocked(repository.getForOwner).mockResolvedValue(failed);
+      vi.mocked(repository.getActiveRetry).mockResolvedValue(
+        editStub('photo_edit', { id: 'retry-0', status: MediaOperationStatus.Queued, retryOfId: failed.id }),
+      );
+
+      const result = await sut.retry(authStub.user1, failed.id);
+
+      expect(result.id).toBe('retry-0');
+      expect(jobs.queue).not.toHaveBeenCalled();
+    });
+
+    it('withholds a Locked edit’s file name from a locked session, like every other job', async () => {
+      vi.mocked(repository.list).mockResolvedValue({
+        items: [editStub('photo_edit', { status: MediaOperationStatus.Rendering })],
+        total: 1,
+      });
+      vi.mocked(repository.getLockedAssetIds).mockResolvedValue(new Set([assetId]));
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+
+      expect(items[0]).toMatchObject({ withheld: true, label: '', assetId: null });
     });
   });
 
@@ -1332,7 +1512,7 @@ describe(MediaOperationService.name, () => {
         {
           kind: MediaOperationKind.StudioExport,
           status: MediaOperationStatus.Rendering,
-          destination: MediaOperationDestination.RunPod,
+          destination: MediaOperationDestination.FrameleafCloud,
           count: 3,
           oldestQueuedAt: new Date('2026-09-22T09:00:00.000Z'),
         },

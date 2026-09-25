@@ -2106,7 +2106,7 @@
         "web/src/routes/admin/queues",
         "server/src/services/queue.service.ts",
         "server/src/services/job.service.ts",
-        "server/src/services/runpod.service.ts",
+        "server/src/services/cloud-ml.service.ts",
         "server/src/repositories/machine-learning.repository.ts",
         "server/src/services/video-restoration.service.ts",
         "prototypes/frameleaf/src/JobsManager.jsx",
@@ -2142,7 +2142,7 @@
       "paths": [
         "server/src/services/server.service.ts",
         "server/src/repositories/user.repository.ts",
-        "server/src/services/runpod.service.ts",
+        "server/src/services/cloud-ml.service.ts",
         "server/src/repositories/video-restoration.repository.ts",
         "docs/docs/developer/frameleaf-command-center-data.md",
         "prototypes/frameleaf/src/SettingsAnalytics.jsx",

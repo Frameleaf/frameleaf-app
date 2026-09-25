@@ -1,4 +1,4 @@
-import { Mode2, type AskSearchResponseDto } from '@immich/sdk';
+import { Mode, type AskSearchResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -6,7 +6,7 @@ import { SEARCH_ASK_EXAMPLES } from '$lib/frameleaf/search-ask';
 import en from '../../../../../i18n/en.json';
 import SearchAsk from './SearchAsk.svelte';
 
-const answer = (mode: Mode2, warnings: string[] = []) =>
+const answer = (mode: Mode, warnings: string[] = []) =>
   ({
     query: 'favorite videos since 2020',
     explanation: 'Favorite videos taken since 2020.',
@@ -86,7 +86,7 @@ describe('SearchAsk (FL-31)', () => {
   });
 
   it('shows what was searched for, the AI mark for smart search, warnings and the empty state', () => {
-    render(SearchAsk, { onAsk: vi.fn(), response: answer(Mode2.Smart, ['No place called home.']), matches: 0 });
+    render(SearchAsk, { onAsk: vi.fn(), response: answer(Mode.Smart, ['No place called home.']), matches: 0 });
 
     expect(screen.getByText('Favorite videos taken since 2020.')).toBeInTheDocument();
     expect(screen.getByTitle('Read by smart search')).toBeInTheDocument();
@@ -96,7 +96,7 @@ describe('SearchAsk (FL-31)', () => {
   });
 
   it('has no AI mark when metadata search answered', () => {
-    render(SearchAsk, { onAsk: vi.fn(), response: answer(Mode2.Metadata), matches: 3 });
+    render(SearchAsk, { onAsk: vi.fn(), response: answer(Mode.Metadata), matches: 3 });
 
     expect(screen.queryByTitle('Read by smart search')).not.toBeInTheDocument();
     expect(screen.getByText('3 matches')).toBeInTheDocument();

@@ -3,7 +3,10 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { SystemConfig } from 'src/config.js';
+import { readFrameleafCloudConfig } from 'src/dtos/config.dto.js';
 import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority.js';
+import { assertNoLiveHandoffLeases, releaseTransientHandoffLeases } from 'src/repositories/fork-handoff-leases.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { DeepPartial } from 'src/types.js';
 
@@ -92,6 +95,8 @@ const getBackfillSource = (kind: BackfillKind) => {
 
 @Injectable()
 export class ForkSchemaRepository {
+  private logger = LoggingRepository.create('ForkSchemaRepository');
+
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
   async overlayConfig(config: SystemConfig): Promise<SystemConfig> {
@@ -101,17 +106,18 @@ export class ForkSchemaRepository {
     }
     const result = await sql<{ key: string; value: unknown }>`
       SELECT key, value FROM immich_fork.config
-      WHERE key IN ('machineLearning.runpod', 'smartAlbums')
+      WHERE key IN ('frameleafCloud', 'smartAlbums')
     `.execute(this.db);
     const values = new Map(result.rows.map(({ key, value }) => [key, value]));
-    const runpod = values.get('machineLearning.runpod');
+    const frameleafCloud = values.get('frameleafCloud');
     const smartAlbums = values.get('smartAlbums');
-    if (!runpod || !smartAlbums) {
+    if (!frameleafCloud || !smartAlbums) {
       throw new Error('Missing authoritative fork configuration sidecar');
     }
     return {
       ...config,
-      machineLearning: { ...config.machineLearning, runpod: runpod as SystemConfig['machineLearning']['runpod'] },
+      // Read over the defaults: a sidecar saved before a field existed still yields a whole section.
+      frameleafCloud: readFrameleafCloudConfig(frameleafCloud, (message) => this.logger.warn(message)),
       smartAlbums: smartAlbums as SystemConfig['smartAlbums'],
     };
   }
@@ -123,7 +129,7 @@ export class ForkSchemaRepository {
     }
     await this.db.transaction().execute(async (trx) => {
       for (const [key, value] of [
-        ['machineLearning.runpod', config.machineLearning.runpod],
+        ['frameleafCloud', config.frameleafCloud],
         ['smartAlbums', config.smartAlbums],
       ] as const) {
         await sql`INSERT INTO immich_fork.config (key, value) VALUES (${key}, ${value}::jsonb)
@@ -146,7 +152,7 @@ export class ForkSchemaRepository {
       `.execute(trx);
       if (isForkWriteEnabled(state.rows[0].phase)) {
         for (const [key, value] of [
-          ['machineLearning.runpod', config.machineLearning.runpod],
+          ['frameleafCloud', config.frameleafCloud],
           ['smartAlbums', config.smartAlbums],
         ] as const) {
           await sql`INSERT INTO immich_fork.config (key, value) VALUES (${key}, ${value}::jsonb)
@@ -509,6 +515,11 @@ export class ForkSchemaRepository {
         if (audit && audit.status !== 'applied' && audit.status !== 'failed') {
           throw new Error(`Unsupported official handoff preparation audit status: ${audit.status}`);
         }
+        // FL-44 (FN-304): transient leases never cross the handoff. Render-worker sessions and Studio
+        // editor leases are released here; a job still claimed by a live worker refuses preparation,
+        // and once the audit below runs every Frameleaf writer refuses, so none can be taken again.
+        await releaseTransientHandoffLeases(trx);
+        await assertNoLiveHandoffLeases(trx);
         // Steady-state backfills preserved deduplication; the handoff needs a
         // fresh destructive pass, so reset the storage evidence rows and run
         // the storage and checksum handlers again with handoff authority.

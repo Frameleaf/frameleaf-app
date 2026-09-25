@@ -360,6 +360,9 @@ export enum Permission {
   ServerStatistics = 'server.statistics',
   ServerVersionCheck = 'server.versionCheck',
 
+  AdminCloudMlRead = 'adminCloudMl.read',
+  AdminCloudMlUpdate = 'adminCloudMl.update',
+
   ServerLicenseRead = 'serverLicense.read',
   ServerLicenseUpdate = 'serverLicense.update',
   ServerLicenseDelete = 'serverLicense.delete',
@@ -479,13 +482,21 @@ export enum SystemMetadataKey {
   VersionCheckState = 'version-check-state',
   License = 'license',
   PhysicalDeduplicationMigration = 'physical-deduplication-migration',
-  RunPodState = 'runpod-state',
+  /** FL-159: the Frameleaf Cloud link written by linking the server (FL-155); read by cloud processing. */
+  FrameleafCloudLink = 'frameleaf-cloud-link',
+  /** FL-159: this server's Ed25519 identity (public part only; the private key is a 0600 file). */
+  FrameleafInstance = 'frameleaf-instance',
+  /** FL-159: the cached Frameleaf Cloud service discovery document. */
+  FrameleafServiceDiscovery = 'frameleaf-service-discovery',
+  /** FL-159: the last AI Wallet balance read from Frameleaf Cloud (USD display). */
+  FrameleafMlWallet = 'frameleaf-ml-wallet',
+  /** FL-159: the last Hardware & GPU check of the server and ML containers. */
+  HardwareCheck = 'hardware-check',
   /**
-   * References to RunPod templates that the teardown path could not delete
-   * (typically because they were already gone from RunPod's side). Tracked so
-   * an admin can audit possible orphan HF tokens — see security.md H2.
+   * FL-159: set by migration 2100000000620 when it removed destinations of the previous cloud
+   * provider, so administrators are told once, in plain language, what changed.
    */
-  RunPodOrphans = 'runpod-orphans',
+  FrameleafCloudMigrationNotice = 'frameleaf-cloud-migration-notice',
   IntegrityChecksumCheckpoint = 'integrity-checksum-checkpoint',
   /**
    * FL-34: whether "hide sensitive detections from the library" was on the last time the server
@@ -792,16 +803,13 @@ export enum MlDestinationKind {
   /** Another machine on the home network, configured by URL. Media stays on the LAN. */
   Lan = 'lan',
   /**
-   * The RunPod pod or serverless endpoint managed by the RunPod service. It runs the ordinary
-   * `/predict` image, so it is a library-analysis worker only. Media leaves the network.
-   */
-  RunPod = 'runpod',
-  /**
-   * A persistent restoration worker on RunPod (FL-72), reached by its own URL and credential
-   * and never by the library-analysis pod's endpoint. The server does not create or stop it.
+   * Frameleaf Cloud (FL-146 owner decision, 2026-09-25; FL-42, FL-72). Created only by an
+   * administrator, it has no URL or credential of its own: requests go to the regional gateway
+   * the server is linked to. Until the gateway link exists (FL-159) it resolves to nothing, so
+   * every admission is refused with `cloud-unavailable` and no work is ever sent elsewhere.
    * Media leaves the network.
    */
-  RunPodVideo = 'runpod-video',
+  FrameleafCloud = 'frameleaf-cloud',
 }
 
 export const MlDestinationKindSchema = z
@@ -810,10 +818,7 @@ export const MlDestinationKindSchema = z
   .meta({ id: 'MlDestinationKind' });
 
 /** Destination kinds whose selection sends media off the operator's network. */
-export const CLOUD_ML_DESTINATION_KINDS: ReadonlySet<MlDestinationKind> = new Set([
-  MlDestinationKind.RunPod,
-  MlDestinationKind.RunPodVideo,
-]);
+export const CLOUD_ML_DESTINATION_KINDS: ReadonlySet<MlDestinationKind> = new Set([MlDestinationKind.FrameleafCloud]);
 
 /**
  * A kind of work a destination can serve. Capabilities (what a destination can run) and
@@ -830,6 +835,12 @@ export enum MlWorkload {
   RestorationCreative = 'restoration-creative',
   /** Studio AI features (transcription, captioning, speech, music, interpolation). */
   StudioAi = 'studio-ai',
+  /** FL-159: image and video upscaling. Frameleaf Cloud only; no local worker serves it yet. */
+  Upscale = 'upscale',
+  /** FL-159: frame interpolation. Frameleaf Cloud only. */
+  Interpolation = 'interpolation',
+  /** FL-159: Studio render on Frameleaf Cloud. Local renders go through enrolled render workers. */
+  StudioRender = 'studio-render',
   /**
    * Pet recognition (FL-58): the CLIP text prompts that tell cats and dogs apart. It runs on the
    * ordinary `/predict` container with the configured CLIP model and is routed on its own, so an
@@ -848,6 +859,21 @@ export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Ocr,
   MlWorkload.Enrichment,
   MlWorkload.PetRecognition,
+];
+
+/**
+ * The workloads Frameleaf Cloud may be allowed (FL-146, FL-159): descriptions, upscaling, restoration,
+ * Studio AI, interpolation and Studio render. Faces are refused by policy (biometric law), and search
+ * embeddings and OCR stay on this network.
+ */
+// Studio exports render at home only (this server or a home-network worker); never on the cloud.
+export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
+  MlWorkload.Enrichment,
+  MlWorkload.Upscale,
+  MlWorkload.RestorationFaithful,
+  MlWorkload.RestorationCreative,
+  MlWorkload.StudioAi,
+  MlWorkload.Interpolation,
 ];
 
 /** The workloads only the separate restoration worker serves (FL-114, FL-72). */
@@ -923,7 +949,7 @@ export const WorkerInventorySourceSchema = z
 export enum WorkerCredentialState {
   None = 'none',
   Stored = 'stored',
-  /** Held by the RunPod service for the pod or serverless endpoint it manages. */
+  /** Frameleaf Cloud: short-lived tokens minted from this server's key; nothing is stored. */
   Managed = 'managed',
   /** An enrolled render worker's hashed secret. */
   Enrolled = 'enrolled',
@@ -958,6 +984,18 @@ export enum MlAdmissionRefusal {
   DestinationUnhealthy = 'destination-unhealthy',
   /** A restoration on an endpoint that library analysis is allowed or routed to (FL-72). */
   RoleConflict = 'role-conflict',
+  /** Frameleaf Cloud is not configured or linked, turned off, or its gateway did not answer (FL-159). */
+  CloudUnavailable = 'cloud-unavailable',
+  /** The Frameleaf account has no cloud processing entitlement (FL-159). */
+  EntitlementMissing = 'entitlement-missing',
+  /** The recorded consent is older than the version Frameleaf Cloud requires now (FL-159). */
+  ConsentVersionOutdated = 'consent-version-outdated',
+  /** The AI Wallet is empty, or cannot cover the hold for a time-priced job (FL-159). */
+  WalletInsufficient = 'wallet-insufficient',
+  /** Frameleaf Cloud reported a rate or quota limit (FL-159). */
+  QuotaExceeded = 'quota-exceeded',
+  /** The chosen model is not in the Frameleaf Cloud catalogue any more, or changed (FL-159). */
+  ModelMismatch = 'model-mismatch',
   /** The worker reported its GPU memory and none of its GPUs has enough for the workload (FL-58). */
   InsufficientMemory = 'insufficient-memory',
 }
@@ -1044,6 +1082,13 @@ export enum PetRecognitionUnavailableReason {
   DestinationUnhealthy = 'destination-unhealthy',
   RoleConflict = 'role-conflict',
   InsufficientMemory = 'insufficient-memory',
+  // FL-159: Frameleaf Cloud refusals, so every destination refusal has a Pets page reason.
+  CloudUnavailable = 'cloud-unavailable',
+  EntitlementMissing = 'entitlement-missing',
+  ConsentVersionOutdated = 'consent-version-outdated',
+  WalletInsufficient = 'wallet-insufficient',
+  QuotaExceeded = 'quota-exceeded',
+  ModelMismatch = 'model-mismatch',
 }
 
 export const PetRecognitionUnavailableReasonSchema = z
@@ -1524,8 +1569,8 @@ export enum MediaOperationDestination {
   Local = 'local',
   /** A qualified worker on the home network. */
   Lan = 'lan',
-  /** The configured RunPod workload. Chosen by the person, never as a fallback. */
-  RunPod = 'runpod',
+  /** Frameleaf Cloud (FL-159). Chosen by the person, never as a fallback. */
+  FrameleafCloud = 'frameleaf-cloud',
 }
 
 export const MediaOperationDestinationSchema = z
@@ -1958,13 +2003,13 @@ export const QueueJobStatusSchema = z.enum(QueueJobStatus).describe('Queue job s
 
 /**
  * FL-71: where a queue job runs, for the Job manager's Worker column: the server itself, or the
- * machine-learning destination (local container, a LAN machine or RunPod) its workload is routed to.
+ * machine-learning destination (local container, a LAN machine or Frameleaf Cloud) its workload is routed to.
  */
 export enum QueueJobWorkerKind {
   Server = 'server',
   Local = 'local',
   Lan = 'lan',
-  RunPod = 'runpod',
+  FrameleafCloud = 'frameleaf-cloud',
 }
 
 export const QueueJobWorkerKindSchema = z
@@ -2156,11 +2201,14 @@ export enum DatabaseLock {
   MemoryCreation = 777,
   IntegrityCheck = 67,
   VersionCheck = 800,
-  RunPodTransition = 900,
   MlDestinationBootstrap = 910,
   HlsSessionCleanup = 850,
   /** FL-66: an administrator's settings save compares the revision and writes as one step. */
   SystemConfigUpdate = 930,
+  /** FL-69: one server schedules Library Care's incremental health scans. */
+  LibraryCareSchedule = 940,
+  /** FL-159: creating this server's Frameleaf identity key happens once, on one worker. */
+  FrameleafIdentity = 945,
 }
 
 export enum MaintenanceAction {
@@ -2713,6 +2761,7 @@ export enum ApiTag {
   Duplicates = 'Duplicates',
   Enrichment = 'Enrichment',
   Faces = 'Faces',
+  FrameleafCloudMl = 'Frameleaf Cloud processing (admin)',
   Integrity = 'Integrity (admin)',
   Jobs = 'Jobs',
   Libraries = 'Libraries',
@@ -2733,7 +2782,6 @@ export enum ApiTag {
   Plugins = 'Plugins',
   Preservation = 'Preservation',
   Queues = 'Queues',
-  RunPod = 'RunPod (admin)',
   Search = 'Search',
   Server = 'Server',
   Sessions = 'Sessions',
@@ -2827,10 +2875,6 @@ export enum ConfigCredential {
   SmtpPassword = 'smtp-password',
   /** `oauth.clientSecret` */
   OAuthClientSecret = 'oauth-client-secret',
-  /** `machineLearning.runpod.apiKey` */
-  RunPodApiKey = 'runpod-api-key',
-  /** `machineLearning.runpod.hfToken` */
-  HuggingFaceToken = 'huggingface-token',
 }
 
 export const ConfigCredentialSchema = z

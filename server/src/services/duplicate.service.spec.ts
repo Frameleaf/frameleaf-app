@@ -4,6 +4,7 @@ import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
@@ -82,6 +83,26 @@ describe(DuplicateService.name, () => {
       ]);
       const result = await sut.getDuplicates(authStub.admin);
       expect(result[0].suggestedKeepAssetIds).toEqual([largeAsset.id]);
+    });
+  });
+
+  describe('Library care → Group near-duplicates for review (FL-69)', () => {
+    beforeEach(() => {
+      clearConfigCache();
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { enabled: true, duplicateDetection: { enabled: true } },
+        libraryCare: { duplicateReview: false },
+      });
+    });
+
+    it('queues no grouping while it is off', async () => {
+      await expect(sut.handleQueueSearchDuplicates({})).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('groups nothing while it is off', async () => {
+      await expect(sut.handleSearchDuplicates({ id: newUuid() })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.getForSearchDuplicatesJob).not.toHaveBeenCalled();
     });
   });
 

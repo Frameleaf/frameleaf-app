@@ -138,9 +138,7 @@ export class PetRecognitionService {
     }
 
     const destination = await this.mlDestinationRepository.getById(route.destinationId);
-    const endpoint = destination
-      ? resolveEndpoint(destination, this.machineLearningRepository.getRunPodEndpoint())
-      : null;
+    const endpoint = destination ? resolveEndpoint(destination) : null;
     const spentUsd =
       destination && destination.budgetLimitUsd !== null
         ? await this.mlDestinationRepository.getSpend(

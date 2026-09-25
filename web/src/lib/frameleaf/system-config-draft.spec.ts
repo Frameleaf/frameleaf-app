@@ -38,7 +38,7 @@ describe('diffConfig (FL-66)', () => {
   it('never reports values the server keeps on its own', () => {
     const draft = withChange((config) => {
       config.machineLearning.imageDescription!.pendingRequeueAt = '2026-09-23T10:00:00.000Z';
-      config.machineLearning.runpod!.apiKeyConfigured = false;
+      config.oauth.clientSecretConfigured = false;
     });
 
     expect(diffConfig(configFixture(), draft)).toEqual([]);
@@ -48,6 +48,10 @@ describe('diffConfig (FL-66)', () => {
     expect(sectionForConfigPath('trash.days')).toBe('trash');
     expect(sectionForConfigPath('oauth.clientSecret')).toBe('authentication');
     expect(sectionForConfigPath('reverseGeocoding.enabled')).toBe('location');
+    // FL-69: Library care's toggles are spread over three pages.
+    expect(sectionForConfigPath('libraryCare.healthScan')).toBe('integrity-checks');
+    expect(sectionForConfigPath('libraryCare.rawRecovery')).toBe('repair');
+    expect(sectionForConfigPath('libraryCare.manualMetadata')).toBe('enrichment-care');
     expect(sectionForConfigPath('localFeatures.askSearch.enabled')).toBe('machine-learning');
     expect(sectionForConfigPath('analytics.historyDays')).toBe('logging');
     expect(sectionForConfigPath('unknownGroup.anything')).toBeUndefined();
@@ -303,7 +307,7 @@ describe('reload journal (FL-66 reload recovery)', () => {
 
   it('treats a change as safe only without secrets or credentials', () => {
     expect(isJournalSafe({ path: 'trash.days', before: 1, after: 2 })).toBe(true);
-    expect(isJournalSafe({ path: 'machineLearning.runpod.hfToken', before: '', after: 'hf_x' })).toBe(false);
+    expect(isJournalSafe({ path: 'oauth.clientSecret', before: '', after: 'secret-x' })).toBe(false);
     expect(isJournalSafe({ path: 'machineLearning.urls', before: [], after: ['https://u:p@ml.example.com'] })).toBe(
       false,
     );

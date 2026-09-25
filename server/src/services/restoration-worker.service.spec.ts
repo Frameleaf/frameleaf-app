@@ -185,6 +185,7 @@ describe(RestorationWorkerService.name, () => {
       create: vi.fn(),
       createRetry: vi.fn(),
       getForOwner: vi.fn().mockResolvedValue(operation()),
+      getOfKind: vi.fn(),
       list: vi.fn(),
       getCheckpoints: vi.fn().mockResolvedValue([]),
       dismiss: vi.fn(),
@@ -236,6 +237,13 @@ describe(RestorationWorkerService.name, () => {
       getLockedIds: vi.fn(),
       listExpiredBundleExports: vi.fn(),
       listRecentOfKind: vi.fn(),
+      onChange: vi.fn(),
+      getForWorker: vi.fn(),
+      beginJobQueueRun: vi.fn(),
+      claimJobQueueDispatch: vi.fn(),
+      releaseJobQueueDispatch: vi.fn(),
+      listActiveEditsOfRevision: vi.fn(),
+      getTrackedRevisionIds: vi.fn(),
       requestPause: vi.fn(),
       resume: vi.fn(),
       setFinishedResult: vi.fn(),
@@ -382,13 +390,13 @@ describe(RestorationWorkerService.name, () => {
     });
 
     it('fails in place when the destination refuses, never moving the media elsewhere', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodVideo);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
 
       await sut.run(
         operation({
           snapshot: snapshot({
-            destinationId: mlDestinationStub.runPodVideo.id,
-            destinationKind: MlDestinationKind.RunPodVideo,
+            destinationId: mlDestinationStub.frameleafCloud.id,
+            destinationKind: MlDestinationKind.FrameleafCloud,
           }),
         }),
         CLAIM,

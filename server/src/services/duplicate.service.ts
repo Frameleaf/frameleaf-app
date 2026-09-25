@@ -383,8 +383,9 @@ export class DuplicateService extends BaseService {
 
   @OnJob({ name: JobName.AssetDetectDuplicatesQueueAll, queue: QueueName.DuplicateDetection })
   async handleQueueSearchDuplicates({ force }: JobOf<JobName.AssetDetectDuplicatesQueueAll>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: false });
-    if (!isDuplicateDetectionEnabled(machineLearning)) {
+    const { machineLearning, libraryCare } = await this.getConfig({ withCache: false });
+    // Library care → "Group near-duplicates for review" (FL-69, settings-catalog.mjs:951-956).
+    if (!isDuplicateDetectionEnabled(machineLearning) || !libraryCare.duplicateReview) {
       return JobStatus.Skipped;
     }
 
@@ -533,8 +534,8 @@ export class DuplicateService extends BaseService {
 
   @OnJob({ name: JobName.AssetDetectDuplicates, queue: QueueName.DuplicateDetection })
   async handleSearchDuplicates({ id }: JobOf<JobName.AssetDetectDuplicates>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: true });
-    if (!isDuplicateDetectionEnabled(machineLearning)) {
+    const { machineLearning, libraryCare } = await this.getConfig({ withCache: true });
+    if (!isDuplicateDetectionEnabled(machineLearning) || !libraryCare.duplicateReview) {
       return JobStatus.Skipped;
     }
 

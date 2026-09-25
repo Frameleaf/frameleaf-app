@@ -51,3 +51,24 @@ where
 delete from "ml_workload_route"
 where
   "workload" = $1
+
+-- MlDestinationRepository.getSettlements
+select
+  "cloudJobId",
+  "workload",
+  "jobName",
+  "outcome",
+  "costUsd",
+  "credits",
+  "startedAt",
+  "finishedAt"
+from
+  "ml_workload_accounting"
+where
+  "destinationId" = $1
+  and "cloudJobId" is not null
+  and "costUsd" is not null
+order by
+  "finishedAt" desc
+limit
+  $2

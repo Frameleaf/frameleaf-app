@@ -5,7 +5,8 @@
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
+  import { QueryParameter, SettingInputFieldType } from '$lib/constants';
+  import { DEDUP_OWNER_SETTING } from '$lib/frameleaf/physical-dedup';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
@@ -23,7 +24,8 @@
   import { Heading, Link, LoadingSpinner, Text } from '@immich/ui';
   import handlebar from 'handlebars';
   import * as luxon from 'luxon';
-  import { onDestroy } from 'svelte';
+  import { page } from '$app/state';
+  import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
   import { createBubbler, preventDefault } from 'svelte/legacy';
   import { fade } from 'svelte/transition';
@@ -49,6 +51,33 @@
   const setPhysicalDeduplication = (patch: Partial<typeof physicalDeduplication>) => {
     configToEdit.physicalDeduplication = { ...physicalDeduplication, ...patch };
   };
+
+  let ownerSetting = $state<HTMLElement>();
+  let ownerSettingOpened = false;
+
+  // Deep link from the deduplication page's "Change" and "Open settings" (FL-73): scroll to the
+  // file reuse group and focus the retained-account choice once it has rendered.
+  $effect(() => {
+    // Waits for the account list while file reuse is on, since the choice renders once it loads.
+    const ready = users.length > 0 || !physicalDeduplication.enabled;
+    if (
+      ownerSetting &&
+      ready &&
+      !ownerSettingOpened &&
+      page.url.searchParams.get(QueryParameter.OPEN_SETTING) === DEDUP_OWNER_SETTING
+    ) {
+      ownerSettingOpened = true;
+      const target = ownerSetting;
+      void tick().then(() => {
+        target.scrollIntoView({ block: 'center' });
+        // The account choice once file reuse is on; the file reuse switch while it is off.
+        const control =
+          target.querySelector<HTMLElement>('select:not(:disabled)') ??
+          target.querySelector<HTMLElement>('input, button, [role="switch"]');
+        control?.focus({ preventScroll: true });
+      });
+    }
+  });
 
   const bubble = createBubbler();
   let templateOptions: SystemConfigTemplateStorageOptionDto | undefined = $state();
@@ -186,7 +215,8 @@
       {#if !minified}
         <hr />
 
-        <div class="flex flex-col gap-4">
+        <!-- The prototype's `advanced-dedup-owner` setting; the deduplication page opens it (FL-73). -->
+        <div class="flex flex-col gap-4" id={DEDUP_OWNER_SETTING} bind:this={ownerSetting}>
           <Heading size="tiny" color="primary">
             {$t('admin.physical_deduplication')}
           </Heading>

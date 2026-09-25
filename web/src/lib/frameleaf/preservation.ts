@@ -17,12 +17,22 @@ import {
   PreservationVerificationStatus,
   type MediaOperationDto,
   type PreservationPackageDto,
+  type PreservationPreviewResponseDto,
   type PreservationRestoreDto,
   type PreservationScopeDto,
   type PreservationSupportDto,
   type SearchFilter,
 } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
+import type { BulkAsset } from '$lib/frameleaf/bulk-actions';
+import {
+  MAX_PALETTE_TEXT,
+  emptyPaletteCatalog,
+  parseSearchInput,
+  withAllText,
+  type PaletteCatalog,
+  type PaletteToken,
+} from '$lib/frameleaf/search-palette';
 
 /** The design's export stages, in order. */
 export const EXPORT_STEPS = [
@@ -47,7 +57,12 @@ export const MANIFEST_FACTS = [
   { labelKey: 'frameleaf_preservation_fact_editing', valueKey: 'frameleaf_preservation_fact_editing_value' },
 ] as const;
 
-export type ScopeKind = 'library' | 'favorites' | 'dates' | 'albums';
+/**
+ * What an export preserves. `search` is a typed search (the search palette's operators and free text)
+ * compiled to the server's structured filter; `selection` is the items chosen in the library or in
+ * search results, handed over by "Export for preservation…" in the selection bar.
+ */
+export type ScopeKind = 'library' | 'favorites' | 'dates' | 'albums' | 'search' | 'selection';
 
 export type ScopeChoice = {
   kind: ScopeKind;
@@ -56,9 +71,96 @@ export type ScopeChoice = {
   /** `YYYY-MM-DD`, inclusive. */
   to: string;
   albumIds: string[];
+  /** The typed search, as compiled by {@link searchScope}; null while empty or not expressible. */
+  searchFilter: SearchFilter | null;
+  /** The chosen items, already narrowed to the signed-in account's own where that is known. */
+  assetIds: string[];
 };
 
-export const emptyScope = (): ScopeChoice => ({ kind: 'library', from: '', to: '', albumIds: [] });
+export const emptyScope = (): ScopeChoice => ({
+  kind: 'library',
+  from: '',
+  to: '',
+  albumIds: [],
+  searchFilter: null,
+  assetIds: [],
+});
+
+/** Items in one package; the server refuses a longer list outright (`PRESERVATION_MAX_ITEMS`). */
+export const PRESERVATION_MAX_SELECTED = 100_000;
+
+export type SearchScope = {
+  /** The server filter, or null when there is nothing to search for or it cannot be expressed. */
+  filter: SearchFilter | null;
+  /** The operators that were understood, for the chips under the field. */
+  tokens: PaletteToken[];
+  /** Free text matched in file names, descriptions, recognized text and paths. */
+  text: string;
+  /** The free text was longer than a search takes and was cut. */
+  truncated: boolean;
+  /** The text and the operators together are more than one filter can say; nothing is searched. */
+  tooComplex: boolean;
+};
+
+/**
+ * A typed search as a preservation scope: the search palette's operators (`person:`, `tag:`, `year:`,
+ * `camera:`, `text:` …) resolved against the account's own vocabulary, and any free text as the
+ * palette's "All text" search. Smart (meaning-based) search ranks by similarity and has no filter the
+ * server can freeze, so it is not a scope; its results can be selected and exported as a selection.
+ */
+export const searchScope = (input: string, catalog: PaletteCatalog = emptyPaletteCatalog()): SearchScope => {
+  const parsed = parseSearchInput(input, catalog);
+  const raw = parsed.text.replaceAll(/\s+/g, ' ').trim();
+  const text = raw.slice(0, MAX_PALETTE_TEXT);
+  const truncated = raw.length > text.length;
+  let filter: SearchFilter | undefined = parsed.filter;
+  if (text) {
+    filter = withAllText(filter, text);
+  }
+  const tooComplex = !filter;
+  const empty = !filter || Object.keys(filter).length === 0;
+  return { filter: empty ? null : filter!, tokens: parsed.tokens, text, truncated, tooComplex };
+};
+
+/**
+ * The selection bar's items as an export: the account's own, in the order chosen, without repeats.
+ * An item known to belong to someone else — a partner's photo in the timeline, a shared album's — is
+ * left out and counted, so the dialog can say so. An item whose owner the page has not loaded is
+ * sent as chosen: the server keeps only the requester's own and the preview counts what remains.
+ */
+export const selectionForPreservation = (
+  selectedIds: readonly string[],
+  assets: readonly Pick<BulkAsset, 'id' | 'ownerId'>[],
+  currentUserId: string | undefined,
+): { assetIds: string[]; leftOut: number } => {
+  const owners = new Map(assets.map((asset) => [asset.id, asset.ownerId]));
+  const assetIds: string[] = [];
+  const seen = new Set<string>();
+  let leftOut = 0;
+  for (const id of selectedIds) {
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    const ownerId = owners.get(id);
+    if (currentUserId && ownerId && ownerId !== currentUserId) {
+      leftOut++;
+      continue;
+    }
+    assetIds.push(id);
+  }
+  return { assetIds, leftOut };
+};
+
+/**
+ * How many of the items sent the server did not count: in the trash, gone, not the requester's, or
+ * Locked while the session has not unlocked (an ordinary session is never told about Locked items,
+ * so they are indistinguishable from the rest here, and never named).
+ */
+export const selectionShortfall = (
+  requested: number,
+  preview: Pick<PreservationPreviewResponseDto, 'items' | 'lockedItems'>,
+): number => Math.max(0, requested - preview.items - preview.lockedItems);
 
 const isDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
 
@@ -100,6 +202,14 @@ export const scopeToRequest = (choice: ScopeChoice): PreservationScopeDto | null
     case 'albums': {
       return choice.albumIds.length > 0 ? { filter: { albumIds: { any: [...choice.albumIds] } } } : null;
     }
+    case 'search': {
+      return choice.searchFilter ? { filter: choice.searchFilter } : null;
+    }
+    case 'selection': {
+      return choice.assetIds.length > 0 && choice.assetIds.length <= PRESERVATION_MAX_SELECTED
+        ? { assetIds: [...choice.assetIds] }
+        : null;
+    }
   }
 };
 
@@ -115,6 +225,12 @@ export const defaultPackageName = (choice: ScopeChoice, today = new Date()): str
     }
     case 'albums': {
       return `Albums ${stamp}`;
+    }
+    case 'search': {
+      return `Search ${stamp}`;
+    }
+    case 'selection': {
+      return `Selection ${stamp}`;
     }
     default: {
       return `Library ${stamp}`;

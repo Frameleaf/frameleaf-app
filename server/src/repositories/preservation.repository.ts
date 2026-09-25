@@ -3,6 +3,7 @@ import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
 import { AlbumKind, AlbumUserRole, AssetStatus, MediaOperationKind, SourceType, VideoMomentSource } from 'src/enum.js';
+import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -13,6 +14,9 @@ import {
 } from 'src/schema/tables/preservation.table.js';
 import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
+
+/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
+export const PRESERVATION_HANDOFF_REFUSAL = 'Preservation packages are unavailable during database handoff';
 
 export type PreservationPackage = Selectable<PreservationPackageTable>;
 export type PreservationItem = Selectable<PreservationItemTable>;
@@ -78,6 +82,11 @@ const lockedRestoreItem = sql<boolean>`(preservation_restore_item.locked or exis
 export class PreservationRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    return withPublicForkWrites(this.db, query, PRESERVATION_HANDOFF_REFUSAL);
+  }
+
   /* ---------------------------------------------------------------- */
   /* Selection                                                         */
   /* ---------------------------------------------------------------- */
@@ -142,6 +151,7 @@ export class PreservationRepository {
     return this.db
       .transaction()
       .execute(async (tx) => {
+        await lockPublicForkWrites(tx, PRESERVATION_HANDOFF_REFUSAL);
         const inserted = await tx
           .insertInto('preservation_package')
           .values({ ...input, path: '' })
@@ -207,7 +217,9 @@ export class PreservationRepository {
   /* ---------------------------------------------------------------- */
 
   async createPackage(input: Insertable<PreservationPackageTable>): Promise<PreservationPackage> {
-    return this.db.insertInto('preservation_package').values(input).returningAll().executeTakeFirstOrThrow();
+    return this.write((db) =>
+      db.insertInto('preservation_package').values(input).returningAll().executeTakeFirstOrThrow(),
+    );
   }
 
   getPackage(id: string, ownerId: string): Promise<PreservationPackage | undefined> {
@@ -246,20 +258,22 @@ export class PreservationRepository {
       removedAt?: Date | null;
     },
   ): Promise<void> {
-    await this.db
-      .updateTable('preservation_package')
-      .set({
-        ...(patch.status !== undefined && { status: patch.status }),
-        ...(patch.manifest !== undefined && { manifest: patch.manifest === null ? null : jsonb(patch.manifest) }),
-        ...(patch.verification !== undefined && {
-          verification: patch.verification === null ? null : jsonb(patch.verification),
-        }),
-        ...(patch.verifiedAt !== undefined && { verifiedAt: patch.verifiedAt }),
-        ...(patch.sizeBytes !== undefined && { sizeBytes: patch.sizeBytes }),
-        ...(patch.removedAt !== undefined && { removedAt: patch.removedAt }),
-      })
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('preservation_package')
+        .set({
+          ...(patch.status !== undefined && { status: patch.status }),
+          ...(patch.manifest !== undefined && { manifest: patch.manifest === null ? null : jsonb(patch.manifest) }),
+          ...(patch.verification !== undefined && {
+            verification: patch.verification === null ? null : jsonb(patch.verification),
+          }),
+          ...(patch.verifiedAt !== undefined && { verifiedAt: patch.verifiedAt }),
+          ...(patch.sizeBytes !== undefined && { sizeBytes: patch.sizeBytes }),
+          ...(patch.removedAt !== undefined && { removedAt: patch.removedAt }),
+        })
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   /** Uploaded packages past their expiry whose files are still on disk. */
@@ -456,11 +470,13 @@ export class PreservationRepository {
 
   /** Record an attempt at an item before it is made, so a crash still counts it. */
   async beginItemAttempt(id: string): Promise<void> {
-    await this.db
-      .updateTable('preservation_item')
-      .set((eb) => ({ attempts: eb('attempts', '+', 1) }))
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('preservation_item')
+        .set((eb) => ({ attempts: eb('attempts', '+', 1) }))
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   async finishItem(
@@ -473,28 +489,32 @@ export class PreservationRepository {
       error?: string | null;
     },
   ): Promise<void> {
-    await this.db
-      .updateTable('preservation_item')
-      .set({
-        state: patch.state,
-        ...(patch.entry !== undefined && { entry: patch.entry === null ? null : jsonb(patch.entry) }),
-        ...(patch.locked !== undefined && { locked: patch.locked }),
-        reasonKey: patch.reasonKey ?? null,
-        error: patch.error ?? null,
-        verifyState: null,
-      })
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('preservation_item')
+        .set({
+          state: patch.state,
+          ...(patch.entry !== undefined && { entry: patch.entry === null ? null : jsonb(patch.entry) }),
+          ...(patch.locked !== undefined && { locked: patch.locked }),
+          reasonKey: patch.reasonKey ?? null,
+          error: patch.error ?? null,
+          verifyState: null,
+        })
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   /** A manual retry: every failed item gets its attempts, and its automatic retry, back. */
   async resetFailedItems(packageId: string): Promise<number> {
-    const result = await this.db
-      .updateTable('preservation_item')
-      .set({ attempts: 0 })
-      .where('packageId', '=', packageId)
-      .where('state', '=', 'failed')
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('preservation_item')
+        .set({ attempts: 0 })
+        .where('packageId', '=', packageId)
+        .where('state', '=', 'failed')
+        .executeTakeFirst(),
+    );
     return Number(result.numUpdatedRows);
   }
 
@@ -523,25 +543,27 @@ export class PreservationRepository {
     if (entries.length === 0) {
       return;
     }
-    await this.db
-      .insertInto('preservation_item')
-      .values(
-        entries.map((item) => ({
-          packageId,
-          sourceAssetId: item.sourceAssetId,
-          state: 'listed',
-          locked: item.locked,
-          entry: jsonb(item.entry),
-        })),
-      )
-      .onConflict((oc) =>
-        oc.columns(['packageId', 'sourceAssetId']).doUpdateSet((eb) => ({
-          entry: eb.ref('excluded.entry'),
-          locked: eb.ref('excluded.locked'),
-          verifyState: null,
-        })),
-      )
-      .execute();
+    await this.write((db) =>
+      db
+        .insertInto('preservation_item')
+        .values(
+          entries.map((item) => ({
+            packageId,
+            sourceAssetId: item.sourceAssetId,
+            state: 'listed',
+            locked: item.locked,
+            entry: jsonb(item.entry),
+          })),
+        )
+        .onConflict((oc) =>
+          oc.columns(['packageId', 'sourceAssetId']).doUpdateSet((eb) => ({
+            entry: eb.ref('excluded.entry'),
+            locked: eb.ref('excluded.locked'),
+            verifyState: null,
+          })),
+        )
+        .execute(),
+    );
   }
 
   /** Items whose export entry the index does not match, found while reading it back. */
@@ -560,12 +582,14 @@ export class PreservationRepository {
 
   /** Start a verification: every listed item is unchecked again. */
   async resetVerification(packageId: string): Promise<void> {
-    await this.db
-      .updateTable('preservation_item')
-      .set({ verifyState: null })
-      .where('packageId', '=', packageId)
-      .where('entry', 'is not', null)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('preservation_item')
+        .set({ verifyState: null })
+        .where('packageId', '=', packageId)
+        .where('entry', 'is not', null)
+        .execute(),
+    );
   }
 
   verificationWork(packageId: string, afterId: string | null, take: number): Promise<PreservationItem[]> {
@@ -583,7 +607,9 @@ export class PreservationRepository {
   }
 
   async setVerifyState(id: string, verifyState: string, reasonKey: string | null): Promise<void> {
-    await this.db.updateTable('preservation_item').set({ verifyState, reasonKey }).where('id', '=', id).execute();
+    await this.write((db) =>
+      db.updateTable('preservation_item').set({ verifyState, reasonKey }).where('id', '=', id).execute(),
+    );
   }
 
   /** Items the index lists that a verification marked unexpected: listed but not in the package's own journal. */
@@ -591,12 +617,14 @@ export class PreservationRepository {
     if (sourceAssetIds.length === 0) {
       return;
     }
-    await this.db
-      .updateTable('preservation_item')
-      .set({ verifyState: 'changed', reasonKey: 'package_index_changed' })
-      .where('packageId', '=', packageId)
-      .where('sourceAssetId', '=', anyUuid(sourceAssetIds))
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('preservation_item')
+        .set({ verifyState: 'changed', reasonKey: 'package_index_changed' })
+        .where('packageId', '=', packageId)
+        .where('sourceAssetId', '=', anyUuid(sourceAssetIds))
+        .execute(),
+    );
   }
 
   /** Whether any item of the package is Locked in the library now, or was when it was written. */
@@ -865,11 +893,13 @@ export class PreservationRepository {
   /* ---------------------------------------------------------------- */
 
   createRestore(input: Insertable<PreservationRestoreTable>): Promise<PreservationRestore> {
-    return this.db
-      .insertInto('preservation_restore')
-      .values({ ...input, options: jsonb(input.options) })
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    return this.write((db) =>
+      db
+        .insertInto('preservation_restore')
+        .values({ ...input, options: jsonb(input.options) })
+        .returningAll()
+        .executeTakeFirstOrThrow(),
+    );
   }
 
   getRestore(id: string, ownerId: string): Promise<PreservationRestore | undefined> {
@@ -904,16 +934,18 @@ export class PreservationRepository {
       summary?: Record<string, unknown> | null;
     },
   ): Promise<void> {
-    await this.db
-      .updateTable('preservation_restore')
-      .set({
-        ...(patch.status !== undefined && { status: patch.status }),
-        ...(patch.packageIdentity !== undefined && { packageIdentity: patch.packageIdentity }),
-        ...(patch.options !== undefined && { options: jsonb(patch.options) }),
-        ...(patch.summary !== undefined && { summary: patch.summary === null ? null : jsonb(patch.summary) }),
-      })
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('preservation_restore')
+        .set({
+          ...(patch.status !== undefined && { status: patch.status }),
+          ...(patch.packageIdentity !== undefined && { packageIdentity: patch.packageIdentity }),
+          ...(patch.options !== undefined && { options: jsonb(patch.options) }),
+          ...(patch.summary !== undefined && { summary: patch.summary === null ? null : jsonb(patch.summary) }),
+        })
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   /** Record the package's index as restoration items; reading it again adds nothing twice. */
@@ -924,19 +956,21 @@ export class PreservationRepository {
     if (entries.length === 0) {
       return;
     }
-    await this.db
-      .insertInto('preservation_restore_item')
-      .values(
-        entries.map((item) => ({
-          restoreId,
-          sourceAssetId: item.sourceAssetId,
-          state: 'pending',
-          locked: item.locked,
-          entry: jsonb(item.entry),
-        })),
-      )
-      .onConflict((oc) => oc.columns(['restoreId', 'sourceAssetId']).doNothing())
-      .execute();
+    await this.write((db) =>
+      db
+        .insertInto('preservation_restore_item')
+        .values(
+          entries.map((item) => ({
+            restoreId,
+            sourceAssetId: item.sourceAssetId,
+            state: 'pending',
+            locked: item.locked,
+            entry: jsonb(item.entry),
+          })),
+        )
+        .onConflict((oc) => oc.columns(['restoreId', 'sourceAssetId']).doNothing())
+        .execute(),
+    );
   }
 
   reviewWork(restoreId: string, afterId: string | null, take: number): Promise<PreservationRestoreItem[]> {
@@ -1050,25 +1084,27 @@ export class PreservationRepository {
       attempt?: boolean;
     },
   ): Promise<void> {
-    await this.db
-      .updateTable('preservation_restore_item')
-      .set((eb) => ({
-        ...(patch.state !== undefined && { state: patch.state }),
-        ...(patch.match !== undefined && { match: patch.match }),
-        ...(patch.assetId !== undefined && { assetId: patch.assetId }),
-        ...(patch.sidecar !== undefined && { sidecar: patch.sidecar === null ? null : jsonb(patch.sidecar) }),
-        ...(patch.conflicts !== undefined && {
-          conflicts: patch.conflicts === null ? null : jsonb(patch.conflicts),
-        }),
-        ...(patch.findings !== undefined && { findings: patch.findings === null ? null : jsonb(patch.findings) }),
-        ...(patch.reasonKey !== undefined && { reasonKey: patch.reasonKey }),
-        ...(patch.error !== undefined && { error: patch.error }),
-        ...(patch.creatingAt !== undefined && { creatingAt: patch.creatingAt }),
-        ...(patch.appliedAt !== undefined && { appliedAt: patch.appliedAt }),
-        ...(patch.attempt && { attempts: eb('attempts', '+', 1) }),
-      }))
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('preservation_restore_item')
+        .set((eb) => ({
+          ...(patch.state !== undefined && { state: patch.state }),
+          ...(patch.match !== undefined && { match: patch.match }),
+          ...(patch.assetId !== undefined && { assetId: patch.assetId }),
+          ...(patch.sidecar !== undefined && { sidecar: patch.sidecar === null ? null : jsonb(patch.sidecar) }),
+          ...(patch.conflicts !== undefined && {
+            conflicts: patch.conflicts === null ? null : jsonb(patch.conflicts),
+          }),
+          ...(patch.findings !== undefined && { findings: patch.findings === null ? null : jsonb(patch.findings) }),
+          ...(patch.reasonKey !== undefined && { reasonKey: patch.reasonKey }),
+          ...(patch.error !== undefined && { error: patch.error }),
+          ...(patch.creatingAt !== undefined && { creatingAt: patch.creatingAt }),
+          ...(patch.appliedAt !== undefined && { appliedAt: patch.appliedAt }),
+          ...(patch.attempt && { attempts: eb('attempts', '+', 1) }),
+        }))
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   async listRestoreItems(
@@ -1164,14 +1200,16 @@ export class PreservationRepository {
    * back. Items the review could not verify stay failed: their files are what is wrong.
    */
   async resetFailedRestoreItems(restoreId: string): Promise<number> {
-    const result = await this.db
-      .updateTable('preservation_restore_item')
-      .set({ attempts: 0 })
-      .where('restoreId', '=', restoreId)
-      .where('state', '=', 'failed')
-      .where('match', 'is not', null)
-      .where('appliedAt', 'is', null)
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('preservation_restore_item')
+        .set({ attempts: 0 })
+        .where('restoreId', '=', restoreId)
+        .where('state', '=', 'failed')
+        .where('match', 'is not', null)
+        .where('appliedAt', 'is', null)
+        .executeTakeFirst(),
+    );
     return Number(result.numUpdatedRows);
   }
 
@@ -1197,13 +1235,15 @@ export class PreservationRepository {
   ): Promise<number> {
     let updated = 0;
     for (const item of items) {
-      const result = await this.db
-        .updateTable('preservation_restore_item')
-        .set({ decisions: jsonb(item.decisions) })
-        .where('id', '=', item.id)
-        .where('restoreId', '=', restoreId)
-        .where('appliedAt', 'is', null)
-        .executeTakeFirst();
+      const result = await this.write((db) =>
+        db
+          .updateTable('preservation_restore_item')
+          .set({ decisions: jsonb(item.decisions) })
+          .where('id', '=', item.id)
+          .where('restoreId', '=', restoreId)
+          .where('appliedAt', 'is', null)
+          .executeTakeFirst(),
+      );
       updated += Number(result.numUpdatedRows);
     }
     return updated;
@@ -1280,11 +1320,13 @@ export class PreservationRepository {
 
   /** Keep the reason a restored lock had in the package; the lock itself was made by the asset service. */
   async setLockReason(assetId: string, reason: string): Promise<void> {
-    await this.db
-      .updateTable('asset_lock')
-      .set({ reason: reason as any })
-      .where('assetId', '=', assetId)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('asset_lock')
+        .set({ reason: reason as any })
+        .where('assetId', '=', assetId)
+        .execute(),
+    );
   }
 
   /** An album the owner owns, by id. */
@@ -1358,6 +1400,7 @@ export class PreservationRepository {
     person: { name: string; birthDate: string | null; isHidden: boolean; isFavorite: boolean; color: string | null },
   ): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, PRESERVATION_HANDOFF_REFUSAL);
       await sql`
         insert into person_group (id, "clusterGroupId")
         select ${personGroupId}::uuid, "user"."clusterGroupId" from "user" where "user".id = ${ownerId}::uuid
@@ -1408,30 +1451,34 @@ export class PreservationRepository {
     y2: number;
     sourceType: string;
   }): Promise<void> {
-    await this.db
-      .insertInto('asset_face')
-      .values({
-        assetId: face.assetId,
-        personGroupId: face.personGroupId,
-        imageWidth: face.imageWidth,
-        imageHeight: face.imageHeight,
-        boundingBoxX1: Math.round(face.x1),
-        boundingBoxY1: Math.round(face.y1),
-        boundingBoxX2: Math.round(face.x2),
-        boundingBoxY2: Math.round(face.y2),
-        sourceType: face.sourceType as SourceType,
-      })
-      .execute();
+    await this.write((db) =>
+      db
+        .insertInto('asset_face')
+        .values({
+          assetId: face.assetId,
+          personGroupId: face.personGroupId,
+          imageWidth: face.imageWidth,
+          imageHeight: face.imageHeight,
+          boundingBoxX1: Math.round(face.x1),
+          boundingBoxY1: Math.round(face.y1),
+          boundingBoxX2: Math.round(face.x2),
+          boundingBoxY2: Math.round(face.y2),
+          sourceType: face.sourceType as SourceType,
+        })
+        .execute(),
+    );
   }
 
   /** Name a face nobody has named yet; a face somebody named keeps its person. */
   async nameFace(faceId: string, personGroupId: string): Promise<void> {
-    await this.db
-      .updateTable('asset_face')
-      .set({ personGroupId })
-      .where('id', '=', faceId)
-      .where('personGroupId', 'is', null)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('asset_face')
+        .set({ personGroupId })
+        .where('id', '=', faceId)
+        .where('personGroupId', 'is', null)
+        .execute(),
+    );
   }
 
   /** Add a document decision the owner made, unless one is already recorded for the same thing. */
@@ -1445,19 +1492,21 @@ export class PreservationRepository {
       region: { x1: number; y1: number; x2: number; y2: number; x3: number; y3: number; x4: number; y4: number } | null;
     },
   ): Promise<boolean> {
-    const result = await this.db
-      .insertInto('asset_document_edit')
-      .values({
-        assetId,
-        key: edit.key,
-        action: edit.action as any,
-        value: edit.value,
-        sourceText: null,
-        editedById: ownerId,
-        ...edit.region,
-      })
-      .onConflict((oc) => oc.columns(['assetId', 'key']).doNothing())
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .insertInto('asset_document_edit')
+        .values({
+          assetId,
+          key: edit.key,
+          action: edit.action as any,
+          value: edit.value,
+          sourceText: null,
+          editedById: ownerId,
+          ...edit.region,
+        })
+        .onConflict((oc) => oc.columns(['assetId', 'key']).doNothing())
+        .executeTakeFirst(),
+    );
     return Number(result.numInsertedOrUpdatedRows ?? 0) > 0;
   }
 
@@ -1478,18 +1527,20 @@ export class PreservationRepository {
     if (existing) {
       return false;
     }
-    await this.db
-      .insertInto('video_moment')
-      .values({
-        assetId,
-        source: VideoMomentSource.Manual,
-        timestampMs: moment.timestampMs,
-        endMs: moment.endMs,
-        caption: moment.caption,
-        transcript: moment.transcript,
-        createdById: ownerId,
-      })
-      .execute();
+    await this.write((db) =>
+      db
+        .insertInto('video_moment')
+        .values({
+          assetId,
+          source: VideoMomentSource.Manual,
+          timestampMs: moment.timestampMs,
+          endMs: moment.endMs,
+          caption: moment.caption,
+          transcript: moment.transcript,
+          createdById: ownerId,
+        })
+        .execute(),
+    );
     return true;
   }
 

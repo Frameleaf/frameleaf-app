@@ -60,6 +60,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000580-AddStudioExportVersions')).toBe('legacy-fork');
     expect(classifyMigration('2100000000590-HardenMediaOperationRetryAndCheckpoints')).toBe('legacy-fork');
     expect(classifyMigration('2100000000610-AddClassificationRule')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000620-FrameleafCloudMlDestination')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {

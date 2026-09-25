@@ -29,21 +29,19 @@ describe('settings change history (FL-66)', () => {
   it('records a credential only as replaced or cleared, never with a value', () => {
     const before = cloneDeep(defaults);
     before.oauth.clientSecret = 'oauth-old';
-    before.machineLearning.runpod.apiKey = 'rp_old';
+    before.notifications.smtp.transport.password = 'smtp-old';
     const after = cloneDeep(before);
     after.oauth.clientSecret = 'oauth-new';
-    after.machineLearning.runpod.apiKey = '';
-    after.notifications.smtp.transport.password = 'smtp-new';
+    after.notifications.smtp.transport.password = '';
 
     const changes = describeConfigChanges(before, after);
 
     expect(changes).toEqual([
-      { path: 'notifications.smtp.transport.password', before: null, after: null, credential: 'replaced' },
+      { path: 'notifications.smtp.transport.password', before: null, after: null, credential: 'cleared' },
       { path: 'oauth.clientSecret', before: null, after: null, credential: 'replaced' },
-      { path: 'machineLearning.runpod.apiKey', before: null, after: null, credential: 'cleared' },
     ]);
     const text = JSON.stringify(changes);
-    for (const secret of ['oauth-old', 'oauth-new', 'rp_old', 'smtp-new', 'Configured']) {
+    for (const secret of ['oauth-old', 'oauth-new', 'smtp-old', 'Configured']) {
       expect(text).not.toContain(secret);
     }
   });
@@ -111,7 +109,7 @@ describe('settings change history (FL-66)', () => {
 
 describe('FL-71 CC-10 history titles and object changes', () => {
   it('names credential and review entries without values', () => {
-    expect(credentialHistoryTitle('runpod-api-key', 'replaced')).toBe('Updated RunPod API key');
+    expect(credentialHistoryTitle('oauth-client-secret', 'replaced')).toBe('Updated OAuth client secret');
     expect(credentialHistoryTitle('smtp-password', 'cleared')).toBe('Cleared email server password');
     expect(reviewHistoryTitle('Recovery readiness')).toBe('Reviewed: Recovery readiness');
   });

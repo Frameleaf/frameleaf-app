@@ -358,6 +358,35 @@ export class StorageRepository {
     return total;
   }
 
+  /**
+   * Every non-directory entry under `folder`, depth first, symbolic links listed but never followed
+   * (FL-44: user deletion checks each file's references before removing it). A missing folder is
+   * empty. Matching is exact — unlike `walk`, no glob and no case folding reaches a sibling folder.
+   */
+  async *walkFiles(folder: string): AsyncGenerator<string> {
+    const pending = [folder];
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      let entries: Dirent[];
+      try {
+        entries = await fs.readdir(directory, { withFileTypes: true });
+      } catch (error: any) {
+        if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+          continue;
+        }
+        throw error;
+      }
+      for (const entry of entries) {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          pending.push(entryPath);
+        } else {
+          yield entryPath;
+        }
+      }
+    }
+  }
+
   /** The device a path lives on (`stat.dev`), or null when it cannot be read. */
   async getDevice(filepath: string): Promise<number | null> {
     try {

@@ -124,7 +124,7 @@ describe(AssetRestorationService.name, () => {
     mocks.mlDestination.getAll.mockResolvedValue([
       mlDestinationStub.local,
       mlDestinationStub.lan,
-      mlDestinationStub.runPodVideo,
+      mlDestinationStub.frameleafCloud,
     ]);
     // No library routes by default; the FL-72 case below sets one.
     mocks.mlDestination.getRoutes.mockResolvedValue([]);
@@ -201,7 +201,7 @@ describe(AssetRestorationService.name, () => {
       });
       const local = options.destinations.find((item) => item.id === mlDestinationStub.local.id);
       const lan = options.destinations.find((item) => item.id === mlDestinationStub.lan.id);
-      const runPod = options.destinations.find((item) => item.id === mlDestinationStub.runPodVideo.id);
+      const cloud = options.destinations.find((item) => item.id === mlDestinationStub.frameleafCloud.id);
       expect(local).toMatchObject({
         available: false,
         refusal: MlAdmissionRefusal.WorkloadNotAllowed,
@@ -211,13 +211,13 @@ describe(AssetRestorationService.name, () => {
       expect(lan?.estimate.fullSeconds).toBe(6);
       expect(lan?.estimate.previewSeconds).not.toBeNull();
       // Without recorded consent the cloud destination is shown as refused, never hidden and never chosen.
-      expect(runPod).toMatchObject({
+      expect(cloud).toMatchObject({
         available: false,
         refusal: MlAdmissionRefusal.ConsentMissing,
         leavesNetwork: true,
         consentGranted: false,
       });
-      expect(runPod?.estimate.fullSeconds).toBeNull();
+      expect(cloud?.estimate.fullSeconds).toBeNull();
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
     });
 
@@ -225,7 +225,7 @@ describe(AssetRestorationService.name, () => {
       const sameUrl = { ...mlDestinationStub.lan, url: mlDestinationStub.local.url };
       mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, sameUrl]);
       mocks.mlDestination.getRoutes.mockResolvedValue([
-        { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
+        { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() },
       ]);
       mocks.mlDestination.getById.mockImplementation((id: string) =>
         Promise.resolve(id === mlDestinationStub.local.id ? mlDestinationStub.local : sameUrl),
@@ -252,8 +252,8 @@ describe(AssetRestorationService.name, () => {
       region: DEFAULT_RESTORATION_REGION,
     };
 
-    it('refuses restoration on the library-analysis pod up front and creates nothing (FL-72)', async () => {
-      const legacyPod = { ...mlDestinationStub.runPodConsented, workloads: [MlWorkload.RestorationFaithful] };
+    it('refuses restoration on a worker also allowed library analysis up front and creates nothing (FL-72)', async () => {
+      const legacyPod = { ...mlDestinationStub.lan, workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful] };
       mocks.mlDestination.getById.mockResolvedValue(legacyPod);
 
       const error = await sut
@@ -267,10 +267,13 @@ describe(AssetRestorationService.name, () => {
     });
 
     it('refuses a cloud destination without consent and creates nothing', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodVideo);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
 
       await expect(
-        sut.requestPreview(authStub.user1, asset.id, { ...request, destinationId: mlDestinationStub.runPodVideo.id }),
+        sut.requestPreview(authStub.user1, asset.id, {
+          ...request,
+          destinationId: mlDestinationStub.frameleafCloud.id,
+        }),
       ).rejects.toBeInstanceOf(MlDestinationRefusedError);
       expect(restorations.create).not.toHaveBeenCalled();
       expect(operations.create).not.toHaveBeenCalled();

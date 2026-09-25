@@ -18,14 +18,21 @@
    * - Unsupported RAW and suspected damage are never offered for replacement or the trash.
    * - Another account's findings are an administrator's to review; their Locked media is never
    *   listed, and their thumbnails are not shown (the viewer has no access to them).
+   * - The notice after a change offers Undo where the server can take the change back
+   *   (UtilitiesManager.jsx:295-320): a dismissal is reopened, a queued scan or search cancelled, a
+   *   pause resumed, and the viewer's own damage moved to the trash restored and reopened. A relink
+   *   or recovery changed the original itself; putting the old path back is not a status change, so
+   *   those notices offer none.
    */
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import LibraryCareRecoveryDialog from '$lib/components/frameleaf/LibraryCareRecoveryDialog.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import { durableItemStates } from '$lib/frameleaf/bulk-operations';
   import {
+    accountOptions,
     canRecover,
     canRelink,
     evidenceKey,
@@ -34,17 +41,20 @@
     isActiveOperation,
     LIBRARY_CARE_POLL_MS,
     locatable,
+    ownerScope,
     relinkCandidate,
     scanState,
     STATUS_LABEL_KEY,
     statusTone,
     toRows,
     trashable,
+    trashUndoable,
     type LibraryCareRow,
     libraryCareActivityKey,
   } from '$lib/frameleaf/library-care';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
+  import { utilitiesUrl } from '$lib/frameleaf/utilities';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -66,6 +76,8 @@
     pauseMediaOperation,
     recoverDamaged,
     relinkMissing,
+    reopen as reopenFindings,
+    restoreAssets,
     resumeMediaOperation,
     startCorruptScan,
     startMissingScan,
@@ -76,7 +88,7 @@
     type UserAdminResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiCheckCircleOutline, mdiImageOffOutline } from '@mdi/js';
+  import { mdiCheckCircleOutline, mdiClose, mdiImageOffOutline, mdiUndo } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -101,6 +113,7 @@
     initialStatus,
     roots,
     users,
+    initialOwner,
   }: {
     category: MediaHealthCategory;
     initial: MediaHealthListResponseDto;
@@ -110,6 +123,8 @@
     roots: MediaHealthRootDto[];
     /** Every account, for an administrator's account filter. Empty for everyone else. */
     users: UserAdminResponseDto[];
+    /** Whose findings were loaded: `all` or one account's id (UT-13). The reader's own by default. */
+    initialOwner?: string;
   } = $props();
 
   const isMissing = $derived(category === MediaHealthCategory.Missing);
@@ -118,12 +133,14 @@
 
   let list = $state(initial);
   let summary = $state(initialSummary);
-  let owner = $state<string>('self');
+  let owner = $state<string>(initialOwner ?? authManager.user.id);
   let query = $state('');
   let statusFilter = $state<MediaHealthStatus | undefined>(initialStatus);
   let show = $state<'open' | 'all'>(initialStatus ? 'all' : 'open');
   let selected = $state<string[]>([]);
   let notice = $state('');
+  /** How to take the last change back, when the server can (UT-2); resolves true when all of it was. */
+  let undo = $state<(() => Promise<boolean>) | null>(null);
   let busy = $state(false);
 
   let inspect = $state<LibraryCareRow | null>(null);
@@ -143,8 +160,10 @@
   let itemStates = $state(new Map<string, { state: 'pending' } | { state: 'failed'; reasonKey: Translations }>());
 
   const rows = $derived(toRows(list));
+  /** Accounts by name, the reader's own included, as the template's `ownerName` (UT-13). */
   const nameOf = (ownerId: string) =>
-    ownerId === selfId ? $t('library_care_you') : (users.find((user) => user.id === ownerId)?.name ?? ownerId);
+    ownerId === selfId ? authManager.user.name : (users.find((user) => user.id === ownerId)?.name ?? ownerId);
+  const owners = $derived(accountOptions(users, { id: selfId, name: authManager.user.name }, isAdmin));
   const describe = (row: LibraryCareRow) => `${row.name} ${$t(STATUS_LABEL_KEY[row.status])} ${nameOf(row.ownerId)}`;
   const visible = $derived(filterRows(rows, query, describe));
   const editable = $derived(visible.filter((row) => itemStates.get(row.assetId)?.state !== 'pending'));
@@ -156,9 +175,9 @@
   const recoveryRows = $derived(recovery ? rows.filter((row) => recovery!.ids.includes(row.id)) : []);
   const searchingForRecovery = $derived(active && operation?.mode === MediaHealthOperationMode.Locate);
   const trashRows = $derived(trashable(chosen));
-  const locatableRows = $derived(locatable(chosen));
+  const locatableRows = $derived(locatable(chosen, { rawRecovery: summary.care?.rawRecovery ?? true }));
 
-  const scope = $derived(owner === 'all' ? { allAccounts: true } : owner === 'self' ? {} : { ownerId: owner });
+  const scope = $derived(ownerScope(owner, selfId));
 
   const time = (value: string | null | undefined) =>
     value ? DateTime.fromISO(value).toLocaleString(DateTime.DATETIME_MED) : '';
@@ -272,6 +291,41 @@
   /* Actions                                                           */
   /* ---------------------------------------------------------------- */
 
+  /** Show what changed, with Undo when `revert` can take it back (UtilitiesManager.jsx:80-95). */
+  const announce = (message: string, revert: (() => Promise<boolean>) | null = null) => {
+    notice = message;
+    undo = revert;
+  };
+
+  const undoLast = () =>
+    run(async () => {
+      const revert = undo;
+      if (!revert) {
+        return;
+      }
+      undo = null;
+      const complete = await revert();
+      notice = complete ? $t('library_care_undone') : $t('library_care_undo_partial');
+      await refresh();
+    });
+
+  const allReopened = async (ids: string[]) => {
+    const { results } = await reopenFindings({ mediaHealthBulkActionDto: { ids } });
+    return results.every(({ success }) => success);
+  };
+
+  /** Stop following a job whose change was taken back. */
+  const unfollow = (operationId: string, assetIds: string[]) => {
+    const remaining = new Map(jobs);
+    remaining.delete(operationId);
+    jobs = remaining;
+    const next = new Map(itemStates);
+    for (const id of assetIds) {
+      next.delete(id);
+    }
+    itemStates = next;
+  };
+
   const run = async (action: () => Promise<void>) => {
     busy = true;
     try {
@@ -285,8 +339,16 @@
 
   const startScan = () =>
     run(async () => {
-      await (isMissing ? startMissingScan() : startCorruptScan());
-      notice = $t('library_care_scan_queued');
+      const { operationId } = await (isMissing ? startMissingScan() : startCorruptScan());
+      announce(
+        $t('library_care_scan_queued'),
+        operationId
+          ? async () => {
+              await cancelMediaOperation({ id: operationId });
+              return true;
+            }
+          : null,
+      );
       summary = await getSummary(scope);
       schedule();
     });
@@ -297,8 +359,12 @@
         return;
       }
       const paused = operation.status === MediaOperationStatus.Paused || !!operation.pauseRequestedAt;
-      await (paused ? resumeMediaOperation({ id: operation.id }) : pauseMediaOperation({ id: operation.id }));
-      notice = paused ? $t('library_care_scan_resumed') : $t('library_care_scan_paused');
+      const id = operation.id;
+      await (paused ? resumeMediaOperation({ id }) : pauseMediaOperation({ id }));
+      announce(paused ? $t('library_care_scan_resumed') : $t('library_care_scan_paused'), async () => {
+        await (paused ? pauseMediaOperation({ id }) : resumeMediaOperation({ id }));
+        return true;
+      });
       summary = await getSummary(scope);
       schedule();
     });
@@ -309,7 +375,8 @@
         return;
       }
       await cancelMediaOperation({ id: operation.id });
-      notice = $t('library_care_scan_cancelled');
+      // A cancelled job cannot be started again where it stopped: no Undo.
+      announce($t('library_care_scan_cancelled'));
       summary = await getSummary(scope);
     });
 
@@ -349,7 +416,7 @@
 
       if (action === 'dismiss') {
         await dismissFindings({ mediaHealthBulkActionDto: { ids } });
-        notice = $t('library_care_items_updated', { values: { count: ids.length } });
+        announce($t('library_care_items_updated', { values: { count: ids.length } }), () => allReopened(ids));
         selected = [];
         await refresh();
         return;
@@ -360,15 +427,28 @@
           ? await relinkMissing({ mediaHealthBulkActionDto: { ids } })
           : await deleteCorrupt({ mediaHealthDeleteCorruptDto: { ids, confirmText: DELETE_CONFIRM_TEXT } });
       const accepted = new Set(response.results.filter(({ success }) => success).map(({ id }) => id));
-      follow(
-        response.operationId,
-        targets.filter(({ id }) => accepted.has(id)).map(({ assetId }) => assetId),
-      );
+      const moved = targets.filter(({ id }) => accepted.has(id));
+      const assetIds = moved.map(({ assetId }) => assetId);
+      follow(response.operationId, assetIds);
       const refused = response.results.length - accepted.size;
-      notice =
-        action === 'relink'
-          ? $t('library_care_relink_queued', { values: { count: accepted.size, refused } })
-          : $t('library_care_trash_queued', { values: { count: accepted.size, refused } });
+      const operationId = response.operationId;
+      if (action === 'relink') {
+        // A relink points the original at another file; putting the old path back is not offered.
+        announce($t('library_care_relink_queued', { values: { count: accepted.size, refused } }));
+      } else {
+        announce(
+          $t('library_care_trash_queued', { values: { count: accepted.size, refused } }),
+          // The trash is recoverable: the viewer's own items come back out and are reviewed again.
+          operationId && trashUndoable(moved, selfId)
+            ? async () => {
+                await cancelMediaOperation({ id: operationId }).catch(() => {});
+                unfollow(operationId, assetIds);
+                await restoreAssets({ bulkIdsDto: { ids: assetIds } });
+                return allReopened(moved.map(({ id }) => id));
+              }
+            : null,
+        );
+      }
       selected = [];
     });
 
@@ -385,8 +465,16 @@
       if (!recovery) {
         return;
       }
-      await locateMissing({ mediaHealthLocateDto: { ids: recovery.ids, rootIds } });
-      notice = $t('library_care_search_queued');
+      const { operationId } = await locateMissing({ mediaHealthLocateDto: { ids: recovery.ids, rootIds } });
+      announce(
+        $t('library_care_search_queued'),
+        operationId
+          ? async () => {
+              await cancelMediaOperation({ id: operationId });
+              return true;
+            }
+          : null,
+      );
       summary = await getSummary(scope);
       schedule();
     });
@@ -401,7 +489,7 @@
         .map((findingId) => ({ findingId, candidateId: choices[findingId] }));
       if (recovery.mode === 'locate') {
         await chooseCandidates({ mediaHealthChooseCandidatesDto: { choices: picked } });
-        notice = $t('library_care_choices_saved');
+        announce($t('library_care_choices_saved'));
         recoveryOpen = false;
         await refresh();
         return;
@@ -413,9 +501,12 @@
         response.operationId,
         recoveryRows.filter(({ id }) => accepted.has(id)).map(({ assetId }) => assetId),
       );
-      notice = $t('library_care_recovery_queued', {
-        values: { count: accepted.size, refused: response.results.length - accepted.size },
-      });
+      // A recovery published a new original; the damaged file is kept, but this is not undone here.
+      announce(
+        $t('library_care_recovery_queued', {
+          values: { count: accepted.size, refused: response.results.length - accepted.size },
+        }),
+      );
       recoveryOpen = false;
       selected = [];
     });
@@ -519,9 +610,23 @@
 
 <div class="care">
   {#if notice}
+    <!-- UtilitiesManager.jsx:295-320: the notice, Undo while the last change can be taken back, and close. -->
     <div role="status" class="message">
       <span>{notice}</span>
-      <Button variant="quiet" label={$t('library_care_dismiss_message')} onclick={() => (notice = '')}>×</Button>
+      {#if undo}
+        <Button disabled={busy} onclick={undoLast}>
+          <span class="with-icon"><Icon icon={mdiUndo} size="1rem" aria-hidden={true} />{$t('undo')}</span>
+        </Button>
+      {/if}
+      <IconButton
+        label={$t('library_care_dismiss_message')}
+        onclick={() => {
+          notice = '';
+          undo = null;
+        }}
+      >
+        <Icon icon={mdiClose} size="1rem" />
+      </IconButton>
     </div>
   {/if}
 
@@ -546,7 +651,8 @@
           : $t('library_care_cancel_scan')}
       </Button>
     {/if}
-    <Button onclick={() => goto(Route.activity({ filter: 'running' }))}>{$t('library_care_view_jobs')}</Button>
+    <!-- UT-14: the Job manager, as the template's onNavigate("processing", "queues") (UtilitiesManager.jsx:552). -->
+    <Button onclick={() => goto(Route.queues())}>{$t('library_care_view_jobs')}</Button>
   </div>
 
   {#if active && operation && operation.totalUnits}
@@ -554,19 +660,47 @@
     ></progress>
   {/if}
 
-  <div class="toolbar">
-    {#if isAdmin}
-      <label>
-        {$t('library_care_account')}
-        <select value={owner} onchange={(event) => changeScope(event.currentTarget.value)}>
-          <option value="self">{$t('library_care_account_mine')}</option>
-          <option value="all">{$t('library_care_account_all')}</option>
-          {#each users.filter((user) => user.id !== selfId) as user (user.id)}
-            <option value={user.id}>{user.name}</option>
-          {/each}
-        </select>
-      </label>
+  <!-- Queues the other tools work through (FL-69; the template's queue list, CommandCenter.jsx:2061-2097). -->
+  <section class="queues" aria-label={$t('library_care_other_queues')}>
+    <div>
+      <span>
+        <strong>{$t('library_care_queue_duplicates')}</strong>
+        <small>
+          {summary.care && !summary.care.duplicateReview
+            ? $t('library_care_queue_duplicates_off')
+            : $t('library_care_queue_groups', { values: { count: summary.queues.duplicates } })}
+        </small>
+      </span>
+      <Button onclick={() => goto(utilitiesUrl('duplicates'))}>{$t('library_care_queue_review')}</Button>
+    </div>
+    {#if summary.queues.importReview !== null}
+      <div>
+        <span>
+          <strong>{$t('library_care_queue_import')}</strong>
+          <small>{$t('library_care_queue_items', { values: { count: summary.queues.importReview } })}</small>
+        </span>
+        <Button onclick={() => goto(utilitiesUrl('icloud'))}>{$t('library_care_queue_review')}</Button>
+      </div>
     {/if}
+    <div>
+      <span>
+        <strong>{$t('library_care_queue_enrichment')}</strong>
+        <small>{$t('library_care_queue_waiting', { values: { count: summary.queues.enrichmentPending } })}</small>
+      </span>
+      <Button onclick={() => goto(Route.queues())}>{$t('library_care_view_jobs')}</Button>
+    </div>
+  </section>
+
+  <div class="toolbar">
+    <!-- UT-13: "All accounts", then every account by name (UtilitiesManager.jsx:158-172). -->
+    <label>
+      {$t('library_care_account')}
+      <select value={owner} onchange={(event) => changeScope(event.currentTarget.value)}>
+        {#each owners as option (option.value)}
+          <option value={option.value}>{option.name ?? $t('library_care_account_all')}</option>
+        {/each}
+      </select>
+    </label>
     <label>
       {$t('library_care_find_items')}
       <input type="search" bind:value={query} placeholder={$t('library_care_find_placeholder')} />
@@ -605,6 +739,9 @@
 
   {#if !isMissing}
     <p class="policy">{$t('library_care_damage_policy')}</p>
+  {/if}
+  {#if summary.care && !summary.care.rawRecovery}
+    <p class="policy">{$t('library_care_raw_search_off')}</p>
   {/if}
 
   <div class="table-scroll">
@@ -761,6 +898,38 @@
         {/if}
         <dt>{$t('library_care_checked')}</dt>
         <dd>{time(row.item.checkedAt)}</dd>
+        {#each row.item.expectedChecksums ?? [] as checksum (checksum.algorithm)}
+          <dt>{$t('library_care_recorded_checksum', { values: { algorithm: checksum.algorithm.toUpperCase() } })}</dt>
+          <dd><code>{checksum.value}</code></dd>
+        {/each}
+        {#if row.item.provenance}
+          {@const provenance = row.item.provenance}
+          <dt>
+            {provenance.action === 'recovered'
+              ? $t('library_care_provenance_recovered')
+              : $t('library_care_provenance_relinked')}
+          </dt>
+          <dd>
+            {$t('library_care_provenance_detail', {
+              values: {
+                name: provenance.userId ? nameOf(provenance.userId) : '',
+                location:
+                  provenance.rootKind === MediaHealthRootKind.Managed
+                    ? $t('library_care_root_managed')
+                    : (provenance.rootLabel ?? ''),
+                time: time(provenance.at),
+              },
+            })}
+          </dd>
+          {#if provenance.previousPath}
+            <dt>{$t('library_care_previous_path')}</dt>
+            <dd><code>{provenance.previousPath}</code></dd>
+          {/if}
+          {#if provenance.sourcePath}
+            <dt>{$t('library_care_copy_used')}</dt>
+            <dd><code>{provenance.sourcePath}</code></dd>
+          {/if}
+        {/if}
         {#each row.candidates as candidate (candidate.id)}
           <dt>
             {candidate.chosen ? $t('library_care_candidate_chosen') : $t('library_care_candidate')}
@@ -781,6 +950,9 @@
                 ? $t('library_care_decode_validated')
                 : $t('library_care_decode_not_validated')} · {$t(STATUS_LABEL_KEY[candidate.status])}
             </small>
+            {#each candidate.checksums ?? [] as checksum (checksum.algorithm)}
+              <small>{checksum.algorithm.toUpperCase()} <code>{checksum.value}</code></small>
+            {/each}
           </dd>
         {/each}
       </dl>
@@ -864,6 +1036,42 @@
     border-left: 3px solid var(--fl-teal);
     border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
+  }
+  .message > span {
+    flex: 1;
+  }
+  .with-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+  .queues {
+    display: grid;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+  }
+  .queues > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+  }
+  .queues > div + div {
+    border-top: 1px solid var(--fl-border);
+  }
+  .queues span {
+    display: grid;
+    gap: 0.125rem;
+  }
+  .queues strong {
+    font-weight: 500;
+  }
+  .queues small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small, 0.75rem);
   }
   .scan {
     display: flex;

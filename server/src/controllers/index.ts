@@ -13,6 +13,7 @@ import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
+import { CloudMlAdminController } from 'src/controllers/cloud-ml-admin.controller.js';
 import { ClusterGroupController } from 'src/controllers/cluster-group.controller.js';
 import { ConfigAdminController } from 'src/controllers/config-admin.controller.js';
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
@@ -24,6 +25,7 @@ import { DuplicateReviewController } from 'src/controllers/duplicate-review.cont
 import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
+import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
@@ -47,7 +49,6 @@ import { PluginController } from 'src/controllers/plugin.controller.js';
 import { PreservationController } from 'src/controllers/preservation.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
 import { RenderWorkerAdminController, RenderWorkerController } from 'src/controllers/render-worker.controller.js';
-import { RunPodController } from 'src/controllers/runpod.controller.js';
 import { SearchController } from 'src/controllers/search.controller.js';
 import { ServerController } from 'src/controllers/server.controller.js';
 import { SessionController } from 'src/controllers/session.controller.js';
@@ -74,6 +75,8 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  CloudMlAdminController,
+  HardwareCheckController,
   ICloudSyncController,
   ApiKeyController,
   ActivityController,
@@ -125,7 +128,6 @@ export const controllers = [
   PluginController,
   PreservationController,
   QueueController,
-  RunPodController,
   SearchController,
   ServerController,
   SessionController,

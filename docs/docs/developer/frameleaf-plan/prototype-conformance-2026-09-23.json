@@ -19,10 +19,10 @@
     "webActions": 153,
     "routes": 83,
     "byStatus": {
-      "match": 61,
-      "partial": 14,
+      "match": 58,
+      "partial": 13,
       "missing": 0,
-      "fixed": 139,
+      "fixed": 143,
       "in-flight": 6,
       "studio-parked": 3,
       "retained-live-route": 8,
@@ -2020,9 +2020,9 @@
         "web/src/routes/admin/queues/+page.ts",
         "web/src/routes/(user)/user-settings/sections/QueuesSection.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["CC-42", "CC-43", "CC-44"],
-      "followUp": "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts) and FL-59 (CC-42, the Frameleaf Enrichment tasks dialog with When and Acceleration); open: the RunPod manager and provider history (CC-43, CC-44, FL-43)"
+      "followUp": "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts) and FL-59 (CC-42, the Frameleaf Enrichment tasks dialog with When and Acceleration); CC-43 and CC-44 are obsolete: the GPU provider is removed and Frameleaf Cloud processing replaces it (FL-159)"
     },
     {
       "route": "/admin/queues/[name]",
@@ -2633,9 +2633,9 @@
         "web/src/routes/(user)/utilities/corrupt-media/+page.ts",
         "web/src/lib/components/frameleaf/LibraryCareHealth.svelte"
       ],
-      "status": "match",
+      "status": "fixed",
       "gaps": ["UT-2"],
-      "followUp": "Undo on the notice as the API allows"
+      "followUp": "Undo on the notice through the reopen endpoint (FL-69)"
     },
     {
       "route": "/utilities/downloads",
@@ -2698,9 +2698,9 @@
         "web/src/routes/(user)/utilities/icloud-sync/+page.ts",
         "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte"
       ],
-      "status": "match",
+      "status": "fixed",
       "gaps": ["UT-11"],
-      "followUp": "Recent utility activity"
+      "followUp": "Recent utility activity on every tool (FL-69)"
     },
     {
       "route": "/utilities/large-files/[[photos=photos]]/[[assetId=id]]",
@@ -2735,9 +2735,9 @@
         "web/src/routes/(user)/utilities/missing-media/+page.ts",
         "web/src/lib/components/frameleaf/LibraryCareHealth.svelte"
       ],
-      "status": "match",
+      "status": "fixed",
       "gaps": ["UT-2"],
-      "followUp": "Undo on the notice as the API allows"
+      "followUp": "Undo on the notice through the reopen endpoint (FL-69)"
     },
     {
       "route": "/utilities/obtainium",

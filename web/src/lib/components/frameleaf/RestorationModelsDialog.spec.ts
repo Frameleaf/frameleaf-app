@@ -27,7 +27,8 @@ const lan: MlDestinationResponseDto = {
   workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
   role: MlWorkerRole.Restoration,
   sharesLibraryHardware: false,
-  consent: { required: false, acknowledgedAt: null, acknowledgedBy: null },
+  consent: { required: false, acknowledgedAt: null, acknowledgedBy: null, requiredVersion: null, version: null },
+  cloud: null,
   costControls: {
     budgetLimitUsd: null,
     maxRuntimeMinutes: null,

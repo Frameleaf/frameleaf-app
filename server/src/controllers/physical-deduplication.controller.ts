@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -7,13 +7,16 @@ import {
   PhysicalDeduplicationApplyRequestDto,
   PhysicalDeduplicationPreviewRequestDto,
   PhysicalDeduplicationPreviewResponseDto,
+  PhysicalDeduplicationRestoreRequestDto,
   PhysicalDeduplicationReviewRequestDto,
   PhysicalDeduplicationReviewResponseDto,
+  PhysicalDeduplicationVerificationDto,
 } from 'src/dtos/physical-deduplication.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
+import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Maintenance)
 @Controller('admin/physical-deduplication')
@@ -78,5 +81,38 @@ export class PhysicalDeduplicationController {
     @Body() dto: PhysicalDeduplicationApplyRequestDto,
   ): Promise<MediaOperationDto> {
     return this.plans.apply(auth, dto);
+  }
+
+  @Post('applies/:id/verify')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.JobRead, admin: true })
+  @Endpoint({
+    summary: 'Verify an applied physical deduplication plan',
+    description:
+      'Hash every retained original the applied plan shares again and check that every copy it changed still resolves to one. Reports, per copy, whether its own former file is gone (which cannot be undone) or still on disk (which can be restored). Nothing is written.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  verifyPhysicalDeduplicationApply(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+  ): Promise<PhysicalDeduplicationVerificationDto> {
+    return this.plans.verify(auth, id);
+  }
+
+  @Post('applies/:id/restore')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.JobCreate, admin: true })
+  @Endpoint({
+    summary: 'Restore a copy of an applied physical deduplication plan',
+    description:
+      'Point one copy back at its own former file, only while that file is still on disk with the reviewed checksum and size, and answer with the plan verified again. A copy whose own file was removed cannot be restored.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  restorePhysicalDeduplicationCopy(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: PhysicalDeduplicationRestoreRequestDto,
+  ): Promise<PhysicalDeduplicationVerificationDto> {
+    return this.plans.restore(auth, id, dto);
   }
 }

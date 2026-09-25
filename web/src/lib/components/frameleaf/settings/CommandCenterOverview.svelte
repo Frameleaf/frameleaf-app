@@ -381,7 +381,7 @@
           ></span
         ><Icon icon={mdiChevronRight} size="18" /></a
       >
-      <a href={href('processing')}
+      <a href={href('processing', 'cloud-ml')}
         ><Icon icon={mdiCloudOutline} size="18" /><span
           ><strong>{$t('frameleaf_cc_cloud_destination')}</strong><small
             >{ml

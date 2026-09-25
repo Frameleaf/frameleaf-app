@@ -70,7 +70,7 @@ const iso = (value: unknown): string | null => (value ? new Date(value as string
 /**
  * The worker inventory (FL-72): one read-only view over every place work can run.
  *
- * - **Machine-learning destinations** (local, LAN, RunPod pod, RunPod video worker) with the state
+ * - **Machine-learning destinations** (local, LAN and Frameleaf Cloud) with the state
  *   of their last check, what they may run, what they said they serve, where library work is
  *   routed, what admission would answer per workload and how busy they are.
  * - **Render workers** (FL-95) with their check-in state, qualified GPU memory and claims.
@@ -164,7 +164,7 @@ export class WorkerInventoryService {
       libraryLoad: { active: number; waiting: number };
     },
   ): Promise<WorkerInventoryEntryDto> {
-    const endpoint = resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint());
+    const endpoint = resolveEndpoint(row);
     const probe = storedProbe(row);
     const spentUsd =
       row.budgetLimitUsd === null ? 0 : await this.mlDestinationRepository.getSpend(row.id, budgetWindowStart());
@@ -207,7 +207,7 @@ export class WorkerInventoryService {
       name: row.name,
       kind: row.kind,
       role: mlWorkerRoleOf(row.workloads),
-      url: endpoint?.url ?? null,
+      url: endpoint && !endpoint.cloud ? endpoint.url : null,
       configured:
         row.kind !== MlDestinationKind.Local ||
         (row.url !== null && context.configuredUrls.some((url) => sameEndpointUrl(url, row.url as string))),
@@ -217,10 +217,8 @@ export class WorkerInventoryService {
       gpus,
       gpuMemoryBytes,
       credential:
-        row.kind === MlDestinationKind.RunPod
-          ? endpoint?.authToken
-            ? WorkerCredentialState.Managed
-            : WorkerCredentialState.None
+        row.kind === MlDestinationKind.FrameleafCloud
+          ? WorkerCredentialState.Managed
           : row.authToken
             ? WorkerCredentialState.Stored
             : WorkerCredentialState.None,
@@ -271,7 +269,7 @@ export class WorkerInventoryService {
       gpus: [],
       gpuMemoryBytes,
       credential: WorkerCredentialState.Enrolled,
-      leavesNetwork: worker.destination === MediaOperationDestination.RunPod,
+      leavesNetwork: worker.destination === MediaOperationDestination.FrameleafCloud,
       consentGranted: true,
       allowedWorkloads: [],
       servedWorkloads: null,

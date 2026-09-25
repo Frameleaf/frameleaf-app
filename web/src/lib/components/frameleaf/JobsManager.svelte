@@ -683,10 +683,13 @@
   const jobTitle = (name: JobName) => $t(jobNameKey(name) as Translations);
   /** The template's `ownerName` / `destinationName` (`JobsManager.jsx` 37-40), from the server's job data. */
   const accountName = (job: QueueJobResponseDto) => job.account?.name ?? $t('frameleaf_jobs_account_none');
-  const workerLabel = (job: QueueJobResponseDto) =>
-    $t(
-      `frameleaf_jobs_worker_${job.worker.kind === QueueJobWorkerKind.Lan ? 'local' : job.worker.kind}` as Translations,
-    );
+  const WORKER_LABEL: Record<QueueJobWorkerKind, Translations> = {
+    [QueueJobWorkerKind.Server]: 'frameleaf_jobs_worker_server',
+    [QueueJobWorkerKind.Local]: 'frameleaf_jobs_worker_local',
+    [QueueJobWorkerKind.Lan]: 'frameleaf_jobs_worker_local',
+    [QueueJobWorkerKind.FrameleafCloud]: 'frameleaf_jobs_worker_frameleaf_cloud',
+  };
+  const workerLabel = (job: QueueJobResponseDto) => $t(WORKER_LABEL[job.worker.kind]);
   const subject = (job: QueueJobResponseDto) => {
     const id = job.data?.id;
     return typeof id === 'string' ? id : '';
@@ -1284,7 +1287,7 @@
 {#snippet worker(job: QueueJobResponseDto)}
   <span class="jm-destination" title={job.worker.name ?? undefined}>
     <Icon
-      icon={job.worker.kind === QueueJobWorkerKind.Runpod ? mdiCloudOutline : mdiDesktopTowerMonitor}
+      icon={job.worker.kind === QueueJobWorkerKind.FrameleafCloud ? mdiCloudOutline : mdiDesktopTowerMonitor}
       size="15px"
       aria-hidden={true}
     />

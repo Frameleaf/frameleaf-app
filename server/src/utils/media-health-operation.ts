@@ -23,6 +23,13 @@ export type MediaHealthScanSnapshot = {
   userId: string;
   missingRunId: string;
   corruptRunId: string;
+  /**
+   * An incremental scan (Library care → "Schedule incremental health scans"): only assets changed
+   * since this moment, the start of the account's last completed scan. Absent scans everything.
+   */
+  changedSince?: string;
+  /** Started by the Library care schedule rather than by a person. */
+  scheduled?: boolean;
 };
 
 /** Search chosen locations for exact copies of the originals behind a fixed set of findings. */
@@ -82,6 +89,9 @@ export const parseMediaHealthSnapshot = (value: unknown): MediaHealthOperationSn
       userId: value.userId,
       missingRunId: value.missingRunId,
       corruptRunId: value.corruptRunId,
+      ...(typeof value.changedSince === 'string' &&
+        !Number.isNaN(Date.parse(value.changedSince)) && { changedSince: value.changedSince }),
+      ...(value.scheduled === true && { scheduled: true }),
     };
   }
 
@@ -142,7 +152,9 @@ export const scanProgress = (result: MediaHealthScanResult): number => {
 /** What Activity shows for a Library Care job when the client has no translation of its own. */
 export const mediaHealthOperationLabel = (snapshot: MediaHealthOperationSnapshot): string =>
   snapshot.mode === 'scan'
-    ? 'Library health scan'
+    ? snapshot.scheduled
+      ? 'Scheduled library health scan'
+      : 'Library health scan'
     : `Search for originals (${snapshot.findingIds.length} ${snapshot.findingIds.length === 1 ? 'item' : 'items'})`;
 
 /**

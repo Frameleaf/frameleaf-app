@@ -461,7 +461,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
     ).resolves.toHaveLength(1);
   });
 
-  it('backfills RunPod configuration and automation without changing official album membership', async () => {
+  it('backfills Frameleaf Cloud configuration and automation without changing official album membership', async () => {
     const user = await mediumFactory.userWithClusterGroup(db);
     const asset = mediumFactory.assetInsert({ ownerId: user.id });
     const album = mediumFactory.albumInsert({});
@@ -483,10 +483,10 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
       .values({ smartAlbumId: smart.id, assetId: asset.id!, matchReason: 'tag' })
       .execute();
     await db.insertInto('smart_album_exclusion').values({ smartAlbumId: smart.id, assetId: asset.id! }).execute();
-    const runpod = { enabled: true, mode: 'serverless' as const, apiKey: 'rp_secret', imageName: 'fork/image:latest' };
+    const cloudMl = { ...defaults.frameleafCloud.cloudMl, enabled: true };
     await db
       .insertInto('system_metadata')
-      .values({ key: SystemMetadataKey.SystemConfig, value: { machineLearning: { runpod } } })
+      .values({ key: SystemMetadataKey.SystemConfig, value: { frameleafCloud: { cloudMl } } })
       .execute();
 
     const automation = new SmartAlbumRepository(db);
@@ -494,17 +494,17 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
     const first = await automation.backfillAutomation([album.id!]);
     const second = await automation.backfillAutomation([album.id!]);
     const effectiveConfig = structuredClone(defaults);
-    effectiveConfig.machineLearning.runpod = { ...effectiveConfig.machineLearning.runpod, ...runpod };
+    effectiveConfig.frameleafCloud.cloudMl = cloudMl;
     const configResult = await config.backfillConfig(effectiveConfig, 'database');
     const membership = await db.selectFrom('album_asset').selectAll().execute();
     const forkConfig = await sql<{
-      value: typeof runpod;
-    }>`SELECT value FROM immich_fork.config WHERE key = 'machineLearning.runpod'`.execute(db);
+      value: typeof defaults.frameleafCloud;
+    }>`SELECT value FROM immich_fork.config WHERE key = 'frameleafCloud'`.execute(db);
 
     expect(second).toEqual(first);
     expect(first.digest).toMatch(/^[0-9a-f]{64}$/);
     expect(configResult.digest).toMatch(/^[0-9a-f]{64}$/);
-    expect(forkConfig.rows[0]?.value).toMatchObject(runpod);
+    expect(forkConfig.rows[0]?.value).toMatchObject({ cloudMl: { enabled: true } });
     expect(membership).toHaveLength(1);
 
     await sql`UPDATE immich_fork.smart_album_rule SET kind = 'fork-travel' WHERE id = ${smart.id}::uuid`.execute(db);
@@ -538,7 +538,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
     await sql`UPDATE immich_fork.state SET phase = 'ready' WHERE id = 1`.execute(db);
     await new ForkConfigRepository(db).mirrorConfig({
       ...upstream,
-      machineLearning: { ...upstream.machineLearning, runpod: { ...upstream.machineLearning.runpod, enabled: true } },
+      frameleafCloud: { cloudMl: { ...upstream.frameleafCloud.cloudMl, enabled: true } },
       smartAlbums: { ...upstream.smartAlbums, enabled: true },
     });
     await sql`UPDATE immich_fork.state SET phase = 'active', active = true WHERE id = 1`.execute(db);
@@ -546,32 +546,32 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
 
     const first = await getConfig(repos, { withCache: false });
     expect(first.logging.level).toBe('warn');
-    expect(first.machineLearning.runpod.enabled).toBe(true);
+    expect(first.frameleafCloud.cloudMl.enabled).toBe(true);
     expect(first.smartAlbums.enabled).toBe(true);
 
     const next = structuredClone(first);
     next.logging.level = LogLevel.Error;
-    next.machineLearning.runpod.enabled = false;
+    next.frameleafCloud.cloudMl.enabled = false;
     next.smartAlbums.enabled = false;
     const updated = await updateConfig(repos, next);
     const official = await metadataRepo.get(SystemMetadataKey.SystemConfig);
     expect(official?.logging?.level).toBe('error');
     expect(updated.logging.level).toBe('error');
-    expect(updated.machineLearning.runpod.enabled).toBe(false);
+    expect(updated.frameleafCloud.cloudMl.enabled).toBe(false);
     expect(updated.smartAlbums.enabled).toBe(false);
   });
 
   it('backfills fork configuration from the exact effective config-file value', async () => {
     const fileConfig = structuredClone(defaults);
-    fileConfig.machineLearning.runpod.enabled = true;
-    fileConfig.machineLearning.runpod.apiKey = 'file-secret';
+    fileConfig.frameleafCloud.cloudMl.enabled = true;
+    fileConfig.frameleafCloud.cloudMl.models.descriptions = 'file-model';
     fileConfig.smartAlbums.enabled = true;
     await db
       .insertInto('system_metadata')
       .values({
         key: SystemMetadataKey.SystemConfig,
         value: {
-          machineLearning: { runpod: { enabled: false, apiKey: 'database-secret' } },
+          frameleafCloud: { cloudMl: { enabled: false, models: { descriptions: 'database-model' } } },
           smartAlbums: { enabled: false },
         },
       })
@@ -582,14 +582,22 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
       SELECT key, value FROM immich_fork.config ORDER BY key
     `.execute(db);
     expect(rows.rows).toEqual([
-      { key: 'machineLearning.runpod', value: expect.objectContaining({ apiKey: 'file-secret', enabled: true }) },
+      {
+        key: 'frameleafCloud',
+        value: {
+          cloudMl: expect.objectContaining({
+            enabled: true,
+            models: expect.objectContaining({ descriptions: 'file-model' }),
+          }),
+        },
+      },
       { key: 'smartAlbums', value: expect.objectContaining({ enabled: true }) },
     ]);
   });
 
   it('deep-merges a locked partial database config into complete validated fork fields', async () => {
     const preLockEffective = structuredClone(defaults);
-    preLockEffective.machineLearning.runpod.serverless.gpuTypeIds.push('STALE_GPU');
+    preLockEffective.frameleafCloud.cloudMl.models.descriptions = 'stale-model';
     preLockEffective.smartAlbums.builtIn.travel.tagTriggers.push('stale-tag');
     preLockEffective.smartAlbums.builtIn.travel.clipQueries.push('stale query');
     await db
@@ -597,7 +605,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
       .values({
         key: SystemMetadataKey.SystemConfig,
         value: {
-          machineLearning: { runpod: { enabled: true, serverless: { gpuTypeIds: ['LOCKED_GPU'] } } },
+          frameleafCloud: { cloudMl: { enabled: true, models: { descriptions: 'locked-model' } } },
           smartAlbums: {
             enabled: true,
             builtIn: { travel: { tagTriggers: ['locked-tag'], clipQueries: ['locked query'] } },
@@ -609,16 +617,16 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
     await sql`UPDATE immich_fork.state SET phase = 'active', active = true WHERE id = 1`.execute(db);
 
     const complete = await new ForkSchemaRepository(db).overlayConfig(structuredClone(defaults));
-    const expectedRunpod = structuredClone(defaults.machineLearning.runpod);
-    expectedRunpod.enabled = true;
-    expectedRunpod.serverless.gpuTypeIds = ['LOCKED_GPU'];
+    const expectedCloud = structuredClone(defaults.frameleafCloud);
+    expectedCloud.cloudMl.enabled = true;
+    expectedCloud.cloudMl.models.descriptions = 'locked-model';
     const expectedSmartAlbums = structuredClone(defaults.smartAlbums);
     expectedSmartAlbums.enabled = true;
     expectedSmartAlbums.builtIn.travel.tagTriggers = ['locked-tag'];
     expectedSmartAlbums.builtIn.travel.clipQueries = ['locked query'];
-    expect(complete.machineLearning.runpod).toEqual(expectedRunpod);
+    expect(complete.frameleafCloud).toEqual(expectedCloud);
     expect(complete.smartAlbums).toEqual(expectedSmartAlbums);
-    expect(complete.machineLearning.runpod.serverless.gpuTypeIds).toEqual(['LOCKED_GPU']);
+    expect(complete.frameleafCloud.cloudMl.models.descriptions).toEqual('locked-model');
     expect(complete.smartAlbums.builtIn.travel.tagTriggers).toEqual(['locked-tag']);
     expect(complete.smartAlbums.builtIn.travel.clipQueries).toEqual(['locked query']);
   });
@@ -633,38 +641,38 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
       forkSchemaRepo,
     };
     const legacy = structuredClone(defaults);
-    legacy.machineLearning.runpod.enabled = false;
+    legacy.frameleafCloud.cloudMl.enabled = false;
     await metadataRepo.set(SystemMetadataKey.SystemConfig, legacy);
     await forkSchemaRepo.setPhase('dual-write');
     await new ForkConfigRepository(db).mirrorConfig({
       ...legacy,
-      machineLearning: { ...legacy.machineLearning, runpod: { ...legacy.machineLearning.runpod, enabled: true } },
+      frameleafCloud: { cloudMl: { ...legacy.frameleafCloud.cloudMl, enabled: true } },
     });
     clearConfigCache();
     await expect(getConfig(repos, { withCache: false })).resolves.toMatchObject({
-      machineLearning: { runpod: { enabled: false } },
+      frameleafCloud: { cloudMl: { enabled: false } },
     });
 
     await sql`UPDATE immich_fork.state SET phase = 'ready' WHERE id = 1`.execute(db);
     await expect(getConfig(repos, { withCache: true })).resolves.toMatchObject({
-      machineLearning: { runpod: { enabled: false } },
+      frameleafCloud: { cloudMl: { enabled: false } },
     });
 
     await sql`UPDATE immich_fork.state SET phase = 'active', active = true WHERE id = 1`.execute(db);
     await expect(getConfig(repos, { withCache: true })).resolves.toMatchObject({
-      machineLearning: { runpod: { enabled: true } },
+      frameleafCloud: { cloudMl: { enabled: true } },
     });
 
-    await sql`UPDATE immich_fork.config SET value = jsonb_set(value, '{enabled}', 'false')
-      WHERE key = 'machineLearning.runpod'`.execute(db);
+    await sql`UPDATE immich_fork.config SET value = jsonb_set(value, '{cloudMl,enabled}', 'false')
+      WHERE key = 'frameleafCloud'`.execute(db);
     const independentRepos = { ...repos, forkSchemaRepo: new ForkSchemaRepository(db) };
     await expect(getConfig(independentRepos, { withCache: true })).resolves.toMatchObject({
-      machineLearning: { runpod: { enabled: false } },
+      frameleafCloud: { cloudMl: { enabled: false } },
     });
 
     await forkSchemaRepo.setPhase('dual-write');
-    await sql`UPDATE immich_fork.config SET value = jsonb_set(value, '{enabled}', 'true')
-      WHERE key = 'machineLearning.runpod'`.execute(db);
+    await sql`UPDATE immich_fork.config SET value = jsonb_set(value, '{cloudMl,enabled}', 'true')
+      WHERE key = 'frameleafCloud'`.execute(db);
     clearConfigCache();
     let resumeBaseBuild!: () => void;
     let markBaseBuildPaused!: () => void;
@@ -683,7 +691,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
     await sql`UPDATE immich_fork.state SET phase = 'active', active = true WHERE id = 1`.execute(db);
     resumeBaseBuild();
     await expect(spanningBuild).resolves.toMatchObject({
-      machineLearning: { runpod: { enabled: true } },
+      frameleafCloud: { cloudMl: { enabled: true } },
     });
   });
 
@@ -698,10 +706,10 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
     };
     await forkSchemaRepo.setPhase('dual-write');
     const first = structuredClone(defaults);
-    first.machineLearning.runpod.apiKey = 'first';
+    first.frameleafCloud.cloudMl.models.descriptions = 'first';
     first.smartAlbums.enabled = true;
     const second = structuredClone(defaults);
-    second.machineLearning.runpod.apiKey = 'second';
+    second.frameleafCloud.cloudMl.models.descriptions = 'second';
     second.smartAlbums.enabled = false;
     await Promise.all([updateConfig(repos, first), updateConfig(repos, second)]);
 
@@ -711,9 +719,9 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
       { withCache: false },
     );
     const official = await metadataRepo.get(SystemMetadataKey.SystemConfig);
-    const forkRunpod = await new ForkConfigRepository(db).get('machineLearning.runpod');
+    const forkCloud = await new ForkConfigRepository(db).get('frameleafCloud');
     const forkSmartAlbums = await new ForkConfigRepository(db).get('smartAlbums');
-    expect(forkRunpod).toEqual(officialEffective.machineLearning.runpod);
+    expect(forkCloud).toEqual(officialEffective.frameleafCloud);
     expect(forkSmartAlbums).toEqual(officialEffective.smartAlbums);
 
     const before = structuredClone(official);
