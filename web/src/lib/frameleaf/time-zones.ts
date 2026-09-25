@@ -51,8 +51,19 @@ const genericName = (zone: string, at: Date, locale?: string): string | undefine
   }
 };
 
-export const timeZoneLabel = (zone: string, at: Date, locale?: string): { label: string; offsetMinutes: number } => {
-  const offsetMinutes = DateTime.fromJSDate(at, { zone }).offset;
+/**
+ * A zone's label and offset for a wall time (`yyyy-MM-ddTHH:mm`) on that zone's own clock, so a date
+ * across a daylight-saving change reads the offset that date really has there.
+ */
+export const timeZoneLabel = (
+  zone: string,
+  wallTime: string,
+  locale?: string,
+): { label: string; offsetMinutes: number } => {
+  const local = DateTime.fromISO(wallTime, { zone });
+  const moment = local.isValid ? local : DateTime.now().setZone(zone);
+  const offsetMinutes = moment.offset;
+  const at = moment.toJSDate();
   if (zone === 'UTC') {
     return { label: 'UTC', offsetMinutes: 0 };
   }
@@ -63,13 +74,14 @@ export const timeZoneLabel = (zone: string, at: Date, locale?: string): { label:
 
 /**
  * Every zone as a friendly choice, ordered west to east and then by name, with UTC first as in the
- * prototype. `at` is the moment being set, so a zone's offset reflects daylight saving on that date.
+ * prototype. `wallTime` is the date and time being set, so each zone's offset is the one that wall
+ * time has there (daylight saving included).
  */
 export const timeZoneChoices = ({
-  at = new Date(),
+  wallTime = DateTime.now().toFormat("yyyy-MM-dd'T'HH:mm"),
   locale,
   zones = supportedZones(),
-}: { at?: Date; locale?: string; zones?: readonly string[] } = {}): TimeZoneChoice[] => {
+}: { wallTime?: string; locale?: string; zones?: readonly string[] } = {}): TimeZoneChoice[] => {
   const seen = new Set<string>();
   const choices: TimeZoneChoice[] = [];
   for (const zone of zones) {
@@ -78,7 +90,7 @@ export const timeZoneChoices = ({
       continue;
     }
     seen.add(zone);
-    choices.push({ value: zone, ...timeZoneLabel(zone, at, locale) });
+    choices.push({ value: zone, ...timeZoneLabel(zone, wallTime, locale) });
   }
   choices.sort((a, b) => a.offsetMinutes - b.offsetMinutes || a.label.localeCompare(b.label, locale));
   return [{ value: 'UTC', label: 'UTC', offsetMinutes: 0 }, ...choices];
@@ -88,4 +100,33 @@ export const timeZoneChoices = ({
 export const splitLocalDateTime = (value: string | undefined): { date: string; time: string } | null => {
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(value ?? '');
   return match ? { date: match[1], time: match[2] } : null;
+};
+
+/** The browser's own zone. */
+export const browserTimeZone = (): string => {
+  try {
+    return new Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+};
+
+/**
+ * A zone for an item known only by its UTC offset (the timeline carries offsets, not zone names):
+ * the browser's own zone when it has that offset then, else the first place listed with it, else
+ * UTC. Upstream's date dialog guesses the same way (`getPreferredTimeZone`).
+ */
+export const zoneForOffset = (
+  choices: readonly TimeZoneChoice[],
+  offsetMinutes: number,
+  preferred = browserTimeZone(),
+) =>
+  choices.find((choice) => choice.value === preferred && choice.offsetMinutes === offsetMinutes) ??
+  choices.find((choice) => choice.offsetMinutes === offsetMinutes && choice.value !== 'UTC') ??
+  choices.find((choice) => choice.value === 'UTC');
+
+/** A wall time in a zone as ISO with that zone's offset then: `2024-12-11T18:42:00-08:00`. */
+export const wallTimeInZone = (wallTime: string, zone: string): string | null => {
+  const local = DateTime.fromISO(wallTime, { zone });
+  return local.isValid ? local.toISO({ suppressMilliseconds: true, includeOffset: true }) : null;
 };

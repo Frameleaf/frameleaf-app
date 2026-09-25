@@ -1,5 +1,5 @@
 import { SharedLinkType } from '@immich/sdk';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { handleCreateSharedLink } from '$lib/services/shared-link.service';
 import en from '../../../../../i18n/en.json';
@@ -94,5 +94,52 @@ describe('one toolbar while selecting (September 24)', () => {
     render(SelectionBar, { props: baseProps() });
 
     expect(screen.getByRole('button', { name: en.frameleaf_bulk_favorite })).not.toHaveClass('icon-only');
+  });
+});
+
+describe('actions started from the library keys and tiles (FL-33, T-5)', () => {
+  it('asks before a Locked item is deleted permanently, and reports a cancel', async () => {
+    addMessages('dev', en);
+    const onAction = vi.fn();
+    const onDialogSettled = vi.fn();
+    const { component } = render(SelectionBar, {
+      props: {
+        count: 1,
+        assets: [{ id: 'a', ownerId: 'me', isLocked: true }],
+        context: { currentUserId: 'me', locked: true },
+        onAction,
+        onClear: vi.fn(),
+        onDialogSettled,
+      },
+    });
+
+    component.performAction('delete-permanently');
+    const dialog = await screen.findByRole('dialog', { name: en.frameleaf_bulk_delete_permanently });
+    expect(onAction).not.toHaveBeenCalled();
+
+    await fireEvent.click(within(dialog).getAllByRole('button', { name: en.cancel }).at(-1)!);
+    await vi.waitFor(() => expect(onDialogSettled).toHaveBeenCalledWith('delete-permanently', false));
+    expect(onAction).not.toHaveBeenCalled();
+
+    component.performAction('delete-permanently');
+    const again = await screen.findByRole('dialog', { name: en.frameleaf_bulk_delete_permanently });
+    await fireEvent.click(within(again).getByRole('button', { name: en.frameleaf_bulk_delete_permanently }));
+    expect(onAction).toHaveBeenCalledWith('delete-permanently', undefined);
+    expect(onDialogSettled).toHaveBeenLastCalledWith('delete-permanently', true);
+  });
+
+  it('never runs an action the bar does not offer (favorite on the Locked page)', () => {
+    const onAction = vi.fn();
+    const { component } = render(SelectionBar, {
+      props: {
+        count: 1,
+        assets: [{ id: 'a', ownerId: 'me', isLocked: true }],
+        context: { currentUserId: 'me', locked: true },
+        onAction,
+        onClear: vi.fn(),
+      },
+    });
+    component.performAction('favorite');
+    expect(onAction).not.toHaveBeenCalled();
   });
 });

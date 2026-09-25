@@ -95,6 +95,8 @@ export type BulkAsset = {
    * dialog opens on (prototype `ChangeDateDialog` reads the first selected item's `takenAt`).
    */
   localDateTime?: string;
+  /** The item's UTC offset in minutes, so "keep each item's time zone" can keep it (FL-32). */
+  utcOffsetMinutes?: number;
 };
 
 export const toBulkAsset = (asset: AssetResponseDto): BulkAsset => ({

@@ -2,30 +2,42 @@
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   import type { ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
+  import type { BulkAsset } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
-  import { splitLocalDateTime, timeZoneChoices } from '$lib/frameleaf/time-zones';
-  import { DateTime } from 'luxon';
+  import {
+    browserTimeZone,
+    splitLocalDateTime,
+    timeZoneChoices,
+    wallTimeInZone,
+    zoneForOffset,
+  } from '$lib/frameleaf/time-zones';
   import { locale, t } from 'svelte-i18n';
 
   /**
    * Change date, ported from the prototype's `ChangeDateDialog` (`SelectionBar.jsx`). Both modes bind
-   * to the one bulk update endpoint: "set the same date" sends `dateTimeOriginal` with an optional
-   * IANA time zone, and "shift all by" sends `dateTimeRelative` in minutes, which keeps each item's
-   * spacing.
+   * to the one bulk update endpoint: "set the same date" and "shift all by" (`dateTimeRelative` in
+   * minutes, which keeps each item's spacing).
    *
    * As in the prototype the dialog opens on the first selected item's own date and time, and the
    * time zone list names places ("Vancouver (Pacific Time · UTC−07:00)") rather than raw IANA ids.
-   * Every zone the browser knows is offered, so the list is searchable (the Frameleaf `Picker`).
+   * Every zone the browser knows is offered, so the list is searchable (the Frameleaf `Picker`), and
+   * each offset is the one the chosen date has in that zone.
+   *
+   * The time sent always carries an offset, so nothing is read as UTC by accident: a chosen zone
+   * sends the wall time at that zone's offset (as the upstream date dialog does), and "Keep each
+   * item's time zone" sends the wall time at each item's own offset. Keeping needs every item's
+   * offset, so it is offered only when the whole selection is loaded; otherwise the list opens on
+   * the first item's zone.
    */
   let {
     count,
-    /** The first selected item's capture date and time on its own clock (`yyyy-MM-ddTHH:mm`). */
-    initialDateTime,
+    /** The selected items, when every one of them is loaded; empty for a "select all matching" set. */
+    assets = [],
     open = $bindable(true),
     onSubmit,
   }: {
     count: number;
-    initialDateTime?: string;
+    assets?: BulkAsset[];
     open?: boolean;
     onSubmit: (payload: BulkPayload) => void;
   } = $props();
@@ -33,7 +45,14 @@
   const MINUTES_PER_UNIT = { minutes: 1, hours: 60, days: 1440 };
   const KEEP = 'keep';
 
-  const initial = splitLocalDateTime(initialDateTime);
+  const first = assets[0];
+  const initial = splitLocalDateTime(first?.localDateTime);
+  /** Each item's own offset, when every selected item's is known. */
+  const offsets: Record<string, number> | null =
+    assets.length > 0 && assets.length === count && assets.every((asset) => Number.isFinite(asset.utcOffsetMinutes))
+      ? Object.fromEntries(assets.map((asset) => [asset.id, asset.utcOffsetMinutes as number]))
+      : null;
+
   let mode = $state<'set' | 'shift'>('set');
   let date = $state(initial?.date ?? '');
   let time = $state(initial?.time ?? '12:00');
@@ -41,34 +60,37 @@
   let unit = $state<'minutes' | 'hours' | 'days'>('hours');
   let direction = $state<'later' | 'earlier'>('later');
 
-  const keepOption = $derived<ComboBoxOption>({
-    id: KEEP,
-    value: KEEP,
-    label: $t('frameleaf_bulk_date_keep_time_zone'),
-  });
-  let zone = $state<ComboBoxOption>();
-  const selectedZone = $derived(zone ?? keepOption);
-
   let minutes = $derived(MINUTES_PER_UNIT[unit] * Number(amount) * (direction === 'earlier' ? -1 : 1));
   let valid = $derived(
     mode === 'set'
       ? /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(time)
       : Number.isFinite(Number(amount)) && Number(amount) > 0,
   );
+  const wallTime = $derived(`${date}T${time}`);
 
-  /** Offsets follow daylight saving on the date being set, as the upstream picker did. */
-  const moment = $derived.by(() => {
-    const parsed = valid && mode === 'set' ? DateTime.fromISO(`${date}T${time}`, { zone: 'utc' }) : null;
-    return parsed?.isValid ? parsed.toJSDate() : new Date();
+  const choices = $derived(
+    timeZoneChoices({ wallTime: valid && mode === 'set' ? wallTime : undefined, locale: $locale ?? undefined }),
+  );
+  const keepOption = $derived<ComboBoxOption>({
+    id: KEEP,
+    value: KEEP,
+    label: $t('frameleaf_bulk_date_keep_time_zone'),
   });
   const zoneOptions = $derived<ComboBoxOption[]>([
-    keepOption,
-    ...timeZoneChoices({ at: moment, locale: $locale ?? undefined }).map((choice) => ({
-      id: choice.value,
-      value: choice.value,
-      label: choice.label,
-    })),
+    ...(offsets ? [keepOption] : []),
+    ...choices.map((choice) => ({ id: choice.value, value: choice.value, label: choice.label })),
   ]);
+
+  /** The chosen zone by id; its label is read from the current options, so a date change relabels it. */
+  let zoneValue = $state<string>(
+    offsets
+      ? KEEP
+      : ((first?.utcOffsetMinutes === undefined
+          ? undefined
+          : zoneForOffset(timeZoneChoices({ wallTime: first?.localDateTime }), first.utcOffsetMinutes)?.value) ??
+          browserTimeZone()),
+  );
+  const selectedZone = $derived(zoneOptions.find((option) => option.value === zoneValue) ?? zoneOptions[0]);
 
   let preview = $derived(
     valid
@@ -80,16 +102,21 @@
       : $t('frameleaf_bulk_date_incomplete'),
   );
 
-  const submit = () =>
-    onSubmit(
-      mode === 'set'
-        ? {
-            dateMode: 'set',
-            dateTimeOriginal: `${date}T${time.length === 5 ? `${time}:00` : time}`,
-            ...(selectedZone.value !== KEEP && { timeZone: selectedZone.value }),
-          }
-        : { dateMode: 'shift', minutes },
-    );
+  const submit = () => {
+    if (mode === 'shift') {
+      onSubmit({ dateMode: 'shift', minutes });
+      return;
+    }
+    if (selectedZone?.value === KEEP && offsets) {
+      onSubmit({ dateMode: 'set', dateTimeOriginal: wallTime, offsetMinutesById: offsets });
+      return;
+    }
+    const zone = selectedZone?.value ?? browserTimeZone();
+    const dateTimeOriginal = wallTimeInZone(wallTime, zone);
+    if (dateTimeOriginal) {
+      onSubmit({ dateMode: 'set', dateTimeOriginal, timeZone: zone });
+    }
+  };
 </script>
 
 <BulkFormDialog
@@ -122,7 +149,11 @@
         label={$t('frameleaf_bulk_date_time_zone')}
         options={zoneOptions}
         selectedOption={selectedZone}
-        onSelect={(option) => (zone = option ?? keepOption)}
+        onSelect={(option) => {
+          if (option) {
+            zoneValue = option.value;
+          }
+        }}
       />
     </div>
   {:else}

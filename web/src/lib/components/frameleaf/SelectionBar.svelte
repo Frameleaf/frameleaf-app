@@ -57,6 +57,7 @@
     mdiTagPlusOutline,
     mdiTextBoxOutline,
   } from '@mdi/js';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
 
@@ -133,6 +134,7 @@
     onRetryOperation,
     onDismissOperation,
     leading = [],
+    onDialogSettled,
   }: {
     count?: number;
     total?: number | null;
@@ -152,6 +154,8 @@
     onDismissOperation?: (requestId: string) => void;
     /** The page's own actions, labelled, ahead of the bulk actions (SelectionBar.jsx `leading`). */
     leading?: SelectionBarLeadingAction[];
+    /** An action's dialog closed: submitted, or cancelled. */
+    onDialogSettled?: (id: BulkActionId, submitted: boolean) => void;
   } = $props();
 
   let menuOpen = $state(false);
@@ -230,13 +234,17 @@
   const submitDialog = (id: BulkActionId, payload?: BulkPayload) => {
     dialog = null;
     dialogOpen = false;
+    onDialogSettled?.(id, true);
     onAction(id, payload);
   };
 
   $effect(() => {
-    if (!dialogOpen && dialog) {
-      dialog = null;
+    if (dialogOpen || !dialog) {
+      return;
     }
+    const cancelled = dialog;
+    dialog = null;
+    untrack(() => onDialogSettled?.(cancelled, false));
   });
 
   const closeMenu = () => {
@@ -447,7 +455,7 @@
 {#if dialog === 'change-date'}
   <BulkDateDialog
     {count}
-    initialDateTime={assets[0]?.localDateTime}
+    assets={assets.length === count ? assets : []}
     bind:open={dialogOpen}
     onSubmit={(payload) => submitDialog('change-date', payload)}
   />

@@ -30,6 +30,11 @@ export type CommonLayoutOptions = {
    * upstream layouts leave that row ragged.
    */
   fillRowWidth?: boolean;
+  /**
+   * Frameleaf (FL-33, T-7): space for a caption under every row. Tiles keep the row height; the next
+   * row starts this much lower and the group grows by it per row. Honoured by the filling layout.
+   */
+  captionHeight?: number;
 };
 
 export function getJustifiedLayoutFromAssets(
