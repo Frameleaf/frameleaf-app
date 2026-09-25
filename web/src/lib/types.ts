@@ -33,11 +33,6 @@ export type UploadAsset = {
   message?: string;
 };
 
-export enum OnboardingRole {
-  SERVER = 'server',
-  USER = 'user',
-}
-
 export type SearchCameraFilter = {
   make?: string;
   model?: string;
