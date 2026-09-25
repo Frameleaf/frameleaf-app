@@ -317,12 +317,16 @@ describe(FrameleafLicenseService.name, () => {
         licensedDiscount: 0.2,
         storeUrl: `${cloud.url}/store`,
         backup: { usdPerTbMonth: 7.99, minimumTb: 1 },
+        credit: { minimumUsd: 20, maximumUsd: 500 },
       });
       expect(products.products.map(({ id, priceUsd }) => [id, priceUsd])).toEqual([
         ['cloud-monthly', 6],
         ['cloud-annual', 60],
         ['supporter-server', 100],
         ['supporter-individual', 25],
+        ['credit-25', 25],
+        ['credit-50', 50],
+        ['credit-100', 100],
       ]);
       expect(products.products[2].storeUrl).toBe(`${cloud.url}/store?product=supporter-server`);
       expect(fetchSpy).not.toHaveBeenCalled();

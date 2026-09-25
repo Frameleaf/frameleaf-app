@@ -16,8 +16,10 @@
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import OnboardingBackup from './OnboardingBackup.svelte';
   import OnboardingDone from './OnboardingDone.svelte';
+  import OnboardingFrameleafAccount from './OnboardingFrameleafAccount.svelte';
   import OnboardingHello from './OnboardingHello.svelte';
   import OnboardingLanguage from './OnboardingLanguage.svelte';
+  import OnboardingLicense from './OnboardingLicense.svelte';
   import OnboardingMobileApp from './OnboardingMobileApp.svelte';
   import OnboardingServerPrivacy from './OnboardingServerPrivacy.svelte';
   import OnboardingStorageTemplate from './OnboardingStorageTemplate.svelte';
@@ -32,6 +34,7 @@
     type OnboardingStepId,
   } from '$lib/frameleaf/onboarding';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { languageManager } from '$lib/managers/language-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
@@ -55,6 +58,8 @@
     server_privacy: OnboardingServerPrivacy,
     user_privacy: OnboardingUserPrivacy,
     storage_template: OnboardingStorageTemplate,
+    frameleaf_account: OnboardingFrameleafAccount,
+    license: OnboardingLicense,
     backup: OnboardingBackup,
     mobile_app: OnboardingMobileApp,
     done: OnboardingDone,
@@ -204,7 +209,10 @@
           <span class="auth-note">{$t('frameleaf_onboarding_keyboard_note')}</span>
           {#if index < last}
             <button type="button" class="button primary" onclick={() => go(index + 1)}>
-              {$t('next')}
+              <!-- AuthScreens.jsx:1553-1555: the optional account step reads "Skip" until linked -->
+              {step.id === 'frameleaf_account' && cloudManager.status?.state !== 'linked'
+                ? $t('frameleaf_onboarding_skip')
+                : $t('next')}
               <Icon icon={languageManager.rtl ? mdiArrowLeft : mdiArrowRight} size="16" aria-hidden={true} />
             </button>
           {:else}

@@ -4,16 +4,12 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
 import PasswordDialog from '$lib/components/frameleaf/access/PasswordDialog.svelte';
 import PinDialog from '$lib/components/frameleaf/access/PinDialog.svelte';
-import SupporterKeyDialog from '$lib/components/frameleaf/access/SupporterKeyDialog.svelte';
+import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { getActivationKey } from '$lib/utils/license-utils';
-
-vi.mock('$lib/utils/license-utils', () => ({
-  getActivationKey: vi.fn(),
-}));
 
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
-  featureFlagsManager: { value: { passwordLogin: true } },
+  featureFlagsManager: { value: { passwordLogin: true, supporter: false }, init: vi.fn() },
 }));
 
 const pinInput = (label: string) => screen.getByLabelText<HTMLInputElement>(label);
@@ -21,7 +17,6 @@ const typeInto = (element: HTMLElement, value: string) => fireEvent.input(elemen
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(getActivationKey).mockResolvedValue('activation-key');
 });
 
 describe('PasswordDialog (FL-67)', () => {
@@ -141,40 +136,60 @@ describe('ApiKeyDialog (FL-67)', () => {
   });
 });
 
-describe('SupporterKeyDialog (FL-67)', () => {
-  it('activates a personal key for this account only', async () => {
-    sdkMock.setUserLicense.mockResolvedValue({} as never);
-    render(SupporterKeyDialog, { kind: 'personal', onClose: vi.fn() });
+describe('SupporterSection (FL-157)', () => {
+  const user = (license: unknown) =>
+    ({ id: 'user-1', name: 'Taylor', email: 't@example.test', isAdmin: false, license }) as never;
+  const preferences = { purchase: { showSupportBadge: true } } as never;
 
-    await typeInto(screen.getByLabelText('frameleaf_access_supporter_key'), 'IMCL-AAAA-BBBB');
-    await fireEvent.click(screen.getAllByRole('button', { name: 'frameleaf_access_supporter_activate' }).at(-1)!);
+  beforeEach(() => {
+    vi.spyOn(authManager, 'user', 'get').mockReturnValue(user(null));
+    vi.spyOn(authManager, 'preferences', 'get').mockReturnValue(preferences);
+    vi.spyOn(authManager, 'setUser').mockImplementation(() => {});
+    vi.spyOn(authManager, 'setPreferences').mockImplementation(() => {});
+  });
+
+  it('activates a personal FL-I key in the request body only', async () => {
+    sdkMock.setUserLicense.mockResolvedValue({ kind: 'individual', keyHint: '8ELH', activatedAt: new Date() } as never);
+    sdkMock.getMyUser.mockResolvedValue(user({ kind: 'individual', keyHint: '8ELH', activatedAt: new Date() }));
+    render(SupporterSection);
+
+    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'FL-IC8Q-BT2Q-8ELH');
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_buy_activate' }));
 
     await waitFor(() =>
-      expect(sdkMock.setUserLicense).toHaveBeenCalledWith({
-        licenseKeyDto: { licenseKey: 'IMCL-AAAA-BBBB', activationKey: 'activation-key' },
+      expect(sdkMock.setUserLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-IC8Q-BT2Q-8ELH' } }),
+    );
+    expect(sdkMock.activateLicense).not.toHaveBeenCalled();
+  });
+
+  it('refuses a server key and an upstream key before sending anything', async () => {
+    render(SupporterSection);
+
+    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'FL-S8NL-49G8-J58U');
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_buy_activate' }));
+    expect(await screen.findByText('frameleaf_buy_server_key_elsewhere')).toBeInTheDocument();
+
+    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'IMCL-AAAA-BBBB-CCCC');
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_buy_activate' }));
+    expect(await screen.findByText('frameleaf_license_key_error_upstream')).toBeInTheDocument();
+    expect(sdkMock.setUserLicense).not.toHaveBeenCalled();
+  });
+
+  it('shows the activated key with the badge switch, and hides the badge with the right sense', async () => {
+    vi.spyOn(authManager, 'user', 'get').mockReturnValue(
+      user({ kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T00:00:00.000Z' }),
+    );
+    sdkMock.updateMyPreferences.mockResolvedValue(preferences);
+    render(SupporterSection);
+
+    expect(screen.queryByPlaceholderText('FL-XXXX-XXXX-XXXX')).toBeNull();
+    const toggle = screen.getByRole('switch', { name: 'frameleaf_buy_hide_badge' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
+        userPreferencesUpdateDto: { purchase: { showSupportBadge: false } },
       }),
     );
-    expect(sdkMock.setServerLicense).not.toHaveBeenCalled();
-  });
-
-  it('refuses a server key in the personal activation', async () => {
-    render(SupporterKeyDialog, { kind: 'personal', onClose: vi.fn() });
-
-    await typeInto(screen.getByLabelText('frameleaf_access_supporter_key'), 'IMSV-AAAA-BBBB');
-
-    expect(screen.getByText('frameleaf_access_supporter_key_wrong_kind')).toBeInTheDocument();
-    const submit = screen.getAllByRole('button', { name: 'frameleaf_access_supporter_activate' }).at(-1)!;
-    expect(submit.hasAttribute('disabled')).toBe(true);
-  });
-
-  it('registers a server key for the server only', async () => {
-    sdkMock.setServerLicense.mockResolvedValue({} as never);
-    render(SupporterKeyDialog, { kind: 'server', onClose: vi.fn() });
-
-    await typeInto(screen.getByLabelText('frameleaf_access_supporter_key'), 'IMSV-AAAA-BBBB');
-    await fireEvent.click(screen.getAllByRole('button', { name: 'frameleaf_access_server_key_register' }).at(-1)!);
-
-    await waitFor(() => expect(sdkMock.setServerLicense).toHaveBeenCalled());
-    expect(sdkMock.setUserLicense).not.toHaveBeenCalled();
   });
 });

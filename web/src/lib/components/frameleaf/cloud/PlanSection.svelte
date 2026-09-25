@@ -47,7 +47,8 @@
   const license = $derived(cloudManager.license);
   const products = $derived(cloudManager.products);
   const plan = $derived(license?.plan ?? null);
-  const licensed = $derived(!!license?.licensed && !!license.key);
+  // FL-156: a licensed server (a supporter key) pays 20 % less for plans; AI credit never changes
+  const licensed = $derived(!!license?.entitlements.supporter);
   const linked = $derived(!!license?.linked);
   const plans = $derived(products?.products.filter((product) => product.kind === 'plan') ?? []);
   const pct = `${Math.round(LICENSED_DISCOUNT * 100)}%`;

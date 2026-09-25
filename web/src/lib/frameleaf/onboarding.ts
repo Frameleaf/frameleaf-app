@@ -16,6 +16,8 @@ export type OnboardingStepId =
   | 'server_privacy'
   | 'user_privacy'
   | 'storage_template'
+  | 'frameleaf_account'
+  | 'license'
   | 'backup'
   | 'mobile_app'
   | 'done';
@@ -29,7 +31,10 @@ export type OnboardingStep = {
   short: Translations;
 };
 
-/** Prototype order: Welcome → Language → Theme → Server privacy → Your privacy → Storage → Backup → Mobile app → Done. */
+/**
+ * Prototype order: Welcome → Language → Theme → Server privacy → Your privacy → Storage → Frameleaf
+ * account → Plan & licence → Backup → Mobile app → Done (11 steps for the first administrator).
+ */
 export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
     id: 'hello',
@@ -51,6 +56,19 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
     role: OnboardingRole.SERVER,
     title: 'frameleaf_onboarding_storage_title',
     short: 'frameleaf_onboarding_storage_short',
+  },
+  // FL-158 / FL-157: optional server steps after Storage (AuthScreens.jsx:1219-1352, system-data.mjs:500-501)
+  {
+    id: 'frameleaf_account',
+    role: OnboardingRole.SERVER,
+    title: 'frameleaf_onboarding_account_title',
+    short: 'frameleaf_onboarding_account_short',
+  },
+  {
+    id: 'license',
+    role: OnboardingRole.SERVER,
+    title: 'frameleaf_onboarding_license_title',
+    short: 'frameleaf_onboarding_license_short',
   },
   {
     id: 'backup',

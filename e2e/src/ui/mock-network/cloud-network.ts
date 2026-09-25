@@ -72,6 +72,9 @@ export const setupCloudMockApiRoutes = async (context: BrowserContext, mock: Clo
     } else if (method === 'DELETE' && path === 'admin/cloud/link') {
       mock.state = 'unlinked';
     }
-    return route.fulfill({ status: method === 'POST' && path === 'admin/cloud/link' ? 201 : 200, json: cloudStatus(mock) });
+    return route.fulfill({
+      status: method === 'POST' && path === 'admin/cloud/link' ? 201 : 200,
+      json: cloudStatus(mock),
+    });
   });
 };

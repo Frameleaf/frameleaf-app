@@ -87,7 +87,7 @@ const LicenseCertificateSchema = z
 const LicenseProductSchema = z
   .object({
     id: z.string(),
-    kind: z.enum(['plan', 'supporter']),
+    kind: z.enum(['plan', 'supporter', 'credit']),
     period: z.enum(['month', 'year', 'one-time']),
     priceUsd: z.number().meta({ format: 'double' }),
     storeUrl: z.string().nullable().describe('Where to buy it; null when no store is configured'),
@@ -100,6 +100,12 @@ const LicenseProductsResponseSchema = z
     licensedDiscount: z.number().meta({ format: 'double' }).describe('Share taken off plans on a licensed server'),
     storeUrl: z.string().nullable().describe('The store this server was deployed with; null when there is none'),
     products: z.array(LicenseProductSchema),
+    credit: z
+      .object({
+        minimumUsd: z.number().meta({ format: 'double' }),
+        maximumUsd: z.number().meta({ format: 'double' }),
+      })
+      .describe('AI credit top-ups the store accepts; credit is never discounted'),
     backup: z
       .object({
         usdPerTbMonth: z.number().meta({ format: 'double' }),
