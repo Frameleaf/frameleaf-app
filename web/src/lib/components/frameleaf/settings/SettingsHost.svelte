@@ -56,9 +56,11 @@
   import {
     AnalyticsScopeKind,
     getAdminConfigHistory,
+    getMyPreferenceHistory,
     getAnalyticsScopes,
     type AnalyticsScopeOptionDto,
     type SystemConfigHistoryEntryDto,
+    type UserPreferenceHistoryEntryDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
@@ -416,6 +418,23 @@
     }
   });
 
+  // FL-71 (CC-10): every account's own preference history, read when the area opens.
+  let preferenceHistory = $state<UserPreferenceHistoryEntryDto[] | null>(null);
+  let preferenceHistoryError = $state(false);
+  const loadPreferenceHistory = async () => {
+    try {
+      preferenceHistory = (await getMyPreferenceHistory()).entries;
+      preferenceHistoryError = false;
+    } catch {
+      preferenceHistoryError = true;
+    }
+  };
+  $effect(() => {
+    if (area === 'history') {
+      untrack(() => void loadPreferenceHistory());
+    }
+  });
+
   // The "Viewing" choices an administrator has: the server, each account and each library.
   let scopes = $state<AnalyticsScopeOptionDto[]>([]);
   $effect(() => {
@@ -686,10 +705,20 @@
             <CommandCenterOverview />
           {:else if area === 'history'}
             <SettingsChangeHistory
-              entries={history}
-              error={historyError}
-              onRetry={() => void loadHistory()}
-              onConfigure={() => navigate('processing')}
+              entries={settingsDraft ? history : undefined}
+              preferences={preferenceHistory}
+              ownName={authManager.user.name}
+              error={historyError || preferenceHistoryError}
+              onRetry={() => {
+                if (settingsDraft) {
+                  void loadHistory();
+                }
+                void loadPreferenceHistory();
+              }}
+              onConfigure={() => navigate(settingsDraft ? 'processing' : 'preferences')}
+              configureLabel={settingsDraft
+                ? $t('frameleaf_settings_history_empty_action')
+                : $t('frameleaf_settings_history_empty_preferences_action')}
             />
           {:else if selected}
             <div class="cc-settings-content">
