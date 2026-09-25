@@ -36,6 +36,22 @@ const asNotification = (
   };
 };
 
+const MANUAL_CHECK_INTERVAL_SECONDS = 60;
+
+const checkedWithin = (state: VersionCheckMetadata | null | undefined, seconds: number) =>
+  !!state?.checkedAt && DateTime.now().diff(DateTime.fromISO(state.checkedAt)).as('seconds') < seconds;
+
+/** The error and its causes, so a log names the HTTP status and any rate-limit reset. */
+const describeError = (error: unknown): string => {
+  const parts: string[] = [];
+  let current: unknown = error;
+  while (current && parts.length < 4) {
+    parts.push(current instanceof Error ? current.message : String(current));
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return parts.join(' <- ');
+};
+
 /**
  * Version history and the Frameleaf version check (FL-80 S-4 / O-8). The owner's privacy direction
  * applies to Immich-origin calls only (FL-146, 2026-09-25): the check asks Frameleaf's own GitHub
@@ -50,7 +66,9 @@ export class VersionService extends BaseService {
   async onBootstrap(): Promise<void> {
     const hasLock = await this.databaseRepository.tryLock(DatabaseLock.VersionCheck);
     if (hasLock) {
-      await this.handleVersionCheck();
+      // The first check runs in the background: a slow or unreachable release feed must never delay
+      // the cron setup or the rest of the bootstrap (the lookup itself gives up after 10 seconds).
+      handlePromiseError(this.handleVersionCheck(), this.logger);
 
       const randomMinute = Math.floor(Math.random() * 60);
       const expression = `${randomMinute} * * * *`;
@@ -119,17 +137,13 @@ export class VersionService extends BaseService {
       }
 
       const versionCheck = await this.systemMetadataRepository.get(SystemMetadataKey.VersionCheckState);
-      if (versionCheck?.checkedAt) {
-        const lastUpdate = DateTime.fromISO(versionCheck.checkedAt);
-        const elapsedTime = DateTime.now().diff(lastUpdate).as('seconds');
-        if (elapsedTime < 50) {
-          return JobStatus.Skipped;
-        }
+      if (checkedWithin(versionCheck, 50)) {
+        return JobStatus.Skipped;
       }
 
       await this.checkAndNotify(newVersionCheck.channel);
     } catch (error: any) {
-      this.logger.warn(`Unable to run version check: ${error}\n${error?.stack}`);
+      this.logger.warn(`Unable to run version check: ${describeError(error)}\n${error?.stack}`);
       return JobStatus.Failed;
     }
 
@@ -142,9 +156,26 @@ export class VersionService extends BaseService {
    */
   async checkNow(): Promise<ReleaseEventV1> {
     const { newVersionCheck } = await this.getConfig({ withCache: true });
-    const metadata = await this.checkAndNotify(newVersionCheck.channel);
-    return asNotification(newVersionCheck.channel, metadata);
+    // Throttled like the job: a check in the last minute is answered from the stored state, and
+    // simultaneous requests share one lookup, so the endpoint cannot hammer GitHub's rate limit.
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.VersionCheckState);
+    if (stored && checkedWithin(stored, MANUAL_CHECK_INTERVAL_SECONDS)) {
+      return asNotification(newVersionCheck.channel, stored);
+    }
+
+    this.manualCheck ??= this.checkAndNotify(newVersionCheck.channel).finally(() => {
+      this.manualCheck = undefined;
+    });
+    try {
+      const metadata = await this.manualCheck;
+      return asNotification(newVersionCheck.channel, metadata);
+    } catch (error) {
+      this.logger.warn(`Unable to check for updates: ${describeError(error)}`);
+      throw error;
+    }
   }
+
+  private manualCheck?: Promise<VersionCheckMetadata>;
 
   private async checkAndNotify(channel: ReleaseChannel): Promise<VersionCheckMetadata> {
     const { version: releaseVersion, published_at: publishedAt } =

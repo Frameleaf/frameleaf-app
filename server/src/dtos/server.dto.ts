@@ -95,6 +95,11 @@ const ServerVersionResponseSchema = z
       .nullable()
       .meta(HistoryBuilder.v3().getExtensions())
       .describe('Pre-release version number'),
+    prereleaseName: z
+      .string()
+      .optional()
+      .meta(new HistoryBuilder().added('v3.2.0').getExtensions())
+      .describe('Full pre-release identifier (for example rc.1 or beta.2), present only for a pre-release (FL-80)'),
   })
   .meta({ id: 'ServerVersionResponseDto' });
 
@@ -217,7 +222,9 @@ export class ServerVersionResponseDto extends createZodDto(ServerVersionResponse
       major: value.major,
       minor: value.minor,
       patch: value.patch,
-      prerelease: (value.prerelease[1] as number) ?? null,
+      prerelease: typeof value.prerelease[1] === 'number' ? value.prerelease[1] : null,
+      // FL-80: the number alone turns beta.2 into rc.2 in clients; the full identifier keeps it right.
+      ...(value.prerelease.length > 0 && { prereleaseName: value.prerelease.join('.') }),
     };
   }
 }
