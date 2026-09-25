@@ -726,7 +726,7 @@
       "production": ["web/src/lib/components/frameleaf/editor/QuickEditor.svelte"],
       "status": "partial",
       "gaps": ["E-1", "MPY-10"],
-      "followUp": "Open in Studio from the editor (fix-editor-albums); Studio handoff is studio-parked"
+      "followUp": "Open in Studio from the editor (fix-editor-albums, FL-113); keeping the draft and playhead in the workspace is studio-parked"
     },
     {
       "requirementId": "action:quick-edit:persistent-render-status-cancel-retry-reload-revision-supersession",
@@ -1888,8 +1888,8 @@
         "web/src/lib/components/frameleaf/ActivityView.svelte"
       ],
       "status": "fixed",
-      "gaps": ["A-1", "A-6"],
-      "followUp": "The indicator and filter count say \"jobs\" (A-1) and rows carry the status line with percent, ETA, \"Paused at N%\" and \"Waiting for connection\" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port"
+      "gaps": ["A-1", "A-6", "A-8", "A-9", "A-10"],
+      "followUp": "The indicator and filter count say \"jobs\" (A-1) and rows carry the status line with percent, ETA, \"Paused at N%\" and \"Waiting for connection\" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port. FL-104 adds the completion live region (A-8), the Reduce Motion guard (A-9) and Pause disabled with its reason (A-10)"
     },
     {
       "route": "/admin",
@@ -2525,7 +2525,7 @@
       "production": ["web/src/routes/(user)/studio/+page.svelte", "web/src/lib/components/frameleaf/StudioHost.svelte"],
       "status": "studio-parked",
       "gaps": ["ST-1", "ST-2", "ST-3", "ST-4", "ST-5", "ST-6"],
-      "followUp": "Studio workspace waits on the parked engine"
+      "followUp": "The header is done (ST-2…ST-7, FL-88: rename, Library back, review count, Basic/Advanced, avatar, export dialog; the workspace layout is stored per account, FL-91). The workspace itself waits on the parked engine (ST-1)"
     },
     {
       "route": "/studio/projects",
