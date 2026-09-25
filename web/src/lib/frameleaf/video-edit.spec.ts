@@ -209,7 +209,10 @@ describe('video quick editor edit (FL-113)', () => {
       source,
     );
     expect(toVideoEdits(opened, source)).toEqual(
-      expect.arrayContaining([...legacy, { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal } }]),
+      expect.arrayContaining([
+        ...legacy,
+        { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal } },
+      ]),
     );
 
     const trimmed = changeVideoDraft(createVideoDraft(opened), { start: 1 }, 24);

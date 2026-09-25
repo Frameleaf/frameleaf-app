@@ -223,8 +223,7 @@ export const PRESET_IDS: readonly AssetDevelopPreset[] = PRESETS.filter((item) =
 );
 export const presetFor = (id: unknown) => PRESETS.find((item) => item.id === id) ?? PRESETS[0];
 /** The looks offered for a photo or a clip (`develop.mjs` presetsFor). */
-export const presetsFor = (kind: 'photo' | 'video') =>
-  PRESETS.filter((item) => !item.scope || item.scope === kind);
+export const presetsFor = (kind: 'photo' | 'video') => PRESETS.filter((item) => !item.scope || item.scope === kind);
 
 export type DevelopSource = Partial<DevelopValues> & { preset?: DevelopLookId; presetStrength?: number };
 
