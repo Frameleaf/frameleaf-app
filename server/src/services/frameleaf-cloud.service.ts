@@ -124,6 +124,7 @@ export class FrameleafCloudService extends BaseService {
       cloneSuspected: !!link?.heartbeat?.cloneSuspected,
       relinkRequested: !!link?.heartbeat?.relinkRequested,
       linkTokenConfigured: !!this.configRepository.getEnv().frameleafCloud.linkToken,
+      remoteAccessEnabled: linked && !!link.desired?.remoteAccess,
       signInClientId: linked ? (link.oidc?.clientId ?? null) : null,
       signInIssuer: linked ? (link.oidc?.issuer ?? null) : null,
     };

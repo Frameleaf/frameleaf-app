@@ -104,6 +104,8 @@ export type CloudStatusResponseDto = {
     permissions: CloudPermissionsDto;
     /** Frameleaf Cloud asked an administrator to link again */
     relinkRequested: boolean;
+    /** Remote access is switched on for this linked server */
+    remoteAccessEnabled: boolean;
     revoked: {
         at: string;
         reason: string;

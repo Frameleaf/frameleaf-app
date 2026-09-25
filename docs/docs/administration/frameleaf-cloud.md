@@ -44,9 +44,21 @@ The server checks every request against these choices and records it. A request 
 
 ## Unlinking
 
-**Unlink…** on the Account & link page stops every cloud feature on this server: remote access, cloud processing and scheduled cloud backups. Local photos, albums, accounts and sign-in keep working exactly as before. If Frameleaf Cloud ends the link from its side, the page says so and why; the same features stop and nothing local is removed. You can link again at any time.
+**Unlink…** on the Account & link page stops every cloud feature on this server: remote access, cloud processing and scheduled cloud backups. Sign in with Frameleaf stops too: those sessions end and the links between accounts here and Frameleaf accounts are removed. Local photos, albums, accounts and password sign-in keep working exactly as before. If Frameleaf Cloud ends the link from its side, the page says so and why; the same features stop and nothing local is removed. You can link again at any time.
 
 Administrators receive a notification when the server is linked or unlinked, when check-ins keep failing, and when Frameleaf Cloud sees this server's identity start from two places (for example after copying a server with its identity folder). Each of these is recorded in the administrator's activity.
+
+## Sign in with Frameleaf
+
+Once the server is linked, people can sign in with their Frameleaf account. It works alongside passwords and your own OpenID provider, whose settings it never reads or changes. Settings → Access & security → **Sign in with Frameleaf** shows whether it is available, this server's client ID and how many accounts are linked.
+
+- **Through remote access** a Frameleaf sign-in is always required, and it is the only way in: passwords stay on the home network. A visitor who turns out to be on the same network is offered this server's local address (`FRAMELEAF_LOCAL_URL`).
+- **At home** people keep signing in as they do now. Turn on **Show "Sign in with Frameleaf" at home** to add the button to the local sign-in page too; you can change its text on the same page.
+- Each person links their own Frameleaf account under Your preferences → **Frameleaf account**, and can unlink it there, which ends their other Frameleaf sessions.
+- A person Frameleaf Cloud authorizes for this server gets an account here on first sign-in, as an administrator or a member as Frameleaf Cloud says. A Frameleaf account is linked to an existing account here only by a verified email address; the same rule now applies to your own OpenID provider.
+- When Frameleaf Cloud signs someone out, or the server is unlinked, their Frameleaf sessions on this server end.
+
+The server proves who it is to Frameleaf Cloud with its own key. A client secret is only needed if Frameleaf Cloud registered the server with one; it is write-only, like the other credentials.
 
 ## Plan and licence
 

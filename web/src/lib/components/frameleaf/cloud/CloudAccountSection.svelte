@@ -339,9 +339,14 @@
       icon={mdiCellphone}
       title={$t('frameleaf_cloud_benefit_apps_title')}
       description={$t('frameleaf_cloud_apps_description')}
-      status={$t('frameleaf_cloud_apps_at_home')}
+      status={status.remoteAccessEnabled ? $t('frameleaf_cloud_apps_anywhere') : $t('frameleaf_cloud_apps_at_home')}
+      tone={status.remoteAccessEnabled ? 'ok' : 'muted'}
     >
-      <p class="fc-muted">{$t('frameleaf_cloud_apps_at_home_help')}</p>
+      <p class="fc-muted">
+        {status.remoteAccessEnabled
+          ? $t('frameleaf_cloud_apps_anywhere_help')
+          : $t('frameleaf_cloud_apps_at_home_help')}
+      </p>
     </CloudCard>
     <CloudCard
       title={$t('frameleaf_cloud_permissions_title')}

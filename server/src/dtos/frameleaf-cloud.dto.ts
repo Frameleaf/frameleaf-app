@@ -68,6 +68,7 @@ const CloudStatusResponseSchema = z
     cloneSuspected: z.boolean().describe('Frameleaf Cloud saw this server’s identity start from two places'),
     relinkRequested: z.boolean().describe('Frameleaf Cloud asked an administrator to link again'),
     linkTokenConfigured: z.boolean().describe('FRAMELEAF_LINK_TOKEN is set'),
+    remoteAccessEnabled: z.boolean().describe('Remote access is switched on for this linked server'),
     signInClientId: z.string().nullable().describe('The OpenID client ID for Sign in with Frameleaf'),
     signInIssuer: z.string().nullable(),
     signInLinkedAccounts: z.int().describe('Accounts here linked to a Frameleaf account'),

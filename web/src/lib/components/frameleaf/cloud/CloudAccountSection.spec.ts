@@ -25,6 +25,7 @@ const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusRes
   cloneSuspected: false,
   relinkRequested: false,
   linkTokenConfigured: false,
+  remoteAccessEnabled: false,
   signInClientId: null,
   signInIssuer: null,
   signInLinkedAccounts: 0,
@@ -152,6 +153,14 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
         cloudPermissionsUpdateDto: { allowRemoteEnable: true },
       }),
     );
+  });
+
+  it('says the apps are available anywhere once remote access is on', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue({ ...linked(), remoteAccessEnabled: true });
+    render(CloudAccountSection);
+    expect(await screen.findByText('Available anywhere')).toBeInTheDocument();
+    expect(screen.getByText(/through the Frameleaf relay otherwise/)).toBeInTheDocument();
+    expect(screen.queryByText('At home only')).toBeNull();
   });
 
   it('asks for confirmation before unlinking and lists what stops', async () => {
