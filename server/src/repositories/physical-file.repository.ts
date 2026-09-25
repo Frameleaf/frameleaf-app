@@ -5,11 +5,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join, parse } from 'node:path';
 import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
 import { AssetFileType, AssetStatus, ChecksumAlgorithm, PhysicalFileType } from 'src/enum.js';
+import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { anyUuid, asUuid } from 'src/utils/database.js';
 
 type PhysicalFile = Selectable<PhysicalFileTable>;
+
+export const PHYSICAL_FILE_HANDOFF_REFUSAL = 'Shared files cannot change during database handoff';
 
 export type PhysicalNormalizationAsset = {
   id: string;
@@ -689,23 +692,29 @@ export class PhysicalFileRepository {
   }
 
   async upsertPhysicalFile(input: PhysicalFileInput): Promise<PhysicalFile> {
-    return this.db
-      .insertInto('physical_file')
-      .values(input)
-      .onConflict((oc) =>
-        oc.column('path').doUpdateSet((eb) => ({
-          checksum: eb.ref('excluded.checksum'),
-          sizeInBytes: eb.ref('excluded.sizeInBytes'),
-          type: eb.ref('excluded.type'),
-          canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
-        })),
-      )
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    return withPublicForkWrites(
+      this.db,
+      (trx) =>
+        trx
+          .insertInto('physical_file')
+          .values(input)
+          .onConflict((oc) =>
+            oc.column('path').doUpdateSet((eb) => ({
+              checksum: eb.ref('excluded.checksum'),
+              sizeInBytes: eb.ref('excluded.sizeInBytes'),
+              type: eb.ref('excluded.type'),
+              canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+            })),
+          )
+          .returningAll()
+          .executeTakeFirstOrThrow(),
+      PHYSICAL_FILE_HANDOFF_REFUSAL,
+    );
   }
 
   async ensureOriginalPhysicalFile(assetId: string): Promise<PhysicalFile | undefined> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       const asset = await trx
         .selectFrom('asset')
         .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
@@ -877,7 +886,40 @@ export class PhysicalFileRepository {
         OR (o.payload->>'masterPath') || '.lineage.json'=${path}
         OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.payload->'files') f WHERE f->>'path'=${path}))
     ) retained`.execute(trx);
-    return Number(assetRefs.count) + Number(fileRefs.count) + Number(historyRefs.rows[0].count);
+
+    // FL-44 (FN-304): after cutover a live asset's original can be recorded only in its fork
+    // mapping (asset.repository deleteAll resolves `upstreamPath` first), and the fork physical
+    // file keeps the canonical path its sharers resolve to. A mapping of an asset that no longer
+    // exists holds nothing: its row is swept with the asset and must not pin the file forever.
+    // Outputs a Frameleaf feature still serves are owned by their rows the same way: a Studio
+    // export version, a preservation package not yet removed, and a restoration's preview or
+    // result (each clears its path before queueing the file's deletion).
+    const retainedRefs = await sql<{ count: string }>`SELECT count(*) FROM (
+      SELECT 1 FROM immich_fork.asset_physical_file mapping
+      JOIN public.asset asset ON asset.id = mapping."assetId"
+      WHERE mapping."upstreamPath" = ${path}
+      UNION ALL SELECT 1 FROM immich_fork.physical_file physical
+      WHERE physical."canonicalPath" = ${path}
+        AND EXISTS (
+          SELECT 1 FROM immich_fork.asset_physical_file mapping
+          JOIN public.asset asset ON asset.id = mapping."assetId"
+          WHERE mapping."physicalFileId" = physical.id
+        )
+      UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."outputPath" = ${path}
+      UNION ALL SELECT 1 FROM public.preservation_package package
+      WHERE package.path = ${path} AND package."removedAt" IS NULL
+      UNION ALL SELECT 1 FROM public.asset_restoration restoration
+      WHERE ${path} IN (
+        restoration."previewBeforePath", restoration."previewAfterPath",
+        restoration."resultPath", restoration."resultPreviewPath"
+      )
+    ) retained`.execute(trx);
+    return (
+      Number(assetRefs.count) +
+      Number(fileRefs.count) +
+      Number(historyRefs.rows[0].count) +
+      Number(retainedRefs.rows[0].count)
+    );
   }
 
   /**
@@ -891,8 +933,11 @@ export class PhysicalFileRepository {
     await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
   }
 
+  // Every caller changes which rows reference a file (or deletes it), so it is refused while a
+  // database handoff holds the schema (FL-44), before the path lock is taken.
   private async withPathLock<T>(path: string, callback: (trx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       await this.lockPath(trx, path);
       return callback(trx);
     });
