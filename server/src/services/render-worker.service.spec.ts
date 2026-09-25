@@ -16,6 +16,7 @@ import {
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
+import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { signInputGrant } from 'src/utils/render-admission.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -204,6 +205,7 @@ describe(RenderWorkerService.name, () => {
     | 'acknowledgeRemoteReference',
     ReturnType<typeof vi.fn>
   >;
+  let studioPreviews: Record<'onRenderClaimed' | 'onRenderCompleted' | 'onRenderFailed', ReturnType<typeof vi.fn>>;
   let studioProjects: {
     getById: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
@@ -287,6 +289,11 @@ describe(RenderWorkerService.name, () => {
       listRemoteReferences: vi.fn().mockResolvedValue([]),
       acknowledgeRemoteReference: vi.fn().mockResolvedValue(true),
     };
+    studioPreviews = {
+      onRenderClaimed: vi.fn().mockReturnValue('/data/exports/owner/studio-previews/frame'),
+      onRenderCompleted: vi.fn().mockResolvedValue({ published: true }),
+      onRenderFailed: vi.fn().mockResolvedValue(undefined),
+    };
     mocks.user.get.mockImplementation((id: string) =>
       Promise.resolve(id === OWNER_A ? { ...userStub.user1, id: OWNER_A } : undefined),
     );
@@ -302,6 +309,7 @@ describe(RenderWorkerService.name, () => {
       studioResources as unknown as StudioResourceService,
       studioProjects as unknown as StudioProjectRepository,
       studioExports as unknown as StudioExportService,
+      studioPreviews as unknown as StudioPreviewService,
     );
 
     installSessions({ worker: workerA, session: sessionA }, { worker: workerB, session: sessionB });
@@ -1515,6 +1523,79 @@ describe(RenderWorkerService.name, () => {
         authStub.user1.user.id,
         expect.anything(),
       );
+    });
+  });
+
+  describe('Studio preview frames (FL-96)', () => {
+    const rendering = operationStub({
+      kind: MediaOperationKind.StudioPreview,
+      status: MediaOperationStatus.Validating,
+      claimToken: 'claim-1',
+      claimedBy: workerA.id,
+      snapshot: { previewFrameId: 'frame-1' },
+    });
+    const output = {
+      path: '/data/exports/owner/studio-previews/frame-1/frame.png',
+      checksum: 'b'.repeat(64),
+      sizeInBytes: '2048',
+      contentType: 'image/png',
+    };
+
+    beforeEach(() => {
+      vi.mocked(workers.getClaimed).mockImplementation((id, workerId, claimToken) =>
+        Promise.resolve(
+          id === rendering.id && workerId === workerA.id && claimToken === 'claim-1' ? (rendering as never) : undefined,
+        ),
+      );
+    });
+
+    it('publishes the frame before completing the render', async () => {
+      const result = await sut.complete(SESSION_A, rendering.id, {
+        claimToken: 'claim-1',
+        resultAssetId: null,
+        output,
+      } as never);
+
+      expect(result).toEqual({ accepted: true, refusal: null });
+      expect(studioPreviews.onRenderCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({ id: rendering.id }),
+        output,
+      );
+      expect(operations.complete).toHaveBeenCalledWith(rendering.id, 'claim-1', { resultAssetId: null });
+    });
+
+    it('completes a render whose frame was superseded meanwhile, without publishing it', async () => {
+      studioPreviews.onRenderCompleted.mockResolvedValue({ published: false });
+      const result = await sut.complete(SESSION_A, rendering.id, {
+        claimToken: 'claim-1',
+        resultAssetId: null,
+        output,
+      } as never);
+      expect(result).toEqual({ accepted: true, refusal: null });
+    });
+
+    it('refuses a worker-named result and a completion without a frame', async () => {
+      await expect(
+        sut.complete(SESSION_A, rendering.id, {
+          claimToken: 'claim-1',
+          resultAssetId: '00000000-0000-4000-8000-000000000001',
+          output,
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        sut.complete(SESSION_A, rendering.id, { claimToken: 'claim-1', resultAssetId: null } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('marks the frame failed only once the render failed for good', async () => {
+      vi.mocked(operations.fail).mockResolvedValueOnce('retrying');
+      await sut.fail(SESSION_A, rendering.id, { claimToken: 'claim-1', error: 'lost', errorCode: 'gpu' } as never);
+      expect(studioPreviews.onRenderFailed).not.toHaveBeenCalled();
+
+      vi.mocked(operations.fail).mockResolvedValueOnce('failed');
+      await sut.fail(SESSION_A, rendering.id, { claimToken: 'claim-1', error: 'lost', errorCode: 'gpu' } as never);
+      expect(studioPreviews.onRenderFailed).toHaveBeenCalledWith(expect.objectContaining({ id: rendering.id }), 'gpu');
     });
   });
 
