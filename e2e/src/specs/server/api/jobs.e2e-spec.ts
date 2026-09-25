@@ -1,4 +1,13 @@
-import { LoginResponseDto, QueueCommand, QueueName, getQueue, updateConfig } from '@immich/sdk';
+import {
+  AssetJobName,
+  LoginResponseDto,
+  QueueCommand,
+  QueueName,
+  getAssetInfo,
+  getQueue,
+  runAssetJobs,
+  updateConfig,
+} from '@immich/sdk';
 import { cpSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -221,11 +230,18 @@ describe('/jobs', () => {
     let failed = 0;
 
     beforeAll(async () => {
-      // A file that is not an image: its thumbnail job fails.
-      await utils.createAsset(admin.accessToken, {
-        assetData: { bytes: Buffer.from('not an image'), filename: 'broken.jpg' },
-      });
+      // A thumbnail job that fails deterministically: an image whose original is removed from disk
+      // after upload, then asked for new thumbnails. (An unreadable upload is not a failure: the
+      // thumbnail handler skips an unsupported format.)
+      const asset = await utils.createAsset(admin.accessToken);
       await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+      const { originalPath } = await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) });
+      await utils.deleteFile(originalPath);
+      await runAssetJobs(
+        { assetJobsDto: { assetIds: [asset.id], name: AssetJobName.RegenerateThumbnail } },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
       await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
       const queue = await getQueue(
         { name: QueueName.ThumbnailGeneration },

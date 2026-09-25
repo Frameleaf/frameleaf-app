@@ -227,6 +227,20 @@ describe(JobService.name, () => {
     }
   });
 
+  describe('a handler that throws (FL-71)', () => {
+    it('reports the error and rethrows it, so BullMQ records the job as failed', async () => {
+      const error = new Error('Input file is missing');
+      mocks.job.run.mockRejectedValue(error);
+      const item = { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } as const;
+
+      await expect(sut.onJobRun(QueueName.ThumbnailGeneration, item)).rejects.toBe(error);
+
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobError', { job: item, error });
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.ThumbnailGeneration, item);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+
   describe('image enrichment job chaining', () => {
     it('should queue image descriptions after upload thumbnail generation when descriptions are enabled', async () => {
       const asset = AssetFactory.create({ id: 'asset-1', type: AssetType.Image });
