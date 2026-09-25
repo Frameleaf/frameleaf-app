@@ -97,20 +97,24 @@ export class CloudManager {
 
   async refresh() {
     this.#loading = true;
-    try {
-      const [status, license, products] = await Promise.all([
-        getCloudStatus(),
-        getLicenseStatus(),
-        getLicenseProducts(),
-      ]);
-      this.#license = license;
-      this.#products = products;
-      this.#apply(status);
-    } catch (error) {
-      this.#error = error;
-    } finally {
-      this.#loading = false;
+    // each loads on its own, so a licence or price failure never hides a status that loaded
+    const [status, license, products] = await Promise.allSettled([
+      getCloudStatus(),
+      getLicenseStatus(),
+      getLicenseProducts(),
+    ]);
+    if (license.status === 'fulfilled') {
+      this.#license = license.value;
     }
+    if (products.status === 'fulfilled') {
+      this.#products = products.value;
+    }
+    if (status.status === 'fulfilled') {
+      this.#apply(status.value);
+    } else {
+      this.#error = status.reason;
+    }
+    this.#loading = false;
   }
 
   startLink = () => this.#run(() => startCloudLink());

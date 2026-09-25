@@ -78,4 +78,14 @@ describe('CloudManager (FL-155)', () => {
     expect(manager.pollError).toBeNull();
     stop();
   });
+
+  it('shows a status that loaded even when the licence or prices failed', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(status({ state: CloudLinkState.Linked }));
+    sdkMock.getLicenseStatus.mockRejectedValue(new Error('licence down'));
+    sdkMock.getLicenseProducts.mockRejectedValue(new Error('prices down'));
+    const manager = new CloudManager();
+    await manager.refresh();
+    expect(manager.status?.state).toBe('linked');
+    expect(manager.error).toBeNull();
+  });
 });
