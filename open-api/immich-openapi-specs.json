@@ -1282,7 +1282,7 @@
     },
     "/admin/integrity/runs": {
       "get": {
-        "description": "Get when each integrity check last ran in full",
+        "description": "Get when each integrity check last completed a full run",
         "operationId": "getIntegrityCheckRuns",
         "parameters": [],
         "responses": {
@@ -22324,7 +22324,7 @@
             "api_key": []
           }
         ],
-        "summary": "FL-71: the Job manager's \"Retry failed\" (`JobsManager.jsx` 715-727).",
+        "summary": "Retry failed queue jobs",
         "tags": [
           "Queues"
         ],
@@ -49712,19 +49712,19 @@
       "IntegrityCheckRunsResponseDto": {
         "properties": {
           "checksum_mismatch": {
-            "description": "When the checksum check last ran",
+            "description": "When the checksum check last completed a full pass",
             "format": "date-time",
             "nullable": true,
             "type": "string"
           },
           "missing_file": {
-            "description": "When the missing-file check last ran",
+            "description": "When the missing-file check last completed",
             "format": "date-time",
             "nullable": true,
             "type": "string"
           },
           "untracked_file": {
-            "description": "When the untracked-file check last ran",
+            "description": "When the untracked-file check last completed",
             "format": "date-time",
             "nullable": true,
             "type": "string"

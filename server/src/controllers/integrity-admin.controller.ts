@@ -39,7 +39,7 @@ export class IntegrityAdminController {
   @Get('runs')
   @Endpoint({
     summary: 'Get integrity check runs',
-    description: 'Get when each integrity check last ran in full',
+    description: 'Get when each integrity check last completed a full run',
     history: new HistoryBuilder().added('v3').alpha('v3'),
   })
   @Authenticated({ permission: Permission.Maintenance, admin: true })

@@ -8658,7 +8658,8 @@
     "0000000000130-ArchiveOperations",
     "0000000000140-PersonMergeVerdicts",
     "0000000000150-AlbumPositions",
-    "0000000000160-RecipientGroups"
+    "0000000000160-RecipientGroups",
+    "0000000000170-MlWorkloadAccountingJobIndex"
   ],
   "functions": [
     {
@@ -11058,6 +11059,10 @@
     {
       "definition": "CREATE INDEX \"ml_workload_accounting_destinationId_startedAt_idx\" ON public.ml_workload_accounting USING btree (\"destinationId\", \"startedAt\")",
       "identity": "public.ml_workload_accounting.ml_workload_accounting_destinationId_startedAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"ml_workload_accounting_jobId_jobName_startedAt_idx\" ON public.ml_workload_accounting USING btree (\"jobId\", \"jobName\", \"startedAt\" DESC) WHERE (\"jobId\" IS NOT NULL)",
+      "identity": "public.ml_workload_accounting.ml_workload_accounting_jobId_jobName_startedAt_idx"
     },
     {
       "definition": "CREATE UNIQUE INDEX ml_workload_accounting_pkey ON public.ml_workload_accounting USING btree (id)",

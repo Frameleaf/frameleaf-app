@@ -3,6 +3,8 @@
   /**
    * The Frameleaf text button. `primary` is reserved for the single primary action of a
    * surface, because the accent also carries selection and focus; status belongs on Badge.
+   * `danger` is the template's `.resource-button.danger` (accounts-libraries.css:63-65): an
+   * ordinary button whose label is in the danger colour, for an irreversible confirmation.
    * Callers supply translated content and own the action.
    */
   let {
@@ -15,7 +17,7 @@
     onclick,
     children,
   }: {
-    variant?: 'default' | 'primary' | 'quiet';
+    variant?: 'default' | 'primary' | 'quiet' | 'danger';
     type?: 'button' | 'submit' | 'reset';
     disabled?: boolean;
     /** Sets aria-pressed for a two-state action; leave undefined for a plain action. */
@@ -72,6 +74,10 @@
   }
   button.primary:hover:not(:disabled) {
     background: var(--fl-accent-hover);
+  }
+  button.danger {
+    font-weight: 600;
+    color: var(--fl-danger);
   }
   button.quiet {
     background: transparent;
