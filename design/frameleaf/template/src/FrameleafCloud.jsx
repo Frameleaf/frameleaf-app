@@ -23,6 +23,16 @@ import {
   cloudPlans,
   startBackupRun,
   backupRunActive,
+  RESTORE_REPLACED_PATH,
+  libraryRestoreSteps,
+  manifestsWithFile,
+  recoverableSince,
+  restoreDetailsOptions,
+  restoreRunActive,
+  restoreRunStage,
+  restoreSampleAlbums,
+  searchRestoreItems,
+  startRestoreRun,
   configureBackup,
   consentTerms,
   createBackupKey,
@@ -2058,7 +2068,6 @@ function Backup({ state, run, onNavigate, onBuy, setNotice }) {
   const { backup } = state;
   const entitled = state.link.status === "linked" && activeEntitlements(state.license).cloudBackup;
   const [wizard, setWizard] = useState(false);
-  const [restore, setRestore] = useState(false);
   const [unlock, setUnlock] = useState(false);
   const [turningOff, setTurningOff] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -2227,11 +2236,16 @@ function Backup({ state, run, onNavigate, onBuy, setNotice }) {
           <Button icon="mdiCheckCircleOutline" disabled={verifying || !!paused} onClick={() => setVerifying(true)}>
             {verifying ? "Verifying…" : "Verify"}
           </Button>
-          <Button icon="mdiRestore" onClick={() => setRestore(true)}>
+          <Button
+            icon="mdiRestore"
+            onClick={() => document.getElementById("fc-restore-title")?.scrollIntoView({ block: "start" })}
+          >
             Restore…
           </Button>
         </div>
       </Card>
+
+      <BackupRestore state={state} run={run} />
 
       <Card id="fc-schedule-title" title="Schedule & retention" description="Older runs are thinned out; files still in a kept run are never removed.">
         <Field id="fc-backup-schedule" label="Run" help="Times use the server’s time zone.">
@@ -2302,17 +2316,6 @@ function Backup({ state, run, onNavigate, onBuy, setNotice }) {
           The key stays in memory until the server restarts. It is never saved
           or sent to Frameleaf.
         </KeyPrompt>
-      )}
-      {restore && (
-        <RestoreDialog
-          state={state}
-          close={() => setRestore(false)}
-          start={(summary) => {
-            setRestore(false);
-            setNotice(`Restore started: ${summary}. Files appear in Library care for review.`);
-          }}
-          onNavigate={onNavigate}
-        />
       )}
       {turningOff && (
         <Dialog
@@ -2406,93 +2409,431 @@ function KeyPrompt({ title, fingerprint, close, done, confirmLabel, children }) 
   );
 }
 
-function RestoreDialog({ state, close, start }) {
+// In own-memory mode the key is asked for once per session, on the first restore.
+let restoreKeyLoaded = false;
+export const restoreNeedsKey = (backup) => backup.keyMode === "own-memory" && !restoreKeyLoaded;
+
+/** Asks for the key file before the first restore of a session in own-memory mode. */
+export function RestoreKeyPrompt({ close, done }) {
+  const [state] = useCloudState();
+  return (
+    <KeyPrompt
+      title="Load the backup key"
+      fingerprint={state.backup.keyFingerprint}
+      confirmLabel="Use this key"
+      close={close}
+      done={() => {
+        restoreKeyLoaded = true;
+        done();
+      }}
+    >
+      This server doesn’t keep your key. Load the key file once and restores
+      work until the server restarts.
+    </KeyPrompt>
+  );
+}
+
+/**
+ * Restore one missing or damaged item from a kept backup. Opened from a Library
+ * Care finding and from the info panel. item: { name, path, newest } where newest
+ * is the id of the newest kept backup that has the file.
+ */
+export function ItemRestoreDialog({ item, close, onRestore }) {
+  const [state] = useCloudState();
   const { backup } = state;
-  const [manifest, setManifest] = useState(backupManifests[0].id);
-  const [scope, setScope] = useState("library");
-  const [asset, setAsset] = useState("");
-  const [key, setKey] = useState(false);
-  const [useStored, setUseStored] = useState(backup.keyMode === "own-stored");
-  const needsKey = backup.keyMode === "own-memory" || (backup.keyMode === "own-stored" && !useStored);
-  const chosen = backupManifests.find((item) => item.id === manifest);
-  const ready = (!needsKey || key) && (scope !== "asset" || asset.trim());
-  const summary = {
-    library: `whole library from ${when(chosen.createdAt)}`,
-    database: `database only from ${when(chosen.createdAt)}`,
-    asset: `“${asset.trim()}” from ${when(chosen.createdAt)}`,
-  }[scope];
-  if (key === "prompt")
-    return (
-      <KeyPrompt
-        title="Load the backup key"
-        fingerprint={backup.keyFingerprint}
-        confirmLabel="Use this key"
-        close={() => setKey(false)}
-        done={() => setKey(true)}
-      >
-        Restoring needs the key for this bucket.
-      </KeyPrompt>
-    );
+  const options = manifestsWithFile(item.newest);
+  const [manifest, setManifest] = useState(options[0]?.id ?? "");
+  const [details, setDetails] = useState("keep");
+  const [keyReady, setKeyReady] = useState(() => !restoreNeedsKey(backup));
+  const chosen = options.find((entry) => entry.id === manifest);
+  if (!keyReady) return <RestoreKeyPrompt close={close} done={() => setKeyReady(true)} />;
   return (
     <Dialog
-      title="Restore from cloud backup"
+      title={`Restore “${item.name}”`}
       close={close}
-      wide
       actions={
         <>
           <Button onClick={close}>Cancel</Button>
-          <Button primary disabled={!ready} onClick={() => start(summary)}>
-            Start restore
+          <Button primary icon="mdiBackupRestore" disabled={!chosen} onClick={() => onRestore({ manifest: chosen, details })}>
+            Restore
           </Button>
         </>
       }
     >
+      {item.path && (
+        <p className="fc-muted">
+          <code>{item.path}</code>
+        </p>
+      )}
       <label className="fc-stack">
-        Backup
-        <select value={manifest} onChange={(event) => setManifest(event.target.value)}>
-          {backupManifests.map((item) => (
-            <option key={item.id} value={item.id}>
-              {when(item.createdAt)} · {plural(item.assets, "file")} · {formatBytes(item.bytes)}
+        Restore from
+        <select data-initial-focus value={manifest} onChange={(event) => setManifest(event.target.value)}>
+          {options.map((entry, index) => (
+            <option key={entry.id} value={entry.id}>
+              {when(entry.createdAt)}
+              {index === 0 ? " · newest with this file" : ""}
             </option>
           ))}
         </select>
       </label>
       <fieldset className="fc-choices">
-        <legend>What to restore</legend>
-        {[
-          ["library", "Whole library", "Originals, edits and the database."],
-          ["database", "Database only", "Albums, people, tags and settings. Files are not touched."],
-          ["asset", "One photo or video", "Find it by file name or ID."],
-        ].map(([id, label, detail]) => (
-          <label key={id} className={scope === id ? "is-selected" : ""}>
-            <input type="radio" name="fc-restore-scope" checked={scope === id} onChange={() => setScope(id)} />
-            <strong>{label}</strong>
-            <span>{detail}</span>
+        <legend>Details</legend>
+        {restoreDetailsOptions.map((option) => (
+          <label key={option.id} className={details === option.id ? "is-selected" : ""}>
+            <input
+              type="radio"
+              name="fc-restore-details"
+              checked={details === option.id}
+              onChange={() => setDetails(option.id)}
+            />
+            <strong>{option.title}</strong>
+            <span>{option.detail}</span>
           </label>
         ))}
       </fieldset>
-      {scope === "asset" && (
-        <label className="fc-stack">
-          File name or ID
-          <input value={asset} placeholder="IMG_2041.HEIC" onChange={(event) => setAsset(event.target.value)} />
-        </label>
-      )}
-      <Facts rows={[["Restores to", "Library care → Restores, for review. Nothing in your library is overwritten."]]} />
-      {backup.keyMode === "own-stored" && (
-        <label className="fc-confirm">
-          <input type="checkbox" checked={useStored} onChange={(event) => setUseStored(event.target.checked)} />
-          Use the key stored on this server
-        </label>
-      )}
-      {needsKey && (
-        <div className="fc-key-needed">
-          <p>
-            <Icon name="mdiKeyOutline" /> {key === true ? "Key loaded for this restore." : "This restore needs your key file."}
+      <p className="fc-ok">
+        <Icon name="mdiShieldCheckOutline" />
+        <span>
+          The file is verified against its fingerprint before it touches the
+          library. A file it replaces moves to <code>{RESTORE_REPLACED_PATH}</code> and
+          is never deleted.
+        </span>
+      </p>
+    </Dialog>
+  );
+}
+
+const RESTORE_MODES = [
+  ["items", "Items"],
+  ["albums", "Albums"],
+  ["library", "Whole library"],
+];
+const RESTORE_FILTERS = [
+  ["all", "All"],
+  ["deleted", "Deleted from the library"],
+  ["in-library", "Still in the library"],
+];
+
+/** Settings › Frameleaf Cloud › Backup › Restore. Admins also get the whole-library restore. */
+function BackupRestore({ state, run }) {
+  const { backup } = state;
+  const [asMember, setAsMember] = useState(false);
+  const [manifestId, setManifestId] = useState(backupManifests[0].id);
+  const [mode, setMode] = useState("items");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [dialog, setDialog] = useState(null);
+  const [confirm, setConfirm] = useState("");
+  const chosen = backupManifests.find((entry) => entry.id === manifestId) ?? backupManifests[0];
+  const ownerId = asMember ? "jamie" : null;
+  const modes = asMember ? RESTORE_MODES.slice(0, 2) : RESTORE_MODES;
+  const current = modes.some(([id]) => id === mode) ? mode : "items";
+  const items = searchRestoreItems({ manifestId: chosen.id, query, filter, ownerId });
+  const albums = restoreSampleAlbums.filter(
+    (album) =>
+      (!ownerId || album.ownerId === ownerId) &&
+      manifestsWithFile(album.newest).some((entry) => entry.id === chosen.id),
+  );
+  const restoreRun = backup.restoreRun;
+  const active = restoreRunActive(state);
+  const progress = active ? Math.round(restoreRun.progress || 0) : null;
+  const start = (job) =>
+    run((next) => startRestoreRun(next, job), `${job.title} queued. Follow it here or in Activity.`);
+  // In own-memory mode the first restore of a session asks for the key file.
+  const withKey = (job) => (restoreNeedsKey(backup) ? setDialog({ kind: "key", job }) : start(job));
+
+  return (
+    <Card
+      id="fc-restore-title"
+      icon="mdiBackupRestore"
+      title="Restore"
+      description="Bring back items, albums or the whole library from a kept backup. Every file is checked against its fingerprint before it touches the library."
+      status={active ? (restoreRun.status === "queued" ? "Queued" : "Restoring") : undefined}
+      tone="running"
+    >
+      <dl className="resource-stats" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", margin: "4px 0 18px" }}>
+        <div>
+          <dt>Newest backup</dt>
+          <dd>{day(backupManifests[0].createdAt)}</dd>
+        </div>
+        <div>
+          <dt>Paired nightly database backup</dt>
+          <dd>{day(backupManifests[0].db.createdAt)}</dd>
+        </div>
+        <div>
+          <dt>Deleted items recoverable back to</dt>
+          <dd>{day(recoverableSince())}</dd>
+        </div>
+      </dl>
+      <Field
+        id="fc-restore-backup"
+        label="Backup"
+        help={`Paired with the database backup from ${when(chosen.db.createdAt)}.`}
+      >
+        <select id="fc-restore-backup" value={chosen.id} onChange={(event) => setManifestId(event.target.value)}>
+          {backupManifests.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {when(entry.createdAt)} · {plural(entry.assets, "file")} · {formatBytes(entry.bytes)}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <div className="fc-segmented" role="radiogroup" aria-label="What to restore" style={{ margin: "4px 0 16px" }}>
+        {modes.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={current === id}
+            className={current === id ? "is-on" : ""}
+            onClick={() => setMode(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {current === "items" && (
+        <>
+          <div className="fc-actions" style={{ marginTop: 0 }}>
+            <input
+              type="search"
+              aria-label="Search this backup"
+              placeholder="Search by file name…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <div className="fc-segmented" role="radiogroup" aria-label="Show">
+              {RESTORE_FILTERS.map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={filter === id}
+                  className={filter === id ? "is-on" : ""}
+                  onClick={() => setFilter(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {items.length ? (
+            <div className="fc-table-wrap">
+              <table className="fc-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Item</th>
+                    <th scope="col">Owner</th>
+                    <th scope="col">In the library</th>
+                    <th scope="col">
+                      <span className="fc-visually-hidden">Action</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={item.id}>
+                      <th scope="row">
+                        {item.name}
+                        <small>
+                          Taken {when(item.takenAt)} ·{" "}
+                          {item.bytes < 1e9 ? `${(item.bytes / 1e6).toFixed(1)} MB` : formatBytes(item.bytes)}
+                        </small>
+                      </th>
+                      <td>{item.owner}</td>
+                      <td>
+                        {item.inLibrary ? (
+                          <span className="fc-status is-ok">Still in the library</span>
+                        ) : (
+                          <span className="fc-status is-warning">Deleted {when(item.deletedAt)}</span>
+                        )}
+                      </td>
+                      <td>
+                        <Button
+                          icon="mdiBackupRestore"
+                          disabled={active}
+                          onClick={() =>
+                            item.inLibrary
+                              ? setDialog({ kind: "item", item })
+                              : withKey({ title: `Restore “${item.name}”`, files: 1 })
+                          }
+                        >
+                          {item.inLibrary ? "Restore…" : "Restore"}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="fc-muted">
+              Nothing in this backup matches. Deleted items appear in the backups
+              made before they were deleted.
+            </p>
+          )}
+          <p className="fc-note">
+            A deleted item comes back with its details: favourite, rating, tags,
+            albums, people and edits. Items are restored to their owner
+            {asMember ? ", and you can restore only your own." : "."}
           </p>
-          {key !== true && <Button onClick={() => setKey("prompt")}>Load key file…</Button>}
+        </>
+      )}
+
+      {current === "albums" && (
+        <>
+          {albums.length ? (
+            <div className="fc-table-wrap">
+              <table className="fc-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Album</th>
+                    <th scope="col">State</th>
+                    <th scope="col">
+                      <span className="fc-visually-hidden">Action</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {albums.map((album) => (
+                    <tr key={album.id}>
+                      <th scope="row">
+                        {album.name}
+                        <small>{plural(album.items, "item")}</small>
+                      </th>
+                      <td>
+                        {album.status === "deleted" ? (
+                          <span className="fc-status is-warning">Deleted {when(album.deletedAt)}</span>
+                        ) : (
+                          <span className="fc-status is-warning">
+                            {album.missing} missing · {album.corrupt} damaged
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <Button
+                          icon={album.status === "deleted" ? "mdiDeleteRestore" : "mdiWrenchOutline"}
+                          disabled={active}
+                          onClick={() =>
+                            withKey(
+                              album.status === "deleted"
+                                ? { title: `Restore album “${album.name}”`, files: album.items }
+                                : { title: `Repair album “${album.name}”`, files: album.missing + album.corrupt },
+                            )
+                          }
+                        >
+                          {album.status === "deleted" ? "Restore album" : "Repair album"}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="fc-muted">No deleted or damaged albums in this backup.</p>
+          )}
+          <p className="fc-note">
+            Restoring a deleted album recreates its name, cover, order and
+            members. Repair re-checks every member still in the library and
+            brings back the ones that are missing or damaged.
+          </p>
+        </>
+      )}
+
+      {current === "library" && (
+        <>
+          <Banner tone="warning" title="The server goes into maintenance mode">
+            Everyone is signed out until the restore finishes. The library goes
+            back to {when(chosen.createdAt)}; anything added after that is not in
+            this backup.
+          </Banner>
+          <ol className="fc-steps" aria-label="Restore steps">
+            {libraryRestoreSteps.map((step, index) => (
+              <li key={step.id} title={step.detail}>
+                <span>{index + 1}</span>
+                {step.title}
+              </li>
+            ))}
+          </ol>
+          <label className="fc-stack">
+            Type RESTORE to confirm
+            <input autoComplete="off" value={confirm} onChange={(event) => setConfirm(event.target.value.toUpperCase())} />
+          </label>
+          <div className="fc-actions">
+            <Button
+              primary
+              icon="mdiBackupRestore"
+              disabled={confirm !== "RESTORE" || active}
+              onClick={() => {
+                withKey({
+                  title: `Restore the whole library from ${when(chosen.createdAt)}`,
+                  files: chosen.assets,
+                  steps: libraryRestoreSteps.map((step) => step.title),
+                });
+                setConfirm("");
+              }}
+            >
+              Start whole-library restore
+            </Button>
+          </div>
+        </>
+      )}
+
+      {restoreRun && (active || restoreRun.status === "completed") && (
+        <div className="fc-last-run">
+          <h3>{restoreRun.title}</h3>
+          <p className="fc-muted" role="status">
+            {restoreRun.status === "queued"
+              ? "Queued · waiting for its turn"
+              : restoreRun.status === "running"
+                ? `Running · ${progress}% · ${restoreRunStage(restoreRun)}`
+                : `Finished · ${restoreRunStage(restoreRun)} verified. Thumbnails and previews rebuild in the background.`}
+          </p>
+          {restoreRun.status === "running" && (
+            <progress max={100} value={progress} aria-label="Restore progress">
+              {progress}%
+            </progress>
+          )}
         </div>
       )}
-    </Dialog>
+
+      <details className="fc-disclosure fc-preview">
+        <summary>
+          <Icon name="mdiEyeOutline" /> Preview as a non-admin user
+        </summary>
+        <p className="fc-muted">Non-admins see Items and Albums, limited to their own.</p>
+        <label className="fc-confirm">
+          <input type="checkbox" checked={asMember} onChange={(event) => setAsMember(event.target.checked)} />
+          Show this page as Jamie sees it
+        </label>
+      </details>
+
+      {dialog?.kind === "item" && (
+        <ItemRestoreDialog
+          item={dialog.item}
+          close={() => setDialog(null)}
+          onRestore={({ manifest, details }) => {
+            setDialog(null);
+            start({
+              title: `Restore “${dialog.item.name}” from ${when(manifest.createdAt)}`,
+              files: 1,
+              details,
+            });
+          }}
+        />
+      )}
+      {dialog?.kind === "key" && (
+        <RestoreKeyPrompt
+          close={() => setDialog(null)}
+          done={() => {
+            setDialog(null);
+            start(dialog.job);
+          }}
+        />
+      )}
+    </Card>
   );
 }
 

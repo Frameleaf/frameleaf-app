@@ -8,6 +8,14 @@ import React, {
 import { Icon } from "./Icon";
 import { Button, Dialog } from "./App";
 import { PersonAvatar } from "./People";
+import { ItemRestoreDialog } from "./FrameleafCloud";
+import {
+  backupManifests,
+  loadCloudState,
+  restoreRunActive,
+  saveCloudState,
+  startRestoreRun,
+} from "./frameleaf-cloud-data.mjs";
 import {
   viewerAssets,
   viewerCanShare,
@@ -3087,8 +3095,19 @@ function PeopleSection({
     </section>
   );
 }
+/** Sample: the newest kept backup that holds this item, derived from its id. */
+function newestBackupFor(asset) {
+  let value = 0;
+  for (const character of String(asset.id ?? asset.originalFileName ?? "")) value = (value * 31 + character.charCodeAt(0)) >>> 0;
+  return backupManifests[value % 2];
+}
+
 function DetailsSection({ asset, name, media, available, hasAction, run }) {
   const can = (id) => hasAction && available.includes(id);
+  const [cloud] = useState(() => loadCloudState());
+  const [restoring, setRestoring] = useState(false);
+  const [restoreNote, setRestoreNote] = useState("");
+  const inBackup = cloud.backup.configured ? newestBackupFor(asset) : null;
   const dimensions = dimensionsLabel(asset),
     pixels = megapixels(asset.width, asset.height),
     size = formatFileSize(asset.fileSizeInBytes),
@@ -3169,6 +3188,19 @@ function DetailsSection({ asset, name, media, available, hasAction, run }) {
       <code key="sum">{asset.checksum}</code>,
       "mdiHarddisk",
     ],
+    inBackup && [
+      "Backup",
+      <span className="mv-path" key="backup">
+        In backup ·{" "}
+        {new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(inBackup.createdAt))}
+        <button type="button" className="mv-text-button" onClick={() => setRestoring(true)}>
+          <Icon name="mdiBackupRestore" size={14} />
+          Restore from backup
+        </button>
+        {restoreNote && <small role="status">{restoreNote}</small>}
+      </span>,
+      "mdiCloudCheckOutline",
+    ],
   ].filter(Boolean);
   return (
     <section>
@@ -3184,6 +3216,23 @@ function DetailsSection({ asset, name, media, available, hasAction, run }) {
           </div>
         ))}
       </dl>
+      {restoring && (
+        <ItemRestoreDialog
+          item={{ name: asset.originalFileName || name, path: asset.originalPath, newest: inBackup.id }}
+          close={() => setRestoring(false)}
+          onRestore={({ manifest }) => {
+            setRestoring(false);
+            const current = loadCloudState();
+            if (!restoreRunActive(current))
+              saveCloudState(
+                startRestoreRun(current, { title: `Restore “${asset.originalFileName || name}”`, files: 1 }),
+              );
+            setRestoreNote(
+              `Restoring from ${new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(manifest.createdAt))}. Follow it in Activity.`,
+            );
+          }}
+        />
+      )}
     </section>
   );
 }

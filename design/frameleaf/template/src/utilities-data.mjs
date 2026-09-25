@@ -327,6 +327,7 @@ export const utilityFixtures = [
     candidate: "/mnt/photos/recovered/forest.ARW",
     checksum: "Match",
     candidateStatus: "Not checked",
+    backup: { status: "in-backup", newest: "m-2026-09-25" },
   }),
   fixture("missing-cabin", "Cabin at dusk.jpg", "cabin", "jamie", 6700000, {
     tool: "missing-media",
@@ -336,6 +337,19 @@ export const utilityFixtures = [
     candidate: "/mnt/photos/recovered/cabin.jpg",
     checksum: "Different",
     candidateStatus: "Found",
+    // The backup copy was taken after the file changed, so its fingerprint differs too.
+    backup: { status: "in-backup", newest: "m-2026-09-24", fingerprintMismatch: true },
+  }),
+  fixture("missing-kayak", "Kayak.mp4", "kayak", "taylor", 188000000, {
+    tool: "missing-media",
+    status: "Missing",
+    path: "/mnt/archive/2025/kayak.mp4",
+    evidence:
+      "The original path could not be opened. It was imported before cloud backup was set up.",
+    candidate: null,
+    checksum: "Not checked",
+    candidateStatus: "Not checked",
+    backup: { status: "none" },
   }),
   fixture("corrupt-video", "Campfire.mov", "campfire", "taylor", 287000000, {
     tool: "corrupt-media",
@@ -343,6 +357,7 @@ export const utilityFixtures = [
     path: "/mnt/photos/campfire.mov",
     evidence:
       "Repeated decode failure at 00:07.200; independent probe confirms a truncated stream.",
+    backup: { status: "in-backup", newest: "m-2026-09-24" },
   }),
   fixture("corrupt-raw", "Summit.CR3", "summit", "emma", 56000000, {
     tool: "corrupt-media",
@@ -350,12 +365,14 @@ export const utilityFixtures = [
     path: "/mnt/photos/summit.CR3",
     evidence:
       "Decoder does not support this camera. The original has not been proven corrupt.",
+    backup: { status: "in-backup", newest: "m-2026-09-25" },
   }),
   fixture("corrupt-suspect", "Elk.jpg", "elk", "jamie", 11200000, {
     tool: "corrupt-media",
     status: "Suspected damage",
     path: "/mnt/photos/elk.jpg",
     evidence: "A thumbnail job failed once. Further validation is needed.",
+    backup: { status: "checking", newest: "m-2026-09-01" },
   }),
 ];
 export function initialUtilities() {
@@ -614,6 +631,10 @@ export function parseUtilities(raw) {
       });
   return base;
 }
+/** Shown when a restored file doesn't match the fingerprint the library recorded. */
+export const RESTORE_REFUSED =
+  "Restore refused: the backup copy doesn’t match this item’s fingerprint. The finding stays open.";
+
 export function applyUtilityAction(
   state,
   {
@@ -658,6 +679,10 @@ export function applyUtilityAction(
     )
   )
     throw Error("Only confirmed damaged files can be moved to trash.");
+  if (action === "restore" && targets.some((row) => row.backup?.status !== "in-backup"))
+    throw Error("Only items in a kept backup can be restored from it.");
+  if (action === "restore" && targets.some((row) => row.backup.fingerprintMismatch))
+    throw Error(RESTORE_REFUSED);
   if (
     action === "location" &&
     (!Number.isFinite(latitude) ||
@@ -678,6 +703,7 @@ export function applyUtilityAction(
     link: ["live-photos"],
     relink: ["missing-media"],
     locate: ["missing-media"],
+    restore: ["missing-media", "corrupt-media"],
     location: ["geolocation"],
     keep: ["duplicates"],
     stack: ["duplicates"],
@@ -695,6 +721,7 @@ export function applyUtilityAction(
   const status = {
     link: "Linked",
     relink: "Relinked",
+    restore: "Restored",
     dismiss: "Dismissed",
     trash: "Trashed",
     "trash-corrupt": "Trashed",
