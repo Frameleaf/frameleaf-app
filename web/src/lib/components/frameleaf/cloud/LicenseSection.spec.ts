@@ -152,9 +152,6 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(await screen.findByText(/typo/)).toBeInTheDocument();
       expect(activate).toBeDisabled();
 
-      await fireEvent.input(input, { target: { value: 'FL-IC8Q-BT2Q-8ELH' } });
-      expect(await screen.findByText(/key for one person/)).toBeInTheDocument();
-
       await fireEvent.input(input, { target: { value: 'FL-S8NL-49G8-J58U' } });
       await waitFor(() => expect(activate).toBeEnabled());
       await fireEvent.click(activate);
@@ -163,6 +160,38 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       );
       expect(await screen.findByText('•••• J58U')).toBeInTheDocument();
       expect(screen.getByText('Licensed')).toBeInTheDocument();
+    });
+
+    it('activates a key for one person as the administrator’s own supporter key, as the prototype allows', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(license());
+      sdkMock.setUserLicense.mockResolvedValue({} as never);
+      sdkMock.getMyUser.mockResolvedValue({ id: 'admin-1', isAdmin: true, license: { kind: 'individual' } } as never);
+      render(LicenseSection);
+
+      await fireEvent.input(await screen.findByPlaceholderText('FL-XXXX-XXXX-XXXX'), {
+        target: { value: 'FL-IC8Q-BT2Q-8ELH' },
+      });
+      const activate = screen.getByRole('button', { name: 'Activate licence' });
+      await waitFor(() => expect(activate).toBeEnabled());
+      await fireEvent.click(activate);
+      await waitFor(() =>
+        expect(sdkMock.setUserLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-IC8Q-BT2Q-8ELH' } }),
+      );
+      expect(sdkMock.activateLicense).not.toHaveBeenCalled();
+      expect(await screen.findByText(/active for your account/)).toBeInTheDocument();
+    });
+
+    it.each([
+      [LicenseState.Expired, 'Your plan has ended'],
+      [LicenseState.Invalid, 'The licence could not be verified'],
+    ])('shows the %s banner and still offers a replacement key', async (state, title) => {
+      sdkMock.getLicenseStatus.mockResolvedValue(
+        license({ state, key: { ...keySlot, state }, keyHint: 'J58U', licensed: false }),
+      );
+      render(LicenseSection);
+      expect(await screen.findByText(title)).toBeInTheDocument();
+      expect(screen.getByText('Enter a licence key')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX')).toBeInTheDocument();
     });
 
     it('installs a licence file and shows this server’s instance ID', async () => {
