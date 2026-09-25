@@ -21,7 +21,16 @@ import {
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto, mapUser, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { CacheControl, JobName, JobStatus, Permission, QueueName, StorageFolder, UserMetadataKey } from 'src/enum.js';
+import {
+  CacheControl,
+  JobName,
+  JobStatus,
+  Permission,
+  QueueName,
+  StorageFolder,
+  UserMetadataKey,
+  UserStatus,
+} from 'src/enum.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -455,8 +464,12 @@ export class UserService extends BaseService {
       return;
     }
 
-    // just for extra protection here
-    if (!force && !this.isReadyForDeletion(user, config.user.deleteDelay)) {
+    // FL-71: checked against the account as it is now, since a failed deletion can be retried after
+    // the account was restored. A forced removal (UserAdminService.delete) marks it Removing.
+    const ready = force
+      ? !!user.deletedAt && user.status === UserStatus.Removing
+      : this.isReadyForDeletion(user, config.user.deleteDelay);
+    if (!ready) {
       this.logger.warn(`Skipped user that was not ready for deletion: id=${id}`);
       return;
     }
