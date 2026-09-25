@@ -12,6 +12,8 @@
 
 export type StudioRightsDecision = 'allowed' | 'blocked';
 
+export type StudioRightsUseName = 'redistribution' | 'localRuntime' | 'hostedUse';
+
 export type StudioResourceRights = {
   kind: string;
   license: string | null;
@@ -20,6 +22,8 @@ export type StudioResourceRights = {
   hostedUse: StudioRightsDecision;
   /** The date the owner approved this exact row, or null when it was not approved. */
   approvedOn: string | null;
+  /** Why the owner withheld a use of an approved row. A refusal repeats the reason. */
+  restrictions: Readonly<Partial<Record<StudioRightsUseName, string>>>;
 };
 
 export const STUDIO_RIGHTS_SOURCE_SHA256 = 'c78ca1c5fd3080676889db9d529149e91b677fa4d1d80c02295a8cbeb2f59dd1';
@@ -30,7 +34,7 @@ export const STUDIO_RIGHTS_APPROVAL = {
   approvedOn: '2026-09-25',
   source:
     'Jira FL-146, comment 34941: Owner decisions (2026-09-25, afternoon), "Studio resource rights: all 210 bundled resources (fonts, LUTs, tracks, models) are approved. Rights enforcement stays in place for anything new or unknown."',
-  sha256: '837de9c83671b049b66db80b026ace7f2e96e3301d198b8d07bb3255a780ba06',
+  sha256: 'd9810f10002cc770c1ec88a45c7e4b67dcbe0877a0ef2782466ec56ed44c8a34',
 } as const;
 
 /** Whether the engine as a whole may be redistributed. False blocks every redistribution. */
@@ -44,6 +48,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'asset:user-import': {
     kind: 'asset',
@@ -52,6 +57,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Abel': {
     kind: 'font',
@@ -60,6 +66,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Alfa Slab One': {
     kind: 'font',
@@ -68,6 +75,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Almarai': {
     kind: 'font',
@@ -76,6 +84,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Anek Telugu': {
     kind: 'font',
@@ -84,6 +93,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Anton': {
     kind: 'font',
@@ -92,6 +102,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Archivo': {
     kind: 'font',
@@ -100,6 +111,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Archivo Black': {
     kind: 'font',
@@ -108,6 +120,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Arimo': {
     kind: 'font',
@@ -116,6 +129,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Arvo': {
     kind: 'font',
@@ -124,6 +138,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Assistant': {
     kind: 'font',
@@ -132,6 +147,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Barlow': {
     kind: 'font',
@@ -140,6 +156,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Barlow Condensed': {
     kind: 'font',
@@ -148,6 +165,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Barlow Semi Condensed': {
     kind: 'font',
@@ -156,6 +174,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Bebas Neue': {
     kind: 'font',
@@ -164,6 +183,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Bitter': {
     kind: 'font',
@@ -172,6 +192,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Bricolage Grotesque': {
     kind: 'font',
@@ -180,6 +201,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Bungee': {
     kind: 'font',
@@ -188,6 +210,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Cabin': {
     kind: 'font',
@@ -196,6 +219,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Cairo': {
     kind: 'font',
@@ -204,6 +228,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Caveat': {
     kind: 'font',
@@ -212,6 +237,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Changa One': {
     kind: 'font',
@@ -220,6 +246,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Comfortaa': {
     kind: 'font',
@@ -228,6 +255,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Cormorant Garamond': {
     kind: 'font',
@@ -236,6 +264,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Crimson Text': {
     kind: 'font',
@@ -244,6 +273,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:DM Sans': {
     kind: 'font',
@@ -252,6 +282,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:DM Serif Display': {
     kind: 'font',
@@ -260,6 +291,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Dancing Script': {
     kind: 'font',
@@ -268,6 +300,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Domine': {
     kind: 'font',
@@ -276,6 +309,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Dosis': {
     kind: 'font',
@@ -284,6 +318,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:EB Garamond': {
     kind: 'font',
@@ -292,6 +327,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Exo 2': {
     kind: 'font',
@@ -300,6 +336,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Figtree': {
     kind: 'font',
@@ -308,6 +345,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Fira Sans': {
     kind: 'font',
@@ -316,6 +354,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Fjalla One': {
     kind: 'font',
@@ -324,6 +363,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Google Sans': {
     kind: 'font',
@@ -332,6 +372,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Gravitas One': {
     kind: 'font',
@@ -340,6 +381,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Heebo': {
     kind: 'font',
@@ -348,6 +390,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Hind': {
     kind: 'font',
@@ -356,6 +399,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Hind Siliguri': {
     kind: 'font',
@@ -364,6 +408,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:IBM Plex Mono': {
     kind: 'font',
@@ -372,6 +417,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:IBM Plex Sans': {
     kind: 'font',
@@ -380,6 +426,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Inconsolata': {
     kind: 'font',
@@ -388,6 +435,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Inter': {
     kind: 'font',
@@ -396,6 +444,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Inter Tight': {
     kind: 'font',
@@ -404,6 +453,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Josefin Sans': {
     kind: 'font',
@@ -412,6 +462,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Jost': {
     kind: 'font',
@@ -420,6 +471,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Kanit': {
     kind: 'font',
@@ -428,6 +480,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Karla': {
     kind: 'font',
@@ -436,6 +489,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Lato': {
     kind: 'font',
@@ -444,6 +498,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Lexend': {
     kind: 'font',
@@ -452,6 +507,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Lexend Deca': {
     kind: 'font',
@@ -460,6 +516,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Libre Baskerville': {
     kind: 'font',
@@ -468,6 +525,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Libre Franklin': {
     kind: 'font',
@@ -476,6 +534,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Lobster': {
     kind: 'font',
@@ -484,6 +543,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Lobster Two': {
     kind: 'font',
@@ -492,6 +552,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Lora': {
     kind: 'font',
@@ -500,6 +561,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:M PLUS 1p': {
     kind: 'font',
@@ -508,6 +570,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:M PLUS Rounded 1c': {
     kind: 'font',
@@ -516,6 +579,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Manrope': {
     kind: 'font',
@@ -524,6 +588,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Merriweather': {
     kind: 'font',
@@ -532,6 +597,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Merriweather Sans': {
     kind: 'font',
@@ -540,6 +606,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Montserrat': {
     kind: 'font',
@@ -548,6 +615,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Mukta': {
     kind: 'font',
@@ -556,6 +624,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Mulish': {
     kind: 'font',
@@ -564,6 +633,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Nanum Gothic': {
     kind: 'font',
@@ -572,6 +642,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Color Emoji': {
     kind: 'font',
@@ -580,6 +651,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Sans': {
     kind: 'font',
@@ -588,6 +660,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Sans Arabic': {
     kind: 'font',
@@ -596,6 +669,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Sans JP': {
     kind: 'font',
@@ -604,6 +678,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Sans KR': {
     kind: 'font',
@@ -612,6 +687,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Sans SC': {
     kind: 'font',
@@ -620,6 +696,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Sans TC': {
     kind: 'font',
@@ -628,6 +705,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Sans Telugu': {
     kind: 'font',
@@ -636,6 +714,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Serif': {
     kind: 'font',
@@ -644,6 +723,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Noto Serif JP': {
     kind: 'font',
@@ -652,6 +732,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Nunito': {
     kind: 'font',
@@ -660,6 +741,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Nunito Sans': {
     kind: 'font',
@@ -668,6 +750,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Open Sans': {
     kind: 'font',
@@ -676,6 +759,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Orbitron': {
     kind: 'font',
@@ -684,6 +768,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Oswald': {
     kind: 'font',
@@ -692,6 +777,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Outfit': {
     kind: 'font',
@@ -700,6 +786,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Overpass': {
     kind: 'font',
@@ -708,6 +795,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Oxygen': {
     kind: 'font',
@@ -716,6 +804,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:PT Sans': {
     kind: 'font',
@@ -724,6 +813,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:PT Sans Narrow': {
     kind: 'font',
@@ -732,6 +822,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:PT Serif': {
     kind: 'font',
@@ -740,6 +831,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Pacifico': {
     kind: 'font',
@@ -748,6 +840,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Playfair Display': {
     kind: 'font',
@@ -756,6 +849,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Plus Jakarta Sans': {
     kind: 'font',
@@ -764,6 +858,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Poppins': {
     kind: 'font',
@@ -772,6 +867,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Prompt': {
     kind: 'font',
@@ -780,6 +876,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Public Sans': {
     kind: 'font',
@@ -788,6 +885,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Quicksand': {
     kind: 'font',
@@ -796,6 +894,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Rajdhani': {
     kind: 'font',
@@ -804,6 +903,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Raleway': {
     kind: 'font',
@@ -812,6 +912,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Ramabhadra': {
     kind: 'font',
@@ -820,6 +921,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Red Hat Display': {
     kind: 'font',
@@ -828,6 +930,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Roboto': {
     kind: 'font',
@@ -836,6 +939,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Roboto Condensed': {
     kind: 'font',
@@ -844,6 +948,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Roboto Flex': {
     kind: 'font',
@@ -852,6 +957,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Roboto Mono': {
     kind: 'font',
@@ -860,6 +966,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Roboto Slab': {
     kind: 'font',
@@ -868,6 +975,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Rubik': {
     kind: 'font',
@@ -876,6 +984,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Saira': {
     kind: 'font',
@@ -884,6 +993,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Satisfy': {
     kind: 'font',
@@ -892,6 +1002,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Schibsted Grotesk': {
     kind: 'font',
@@ -900,6 +1011,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Shadows Into Light': {
     kind: 'font',
@@ -908,6 +1020,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Share Tech': {
     kind: 'font',
@@ -916,6 +1029,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Slabo 27px': {
     kind: 'font',
@@ -924,6 +1038,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Smooch Sans': {
     kind: 'font',
@@ -932,6 +1047,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Sora': {
     kind: 'font',
@@ -940,6 +1056,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Source Code Pro': {
     kind: 'font',
@@ -948,6 +1065,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Source Sans 3': {
     kind: 'font',
@@ -956,6 +1074,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Source Serif 4': {
     kind: 'font',
@@ -964,6 +1083,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Space Grotesk': {
     kind: 'font',
@@ -972,6 +1092,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Tajawal': {
     kind: 'font',
@@ -980,6 +1101,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Teko': {
     kind: 'font',
@@ -988,6 +1110,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Titillium Web': {
     kind: 'font',
@@ -996,6 +1119,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Ubuntu': {
     kind: 'font',
@@ -1004,6 +1128,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Urbanist': {
     kind: 'font',
@@ -1012,6 +1137,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'font:Work Sans': {
     kind: 'font',
@@ -1020,6 +1146,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:LiquidAI/LFM2.5-VL-450M-ONNX': {
     kind: 'model',
@@ -1028,6 +1155,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx': {
     kind: 'model',
@@ -1036,6 +1164,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX': {
     kind: 'model',
@@ -1044,6 +1173,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX': {
     kind: 'model',
@@ -1052,6 +1182,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:Xenova/all-MiniLM-L6-v2': {
     kind: 'model',
@@ -1060,6 +1191,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:Xenova/clap-htsat-unfused': {
     kind: 'model',
@@ -1068,6 +1200,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:Xenova/clip-vit-base-patch32': {
     kind: 'model',
@@ -1076,14 +1209,19 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:Xenova/musicgen-small': {
     kind: 'model',
     license: 'cc-by-nc-4.0',
     redistribution: 'allowed',
     localRuntime: 'allowed',
-    hostedUse: 'allowed',
+    hostedUse: 'blocked',
     approvedOn: '2026-09-25',
+    restrictions: {
+      hostedUse:
+        'CC-BY-NC-4.0 (non-commercial) licence, so it is not offered on Frameleaf Cloud; local use on this server or a LAN worker stays approved. Owner decision, Jira FL-146 comment 34944 (2026-09-25).',
+    },
   },
   'model:onnx-community/Kokoro-82M-v1.0-ONNX': {
     kind: 'model',
@@ -1092,6 +1230,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:onnx-community/gemma-4-E4B-it-ONNX': {
     kind: 'model',
@@ -1100,6 +1239,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:onnx-community/whisper-base_timestamped': {
     kind: 'model',
@@ -1108,6 +1248,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:onnx-community/whisper-large-v3-turbo_timestamped': {
     kind: 'model',
@@ -1116,6 +1257,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:onnx-community/whisper-small_timestamped': {
     kind: 'model',
@@ -1124,6 +1266,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:onnx-community/whisper-tiny_timestamped': {
     kind: 'model',
@@ -1132,6 +1275,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:supertonic-3': {
     kind: 'model',
@@ -1140,6 +1284,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'model:walterlow/RIFE_fp32_timestep': {
     kind: 'model',
@@ -1148,6 +1293,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'runtime:onnx-cdn': {
     kind: 'runtime-code',
@@ -1156,6 +1302,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'runtime:whisper-transformers': {
     kind: 'runtime-code',
@@ -1164,6 +1311,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'tool:dolby-artistic-trim': {
     kind: 'tool',
@@ -1172,6 +1320,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'tool:dolby-portal': {
     kind: 'tool',
@@ -1180,6 +1329,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_alloy': {
     kind: 'voice',
@@ -1188,6 +1338,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_aoede': {
     kind: 'voice',
@@ -1196,6 +1347,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_bella': {
     kind: 'voice',
@@ -1204,6 +1356,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_heart': {
     kind: 'voice',
@@ -1212,6 +1365,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_jessica': {
     kind: 'voice',
@@ -1220,6 +1374,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_kore': {
     kind: 'voice',
@@ -1228,6 +1383,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_nicole': {
     kind: 'voice',
@@ -1236,6 +1392,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_nova': {
     kind: 'voice',
@@ -1244,6 +1401,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_river': {
     kind: 'voice',
@@ -1252,6 +1410,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_sarah': {
     kind: 'voice',
@@ -1260,6 +1419,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-af_sky': {
     kind: 'voice',
@@ -1268,6 +1428,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-am_adam': {
     kind: 'voice',
@@ -1276,6 +1437,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-am_echo': {
     kind: 'voice',
@@ -1284,6 +1446,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-am_eric': {
     kind: 'voice',
@@ -1292,6 +1455,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-am_fenrir': {
     kind: 'voice',
@@ -1300,6 +1464,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-am_liam': {
     kind: 'voice',
@@ -1308,6 +1473,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-am_michael': {
     kind: 'voice',
@@ -1316,6 +1482,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-am_onyx': {
     kind: 'voice',
@@ -1324,6 +1491,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-am_puck': {
     kind: 'voice',
@@ -1332,6 +1500,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-am_santa': {
     kind: 'voice',
@@ -1340,6 +1509,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-bf_alice': {
     kind: 'voice',
@@ -1348,6 +1518,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-bf_emma': {
     kind: 'voice',
@@ -1356,6 +1527,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-bf_isabella': {
     kind: 'voice',
@@ -1364,6 +1536,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-bf_lily': {
     kind: 'voice',
@@ -1372,6 +1545,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-bm_daniel': {
     kind: 'voice',
@@ -1380,6 +1554,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-bm_fable': {
     kind: 'voice',
@@ -1388,6 +1563,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-bm_george': {
     kind: 'voice',
@@ -1396,6 +1572,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-bm_lewis': {
     kind: 'voice',
@@ -1404,6 +1581,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-ef_dora': {
     kind: 'voice',
@@ -1412,6 +1590,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-em_alex': {
     kind: 'voice',
@@ -1420,6 +1599,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-em_santa': {
     kind: 'voice',
@@ -1428,6 +1608,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-ff_siwis': {
     kind: 'voice',
@@ -1436,6 +1617,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-hf_alpha': {
     kind: 'voice',
@@ -1444,6 +1626,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-hf_beta': {
     kind: 'voice',
@@ -1452,6 +1635,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-hm_omega': {
     kind: 'voice',
@@ -1460,6 +1644,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-hm_psi': {
     kind: 'voice',
@@ -1468,6 +1653,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-if_sara': {
     kind: 'voice',
@@ -1476,6 +1662,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-im_nicola': {
     kind: 'voice',
@@ -1484,6 +1671,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-jf_alpha': {
     kind: 'voice',
@@ -1492,6 +1680,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-jf_gongitsune': {
     kind: 'voice',
@@ -1500,6 +1689,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-jf_nezumi': {
     kind: 'voice',
@@ -1508,6 +1698,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-jf_tebukuro': {
     kind: 'voice',
@@ -1516,6 +1707,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-jm_kumo': {
     kind: 'voice',
@@ -1524,6 +1716,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-pf_dora': {
     kind: 'voice',
@@ -1532,6 +1725,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-pm_alex': {
     kind: 'voice',
@@ -1540,6 +1734,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-pm_santa': {
     kind: 'voice',
@@ -1548,6 +1743,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-zf_xiaobei': {
     kind: 'voice',
@@ -1556,6 +1752,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-zf_xiaoni': {
     kind: 'voice',
@@ -1564,6 +1761,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-zf_xiaoxiao': {
     kind: 'voice',
@@ -1572,6 +1770,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-zf_xiaoyi': {
     kind: 'voice',
@@ -1580,6 +1779,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-zm_yunjian': {
     kind: 'voice',
@@ -1588,6 +1788,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-zm_yunxi': {
     kind: 'voice',
@@ -1596,6 +1797,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-zm_yunxia': {
     kind: 'voice',
@@ -1604,6 +1806,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:kokoro-zm_yunyang': {
     kind: 'voice',
@@ -1612,6 +1815,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-F1': {
     kind: 'voice',
@@ -1620,6 +1824,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-F2': {
     kind: 'voice',
@@ -1628,6 +1833,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-F3': {
     kind: 'voice',
@@ -1636,6 +1842,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-F4': {
     kind: 'voice',
@@ -1644,6 +1851,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-F5': {
     kind: 'voice',
@@ -1652,6 +1860,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-M1': {
     kind: 'voice',
@@ -1660,6 +1869,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-M2': {
     kind: 'voice',
@@ -1668,6 +1878,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-M3': {
     kind: 'voice',
@@ -1676,6 +1887,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-M4': {
     kind: 'voice',
@@ -1684,6 +1896,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'voice:supertonic-M5': {
     kind: 'voice',
@@ -1692,6 +1905,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'weights:anime4k-3d': {
     kind: 'bundled-weights',
@@ -1700,6 +1914,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'weights:anime4k-an': {
     kind: 'bundled-weights',
@@ -1708,6 +1923,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
   'weights:anime4k-rl': {
     kind: 'bundled-weights',
@@ -1716,5 +1932,6 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     localRuntime: 'allowed',
     hostedUse: 'allowed',
     approvedOn: '2026-09-25',
+    restrictions: {},
   },
 };

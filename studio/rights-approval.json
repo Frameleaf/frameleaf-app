@@ -524,7 +524,10 @@
     },
     {
       "id": "model:Xenova/musicgen-small",
-      "sha256": "ad5eb23fa07eb3ad7a7f41034c9250e041b3d5bdcd0d33fa609ce96451d2f650"
+      "sha256": "ad5eb23fa07eb3ad7a7f41034c9250e041b3d5bdcd0d33fa609ce96451d2f650",
+      "excludedUses": {
+        "hostedUse": "CC-BY-NC-4.0 (non-commercial) licence, so it is not offered on Frameleaf Cloud; local use on this server or a LAN worker stays approved. Owner decision, Jira FL-146 comment 34944 (2026-09-25)."
+      }
     },
     {
       "id": "model:onnx-community/Kokoro-82M-v1.0-ONNX",
@@ -846,5 +849,10 @@
   "rowDigest": "sha256 of the canonical JSON of the resource's id, kind, locator, revision, licenseDeclared and files in studio/dependency-attribution.json. A row that changes after approval is no longer approved.",
   "schemaVersion": 1,
   "source": "Jira FL-146, comment 34941: Owner decisions (2026-09-25, afternoon), \"Studio resource rights: all 210 bundled resources (fonts, LUTs, tracks, models) are approved. Rights enforcement stays in place for anything new or unknown.\"",
-  "uses": ["redistribution", "localRuntime", "hostedUse"]
+  "uses": [
+    "redistribution",
+    "localRuntime",
+    "hostedUse"
+  ],
+  "exclusionsSource": "Jira FL-146, comment 34944: Owner decision (2026-09-25), model licences: \"Removed from the Frameleaf Cloud offering (hosted use): nllb-clip ... and MusicGen-small (CC-BY-NC-4.0). Both stay available locally, on the server or a LAN worker.\""
 }

@@ -503,9 +503,9 @@ const actions = {
     "Discard with toast; Save version closes",
   ],
   "open-full-workspace-retaining-draft-and-playhead": [
-    "partial",
-    ["E-1", "MPY-10"],
-    "Open in Studio from the editor (fix-editor-albums, FL-113); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62); keeping the draft and playhead in the workspace is studio-parked",
+    "fixed",
+    ["E-1", "MPY-10", "ST-1"],
+    "Open in Studio from the editor keeps the draft, its undo history and the playhead (editor-continuity, FL-113); Studio starts at that playhead in the Freecut editor and Back to quick edit returns to the same draft (ST-1, FL-88); the memory player's Make a movie opens Studio with its items (MPY-10, FL-62)",
   ],
   "persistent-render-status-cancel-retry-reload-revision-supersession": [
     "match",
@@ -1787,9 +1787,9 @@ const routes = {
     [`${W}/routes/(user)/sharing/sharedlinks/+page.ts`],
   ],
   "/studio": [
-    "studio-parked",
+    "fixed",
     ["ST-1", "ST-2", "ST-3", "ST-4", "ST-5", "ST-6"],
-    "The header is done (ST-2…ST-7, FL-88: rename, Library back, review count, Basic/Advanced, avatar, export dialog; the workspace layout is stored per account, FL-91). The workspace itself waits on the parked engine (ST-1)",
+    "The header (ST-2…ST-7, FL-88: rename, Library back, review count, Basic/Advanced, avatar, export dialog; workspace layout stored per account, FL-91) and the workspace itself: the pinned Freecut editor mounted in a same-origin frame through studio/adapters/web (ST-1, FL-88; engine unparked 2026-09-25), with canonical commands applied by the engine (FL-92)",
     [`${P}/Studio.jsx`, `${P}/studio-project.mjs`],
     [
       `${W}/routes/(user)/studio/+page.svelte`,
