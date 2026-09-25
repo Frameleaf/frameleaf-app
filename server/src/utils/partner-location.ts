@@ -100,26 +100,28 @@ export const getOriginalLocationPolicy = ({
   locationHiddenOwnerIds: ReadonlySet<string>;
   purpose: OriginalPurpose;
 }): OriginalLocationPolicy => {
-  if (auth.sharedLink) {
-    if (auth.sharedLink.showExif) {
-      return OriginalLocationPolicy.Serve;
-    }
-
+  if (auth.sharedLink && !auth.sharedLink.showExif) {
     // AL-27: a link that hides metadata never offers downloads (the file carries it all); playback of
     // an original video stays possible but without its location
     return purpose === 'download' ? OriginalLocationPolicy.Refuse : OriginalLocationPolicy.RemoveLocation;
   }
 
-  if (ownerId === auth.user.id) {
+  // A link shows at most what its creator may see: a partner the owner hides locations from must not get
+  // them back by linking the asset, or an album holding it, and opening the link (FL-54 review B1).
+  const viewerId = getOriginalViewerId(auth);
+  if (ownerId === viewerId) {
     return OriginalLocationPolicy.Serve;
   }
 
   return locationHiddenOwnerIds.has(ownerId) ? OriginalLocationPolicy.RemoveLocation : OriginalLocationPolicy.Serve;
 };
 
+/** whose partner settings apply: the signed-in user, or for a shared link the user who created it */
+const getOriginalViewerId = (auth: AuthDto) => auth.sharedLink?.userId ?? auth.user.id;
+
 /**
- * Resolves the policy for every owner in `ownerIds`. The partner lookup only runs when a signed-in user
- * reads someone else's files, so the owner's own downloads cost nothing extra.
+ * Resolves the policy for every owner in `ownerIds`. The partner lookup only runs when someone else's files
+ * are read (by a signed-in user or through a link), so the owner's own downloads cost nothing extra.
  */
 export const getOriginalLocationPolicies = async ({
   auth,
@@ -132,9 +134,11 @@ export const getOriginalLocationPolicies = async ({
   purpose: OriginalPurpose;
   repository: PartnerRepository;
 }): Promise<(ownerId: string) => OriginalLocationPolicy> => {
-  const needsLookup = !auth.sharedLink && [...ownerIds].some((ownerId) => ownerId !== auth.user.id);
+  const viewerId = getOriginalViewerId(auth);
+  const hidesAllMetadata = !!auth.sharedLink && !auth.sharedLink.showExif;
+  const needsLookup = !hidesAllMetadata && [...ownerIds].some((ownerId) => ownerId !== viewerId);
   const locationHiddenOwnerIds = needsLookup
-    ? await getLocationHiddenPartnerIds({ userId: auth.user.id, repository })
+    ? await getLocationHiddenPartnerIds({ userId: viewerId, repository })
     : new Set<string>();
 
   return (ownerId) => getOriginalLocationPolicy({ auth, ownerId, locationHiddenOwnerIds, purpose });

@@ -150,11 +150,23 @@ describe('partner location policy', () => {
       }
     });
 
-    it('serves a shared link that shows metadata untouched', () => {
-      const auth = AuthFactory.from(me).sharedLink({ showExif: true, allowDownload: true }).build();
-      expect(getOriginalLocationPolicy({ auth, ownerId: hiding.id, locationHiddenOwnerIds, purpose: 'download' })).toBe(
-        OriginalLocationPolicy.Serve,
-      );
+    it('serves a shared link that shows metadata the original when its creator may see the location', () => {
+      const auth = AuthFactory.from(me).sharedLink({ userId: me.id, showExif: true, allowDownload: true }).build();
+      for (const ownerId of [me.id, sharing.id]) {
+        expect(getOriginalLocationPolicy({ auth, ownerId, locationHiddenOwnerIds, purpose: 'download' })).toBe(
+          OriginalLocationPolicy.Serve,
+        );
+      }
+    });
+
+    it('removes the location through a link whose creator the owner hides locations from (review B1)', () => {
+      // a hidden partner linked the owner's asset, or an album holding it, with metadata shown
+      const auth = AuthFactory.from(me).sharedLink({ userId: me.id, showExif: true, allowDownload: true }).build();
+      for (const purpose of ['download', 'playback'] as const) {
+        expect(getOriginalLocationPolicy({ auth, ownerId: hiding.id, locationHiddenOwnerIds, purpose })).toBe(
+          OriginalLocationPolicy.RemoveLocation,
+        );
+      }
     });
 
     it('refuses downloads through a shared link that hides metadata, even when download is on', () => {
@@ -186,7 +198,7 @@ describe('partner location policy', () => {
       expect(repository.getAll).not.toHaveBeenCalled();
     });
 
-    it('skips the partner lookup for a shared link', async () => {
+    it('skips the partner lookup for a shared link that hides metadata', async () => {
       const policyFor = await getOriginalLocationPolicies({
         auth: AuthFactory.from().sharedLink({ showExif: false }).build(),
         ownerIds: [newUuid()],
@@ -196,6 +208,29 @@ describe('partner location policy', () => {
 
       expect(policyFor(newUuid())).toBe(OriginalLocationPolicy.Refuse);
       expect(repository.getAll).not.toHaveBeenCalled();
+    });
+
+    it("resolves an album link's assets from the link creator's partner settings", async () => {
+      const creator = UserFactory.create();
+      const hiding = UserFactory.create();
+      const member = UserFactory.create();
+      vitest
+        .mocked(repository.getAll)
+        .mockResolvedValue([
+          getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith(creator).build()),
+        ]);
+
+      const policyFor = await getOriginalLocationPolicies({
+        auth: AuthFactory.from(creator).sharedLink({ userId: creator.id, albumId: newUuid(), showExif: true }).build(),
+        ownerIds: [creator.id, hiding.id, member.id],
+        purpose: 'download',
+        repository,
+      });
+
+      expect(repository.getAll).toHaveBeenCalledWith(creator.id);
+      expect(policyFor(creator.id)).toBe(OriginalLocationPolicy.Serve);
+      expect(policyFor(hiding.id)).toBe(OriginalLocationPolicy.RemoveLocation);
+      expect(policyFor(member.id)).toBe(OriginalLocationPolicy.Serve);
     });
 
     it("resolves each owner from the viewer's partner settings", async () => {
