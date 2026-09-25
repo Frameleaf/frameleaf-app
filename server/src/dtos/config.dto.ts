@@ -1166,7 +1166,10 @@ const FrameleafPublicConfigSchema = z
       .nullable()
       .describe('How the request arrived; null when the edge worker did not vouch for it'),
     relayHost: z.string().nullable().describe('The remote-access host shown on the login page, when known'),
-    localUrl: z.string().nullable().describe('This server on the home network, when configured'),
+    localUrl: z
+      .string()
+      .nullable()
+      .describe('This server on the home network; given only to a remote-access visitor who is on it'),
     sameNetwork: z.boolean().describe('Whether a remote-access visitor is on the same network as this server'),
   })
   .meta({ id: 'FrameleafPublicConfigDto' });
