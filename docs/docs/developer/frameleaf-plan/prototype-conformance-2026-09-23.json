@@ -20,13 +20,13 @@
     "routes": 83,
     "byStatus": {
       "match": 61,
-      "partial": 81,
+      "partial": 70,
       "missing": 2,
-      "fixed": 67,
+      "fixed": 77,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 8,
-      "intentional-product-change": 2
+      "intentional-product-change": 3
     }
   },
   "webActions": [
@@ -882,7 +882,7 @@
         "web/src/lib/components/frameleaf/ResultsToolbar.svelte",
         "web/src/lib/components/frameleaf/FilterChip.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["S-19", "SD-12"],
       "followUp": "Chips open their section, the search text is a chip and Clear all shows whenever anything is active (S-19, fixed by the FL-30 library gaps); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette"
     },
@@ -1216,9 +1216,9 @@
         "web/src/lib/components/frameleaf/ShowMore.svelte",
         "web/src/lib/components/frameleaf/LibraryView.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-14"],
-      "followUp": "ShowMore only outside the timeline layout; Select all N on matching pages"
+      "followUp": "ShowMore only where a page pages its results (never under the timeline); Select all N reads the grid's count until the server has counted (FL-33 shell completion)"
     },
     {
       "requirementId": "action:timeline-bulk:bulk-add-remove-tags",
@@ -1258,9 +1258,9 @@
         "web/src/lib/components/frameleaf/BulkDateDialog.svelte",
         "web/src/lib/components/frameleaf/BulkLocationDialog.svelte"
       ],
-      "status": "partial",
+      "status": "intentional-product-change",
       "gaps": ["T-13", "T-19"],
-      "followUp": "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); location place-name fields need a server field and an owner decision (T-13)"
+      "followUp": "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); the location place-name fields are not built by owner decision (T-13, FL-146 2026-09-25)"
     },
     {
       "requirementId": "action:timeline-bulk:bulk-delete-undo-with-partial-failures",
@@ -1284,9 +1284,9 @@
         "design/frameleaf/template/src/selection.mjs"
       ],
       "production": ["web/src/lib/frameleaf/bulk-operations.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-17"],
-      "followUp": "Archived items leave the library scope"
+      "followUp": "Archived items leave a Timeline view and unarchived ones leave Archive; no Archived badge; Offline badge from the bucket (FL-33 shell completion)"
     },
     {
       "requirementId": "action:timeline-bulk:bulk-favorite-unfavorite",
@@ -1345,9 +1345,9 @@
         "design/frameleaf/template/src/selection.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/AssetTile.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-4", "T-20"],
-      "followUp": "Tile hover quick actions are done (T-4, FL-33 library gaps); aria nits remain (T-20)"
+      "followUp": "Tile hover quick actions are done (T-4, FL-33 library gaps); Deselect label, full day titles and Timeline-only Locked (T-20, FL-33 shell completion)"
     },
     {
       "requirementId": "action:timeline-bulk:date-grouped-photos-browse-chronological-library",
@@ -1358,9 +1358,9 @@
         "design/frameleaf/template/src/selection.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/LibraryTimeline.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-3", "T-7", "T-10"],
-      "followUp": "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); grouping remains (T-3)"
+      "followUp": "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); Years/Months/Days/All grouping with ⌘-wheel, pinch, D/M/Y and the announcement (T-3)"
     },
     {
       "requirementId": "action:timeline-bulk:grid-list-compare-and-persisted-query-selection-layout",
@@ -1371,9 +1371,9 @@
         "design/frameleaf/template/src/selection.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/ResultsToolbar.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-8", "S-15", "S-17"],
-      "followUp": "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); the Browse/Work grid remains (T-8)"
+      "followUp": "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); square Browse and Work grids with Thumbnail size (T-8; the month-boundary row gap is owner decision FL-143)"
     },
     {
       "requirementId": "action:timeline-bulk:jump-scroll-to-time-restore-asset-position",
@@ -1416,9 +1416,9 @@
         "web/src/lib/frameleaf/library-shortcuts.ts",
         "web/src/lib/components/frameleaf/LibraryView.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-5", "S-22", "T-14"],
-      "followUp": "Library action shortcuts work on every library page (T-5, FL-33 library gaps); key-map drift (S-22) and Select all N (T-14) remain"
+      "followUp": "Library action shortcuts work on every library page (T-5, FL-33 library gaps); ←/→ move focus in the timeline and Delete has no Shift path there (S-22); Select all N (T-14)"
     },
     {
       "requirementId": "action:timeline-bulk:stack-selected-photos",
@@ -2209,9 +2209,9 @@
       "route": "/best-photos/[[photos=photos]]/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/App.jsx", "design/frameleaf/template/src/AssetTile.jsx"],
       "production": ["web/src/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-6"],
-      "followUp": "Score as tile rating (T-6 open); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map"
+      "followUp": "Tiles show each item's own rating from the buckets and details, the score orders the page as in App.jsx (T-6); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map"
     },
     {
       "route": "/buy",
@@ -2277,9 +2277,9 @@
         "design/frameleaf/template/src/locked-content.mjs"
       ],
       "production": ["web/src/routes/(user)/locked/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["S-6", "S-7", "T-20"],
-      "followUp": "Locked control and in-place unlock dialog (fixed on claude/frameleaf-implementation by FL-80); layout forced to Timeline (T-20)"
+      "followUp": "Locked control and in-place unlock dialog (fixed on claude/frameleaf-implementation by FL-80); the layout switch offers the Timeline only (T-20)"
     },
     {
       "route": "/maintenance",
@@ -2397,9 +2397,9 @@
         "web/src/routes/(user)/photos/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/LibraryView.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-3", "T-4", "T-5", "T-6", "T-7", "T-8", "T-10", "T-14", "T-15", "S-15", "S-16", "S-17", "S-19"],
-      "followUp": "Timeline, toolbar and bottom bar conformance"
+      "followUp": "Timeline, toolbar and bottom bar conformance (FL-30/FL-33 shell completion)"
     },
     {
       "route": "/places",
