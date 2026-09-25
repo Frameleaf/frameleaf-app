@@ -59,7 +59,7 @@ import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
-import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
+import { applyAlbumLocationPolicy, applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
 const imageEditActions = new Set<AssetEditAction>([
@@ -173,10 +173,11 @@ export class AssetService extends BaseService {
     }
 
     // a sharer who hides locations from this viewer never hands over coordinates or place names
-    const [data] = await applyPartnerLocationPolicy([mapAsset(asset, { withStack: true, auth })], {
-      userId: auth.user.id,
-      repository: this.partnerRepository,
-    });
+    const locationOptions = { userId: auth.user.id, repository: this.partnerRepository };
+    const [data] = await applyAlbumLocationPolicy(
+      await applyPartnerLocationPolicy([mapAsset(asset, { withStack: true, auth })], locationOptions),
+      locationOptions,
+    );
 
     if (auth.sharedLink) {
       delete data.owner;

@@ -33,7 +33,7 @@ import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isLockedRow } from 'src/utils/locked.js';
-import { getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
+import { getLocationHiddenOwnerIdsForView } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
 
@@ -255,8 +255,9 @@ export class AlbumService extends BaseService {
     // otherwise tell them which items the owner has favorited.
     // FL-54: markers are pure location, so an owner who hides their locations from the viewer contributes
     // none; a shared link is judged as the user who created it
-    const hidden = await getLocationHiddenPartnerIds({
-      userId: auth.sharedLink?.userId ?? auth.user.id,
+    const hidden = await getLocationHiddenOwnerIdsForView({
+      viewerId: auth.sharedLink?.userId ?? auth.user.id,
+      albumIds: [id],
       repository: this.partnerRepository,
     });
     const locationHidden = hidden.size > 0 ? { locationHiddenOwnerIds: [...hidden] } : {};

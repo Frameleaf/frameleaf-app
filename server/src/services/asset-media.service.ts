@@ -44,7 +44,12 @@ import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension }
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { OriginalLocationPolicy, OriginalPurpose, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
+import {
+  OriginalAsset,
+  OriginalLocationPolicy,
+  OriginalPurpose,
+  getOriginalLocationPolicies,
+} from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 
 export interface AssetMediaRedirectResponse {
@@ -299,7 +304,7 @@ export class AssetMediaService extends BaseService {
 
     const path = editedPath ?? originalPath!;
 
-    return this.withOriginalLocationPolicy(auth, ownerId, 'download', {
+    return this.withOriginalLocationPolicy(auth, { id, ownerId }, 'download', {
       path,
       fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(path),
       contentType: mimeTypes.lookup(path),
@@ -315,18 +320,18 @@ export class AssetMediaService extends BaseService {
    */
   private async withOriginalLocationPolicy(
     auth: AuthDto,
-    ownerId: string,
+    asset: OriginalAsset,
     purpose: OriginalPurpose,
     response: ImmichFileResponse,
   ): Promise<ImmichFileResponse> {
     const policyFor = await getOriginalLocationPolicies({
       auth,
-      ownerIds: [ownerId],
+      assets: [asset],
       purpose,
       repository: this.partnerRepository,
     });
 
-    switch (policyFor(ownerId)) {
+    switch (policyFor(asset)) {
       case OriginalLocationPolicy.Serve: {
         return new ImmichFileResponse(response);
       }
@@ -360,7 +365,7 @@ export class AssetMediaService extends BaseService {
     }
 
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
+    const { ownerId, originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
       id,
       size,
       dto.edited ?? false,
@@ -384,13 +389,22 @@ export class AssetMediaService extends BaseService {
     const fileNameBase =
       auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
     const fileName = `${fileNameBase}_${size}${getFilenameExtension(path)}`;
-
-    return new ImmichFileResponse({
+    const response = new ImmichFileResponse({
       fileName,
       path,
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
     });
+
+    // FL-54: a fullsize preview extracted from a RAW before generation-time stripping still carries the
+    // camera's GPS. Rather than a one-time regeneration job, those files are cleaned lazily: a viewer who
+    // may not see the owner's location gets a verified location-free copy (a clean file is served as is).
+    // Thumbnails and previews are re-encoded without metadata, so only fullsize needs the check.
+    if (size === AssetFileType.FullSize) {
+      return this.withOriginalLocationPolicy(auth, { id, ownerId }, 'playback', response);
+    }
+
+    return response;
   }
 
   async downloadVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<ImmichFileResponse> {
@@ -417,7 +431,7 @@ export class AssetMediaService extends BaseService {
 
     const filepath = asset.editedVideoPath || asset.encodedVideoPath || asset.originalPath;
 
-    return this.withOriginalLocationPolicy(auth, asset.ownerId, 'playback', {
+    return this.withOriginalLocationPolicy(auth, { id, ownerId: asset.ownerId }, 'playback', {
       path: filepath,
       contentType: mimeTypes.lookup(filepath),
       cacheControl: CacheControl.PrivateWithCache,
