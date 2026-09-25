@@ -1875,8 +1875,11 @@ export class AssetRepository {
           .$if(!page, (qb) =>
             qb.orderBy(orderDate, order).orderBy(orderTimestamp, order).orderBy('asset.originalFileName', order),
           )
-          // File names in a locale-aware (ICU) collation, so "img_2" sorts with "IMG_10" as a person
-          // expects; the newest capture and then the id break ties, so pages never overlap.
+          // File names in the ICU root collation (`und-x-icu`): letters compare regardless of case and
+          // accents first, as a person reads a list, rather than by byte value. Digits still compare
+          // one by one ("IMG_10" before "IMG_2"). This needs a Postgres built with ICU, which the Immich
+          // Postgres images (production and e2e) are. The newest capture, then the id, break ties so
+          // pages never overlap.
           .$if(page?.sort === 'filename', (qb) =>
             qb
               .orderBy(sql`asset."originalFileName" collate "und-x-icu"`, 'asc')
