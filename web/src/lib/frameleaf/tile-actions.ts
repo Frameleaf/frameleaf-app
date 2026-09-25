@@ -22,25 +22,30 @@ export type TileActionContext = {
   canOpen: boolean;
   /** The page shows the trash, where nothing but restore and delete applies. */
   trash?: boolean;
+  /** The page is the Locked view, whose items are never favorited, edited or shared from a tile. */
+  locked?: boolean;
 };
 
 export type TileActionAvailability = { favorite: boolean; edit: boolean; share: boolean; more: boolean };
 
 /**
  * What a tile may offer. Favorite, edit and share change the item, so they are the owner's alone,
- * as the selection bar's descriptors decide (`bulk-actions.ts`). A Locked item is never shared from
- * a tile: a link would carry it out of the Locked session.
+ * as the selection bar's descriptors decide (`bulk-actions.ts`). A Locked item — on the Locked page
+ * or revealed in an unlocked session — offers none of them: the bar offers no favorite for Locked
+ * items, the editor would write a new version outside the Locked session, and a link would carry it
+ * out of it. Only More (the viewer, which applies its own Locked rules) remains.
  */
 export const tileActionAvailability = (
   asset: Pick<TimelineAsset, 'ownerId' | 'isTrashed' | 'visibility'>,
   context: TileActionContext,
 ): TileActionAvailability => {
   const owned = !!context.currentUserId && asset.ownerId === context.currentUserId;
-  const live = owned && !asset.isTrashed && !context.trash;
+  const locked = !!context.locked || asset.visibility === AssetVisibility.Locked;
+  const live = owned && !asset.isTrashed && !context.trash && !locked;
   return {
     favorite: live,
     edit: live && context.canEdit,
-    share: live && context.canShare && asset.visibility !== AssetVisibility.Locked,
+    share: live && context.canShare,
     more: context.canOpen,
   };
 };

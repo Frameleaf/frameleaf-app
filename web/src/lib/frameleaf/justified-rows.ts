@@ -171,16 +171,20 @@ class FilledJustifiedLayout implements CommonJustifiedLayout {
       width: 0,
       height: 0,
     }));
+    // A caption row under each row (Timeline captions): the photos keep their height and every row
+    // below starts that much lower.
+    const caption = nonNegative(options.captionHeight, 0);
     let widest = 0;
     let bottom = 0;
-    for (const row of rows) {
+    for (const [rowIndex, row] of rows.entries()) {
+      const top = row.top + rowIndex * caption;
       let left = 0;
       for (const tile of row.tiles) {
-        positions[tile.index] = { top: row.top, left, width: tile.width, height: tile.height };
+        positions[tile.index] = { top, left, width: tile.width, height: tile.height };
         left += tile.width + gap;
       }
       widest = Math.max(widest, row.width);
-      bottom = row.top + row.height;
+      bottom = top + row.height + caption;
     }
     this.#positions = positions;
     // Rows fill the container, so the group is exactly as wide as the timeline allows. Falling back

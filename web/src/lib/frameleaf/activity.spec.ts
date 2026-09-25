@@ -603,6 +603,11 @@ describe('the status line (FL-30, prototype `statusText`)', () => {
     expect(activityStatusText(item({ progress: 42 }), { translate, formatDuration, online: false })).toBe(
       'frameleaf_activity_status_offline_progress({"progress":42})',
     );
+    // A queued job waits for the connection too.
+    const queued = item({ running: false, progress: null, statusKey: 'frameleaf_activity_status_queued' });
+    expect(activityStatusText(queued, { translate, formatDuration, online: false })).toBe(
+      'frameleaf_activity_status_offline',
+    );
   });
 
   it('keeps a finished state plain, but says where a cancelled job stopped', () => {

@@ -24,8 +24,10 @@ describe('tile quick actions (FL-33, T-4)', () => {
     });
   });
 
-  it('never shares a Locked item from a tile', () => {
-    expect(tileActionAvailability(asset({ visibility: AssetVisibility.Locked }), context).share).toBe(false);
+  it('offers nothing but More on a Locked item, on the Locked page or revealed elsewhere', () => {
+    const locked = { favorite: false, edit: false, share: false, more: true };
+    expect(tileActionAvailability(asset({ visibility: AssetVisibility.Locked }), context)).toEqual(locked);
+    expect(tileActionAvailability(asset(), { ...context, locked: true })).toEqual(locked);
   });
 
   it('changes nothing in the trash, and needs a viewer to edit or open', () => {

@@ -20,7 +20,9 @@ export function updateGeometry(timelineManager: TimelineManager, month: Timeline
     if (!month.isHeightActual) {
       const unwrappedWidth = (3 / 2) * month.assetsCount * timelineManager.rowHeight * (7 / 10);
       const rows = Math.ceil(unwrappedWidth / viewportWidth);
-      const height = month.groupHeaderHeight + Math.max(1, rows) * timelineManager.rowHeight;
+      // Timeline captions (FL-33) add a caption row under every row of photos.
+      const height =
+        month.groupHeaderHeight + Math.max(1, rows) * (timelineManager.rowHeight + timelineManager.captionHeight);
       month.height = height;
     }
     return;
