@@ -278,6 +278,25 @@ export function renderedDuration(edit: Pick<VideoEdit, 'start' | 'end' | 'speed'
   return round(total, 3);
 }
 
+/**
+ * Where a fast trim really cuts: the renderer opens the clip at the last keyframe at or before the
+ * in point and copies the trimmed length from there (`qualifyStreamCopyTrim`). Null until the
+ * keyframes are known.
+ */
+export function fastTrimBounds(
+  keyframesMs: readonly number[] | null,
+  edit: Pick<VideoEdit, 'start' | 'end'>,
+  duration: number,
+): { start: number; end: number } | null {
+  if (!keyframesMs || keyframesMs.length === 0) {
+    return null;
+  }
+  const inMs = Math.round(edit.start * 1000);
+  const keyframe = keyframesMs.findLast((time) => time <= inMs) ?? 0;
+  const start = keyframe / 1000;
+  return { start, end: Math.min(duration, round(start + (edit.end - edit.start), 3)) };
+}
+
 /** `00:12.4`, the prototype's `precise` time. */
 export const preciseTime = (seconds: number) => {
   const safe = Math.max(0, seconds || 0);
