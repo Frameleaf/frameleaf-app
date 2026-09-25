@@ -9,6 +9,8 @@ vi.mock('@immich/sdk', async () => {
   return { ...sdk, updateAsset: vi.fn() };
 });
 vi.mock('$lib/components/shared-components/map/Map.svelte', () => ({ default: () => {} }));
+const { confirmRequest } = vi.hoisted(() => ({ confirmRequest: vi.fn<(options: unknown) => Promise<boolean>>() }));
+vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: confirmRequest }));
 
 describe('ViewerLocationDialog (V-24)', () => {
   beforeAll(() => {
@@ -70,11 +72,76 @@ describe('ViewerLocationDialog (V-24)', () => {
     );
   });
 
-  it('cannot remove the coordinates of a located item', async () => {
-    render(ViewerLocationDialog, { asset: located(), onClose: vi.fn() });
+  it('removes the location after the owner confirms it (FL-51, FL-146)', async () => {
+    const asset = located();
+    const updated = { ...asset };
+    vi.mocked(updateAsset).mockResolvedValue(updated);
+    confirmRequest.mockResolvedValue(true);
+    const onClose = vi.fn();
+    render(ViewerLocationDialog, { asset, onClose });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_info_remove_location' }));
+
+    await waitFor(() =>
+      expect(updateAsset).toHaveBeenCalledWith({
+        id: asset.id,
+        updateAssetDto: { latitude: null, longitude: null },
+      }),
+    );
+    expect(confirmRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'frameleaf_info_remove_location_title',
+        prompt: 'frameleaf_info_remove_location_prompt',
+        confirmText: 'frameleaf_info_remove_location',
+        danger: true,
+      }),
+    );
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(updated));
+  });
+
+  it('keeps the location and the dialog when the owner chooses Keep', async () => {
+    confirmRequest.mockResolvedValue(false);
+    const onClose = vi.fn();
+    render(ViewerLocationDialog, { asset: located(), onClose });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_info_remove_location' }));
+
+    await waitFor(() => expect(confirmRequest).toHaveBeenCalledOnce());
+    expect(updateAsset).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'edit_location' })).toBeInTheDocument();
+  });
+
+  it('says a Live Photo video loses its location too, and confirms emptied coordinates as a removal', async () => {
+    const asset = { ...located(), livePhotoVideoId: 'motion-1' };
+    vi.mocked(updateAsset).mockResolvedValue(asset);
+    confirmRequest.mockResolvedValue(true);
+    render(ViewerLocationDialog, { asset, onClose: vi.fn() });
+
     await fireEvent.input(screen.getByLabelText('latitude'), { target: { value: '' } });
     await fireEvent.input(screen.getByLabelText('longitude'), { target: { value: '' } });
-    expect(screen.getByRole('alert')).toHaveTextContent('frameleaf_info_coordinates_required');
+    expect(screen.queryByRole('alert')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+
+    await waitFor(() =>
+      expect(confirmRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: 'frameleaf_info_remove_location_prompt_live' }),
+      ),
+    );
+    await waitFor(() =>
+      expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { latitude: null, longitude: null } }),
+    );
+  });
+
+  it('offers no removal for an item without a location', () => {
+    render(ViewerLocationDialog, { asset: assetFactory.build({ exifInfo: {} }), onClose: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'frameleaf_info_remove_location' })).toBeNull();
+  });
+
+  it('refuses a lone coordinate', async () => {
+    render(ViewerLocationDialog, { asset: located(), onClose: vi.fn() });
+    await fireEvent.input(screen.getByLabelText('longitude'), { target: { value: '' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('frameleaf_info_coordinates_invalid');
     expect(screen.getByRole('button', { name: 'save' })).toBeDisabled();
   });
 });
