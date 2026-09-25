@@ -167,8 +167,7 @@ export const recognitionDestinationKey = (kind: MlDestinationKind): Translations
     case MlDestinationKind.Lan: {
       return 'frameleaf_pets_recognition_runs_lan';
     }
-    case MlDestinationKind.Runpod:
-    case MlDestinationKind.RunpodVideo: {
+    case MlDestinationKind.FrameleafCloud: {
       return 'frameleaf_pets_recognition_runs_cloud';
     }
   }

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import {
   MediaOperationBulkCreateDto,
   MediaOperationDetailDto,
@@ -24,6 +25,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ArchiveOperationRepository } from 'src/repositories/archive-operation.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -48,6 +50,14 @@ import {
   parseBulkResult,
   parseBulkSnapshot,
 } from 'src/utils/bulk-operation.js';
+import {
+  EditOperationEdit,
+  JOB_QUEUE_CLAIMANT,
+  canCancelEdit,
+  canRetryEdit,
+  editOperationEdit,
+  editOperationJobItem,
+} from 'src/utils/edit-operation.js';
 import {
   enrichmentPlanLabel,
   enrichmentResumeIds,
@@ -295,6 +305,7 @@ export class MediaOperationService {
     private jobs: JobRepository,
     private preservation: PreservationRepository,
     private archiveOperations: ArchiveOperationRepository,
+    private develop: AssetDevelopRepository,
   ) {
     this.logger.setContext(MediaOperationService.name);
   }
@@ -305,6 +316,8 @@ export class MediaOperationService {
       kind: dto.kind,
       statuses: dto.status ? [dto.status] : undefined,
       includeDismissed: dto.includeDismissed ?? false,
+      // FL-43: a reload shows every job still running, however many finished since it started.
+      unfinishedFirst: true,
       take: dto.take ?? DEFAULT_TAKE,
       skip: dto.skip ?? 0,
     });
@@ -468,6 +481,13 @@ export class MediaOperationService {
       throw new BadRequestException('This job has already finished');
     }
 
+    // FL-43: an edit is cancelled only where its render can stop without leaving the saved edit half
+    // shown: a photo version. A photo edit's previews and a video edit's master finish.
+    const edit = editOperationEdit(operation);
+    if (edit && !canCancelEdit(edit)) {
+      throw new BadRequestException('This edit finishes once it has started and cannot be cancelled');
+    }
+
     const cancelled = await this.repository.requestCancel(id, auth.user.id);
     if (!cancelled) {
       // It finished between the read and the write. Report the settled state, not an error.
@@ -587,6 +607,11 @@ export class MediaOperationService {
 
     if (isPreservationKind(operation.kind)) {
       return this.retryPreservation(auth, operation);
+    }
+
+    const edit = editOperationEdit(operation);
+    if (edit) {
+      return this.retryEdit(auth, operation, edit);
     }
 
     // FL-106: a Studio export is a version of its project. Its render and its publication each had
@@ -858,6 +883,84 @@ export class MediaOperationService {
         throw new BadRequestException('This iCloud connection is no longer connected');
       }
     }
+  }
+
+  /**
+   * Retry an edit render (FL-43). The new row copies the snapshot and goes straight to the job queue
+   * with its job: a photo edit renders the saved edit again, a photo version renders its revision
+   * again (queued afresh, as the editor's Render does), a video edit the requested version and a
+   * video export its version. Like any resubmission, an edit of an item that is Locked now needs the
+   * unlocked session. Asking twice answers with the retry already queued.
+   */
+  private async retryEdit(
+    auth: AuthDto,
+    operation: MediaOperation,
+    edit: EditOperationEdit,
+  ): Promise<MediaOperationDto> {
+    if (!canRetryEdit(edit, operation.status as MediaOperationStatus)) {
+      throw new BadRequestException('Only a failed edit can be retried');
+    }
+
+    const active = await this.repository.getActiveRetry(operation.id, auth.user.id);
+    if (active) {
+      return this.present(auth, active);
+    }
+
+    if (operation.assetId) {
+      await this.requireUnlockedFor(auth, [operation.assetId]);
+    } else {
+      throw new BadRequestException('The edited item is no longer in this library');
+    }
+
+    if (edit === EditOperationEdit.PhotoVersion) {
+      const revision = operation.revisionId ? await this.develop.get(operation.revisionId) : undefined;
+      if (!revision || revision.ownerId !== auth.user.id || revision.assetId !== operation.assetId) {
+        throw new BadRequestException('This version no longer exists');
+      }
+      if (
+        revision.status === AssetDevelopRevisionStatus.Queued ||
+        revision.status === AssetDevelopRevisionStatus.Rendering
+      ) {
+        throw new BadRequestException('This version is already being rendered');
+      }
+      await this.develop.update(revision.id, {
+        status: AssetDevelopRevisionStatus.Queued,
+        progress: 0,
+        error: null,
+        cancelRequested: false,
+        attempts: 0,
+      });
+    }
+
+    const { operation: retried, created } = await this.repository.createRetry({
+      ownerId: operation.ownerId,
+      kind: operation.kind,
+      destination: operation.destination,
+      destinationDetail: operation.destinationDetail,
+      label: operation.label,
+      assetId: operation.assetId,
+      resultAssetId: null,
+      retryOfId: operation.id,
+      projectId: null,
+      revisionId: operation.revisionId,
+      snapshot: operation.snapshot,
+      settings: operation.settings,
+      estimate: null,
+      maxAttempts: operation.maxAttempts,
+      claimedBy: JOB_QUEUE_CLAIMANT,
+    });
+
+    if (created) {
+      const item = editOperationJobItem(retried.id, retried.snapshot);
+      if (item) {
+        // Losing this only delays the retry: recovery dispatches a queued edit that has no job.
+        await this.jobs.queue(item).catch((error) => {
+          this.logger.warn(`Edit retry ${retried.id} will be dispatched by recovery: ${error}`);
+        });
+      }
+      this.logger.log(`Edit ${operation.id} retried as ${retried.id}`);
+    }
+    return this.present(auth, retried);
   }
 
   /**

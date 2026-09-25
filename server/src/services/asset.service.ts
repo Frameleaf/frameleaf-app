@@ -56,6 +56,8 @@ import {
 } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone } from 'src/utils/date.js';
+import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
+import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
@@ -1091,10 +1093,7 @@ export class AssetService extends BaseService {
     }
 
     const newEdits = await withVideoVersionErrors(() => this.assetEditRepository.replaceAll(id, edits, purpose));
-    await this.jobRepository.queue({
-      name: asset.type === AssetType.Video ? JobName.AssetVideoEditGeneration : JobName.AssetEditThumbnailGeneration,
-      data: { id },
-    });
+    await this.queueEditRender({ id, ownerId: auth.user.id, type: asset.type, label: asset.originalFileName });
 
     // Return the asset and its applied edits
     return {
@@ -1131,7 +1130,16 @@ export class AssetService extends BaseService {
     // An export renders a new master, so it needs the same permission as saving an edit.
     await this.requireAccess({ auth, permission: Permission.AssetEditCreate, ids: [id] });
     const version = await withVideoVersionErrors(() => this.assetEditRepository.createVideoExport(id, auth.user.id));
-    await this.jobRepository.queue({ name: JobName.AssetVideoEditGeneration, data: { id, versionId: version.id } });
+    // FL-43: the export is a job in Activity, named by the video it renders.
+    const asset = await this.assetRepository.getById(id);
+    await this.editOperations.queue({
+      ownerId: auth.user.id,
+      edit: EditOperationEdit.VideoExport,
+      assetId: id,
+      label: asset?.originalFileName ?? '',
+      revisionId: version.id,
+      job: { name: JobName.AssetVideoEditGeneration, data: { id, versionId: version.id } },
+    });
     return {
       id: version.id,
       assetId: id,
@@ -1182,9 +1190,50 @@ export class AssetService extends BaseService {
       }
     }
 
-    await this.jobRepository.queue({
-      name: asset.type === AssetType.Video ? JobName.AssetVideoEditGeneration : JobName.AssetEditThumbnailGeneration,
-      data: { id },
+    await this.queueEditRender({ id, ownerId: asset.ownerId, type: asset.type, label: asset.originalFileName });
+  }
+
+  private editTracker?: EditOperationTracker;
+
+  private get editOperations() {
+    return (this.editTracker ??= new EditOperationTracker(
+      this.mediaOperationRepository,
+      this.jobRepository,
+      this.logger,
+    ));
+  }
+
+  /**
+   * Queue the render of a saved, cleared or restored edit as a job in Activity (FL-43). The render is
+   * the same job as always; the row names the photo or video and, for a video, the version the job
+   * will render, so a reload or a restart finds exactly this job again.
+   */
+  private async queueEditRender(asset: { id: string; ownerId: string; type: AssetType; label: string }) {
+    if (asset.type === AssetType.Video) {
+      // Without retained versions (fork writes off) the job renders the saved edits directly.
+      let requestedId: string | null = null;
+      try {
+        requestedId = (await this.assetEditRepository.getRequestedVideoVersion(asset.id))?.id ?? null;
+      } catch {
+        // the job reports a version it cannot render; the row just does not name one
+      }
+      await this.editOperations.queue({
+        ownerId: asset.ownerId,
+        edit: EditOperationEdit.VideoEdit,
+        assetId: asset.id,
+        label: asset.label,
+        revisionId: requestedId,
+        job: { name: JobName.AssetVideoEditGeneration, data: { id: asset.id } },
+      });
+      return;
+    }
+
+    await this.editOperations.queue({
+      ownerId: asset.ownerId,
+      edit: EditOperationEdit.PhotoEdit,
+      assetId: asset.id,
+      label: asset.label,
+      job: { name: JobName.AssetEditThumbnailGeneration, data: { id: asset.id } },
     });
   }
 }

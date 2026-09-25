@@ -48,12 +48,12 @@ describe('PetRecognitionPanel', () => {
     expect(onStart).toHaveBeenCalled();
   });
 
-  it('calls the managed cloud worker Frameleaf Cloud, never RunPod', () => {
-    setup(status({ destination: { kind: MlDestinationKind.Runpod, name: 'RunPod' } }));
+  it('calls the cloud worker Frameleaf Cloud', () => {
+    setup(status({ destination: { kind: MlDestinationKind.FrameleafCloud, name: 'Cloud worker' } }));
 
     const row = screen.getByTestId('pet-recognition-destination');
     expect(row).toHaveTextContent('Frameleaf Cloud');
-    expect(row).not.toHaveTextContent('RunPod');
+    expect(row).not.toHaveTextContent('Cloud worker');
   });
 
   it('names a computer on the network', () => {

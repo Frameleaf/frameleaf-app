@@ -9,6 +9,8 @@
     /** The translated group heading; rows without one sit in an unheaded list. */
     group?: string;
     scope?: SectionScope;
+    /** The row's own icon (an mdi path), drawn before its title as the template does for tools. */
+    icon?: string;
     onSelect: () => void;
   };
 </script>
@@ -19,6 +21,8 @@
    * with the Sept 24 grouped-list style (command-center.css:1619-1695): one inset grouped list per
    * group, like System Settings. Rows carry no repeated area icon, and a scope tag only when the row
    * applies to someone other than the rest of its area ("Just you" among server settings, and so on).
+   * A row with an icon of its own (the utilities, `utilities-data.mjs:15-87`) shows it first, as
+   * `SectionDirectory` does (CommandCenter.jsx:2739, command-center.css:1663-1666).
    * A group named like its area does not repeat the name as a heading.
    */
   import { usualScope } from '$lib/frameleaf/settings-areas';
@@ -47,6 +51,9 @@
       <div class="cc-directory-list fl-continuous-corners">
         {#each rows.filter((row) => (row.group ?? '') === group) as row (row.id)}
           <button type="button" onclick={row.onSelect}>
+            {#if row.icon}
+              <span class="row-icon"><Icon icon={row.icon} size="1.25rem" aria-hidden /></span>
+            {/if}
             <span class="copy">
               <strong>{row.title}</strong>
               <span>{row.description}</span>
@@ -112,6 +119,11 @@
     outline-offset: -2px;
   }
   button > :global(svg) {
+    flex-shrink: 0;
+    color: var(--fl-muted);
+  }
+  .row-icon {
+    display: inline-flex;
     flex-shrink: 0;
     color: var(--fl-muted);
   }

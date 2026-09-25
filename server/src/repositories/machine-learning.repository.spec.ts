@@ -18,6 +18,8 @@ import {
 import { MachineLearningHardwareAcceleration, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
+  CloudJobsUnavailableError,
+  FRAMELEAF_CLOUD_ENDPOINT,
   MachineLearningRepository,
   MlSelection,
   MlUsage,
@@ -39,7 +41,6 @@ const florenceModelName = 'microsoft/Florence-2-base-ft';
 const localUrl = 'http://immich-machine-learning:3003';
 // The LAN restoration worker's port (FL-72 fixtures keep restoration on its own worker).
 const lanUrl = 'https://workshop.lan:3004';
-const runPodUrl = 'https://endpoint.api.runpod.ai/';
 
 const description = {
   imageHeight: 120,
@@ -54,6 +55,33 @@ const description = {
     tags: ['beach'],
   },
 };
+
+/** A model the restoration worker reports as available, weight-verified and qualified (FL-42). */
+const qualifiedModel = {
+  id: 'faithful-1',
+  family: 'realbasicvsr',
+  mode: 'faithful',
+  displayName: 'Faithful',
+  revision: 'abc',
+  fingerprint: 'sha256:weights',
+  state: 'available',
+  reasons: [],
+  nativeScale: 4,
+  maxInputLongEdge: 1920,
+  maxFrames: 120,
+  dynamicRanges: ['sdr'],
+  measured: [],
+  qualificationId: 'qualification-1',
+};
+
+const restorationReport = (models: unknown[]) => ({
+  protocol: RESTORATION_PROTOCOL,
+  workloads: ['restoration-faithful'],
+  models,
+  gpus: [],
+  configurationProblems: [],
+  checkedAt: '2026-09-22T12:00:00.000Z',
+});
 
 const jsonResponse = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'content-type': 'application/json' } });
@@ -94,7 +122,6 @@ describe(MachineLearningRepository.name, () => {
 
   describe('predict', () => {
     it('sends the request to the selected endpoint only and never to another URL when it fails', async () => {
-      sut.setRunPodEndpoint(runPodUrl, 'rpa_test_key');
       const fetch = vi.fn().mockResolvedValue(new Response('error', { status: 500, statusText: 'Internal Error' }));
       vi.stubGlobal('fetch', fetch);
 
@@ -102,27 +129,46 @@ describe(MachineLearningRepository.name, () => {
         sut.encodeImage(selection(MlDestinationKind.Lan, lanUrl), imagePath, { ...defaults.machineLearning.clip }),
       ).rejects.toThrow(/lan destination destination-lan failed with status 500/);
 
-      // One call, to the LAN worker; the published RunPod endpoint and the local URL are untouched.
+      // One call, to the LAN worker; the local URL is untouched.
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/predict`);
     });
 
-    it('does not fall through to the local URL when the RunPod destination is down', async () => {
+    it('does not fall through to the local URL when the chosen destination is down', async () => {
       const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
       vi.stubGlobal('fetch', fetch);
 
       await expect(
         sut.encodeImage(
-          selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'),
+          selection(MlDestinationKind.Lan, lanUrl, () => {}, 'lan-token'),
           imagePath,
           {
             ...defaults.machineLearning.clip,
           },
         ),
-      ).rejects.toThrow(/runpod destination destination-runpod failed: fetch failed/);
+      ).rejects.toThrow(/lan destination destination-lan failed: fetch failed/);
 
       expect(fetch).toHaveBeenCalledTimes(1);
-      expect(String(fetch.mock.calls[0][0])).toBe(`${runPodUrl}predict`);
+      expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/predict`);
+    });
+
+    it('never sends a Frameleaf Cloud request through the predict protocol or anywhere else (FL-159)', async () => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      const record = vi.fn();
+      const cloud: MlSelection = {
+        destinationId: 'destination-frameleaf-cloud',
+        kind: MlDestinationKind.FrameleafCloud,
+        workload: MlWorkload.Enrichment,
+        endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+        record,
+      };
+
+      await expect(sut.encodeImage(cloud, imagePath, { ...defaults.machineLearning.clip })).rejects.toBeInstanceOf(
+        CloudJobsUnavailableError,
+      );
+      expect(fetch).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
     });
 
     it('sends the bearer token of the selected endpoint', async () => {
@@ -215,13 +261,13 @@ describe(MachineLearningRepository.name, () => {
       expect(retry[ModelTask.IMAGE_DESCRIPTION][ModelType.VISUAL].modelName).toBe(florenceModelName);
     });
 
-    it('never retries the fallback model on a RunPod destination', async () => {
+    it('never retries the fallback model on a cloud destination', async () => {
       const fetch = vi.fn().mockResolvedValue(new Response('error', { status: 500, statusText: 'Internal Error' }));
       vi.stubGlobal('fetch', fetch);
 
       await expect(
         sut.describeImage(
-          selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'),
+          { ...selection(MlDestinationKind.FrameleafCloud, ''), endpoint: FRAMELEAF_CLOUD_ENDPOINT },
           imagePath,
           {
             modelName: qwenModelName,
@@ -230,9 +276,9 @@ describe(MachineLearningRepository.name, () => {
             device: 'AUTO',
           },
         ),
-      ).rejects.toThrow('Machine learning request');
+      ).rejects.toBeInstanceOf(CloudJobsUnavailableError);
 
-      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch).not.toHaveBeenCalled();
     });
   });
 
@@ -255,6 +301,9 @@ describe(MachineLearningRepository.name, () => {
           case '/capabilities': {
             return Promise.resolve(jsonResponse({ workloads: ['face', 'restoration-faithful', 'teleport'] }));
           }
+          case '/restoration/models': {
+            return Promise.resolve(jsonResponse(restorationReport([qualifiedModel])));
+          }
           default: {
             return Promise.resolve(new Response('', { status: 404 }));
           }
@@ -268,6 +317,41 @@ describe(MachineLearningRepository.name, () => {
       expect(probe.workloads).toEqual([MlWorkload.Face, MlWorkload.RestorationFaithful]);
       expect(probe.error).toBeNull();
       expect(fetch.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer lan-token' });
+    });
+
+    it.each([
+      ['no model report', null],
+      ['an unqualified model', [{ ...qualifiedModel, qualificationId: null }]],
+      ['unverified weights', [{ ...qualifiedModel, fingerprint: null }]],
+      ['a model that is not available', [{ ...qualifiedModel, state: 'weights-missing' }]],
+      ['a model for the other mode', [{ ...qualifiedModel, mode: 'creative' }]],
+    ])('never admits a restoration claim backed by %s (FL-42)', async (_label, models) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation((url: URL) => {
+          switch (url.pathname) {
+            case '/ping': {
+              return Promise.resolve(new Response('pong'));
+            }
+            case '/capabilities': {
+              return Promise.resolve(jsonResponse({ workloads: ['face', 'restoration-faithful'] }));
+            }
+            case '/restoration/models': {
+              return Promise.resolve(
+                models === null ? new Response('', { status: 404 }) : jsonResponse(restorationReport(models)),
+              );
+            }
+            default: {
+              return Promise.resolve(new Response('', { status: 404 }));
+            }
+          }
+        }),
+      );
+
+      const probe = await sut.probe({ url: lanUrl, authToken: 'lan-token' });
+
+      expect(probe.reachable).toBe(true);
+      expect(probe.workloads).toEqual([MlWorkload.Face]);
     });
 
     it('credits a legacy predict container without a capabilities route with the library workloads only', async () => {
@@ -322,33 +406,6 @@ describe(MachineLearningRepository.name, () => {
       const deferred = heldPing();
       const pending = sut.probe({ url: localUrl });
       sut.setup({ ...defaults.machineLearning });
-      deferred.resolve(new Response('pong'));
-      expect((await pending).reachable).toBe(true);
-    });
-
-    it('does not publish an in-flight RunPod probe after the endpoint changes or is withdrawn', async () => {
-      sut.setRunPodEndpoint(runPodUrl, 'rpa_test_key');
-      let deferred = heldPing();
-      let pending = sut.probe({ url: runPodUrl, authToken: 'rpa_test_key' });
-      sut.setRunPodEndpoint(runPodUrl, 'rpa_rotated_key');
-      deferred.resolve(new Response('pong'));
-      let result = await pending;
-      expect(result.reachable).toBe(false);
-      expect(result.workloads).toEqual([]);
-
-      deferred = heldPing();
-      pending = sut.probe({ url: runPodUrl, authToken: 'rpa_rotated_key' });
-      sut.clearRunPodEndpoint();
-      deferred.resolve(new Response('pong'));
-      result = await pending;
-      expect(result.reachable).toBe(false);
-    });
-
-    it('keeps an in-flight RunPod probe when the same endpoint is republished', async () => {
-      sut.setRunPodEndpoint(runPodUrl, 'rpa_test_key');
-      const deferred = heldPing();
-      const pending = sut.probe({ url: runPodUrl, authToken: 'rpa_test_key' });
-      sut.setRunPodEndpoint(runPodUrl, 'rpa_test_key');
       deferred.resolve(new Response('pong'));
       expect((await pending).reachable).toBe(true);
     });
@@ -461,17 +518,6 @@ describe(MachineLearningRepository.name, () => {
     });
   });
 
-  describe('RunPod endpoint publication', () => {
-    it('exposes the published endpoint for explicit selection and nothing else', () => {
-      expect(sut.getRunPodEndpoint()).toBeNull();
-      sut.setRunPodEndpoint(runPodUrl, 'rpa_test_key');
-      expect(sut.getRunPodEndpoint()).toEqual({ url: runPodUrl, authToken: 'rpa_test_key' });
-      expect(sut.getLocalUrls()).toEqual([localUrl]);
-      sut.clearRunPodEndpoint();
-      expect(sut.getRunPodEndpoint()).toBeNull();
-    });
-  });
-
   describe('getHardware', () => {
     it('asks the explicit endpoint and returns defaults when it does not answer', async () => {
       const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
@@ -549,8 +595,13 @@ describe(MachineLearningRepository.name, () => {
         getRoutes: vi.fn().mockResolvedValue([]),
       } as unknown as MlDestinationRepository;
       const machineLearningRepository = {
-        probe: vi.fn().mockResolvedValue(mlProbeStub.restoration),
-        getRunPodEndpoint: vi.fn().mockReturnValue({ url: runPodUrl, authToken: 'rpa_test_key' }),
+        probe: vi
+          .fn()
+          .mockResolvedValue(
+            destination.kind === MlDestinationKind.FrameleafCloud
+              ? mlProbeStub.frameleafCloud
+              : mlProbeStub.restoration,
+          ),
       } as unknown as MachineLearningRepository;
       return selectRestorationDestination(
         { mlDestinationRepository, machineLearningRepository },
@@ -658,7 +709,7 @@ describe(MachineLearningRepository.name, () => {
       const fetch = vi.fn();
       vi.stubGlobal('fetch', fetch);
       const plainCloud = {
-        ...selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'),
+        ...selection(MlDestinationKind.Lan, lanUrl, () => {}, 'lan-token'),
         workload: MlWorkload.RestorationFaithful,
       } as MlSelection as RestorationSelection;
 
@@ -668,15 +719,15 @@ describe(MachineLearningRepository.name, () => {
       expect(existsSync(outputPath)).toBe(false);
     });
 
-    it('uploads to a consented cloud destination the person chose for this request', async () => {
-      const fetch = vi.fn().mockResolvedValue(answer(result()));
+    it('fails a Frameleaf Cloud restoration in place: cloud jobs never use the worker protocol (FL-159)', async () => {
+      const fetch = vi.fn();
       vi.stubGlobal('fetch', fetch);
 
-      await restore({}, await admit(mlDestinationStub.runPodVideoConsented, true));
-
-      // The RunPod video worker's own URL, not the library-analysis pod's endpoint (FL-72).
-      expect(String(fetch.mock.calls[0][0])).toBe(`${mlDestinationStub.runPodVideoConsented.url}/restoration/restore`);
-      expect(await readFile(outputPath)).toEqual(restored);
+      await expect(restore({}, await admit(mlDestinationStub.frameleafCloudConsented, true))).rejects.toBeInstanceOf(
+        CloudJobsUnavailableError,
+      );
+      expect(fetch).not.toHaveBeenCalled();
+      expect(existsSync(outputPath)).toBe(false);
     });
 
     it('refuses a selection admitted for another workload', async () => {
@@ -714,7 +765,6 @@ describe(MachineLearningRepository.name, () => {
     });
 
     it('does not move the work elsewhere when the destination is unreachable', async () => {
-      sut.setRunPodEndpoint(runPodUrl, 'rpa_test_key');
       const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
       vi.stubGlobal('fetch', fetch);
 

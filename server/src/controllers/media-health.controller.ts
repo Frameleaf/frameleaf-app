@@ -142,6 +142,18 @@ export class MediaHealthController {
     return this.service.dismiss(auth, dto);
   }
 
+  @Post('reopen')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Reopen media health findings',
+    description:
+      'Undo a dismissal, or reopen confirmed damage whose item was restored from the trash, putting the findings back in review.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  reopen(@Auth() auth: AuthDto, @Body() dto: MediaHealthBulkActionDto): Promise<MediaHealthBulkResponseDto> {
+    return this.service.reopen(auth, dto);
+  }
+
   @Delete('corrupt')
   @Authenticated()
   @Endpoint({

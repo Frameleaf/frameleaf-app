@@ -10,6 +10,7 @@ import {
   UpdateDateColumn,
 } from '@immich/sql-tools';
 import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
+import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -26,18 +27,19 @@ export type MlProbeHardware = {
 
 /**
  * One place machine-learning work may run (FL-110). Mirrors migrations
- * 2100000000140-CreateMlDestinations and 2100000000490-SeparateRestorationWorkers (FL-72).
+ * 2100000000140-CreateMlDestinations, 2100000000490-SeparateRestorationWorkers (FL-72) and
+ * 2100000000620-FrameleafCloudMlDestination (FL-159).
  *
- * `authToken` is a bearer credential for LAN workers and is never returned by the API;
- * RunPod destinations carry no URL or token here because both come from the RunPod state
- * machine at selection time. `workloads` is the admin's allow-list; `lastProbeWorkloads`
- * is what the worker itself reported, and admission requires both.
+ * `authToken` is a bearer credential for LAN workers and is never returned by the API; the
+ * Frameleaf Cloud destination carries no URL or token (its requests use short-lived tokens minted
+ * from this server's key) and `authToken` stays null for it. `workloads` is the admin's allow-list;
+ * `lastProbeWorkloads` is what the worker itself reported, and admission requires both.
  */
 @Table('ml_destination')
-// Mirrors the CHECK widened in migration 2100000000490; the comparer strips parens.
+// Mirrors the CHECK set by migration 2100000000620; the comparer strips parens.
 @Check({
   name: 'ml_destination_kind_check',
-  expression: `kind = ANY (ARRAY['local'::text, 'lan'::text, 'runpod'::text, 'runpod-video'::text])`,
+  expression: `kind = ANY (ARRAY['local'::text, 'lan'::text, 'frameleaf-cloud'::text])`,
 })
 export class MlDestinationTable {
   @PrimaryGeneratedColumn()
@@ -104,6 +106,18 @@ export class MlDestinationTable {
   @Column({ type: 'boolean', default: false })
   sharesLibraryHardware!: Generated<boolean>;
 
+  /** FL-159: the Frameleaf Cloud data region the destination was created for (`eu`, `na`). */
+  @Column({ type: 'text', nullable: true })
+  region!: string | null;
+
+  /** FL-159: the consent version the administrator accepted for Frameleaf Cloud. */
+  @Column({ type: 'text', nullable: true })
+  consentVersion!: string | null;
+
+  /** FL-159: what the last Frameleaf Cloud check learned (`CloudProbeFacts`); null for other kinds. */
+  @Column({ type: 'jsonb', nullable: true })
+  lastProbeCloud!: CloudProbeFacts | null;
+
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
 
@@ -123,6 +137,10 @@ export class MlWorkloadRouteTable {
   @ForeignKeyColumn(() => MlDestinationTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' })
   destinationId!: string;
 
+  /** FL-159: the Frameleaf Cloud catalogue model chosen for this workload, or null for none. */
+  @Column({ type: 'text', nullable: true })
+  modelId!: string | null;
+
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
 }
@@ -138,6 +156,14 @@ export class MlWorkloadRouteTable {
   expression: '"jobId", "jobName", "startedAt" DESC',
   where: '("jobId" IS NOT NULL)',
   // Created by the fork migration, not the schema generator (as media-operation.table.ts does).
+  synchronize: false,
+})
+// FL-159: settled Frameleaf Cloud charges are matched by cloud job id
+// (fork migration 0000000000201-MlWorkloadAccountingCloudJobIndex).
+@Index({
+  name: 'ml_workload_accounting_cloudJobId_idx',
+  columns: ['cloudJobId'],
+  where: '("cloudJobId" IS NOT NULL)',
   synchronize: false,
 })
 @Table('ml_workload_accounting')
@@ -172,9 +198,17 @@ export class MlWorkloadAccountingTable {
   @Column({ type: 'text' })
   outcome!: 'success' | 'failure';
 
-  /** Cost attributed to this request from the destination's hourly rate, or null when the rate is unknown. */
+  /** Settled cost of this request in USD (Frameleaf Cloud settlements), or null when nothing was charged or it is not settled yet. */
   @Column({ type: 'double precision', nullable: true })
   costUsd!: number | null;
+
+  /** FL-159: AI Wallet credits the settlement reported, when it reported any. */
+  @Column({ type: 'double precision', nullable: true })
+  credits!: number | null;
+
+  /** FL-159: the Frameleaf Cloud job this row settles, so a settlement finds its row. */
+  @Column({ type: 'text', nullable: true })
+  cloudJobId!: string | null;
 
   @Column({ type: 'timestamp with time zone' })
   startedAt!: Timestamp;

@@ -7,9 +7,12 @@
    * "Preview preservation manifest" on Import & protection → Originals & preservation): Include →
    * Verify → Manifest, in a wide dialog with the design's stepper and facts list.
    *
-   * - **Include.** What to preserve — the whole library, favourites, a range of dates or chosen
-   *   albums — and whether metadata sidecars and edit recipes travel with the originals. Checksums
-   *   and the manifest always do. Locked items only from an unlocked session.
+   * - **Include.** What to preserve — the whole library, favourites, a range of dates, chosen
+   *   albums, a typed search (the search palette's operators and free text, compiled to the server's
+   *   filter) or the items chosen in the selection bar ("Export for preservation…") — and whether
+   *   metadata sidecars and edit recipes travel with the originals. Checksums and the manifest
+   *   always do (the prototype's "Include checksums and a manifest" is shown on and locked).
+   *   Locked items only from an unlocked session.
    * - **Verify.** The server counts the selection, measures it and checks it fits in one package
    *   and in the free space where it is written. Nothing is written.
    * - **Manifest.** What the package holds and, category by category, what a restoration brings
@@ -20,12 +23,14 @@
    */
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Chip from '$lib/components/frameleaf/Chip.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import {
     EXPORT_STEPS,
     MANIFEST_FACTS,
+    PRESERVATION_MAX_SELECTED,
     asBytes,
     defaultPackageName,
     emptyScope,
@@ -33,12 +38,21 @@
     hasRoomFor,
     newRequestKey,
     scopeToRequest,
+    searchScope,
+    selectionShortfall,
     supportCategoryKey,
     supportLevelKey,
     supportTone,
     type ScopeChoice,
     type ScopeKind,
   } from '$lib/frameleaf/preservation';
+  import {
+    buildPaletteCatalog,
+    emptyPaletteCatalog,
+    MAX_PALETTE_TEXT,
+    tokenLabel,
+  } from '$lib/frameleaf/search-palette';
+  import { loadFilterPanelOptions } from '$lib/frameleaf/search-options';
   import { Route } from '$lib/route';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { handleError } from '$lib/utils/handle-error';
@@ -51,16 +65,30 @@
     type PreservationPreviewResponseDto,
   } from '@immich/sdk';
   import { page } from '$app/state';
+  import { untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
   type Props = {
     open?: boolean;
     /** The section's "Include metadata and edit recipes" choice, carried into the export. */
     includeMetadata?: boolean;
+    /**
+     * The selection bar's items ("Export for preservation…"): the account's own, and how many known
+     * to be someone else's were left out. When set, the dialog opens on "Selected items".
+     */
+    selection?: { assetIds: string[]; leftOut: number } | null;
+    /** Start with "Include Locked items" on: the selection was made in the Locked view. */
+    includeLockedDefault?: boolean;
     onCreated?: (created: PreservationPackageDto) => void;
   };
 
-  let { open = $bindable(false), includeMetadata = $bindable(true), onCreated }: Props = $props();
+  let {
+    open = $bindable(false),
+    includeMetadata = $bindable(true),
+    selection = null,
+    includeLockedDefault = false,
+    onCreated,
+  }: Props = $props();
 
   let step = $state(0);
   let scope = $state<ScopeChoice>(emptyScope());
@@ -72,8 +100,16 @@
   let previewing = $state(false);
   let starting = $state(false);
   let requestKey = $state(newRequestKey());
+  let searchInput = $state('');
+  let catalog = $state(emptyPaletteCatalog());
+  let catalogLoaded = $state(false);
 
-  const request = $derived(scopeToRequest(scope));
+  const search = $derived(searchScope(searchInput, catalog));
+  const selectedCount = $derived(selection?.assetIds.length ?? 0);
+  const request = $derived(
+    scopeToRequest({ ...scope, searchFilter: search.filter, assetIds: selection?.assetIds ?? [] }),
+  );
+  const shortfall = $derived(preview && scope.kind === 'selection' ? selectionShortfall(selectedCount, preview) : 0);
   const bytes = (value: string | null | undefined) => {
     const parsed = asBytes(value);
     return parsed === null ? '—' : getByteUnitString(parsed, $locale ?? undefined);
@@ -90,7 +126,23 @@
     { value: 'favorites', label: $t('frameleaf_preservation_scope_favorites') },
     { value: 'dates', label: $t('frameleaf_preservation_scope_dates') },
     { value: 'albums', label: $t('frameleaf_preservation_scope_albums') },
+    { value: 'search', label: $t('frameleaf_preservation_scope_search') },
+    ...(selection ? [{ value: 'selection', label: $t('frameleaf_preservation_scope_selection') }] : []),
   ]);
+
+  /** The account's own people, tags, places and cameras, so `person:Jamie` resolves as in Search. */
+  const loadCatalog = async () => {
+    if (catalogLoaded) {
+      return;
+    }
+    catalogLoaded = true;
+    try {
+      catalog = buildPaletteCatalog(await loadFilterPanelOptions());
+    } catch (error) {
+      catalogLoaded = false;
+      handleError(error, $t('frameleaf_preservation_search_error'));
+    }
+  };
 
   const loadAlbums = async () => {
     if (albumsLoaded) {
@@ -109,6 +161,8 @@
     preview = null;
     if (value === 'albums') {
       void loadAlbums();
+    } else if (value === 'search') {
+      void loadCatalog();
     }
   };
 
@@ -179,6 +233,10 @@
     step = 0;
     preview = null;
     requestKey = newRequestKey();
+    untrack(() => {
+      scope = { ...scope, kind: selection ? 'selection' : scope.kind === 'selection' ? 'library' : scope.kind };
+      includeLocked = includeLockedDefault;
+    });
   });
 </script>
 
@@ -233,6 +291,52 @@
               {/each}
             </ul>
           {/if}
+        {:else if scope.kind === 'search'}
+          <!-- The search palette's typed operators (SearchPalette.jsx), in the dialog's field style. -->
+          <label class="name">
+            {$t('frameleaf_preservation_scope_search_label')}
+            <input
+              type="search"
+              bind:value={searchInput}
+              oninput={() => (preview = null)}
+              placeholder={$t('frameleaf_preservation_scope_search_placeholder')}
+              aria-describedby="preservation-search-hint"
+            />
+            <small id="preservation-search-hint">{$t('frameleaf_preservation_scope_search_hint')}</small>
+          </label>
+          {#if search.tokens.length > 0 || search.text}
+            <ul class="chips" aria-label={$t('frameleaf_preservation_scope_search_understood')}>
+              {#each search.tokens as token, index (`${index}:${token.raw}`)}
+                <li><Chip label={tokenLabel($t, token)} /></li>
+              {/each}
+              {#if search.text}
+                <li>
+                  <Chip label={$t('frameleaf_preservation_scope_search_text', { values: { text: search.text } })} />
+                </li>
+              {/if}
+            </ul>
+          {/if}
+          {#if search.tooComplex}
+            <p class="note" role="alert">{$t('frameleaf_preservation_scope_search_too_complex')}</p>
+          {:else if search.truncated}
+            <p class="hint">
+              {$t('frameleaf_preservation_scope_search_truncated', { values: { count: MAX_PALETTE_TEXT } })}
+            </p>
+          {/if}
+        {:else if scope.kind === 'selection' && selection}
+          <p class="hint">
+            {$t('frameleaf_preservation_scope_selection_count', { values: { count: selectedCount } })}
+          </p>
+          {#if selection.leftOut > 0}
+            <p class="note">
+              {$t('frameleaf_preservation_scope_selection_left_out', { values: { count: selection.leftOut } })}
+            </p>
+          {/if}
+          {#if selectedCount > PRESERVATION_MAX_SELECTED}
+            <p class="note" role="alert">
+              {$t('frameleaf_preservation_scope_selection_too_many', { values: { max: PRESERVATION_MAX_SELECTED } })}
+            </p>
+          {/if}
         {/if}
       </fieldset>
 
@@ -282,6 +386,25 @@
             values: { count: preview.includedItems, size: bytes(preview.includedBytes) },
           })}
         </dd>
+        {#if scope.kind === 'selection' && selection}
+          <dt>{$t('frameleaf_preservation_verify_left_out')}</dt>
+          <dd>
+            {#if selection.leftOut === 0 && shortfall === 0}
+              {$t('frameleaf_preservation_verify_left_out_none')}
+            {:else}
+              {#if selection.leftOut > 0}
+                <span class="line">
+                  {$t('frameleaf_preservation_scope_selection_left_out', { values: { count: selection.leftOut } })}
+                </span>
+              {/if}
+              {#if shortfall > 0}
+                <span class="line">
+                  {$t('frameleaf_preservation_verify_left_out_unavailable', { values: { count: shortfall } })}
+                </span>
+              {/if}
+            {/if}
+          </dd>
+        {/if}
         <dt>{$t('frameleaf_preservation_verify_locked')}</dt>
         <dd>
           {#if !preview.lockedAllowed}
@@ -433,6 +556,7 @@
     gap: 0.25rem;
   }
   input[type='date'],
+  input[type='search'],
   input[type='text'] {
     padding: 0.375rem 0.5rem;
     color: var(--fl-text);
@@ -463,6 +587,17 @@
   .hint {
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .facts .line {
+    display: block;
   }
   .controls {
     display: flex;

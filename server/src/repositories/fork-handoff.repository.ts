@@ -13,6 +13,7 @@ import {
   StorageVerificationEvidence,
   canonicalStorageVerificationDigest,
 } from 'src/repositories/fork-cutover-verification.repository.js';
+import { assertNoLiveHandoffLeases } from 'src/repositories/fork-handoff-leases.js';
 import {
   BACKFILL_KINDS,
   BackfillKind,
@@ -112,6 +113,16 @@ export const assertCertifiedOfficialHandoffLedger = (
 const officialLedgerDigest = (names: readonly string[]): string =>
   createHash('sha256').update(names.join('\n')).digest('hex');
 
+/**
+ * Sidecar families in `immich_fork` whose parents live in the public schema without a foreign key,
+ * so rows orphaned while the official server ran are archived on return. Frameleaf's public-schema
+ * tables (media operations and checkpoints, Studio projects and exports, preservation, Takeout,
+ * render workers, restorations, physical files) are not listed on purpose (FL-44): their owner,
+ * asset and parent references are real foreign keys the official server's deletes cascade or null
+ * through. The uuid columns without one are lineage and audit records meant to outlive what they
+ * name — a Studio export's sources, a preservation item's source asset, the render-worker audit —
+ * so archiving them as orphans would lose exactly the history they keep.
+ */
 const ORPHAN_FAMILIES = [
   [
     'video_edit_selection',
@@ -456,6 +467,8 @@ export class ForkHandoffRepository {
       throw new Error('Official handoff requires maintenance mode');
     }
     await this.getOfficialHandoffCheckpoint(kysely);
+    // FL-44 (FN-304): no live worker claim, render-worker session or Studio editor lease may cross.
+    await assertNoLiveHandoffLeases(kysely);
     const ledger = await sql<{ name: string }>`
       SELECT name FROM public.kysely_migrations ORDER BY timestamp, name
     `.execute(kysely);

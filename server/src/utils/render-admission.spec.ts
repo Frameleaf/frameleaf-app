@@ -1,8 +1,10 @@
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReason } from 'src/enum.js';
 import {
   ClaimAdmissionInput,
+  RenderOutputRefusal,
   SessionAdmissionInput,
   evaluateClaimAdmission,
+  evaluateRenderOutput,
   evaluateRunningLimits,
   evaluateSessionAdmission,
   isWorkerRefusal,
@@ -165,14 +167,14 @@ describe(evaluateClaimAdmission.name, () => {
     });
   });
 
-  it('never lets a LAN worker take a job the person sent to RunPod, or the reverse', () => {
+  it('never lets a LAN worker take a job the person sent to Frameleaf Cloud, or the reverse', () => {
     expect(
-      evaluateClaimAdmission(claimInput({ operation: { destination: MediaOperationDestination.RunPod } })),
+      evaluateClaimAdmission(claimInput({ operation: { destination: MediaOperationDestination.FrameleafCloud } })),
     ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.DestinationMismatch });
     expect(
       evaluateClaimAdmission(
         claimInput({
-          worker: { destination: MediaOperationDestination.RunPod },
+          worker: { destination: MediaOperationDestination.FrameleafCloud },
           operation: { destination: MediaOperationDestination.Local },
         }),
       ),
@@ -490,6 +492,51 @@ describe('input grants', () => {
     expect(verifyInputGrant('a.b.c', { operationId: 'op-1', binding, now: NOW })).toEqual({
       valid: false,
       reason: 'malformed',
+    });
+  });
+});
+
+describe('evaluateRenderOutput (FL-42)', () => {
+  const gib = 1024 ** 3;
+  const sdr = { gpuMemoryBytes: 12 * gib, codecs: ['h264_nvenc', 'hevc_nvenc'], colorPrecision: null };
+  const hdr = { ...sdr, colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false } };
+  const request = { format: 'mp4-h264', color: 'preserve', resolution: '1080p' };
+
+  it('needs a qualified session at all', () => {
+    expect(evaluateRenderOutput([], request)).toEqual({
+      supported: false,
+      refusal: RenderOutputRefusal.NoQualifiedWorker,
+    });
+  });
+
+  it('never infers memory, codecs or colour a check did not verify', () => {
+    expect(evaluateRenderOutput([{ ...sdr, gpuMemoryBytes: null }], request)).toMatchObject({
+      refusal: RenderOutputRefusal.InsufficientMemory,
+    });
+    expect(
+      evaluateRenderOutput([{ ...sdr, gpuMemoryBytes: 4 * gib }], { ...request, resolution: '2160p' }),
+    ).toMatchObject({
+      refusal: RenderOutputRefusal.InsufficientMemory,
+    });
+    expect(evaluateRenderOutput([{ ...sdr, codecs: [] }], request)).toMatchObject({
+      refusal: RenderOutputRefusal.CodecUnavailable,
+    });
+    expect(evaluateRenderOutput([sdr], { ...request, format: 'mp4-hevc-main10' })).toMatchObject({
+      refusal: RenderOutputRefusal.IncompatibleColor,
+    });
+    expect(evaluateRenderOutput([hdr], { ...request, format: 'mp4-hevc-main10', color: 'dolby-vision' })).toMatchObject(
+      {
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      },
+    );
+  });
+
+  it('admits what one session verified in full', () => {
+    expect(evaluateRenderOutput([sdr], request)).toEqual({ supported: true });
+    expect(
+      evaluateRenderOutput([sdr, hdr], { format: 'mp4-hevc-main10', color: 'hdr10', resolution: '2160p' }),
+    ).toEqual({
+      supported: true,
     });
   });
 });

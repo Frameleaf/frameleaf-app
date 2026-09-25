@@ -1,4 +1,4 @@
-import { Mode2, askSearch, searchAssets, searchSmart, type SearchResponseDto } from '@immich/sdk';
+import { Mode, askSearch, searchAssets, searchSmart, type SearchResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { addMessages } from 'svelte-i18n';
@@ -141,7 +141,7 @@ it('shares ownership when metadata is replaced by Ask and ignores the old error'
   await waitFor(() => expect(searchAssets).toHaveBeenCalledOnce());
   vi.mocked(askSearch).mockResolvedValue({
     query: 'new',
-    plan: { filters: {}, mode: Mode2.Metadata, normalizedQuery: 'new' },
+    plan: { filters: {}, mode: Mode.Metadata, normalizedQuery: 'new' },
     explanation: 'new explanation',
     warnings: [],
     results: result(['ask-result']),
@@ -206,7 +206,7 @@ describe('Ask about your photos', () => {
 
   const answer = (ids: string[]) => ({
     query: 'favorite videos since 2020',
-    plan: { filters: {}, mode: Mode2.Smart, normalizedQuery: 'favorite videos since 2020' },
+    plan: { filters: {}, mode: Mode.Smart, normalizedQuery: 'favorite videos since 2020' },
     explanation: 'Favorite videos taken since 2020.',
     warnings: [],
     results: result(ids),

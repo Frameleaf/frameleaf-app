@@ -7,6 +7,7 @@
    * render-worker endpoints. A change saved in the destinations panel reloads the inventory.
    */
   import MlDestinationsPanel from '$lib/components/frameleaf/MlDestinationsPanel.svelte';
+  import WorkloadRoutingTable from '$lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte';
   import WorkerInventoryPanel from '$lib/components/frameleaf/WorkerInventoryPanel.svelte';
   import { t } from 'svelte-i18n';
   import type { ProcessingData } from './loaders';
@@ -30,7 +31,17 @@
     {/if}
   </div>
 {:else}
-  <div id="ml-destinations">
+  <div id="ml-destinations" class="routing-section">
+    <!-- FL-159 (handoff §3.2): "Where each job runs" first, then the destinations each workload uses. -->
+    <WorkloadRoutingTable />
     <MlDestinationsPanel destinations={data.destinations} routes={data.routes} onChanged={() => (inventoryKey += 1)} />
   </div>
 {/if}
+
+<style>
+  .routing-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+</style>

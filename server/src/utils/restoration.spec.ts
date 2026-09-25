@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import {
   AssetRestorationMode,
@@ -13,6 +12,11 @@ import {
   MlDestinationKind,
   MlWorkload,
 } from 'src/enum.js';
+import {
+  FRAMELEAF_CLOUD_ENDPOINT,
+  type MachineLearningRepository,
+  type MlEndpointProbe,
+} from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRefusedError, selectMlDestination } from 'src/utils/ml-destination.js';
 import {
   RESTORATION_PREVIEW_AFTER_DECISION_DAYS,
@@ -79,7 +83,9 @@ describe('restoration rules (FL-115)', () => {
     it('maps destination kinds one to one and never invents a cloud destination', () => {
       expect(mediaOperationDestinationOf(MlDestinationKind.Local)).toBe(MediaOperationDestination.Local);
       expect(mediaOperationDestinationOf(MlDestinationKind.Lan)).toBe(MediaOperationDestination.Lan);
-      expect(mediaOperationDestinationOf(MlDestinationKind.RunPod)).toBe(MediaOperationDestination.RunPod);
+      expect(mediaOperationDestinationOf(MlDestinationKind.FrameleafCloud)).toBe(
+        MediaOperationDestination.FrameleafCloud,
+      );
     });
   });
 
@@ -301,8 +307,6 @@ describe('restoration rules (FL-115)', () => {
   });
 });
 
-const runPodEndpoint = { url: 'https://pod.proxy.runpod.net/', authToken: 'rpa_test_key' };
-
 const deps = (overrides: {
   destination?: MlDestinationRow;
   probe?: MlEndpointProbe;
@@ -310,7 +314,6 @@ const deps = (overrides: {
   /** Every route, for the FL-72 check that restoration never lands on a library endpoint. */
   routes?: Array<{ workload: MlWorkload; destinationId: string }>;
   others?: MlDestinationRow[];
-  runPod?: { url: string; authToken?: string } | null;
 }) => {
   const destination = overrides.destination ?? mlDestinationStub.lan;
   const rows = [destination, ...(overrides.others ?? [])];
@@ -325,7 +328,6 @@ const deps = (overrides: {
   } as unknown as MlDestinationRepository;
   const machineLearningRepository = {
     probe: vi.fn().mockResolvedValue(overrides.probe ?? mlProbeStub.restoration),
-    getRunPodEndpoint: vi.fn().mockReturnValue(overrides.runPod ?? null),
   } as unknown as MachineLearningRepository;
   return { mlDestinationRepository, machineLearningRepository };
 };
@@ -394,10 +396,10 @@ describe('selectRestorationDestination (FL-114)', () => {
   });
 
   it('never contacts a cloud destination until the person confirms the upload', async () => {
-    const d = deps({ destination: mlDestinationStub.runPodVideoConsented, runPod: runPodEndpoint });
+    const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
     const request = {
       mode: AssetRestorationMode.Creative,
-      destinationId: mlDestinationStub.runPodVideoConsented.id,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
       acknowledgeCloudUpload: false,
     };
 
@@ -407,9 +409,9 @@ describe('selectRestorationDestination (FL-114)', () => {
 
   it('also refuses a routed cloud destination nobody confirmed', async () => {
     const d = deps({
-      destination: mlDestinationStub.runPodVideoConsented,
-      runPod: runPodEndpoint,
-      route: { workload: MlWorkload.RestorationCreative, destinationId: mlDestinationStub.runPodVideoConsented.id },
+      destination: mlDestinationStub.frameleafCloudConsented,
+      probe: mlProbeStub.frameleafCloud,
+      route: { workload: MlWorkload.RestorationCreative, destinationId: mlDestinationStub.frameleafCloudConsented.id },
     });
     const request = { mode: AssetRestorationMode.Creative, destinationId: null, acknowledgeCloudUpload: false };
 
@@ -418,10 +420,10 @@ describe('selectRestorationDestination (FL-114)', () => {
   });
 
   it('still needs the administrator consent when the person confirms the upload', async () => {
-    const d = deps({ destination: mlDestinationStub.runPodVideo, runPod: runPodEndpoint });
+    const d = deps({ destination: mlDestinationStub.frameleafCloud, probe: mlProbeStub.frameleafCloud });
     const request = {
       mode: AssetRestorationMode.Creative,
-      destinationId: mlDestinationStub.runPodVideo.id,
+      destinationId: mlDestinationStub.frameleafCloud.id,
       acknowledgeCloudUpload: true,
     };
 
@@ -430,17 +432,20 @@ describe('selectRestorationDestination (FL-114)', () => {
   });
 
   it('admits a consented cloud destination once the person confirms the upload', async () => {
-    const d = deps({ destination: mlDestinationStub.runPodVideoConsented, runPod: runPodEndpoint });
+    const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
 
     const selection = await selectRestorationDestination(d, {
       mode: AssetRestorationMode.Creative,
-      destinationId: mlDestinationStub.runPodVideoConsented.id,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
       acknowledgeCloudUpload: true,
     });
 
-    expect(selection).toMatchObject({ kind: MlDestinationKind.RunPodVideo, workload: MlWorkload.RestorationCreative });
-    // The video worker's own address, never the library-analysis pod the RunPod service published (FL-72).
-    expect(selection.endpoint).toEqual({ url: mlDestinationStub.runPodVideoConsented.url, authToken: 'video-token' });
+    expect(selection).toMatchObject({
+      kind: MlDestinationKind.FrameleafCloud,
+      workload: MlWorkload.RestorationCreative,
+    });
+    // FL-159: Frameleaf Cloud resolves to its sentinel; its check comes from the cloud processing service.
+    expect(selection.endpoint).toEqual(FRAMELEAF_CLOUD_ENDPOINT);
     expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: true });
   });
 
@@ -455,13 +460,17 @@ describe('selectRestorationDestination (FL-114)', () => {
     expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.WorkloadNotServed);
   });
 
-  it('refuses restoration on the managed RunPod pod, which is a library-analysis worker (FL-72)', async () => {
-    const legacy = { ...mlDestinationStub.runPodConsented, workloads: [MlWorkload.RestorationCreative] };
-    const d = deps({ destination: legacy, runPod: runPodEndpoint });
-    const request = { mode: AssetRestorationMode.Creative, destinationId: legacy.id, acknowledgeCloudUpload: true };
+  it('refuses a Frameleaf Cloud restoration the AI Wallet cannot pay for, without moving it (FL-159)', async () => {
+    const cloud = mlProbeStub.frameleafCloud.cloud!;
+    const emptyWallet = { ...mlProbeStub.frameleafCloud, cloud: { ...cloud, balanceUsd: 0, heldUsd: 0 } };
+    const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: emptyWallet });
+    const request = {
+      mode: AssetRestorationMode.Creative,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
+      acknowledgeCloudUpload: true,
+    };
 
-    expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.RoleConflict);
-    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+    expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.WalletInsufficient);
   });
 
   it('refuses restoration on an endpoint library analysis is routed to, without moving it (FL-72)', async () => {

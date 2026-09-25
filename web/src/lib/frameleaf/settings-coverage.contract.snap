@@ -170,6 +170,86 @@
   "ffmpeg.twoPass": {
     "type": "boolean"
   },
+  "frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0.5,
+    "maximum": 100
+  },
+  "frameleafCloud.cloudMl.autoDescribe.enabled": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudMl.enabled": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudMl.faces.enabled": {
+    "type": "boolean",
+    "enum": [
+      false
+    ]
+  },
+  "frameleafCloud.cloudMl.models.descriptions": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudMl.models.interpolation": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudMl.models.restoration": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudMl.models.studio": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudMl.models.upscale": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudMl.routing.descriptions": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.routing.interpolation": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.routing.restoration": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.routing.studio": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.routing.upscale": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.startWith": {
+    "type": "string",
+    "enum": [
+      "local",
+      "cloud"
+    ]
+  },
   "image.colorspace": {
     "type": "string",
     "enum": [
@@ -382,6 +462,33 @@
     "type": "boolean"
   },
   "library.watch.enabled": {
+    "type": "boolean"
+  },
+  "libraryCare.checksumScan": {
+    "type": "boolean"
+  },
+  "libraryCare.duplicateReview": {
+    "type": "boolean"
+  },
+  "libraryCare.healthScan": {
+    "type": "boolean"
+  },
+  "libraryCare.healthScanCronExpression": {
+    "type": "string"
+  },
+  "libraryCare.incrementalEnrichment": {
+    "type": "boolean"
+  },
+  "libraryCare.integrityAudit": {
+    "type": "boolean"
+  },
+  "libraryCare.livePhotoRepair": {
+    "type": "boolean"
+  },
+  "libraryCare.manualMetadata": {
+    "type": "boolean"
+  },
+  "libraryCare.rawRecovery": {
     "type": "boolean"
   },
   "localFeatures.askSearch.enabled": {
@@ -625,104 +732,6 @@
   },
   "machineLearning.ocr.modelName": {
     "type": "string"
-  },
-  "machineLearning.runpod.apiKey": {
-    "type": "string"
-  },
-  "machineLearning.runpod.apiKeyConfigured": {
-    "type": "boolean"
-  },
-  "machineLearning.runpod.autoBackfillOnLaunch": {
-    "type": "boolean"
-  },
-  "machineLearning.runpod.autoStopEnabled": {
-    "type": "boolean"
-  },
-  "machineLearning.runpod.autoStopGraceMinutes": {
-    "type": "integer",
-    "minimum": 1,
-    "maximum": 1440
-  },
-  "machineLearning.runpod.containerDiskGb": {
-    "type": "integer",
-    "minimum": 10,
-    "maximum": 2000
-  },
-  "machineLearning.runpod.dataPrivacyAcknowledged": {
-    "type": "boolean"
-  },
-  "machineLearning.runpod.defaultGpuTypeId": {
-    "type": "string"
-  },
-  "machineLearning.runpod.enabled": {
-    "type": "boolean"
-  },
-  "machineLearning.runpod.hfToken": {
-    "type": "string"
-  },
-  "machineLearning.runpod.hfTokenConfigured": {
-    "type": "boolean"
-  },
-  "machineLearning.runpod.imageName": {
-    "type": "string"
-  },
-  "machineLearning.runpod.maxRuntimeHours": {
-    "type": "integer",
-    "minimum": 1,
-    "maximum": 168
-  },
-  "machineLearning.runpod.mode": {
-    "type": "string",
-    "enum": [
-      "disabled",
-      "pod",
-      "serverless"
-    ]
-  },
-  "machineLearning.runpod.provisionTimeoutMinutes": {
-    "type": "integer",
-    "minimum": 1,
-    "maximum": 60
-  },
-  "machineLearning.runpod.serverless.executionTimeoutMs": {
-    "type": "integer",
-    "minimum": 5000,
-    "maximum": 3600000
-  },
-  "machineLearning.runpod.serverless.gpuTypeIds": {
-    "type": "array"
-  },
-  "machineLearning.runpod.serverless.idleTimeoutSeconds": {
-    "type": "integer",
-    "minimum": 5,
-    "maximum": 3600
-  },
-  "machineLearning.runpod.serverless.scalerType": {
-    "type": "string",
-    "enum": [
-      "QUEUE_DELAY",
-      "REQUEST_COUNT"
-    ]
-  },
-  "machineLearning.runpod.serverless.scalerValue": {
-    "type": "integer",
-    "minimum": 1,
-    "maximum": 60
-  },
-  "machineLearning.runpod.serverless.workersMax": {
-    "type": "integer",
-    "minimum": 1,
-    "maximum": 20
-  },
-  "machineLearning.runpod.serverless.workersMin": {
-    "type": "integer",
-    "minimum": 0,
-    "maximum": 10
-  },
-  "machineLearning.runpod.volumeGb": {
-    "type": "integer",
-    "minimum": 0,
-    "maximum": 2000
   },
   "machineLearning.urls": {
     "type": "array"

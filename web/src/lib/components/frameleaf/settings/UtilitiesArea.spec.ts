@@ -49,6 +49,14 @@ describe('Utilities area', () => {
     await userEvent.click(screen.getByRole('button', { name: /Duplicate review/ }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=duplicates', expect.any(Object));
   });
+  it('shows each tool’s icon in the directory (UT-12)', () => {
+    render(UtilitiesArea);
+    for (const name of [/Duplicate review/, /Large files/, /Mobile applications/]) {
+      expect(screen.getByRole('button', { name }).querySelector('svg')).not.toBeNull();
+      // The icon comes first, before the title, then the chevron.
+      expect(screen.getByRole('button', { name }).querySelectorAll('svg')).toHaveLength(2);
+    }
+  });
   it('keeps an admin on the single utilities host', async () => {
     state.user.isAdmin = true;
     render(UtilitiesArea);

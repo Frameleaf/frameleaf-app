@@ -86,7 +86,7 @@ function fixture(spec = VARIANTS[0]) {
 }
 
 test("every supported image variant has an explicit native build contract", () => {
-  assert.equal(VARIANTS.length, 8);
+  assert.equal(VARIANTS.length, 7);
   for (const spec of VARIANTS) {
     const env = {
       IMAGE: spec.image,
@@ -118,8 +118,8 @@ test("every supported image variant has an explicit native build contract", () =
       assert.throws(() => validateBuildInput({ ...env, ...patch }));
   }
   assert.equal(
-    VARIANTS.find((v) => v.suffix === "-cuda-runpod").target,
-    "prod-runpod",
+    VARIANTS.some((v) => v.target !== "prod"),
+    false,
   );
 });
 

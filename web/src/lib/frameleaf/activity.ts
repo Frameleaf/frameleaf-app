@@ -205,7 +205,7 @@ export type ActivityItem = {
 const DESTINATION_KEY: Record<MediaOperationDestination, Translations> = {
   [MediaOperationDestination.Local]: 'frameleaf_activity_destination_local',
   [MediaOperationDestination.Lan]: 'frameleaf_activity_destination_lan',
-  [MediaOperationDestination.Runpod]: 'frameleaf_activity_destination_runpod',
+  [MediaOperationDestination.FrameleafCloud]: 'frameleaf_activity_destination_frameleaf_cloud',
 };
 
 /** Settings the prototype showed under a job title, in its order, skipping whatever is absent. */
@@ -268,6 +268,34 @@ const ICLOUD_WORKING: ReadonlySet<MediaOperationStatus> = new Set([
 export const isWaitingICloudSync = (operation: Pick<MediaOperationDto, 'status' | 'autoRetries' | 'retryAt'>) =>
   operation.status === MediaOperationStatus.Queued && !!operation.retryAt && (operation.autoRetries ?? 0) === 0;
 
+/**
+ * What an edit job rendered (FL-43). Edits the server's job queue renders carry it in
+ * `settings.edit`, and Activity names the row by it rather than calling every one "Edit".
+ */
+const EDIT_KIND_KEY: Readonly<Record<string, Translations>> = {
+  photo_edit: 'frameleaf_activity_kind_photo_edit',
+  photo_version: 'frameleaf_activity_kind_photo_version',
+  video_edit: 'frameleaf_activity_kind_video_edit',
+  video_export: 'frameleaf_activity_kind_video_export',
+};
+
+/**
+ * Edits the server lets stop once queued (FL-43): a photo version, which checks between its stages
+ * and keeps the working version until it finishes. A photo edit's previews and a video's master
+ * render edits already saved, so the server refuses to cancel them and the row does not offer it.
+ */
+const CANCELLABLE_EDITS: ReadonlySet<string> = new Set(['photo_version']);
+
+/** The edit an edit job rendered, or nothing for every other job. */
+export const mediaOperationEdit = (operation: Pick<MediaOperationDto, 'kind' | 'settings'>): string | undefined => {
+  const edit = operation.settings?.edit;
+  return operation.kind === MediaOperationKind.QuickEdit &&
+    typeof edit === 'string' &&
+    Object.hasOwn(EDIT_KIND_KEY, edit)
+    ? edit
+    : undefined;
+};
+
 /** A physical deduplication plan's name, `PD-` and eight characters, or nothing. */
 const asPlanName = (value: unknown): string | null =>
   typeof value === 'string' && /^PD-[\dA-F]{8}$/.test(value) ? value : null;
@@ -303,12 +331,13 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     isPreservationKind(operation.kind) && BULK_WORKING.has(status)
       ? 'frameleaf_activity_bulk_running'
       : `frameleaf_activity_status_${status}`;
+  const edit = mediaOperationEdit(operation);
 
   return {
     id: `job:${operation.id}`,
     source: 'job',
     operationId: operation.id,
-    kindKey: `frameleaf_activity_kind_${operation.kind}`,
+    kindKey: edit ? EDIT_KIND_KEY[edit] : `frameleaf_activity_kind_${operation.kind}`,
     statusKey: pause.pausePending
       ? 'frameleaf_activity_status_pausing'
       : waiting
@@ -337,15 +366,18 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     startedAt: Date.parse(operation.startedAt ?? operation.createdAt),
     assetId: operation.resultAssetId ?? operation.assetId ?? undefined,
     // The server decides; these only mirror its rules so the buttons are not offered pointlessly.
-    canCancel: running || pause.paused,
+    // An edit is cancelled only where its render can stop cleanly (FL-43).
+    canCancel: (running || pause.paused) && (!edit || CANCELLABLE_EDITS.has(edit)),
     // A Library Care scan or search is started again from Library Care, not copied (FL-69); a
     // deduplication plan is reviewed again on its page and applied as a new plan (FL-73).
     // A library scan is started again from Libraries, which checks its folders and owner first (FL-78).
+    // An edit that could not be cancelled was never cancelled by its owner, so only a failure retries.
     canRetry:
       operation.kind !== MediaOperationKind.MediaHealth &&
       operation.kind !== MediaOperationKind.LibraryScan &&
       !dedup &&
-      (status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled),
+      (status === MediaOperationStatus.Failed ||
+        (status === MediaOperationStatus.Cancelled && (!edit || CANCELLABLE_EDITS.has(edit)))),
     canDismiss: finished,
     browserLocal: false,
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),

@@ -61,7 +61,7 @@ const setupQueueMocks = async (context: BrowserContext) => {
               attemptsMade: 3,
               failedReason: 'Machine learning is unreachable',
               account: { id: faker.string.uuid(), name: 'Ada Lovelace' },
-              worker: { kind: 'runpod', name: 'Studio pod' },
+              worker: { kind: 'frameleaf-cloud', name: 'Studio cloud' },
             },
           ]
         : [],
@@ -204,7 +204,7 @@ test.describe('Job manager', () => {
     await expect(table.getByRole('columnheader', { name: 'Account' })).toBeVisible();
     await expect(table.getByRole('columnheader', { name: 'Worker' })).toBeVisible();
     await expect(table.getByText('Ada Lovelace')).toBeVisible();
-    await expect(table.getByText('RunPod')).toBeVisible();
+    await expect(table.getByText('Frameleaf Cloud')).toBeVisible();
 
     await page.getByRole('button', { name: 'Retry failed', exact: true }).click();
     const review = page.getByRole('dialog', { name: 'Retry failed jobs' });

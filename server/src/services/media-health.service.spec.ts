@@ -27,6 +27,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
 import { MANAGED_ROOT_ID, recoveryRootId } from 'src/utils/media-health-roots.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -75,6 +76,7 @@ describe(MediaHealthService.name, () => {
       isOriginalPathInUse: vi.fn().mockResolvedValue(false),
       getActiveTrashFindingIds: vi.fn().mockResolvedValue([]),
       releaseTrashQueued: vi.fn().mockResolvedValue(0),
+      reopenFinding: vi.fn().mockResolvedValue(true),
       withLibraryCareLock: vi.fn().mockImplementation((_ownerId: string, work: () => Promise<unknown>) => work()),
       trashCorruptIfUnchanged: vi.fn().mockResolvedValue(true),
       replaceCandidates: vi.fn(),
@@ -112,7 +114,11 @@ describe(MediaHealthService.name, () => {
       { getEnv: () => ({ storage: { ignoreMountCheckErrors: false, recoveryRoots } }) } as never,
       mediaOperationRepository,
       mediaOperationService,
+      mocks.cron as never,
+      mocks.database as never,
+      mocks.systemMetadata as never,
     );
+    clearConfigCache();
     vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([]);
     vi.mocked(mediaHealthRepository.count).mockResolvedValue(0);
     vi.mocked(mocks.user.getList).mockResolvedValue([]);
@@ -762,7 +768,7 @@ describe(MediaHealthService.name, () => {
         afterId: 'a-0',
         limit: 25,
       });
-      expect(scanAsset).toHaveBeenCalledWith(assets[0], 'm', 'c');
+      expect(scanAsset).toHaveBeenCalledWith(assets[0], 'm', 'c', { checksumScan: true });
     });
 
     it('keeps a paused run open and closes a finished one', async () => {
@@ -2541,6 +2547,400 @@ describe(MediaHealthService.name, () => {
       expect(classifyImageDecodeFailure(error, { isRaw: true, enhancedRawAttempted: true })).toBe(
         MediaHealthStatus.UnsupportedRaw,
       );
+    });
+  });
+  describe('Library care settings (FL-69)', () => {
+    const care = (libraryCare: Record<string, unknown>) => {
+      clearConfigCache();
+      vi.mocked(mocks.systemMetadata.get).mockResolvedValue({ libraryCare } as never);
+    };
+
+    it('schedules the health scan on the server that holds the lock, as the settings say', async () => {
+      vi.mocked(mocks.database.tryLock).mockResolvedValue(true);
+      vi.mocked(mocks.cron.create).mockReturnValue();
+      vi.mocked(mocks.cron.update).mockReturnValue();
+      await sut.onConfigInit({
+        newConfig: { libraryCare: { healthScan: false, healthScanCronExpression: '0 02 * * *' } },
+      } as never);
+      expect(mocks.cron.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'libraryCareHealthScan', expression: '0 02 * * *', start: false }),
+      );
+
+      sut.onConfigUpdate({
+        newConfig: { libraryCare: { healthScan: true, healthScanCronExpression: '0 03 * * *' } },
+      } as never);
+      expect(mocks.cron.update).toHaveBeenCalledWith({
+        name: 'libraryCareHealthScan',
+        expression: '0 03 * * *',
+        start: true,
+      });
+    });
+
+    it('leaves the schedule to another server when the lock is taken', async () => {
+      vi.mocked(mocks.database.tryLock).mockResolvedValue(false);
+      await sut.onConfigInit({
+        newConfig: { libraryCare: { healthScan: true, healthScanCronExpression: '0 02 * * *' } },
+      } as never);
+      sut.onConfigUpdate({
+        newConfig: { libraryCare: { healthScan: true, healthScanCronExpression: '0 02 * * *' } },
+      } as never);
+      expect(mocks.cron.create).not.toHaveBeenCalled();
+      expect(mocks.cron.update).not.toHaveBeenCalled();
+    });
+
+    it('starts no scheduled scan while "Schedule incremental health scans" is off', async () => {
+      care({ healthScan: false });
+      await expect(sut.startScheduledScans()).resolves.toBe(0);
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('scans each account for what changed since its last completed scan, or everything', async () => {
+      vi.useFakeTimers({ now: new Date('2026-09-25T02:00:00.000Z'), toFake: ['Date'] });
+      care({ healthScan: true });
+      vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-a' }, { id: 'user-b' }] as never);
+      vi.mocked(mediaHealthRepository.createRun).mockImplementation((category) =>
+        Promise.resolve({ id: `run-${category}` } as never),
+      );
+      const completed = new Date('2026-09-20T02:00:00.000Z');
+      vi.mocked(mediaOperationRepository.list).mockImplementation(
+        (options: any) =>
+          Promise.resolve(
+            options.ownerId === 'user-a' && options.statuses?.includes(MediaOperationStatus.Completed)
+              ? {
+                  items: [
+                    {
+                      id: 'op-1',
+                      snapshot: { mode: 'scan', userId: 'user-a', missingRunId: 'm', corruptRunId: 'c' },
+                      createdAt: completed,
+                    },
+                  ],
+                  total: 1,
+                }
+              : { items: [], total: 0 },
+          ) as never,
+      );
+
+      await expect(sut.startScheduledScans()).resolves.toBe(2);
+
+      const snapshots = vi.mocked(mediaOperationRepository.create).mock.calls.map(([operation]) => operation.snapshot);
+      expect(snapshots).toEqual([
+        expect.objectContaining({ userId: 'user-a', changedSince: completed.toISOString(), scheduled: true }),
+        expect.objectContaining({ userId: 'user-b', scheduled: true }),
+      ]);
+      expect(snapshots[1]).not.toHaveProperty('changedSince');
+      expect(vi.mocked(mediaOperationRepository.create).mock.calls[0][0].label).toBe('Scheduled library health scan');
+      vi.useRealTimers();
+    });
+
+    it('makes a scheduled scan full at least weekly, so files removed or damaged later are found (FL-69)', async () => {
+      vi.useFakeTimers({ now: new Date('2026-09-25T02:00:00.000Z'), toFake: ['Date'] });
+      care({ healthScan: true });
+      vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'recent' }, { id: 'stale' }, { id: 'no-full' }] as never);
+      vi.mocked(mediaHealthRepository.createRun).mockImplementation((category) =>
+        Promise.resolve({ id: `run-${category}` } as never),
+      );
+      const scan = (userId: string, createdAt: string, changedSince?: string) => ({
+        id: `op-${userId}-${createdAt}`,
+        snapshot: { mode: 'scan', userId, missingRunId: 'm', corruptRunId: 'c', ...(changedSince && { changedSince }) },
+        createdAt: new Date(createdAt),
+      });
+      const history: Record<string, unknown[]> = {
+        // Incremental yesterday, full three days ago: incremental from yesterday.
+        recent: [
+          scan('recent', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
+          scan('recent', '2026-09-22T02:00:00.000Z'),
+        ],
+        // Last full scan eight days ago: full, whatever the incremental ones since.
+        stale: [
+          scan('stale', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
+          scan('stale', '2026-09-17T02:00:00.000Z'),
+        ],
+        // Only incremental scans in reach: full.
+        'no-full': [scan('no-full', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z')],
+      };
+      vi.mocked(mediaOperationRepository.list).mockImplementation(
+        (options: any) =>
+          Promise.resolve(
+            options.statuses?.includes(MediaOperationStatus.Completed)
+              ? { items: history[options.ownerId] ?? [], total: 0 }
+              : { items: [], total: 0 },
+          ) as never,
+      );
+
+      await expect(sut.startScheduledScans()).resolves.toBe(3);
+
+      const snapshots = vi.mocked(mediaOperationRepository.create).mock.calls.map(([operation]) => operation.snapshot);
+      expect(snapshots[0]).toMatchObject({ userId: 'recent', changedSince: '2026-09-24T02:00:00.000Z' });
+      expect(snapshots[1]).toMatchObject({ userId: 'stale' });
+      expect(snapshots[1]).not.toHaveProperty('changedSince');
+      expect(snapshots[2]).toMatchObject({ userId: 'no-full' });
+      expect(snapshots[2]).not.toHaveProperty('changedSince');
+      vi.useRealTimers();
+    });
+
+    it('keeps a scan an account already has instead of starting a second one', async () => {
+      care({ healthScan: true });
+      vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-a' }] as never);
+      vi.mocked(mediaOperationRepository.list).mockImplementation(
+        (options: any) =>
+          Promise.resolve(
+            options.statuses?.includes(MediaOperationStatus.Paused)
+              ? {
+                  items: [
+                    {
+                      id: 'op-open',
+                      snapshot: { mode: 'scan', userId: 'user-a', missingRunId: 'm', corruptRunId: 'c' },
+                    },
+                  ],
+                  total: 1,
+                }
+              : { items: [], total: 0 },
+          ) as never,
+      );
+
+      await expect(sut.startScheduledScans()).resolves.toBe(1);
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('scans only assets changed since an incremental scan began', async () => {
+      care({ checksumScan: true });
+      vi.mocked(mediaHealthRepository.getAssetPage).mockResolvedValue([]);
+      const snapshot = {
+        mode: 'scan' as const,
+        userId: 'user-id',
+        missingRunId: 'm',
+        corruptRunId: 'c',
+        changedSince: '2026-09-20T02:00:00.000Z',
+      };
+
+      await sut.scanPage(snapshot, null, 25);
+      await sut.countScanAssets('user-id', snapshot.changedSince);
+
+      expect(mediaHealthRepository.getAssetPage).toHaveBeenCalledWith({
+        ownerId: 'user-id',
+        afterId: null,
+        limit: 25,
+        changedSince: new Date(snapshot.changedSince),
+      });
+      expect(mediaHealthRepository.countScanAssets).toHaveBeenCalledWith('user-id', new Date(snapshot.changedSince));
+    });
+
+    it('verifies original checksums in a scan only while "Verify original checksums" is on', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      const withSha1 = { ...asset, checksum: Buffer.from('abc'), checksumAlgorithm: ChecksumAlgorithm.sha1File };
+      vi.mocked(mediaHealthRepository.getAssetPage).mockResolvedValue([withSha1] as never);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+      const snapshot = { mode: 'scan' as const, userId: 'user-id', missingRunId: 'm', corruptRunId: 'c' };
+
+      care({ checksumScan: true });
+      await sut.scanPage(snapshot, null, 25);
+      expect(validate).toHaveBeenLastCalledWith(expect.objectContaining({ expected: { sha1: withSha1.checksum } }));
+
+      care({ checksumScan: false });
+      await sut.scanPage(snapshot, null, 25);
+      expect(validate).toHaveBeenLastCalledWith(expect.objectContaining({ expected: undefined, deep: true }));
+    });
+
+    it('leaves RAW originals out of a search while "Suggest recoverable RAW sources" is off', async () => {
+      care({ rawRecovery: false });
+      const raw = {
+        id: 'health-raw',
+        assetId: 'asset-raw',
+        category: MediaHealthCategory.Missing,
+        originalFileName: 'Forest.ARW',
+      };
+      const jpeg = {
+        id: 'health-jpg',
+        assetId: 'asset-jpg',
+        category: MediaHealthCategory.Missing,
+        originalFileName: 'Lake.jpg',
+      };
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([raw] as never);
+      await expect(sut.locateMissing(authStub.admin, { ids: [raw.id] })).rejects.toThrow('RAW sources is turned off');
+
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([raw, jpeg] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([]);
+      vi.mocked(mediaHealthRepository.createRun).mockResolvedValue({ id: 'run-1' } as never);
+      await sut.locateMissing(authStub.admin, { ids: [raw.id, jpeg.id] });
+      expect(vi.mocked(mediaOperationRepository.create).mock.calls[0][0].snapshot).toEqual(
+        expect.objectContaining({ findingIds: [jpeg.id] }),
+      );
+    });
+
+    it('reports the settings that decide what Library Care offers in the summary', async () => {
+      care({ rawRecovery: false, duplicateReview: false });
+      const summary = await sut.summary(authStub.admin, {});
+      expect(summary.care).toEqual({
+        healthScan: true,
+        checksumScan: true,
+        integrityAudit: true,
+        rawRecovery: false,
+        duplicateReview: false,
+      });
+    });
+  });
+
+  describe('reopen (FL-69, UT-2)', () => {
+    const finding = (overrides: Record<string, unknown>) => ({
+      id: 'health-1',
+      assetId: 'asset-1',
+      category: MediaHealthCategory.Corrupt,
+      status: MediaHealthStatus.Dismissed,
+      resolution: {},
+      ...overrides,
+    });
+
+    it('puts a dismissed finding back to the status its dismissal recorded', async () => {
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        finding({ resolution: { dismissedFrom: MediaHealthStatus.CorruptSuspect } }),
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([]);
+
+      await expect(sut.reopen(authStub.user1, { ids: ['health-1'] })).resolves.toEqual({
+        results: [{ id: 'health-1', success: true, status: MediaHealthStatus.CorruptSuspect }],
+      });
+      expect(mediaHealthRepository.reopenFinding).toHaveBeenCalledWith(
+        'health-1',
+        MediaHealthStatus.Dismissed,
+        MediaHealthStatus.CorruptSuspect,
+      );
+      // An owner reaches only their own findings, with their own privacy.
+      expect(mediaHealthRepository.getByIds).toHaveBeenCalledWith(['health-1'], authStub.user1.user.id, {});
+    });
+
+    it('does not guess the status of a finding dismissed before undo existed', async () => {
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([finding({})] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([]);
+
+      const { results } = await sut.reopen(authStub.user1, { ids: ['health-1'] });
+      expect(results[0]).toMatchObject({ success: false, error: expect.stringContaining('scan again') });
+      expect(mediaHealthRepository.reopenFinding).not.toHaveBeenCalled();
+    });
+
+    it('reopens trashed damage as confirmed only once its item is out of the trash', async () => {
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        finding({ status: MediaHealthStatus.Trashed }),
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-1', deletedAt: new Date() }] as never);
+      const refused = await sut.reopen(authStub.user1, { ids: ['health-1'] });
+      expect(refused.results[0]).toMatchObject({ success: false, error: 'Restore the item from the trash first' });
+
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-1', deletedAt: null }] as never);
+      const reopened = await sut.reopen(authStub.user1, { ids: ['health-1'] });
+      expect(reopened.results[0]).toEqual({
+        id: 'health-1',
+        success: true,
+        status: MediaHealthStatus.CorruptConfirmed,
+      });
+      expect(mediaHealthRepository.reopenFinding).toHaveBeenCalledWith(
+        'health-1',
+        MediaHealthStatus.Trashed,
+        MediaHealthStatus.CorruptConfirmed,
+      );
+    });
+
+    it('leaves damage a trash job still holds', async () => {
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        finding({ status: MediaHealthStatus.TrashQueued }),
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-1', deletedAt: null }] as never);
+      vi.mocked(mediaHealthRepository.getActiveTrashFindingIds).mockResolvedValue(['health-1']);
+
+      const { results } = await sut.reopen(authStub.user1, { ids: ['health-1'] });
+      expect(results[0].success).toBe(false);
+      expect(mediaHealthRepository.reopenFinding).not.toHaveBeenCalled();
+    });
+
+    it('never reopens a relink or a finding the reader cannot reach', async () => {
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        finding({ category: MediaHealthCategory.Missing, status: MediaHealthStatus.Relinked }),
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([]);
+
+      const { results } = await sut.reopen(authStub.user1, { ids: ['health-1', 'someone-elses'] });
+      expect(results).toEqual([
+        expect.objectContaining({ id: 'health-1', success: false }),
+        { id: 'someone-elses', success: false, error: 'Finding is not available' },
+      ]);
+      expect(mediaHealthRepository.reopenFinding).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('inspect evidence (FL-69)', () => {
+    it('lists the recorded checksums, the candidate checksums and, for an administrator, the provenance', async () => {
+      const asset = {
+        ...AssetFactory.create({
+          id: 'asset-1',
+          ownerId: authStub.admin.user.id,
+          originalPath: '/data/upload/admin/a.jpg',
+          originalFileName: 'a.jpg',
+        }),
+        checksum: Buffer.from('0a0b', 'hex'),
+        checksumAlgorithm: ChecksumAlgorithm.sha1File,
+      };
+      const resolvedAt = new Date('2026-09-21T10:00:00.000Z');
+      const row = {
+        id: 'health-1',
+        assetId: asset.id,
+        category: MediaHealthCategory.Missing,
+        status: MediaHealthStatus.Relinked,
+        severity: MediaHealthSeverity.Info,
+        originalPath: asset.originalPath,
+        originalFileName: asset.originalFileName,
+        evidence: {
+          reason: 'candidate_relinked',
+          previousPath: '/data/upload/admin/old.jpg',
+          provenance: { relinkedBy: authStub.admin.user.id, rootId: MANAGED_ROOT_ID },
+        },
+        resolution: {},
+        checkedAt: resolvedAt,
+        dismissedAt: null,
+        resolvedAt,
+      };
+      vi.mocked(mediaHealthRepository.list).mockResolvedValue([row] as never);
+      vi.mocked(mediaHealthRepository.getLatestRun).mockResolvedValue(undefined);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([
+        { assetId: asset.id, sha1: Buffer.from('0a0b', 'hex'), sha256: Buffer.from('ff', 'hex') },
+      ] as never);
+      vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+        {
+          id: 'candidate-1',
+          healthId: 'health-1',
+          candidatePath: '/data/upload/admin/a.jpg',
+          status: MediaHealthStatus.Found,
+          evidence: { algorithms: ['sha1'], sha1: '0a0b' },
+          resolution: {},
+          visualMatchScore: 1,
+          checkedAt: resolvedAt,
+        },
+      ] as never);
+      vi.mocked(mocks.user.get).mockResolvedValue({ id: asset.ownerId, storageLabel: null } as never);
+
+      const item = (await sut.list(authStub.admin, { size: 10 })).buckets[0].items[0];
+
+      expect(item.expectedChecksums).toEqual([
+        { algorithm: 'sha1', value: '0a0b' },
+        { algorithm: 'sha256', value: 'ff' },
+      ]);
+      expect(item.candidates[0].checksums).toEqual([{ algorithm: 'sha1', value: '0a0b' }]);
+      expect(item.provenance).toEqual({
+        action: 'relinked',
+        userId: authStub.admin.user.id,
+        rootId: MANAGED_ROOT_ID,
+        rootKind: 'managed',
+        rootLabel: 'Library storage',
+        at: resolvedAt.toISOString(),
+        previousPath: '/data/upload/admin/old.jpg',
+        sourcePath: null,
+      });
+
+      // An owner never sees who repaired it from which location.
+      const ownerItem = (
+        await sut.list({ ...authStub.admin, user: { ...authStub.admin.user, isAdmin: false } } as never, { size: 10 })
+      ).buckets[0].items[0];
+      expect(ownerItem.provenance).toBeNull();
     });
   });
 });

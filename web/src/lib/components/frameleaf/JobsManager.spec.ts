@@ -321,7 +321,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
         data: { id: 'asset-1' },
         attemptsMade: 1,
         account: { id: 'user-1', name: 'Ada Lovelace' },
-        worker: { kind: QueueJobWorkerKind.Runpod, name: 'Studio pod' },
+        worker: { kind: QueueJobWorkerKind.FrameleafCloud, name: 'Studio cloud' },
       },
       {
         id: 'job-2',
@@ -339,14 +339,14 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(within(table).getByRole('columnheader', { name: 'Worker' })).toBeInTheDocument();
     const [, first, second] = within(table).getAllByRole('row');
     expect(within(first).getByText('Ada Lovelace')).toBeInTheDocument();
-    expect(within(first).getByText('RunPod').closest('span')).toHaveAttribute('title', 'Studio pod');
+    expect(within(first).getByText('Frameleaf Cloud').closest('span')).toHaveAttribute('title', 'Studio cloud');
     expect(within(second).getByText('No account')).toBeInTheDocument();
     expect(within(second).getByText('Local / LAN')).toBeInTheDocument();
 
     await fireEvent.click(within(first).getByRole('button', { name: /^Detect faces/ }));
     const detail = screen.getByRole('dialog', { name: 'Detect faces' });
     expect(within(detail).getByText('Account').nextElementSibling).toHaveTextContent('Ada Lovelace');
-    expect(within(detail).getByText('Worker').nextElementSibling).toHaveTextContent('RunPod · Studio pod');
+    expect(within(detail).getByText('Worker').nextElementSibling).toHaveTextContent('Frameleaf Cloud · Studio cloud');
   });
 
   it('retries the failed jobs after the review, without an acknowledgement', async () => {

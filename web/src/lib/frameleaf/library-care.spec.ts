@@ -13,20 +13,25 @@ import {
 } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
+  accountOptions,
   canRecover,
   canRelink,
   candidatesIn,
   evidenceKey,
   filterRows,
   formatBytes,
+  initialOwner,
   isActiveOperation,
+  isRawName,
   locatable,
+  ownerScope,
   recoveryChoicesValid,
   relinkCandidate,
   scanState,
   statusTone,
   toRows,
   trashable,
+  trashUndoable,
   type LibraryCareRow,
 } from '$lib/frameleaf/library-care';
 
@@ -42,6 +47,7 @@ const candidate = (overrides: Partial<MediaHealthCandidateDto> = {}): MediaHealt
   rootId: 'managed',
   rootKind: MediaHealthRootKind.Managed,
   checksumMatch: true,
+  checksums: [],
   decodeValid: true,
   chosen: false,
   ...overrides,
@@ -161,6 +167,58 @@ describe('the actions the page offers', () => {
   it('searches for missing originals that still need attention and for confirmed damage', () => {
     const relinked = row({ id: 'done', status: MediaHealthStatus.Relinked });
     expect(locatable([row(), relinked, confirmed, raw]).map(({ id }) => id)).toEqual(['health-1', 'health-1']);
+  });
+
+  it('leaves RAW originals out of a search while RAW source suggestions are off (FL-69)', () => {
+    const jpeg = row({ id: 'jpeg', originalFileName: 'Lake.jpg' });
+    const arw = row({ id: 'arw', originalFileName: 'Forest trail.ARW' });
+    expect(locatable([jpeg, arw], { rawRecovery: false }).map(({ id }) => id)).toEqual(['jpeg']);
+    expect(locatable([jpeg, arw], { rawRecovery: true }).map(({ id }) => id)).toEqual(['jpeg', 'arw']);
+    expect(isRawName('Summit.CR3')).toBe(true);
+    expect(isRawName('scan.tiff')).toBe(false);
+  });
+});
+
+describe('whose findings (UT-13)', () => {
+  const users = [
+    { id: 'admin', name: 'Taylor' },
+    { id: 'jamie', name: 'Jamie' },
+    { id: 'emma', name: 'Emma' },
+  ];
+
+  it('offers All accounts and then every account by name, the administrator included', () => {
+    expect(accountOptions(users, { id: 'admin', name: 'Taylor' }, true)).toEqual([
+      { value: 'all', name: null },
+      { value: 'admin', name: 'Taylor' },
+      { value: 'jamie', name: 'Jamie' },
+      { value: 'emma', name: 'Emma' },
+    ]);
+  });
+
+  it('offers somebody who is not an administrator only themselves', () => {
+    expect(accountOptions(users, { id: 'jamie', name: 'Jamie' }, false)).toEqual([{ value: 'jamie', name: 'Jamie' }]);
+    expect(initialOwner('user:emma', users, 'jamie', false)).toBe('jamie');
+  });
+
+  it('opens on the viewed account or on all accounts', () => {
+    expect(initialOwner('user:emma', users, 'admin', true)).toBe('emma');
+    expect(initialOwner('user:nobody', users, 'admin', true)).toBe('all');
+    expect(initialOwner('library:1', users, 'admin', true)).toBe('all');
+    expect(initialOwner(null, users, 'admin', true)).toBe('all');
+  });
+
+  it('asks the server for exactly that scope', () => {
+    expect(ownerScope('all', 'admin')).toEqual({ allAccounts: true });
+    expect(ownerScope('admin', 'admin')).toEqual({});
+    expect(ownerScope('emma', 'admin')).toEqual({ ownerId: 'emma' });
+  });
+});
+
+describe('undo (UT-2)', () => {
+  it('offers to take a trash move back only when every item is the viewer’s own', () => {
+    expect(trashUndoable([{ ownerId: 'me' }, { ownerId: 'me' }], 'me')).toBe(true);
+    expect(trashUndoable([{ ownerId: 'me' }, { ownerId: 'jamie' }], 'me')).toBe(false);
+    expect(trashUndoable([], 'me')).toBe(false);
   });
 });
 

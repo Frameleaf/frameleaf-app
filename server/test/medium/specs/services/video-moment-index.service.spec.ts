@@ -56,7 +56,6 @@ const setup = () => {
 
   const machineLearning = automock(MachineLearningRepository, { args: [{ setContext: () => {} }] });
   machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
-  machineLearning.getRunPodEndpoint.mockReturnValue(null);
   machineLearning.encodeImage.mockImplementation(() => Promise.resolve(newEmbedding()));
 
   // Library workloads are routed to a healthy local destination, as in the unit tests (FL-110). The
@@ -64,7 +63,7 @@ const setup = () => {
   const destination = { ...mlDestinationStub.local, id: factory.uuid() };
   const mlDestinations = automock(MlDestinationRepository);
   mlDestinations.getRoute.mockImplementation((workload) =>
-    Promise.resolve({ workload, destinationId: destination.id, updatedAt: new Date() }),
+    Promise.resolve({ workload, destinationId: destination.id, modelId: null, updatedAt: new Date() }),
   );
   mlDestinations.getById.mockResolvedValue(destination);
   mlDestinations.getSpend.mockResolvedValue(0);

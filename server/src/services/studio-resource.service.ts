@@ -22,7 +22,7 @@
  * - Nothing about an asset is reported before its access check. An asset the acting user cannot
  *   read is refused exactly like a missing one, and `locked` is reported only to the asset's owner
  *   in an elevated session (FL-34).
- * - Cloud is never a fallback. A RunPod destination without explicit consent fails before a single
+ * - Cloud is never a fallback. A Frameleaf Cloud destination without explicit consent fails before a single
  *   reference is enumerated, and nothing is uploaded.
  * - The graph is bounded before it is walked, and URLs, blob strings, host paths and traversal
  *   sequences are refused wherever they appear. Only resource ids reach a worker.
@@ -312,7 +312,7 @@ export class StudioResourceService extends BaseService {
       throw new BadRequestException('Unknown Studio destination');
     }
 
-    if (context.destination === StudioDestination.RunPod && context.cloudConsent !== true) {
+    if (context.destination === StudioDestination.FrameleafCloud && context.cloudConsent !== true) {
       throw new BadRequestException(
         'A cloud destination requires explicit consent for this job; nothing was resolved or uploaded.',
       );
@@ -1162,7 +1162,7 @@ export class StudioResourceService extends BaseService {
         includesSharedSources: entries.some((entry) => entry.sourceAccess === 'shared'),
         includesPersonalData: entries.some((entry) => getStudioResourceClass(entry.kind).carriesPersonalData),
         originalAccess: false,
-        leavesMachine: context.destination === StudioDestination.RunPod,
+        leavesMachine: context.destination === StudioDestination.FrameleafCloud,
       },
     };
 

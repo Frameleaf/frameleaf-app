@@ -58,7 +58,7 @@ export type AuthorizedManifest = {
 /**
  * Whether a destination can take work right now. `unknown` is the honest default when nothing
  * has probed it; admission refuses only on `unavailable`. FL-110 supplies the real provider
- * (RunPod endpoint state, LAN reachability, local GPU presence).
+ * (Frameleaf Cloud availability, LAN reachability, local GPU presence).
  */
 export type DestinationHealth = {
   destination: MediaOperationDestination;
@@ -295,7 +295,7 @@ export const evaluateClaimAdmission = (input: ClaimAdmissionInput): AdmissionDec
   }
 
   if (operation.destination !== worker.destination) {
-    // A LAN worker never takes a RunPod job and a RunPod worker never takes a local one. The
+    // A LAN worker never takes a cloud job and a cloud worker never takes a local one. The
     // destination was the person's explicit choice; admission does not reinterpret it.
     return refuse(RenderWorkerRefusalReason.DestinationMismatch);
   }
@@ -569,4 +569,111 @@ export const verifyInputGrant = (
   }
 
   return { valid: true, payload };
+};
+
+/* ------------------------------------------------------------------ */
+/* Output support (FL-42)                                               */
+/* ------------------------------------------------------------------ */
+
+/** The colour an admitted session's conformance check verified. Absent means only 8-bit SDR. */
+export type RenderColorPrecision = { maxBitDepth: number; hdr10: boolean; dolbyVision: boolean };
+
+export const SDR_ONLY: RenderColorPrecision = Object.freeze({ maxBitDepth: 8, hdr10: false, dolbyVision: false });
+
+/** Why no admitted worker can render an export as asked; each one names what the person can change. */
+export enum RenderOutputRefusal {
+  /** No qualified render session is live for the destination. */
+  NoQualifiedWorker = 'no-qualified-worker',
+  /** Every qualified worker verified less GPU memory than the resolution needs. */
+  InsufficientMemory = 'insufficient-memory',
+  /** No qualified worker verified the colour handling (bit depth, HDR10, Dolby Vision). */
+  IncompatibleColor = 'incompatible-color',
+  /** No qualified worker verified an encoder for the format. */
+  CodecUnavailable = 'codec-unavailable',
+}
+
+/**
+ * GPU memory a render at each resolution needs, as policy: a worker that verified less is never
+ * offered the export (it would fail mid-render or fall back to software, which admission refuses).
+ */
+export const RENDER_MEMORY_BY_RESOLUTION: Readonly<Record<string, number>> = Object.freeze({
+  '720p': 2 * 1024 ** 3,
+  '1080p': 4 * 1024 ** 3,
+  '1440p': 6 * 1024 ** 3,
+  '2160p': 8 * 1024 ** 3,
+});
+
+/** The encoder names that satisfy each export format, matched against the verified codec list. */
+const FORMAT_ENCODERS: Readonly<Record<string, RegExp>> = Object.freeze({
+  'mp4-hevc-main10': /hevc|h\.?265|x265/i,
+  'mp4-h264': /h\.?264|avc|x264/i,
+  'webm-av1': /av1|svt|aom|rav1e/i,
+  'prores-422-hq': /prores/i,
+});
+
+/** Bit depth a format writes: Main10 and ProRes 422 HQ are 10-bit. */
+const FORMAT_BIT_DEPTH: Readonly<Record<string, number>> = Object.freeze({
+  'mp4-hevc-main10': 10,
+  'mp4-h264': 8,
+  'webm-av1': 10,
+  'prores-422-hq': 10,
+});
+
+export type RenderOutputRequest = { format: string; color: string; resolution: string };
+
+export type RenderOutputCandidate = {
+  gpuMemoryBytes: number | null;
+  codecs: readonly string[];
+  colorPrecision: RenderColorPrecision | null;
+};
+
+const colorSupported = (color: string, format: string, precision: RenderColorPrecision) => {
+  const depth = Math.max(FORMAT_BIT_DEPTH[format] ?? 8, color === 'preserve' ? 8 : 10);
+  if (precision.maxBitDepth < depth) {
+    return false;
+  }
+  if (color === 'hdr10') {
+    return precision.hdr10;
+  }
+  if (color === 'dolby-vision') {
+    return precision.dolbyVision;
+  }
+  return true;
+};
+
+/**
+ * Whether any qualified render session can produce this export (FL-42): enough verified GPU memory
+ * for the resolution, a verified encoder for the format, and verified colour precision. Evaluated in
+ * the order a person can act on, and the most specific refusal among the candidates is reported.
+ * A session's evidence is what its conformance check reported at admission; nothing is inferred
+ * from CUDA being present.
+ */
+export const evaluateRenderOutput = (
+  candidates: readonly RenderOutputCandidate[],
+  request: RenderOutputRequest,
+): { supported: true } | { supported: false; refusal: RenderOutputRefusal } => {
+  if (candidates.length === 0) {
+    return { supported: false, refusal: RenderOutputRefusal.NoQualifiedWorker };
+  }
+  const neededMemory = RENDER_MEMORY_BY_RESOLUTION[request.resolution] ?? 0;
+  const withMemory = candidates.filter(
+    (candidate) => candidate.gpuMemoryBytes !== null && candidate.gpuMemoryBytes >= neededMemory,
+  );
+  if (withMemory.length === 0) {
+    return { supported: false, refusal: RenderOutputRefusal.InsufficientMemory };
+  }
+  const encoder = FORMAT_ENCODERS[request.format];
+  const withCodec = withMemory.filter(
+    (candidate) => !!encoder && candidate.codecs.some((codec) => encoder.test(codec)),
+  );
+  if (withCodec.length === 0) {
+    return { supported: false, refusal: RenderOutputRefusal.CodecUnavailable };
+  }
+  const withColor = withCodec.filter((candidate) =>
+    colorSupported(request.color, request.format, candidate.colorPrecision ?? SDR_ONLY),
+  );
+  if (withColor.length === 0) {
+    return { supported: false, refusal: RenderOutputRefusal.IncompatibleColor };
+  }
+  return { supported: true };
 };

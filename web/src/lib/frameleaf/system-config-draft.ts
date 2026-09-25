@@ -45,8 +45,6 @@ export type ConfigConflict = {
 export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'machineLearning.imageDescription.pendingRequeueAt',
   'machineLearning.imageDescription.lastConfigChangeAt',
-  'machineLearning.runpod.apiKeyConfigured',
-  'machineLearning.runpod.hfTokenConfigured',
   'notifications.smtp.transport.passwordConfigured',
   'oauth.clientSecretConfigured',
 ]);
@@ -59,8 +57,6 @@ export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
 export const SECRET_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'notifications.smtp.transport.password',
   'oauth.clientSecret',
-  'machineLearning.runpod.apiKey',
-  'machineLearning.runpod.hfToken',
 ]);
 
 const SECRET_NAME = /(password|secret|token|apikey|api_key|credential)$/i;
@@ -79,7 +75,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   authentication: ['passwordLogin', 'oauth'],
   backup: ['backup'],
   image: ['image'],
-  'integrity-checks': ['integrityChecks'],
+  'cloud-processing': ['frameleafCloud'],
+  'integrity-checks': ['integrityChecks', 'libraryCare'],
   'external-library': ['library'],
   // FL-71: "Logs & diagnostics" also holds the local analytics settings; the search models page
   // holds Ask Search, which is its own top-level group.
@@ -101,8 +98,26 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   'video-transcoding': ['ffmpeg'],
 });
 
+/**
+ * Settings one group spreads over several sections (FL-69): Library care's toggles sit on the
+ * template's Media health & integrity, Repair queues and Enrichment completeness pages
+ * (settings-catalog.mjs:905-977). A changed path goes to the page that shows it.
+ */
+const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
+  'libraryCare.livePhotoRepair': 'repair',
+  'libraryCare.rawRecovery': 'repair',
+  'libraryCare.duplicateReview': 'repair',
+  'libraryCare.incrementalEnrichment': 'enrichment-care',
+  'libraryCare.manualMetadata': 'enrichment-care',
+  libraryCare: 'integrity-checks',
+});
+
 /** The settings section a changed path belongs to, if any section edits it. */
 export const sectionForConfigPath = (path: string): string | undefined => {
+  const specific = Object.keys(SECTION_CONFIG_PATHS).find((prefix) => path === prefix || path.startsWith(`${prefix}.`));
+  if (specific) {
+    return SECTION_CONFIG_PATHS[specific];
+  }
   const [top] = path.split('.', 1);
   return Object.entries(SECTION_CONFIG_KEYS).find(([, keys]) => (keys as readonly string[]).includes(top))?.[0];
 };
