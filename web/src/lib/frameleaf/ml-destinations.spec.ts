@@ -189,7 +189,6 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
       MlWorkload.StudioAi,
       MlWorkload.Upscale,
       MlWorkload.Interpolation,
-      MlWorkload.StudioRender,
     ]);
     expect(workloadsForKind(MlDestinationKind.Lan)).toEqual([...ML_WORKLOAD_ORDER]);
   });

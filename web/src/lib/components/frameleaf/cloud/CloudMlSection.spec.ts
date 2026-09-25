@@ -248,7 +248,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     sdkMock.getCloudMlStatus.mockResolvedValue(
       status({ enabled: true, consent: consent('2026-10-01'), destination: { id: 'cloud-1' } as never }),
     );
-    sdkMock.reconcileCloudMlUsage.mockResolvedValue();
+    sdkMock.reconcileCloudMlUsage.mockResolvedValue(undefined as never);
     render(CloudMlSection);
 
     await vi.waitFor(() => expect(sdkMock.getCloudMlSettlements).toHaveBeenCalled());
