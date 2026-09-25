@@ -290,10 +290,11 @@ export const cloudJobs = Object.freeze([
   },
 ]);
 
+// Each manifest pairs with the nightly database backup uploaded in the same run.
 export const backupManifests = Object.freeze([
-  { id: "m-2026-09-25", createdAt: "2026-09-25T03:00:00Z", assets: 48211, bytes: 612e9 },
-  { id: "m-2026-09-24", createdAt: "2026-09-24T03:00:00Z", assets: 48160, bytes: 611.4e9 },
-  { id: "m-2026-09-01", createdAt: "2026-09-01T03:00:00Z", assets: 47302, bytes: 598e9 },
+  { id: "m-2026-09-25", createdAt: "2026-09-25T03:00:00Z", assets: 48211, bytes: 612e9, db: { createdAt: "2026-09-25T02:00:00Z", bytes: 1.84e9 } },
+  { id: "m-2026-09-24", createdAt: "2026-09-24T03:00:00Z", assets: 48160, bytes: 611.4e9, db: { createdAt: "2026-09-24T02:00:00Z", bytes: 1.83e9 } },
+  { id: "m-2026-09-01", createdAt: "2026-09-01T03:00:00Z", assets: 47302, bytes: 598e9, db: { createdAt: "2026-09-01T02:00:00Z", bytes: 1.79e9 } },
 ]);
 
 export function formatUsd(value, digits = 2) {
@@ -1339,4 +1340,119 @@ export function routeSummary(state, workloadId, worker = detectedWorker(state)) 
     };
   if (route === "cloud") return { tone: "ok", text: "Jobs run on Frameleaf Cloud and show the cost first." };
   return { tone: "ok", text: local.reason };
+}
+
+// ---------------------------------------------------------------- restore
+
+/** A replaced file is moved here, relative to the media folder. Nothing is deleted. */
+export const RESTORE_REPLACED_PATH = "frameleaf/restore/replaced";
+
+export const restoreDetailsOptions = Object.freeze([
+  {
+    id: "keep",
+    title: "Keep current details",
+    detail: "Only the file comes back. Favourites, albums, people and edits stay as they are.",
+  },
+  {
+    id: "fill",
+    title: "Fill in missing details",
+    detail: "Values from the backup fill empty fields. Anything already set is kept.",
+  },
+  {
+    id: "replace",
+    title: "Replace current details",
+    detail: "Fields that differ go back to the backup’s values.",
+  },
+]);
+
+export const libraryRestoreSteps = Object.freeze([
+  { id: "database", title: "Database", detail: "The paired nightly database backup, through maintenance restore." },
+  { id: "files", title: "Files", detail: "Every original and sidecar the database references." },
+  { id: "verify", title: "Verify", detail: "Each file is checked against its fingerprint." },
+  { id: "thumbnails", title: "Rebuild thumbnails", detail: "Thumbnails, previews and video transcodes are regenerated." },
+]);
+
+/** Kept backups that hold a file, newest first. The newest one listed is where the file first appears. */
+export function manifestsWithFile(newestId) {
+  const start = backupManifests.findIndex((item) => item.id === newestId);
+  return start < 0 ? [] : backupManifests.slice(start);
+}
+
+/** Deleted items can come back for as long as the oldest kept manifest lists them. */
+export const recoverableSince = () => backupManifests[backupManifests.length - 1]?.createdAt ?? null;
+
+/** Sample contents of the kept backups for Settings › Backup › Restore. */
+export const restoreSampleItems = Object.freeze([
+  { id: "ri-1", name: "IMG_2041.HEIC", ownerId: "taylor", owner: "Taylor", takenAt: "2026-08-14T09:12:00Z", bytes: 3.2e6, inLibrary: false, deletedAt: "2026-09-24T18:40:00Z", newest: "m-2026-09-24" },
+  { id: "ri-2", name: "Lake morning.mov", ownerId: "taylor", owner: "Taylor", takenAt: "2026-08-15T06:48:00Z", bytes: 412e6, inLibrary: true, newest: "m-2026-09-25" },
+  { id: "ri-3", name: "Campfire evening.jpg", ownerId: "taylor", owner: "Taylor", takenAt: "2026-07-22T21:05:00Z", bytes: 5.1e6, inLibrary: false, deletedAt: "2026-09-06T11:02:00Z", newest: "m-2026-09-01" },
+  { id: "ri-4", name: "Hiking with Jamie.jpg", ownerId: "jamie", owner: "Jamie", takenAt: "2025-09-13T15:30:00Z", bytes: 4.4e6, inLibrary: false, deletedAt: "2026-09-24T20:15:00Z", newest: "m-2026-09-24" },
+  { id: "ri-5", name: "DSC_2210.NEF", ownerId: "taylor", owner: "Taylor", takenAt: "2026-07-03T17:44:00Z", bytes: 24.8e6, inLibrary: true, newest: "m-2026-09-25" },
+  { id: "ri-6", name: "Skating.mp4", ownerId: "jamie", owner: "Jamie", takenAt: "2025-12-28T14:02:00Z", bytes: 188e6, inLibrary: true, newest: "m-2026-09-25" },
+]);
+
+export const restoreSampleAlbums = Object.freeze([
+  { id: "ra-1", name: "Lake house weekend", ownerId: "taylor", items: 84, status: "deleted", deletedAt: "2026-09-24T21:10:00Z", newest: "m-2026-09-24" },
+  { id: "ra-2", name: "Moraine Lake", ownerId: "taylor", items: 212, status: "damaged", missing: 3, corrupt: 1, newest: "m-2026-09-25" },
+  { id: "ra-3", name: "Winter 2025", ownerId: "jamie", items: 57, status: "deleted", deletedAt: "2026-09-12T09:30:00Z", newest: "m-2026-09-01" },
+]);
+
+/**
+ * Items in the chosen backup. filter: "all" | "deleted" | "in-library".
+ * ownerId limits a non-admin to their own items; a restore never touches another user's items.
+ */
+export function searchRestoreItems({ manifestId, query = "", filter = "all", ownerId = null } = {}) {
+  const chosen = backupManifests.find((item) => item.id === manifestId) ?? backupManifests[0];
+  const text = String(query).trim().toLowerCase();
+  return restoreSampleItems.filter(
+    (item) =>
+      manifestsWithFile(item.newest).some((manifest) => manifest.id === chosen.id) &&
+      (!ownerId || item.ownerId === ownerId) &&
+      (filter === "all" || (filter === "deleted" ? !item.inLibrary : item.inLibrary)) &&
+      (!text || item.name.toLowerCase().includes(text)),
+  );
+}
+
+export const RESTORE_RUN_ACTIVE = Object.freeze(["queued", "running"]);
+export const restoreRunActive = (state) => RESTORE_RUN_ACTIVE.includes(state?.backup?.restoreRun?.status);
+
+/** Queue a restore. It runs as a media operation with progress in Activity. */
+export function startRestoreRun(state, { title, files = 1, steps = null } = {}, now = Date.now()) {
+  if (restoreRunActive(state)) throw new Error("A restore is already running. Wait for it to finish.");
+  const ms = nowMs(now);
+  return {
+    ...state,
+    backup: {
+      ...state.backup,
+      restoreRun: {
+        status: "queued",
+        title: String(title || "Restore from backup"),
+        files: Math.max(1, Number(files) || 1),
+        steps: Array.isArray(steps) ? steps : null,
+        progress: 0,
+        startedAt: new Date(ms).toISOString(),
+        stageStartedAt: ms,
+      },
+    },
+  };
+}
+
+/** One simulated second of a restore. Returns the same state when nothing moved. */
+export function advanceRestoreRun(state, now = Date.now()) {
+  const run = state?.backup?.restoreRun;
+  if (!run || !RESTORE_RUN_ACTIVE.includes(run.status)) return state;
+  const ms = nowMs(now);
+  const put = (patch) => ({ ...state, backup: { ...state.backup, restoreRun: { ...run, ...patch } } });
+  if (run.status === "queued")
+    return (ms - (run.stageStartedAt ?? ms)) / 1000 >= 2 ? put({ status: "running", progress: 1, stageStartedAt: ms }) : state;
+  const progress = Math.min(100, (Number(run.progress) || 0) + (run.steps ? 5 : 20));
+  return put(progress < 100 ? { progress } : { status: "completed", progress: 100, stageStartedAt: ms });
+}
+
+/** "Step 2 of 4 · Files" for a whole-library restore, or the file count otherwise. */
+export function restoreRunStage(run) {
+  if (!run) return "";
+  if (!run.steps?.length) return `${run.files.toLocaleString("en-US")} ${run.files === 1 ? "file" : "files"}`;
+  const index = Math.min(run.steps.length - 1, Math.floor(((Number(run.progress) || 0) / 100) * run.steps.length));
+  return `Step ${index + 1} of ${run.steps.length} · ${run.steps[index]}`;
 }
