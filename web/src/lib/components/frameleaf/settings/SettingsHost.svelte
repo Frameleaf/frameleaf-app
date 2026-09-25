@@ -49,6 +49,7 @@
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { libraryCareToolsFor, utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
   import { sidebarCollapsed } from '$lib/stores/preferences.store';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
@@ -445,6 +446,12 @@
     ),
   );
 
+  // CC-4: the template's `settings.serverName` (CommandCenter.jsx:657), which an administrator sets in
+  // Server identity & network; saved drafts apply at once, and an unnamed server shows its address.
+  const serverName = $derived(
+    settingsDraft?.baseline?.server?.name?.trim() || serverConfigManager.value.serverName?.trim() || page.url.host,
+  );
+
   // The template's library-scope note (CommandCenter.jsx:772-779): queues filter by account, not library.
   const libraryScope = $derived(
     scopes.find((option) => option.kind === AnalyticsScopeKind.Library && option.value === scope),
@@ -545,7 +552,7 @@
       <Icon icon={isAdmin ? mdiShieldCheckOutline : mdiAccountOutline} size="1.125rem" aria-hidden />
       <span>
         {isAdmin ? $t('frameleaf_cc_administrator') : authManager.user.name}
-        <small>{isAdmin ? page.url.host : $t('frameleaf_cc_own')}</small>
+        <small>{isAdmin ? serverName : $t('frameleaf_cc_own')}</small>
       </span>
     </div>
   </aside>
@@ -562,7 +569,7 @@
     <div class="cc-context-bar">
       <span class="cc-context">
         <Icon icon={mdiServerOutline} size="1rem" aria-hidden />
-        {page.url.host}
+        {serverName}
         <span class="cc-context-divider">/</span>
         {$t('settings')}
       </span>

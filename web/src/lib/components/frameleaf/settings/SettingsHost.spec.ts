@@ -30,6 +30,8 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
   },
 }));
 vi.mock('$lib/frameleaf/system-config-draft.svelte', () => ({ getSystemConfigDraft: () => undefined }));
+const serverConfig = vi.hoisted(() => ({ value: { serverName: '' } }));
+vi.mock('$lib/managers/server-config-manager.svelte', () => ({ serverConfigManager: serverConfig }));
 vi.mock('$lib/components/frameleaf/analytics/AnalyticsArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
@@ -246,6 +248,18 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
     await userEvent.click(screen.getByRole('button', { name: 'Open your trash' }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=trash&section=contents', expect.any(Object));
+  });
+
+  it('names the server as its administrator set it, and falls back to its address (CC-4, CommandCenter.jsx:657)', () => {
+    open('/user-settings?area=storage');
+    serverConfig.value.serverName = 'Home archive';
+    const { unmount } = render(SettingsHost, { sections });
+    expect(document.querySelector('.cc-context')).toHaveTextContent('Home archive');
+    unmount();
+
+    serverConfig.value.serverName = '  ';
+    render(SettingsHost, { sections });
+    expect(document.querySelector('.cc-context')).toHaveTextContent('localhost');
   });
 
   it('keeps the Viewing scope when moving between areas', async () => {

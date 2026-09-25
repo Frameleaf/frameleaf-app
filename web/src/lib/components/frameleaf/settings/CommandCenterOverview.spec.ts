@@ -15,6 +15,10 @@ const sdk = vi.hoisted(() => ({
   getStorage: vi.fn(),
   getQueues: vi.fn(),
   listDatabaseBackups: vi.fn(),
+  getBackupRestoreVerification: vi.fn(),
+  getRenderWorkerCompatibility: vi.fn(),
+  listMlDestinations: vi.fn(),
+  getMlWorkloadRoutes: vi.fn(),
 }));
 vi.mock('$app/state', () => ({
   page: {
@@ -45,6 +49,10 @@ describe('Command Center measured Overview', () => {
     sdk.getQueues.mockResolvedValue([
       { name: 'thumbnailGeneration', statistics: { active: 2, waiting: 3, failed: 4 } },
     ]);
+    sdk.getBackupRestoreVerification.mockReset().mockRejectedValue(new Error('not read'));
+    sdk.getRenderWorkerCompatibility.mockReset().mockRejectedValue(new Error('not read'));
+    sdk.listMlDestinations.mockReset().mockRejectedValue(new Error('not read'));
+    sdk.getMlWorkloadRoutes.mockReset().mockRejectedValue(new Error('not read'));
     sdk.listDatabaseBackups.mockResolvedValue({
       backups: [
         { filename: 'z-immich-db-backup-20260921T120000-v3.sql.gz' },
@@ -156,5 +164,54 @@ describe('Command Center measured Overview', () => {
     expect(screen.queryByText('100')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await screen.findByRole('link', { name: /All accounts.*100/ });
+  });
+
+  describe('readiness rows (CC-9, CommandCenter.jsx:1790-1812, 1905-1935)', () => {
+    const destination = (id: string, kind: string, status: string) => ({ id, kind, health: { status } });
+
+    it('asks to prove the backup restores and to check worker compatibility, from the server', async () => {
+      sdk.getBackupRestoreVerification.mockResolvedValue({
+        metadataVerifiedAt: '2026-09-01T00:00:00.000Z',
+        originalsVerifiedAt: null,
+        verifiedBy: null,
+        overdue: true,
+        dueAt: null,
+        intervalDays: 90,
+      });
+      sdk.getRenderWorkerCompatibility.mockResolvedValue({
+        qualified: ['quick_edit'],
+        unavailable: ['studio_export', 'restoration'],
+      });
+      render(CommandCenterOverview);
+
+      expect(await screen.findByRole('link', { name: /Prove your backup can restore/ })).toHaveTextContent(
+        'Metadata is backed up. Original-file verification has not been recorded.',
+      );
+      expect(screen.getByRole('link', { name: /Check worker compatibility/ })).toHaveTextContent(
+        /No qualified GPU worker for .*,/,
+      );
+      expect(screen.getByText('Original-file restore drill overdue')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /GPU Studio/ })).toHaveTextContent('Compatibility check needed');
+    });
+
+    it('reads the ML endpoint and cloud destination from the routed destinations', async () => {
+      sdk.listMlDestinations.mockResolvedValue([
+        destination('local', 'local', 'healthy'),
+        destination('pod', 'runpod', 'healthy'),
+      ]);
+      sdk.getMlWorkloadRoutes.mockResolvedValue({
+        routes: [
+          { workload: 'clip', destinationId: 'local' },
+          { workload: 'face', destinationId: 'pod' },
+        ],
+      });
+      sdk.getRenderWorkerCompatibility.mockResolvedValue({ qualified: ['studio_export'], unavailable: [] });
+      render(CommandCenterOverview);
+
+      await waitFor(() => expect(screen.getByRole('link', { name: /ML endpoint/ })).toHaveTextContent('Reachable'));
+      expect(screen.getByRole('link', { name: /Cloud destination/ })).toHaveTextContent('RunPod selected');
+      expect(screen.getByRole('link', { name: /GPU Studio/ })).toHaveTextContent('Qualified');
+      expect(screen.queryByRole('link', { name: /Check worker compatibility/ })).toBeNull();
+    });
   });
 });

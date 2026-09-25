@@ -19,7 +19,9 @@
    * (what it does, scope, affected now); the destructive ones ask for an acknowledgement, which
    * also covers the face reset confirmation. The failed tab has "Retry failed" (`JobsManager.jsx`
    * 715-727) and each job names its Account and Worker (758-796, 941-948) from the server. The
-   * template's account filter has no server source and is not shown.
+   * Account filter (341-355, 398-401, 838-840) narrows the counts and the job list to one account's
+   * items: the server counts up to 1,000 jobs of each state per queue, and the page says when a count
+   * is a lower bound. Queue controls and concurrency still affect every account.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -80,6 +82,7 @@
   import {
     createJob,
     getQueueJobs,
+    getQueueOwnerStatistics,
     QueueCommand,
     QueueJobWorkerKind,
     QueueName,
@@ -87,7 +90,11 @@
     type JobName,
     type QueueJobResponseDto,
     type QueueJobStatus,
+    type QueueOwnerStatisticsResponseDto,
     type QueueResponseDto,
+    type QueueStatisticsDto,
+    searchUsersAdmin,
+    type UserAdminResponseDto,
   } from '@immich/sdk';
   import { CommandPaletteDefaultProvider, Icon, modalManager, type ActionItem } from '@immich/ui';
   import {
@@ -112,10 +119,41 @@
     mdiShieldCheckOutline,
     mdiTuneVariant,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
   onMount(() => queueManager.listen());
+
+  // ---- the template's Account filter (JobsManager.jsx 341-355) ----------------------------------
+
+  let owner = $state('all');
+  let accounts = $state<UserAdminResponseDto[]>([]);
+  let ownerStats = $state(new Map<QueueName, QueueOwnerStatisticsResponseDto>());
+  onMount(() => {
+    searchUsersAdmin({})
+      .then((users) => (accounts = [...users].sort((a, b) => a.name.localeCompare(b.name))))
+      .catch(() => {
+        // Without the account list the filter offers All accounts only.
+      });
+  });
+  const ownerName = $derived(
+    owner === 'all'
+      ? $t('frameleaf_jobs_review_all_accounts')
+      : (accounts.find(({ id }) => id === owner)?.name ?? $t('frameleaf_jobs_selected_account')),
+  );
+  /** A queue's statistics as the Account filter sees them; undefined while an account's are loading. */
+  const statsOf = (queue: QueueResponseDto): QueueStatisticsDto | undefined =>
+    owner === 'all' ? queue.statistics : ownerStats.get(queue.name);
+  const NO_STATS: QueueStatisticsDto = { active: 0, completed: 0, delayed: 0, failed: 0, paused: 0, waiting: 0 };
+  const isTruncated = (stats: Map<QueueName, QueueOwnerStatisticsResponseDto>) => {
+    for (const { truncated } of stats.values()) {
+      if (truncated) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const truncated = $derived(owner !== 'all' && isTruncated(ownerStats));
 
   const flags = $derived(featureFlagsManager.value);
   const draft = getSystemConfigDraft();
@@ -135,7 +173,40 @@
   const requestedTab = $derived(page.url.searchParams.get('tab'));
   const tab: JobTab = $derived(isJobTab(requestedTab) ? requestedTab : 'active');
 
-  const counts = $derived(selected ? jobCounts(selected.queue.statistics) : sumJobCounts(queues));
+  const counts = $derived(
+    selected
+      ? jobCounts(statsOf(selected.queue) ?? NO_STATS)
+      : owner === 'all'
+        ? sumJobCounts(queues)
+        : sumJobCounts(queues.map((queue) => ({ ...queue, statistics: statsOf(queue) ?? NO_STATS }))),
+  );
+
+  // An account's counts: the open queue's, or every listed queue's; again after each command.
+  $effect(() => {
+    const account = owner;
+    const name = selected?.definition.name;
+    void jobsReload;
+    if (account === 'all') {
+      ownerStats = new Map();
+      return;
+    }
+    const names = name ? [name] : untrack(() => rows.map((row) => row.definition.name));
+    let cancelled = false;
+    void Promise.all(
+      names.map((queueName) =>
+        getQueueOwnerStatistics({ name: queueName, ownerId: account })
+          .then((stats) => [queueName, stats] as const)
+          .catch(() => undefined),
+      ),
+    ).then((entries) => {
+      if (!cancelled) {
+        ownerStats = new Map(entries.filter((entry) => entry !== undefined));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
   const metrics = $derived([
     { label: $t('frameleaf_jobs_metric_processing'), value: counts.active, icon: mdiPlay, warning: false },
     { label: $t('frameleaf_jobs_metric_waiting'), value: counts.pending, icon: mdiClockOutline, warning: false },
@@ -433,11 +504,12 @@
   });
 
   // The tab's count changes as the queue works; the list follows it, at most every few seconds.
-  const tabCount = $derived(selected ? jobTabCount(tab, jobCounts(selected.queue.statistics)) : 0);
+  const tabCount = $derived(selected ? jobTabCount(tab, jobCounts(statsOf(selected.queue) ?? NO_STATS)) : 0);
   let lastLoad = 0;
   $effect(() => {
     const name = selected?.definition.name;
     const statuses = JOB_TAB_STATUSES[tab];
+    const ownerId = owner === 'all' ? undefined : owner;
     void jobsReload;
     void tabCount;
     if (!name) {
@@ -450,7 +522,7 @@
       lastLoad = Date.now();
       void Promise.all(
         statuses.map((status) =>
-          getQueueJobs({ name, status: [status] }).then((list) =>
+          getQueueJobs({ name, status: [status], ownerId }).then((list) =>
             list.map((job, index) => ({ ...job, status, key: `${status}:${job.id ?? index}` })),
           ),
         ),
@@ -681,6 +753,15 @@
         bind:value={query}
       />
     </label>
+    <label>
+      <span>{$t('frameleaf_jobs_account')}</span>
+      <select aria-label={$t('frameleaf_jobs_account_filter')} bind:value={owner}>
+        <option value="all">{$t('frameleaf_jobs_review_all_accounts')}</option>
+        {#each accounts as account (account.id)}
+          <option value={account.id}>{account.name}</option>
+        {/each}
+      </select>
+    </label>
     {#if !selected}
       <label>
         <span>{$t('frameleaf_jobs_category')}</span>
@@ -704,8 +785,11 @@
   </div>
   <p class="jm-scope">
     <Icon icon={mdiAccountMultipleOutline} size="15px" aria-hidden={true} />
-    {$t('frameleaf_jobs_account_scope')}
+    {$t('frameleaf_jobs_account_scope', { values: { name: ownerName } })}
   </p>
+  {#if truncated}
+    <p class="jm-scope">{$t('frameleaf_jobs_account_truncated')}</p>
+  {/if}
 
   {#if !selected}
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (a scrollable region must be reachable by keyboard to scroll it) -->
@@ -725,7 +809,7 @@
         <tbody>
           {#each visibleRows as row (row.definition.name)}
             {@const { definition, queue } = row}
-            {@const rowCounts = jobCounts(queue.statistics)}
+            {@const rowCounts = jobCounts(statsOf(queue) ?? NO_STATS)}
             {@const name = title(definition)}
             <tr>
               <th scope="row">
@@ -828,7 +912,7 @@
     </div>
   {:else}
     {@const { definition, queue } = selected}
-    {@const queueCounts = jobCounts(queue.statistics)}
+    {@const queueCounts = jobCounts(statsOf(queue) ?? NO_STATS)}
     {@const blocked = blockedReason(selected)}
     <div class="jm-queue-actions">
       <div>
@@ -998,7 +1082,11 @@
                   values: { state: $t(`frameleaf_jobs_empty_state_${tab}` as Translations) },
                 })}
           </h3>
-          <p>{$t('frameleaf_jobs_empty_help')}</p>
+          <p>
+            {owner === 'all'
+              ? $t('frameleaf_jobs_empty_help')
+              : $t('frameleaf_jobs_empty_help_account', { values: { name: ownerName } })}
+          </p>
         </div>
       {/if}
     </div>

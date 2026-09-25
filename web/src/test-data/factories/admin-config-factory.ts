@@ -19,7 +19,7 @@ export const adminConfigFixture = () =>
     oauth: { enabled: false, clientSecret: 'oauth-secret', issuerUrl: '' },
     passwordLogin: { enabled: true },
     map: { enabled: true, lightStyle: 'https://tiles.example.com/light.json?key=abc123', darkStyle: '' },
-    server: { externalDomain: '', loginPageMessage: '', publicUsers: true },
+    server: { name: '', externalDomain: '', loginPageMessage: '', publicUsers: true },
     machineLearning: {
       enabled: true,
       urls: ['http://ml:3003'],
