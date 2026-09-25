@@ -932,7 +932,20 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
+  [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
 }
+
+/** FL-176: which first-run setup flow an administrator sees. */
+export type FrameleafSetupFlow = 'new' | 'existing';
+
+/** FL-176: the saved first-run setup state. `progress` is the validated, password-free step payload. */
+export type FrameleafSetupState = {
+  completed: boolean;
+  completedAt: string | null;
+  flow: FrameleafSetupFlow | null;
+  progress: Record<string, unknown> | null;
+  updatedAt: string | null;
+};
 
 /** FL-71: the last recorded restore test of each part of a backup (ISO date-times), and who recorded it. */
 export type BackupRestoreVerification = {
