@@ -24,6 +24,8 @@ vi.mock('@immich/sdk', async () => {
     editAsset: vi.fn(),
     removeAssetEdits: vi.fn(),
     getVideoEditVersions: vi.fn().mockResolvedValue([]),
+    getAssetRestorations: vi.fn().mockResolvedValue([]),
+    getAssetRestorationOptions: vi.fn().mockResolvedValue({ destinations: [], modes: [] }),
   };
 });
 
@@ -185,6 +187,12 @@ describe('VideoQuickEditor', () => {
     expect(mute).toHaveAttribute('aria-checked', 'false');
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_redo' }));
     expect(mute).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('keeps the clip on the Restore stage with the compare hint', async () => {
+    await opened();
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_restore' }));
+    expect(screen.getByText('frameleaf_restoration_compare_empty')).toHaveClass('ed-restore-hint');
   });
 
   it('says the clip cannot be edited when its original cannot be read', async () => {

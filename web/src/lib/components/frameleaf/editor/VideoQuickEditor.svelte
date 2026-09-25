@@ -1223,6 +1223,10 @@
       {#if videoError && !loadFailed}
         <span class="ed-badge centre">{$t('frameleaf_video_editor_preview_still')}</span>
       {/if}
+      {#if tool === 'restore' && !restorationCompare}
+        <!-- The clip stays on the stage so "Use current frame" reads its playhead (Studio.jsx:2565). -->
+        <p class="ed-restore-hint">{$t('frameleaf_restoration_compare_empty')}</p>
+      {/if}
     </div>
 
     {#if duration > 0}
