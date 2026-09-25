@@ -1,6 +1,6 @@
 import { mdiArchiveLockOutline, mdiDeleteOutline, mdiImport, mdiTools, mdiTwoFactorAuthentication } from '@mdi/js';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
-import { personalSettingsAreas } from '$lib/frameleaf/command-index';
+import { USER_SETTINGS_AREAS } from '$lib/frameleaf/command-index';
 import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
 
 /**
@@ -9,11 +9,8 @@ import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
  * imports and preservation (FL-65, FL-74) that sit in "Import & protection" for every account,
  * the repair queues of Library care and the account's Trash.
  */
-export const personalSections = (
-  $t: MessageFormatter,
-  options: { oauth: boolean; frameleafCloud?: boolean },
-): SettingsHostSection[] => [
-  ...personalSettingsAreas({ frameleafCloud: !!options.frameleafCloud }).map((area) =>
+export const personalSections = ($t: MessageFormatter, options: { oauth: boolean }): SettingsHostSection[] => [
+  ...USER_SETTINGS_AREAS.map((area) =>
     // Partner sharing is the template's People & sharing → "Partners & recipient groups".
     area.key === 'sharing'
       ? {
