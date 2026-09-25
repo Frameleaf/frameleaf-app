@@ -22,6 +22,8 @@ class FoldersStore {
   folders = $state.raw<FolderTree | null>(null);
   private assets = $state<AssetCache>({});
   private pending: Promise<FolderTree> | null = null;
+  // Bumped on logout, so a response for the previous account never lands in the cleared store.
+  private generation = 0;
 
   constructor() {
     eventManager.on({
@@ -35,9 +37,23 @@ class FoldersStore {
       return this.folders;
     }
     // Concurrent loads share one request, so every caller gets the same tree.
-    this.pending ??= getFolderSummary()
-      .then((rows) => (this.folders = buildFolderTree(rows)))
-      .finally(() => (this.pending = null));
+    if (!this.pending) {
+      const generation = this.generation;
+      const pending: Promise<FolderTree> = getFolderSummary()
+        .then((rows) => {
+          const tree = buildFolderTree(rows);
+          if (generation === this.generation) {
+            this.folders = tree;
+          }
+          return tree;
+        })
+        .finally(() => {
+          if (this.pending === pending) {
+            this.pending = null;
+          }
+        });
+      this.pending = pending;
+    }
     return this.pending;
   }
 
@@ -46,14 +62,21 @@ class FoldersStore {
   }
 
   async refreshAssetsByPath(path: string) {
-    return (this.assets[path] = await getAssetsByOriginalPath({ path }));
+    const generation = this.generation;
+    const assets = await getAssetsByOriginalPath({ path });
+    if (generation === this.generation) {
+      this.assets[path] = assets;
+    }
+    return assets;
   }
 
-  async fetchAssetsByPath(path: string) {
-    return (this.assets[path] ??= await getAssetsByOriginalPath({ path }));
+  fetchAssetsByPath(path: string): Promise<AssetResponseDto[]> {
+    const cached = this.assets[path];
+    return cached ? Promise.resolve(cached) : this.refreshAssetsByPath(path);
   }
 
   clearCache() {
+    this.generation++;
     this.assets = {};
     this.folders = null;
     this.pending = null;

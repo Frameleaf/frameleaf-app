@@ -64,4 +64,31 @@ describe('foldersStore', () => {
     await foldersStore.fetchAssetsByPath('/a');
     expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(2);
   });
+
+  it("never stores the previous account's tree or files when they arrive after logout", async () => {
+    let resolveRows: (value: FolderSummaryResponseDto[]) => void;
+    let resolveAssets: (value: []) => void;
+    vi.mocked(getFolderSummary).mockReturnValue(
+      new Promise<FolderSummaryResponseDto[]>((resolve) => {
+        resolveRows = resolve;
+      }),
+    );
+    vi.mocked(getAssetsByOriginalPath).mockReturnValue(
+      new Promise<[]>((resolve) => {
+        resolveAssets = resolve;
+      }),
+    );
+
+    const tree = foldersStore.fetchTree();
+    const files = foldersStore.fetchAssetsByPath('/a');
+    foldersStore.clearCache();
+    resolveRows!([{ path: '/private', count: 1, size: 1 }]);
+    resolveAssets!([]);
+    await Promise.all([tree, files]);
+
+    expect(foldersStore.folders).toBeNull();
+    vi.mocked(getAssetsByOriginalPath).mockResolvedValue([]);
+    await foldersStore.fetchAssetsByPath('/a');
+    expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(2);
+  });
 });
