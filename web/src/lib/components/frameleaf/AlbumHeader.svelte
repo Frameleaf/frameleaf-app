@@ -197,6 +197,8 @@
   let reevaluateOpen = $state(false);
   let reviewOpen = $state(false);
   let ruleOpen = $state(false);
+  /** Edit details, owner badges, rule, cover and options: the "…" menu's middle group. */
+  const hasMiddleItems = $derived(editor || canShowOwnerBadges || !!rule);
 
   const loadRule = async (id: string) => {
     try {
@@ -658,16 +660,24 @@
           {$t('options')}
         </MenuItem>
       {/if}
-      <div class="menu-separator" role="separator"></div>
+      <!-- A separator only between two groups: never doubled, never first. -->
+      {#if hasMiddleItems}
+        <div class="menu-separator" role="separator"></div>
+      {/if}
+      <!-- Delete and Leave are the danger items (CollectionHeader.jsx:1520-1536). -->
       {#if owner}
         <MenuItem onSelect={() => (deleteOpen = true)}>
-          <Icon icon={mdiDeleteOutline} size="18" />
-          {$t('frameleaf_album_delete', { values: { kind: kindLabel } })}
+          <span class="danger-item">
+            <Icon icon={mdiDeleteOutline} size="18" />
+            {$t('frameleaf_album_delete', { values: { kind: kindLabel } })}
+          </span>
         </MenuItem>
       {:else}
         <MenuItem onSelect={() => (leaveOpen = true)}>
-          <Icon icon={mdiLogoutVariant} size="18" />
-          {$t('frameleaf_album_leave', { values: { kind: kindLabel } })}
+          <span class="danger-item">
+            <Icon icon={mdiLogoutVariant} size="18" />
+            {$t('frameleaf_album_leave', { values: { kind: kindLabel } })}
+          </span>
         </MenuItem>
       {/if}
     </Menu>
@@ -1040,6 +1050,12 @@
     height: 1px;
     margin: 0.25rem 0.375rem;
     background: var(--fl-border);
+  }
+  .danger-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--fl-danger);
   }
   /*
    * The large title that shrinks as you scroll (apple-style.css:219-244), on album, collection and

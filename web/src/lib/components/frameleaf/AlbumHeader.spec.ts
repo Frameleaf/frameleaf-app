@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AlbumHeader from './AlbumHeader.svelte';
@@ -154,6 +155,13 @@ describe('AlbumHeader', () => {
     expect(screen.getByRole('button', { name: /^Activity/ })).toBeInTheDocument();
   });
 
+  it('shows no separator above Leave when a viewer has nothing else in the menu', async () => {
+    renderHeader(albumAs(AlbumUserRole.Viewer));
+    const menu = await openMore();
+    expect(menu.queryAllByRole('separator')).toHaveLength(0);
+    expect(menu.getByRole('menuitem', { name: 'Leave album' })).toBeInTheDocument();
+  });
+
   describe('on a phone', () => {
     const phoneWidth = (query: string) => ({
       matches: query.includes('max-width: 700px'),
@@ -191,6 +199,44 @@ describe('AlbumHeader', () => {
         expect(menu.getByRole(name === 'Activity' ? 'menuitemcheckbox' : 'menuitem', { name })).toBeInTheDocument();
       }
       expect(menu.getByRole('menuitem', { name: 'Delete album' })).toBeInTheDocument();
+    });
+
+    it('moves Map into the menu when the map is on', async () => {
+      featureFlagsManager.value.map = true;
+      try {
+        renderHeader(albumAs(AlbumUserRole.Owner));
+        expect(within(screen.getByRole('toolbar')).queryByRole('button', { name: 'Map' })).toBeNull();
+        const menu = await openMore();
+        // no located items yet, so it is offered but disabled, as the row button was
+        expect(menu.getByRole('menuitem', { name: 'Map' })).toHaveAttribute('aria-disabled', 'true');
+      } finally {
+        featureFlagsManager.value.map = false;
+      }
+    });
+
+    it("gives a viewer the album's actions in the menu, without links, and Leave as the danger item", async () => {
+      renderHeader(albumAs(AlbumUserRole.Viewer));
+
+      const toolbar = screen.getByRole('toolbar');
+      expect(within(toolbar).queryByRole('button', { name: 'Add photos' })).toBeNull();
+      expect(within(toolbar).getByRole('button', { name: 'Members' })).toBeInTheDocument();
+
+      const menu = await openMore();
+      expect(menu.queryByRole('menuitem', { name: 'Shared links' })).toBeNull();
+      for (const name of ['Slideshow', 'Download']) {
+        expect(menu.getByRole('menuitem', { name })).toBeInTheDocument();
+      }
+      const leave = menu.getByRole('menuitem', { name: 'Leave album' });
+      expect(leave.querySelector('.danger-item')).not.toBeNull();
+      // the moved actions, then Leave: one separator, never two in a row
+      expect(menu.getAllByRole('separator')).toHaveLength(1);
+    });
+
+    it('separates the moved actions, the album settings and Delete', async () => {
+      renderHeader(albumAs(AlbumUserRole.Owner));
+      const menu = await openMore();
+      expect(menu.getAllByRole('separator')).toHaveLength(2);
+      expect(menu.getByRole('menuitem', { name: 'Delete album' }).querySelector('.danger-item')).not.toBeNull();
     });
 
     it('opens activity from the menu, with its count', async () => {
