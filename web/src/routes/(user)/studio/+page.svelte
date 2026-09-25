@@ -387,6 +387,8 @@
     if (!decision.stage) {
       return Promise.resolve(decision.result);
     }
+    // The session keeps `project.graph` on the newest draft (in a conflict too, never the head), so
+    // history records this edit against the draft's own previous graph.
     const before = project.graph;
     session.stage(graph, commandIds.length > 0 ? commandIds : ['editor.save']);
     if (!session.state.hasDraft) {

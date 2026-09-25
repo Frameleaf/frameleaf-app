@@ -526,8 +526,86 @@ describe('studio project session', () => {
         status: 'conflict',
         hasDraft: true,
         conflict: { reason: 'stale-revision', currentRevision: 9 },
-        project: { revision: 9, hasLease: true },
+        // The draft and its base stay in view; only Reload shows the head.
+        project: { revision: 3, graph: { mine: true }, hasLease: true },
       });
+    });
+
+    it('never overwrites a newer head through conflict, lease lost and take over', async () => {
+      api.save.mockRejectedValueOnce(httpError(409, { reason: 'stale-revision', currentRevision: 4 }));
+      const session = create();
+      await session.open();
+      session.stage({ mine: true }, ['clip.add']);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(last()).toMatchObject({ status: 'conflict', hasDraft: true });
+
+      // The renewal is refused while the conflict is still open; the conflict stays until resolved.
+      api.acquireLease.mockRejectedValueOnce(
+        httpError(409, { reason: 'lease-held', lease: lease({ heldByYou: false, heldByAnother: true }) }),
+      );
+      await timers.fire((timer) => timer.ms === 30_000);
+      expect(last()).toMatchObject({
+        status: 'conflict',
+        conflict: { reason: 'stale-revision' },
+        project: { hasLease: false },
+      });
+
+      session.stage({ mine: 2 }, ['clip.move']);
+      expect(last()).toMatchObject({ status: 'conflict', hasDraft: true, project: { graph: { mine: 2 } } });
+
+      api.get.mockResolvedValue(detail({ revision: 4 }));
+      expect(await session.takeOver()).toBe(true);
+      expect(last()).toMatchObject({
+        status: 'conflict',
+        conflict: { reason: 'stale-revision', currentRevision: 4 },
+        project: { revision: 3, graph: { mine: 2 }, hasLease: true },
+      });
+      expect(timers.pending().some((timer) => timer.ms === 1500)).toBe(false);
+      expect(api.save).toHaveBeenCalledTimes(1);
+      expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 3 }));
+    });
+
+    it('keeps the conflict when the lease lapses and is reacquired over a moved head', async () => {
+      api.save.mockRejectedValueOnce(httpError(409, { reason: 'stale-revision', currentRevision: 4 }));
+      const session = create();
+      await session.open();
+      session.stage({ mine: true }, ['clip.add']);
+      await timers.fire((timer) => timer.ms === 1500);
+
+      api.acquireLease.mockRejectedValueOnce(
+        httpError(409, { reason: 'lease-lost', lease: lease({ heldByYou: false }) }),
+      );
+      await timers.fire((timer) => timer.ms === 30_000);
+      expect(last()).toMatchObject({ status: 'conflict', project: { hasLease: false } });
+
+      api.get.mockResolvedValue(detail({ revision: 4 }));
+      expect(await session.reacquire()).toBe(true);
+      expect(last()).toMatchObject({ status: 'conflict', conflict: { currentRevision: 4 }, hasDraft: true });
+      expect(timers.pending().some((timer) => timer.ms === 1500)).toBe(false);
+      expect(api.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends a draft staged during a save against the revision that save stored', async () => {
+      let resolveFirst: (value: ReturnType<typeof saved>) => void = () => {};
+      api.save
+        .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+        .mockResolvedValueOnce(saved(5));
+      const session = create();
+      await session.open();
+      session.stage({ step: 1 }, ['clip.add']);
+      const firing = timers.fire((timer) => timer.ms === 1500);
+      await flushPromises();
+      session.stage({ step: 2 }, ['clip.move']);
+      resolveFirst(saved(4));
+      await firing;
+      await flushPromises();
+      expect(last()).toMatchObject({ status: 'dirty', project: { revision: 4, graph: { step: 2 } } });
+
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenLastCalledWith(
+        'p-1',
+        expect.objectContaining({ expectedRevision: 4, envelope: expect.objectContaining({ graph: { step: 2 } }) }),
+      );
     });
 
     it('renews the lease on the timer and drops to review when renewal is refused', async () => {
