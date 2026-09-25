@@ -13,7 +13,7 @@ import {
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AdminAuditAction, ImmichCookie } from 'src/enum.js';
-import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE } from 'src/services/auth.service.js';
+import { type LoginDetails, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   frameleafCallbackUrl,
@@ -58,8 +58,12 @@ export class FrameleafAuthService extends BaseService {
     const config = await this.requireConfig();
     const { profile, sid, idToken } = await this.exchange(config, dto, headers);
     const email = profile.email?.trim().toLowerCase();
-    if (profile.email_verified !== true || !email) {
-      throw new BadRequestException(UNVERIFIED_EMAIL_MESSAGE);
+    if (!email) {
+      throw new BadRequestException('Frameleaf did not send an email address');
+    }
+    const emailProblem = emailVerificationProblem(profile);
+    if (emailProblem) {
+      throw new BadRequestException(emailProblem);
     }
     const role = frameleafRole(profile);
 
@@ -191,8 +195,12 @@ export class FrameleafAuthService extends BaseService {
     const config = await this.requireConfig();
     const { profile } = await this.exchange(config, dto, headers);
     const email = profile.email?.trim().toLowerCase();
-    if (profile.email_verified !== true || !email) {
-      throw new BadRequestException(UNVERIFIED_EMAIL_MESSAGE);
+    if (!email) {
+      throw new BadRequestException('Frameleaf did not send an email address');
+    }
+    const emailProblem = emailVerificationProblem(profile);
+    if (emailProblem) {
+      throw new BadRequestException(emailProblem);
     }
     const other = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
     if (other && other.userId !== auth.user.id) {

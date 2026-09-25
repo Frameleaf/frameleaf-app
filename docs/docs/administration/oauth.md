@@ -54,6 +54,14 @@ Before enabling OAuth in Immich, a new client application needs to be configured
 
    If the authentication server supports it, the **Backchannel logout URL** can be specified, and it is of the form: `http://DOMAIN:PORT/api/oauth/backchannel-logout`.
 
+## Verified email addresses
+
+An email address from the provider is used to link a sign-in to an existing account, or to create a new account, only when the provider says it is verified: the `email_verified` claim must be `true` (the text `"true"` is accepted too). A sign-in with an unverified address, or without the claim, is refused with a message saying why.
+
+:::note Upgrading
+Some providers (for example Microsoft Entra ID) do not send `email_verified`. With them, a person whose account is not yet linked to the provider cannot sign in by email, and automatic registration is refused, until you map an `email_verified` claim in the provider. Accounts already linked to the provider (by its account ID) are not affected and keep signing in as before.
+:::
+
 ## Enable OAuth
 
 Once you have a new OAuth client application configured, Immich can be configured using the Administration Settings page, available on the web (Administration -> Settings).
