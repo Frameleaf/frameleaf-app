@@ -425,6 +425,14 @@
       playhead = { num: time.num, den: time.den };
     },
     saveWorkspace: (layout) => saveStudioWorkspaceLayout(layout, pinnedFreecutRevision),
+    // The editor's own Export control opens the same dialog as the header's (FL-106).
+    requestExport: () => {
+      if (canExportVideo) {
+        videoExportOpen = true;
+      } else {
+        toastManager.danger($t('frameleaf_studio_export_unavailable'));
+      }
+    },
   };
 
   /**
