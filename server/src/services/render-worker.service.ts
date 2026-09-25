@@ -253,6 +253,8 @@ const requireRenderKinds = (kinds: readonly MediaOperationKind[]) => {
 
 /** A worker named a result asset that is not a live asset of the job's owner (FL-43). */
 export const RENDER_RESULT_NOT_OWNED = 'result_not_owned';
+/** The error code a worker reports when its GPU disappears mid-job (FL-95 device loss). */
+export const RENDER_DEVICE_LOST = 'device_lost';
 
 /**
  * Authenticated renderer admission and resource limits (FL-95 `STU-401`).
@@ -554,7 +556,7 @@ export class RenderWorkerService {
     // FL-73: a scope saved before the render-only rule keeps only its renders in the session.
     const scopes = (worker.kinds as MediaOperationKind[]).filter((kind) => isRenderWorkerMediaOperationKind(kind));
 
-    await this.repository.createSession({
+    const created = await this.repository.createSession({
       workerId: worker.id,
       token: this.cryptoRepository.hashSha256(sessionToken),
       scopes,
@@ -562,6 +564,11 @@ export class RenderWorkerService {
       engineDigest: dto.engineDigest,
       conformanceReportedAt: reportedAt,
       expiresAt,
+    });
+    // FL-95: what the check verified travels with the session, so claims are measured against it.
+    await this.repository.recordSessionCapabilities(created.id, {
+      codecs: dto.codecs ?? [],
+      formats: dto.formats ?? [],
     });
     await this.repository.markAdmitted(worker.id, reportedAt);
     await this.repository.recordAudit({
@@ -572,6 +579,7 @@ export class RenderWorkerService {
         conformanceReportedAt: dto.conformanceReportedAt,
         gpuMemoryBytes: gpuMemoryBytes === null ? null : String(gpuMemoryBytes),
         codecs: dto.codecs ?? [],
+        formats: dto.formats ?? [],
         expiresAt: expiresAt.toISOString(),
       },
     });
@@ -642,6 +650,7 @@ export class RenderWorkerService {
       throw new ForbiddenException('Requested kinds are outside this session’s scopes');
     }
 
+    const sessionCapabilities = await this.repository.getSessionCapabilities(session.id);
     const [workerActive, instanceLimit, destinationHealth] = await Promise.all([
       this.repository.countActiveForWorker(worker.id),
       this.repository.getLimit(RENDER_WORKER_LIMIT_INSTANCE_SUBJECT),
@@ -689,12 +698,14 @@ export class RenderWorkerService {
             scopes,
             gpuMemoryBytes: asNumberOrNull(session.gpuMemoryBytes),
             engineDigest: session.engineDigest,
+            capabilities: sessionCapabilities ?? null,
           },
           operation: {
             kind: candidate.kind as MediaOperationKind,
             destination: candidate.destination as MediaOperationDestination,
             destinationDetail: candidate.destinationDetail,
             snapshot: asObject(candidate.snapshot),
+            settings: asObject(candidate.settings),
           },
           owner: { activeOperations: ownerCounts.get(candidate.ownerId)!, limits: ownerLimits.get(candidate.ownerId)! },
           destinationHealth,
@@ -1116,6 +1127,18 @@ export class RenderWorkerService {
       error: dto.error,
       errorCode: dto.errorCode,
     });
+    if (dto.errorCode === RENDER_DEVICE_LOST) {
+      // FL-95: the GPU the session was admitted on is gone, so its evidence no longer holds. Every
+      // session of the worker ends; it is given nothing until it re-admits with a fresh check.
+      const revoked = await this.repository.revokeSessions(worker.id);
+      await this.repository.recordAudit({
+        workerId: worker.id,
+        event: RenderWorkerAuditEvent.DeviceLost,
+        operationId: operation.id,
+        detail: { revokedSessions: revoked },
+      });
+      this.logger.warn(`Render worker ${worker.id} lost its GPU; ${revoked} session(s) revoked until it re-admits`);
+    }
     const accepted = outcome !== false;
     if (outcome === 'failed' && operation.kind === MediaOperationKind.StudioExport) {
       await this.studioExports.onRenderFailed(operation, { errorCode: dto.errorCode, error: dto.error });
