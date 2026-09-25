@@ -319,6 +319,20 @@ describe('selectMlDestination', () => {
     );
   });
 
+  it('names the licensed cloud description default when no model is routed, never the local one (FL-146)', async () => {
+    const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
+    const cloud = await selectMlDestination(d, {
+      workload: MlWorkload.Enrichment,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
+    });
+    expect(cloud.cloudModelId).toBe('qwen3.5-9b@1');
+    const local = await selectMlDestination(deps({}), {
+      workload: MlWorkload.Enrichment,
+      destinationId: 'ml-destination-local',
+    });
+    expect(local.cloudModelId).toBeNull();
+  });
+
   it('refuses the routed model when the catalogue dropped it, and never picks another (FL-159)', async () => {
     const d = deps({
       destination: mlDestinationStub.frameleafCloudConsented,

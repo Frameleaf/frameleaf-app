@@ -413,7 +413,7 @@ export const adminConfigDefaults = {
         interpolation: 'local',
       },
       startWith: 'local',
-      models: { descriptions: '', upscale: '', restoration: '', studio: '', interpolation: '' },
+      models: { descriptions: 'qwen3.5-9b@1', upscale: '', restoration: '', studio: '', interpolation: '' },
       autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
       faces: { enabled: false },
     },
