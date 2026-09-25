@@ -104,4 +104,19 @@ describe('CloudManager (FL-155)', () => {
     expect(sdkMock.getCloudLink).not.toHaveBeenCalled();
     stop();
   });
+
+  it('keeps polling a pending code when Cancel fails', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(pending());
+    sdkMock.cancelCloudLink.mockRejectedValue(new Error('offline'));
+    const manager = new CloudManager();
+    const stop = manager.listen();
+    await vi.waitFor(() => expect(manager.status?.state).toBe('pending'));
+
+    await expect(manager.cancelLink()).rejects.toThrow('offline');
+    sdkMock.getCloudLink.mockResolvedValue(status({ state: CloudLinkState.Linked }));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sdkMock.getCloudLink).toHaveBeenCalledTimes(1);
+    expect(manager.status?.state).toBe('linked');
+    stop();
+  });
 });
