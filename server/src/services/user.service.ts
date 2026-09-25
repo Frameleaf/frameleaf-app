@@ -404,11 +404,12 @@ export class UserService extends BaseService {
         swept.memoryShowLess +
         swept.memoryCurations +
         swept.peopleAndPets +
-        swept.workspaceLayouts >
+        swept.workspaceLayouts +
+        swept.utilityActivity >
       0
     ) {
       this.logger.log(
-        `Swept fork rows of removed accounts: ${swept.preferenceHistory} preference history entries, ${swept.recipientGroups} recipient groups, ${swept.memoryShowLess} memory show-less rules, ${swept.memoryCurations} memory curations, ${swept.peopleAndPets} face correction, merge answer and pet recognition rows, ${swept.workspaceLayouts} Studio workspace layouts`,
+        `Swept fork rows of removed accounts: ${swept.preferenceHistory} preference history entries, ${swept.recipientGroups} recipient groups, ${swept.memoryShowLess} memory show-less rules, ${swept.memoryCurations} memory curations, ${swept.peopleAndPets} face correction, merge answer and pet recognition rows, ${swept.workspaceLayouts} Studio workspace layouts, ${swept.utilityActivity} utility activity entries`,
       );
     }
     return JobStatus.Success;
@@ -480,7 +481,7 @@ export class UserService extends BaseService {
 
     await this.albumRepository.deleteAll(user.id);
     await this.albumUserRepository.forgetRecipient(user.id);
-    // FL-71 (CC-10): the account's own preference history goes with it. While the fork schema is
+    // FL-71 (CC-10), FL-47: the account's own preference history and utility activity go with it. While the fork schema is
     // not writable it stays behind and the next user cleanup sweeps it (handleUserDeleteCheck).
     if (!(await this.userRepository.deletePreferenceHistory(user.id))) {
       this.logger.warn(`Preference history of user ${user.id} kept until the fork schema is writable again`);

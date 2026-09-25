@@ -39,7 +39,7 @@ export const envData: EnvData = {
   },
 
   versionCheck: {
-    url: 'https://version.immich.cloud/version',
+    url: 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases',
   },
 
   network: {

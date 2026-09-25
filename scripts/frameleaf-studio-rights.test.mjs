@@ -5,8 +5,10 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  APPROVAL_PATH,
   ATTRIBUTION_PATH,
   SERVER_MIRROR_PATH,
+  approvalRowDigest,
   buildServerMirror,
   generate,
   rightsRows,
@@ -20,7 +22,7 @@ test('the server rights mirror matches the reviewed bill of materials', async ()
   assert.equal(await read(SERVER_MIRROR_PATH), files[SERVER_MIRROR_PATH]);
 });
 
-test('every reviewed resource stays blocked until the owner approves it (FL-146 default)', async () => {
+test('the packager review keeps its decisions; the owner approval is recorded beside it (FL-146)', async () => {
   const manifest = JSON.parse(await read(ATTRIBUTION_PATH));
   const { distributionApproval, rows } = rightsRows(manifest);
   assert.equal(distributionApproval, false);
@@ -68,4 +70,52 @@ test('an approved use is carried through exactly as reviewed', () => {
   );
   assert.match(text, /'font:It\\'s': \{\n {4}kind: 'font',\n {4}license: null,\n {4}redistribution: 'blocked',\n {4}localRuntime: 'allowed',/);
   assert.match(text, /STUDIO_DISTRIBUTION_APPROVAL = false;/);
+});
+
+test('the owner approved every one of the 210 reviewed resources on 2026-09-25, each bound to its row', async () => {
+  const manifest = JSON.parse(await read(ATTRIBUTION_PATH));
+  const approval = JSON.parse(await read(APPROVAL_PATH));
+  assert.equal(approval.approvedOn, '2026-09-25');
+  assert.match(approval.source, /FL-146/);
+  assert.equal(approval.resources.length, 210);
+  const byId = new Map(manifest.resources.map((resource) => [resource.id, resource]));
+  for (const entry of approval.resources) {
+    assert.equal(entry.sha256, approvalRowDigest(byId.get(entry.id)), entry.id);
+  }
+  const mirror = await read(SERVER_MIRROR_PATH);
+  assert.equal((mirror.match(/localRuntime: 'allowed'/g) ?? []).length, 210);
+  assert.equal((mirror.match(/approvedOn: '2026-09-25'/g) ?? []).length, 211);
+  assert.match(mirror, /STUDIO_DISTRIBUTION_APPROVAL = false;/);
+});
+
+test('an approval covers only the exact row it was given; new, changed and unknown rows stay blocked', () => {
+  const resources = [row('font:A'), row('font:B'), row('font:C')];
+  const approval = (entries) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      approvedBy: 'Owner',
+      approvedOn: '2026-09-25',
+      source: 'FL-146',
+      uses: ['redistribution', 'localRuntime', 'hostedUse'],
+      resources: entries,
+    });
+  const text = buildServerMirror(
+    minimal(resources),
+    approval([
+      { id: 'font:A', sha256: approvalRowDigest(resources[0]) },
+      // font:B changed after it was approved.
+      { id: 'font:B', sha256: '0'.repeat(64) },
+    ]),
+  );
+  assert.match(text, /'font:A': \{[^}]*localRuntime: 'allowed',[^}]*approvedOn: '2026-09-25'/s);
+  assert.match(text, /'font:B': \{[^}]*localRuntime: 'blocked',[^}]*approvedOn: null/s);
+  assert.match(text, /'font:C': \{[^}]*localRuntime: 'blocked',[^}]*approvedOn: null/s);
+  assert.throws(
+    () => buildServerMirror(minimal(resources), approval([{ id: 'font:Z', sha256: 'x' }])),
+    /font:Z is not a reviewed resource/,
+  );
+  assert.throws(
+    () => buildServerMirror(minimal(resources), approval([]).replace('2026-09-25', 'yesterday')),
+    /approvedOn must be a date/,
+  );
 });

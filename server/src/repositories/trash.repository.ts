@@ -3,8 +3,9 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { TrashReviewRow, TrashScopeRow } from 'src/utils/trash-review.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { TrashItemSort } from 'src/dtos/trash.dto.js';
+import { TrashItemSort, UtilityActivityAction, UtilityActivityTool } from 'src/dtos/trash.dto.js';
 import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
+import { canWriteFork } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
@@ -46,6 +47,20 @@ export type TrashItemRow = {
   isLocked: boolean;
   isOffline: boolean;
 };
+
+/** One item of a utility activity entry, as stored: what it was when it was moved. */
+export type UtilityActivityItem = { assetId: string; fileName: string; bytes: number };
+
+export type UtilityActivityRow = {
+  id: string;
+  action: UtilityActivityAction;
+  createdAt: Date;
+  items: UtilityActivityItem[];
+};
+
+/** How long, and how much, utility activity is kept per owner and tool (FL-47, FL-146). */
+export const UTILITY_ACTIVITY_RETENTION_DAYS = 365;
+export const UTILITY_ACTIVITY_LIMIT = 500;
 
 export class TrashRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -279,5 +294,109 @@ export class TrashRepository {
       .execute();
 
     return restored.map(({ id }) => id);
+  }
+
+  /**
+   * The name and size of each changed original, for a utility activity entry. Read after the change,
+   * from the owner's own rows only.
+   */
+  async getActivityItems(userId: string, ids: string[]): Promise<UtilityActivityItem[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .where('asset.ownerId', '=', asUuid(userId))
+      .where('asset.id', '=', anyUuid(ids))
+      .select(['asset.id', 'asset.originalFileName', 'asset_exif.fileSizeInByte'])
+      .orderBy('asset_exif.fileSizeInByte', (ob) => ob.desc().nullsLast())
+      .orderBy('asset.id')
+      .execute();
+    return rows.map((row) => ({
+      assetId: row.id,
+      fileName: row.originalFileName,
+      bytes: toByteCount(row.fileSizeInByte),
+    }));
+  }
+
+  /**
+   * Record one utility change (FL-47): a move to the trash or its undo, with its items. Keeps the
+   * newest `UTILITY_ACTIVITY_LIMIT` entries of the owner's tool from the last
+   * `UTILITY_ACTIVITY_RETENTION_DAYS` days. Returns false, recording nothing, while the fork schema
+   * is not writable (a database handoff); the change itself has already been made.
+   */
+  async addUtilityActivity(entry: {
+    userId: string;
+    tool: UtilityActivityTool;
+    action: UtilityActivityAction;
+    items: UtilityActivityItem[];
+  }): Promise<boolean> {
+    const bytes = entry.items.reduce((sum, item) => sum + item.bytes, 0);
+    return this.db.transaction().execute(async (trx) => {
+      if (!(await canWriteFork(trx))) {
+        return false;
+      }
+      await sql`
+        INSERT INTO immich_fork.utility_activity ("userId", tool, action, "itemCount", bytes, items)
+        VALUES (${entry.userId}::uuid, ${entry.tool}, ${entry.action}, ${entry.items.length}, ${bytes},
+          ${JSON.stringify(entry.items)}::text::jsonb)
+      `.execute(trx);
+      await sql`
+        DELETE FROM immich_fork.utility_activity
+        WHERE "userId" = ${entry.userId}::uuid
+          AND tool = ${entry.tool}
+          AND (
+            "createdAt" < clock_timestamp() - make_interval(days => ${UTILITY_ACTIVITY_RETENTION_DAYS})
+            OR id NOT IN (
+              SELECT id FROM immich_fork.utility_activity
+              WHERE "userId" = ${entry.userId}::uuid AND tool = ${entry.tool}
+              ORDER BY "createdAt" DESC, id DESC
+              LIMIT ${UTILITY_ACTIVITY_LIMIT}
+            )
+          )
+      `.execute(trx);
+      return true;
+    });
+  }
+
+  /** The owner's utility activity for one tool, newest first, within the retention window. */
+  async getUtilityActivity(userId: string, tool: UtilityActivityTool): Promise<UtilityActivityRow[]> {
+    const { rows } = await sql<UtilityActivityRow>`
+      SELECT id, action, "createdAt", items
+      FROM immich_fork.utility_activity
+      WHERE "userId" = ${userId}::uuid
+        AND tool = ${tool}
+        AND "createdAt" >= clock_timestamp() - make_interval(days => ${UTILITY_ACTIVITY_RETENTION_DAYS})
+      ORDER BY "createdAt" DESC, id DESC
+      LIMIT ${UTILITY_ACTIVITY_LIMIT}
+    `.execute(this.db);
+    return rows;
+  }
+
+  /**
+   * Which of these items the session may still see (FL-47): the owner's own, not the hidden part of
+   * a live photo, Locked media only for the owner's unlocked session, and nothing the privacy filters
+   * hide. Utility activity names only these; a permanently deleted item has no row and is not named.
+   */
+  async getVisibleIds(
+    userId: string,
+    ids: string[],
+    { lockedOwnerId, privacy }: TrashScopeOptions,
+  ): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .where('asset.ownerId', '=', asUuid(userId))
+      .where('asset.id', '=', anyUuid(ids))
+      .where('asset.status', '!=', AssetStatus.Deleted)
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .$if(lockedOwnerId !== userId, (qb) => qb.where(isNotLocked('asset')))
+      .$call((qb) => withHiddenContentFilter(qb, privacy))
+      .select('asset.id')
+      .execute();
+    return new Set(rows.map(({ id }) => id));
   }
 }
