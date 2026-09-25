@@ -281,7 +281,11 @@ export class RestorationWorkerService {
     // resume; past that date the work folder goes. The row stays, still retryable from scratch.
     for (const row of await this.restorationRepository.listExpiredResults(now, RETENTION_BATCH)) {
       // Re-check the status in the write: a retry started since the read owns the folder now.
-      const cleared = await this.restorationRepository.clearExpiredResult(row.id, row.status, now);
+      const cleared = await this.restorationRepository.clearExpiredResult(
+        row.id,
+        row.status as AssetRestorationStatus,
+        now,
+      );
       if (!cleared) {
         continue;
       }
