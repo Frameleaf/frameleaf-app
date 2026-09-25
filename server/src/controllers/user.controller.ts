@@ -20,7 +20,8 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
-import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
+import { LicenseActivateDto } from 'src/dtos/frameleaf-license.dto.js';
+import { LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import {
   UserPreferenceHistoryResponseDto,
@@ -33,6 +34,7 @@ import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -42,6 +44,7 @@ import { UUIDParamDto } from 'src/validation.js';
 export class UserController {
   constructor(
     private service: UserService,
+    private licenseService: FrameleafLicenseService,
     private logger: LoggingRepository,
   ) {}
 
@@ -154,35 +157,37 @@ export class UserController {
   @Get('me/license')
   @Authenticated({ permission: Permission.UserLicenseRead })
   @Endpoint({
-    summary: 'Retrieve user product key',
-    description: 'Retrieve information about whether the current user has a registered product key.',
+    summary: 'Get your supporter key',
+    description:
+      'Your own Frameleaf supporter key (FL-I…), as its last four symbols and activation date. The key itself is never returned.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   getUserLicense(@Auth() auth: AuthDto): Promise<LicenseResponseDto> {
-    return this.service.getLicense(auth);
+    return this.licenseService.getUserSupporter(auth);
   }
 
   @Put('me/license')
   @Authenticated({ permission: Permission.UserLicenseUpdate })
   @Endpoint({
-    summary: 'Set user product key',
-    description: 'Register a product key for the current user.',
+    summary: 'Activate your supporter key',
+    description:
+      'Activate a personal Frameleaf supporter key (FL-IXXX-XXXX-XXXX) for your account with Frameleaf Cloud. The key travels only in this request body.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  async setUserLicense(@Auth() auth: AuthDto, @Body() license: LicenseKeyDto): Promise<LicenseResponseDto> {
-    return this.service.setLicense(auth, license);
+  async setUserLicense(@Auth() auth: AuthDto, @Body() dto: LicenseActivateDto): Promise<LicenseResponseDto> {
+    return this.licenseService.activateUserSupporter(auth, dto);
   }
 
   @Delete('me/license')
   @Authenticated({ permission: Permission.UserLicenseDelete })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
-    summary: 'Delete user product key',
-    description: 'Delete the registered product key for the current user.',
+    summary: 'Remove your supporter key',
+    description: 'Remove your supporter key from this server. The key stays yours to activate again.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   async deleteUserLicense(@Auth() auth: AuthDto): Promise<void> {
-    await this.service.deleteLicense(auth);
+    await this.licenseService.removeUserSupporter(auth);
   }
 
   @Get('me/onboarding')

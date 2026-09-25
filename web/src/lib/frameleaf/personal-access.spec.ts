@@ -7,8 +7,6 @@ import {
   isCompletePin,
   isProfileImageFile,
   keyCanDelete,
-  licenseKeyKind,
-  maskLicenseKey,
   normalizeKeyPermissions,
   otherSessions,
   passwordFormError,
@@ -122,20 +120,6 @@ describe('personal access (FL-67)', () => {
     it('names a device from what it reported', () => {
       expect(sessionDeviceName(recent, 'Unknown device')).toBe('macOS · Safari');
       expect(sessionDeviceName(session({ deviceOS: '', deviceType: '' }), 'Unknown device')).toBe('Unknown device');
-    });
-  });
-
-  describe('supporter keys', () => {
-    it('shows a key without revealing it', () => {
-      expect(maskLicenseKey('IMSV-FF69-TUK1-RWZU-V9Q8-QGQS-S5GC-X4R2-UFK4')).toBe('IMSV-…-UFK4');
-      expect(maskLicenseKey('not-a-key')).toBe('not-…-key');
-      expect(maskLicenseKey('opaque')).toBe('…');
-    });
-
-    it('tells personal and server keys apart', () => {
-      expect(licenseKeyKind(' imcl-ff69-tuk1 ')).toBe('personal');
-      expect(licenseKeyKind('IMSV-FF69')).toBe('server');
-      expect(licenseKeyKind('ABCD-1234')).toBeUndefined();
     });
   });
 

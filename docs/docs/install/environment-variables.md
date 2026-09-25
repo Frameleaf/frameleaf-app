@@ -75,6 +75,25 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 
 \*1: The folder must contain `app-arm64-v8a-release.apk`, `app-armeabi-v7a-release.apk`, `app-x86_64-release.apk` and `app-release.apk` (universal). Android downloads and Obtainium setup are offered only when all three Android variables are set; a value that is set but invalid stops the server at startup. Without them the Mobile applications and Obtainium setup pages say that no signed release is available. Include `{version}` in the folder so Obtainium recognises each new release.
 
+## Frameleaf Cloud
+
+| Variable                      | Description                                                                                                                                                   |           Default            | Containers | Workers            |
+| :---------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------------: | :--------- | :----------------- |
+| `FRAMELEAF_CLOUD_URL`         | Frameleaf Cloud address. Unset means Frameleaf Cloud is not set up and nothing is ever contacted.<sup>\*1</sup>                                               |                              | server     | api, microservices |
+| `FRAMELEAF_IDENTITY_DIR`      | Folder holding this server's identity key. Must be persistent storage.<sup>\*2</sup>                                                                          | `<media>/frameleaf/identity` | server     | api, microservices |
+| `FRAMELEAF_LINK_TOKEN`        | Single-use link token (`fll_…`) that links the server to a Frameleaf account when it starts, without a browser.<sup>\*3</sup>                                 |                              | server     | microservices      |
+| `FRAMELEAF_EDGE_PORT`         | Port of the direct remote-access listener.                                                                                                                    |            `2443`            | server     | edge               |
+| `FRAMELEAF_EDGE_BIND`         | Address the direct remote-access listener binds to.                                                                                                           |          `0.0.0.0`           | server     | edge               |
+| `FRAMELEAF_TRUSTED_LAN_CIDRS` | Extra networks, as comma-separated CIDRs, that count as home besides private IPv4 ranges and IPv6 unique local addresses.                                     |                              | server     | edge               |
+| `FRAMELEAF_EDGE_SECRET`       | Per-boot secret the edge worker sends with each request, so the server can tell how a visitor arrived. Without it, every visitor is treated as being at home. |                              | server     | api, edge          |
+| `FRAMELEAF_LOCAL_URL`         | This server's address on the home network, offered to a remote-access visitor who is on the same network.                                                     |                              | server     | api                |
+
+\*1: The address is deployment configuration, never a setting, and no default host is ever used. See [Frameleaf Cloud](/administration/frameleaf-cloud).
+
+\*2: The key is created once, readable by the server only. Losing it gives the server a new identity: every link and licence tied to the old one stops working until you link and activate again.
+
+\*3: Create the token in your Frameleaf account under Servers → Add server. It works once and expires within an hour; the server never sends a token it already used. Remove it after the server shows as linked. A malformed token, port or network stops the server at startup.
+
 ## Help links
 
 | Variable                    | Description                                                       | Default | Containers | Workers |

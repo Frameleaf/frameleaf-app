@@ -2,6 +2,7 @@ import request from 'supertest';
 import { UserController } from 'src/controllers/user.controller.js';
 import { Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { errorDto } from 'test/medium/responses.js';
 import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
@@ -14,6 +15,7 @@ describe(UserController.name, () => {
     ctx = await controllerSetup(UserController, [
       { provide: LoggingRepository, useValue: automock(LoggingRepository, { strict: false }) },
       { provide: UserService, useValue: service },
+      { provide: FrameleafLicenseService, useValue: mockBaseService(FrameleafLicenseService) },
     ]);
     return () => ctx.close();
   });

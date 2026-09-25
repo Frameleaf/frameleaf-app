@@ -151,6 +151,7 @@
       description: $t('frameleaf_settings_area_processing_description'),
       icon: mdiDesktopTowerMonitor,
     },
+    // FL-154: the template's Frameleaf Cloud area (settings-catalog.mjs:125-131).
     cloud: {
       title: $t('frameleaf_settings_area_cloud'),
       description: $t('frameleaf_settings_area_cloud_description'),
@@ -270,6 +271,11 @@
     'render-workers',
     'cloud-processing',
     'hardware',
+    // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
+    'cloud-account',
+    'cloud-plan',
+    'cloud-license',
+    'frameleaf-signin',
     'deduplication',
     'mode',
     'backups',

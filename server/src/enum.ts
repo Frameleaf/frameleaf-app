@@ -360,6 +360,17 @@ export enum Permission {
   ServerStatistics = 'server.statistics',
   ServerVersionCheck = 'server.versionCheck',
 
+  /** FL-154: read the Frameleaf Cloud link status. */
+  AdminCloudRead = 'adminCloud.read',
+  /** FL-155: change what Frameleaf Cloud may ask this server to do. */
+  AdminCloudUpdate = 'adminCloud.update',
+  /** FL-155: link this server to a Frameleaf account, or unlink it. */
+  AdminCloudLink = 'adminCloud.link',
+  /** FL-158: read your own Frameleaf account link. */
+  FrameleafAccountRead = 'frameleafAccount.read',
+  /** FL-158: link or unlink your own Frameleaf account. */
+  FrameleafAccountUpdate = 'frameleafAccount.update',
+
   AdminCloudMlRead = 'adminCloudMl.read',
   AdminCloudMlUpdate = 'adminCloudMl.update',
 
@@ -480,7 +491,6 @@ export enum SystemMetadataKey {
   SystemConfig = 'system-config',
   SystemFlags = 'system-flags',
   VersionCheckState = 'version-check-state',
-  License = 'license',
   PhysicalDeduplicationMigration = 'physical-deduplication-migration',
   /** FL-159: the Frameleaf Cloud link written by linking the server (FL-155); read by cloud processing. */
   FrameleafCloudLink = 'frameleaf-cloud-link',
@@ -490,6 +500,8 @@ export enum SystemMetadataKey {
   FrameleafServiceDiscovery = 'frameleaf-service-discovery',
   /** FL-159: the last AI Wallet balance read from Frameleaf Cloud (USD display). */
   FrameleafMlWallet = 'frameleaf-ml-wallet',
+  /** FL-156: this server's Frameleaf licence certificate and its refresh state. */
+  FrameleafLicense = 'frameleaf-license',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
   HardwareCheck = 'hardware-check',
   /**
@@ -2112,6 +2124,11 @@ export enum JobName {
 
   VersionCheck = 'VersionCheck',
 
+  /** FL-155: the Frameleaf Cloud check-in, every five minutes plus jitter while linked. */
+  FrameleafHeartbeat = 'FrameleafHeartbeat',
+  /** FL-156: the daily Frameleaf licence certificate refresh, with jitter. */
+  FrameleafLicenseRefresh = 'FrameleafLicenseRefresh',
+
   // OCR
   OcrQueueAll = 'OcrQueueAll',
   Ocr = 'Ocr',
@@ -2209,6 +2226,10 @@ export enum DatabaseLock {
   LibraryCareSchedule = 940,
   /** FL-159: creating this server's Frameleaf identity key happens once, on one worker. */
   FrameleafIdentity = 945,
+  /** FL-155: one server checks in with Frameleaf Cloud at a time. */
+  FrameleafHeartbeat = 946,
+  /** FL-156: one server refreshes the Frameleaf licence certificate at a time. */
+  FrameleafLicenseRefresh = 947,
 }
 
 export enum MaintenanceAction {
@@ -2585,6 +2606,22 @@ export enum AdminAuditAction {
   LibraryScanCancelled = 'library-scan-cancelled',
   /** `detail` is the number of indexed items the removal covers (FL-78). */
   LibraryDeleted = 'library-deleted',
+  /** FL-155: the server was linked to a Frameleaf account; `detail` is the account label. */
+  CloudLinked = 'cloud-linked',
+  /** FL-155: an administrator unlinked the server from Frameleaf Cloud. */
+  CloudUnlinked = 'cloud-unlinked',
+  /** FL-155: Frameleaf Cloud revoked the link; `detail` is the reason it gave. */
+  CloudRevoked = 'cloud-revoked',
+  /** FL-155: what Frameleaf Cloud may ask this server to do changed; `detail` lists the toggles now on. */
+  CloudPermissionsChanged = 'cloud-permissions-changed',
+  /** FL-156: a licence key or file was activated; `detail` is the key hint or `file`. */
+  LicenseActivated = 'license-activated',
+  /** FL-156: the licence was removed from this server. */
+  LicenseRemoved = 'license-removed',
+  /** FL-158: the account linked a Frameleaf account; `detail` is its email. */
+  FrameleafAccountLinked = 'frameleaf-account-linked',
+  /** FL-158: the account's Frameleaf account link was removed. */
+  FrameleafAccountUnlinked = 'frameleaf-account-unlinked',
 }
 
 export const AdminAuditActionSchema = z
@@ -2761,7 +2798,9 @@ export enum ApiTag {
   Duplicates = 'Duplicates',
   Enrichment = 'Enrichment',
   Faces = 'Faces',
+  FrameleafCloud = 'Frameleaf Cloud (admin)',
   FrameleafCloudMl = 'Frameleaf Cloud processing (admin)',
+  FrameleafLicense = 'Frameleaf licence',
   Integrity = 'Integrity (admin)',
   Jobs = 'Jobs',
   Libraries = 'Libraries',
@@ -2875,6 +2914,8 @@ export enum ConfigCredential {
   SmtpPassword = 'smtp-password',
   /** `oauth.clientSecret` */
   OAuthClientSecret = 'oauth-client-secret',
+  /** FL-158: `frameleafCloud.signIn.clientSecret` */
+  FrameleafOidcClientSecret = 'frameleaf-oidc-client-secret',
 }
 
 export const ConfigCredentialSchema = z

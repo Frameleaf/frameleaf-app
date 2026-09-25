@@ -243,10 +243,11 @@ export async function validateContracts(repository = root) {
     21,
   );
   // FL-71: the account settings are Command Center sections drawn one at a time, no longer
-  // accordion groups; the same 16 sections (now counted by their section branch).
+  // accordion groups; the same 16 sections (now counted by their section branch). FL-158 adds the
+  // account's own Frameleaf account section (Your preferences → Frameleaf account): 16 -> 17.
   assert.equal(
     (personalSettings.match(/\{(?:#|:else )if section === '/g) ?? []).length,
-    16,
+    17,
   );
 
   await rejectSpecializedLibraryBacklog(repository);

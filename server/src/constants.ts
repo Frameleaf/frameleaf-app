@@ -86,6 +86,29 @@ const packageFile = join(basePath, '..', 'package.json');
 const { version } = JSON.parse(readFileSync(packageFile, 'utf8'));
 export const serverVersion = new SemVer(version);
 
+/**
+ * FL-156: the Ed25519 keys Frameleaf licence certificates are verified with: the active signing key
+ * and a spare, pinned in source so a certificate is only ever trusted if one of them signed it
+ * (instance contract, "License certificate"). A certificate signed by any other key is refused.
+ *
+ * These are placeholder public keys whose private halves were never kept: until the production keys
+ * of the Frameleaf Cloud licence service replace them (FL-145), no certificate verifies and every
+ * cloud entitlement stays off. Self-hosted features never depend on them.
+ */
+export const FRAMELEAF_LICENSE_KEYS: ReadonlyArray<{ kid: string; x: string; status: 'active' | 'spare' }> =
+  Object.freeze([
+    {
+      kid: 'siWAxYtAkYIj69LAMUbhb5ma-FKRWDWZtI479DZ0BRo',
+      x: 'p-ilbYOPlIjm12XyBzhM8lOJfKfnPMCnypNxHYVgwvc',
+      status: 'active',
+    },
+    {
+      kid: 'AzTIXdzYrPfkBjYvKjlYaeYhQvPIMY9G2ddCr0zF1rA',
+      x: 'FN_dby_dUkObZoniAoVM79EgzhXJkVugbmHs63W-C8A',
+      status: 'spare',
+    },
+  ]);
+
 export const citiesFile = 'cities500.txt';
 export const reverseGeocodeMaxDistance = 25_000;
 
@@ -206,6 +229,10 @@ export const endpointTags: Record<ApiTag, string> = {
     'Enrichment previews, durable enrichment plans and timestamped video moments. A preview runs a draft prompt or model on chosen samples without writing anything; a plan runs chosen stages on a frozen set of assets through the destinations pinned when it was queued.',
   [ApiTag.Faces]:
     'A face is a detected human face within an asset, which can be associated with a person. Faces are normally detected via machine learning, but can also be created manually.',
+  [ApiTag.FrameleafCloud]:
+    'Linking this server to a Frameleaf account: status, the device-code link, the check-in and what Frameleaf Cloud may ask this server to do. Nothing is contacted until an administrator starts linking, and an unset FRAMELEAF_CLOUD_URL is never replaced by a default host.',
+  [ApiTag.FrameleafLicense]:
+    'Frameleaf licence certificates: activation by key or offline file, refresh with a grace period, and the entitlements cloud-connected features read. Self-hosted features never depend on a licence.',
   [ApiTag.FrameleafCloudMl]:
     'Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback.',
   [ApiTag.Integrity]: 'Endpoints for viewing and managing integrity reports.',

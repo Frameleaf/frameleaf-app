@@ -1,9 +1,17 @@
 <script lang="ts">
   import { Icon } from '@immich/ui';
-  import { mdiAlertCircleOutline, mdiInformationOutline, mdiShieldAccountOutline, mdiServerOutline } from '@mdi/js';
+  import {
+    mdiAlertCircleOutline,
+    mdiEarth,
+    mdiInformationOutline,
+    mdiLanConnect,
+    mdiServerOutline,
+    mdiShieldAccountOutline,
+  } from '@mdi/js';
   import { goto } from '$app/navigation';
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
+  import Logo from '$lib/components/frameleaf/Logo.svelte';
   import {
     clearRememberMePreference,
     clearOAuthContinue,
@@ -13,12 +21,13 @@
     setOAuthContinue,
     setRememberMePreference,
   } from '$lib/frameleaf/auth-session-preference';
+  import { startFrameleaf, takeFrameleafCallback } from '$lib/frameleaf/frameleaf-sign-in';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
   import { oauth } from '$lib/utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
-  import { login, type LoginResponseDto } from '@immich/sdk';
+  import { finishFrameleafSignIn, login, type LoginResponseDto } from '@immich/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -36,6 +45,25 @@
   const serverConfig = $derived(serverConfigManager.value);
   const publicConfig = $derived(data.publicConfig);
 
+  // FL-158: Sign in with Frameleaf. Through remote access it is the only way in; at home it is offered
+  // when the administrator turned "Show Sign in with Frameleaf at home" on.
+  const frameleaf = $derived(publicConfig.frameleaf);
+  const relayOnly = $derived(frameleaf.signInRequired);
+  const frameleafButtonText = $derived(publicConfig.frameleafCloud.signIn.buttonText);
+  const showFrameleafAtHome = $derived(
+    frameleaf.signInAvailable && publicConfig.frameleafCloud.signIn.showOnLocalLogin,
+  );
+  let frameleafLoading = $state(false);
+  let frameleafError = $state('');
+  let stayRemote = $state(false);
+  const localHost = $derived.by(() => {
+    try {
+      return frameleaf.localUrl ? new URL(frameleaf.localUrl).host : '';
+    } catch {
+      return '';
+    }
+  });
+
   const onSuccess = async (user: LoginResponseDto) => {
     await goto(oauth.isCallback(location) ? getOAuthContinue(data.continueUrl) : data.continueUrl, {
       invalidateAll: true,
@@ -47,13 +75,34 @@
   const onFirstLogin = () => goto(Route.changePassword());
   const onOnboarding = () => goto(Route.onboarding());
 
+  const finishUser = async (user: LoginResponseDto) => {
+    if (!user.isOnboarded) {
+      await onOnboarding();
+      return;
+    }
+    await onSuccess(user);
+  };
+
   onMount(async () => {
+    const frameleafCallback = oauth.isCallback(location) ? takeFrameleafCallback(location.href) : null;
     if (oauth.isCallback(location)) {
       // FL-80: a callback that lands in another tab takes the choices its sign-in started with
       restoreOAuthRequest(location.href);
     }
     rememberMe = rememberMePreference();
-    if (!publicConfig.oauth.enabled) {
+    if (frameleafCallback === 'sign-in') {
+      try {
+        await finishUser(await finishFrameleafSignIn({ oAuthCallbackDto: { url: location.href, rememberMe } }));
+        return;
+      } catch (error) {
+        clearOAuthContinue();
+        frameleafError = getServerErrorMessage(error) || $t('frameleaf_auth_frameleaf_failed');
+        oauthLoading = false;
+        return;
+      }
+    }
+    // the administrator's own provider is not offered through remote access
+    if (!publicConfig.oauth.enabled || relayOnly) {
       oauthLoading = false;
       return;
     }
@@ -157,11 +206,51 @@
     }
   };
 
+  const handleFrameleafLogin = async () => {
+    frameleafLoading = true;
+    frameleafError = '';
+    if (!setRememberMePreference(rememberMe) || !setOAuthContinue(data.continueUrl)) {
+      frameleafError = $t('frameleaf_auth_error_storage_sign_in');
+      frameleafLoading = false;
+      return;
+    }
+    try {
+      await startFrameleaf('sign-in', location);
+    } catch (error) {
+      clearOAuthContinue();
+      frameleafLoading = false;
+      frameleafError = getServerErrorMessage(error) || $t('frameleaf_auth_frameleaf_failed');
+    }
+  };
+
+  const continueAtHome = () => {
+    if (frameleaf.localUrl) {
+      location.assign(new URL(Route.login(), frameleaf.localUrl).href);
+    }
+  };
+
   const onsubmit = async (event: SubmitEvent) => {
     event.preventDefault();
     await handleLogin();
   };
 </script>
+
+{#snippet frameleafButton(autofocus: boolean)}
+  {#if frameleafError}<p class="auth-error" role="alert">
+      <Icon icon={mdiAlertCircleOutline} size="16" /><span>{frameleafError}</span>
+    </p>{/if}
+  <!-- svelte-ignore a11y_autofocus (the only sign-in action through remote access) -->
+  <button
+    type="button"
+    class="button auth-frameleaf"
+    {autofocus}
+    disabled={loading || frameleafLoading}
+    onclick={handleFrameleafLogin}
+    ><Logo variant="icon" size="tiny" decorative />{frameleafLoading
+      ? $t('frameleaf_auth_opening_frameleaf')
+      : frameleafButtonText}</button
+  >
+{/snippet}
 
 <AuthShell hero="summit" attribution>
   <div class="auth-heading">
@@ -182,6 +271,39 @@
     <p class="auth-info" role="status">
       <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_oauth_connecting')}</span>
     </p>
+  {:else if relayOnly}
+    {#if frameleaf.sameNetwork && localHost && !stayRemote}
+      <div class="auth-lan" role="status">
+        <Icon icon={mdiLanConnect} size="18" />
+        <div>
+          <strong>{$t('frameleaf_auth_same_network_title')}</strong>
+          <span>{$t('frameleaf_auth_same_network_body')}</span>
+        </div>
+        <div class="auth-lan-actions">
+          <button type="button" class="button primary" onclick={continueAtHome}
+            >{$t('frameleaf_auth_continue_on', { values: { host: localHost } })}</button
+          >
+          <button type="button" class="auth-link" onclick={() => (stayRemote = true)}
+            >{$t('frameleaf_auth_stay_remote')}</button
+          >
+        </div>
+      </div>
+    {/if}
+    <div class="auth-card auth-form">
+      <p class="auth-info">
+        <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_relay_note')}</span>
+      </p>
+      {#if frameleaf.signInAvailable}
+        {@render frameleafButton(true)}
+        <label class="auth-check"
+          ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
+        >
+      {:else}
+        <p class="auth-error" role="alert">
+          <Icon icon={mdiAlertCircleOutline} size="16" /><span>{$t('frameleaf_auth_frameleaf_unavailable')}</span>
+        </p>
+      {/if}
+    </div>
   {:else}
     <form class="auth-card auth-form" {onsubmit} novalidate>
       {#if publicConfig.passwordLogin.enabled}
@@ -228,23 +350,30 @@
         >
       {/if}
 
-      {#if publicConfig.oauth.enabled}
+      {#if publicConfig.oauth.enabled || showFrameleafAtHome}
         {#if !publicConfig.passwordLogin.enabled}
           <label class="auth-check"
             ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
           >
+        {:else}
+          <div class="auth-divider" aria-hidden="true">{$t('frameleaf_auth_or')}</div>
         {/if}
-        {#if publicConfig.passwordLogin.enabled}<div class="auth-divider" aria-hidden="true">
-            {$t('frameleaf_auth_or')}
-          </div>{/if}
-        {#if oauthError}<p class="auth-error" role="alert">
-            <Icon icon={mdiAlertCircleOutline} size="16" /><span>{oauthError}</span>
-          </p>{/if}
-        <button type="button" class="button auth-oauth" disabled={loading || oauthLoading} onclick={handleOAuthLogin}
-          ><Icon icon={mdiShieldAccountOutline} size="20" />{publicConfig.oauth.buttonText}</button
-        >
+        {#if showFrameleafAtHome}
+          {@render frameleafButton(false)}
+        {/if}
+        {#if publicConfig.oauth.enabled}
+          {#if oauthError}<p class="auth-error" role="alert">
+              <Icon icon={mdiAlertCircleOutline} size="16" /><span>{oauthError}</span>
+            </p>{/if}
+          <button type="button" class="button auth-oauth" disabled={loading || oauthLoading} onclick={handleOAuthLogin}
+            ><Icon icon={mdiShieldAccountOutline} size="20" />{publicConfig.oauth.buttonText}</button
+          >
+        {/if}
+        {#if showFrameleafAtHome}
+          <p class="auth-note auth-frameleaf-note">{$t('frameleaf_auth_frameleaf_optional')}</p>
+        {/if}
       {/if}
-      {#if !publicConfig.passwordLogin.enabled && !publicConfig.oauth.enabled}
+      {#if !publicConfig.passwordLogin.enabled && !publicConfig.oauth.enabled && !showFrameleafAtHome}
         <p class="auth-error" role="alert">
           <Icon icon={mdiAlertCircleOutline} size="16" /><span>{$t('login_has_been_disabled')}</span>
         </p>
@@ -252,7 +381,15 @@
     </form>
   {/if}
 
-  <div class="auth-server">
-    <Icon icon={mdiServerOutline} size="16" /><span>{$t('frameleaf_auth_server')}</span><code>{data.serverUrl}</code>
-  </div>
+  {#if relayOnly}
+    <div class="auth-server">
+      <Icon icon={mdiEarth} size="16" /><span>{$t('frameleaf_auth_remote_access')}</span><code
+        >{frameleaf.relayHost ?? new URL(data.serverUrl).host}</code
+      >
+    </div>
+  {:else}
+    <div class="auth-server">
+      <Icon icon={mdiServerOutline} size="16" /><span>{$t('frameleaf_auth_server')}</span><code>{data.serverUrl}</code>
+    </div>
+  {/if}
 </AuthShell>

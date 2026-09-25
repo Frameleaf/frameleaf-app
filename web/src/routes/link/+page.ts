@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { OpenQueryParam } from '$lib/constants';
+import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { Route } from '$lib/route';
 import type { PageLoad } from './$types';
 
@@ -7,13 +8,25 @@ enum LinkTarget {
   HOME = 'home',
   UNSUBSCRIBE = 'unsubscribe',
   VIEW_ASSET = 'view_asset',
-  ACTIVATE_LICENSE = 'activate_license',
+  /** FL-158: back from Frameleaf with a Frameleaf account to link on this server. */
+  FRAMELEAF_ACCOUNT = 'frameleaf_account',
 }
 
+/**
+ * Links into the app. FL-157: a licence key from the Frameleaf store arrives only in the fragment
+ * (`#target=frameleaf_license&key=…`), which a load function never sees; without a `target` query
+ * the page itself reads the fragment. The previous `?target=activate_license&licenseKey=…` form put
+ * a key in the address and is no longer accepted.
+ */
 export const load = (({ url }) => {
   const queryParams = url.searchParams;
-  const target = queryParams.get('target') as LinkTarget;
+  const target = queryParams.get('target') as LinkTarget | null;
   switch (target) {
+    case null: {
+      // the fragment, if any, is handled by +page.svelte
+      return {};
+    }
+
     case LinkTarget.HOME: {
       return redirect(307, Route.photos());
     }
@@ -30,23 +43,8 @@ export const load = (({ url }) => {
       break;
     }
 
-    case LinkTarget.ACTIVATE_LICENSE: {
-      // https://my.immich.app/link?target=activate_license&licenseKey=IMCL-9XC3-T4S3-37BU-GGJ5-8MWP-F2Y1-BGEX-AQTF
-      const licenseKey = queryParams.get('licenseKey');
-      const activationKey = queryParams.get('activationKey');
-      const redirectUrl = new URL(Route.buy(), url.origin);
-
-      if (licenseKey) {
-        redirectUrl.searchParams.append('licenseKey', licenseKey);
-
-        if (activationKey) {
-          redirectUrl.searchParams.append('activationKey', activationKey);
-        }
-
-        return redirect(307, redirectUrl);
-      }
-
-      break;
+    case LinkTarget.FRAMELEAF_ACCOUNT: {
+      return redirect(307, commandCenterUrl('preferences', 'frameleaf-account'));
     }
   }
 

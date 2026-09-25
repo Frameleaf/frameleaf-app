@@ -93,6 +93,30 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'cloudMl.startWith',
   },
   {
+    pattern: 'frameleafCloud.signIn.buttonText',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/FrameleafSignInSection.svelte',
+    evidence: 'buttonText',
+  },
+  {
+    pattern: 'frameleafCloud.signIn.clientSecret',
+    kind: 'credential',
+    file: 'src/lib/components/frameleaf/cloud/FrameleafSignInSection.svelte',
+    evidence: 'ConfigCredential.FrameleafOidcClientSecret',
+  },
+  {
+    pattern: 'frameleafCloud.signIn.clientSecretConfigured',
+    kind: 'credential-state',
+    file: 'src/lib/frameleaf/credentials.ts',
+    evidence: 'signIn?.clientSecretConfigured',
+  },
+  {
+    pattern: 'frameleafCloud.signIn.showOnLocalLogin',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/FrameleafSignInSection.svelte',
+    evidence: 'setShowOnLocalLogin',
+  },
+  {
     pattern: 'libraryCare.checksumScan',
     kind: 'control',
     file: 'src/lib/frameleaf/library-care-settings.ts',

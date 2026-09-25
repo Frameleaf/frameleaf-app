@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import z from 'zod';
 import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
 
@@ -31,6 +32,8 @@ export const discoverySchema = z.object({
   issuer: z.url({ protocol: /^https?$/ }),
   api: z.url({ protocol: /^https?$/ }),
   ml: z.record(z.string().min(1).max(16), z.url({ protocol: /^https?$/ })),
+  /** FL-155: named instance endpoints (`heartbeat`, `commands`, …); absent ones follow `api`. */
+  endpoints: z.record(z.string().min(1).max(64), z.url({ protocol: /^https?$/ })).optional(),
 });
 export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
 
@@ -42,36 +45,56 @@ export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
  * misconfigured document could send the signed client assertion or an access token elsewhere.
  */
 export const discoveryProblem = (cloudUrl: string, document: FrameleafDiscoveryDocument): string | null => {
+  const entries: Array<[string, string]> = [
+    ['issuer', document.issuer],
+    ['api', document.api],
+    ...Object.entries(document.ml).map(([region, url]): [string, string] => [`ml.${region}`, url]),
+    // FL-155: named instance endpoints (heartbeat, commands) follow the same rule
+    ...Object.entries(document.endpoints ?? {}).map(([name, url]): [string, string] => [`endpoints.${name}`, url]),
+  ];
+  for (const [name, value] of entries) {
+    const problem = cloudAddressProblem(cloudUrl, `discovery ${name}`, value);
+    if (problem) {
+      return problem;
+    }
+  }
+  return null;
+};
+
+/**
+ * Why an address the cloud handed over must not be used, or null: the same rule as discovery (the
+ * configured host or a subdomain, https unless the configured address is http, the configured port,
+ * no credentials). FL-155/FL-158 also apply it to the addresses in the link response (the sign-in
+ * issuer and the client registration endpoint), so a signed assertion never leaves the cloud.
+ */
+export const cloudAddressProblem = (cloudUrl: string, name: string, value: string): string | null => {
   let configured: URL;
+  let url: URL;
   try {
     configured = new URL(cloudUrl);
   } catch {
     return `the configured Frameleaf Cloud address ${cloudUrl} is not a URL`;
   }
+  try {
+    url = new URL(value);
+  } catch {
+    return `${name} ${value} is not a URL`;
+  }
   const host = configured.hostname.toLowerCase();
   const allowHttp = configured.protocol === 'http:';
-  const effectivePort = (url: URL) => url.port || (url.protocol === 'http:' ? '80' : '443');
-  const port = effectivePort(configured);
-  const entries: Array<[string, string]> = [
-    ['issuer', document.issuer],
-    ['api', document.api],
-    ...Object.entries(document.ml).map(([region, url]): [string, string] => [`ml.${region}`, url]),
-  ];
-  for (const [name, value] of entries) {
-    const url = new URL(value);
-    if (url.protocol !== 'https:' && !(allowHttp && url.protocol === 'http:')) {
-      return `discovery ${name} ${value} is not https`;
-    }
-    const candidate = url.hostname.toLowerCase();
-    if (candidate !== host && !candidate.endsWith(`.${host}`)) {
-      return `discovery ${name} ${value} is not on ${host}`;
-    }
-    if (effectivePort(url) !== port) {
-      return `discovery ${name} ${value} is not on port ${port}`;
-    }
-    if (url.username || url.password) {
-      return `discovery ${name} carries credentials`;
-    }
+  const effectivePort = (address: URL) => address.port || (address.protocol === 'http:' ? '80' : '443');
+  if (url.protocol !== 'https:' && !(allowHttp && url.protocol === 'http:')) {
+    return `${name} ${value} is not https`;
+  }
+  const candidate = url.hostname.toLowerCase();
+  if (candidate !== host && !candidate.endsWith(`.${host}`)) {
+    return `${name} ${value} is not on ${host}`;
+  }
+  if (effectivePort(url) !== effectivePort(configured)) {
+    return `${name} ${value} is not on port ${effectivePort(configured)}`;
+  }
+  if (url.username || url.password) {
+    return `${name} carries credentials`;
   }
   return null;
 };
@@ -260,6 +283,13 @@ export const refusalFromCloudError = (
   }
 };
 
+/** An OAuth error answer (RFC 6749 section 5.2, RFC 8628 section 3.5). */
+export const oauthErrorSchema = z.object({
+  error: z.string().min(1).max(100),
+  error_description: z.string().max(2000).optional(),
+});
+export type OAuthErrorBody = z.infer<typeof oauthErrorSchema>;
+
 /** A failed call to Frameleaf Cloud, carrying the refusal it maps to. */
 export class FrameleafCloudError extends Error {
   constructor(
@@ -267,6 +297,7 @@ export class FrameleafCloudError extends Error {
     readonly status: number | null,
     message: string,
     readonly envelope: CloudErrorEnvelope | null = null,
+    readonly oauth: OAuthErrorBody | null = null,
   ) {
     super(message);
     this.name = 'FrameleafCloudError';
@@ -357,4 +388,29 @@ export const regionalGateway = (document: FrameleafDiscoveryDocument, region: st
   }
   const url = document.ml[region];
   return url ? url.replace(/\/+$/, '') : null;
+};
+
+/**
+ * `FRAMELEAF_TRUSTED_LAN_CIDRS` (FL-154): comma-separated IPv4 or IPv6 networks the edge worker
+ * treats as home, besides RFC 1918 and ULA. A malformed entry stops start-up with a clear message
+ * rather than silently widening or narrowing who counts as local.
+ */
+export const parseTrustedLanCidrs = (value: string | undefined): string[] => {
+  if (!value?.trim()) {
+    return [];
+  }
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [address, prefix, extra] = entry.split('/', 3);
+      const family = isIP(address ?? '');
+      const bits = Number(prefix);
+      const max = family === 6 ? 128 : 32;
+      if (extra !== undefined || !family || !/^\d{1,3}$/.test(prefix ?? '') || bits < 0 || bits > max) {
+        throw new Error(`FRAMELEAF_TRUSTED_LAN_CIDRS has an invalid network: "${entry}"`);
+      }
+      return `${address}/${bits}`;
+    });
 };
