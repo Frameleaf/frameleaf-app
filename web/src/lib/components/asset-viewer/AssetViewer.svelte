@@ -730,9 +730,10 @@
   bind:this={assetViewerHtmlElement}
   onfocusin={revealChrome}
 >
-  <!-- Top navigation bar -->
+  <!-- Top navigation bar. It stacks above the footer (z-2) so its More menu, which can reach the bottom of
+       the window, is never covered by the frosted footer (MediaViewer.jsx:1269 menu over the .mv-footer). -->
   {#if $slideshowState === SlideshowState.None && !assetViewerManager.isShowEditor}
-    <div class="col-span-4 col-start-1 row-span-1 row-start-1" data-viewer-chrome="header">
+    <div class="relative z-3 col-span-4 col-start-1 row-span-1 row-start-1" data-viewer-chrome="header">
       <AssetViewerNavBar
         {asset}
         {album}
