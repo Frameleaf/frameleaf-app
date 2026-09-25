@@ -122,6 +122,8 @@ When the `Mobile Redirect URI Override` is enabled, the Frameleaf app is sent to
 1. The override must be this server's `/api/oauth/mobile-redirect` address (for example `https://example.immich.app/api/oauth/mobile-redirect`). Any other override cannot be matched to a Frameleaf address, and Frameleaf app sign-in is refused with an error.
 2. Register a **second** redirect URI with your provider: the same address ending in `/api/oauth/frameleaf-mobile-redirect` (for example `https://example.immich.app/api/oauth/frameleaf-mobile-redirect`).
 
+Administration → Settings → Authentication lists both apps' callbacks for the current configuration under **Mobile app callbacks**. For what does and does not carry over between the two apps, see [Moving to the Frameleaf app](./frameleaf-app-transition.md).
+
 ## Example Configuration
 
 <details>

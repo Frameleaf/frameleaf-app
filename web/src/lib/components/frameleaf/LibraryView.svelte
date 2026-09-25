@@ -57,6 +57,7 @@
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
+  import { effectiveAlbumSort, readAlbumViewSort, writeAlbumViewSort } from '$lib/frameleaf/album-view-sort';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { timelineQueryOptions } from '$lib/frameleaf/library-query-options';
@@ -252,18 +253,25 @@
 
   const manager = $derived(timelineManager as TimelineManager);
   /** The layout the grid is drawn in; a public page has no layout switch and stays on Browse. */
-  const gridLayout = $derived(publicView ? 'browse' : session.layout);
+  /**
+   * T-20 (`App.jsx` `layoutSwitch`): the Locked collection offers the Timeline only, so a Locked view
+   * always draws it; the device's own layout choice is left alone for every other page.
+   */
+  const lockedView = $derived(!!bulkContext?.locked || options?.visibility === AssetVisibility.Locked);
+  const gridLayout = $derived(publicView ? 'browse' : lockedView ? 'timeline' : session.layout);
   /**
    * The information panel (prototype `inspector`): the results toolbar's toggle and I show or hide it
    * in every layout, and a layout switch opens it for Work and closes it for the others, as the
    * template's layout switch does (`setInspector(layout === "work" && innerWidth > 1000)`).
    */
-  let inspectorOpen = $state(untrack(() => gridLayout === 'work'));
+  // FL-31: Work opens the panel by itself only above 1000px, never on phones or tablets, where the
+  // toolbar toggle (or I) still shows it on request.
+  let inspectorOpen = $state(untrack(() => gridLayout === 'work' && mediaQueryManager.wideInspector));
   let inspectorLayout: string | undefined;
   $effect(() => {
     const layout = gridLayout;
     if (inspectorLayout !== undefined && layout !== inspectorLayout) {
-      inspectorOpen = layout === 'work';
+      inspectorOpen = layout === 'work' && untrack(() => mediaQueryManager.wideInspector);
     }
     inspectorLayout = layout;
   });
@@ -320,7 +328,27 @@
    * through the flat ordered source (`GET /timeline/ordered`). A page that fixes its own order
    * (Recently added, an album) keeps it and draws no Sort control.
    */
-  const sortable = $derived(!!options && !publicView && !selectionMode && !options.order && !options.dateType);
+  /**
+   * FL-31: an album's display order is shared; the viewer's own sort for it starts from that order
+   * and is kept per album on this device (`album-view-sort.ts`), never written back to the album.
+   */
+  const albumSortId = $derived(options?.albumId && !options.dateType && !publicView ? options.albumId : undefined);
+  let albumPersonalSort = $state<LibrarySort | null>(null);
+  $effect(() => {
+    const id = albumSortId;
+    albumPersonalSort = id && browser ? untrack(() => readAlbumViewSort(localStorage, id)) : null;
+  });
+  const activeSort = $derived<LibrarySort>(
+    albumSortId ? effectiveAlbumSort(albumPersonalSort, options?.order) : session.state.sort,
+  );
+  const changeAlbumSort = (sort: LibrarySort) => {
+    if (albumSortId) {
+      albumPersonalSort = writeAlbumViewSort(browser ? localStorage : undefined, albumSortId, sort, options?.order);
+    }
+  };
+  const sortable = $derived(
+    !!options && !publicView && !selectionMode && (!options.order || !!albumSortId) && !options.dateType,
+  );
   const TIMELINE_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc'];
   const FLAT_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc', 'imported-desc', 'filename', 'rating'];
   const sorts = $derived(sortable ? (gridLayout === 'timeline' ? TIMELINE_SORTS : FLAT_SORTS) : undefined);
@@ -330,7 +358,7 @@
       return base;
     }
     const flat = gridLayout !== 'timeline';
-    switch (session.state.sort) {
+    switch (activeSort) {
       case 'captured-asc': {
         return { ...base, order: AssetOrder.Asc };
       }
@@ -344,7 +372,8 @@
         return flat ? { ...base, orderedBy: TimelineOrderedSort.Rating } : base;
       }
       default: {
-        return base;
+        // Newest first; on an album that overrides a shared oldest-first order for this viewer only.
+        return albumSortId ? { ...base, order: AssetOrder.Desc } : base;
       }
     }
   });
@@ -468,6 +497,7 @@
       view: {
         isLocked: options?.visibility === AssetVisibility.Locked,
         revealsLocks: !!options && revealsLocks(options),
+        visibility: options?.visibility,
       },
       currentUserId: authManager.authenticated ? authManager.user.id : undefined,
       ownerById: Object.fromEntries(
@@ -920,7 +950,11 @@
     const state = session.state;
     void untrack(() => bulk.count(state)).then((total) => session.applyTotal(total, revision));
   });
-  /** What the grid shows: the toolbar's count, the empty state and Slideshow all read it. */
+  /**
+   * What the grid shows: the toolbar's count, the empty state and Slideshow all read it. It is also
+   * the selection bar's "Select all N" before the server has counted the matches (T-14): a library
+   * page applies every condition it keeps to its buckets, so the grid's count is the matching count.
+   */
   const resultCount = $derived(scopeTotal);
   /**
    * The status bar's Y while the grid applies a filter: the scope without it, counted by the server
@@ -1389,7 +1423,7 @@
           <div class="fl-library-header">
             <div class="fl-library-header-content">{@render children?.()}</div>
             {#if !publicView}
-              <LibraryLayoutSwitch {session} />
+              <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
             {/if}
           </div>
           {#if !publicView}
@@ -1402,6 +1436,8 @@
                 inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
                 onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
                 {sorts}
+                sort={albumSortId ? activeSort : undefined}
+                onSortChange={albumSortId ? changeAlbumSort : undefined}
                 unappliedFields={queryApplied.unapplied}
                 view={gridLayout === 'timeline' || publicView ? undefined : listView ? 'list' : 'grid'}
                 onViewChange={(view) => session.patchView({ view })}
@@ -1463,7 +1499,7 @@
         onDialogSettled={(_id, submitted) => onBarDialogSettled(submitted)}
         {resolveCaptureTimes}
         count={session.selection.length}
-        total={selectAll === 'loaded' ? (manager.assetCount ?? null) : session.total}
+        total={selectAll === 'loaded' ? (manager.assetCount ?? null) : (session.total ?? resultCount)}
         assets={selectedAssets}
         selectedIds={session.selection}
         context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}

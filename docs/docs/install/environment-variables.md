@@ -71,8 +71,20 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 | `FRAMELEAF_ANDROID_APP_ID`         | Android package id the APKs are signed as.                                                                                   |         | server     | api     |
 | `FRAMELEAF_ANDROID_SIGNING_SHA256` | SHA-256 fingerprint of the APK signing certificate, shown to people before they install.                                     |         | server     | api     |
 | `FRAMELEAF_IOS_APP_URL`            | https App Store or TestFlight page of the iOS app.                                                                           |         | server     | api     |
+| `FRAMELEAF_ANDROID_STORE_URL`      | https store listing of the Android app (Google Play, F-Droid or another store), offered next to the APKs.                    |         | server     | api     |
 
 \*1: The folder must contain `app-arm64-v8a-release.apk`, `app-armeabi-v7a-release.apk`, `app-x86_64-release.apk` and `app-release.apk` (universal). Android downloads and Obtainium setup are offered only when all three Android variables are set; a value that is set but invalid stops the server at startup. Without them the Mobile applications and Obtainium setup pages say that no signed release is available. Include `{version}` in the folder so Obtainium recognises each new release.
+
+## Help links
+
+| Variable                    | Description                                                       | Default | Containers | Workers |
+| :-------------------------- | :---------------------------------------------------------------- | :-----: | :--------- | :------ |
+| `FRAMELEAF_DOCS_URL`        | https address of this installation's documentation.<sup>\*1</sup> |         | server     | api     |
+| `FRAMELEAF_SUPPORT_URL`     | https address where people get help with this installation.       |         | server     | api     |
+| `FRAMELEAF_BUG_FEATURE_URL` | https address for reporting problems and requesting features.     |         | server     | api     |
+| `FRAMELEAF_SOURCE_URL`      | https address of the source code this installation runs.          |         | server     | api     |
+
+\*1: Help, settings and sign-in pages link to these addresses only when they are set; nothing falls back to another project's sites. A value that is not an https address, or that carries a user name or password, stops the server at startup. The older `IMMICH_THIRD_PARTY_DOCUMENTATION_URL`, `IMMICH_THIRD_PARTY_SUPPORT_URL`, `IMMICH_THIRD_PARTY_BUG_FEATURE_URL` and `IMMICH_THIRD_PARTY_SOURCE_URL` still work when the Frameleaf variable is not set, but only an https value is used.
 
 ## Workers
 

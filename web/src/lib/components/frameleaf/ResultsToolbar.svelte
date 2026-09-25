@@ -19,7 +19,8 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
   import { activeFilterFields, withoutDiscoveryFilters } from '$lib/components/discovery/query';
-  import { describeFilterFields } from '$lib/frameleaf/library-filters';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { describeFilterFields, filterFieldEntityIds } from '$lib/frameleaf/library-filters';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibrarySort } from '$lib/frameleaf/library-session';
   import {
@@ -28,6 +29,7 @@
     requestFilterPanelClose,
     type FilterPanelState,
   } from '$lib/frameleaf/search-shortcuts';
+  import { getPerson, type PersonResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
@@ -44,6 +46,7 @@
     mdiTuneVariant,
     mdiViewGridOutline,
   } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
   type Props = {
@@ -65,6 +68,12 @@
      * source cannot order by are shown but not offered. Undefined draws no Sort control.
      */
     sorts?: readonly LibrarySort[];
+    /**
+     * The sort shown and a handler for a new one, where the page keeps its own (an album's personal
+     * viewing sort, FL-31); by default the session's sort.
+     */
+    sort?: LibrarySort;
+    onSortChange?: (sort: LibrarySort) => void;
     /**
      * Conditions the page's grid does not apply (and `text` for a search it cannot run). They get no
      * chip and no count here: a library page shows only what narrows its grid (review M3).
@@ -89,6 +98,8 @@
     inspectorOpen,
     onToggleInspector,
     sorts,
+    sort,
+    onSortChange,
     unappliedFields = [],
     view,
     onViewChange,
@@ -144,6 +155,55 @@
     ),
   );
   const chips = $derived(describeFilterFields(session.query, appliedFields));
+
+  /**
+   * FL-29: a people chip carries the person's real face (`App.jsx` chips, `SearchChip` in the palette),
+   * with private-evidence handling. Only a single named, visible person is drawn, read through the
+   * authorized person endpoint (a person the session may not see answers 403 and draws nothing); a
+   * hidden person, a face whose thumbnail stops loading, and every face after a lock, a PIN reset or
+   * an account change are dropped at once and never drawn from an earlier answer.
+   */
+  let chipFaces = $state<Record<string, PersonResponseDto | null>>({});
+  const asked = new Set<string>();
+  let faceGeneration = 0;
+  const chipPersonId = (field: string) => {
+    const ids = field === 'personIds' ? filterFieldEntityIds(session.query, field) : null;
+    return ids?.length === 1 ? ids[0] : null;
+  };
+  $effect(() => {
+    const id = chips.some((chip) => chip.field === 'personIds' && !chip.negated) ? chipPersonId('personIds') : null;
+    if (!id || asked.has(id)) {
+      return;
+    }
+    asked.add(id);
+    const generation = faceGeneration;
+    void getPerson({ id })
+      .then((person) => {
+        if (generation === faceGeneration && !person.isHidden) {
+          chipFaces = { ...chipFaces, [id]: person };
+        }
+      })
+      .catch(() => {
+        // Not readable to this session: the chip keeps its name only.
+      });
+  });
+  const faceFor = (chip: (typeof chips)[number]) => {
+    const id = chip.field === 'personIds' && !chip.negated ? chipPersonId(chip.field) : null;
+    return id ? (chipFaces[id] ?? undefined) : undefined;
+  };
+  const dropFace = (chip: (typeof chips)[number]) => {
+    const id = chipPersonId(chip.field);
+    if (id) {
+      chipFaces = { ...chipFaces, [id]: null };
+    }
+  };
+  onDestroy(
+    onLibraryAccessChange(() => {
+      faceGeneration++;
+      asked.clear();
+      chipFaces = {};
+    }),
+  );
 
   const closeMenu = (focus = true) => {
     menuOpen = false;
@@ -258,6 +318,8 @@
         {#each chips as chip (chip.field)}
           <FilterChip
             label={chipLabel(chip)}
+            person={faceFor(chip)}
+            onUnavailable={() => dropFace(chip)}
             removeLabel={$t('frameleaf_library_remove_filter', { values: { name: chipLabel(chip) } })}
             onOpen={() => openFilters(session.sectionForField(chip.field))}
             onRemove={() => session.removeFilter(chip.field)}
@@ -360,8 +422,15 @@
         <Icon icon={mdiSort} size="16" aria-hidden />
         <select
           aria-label={$t('frameleaf_library_sort')}
-          value={session.state.sort}
-          onchange={(event) => session.patchView({ sort: event.currentTarget.value as LibrarySort })}
+          value={sort ?? session.state.sort}
+          onchange={(event) => {
+            const value = event.currentTarget.value as LibrarySort;
+            if (onSortChange) {
+              onSortChange(value);
+            } else {
+              session.patchView({ sort: value });
+            }
+          }}
         >
           {#each SORT_OPTIONS as option (option.value)}
             <!-- A sort this view's source cannot apply is listed, not offered. -->

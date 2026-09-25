@@ -69,14 +69,13 @@ import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
 /**
- * Whether a slideshow may play from this item: never from a Locked item, and on a shared link only
- * when the link allows downloads (FL-83). The More menu, the shared link's bar and the viewer footer
- * (V-13) all read this one rule.
+ * Whether a slideshow may play from this item: never from a Locked item. The More menu, the shared
+ * link's bar and the viewer footer (V-13) all read this one rule. FL-56 (AL-37): a slideshow shows
+ * only the previews a shared link already shows, so it no longer depends on the link allowing
+ * downloads (FL-56 acceptance: the public viewer keeps its slideshow).
  */
-export const canPlaySlideshow = (
-  asset: Pick<AssetResponseDto, 'visibility'>,
-  sharedLink: { allowDownload: boolean } | undefined = getSharedLink(),
-): boolean => asset.visibility !== AssetVisibility.Locked && (!sharedLink || sharedLink.allowDownload);
+export const canPlaySlideshow = (asset: Pick<AssetResponseDto, 'visibility'>): boolean =>
+  asset.visibility !== AssetVisibility.Locked;
 
 export const getAssetActions = (
   $t: MessageFormatter,
@@ -151,7 +150,7 @@ export const getAssetActions = (
   const PlaySlideshow: ActionItem = {
     title: $t('frameleaf_viewer_play_slideshow'),
     icon: mdiPresentationPlay,
-    $if: () => canPlaySlideshow(asset, sharedLink),
+    $if: () => canPlaySlideshow(asset),
     onAction: () => slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow),
   };
 

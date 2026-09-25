@@ -369,6 +369,43 @@ describe(`/oauth`, () => {
     });
   });
 
+  describe('POST /oauth/link', () => {
+    beforeAll(async () => {
+      await setupOAuth(admin.accessToken, {
+        enabled: true,
+        clientId: OAuthClient.DEFAULT,
+        clientSecret: OAuthClient.DEFAULT,
+        autoRegister: true,
+        buttonText: 'Login with Immich',
+      });
+    });
+
+    // FL-67: a sign-in provider account already linked to someone else cannot be linked again, and
+    // the refused link leaves the signed-in account unlinked
+    it('should refuse to link an OAuth account that is linked to another user', async () => {
+      const owner = await request(app)
+        .post('/oauth/callback')
+        .send(await loginWithOAuth('oauth-link-taken'));
+      expect(owner.status).toBe(201);
+
+      const other = await utils.userSetup(admin.accessToken, {
+        name: 'OAuth Link Other',
+        email: 'oauth-link-other@immich.app',
+        password: 'password',
+      });
+
+      const { status, body } = await request(app)
+        .post('/oauth/link')
+        .set('Authorization', `Bearer ${other.accessToken}`)
+        .send(await loginWithOAuth('oauth-link-taken'));
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('This OAuth account has already been linked to another user.'));
+
+      const me = await getMyUser({ headers: asBearerAuth(other.accessToken) });
+      expect(me.oauthId).toBe('');
+    });
+  });
+
   describe(`POST /oauth/backchannel-logout`, () => {
     it(`should throw an error if an invalid logout token is provided`, async () => {
       const { status, body } = await request(app)
@@ -470,6 +507,50 @@ describe(`/oauth`, () => {
         userEmail: 'oauth-mobile-override@immich.app',
         userId: expect.any(String),
       });
+    });
+  });
+
+  // FL-131: the Immich app and the Frameleaf app share one OAuth configuration whose mobile redirect
+  // override is this server's own /api/oauth/mobile-redirect; each app gets its own callback back.
+  describe('Frameleaf and Immich mobile callbacks coexist', () => {
+    const serverMobileRedirect = `${app}/oauth/mobile-redirect`;
+
+    beforeAll(async () => {
+      await setupOAuth(admin.accessToken, {
+        enabled: true,
+        clientId: OAuthClient.DEFAULT,
+        clientSecret: OAuthClient.DEFAULT,
+        buttonText: 'Login with Immich',
+        mobileOverrideEnabled: true,
+        mobileRedirectUri: serverMobileRedirect,
+      });
+    });
+
+    it('should give each app its own redirect_uri in the same configuration', async () => {
+      const immich = await request(app).post('/oauth/authorize').send({ redirectUri: 'app.immich:///oauth-callback' });
+      const frameleaf = await request(app)
+        .post('/oauth/authorize')
+        .send({ redirectUri: 'frameleaf-auth:///oauth-callback' });
+      expect(immich.status).toBe(201);
+      expect(frameleaf.status).toBe(201);
+
+      const immichRedirect = new URL(immich.body.url).searchParams.get('redirect_uri');
+      const frameleafRedirect = new URL(frameleaf.body.url).searchParams.get('redirect_uri');
+      expect(immichRedirect).toBe(serverMobileRedirect);
+      expect(frameleafRedirect).toBe(`${app}/oauth/frameleaf-mobile-redirect`);
+      expect(frameleafRedirect).not.toBe(immichRedirect);
+    });
+
+    it('should forward the Frameleaf callback to the Frameleaf app only', async () => {
+      const { status, headers } = await request(app).get('/oauth/frameleaf-mobile-redirect?code=x&state=y');
+      expect(status).toBe(307);
+      expect(headers.location).toBe('frameleaf-auth:///oauth-callback?code=x&state=y');
+    });
+
+    it('should forward the Immich callback to the Immich app only', async () => {
+      const { status, headers } = await request(app).get('/oauth/mobile-redirect?code=x&state=y');
+      expect(status).toBe(307);
+      expect(headers.location).toBe('app.immich:///oauth-callback?code=x&state=y');
     });
   });
 

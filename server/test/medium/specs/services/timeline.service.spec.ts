@@ -139,6 +139,7 @@ describe(TimelineService.name, () => {
         visibility: [],
         isFavorite: [],
         isImage: [],
+        isOffline: [],
         isTrashed: [],
         livePhotoVideoId: [],
         fileCreatedAt: [],
@@ -152,6 +153,27 @@ describe(TimelineService.name, () => {
         thumbhash: [],
         width: [],
       });
+    });
+
+    it('should say which assets are offline (FL-33)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: offline } = await ctx.newAsset({
+        ownerId: user.id,
+        isOffline: true,
+        fileCreatedAt: new Date('1970-02-13'),
+        localDateTime: new Date('1970-02-13'),
+      });
+      const { asset: online } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('1970-02-12'),
+        localDateTime: new Date('1970-02-12'),
+      });
+      await ctx.newExif({ assetId: offline.id, make: 'Canon' });
+      await ctx.newExif({ assetId: online.id, make: 'Canon' });
+      const auth = factory.auth({ user: { id: user.id } });
+      const response = JSON.parse(await sut.getTimeBucket(auth, { timeBucket: '1970-02-01' }));
+      expect(response).toEqual(expect.objectContaining({ id: [offline.id, online.id], isOffline: [true, false] }));
     });
 
     it('should return the exif rating for each asset (FL-33)', async () => {

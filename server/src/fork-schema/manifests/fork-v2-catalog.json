@@ -1153,6 +1153,46 @@
       "identity": "immich_fork.icloud_run.status"
     },
     {
+      "definition": "uuid[]|nullable|||",
+      "identity": "immich_fork.memory_curation.assetOrder"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.memory_curation.hiddenAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.memory_curation.memoryId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.memory_curation.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.memory_curation.title"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.memory_curation.updatedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.memory_show_less.createdAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.memory_show_less.kind"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.memory_show_less.userId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.memory_show_less.value"
+    },
+    {
       "definition": "timestamp with time zone|nullable|||",
       "identity": "immich_fork.migration_audit.completedAt"
     },
@@ -7047,6 +7087,26 @@
       "identity": "immich_fork.icloud_run.icloud_run_pkey"
     },
     {
+      "definition": "PRIMARY KEY (\"memoryId\")",
+      "identity": "immich_fork.memory_curation.memory_curation_pkey"
+    },
+    {
+      "definition": "CHECK (title IS NULL OR char_length(title) >= 1 AND char_length(title) <= 200)",
+      "identity": "immich_fork.memory_curation.memory_curation_title_check"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['person'::text, 'pet'::text, 'date'::text, 'type'::text]))",
+      "identity": "immich_fork.memory_show_less.memory_show_less_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"userId\", kind, value)",
+      "identity": "immich_fork.memory_show_less.memory_show_less_pkey"
+    },
+    {
+      "definition": "CHECK (char_length(value) >= 1 AND char_length(value) <= 64)",
+      "identity": "immich_fork.memory_show_less.memory_show_less_value_check"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.migration_audit.migration_audit_pkey"
     },
@@ -8850,7 +8910,9 @@
     "0000000000170-MlWorkloadAccountingJobIndex",
     "0000000000171-UserPreferenceHistory",
     "0000000000175-FaceCorrectionHistory",
-    "0000000000176-PetObservationSourceAndRecognitionRuns"
+    "0000000000176-PetObservationSourceAndRecognitionRuns",
+    "0000000000187-MemoryCuration",
+    "0000000000188-MemoryShowLess"
   ],
   "functions": [
     {
@@ -10238,6 +10300,18 @@
     {
       "definition": "CREATE UNIQUE INDEX icloud_run_pkey ON immich_fork.icloud_run USING btree (id)",
       "identity": "immich_fork.icloud_run.icloud_run_pkey"
+    },
+    {
+      "definition": "CREATE INDEX memory_curation_owner_idx ON immich_fork.memory_curation USING btree (\"ownerId\")",
+      "identity": "immich_fork.memory_curation.memory_curation_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX memory_curation_pkey ON immich_fork.memory_curation USING btree (\"memoryId\")",
+      "identity": "immich_fork.memory_curation.memory_curation_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX memory_show_less_pkey ON immich_fork.memory_show_less USING btree (\"userId\", kind, value)",
+      "identity": "immich_fork.memory_show_less.memory_show_less_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX migration_audit_pkey ON immich_fork.migration_audit USING btree (id)",
@@ -12693,6 +12767,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.icloud_run"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.memory_curation"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.memory_show_less"
     },
     {
       "definition": "table",

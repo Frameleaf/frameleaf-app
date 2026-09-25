@@ -35,6 +35,8 @@ export type TimelineAsset = {
   lockReason?: AssetLockReason | null;
   isFavorite: boolean;
   isTrashed: boolean;
+  /** The file is missing from its external library (FL-33 tile badge); absent where unknown. */
+  isOffline?: boolean;
   isVideo: boolean;
   isImage: boolean;
   stack: AssetStackResponseDto | null;

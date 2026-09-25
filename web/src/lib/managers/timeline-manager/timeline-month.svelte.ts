@@ -434,6 +434,7 @@ export function* bucketTimelineAssets(bucketAssets: TimeBucketAssetResponseDto):
       thumbhash: bucketAssets.thumbhash[i],
       people: null, // People are not included in the bucket assets
       rating: bucketAssets.rating?.[i] ?? null,
+      isOffline: bucketAssets.isOffline?.[i] ?? false,
       originalFileName: bucketAssets.originalFileName?.[i] ?? null,
     };
 

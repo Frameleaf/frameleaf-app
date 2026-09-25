@@ -8,8 +8,8 @@ Read the [implementation plan](00-implementation-plan.md), [agent execution guid
 
 ## Authoritative records
 
-- `backlog.json` is the only executable local dependency graph: **142 items**, comprising **24 epics** and **118 stories**, with **408 declared dependency edges**.
-- `jira-map.json` maps every Plan ID to one canonical Jira ID, key, and URL. Its **275 Blocks links** are the transitive reduction of the declared graph; the reduction preserves reachability but never removes a prerequisite from the backlog.
+- `backlog.json` is the only executable local dependency graph: **162 items**, comprising **28 epics** and **134 stories**, with **434 declared dependency edges**.
+- `jira-map.json` maps every Plan ID to one canonical Jira ID, key, and URL. Its **298 Blocks links** are the transitive reduction of the declared graph; the reduction preserves reachability but never removes a prerequisite from the backlog.
 - `delivery-backlog-evidence.json` is a dated read-only observation of live Jira identities, statuses, and link counts. Its structured query receipts and normalized snapshot digest make the observation reviewable; it is deliberately not an execution-status database.
 - Jira remains authoritative for current workflow state. Re-read an issue immediately before dispatch; a dated snapshot can become stale.
 
@@ -17,12 +17,14 @@ Run `node scripts/frameleaf-delivery-backlog-contracts.mjs` before relying on th
 
 ## Reviewed checkpoint
 
-The evidence snapshot was read from live Jira on 2026-09-20. It observed:
+The evidence snapshot was read from live Jira on 2026-09-25 (after the `cloud` workstream was registered). It observed:
 
-- 140 issues in **To Do**;
-- `FL-25` / `FN-101` in **In Progress**;
-- `FL-118` / `REL-201` in **Done**;
-- 275 live Blocks links matching the canonical transitive reduction.
+- 79 issues in **To Do**;
+- 54 issues in **In Progress**, including `FL-153` / `CLD-000` (this registration);
+- 29 issues in **Done**, including `FL-25` / `FN-101` and `FL-118` / `REL-201`;
+- 298 live Blocks links matching the canonical transitive reduction.
+
+The earlier checkpoint of 2026-09-20 (140 To Do, `FL-25` In Progress, `FL-118` Done, 275 links) remains in history; the workstream `cloud` (Plan IDs `CLD-*`, Jira FL-149 to FL-168) was added on 2026-09-25 with its own guide, `15-frameleaf-cloud-integration.md`.
 
 Workflow status is not technical acceptance. `REL-201` is locally recorded as `delivered-with-open-qualification-gaps`; every other backlog item remains `planned-not-qualified`. Its exact exception receipt retains its `FN-101` dependency and separately enumerates administrator-review bypass, merge-committer identity, GHCR visibility, and runtime/application qualification gaps. No item is `qualified`, `released`, or `deployed` by this contract.
 
