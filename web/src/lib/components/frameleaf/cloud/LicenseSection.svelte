@@ -48,13 +48,15 @@
   const serverLicensed = $derived(!!key && (key.state === 'active' || key.state === 'grace'));
   // FL-156: a key for one person (the administrator's own) is an individual licence, shown as
   // Licensed as in the prototype (frameleaf-cloud-data.mjs:579-592)
-  const personal = $derived(serverLicensed ? null : (authManager.user.license ?? null));
+  const personal = $derived(authManager.user.license ?? null);
   const licensed = $derived(serverLicensed || !!personal);
   const pct = `${Math.round(LICENSED_DISCOUNT * 100)}%`;
 
   let keyValue = $state('');
   let keyCheck = $state<ProductKeyCheck | null>(null);
-  let removing = $state(false);
+  /** Which key the Remove dialog is about: this server's key or the administrator's own. */
+  let removingKey = $state<'server' | 'personal' | null>(null);
+  const removing = $derived(removingKey !== null);
   let busy = $state(false);
   let notice = $state('');
   let failure = $state('');
@@ -173,11 +175,13 @@
 
     <CloudCard
       icon={mdiCertificateOutline}
-      title={licensed
-        ? personal || key?.kind === 'individual'
+      title={serverLicensed
+        ? key?.kind === 'individual'
           ? $t('frameleaf_license_individual')
           : $t('frameleaf_license_server')
-        : $t('frameleaf_license_not_licensed_title')}
+        : personal
+          ? $t('frameleaf_license_individual')
+          : $t('frameleaf_license_not_licensed_title')}
       description={licensed
         ? $t('frameleaf_license_licensed_description')
         : $t('frameleaf_license_not_licensed_description')}
@@ -231,8 +235,9 @@
           <dt>{$t('frameleaf_license_last_checked')}</dt>
           <dd>{formatWhen(key.refreshedAt ?? key.activatedAt)}</dd>
         </dl>
-      {:else if personal}
-        <dl class="fc-facts">
+      {/if}
+      {#if personal}
+        <dl class="fc-facts" aria-label={$t('frameleaf_license_personal_facts')}>
           <dt>{$t('frameleaf_license_key')}</dt>
           <dd>•••• {personal.keyHint}</dd>
           <dt>{$t('frameleaf_license_type')}</dt>
@@ -273,10 +278,16 @@
             {$t('frameleaf_license_refresh')}
           </Button>
         {/if}
-        {#if key || personal}
-          <Button onclick={() => (removing = true)}>
+        {#if key}
+          <Button onclick={() => (removingKey = 'server')}>
             <Icon icon={mdiDeleteOutline} size="18" />
             {$t('frameleaf_license_remove_action')}
+          </Button>
+        {/if}
+        {#if personal}
+          <Button onclick={() => (removingKey = 'personal')}>
+            <Icon icon={mdiDeleteOutline} size="18" />
+            {$t('frameleaf_license_remove_personal_action')}
           </Button>
         {/if}
         <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-plan')}>
@@ -369,24 +380,28 @@
   {/if}
 </div>
 
-<Dialog bind:open={removing} title={$t('frameleaf_license_remove_title')} closeLabel={$t('close')}>
+<Dialog
+  bind:open={() => removing, (open) => (removingKey = open ? removingKey : null)}
+  title={$t('frameleaf_license_remove_title')}
+  closeLabel={$t('close')}
+>
   <p>{$t('frameleaf_license_remove_body')}</p>
   {#snippet actions()}
-    <Button onclick={() => (removing = false)}>{$t('frameleaf_cloud_cancel')}</Button>
+    <Button onclick={() => (removingKey = null)}>{$t('frameleaf_cloud_cancel')}</Button>
     <Button
       variant="danger"
       disabled={busy}
       onclick={async () => {
         // a server key is removed from the server; a key for one person through the personal endpoint
         const removed =
-          !key && personal
+          removingKey === 'personal'
             ? await act(async () => {
                 await deleteUserLicense();
                 authManager.setUser(await getMyUser());
               }, $t('frameleaf_license_personal_removed_notice'))
             : await act(() => cloudManager.removeLicenseKey(), $t('frameleaf_license_removed_notice'));
         if (removed) {
-          removing = false;
+          removingKey = null;
         }
       }}
     >
