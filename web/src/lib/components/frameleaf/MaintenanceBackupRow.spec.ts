@@ -119,6 +119,33 @@ describe('MaintenanceBackupRow', () => {
     );
   });
 
+  it('says an older backup is migrated, and keeps Restore disabled for a backup from a newer server (FL-81)', async () => {
+    const { unmount } = renderWithTooltips(MaintenanceBackupRow, {
+      expectedVersion: '1.2.3',
+      filename: 'immich-db-backup-20260324T110000-v1.2.2-pg14.sql.gz',
+      filesize: 1024,
+      timezone: 'UTC',
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    expect(screen.getByText(/^This backup is from v1\.2\.2\. This server runs v1\.2\.3/)).toBeInTheDocument();
+    unmount();
+
+    renderWithTooltips(MaintenanceBackupRow, {
+      expectedVersion: '1.2.3',
+      filename: 'immich-db-backup-20260324T110000-v1.3.0-pg14.sql.gz',
+      filesize: 1024,
+      timezone: 'UTC',
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('This backup was made by a newer server (v1.3.0)');
+
+    await fireEvent.input(screen.getByLabelText('Type RESTORE to confirm'), { target: { value: 'RESTORE' } });
+    const confirmButton = screen.getByRole('button', { name: 'Restore backup' });
+    expect(confirmButton).toBeDisabled();
+    await fireEvent.click(confirmButton);
+    expect(restoreDatabaseBackup).not.toHaveBeenCalled();
+  });
+
   it('shows the prototype row actions and confirms a delete through the Frameleaf dialog', async () => {
     renderWithTooltips(MaintenanceBackupRow, {
       expectedVersion: '1.2.3',

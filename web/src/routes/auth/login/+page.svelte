@@ -9,6 +9,7 @@
     clearOAuthContinue,
     getOAuthContinue,
     rememberMePreference,
+    restoreOAuthRequest,
     setOAuthContinue,
     setRememberMePreference,
   } from '$lib/frameleaf/auth-session-preference';
@@ -47,6 +48,10 @@
   const onOnboarding = () => goto(Route.onboarding());
 
   onMount(async () => {
+    if (oauth.isCallback(location)) {
+      // FL-80: a callback that lands in another tab takes the choices its sign-in started with
+      restoreOAuthRequest(location.href);
+    }
     rememberMe = rememberMePreference();
     if (!publicConfig.oauth.enabled) {
       oauthLoading = false;

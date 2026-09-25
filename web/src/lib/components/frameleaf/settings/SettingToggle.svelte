@@ -15,6 +15,8 @@
     disabled?: boolean;
     isEdited?: boolean;
     onToggle?: (isChecked: boolean) => void;
+    /** A row the server's policy fixes (the template's locked field, `CommandCenter.jsx:1632-1636`). */
+    policy?: string;
     children?: Snippet;
   }
 
@@ -25,6 +27,7 @@
     disabled = false,
     isEdited = false,
     onToggle = () => {},
+    policy,
     children,
   }: Props = $props();
 
@@ -45,6 +48,9 @@
       <p id={subtitleId}>{subtitle}</p>
     {/if}
     {@render children?.()}
+    {#if policy}
+      <small class="locked">{policy}</small>
+    {/if}
   </div>
   <div class="control">
     <Toggle
@@ -76,6 +82,13 @@
     margin-inline-start: -12px;
     padding-inline-start: 12px;
     box-shadow: inset 3px 0 var(--fl-warning);
+  }
+  /* command-center.css `.cc-locked` */
+  .locked {
+    display: block;
+    margin-top: 8px;
+    color: var(--fl-muted);
+    font-size: 10px;
   }
   .copy {
     flex: 1;

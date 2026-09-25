@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { JobStatus } from 'src/enum.js';
+import { AssetVisibility, JobStatus } from 'src/enum.js';
 import { TagService } from 'src/services/tag.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { tagResponseStub, tagStub } from 'test/fixtures/tag.stub.js';
@@ -31,6 +31,61 @@ describe(TagService.name, () => {
       mocks.tag.getAll.mockResolvedValue([tagStub.tag]);
       await expect(sut.getAll({ ...authStub.admin, hideNsfwAssets: true })).resolves.toEqual([tagResponseStub.tag1]);
       expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, { excludeNsfw: true });
+    });
+  });
+
+  describe('getStatistics (FL-46)', () => {
+    it("should count the owner's Timeline items per tag, with and without subtags", async () => {
+      mocks.search.searchTagStatistics.mockResolvedValue([
+        { tagId: 'tag-1', count: 1, total: 3 },
+        { tagId: 'tag-2', count: 2, total: 2 },
+      ]);
+
+      await expect(sut.getStatistics(authStub.admin)).resolves.toEqual([
+        { id: 'tag-1', count: 1, total: 3 },
+        { id: 'tag-2', count: 2, total: 2 },
+      ]);
+      expect(mocks.search.searchTagStatistics).toHaveBeenCalledWith(
+        {
+          visibility: AssetVisibility.Timeline,
+          lockedOwnerId: undefined,
+          hideLockedMotion: true,
+          userIds: [authStub.admin.user.id],
+          viewingUserId: authStub.admin.user.id,
+        },
+        { viewerId: authStub.admin.user.id, suppressedTagIds: [] },
+      );
+    });
+
+    it('should keep Timeline visibility (never Locked) even for an unlocked session', async () => {
+      mocks.search.searchTagStatistics.mockResolvedValue([]);
+      const elevated = { ...authStub.admin, session: { id: 'session-1', hasElevatedPermission: true } };
+
+      await sut.getStatistics(elevated as typeof authStub.admin);
+
+      expect(mocks.search.searchTagStatistics).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: AssetVisibility.Timeline, lockedOwnerId: authStub.admin.user.id }),
+        expect.anything(),
+      );
+    });
+
+    it('should leave hidden items and suppressed tags out while the session is locked', async () => {
+      mocks.search.searchTagStatistics.mockResolvedValue([]);
+      const hiddenContent = {
+        userId: authStub.admin.user.id,
+        includeNsfw: false,
+        tagIds: ['tag-private'],
+        personIds: [],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+
+      await sut.getStatistics({ ...authStub.admin, hiddenContent });
+
+      expect(mocks.search.searchTagStatistics).toHaveBeenCalledWith(expect.objectContaining({ hiddenContent }), {
+        viewerId: authStub.admin.user.id,
+        suppressedTagIds: ['tag-private'],
+      });
     });
   });
 

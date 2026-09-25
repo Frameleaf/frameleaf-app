@@ -11,8 +11,14 @@ const UpdateAssetBaseSchema = z
     isFavorite: z.boolean().optional().describe('Mark as favorite'),
     visibility: AssetVisibilitySchema.optional(),
     dateTimeOriginal: z.string().optional().describe('Original date and time'),
-    latitude: latitudeSchema.optional().describe('Latitude coordinate'),
-    longitude: longitudeSchema.optional().describe('Longitude coordinate'),
+    latitude: latitudeSchema
+      .nullable()
+      .optional()
+      .describe('Latitude coordinate; null together with a null longitude removes the location'),
+    longitude: longitudeSchema
+      .nullable()
+      .optional()
+      .describe('Longitude coordinate; null together with a null latitude removes the location'),
     rating: z
       .int()
       .min(-1)
@@ -34,8 +40,9 @@ const UpdateAssetBaseSchema = z
   .refine(
     (data) =>
       (data.latitude === undefined && data.longitude === undefined) ||
-      (data.latitude !== undefined && data.longitude !== undefined),
-    { message: 'Latitude and longitude must be provided together' },
+      (data.latitude === null && data.longitude === null) ||
+      (typeof data.latitude === 'number' && typeof data.longitude === 'number'),
+    { message: 'Latitude and longitude must be provided together, both as numbers or both as null' },
   );
 
 const AssetBulkUpdateBaseSchema = UpdateAssetBaseSchema.extend({

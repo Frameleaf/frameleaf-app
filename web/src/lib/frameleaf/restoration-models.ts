@@ -10,7 +10,9 @@ import {
   MlWorkload,
   RestorationModelState,
   type MlDestinationResponseDto,
+  type RestorationGpuDto,
   type RestorationMeasuredThroughputDto,
+  type RestorationModelCapabilityDto,
 } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
 
@@ -83,4 +85,20 @@ export const measurementValues = (measurement: RestorationMeasuredThroughputDto)
   gpu: measurement.gpu,
   fps: Math.round(measurement.framesPerSecond * 100) / 100,
   memory: Math.round((measurement.peakVramBytes / 1024 ** 3) * 10) / 10,
+});
+
+/** FL-110: a worker GPU as the admin reads it — name, memory in GiB (1024³ bytes) and driver. */
+export const gpuValues = (gpu: RestorationGpuDto) => ({
+  name: gpu.name,
+  memory: Math.round((gpu.memoryTotalBytes / 1024 ** 3) * 10) / 10,
+  driver: gpu.driverVersion,
+});
+
+/** FL-110: the input profile a model is qualified for. */
+export const modelProfileValues = (
+  model: Pick<RestorationModelCapabilityDto, 'maxInputLongEdge' | 'maxFrames' | 'dynamicRanges'>,
+) => ({
+  edge: model.maxInputLongEdge,
+  frames: model.maxFrames,
+  ranges: model.dynamicRanges.map((range) => range.toUpperCase()).join(', '),
 });

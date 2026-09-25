@@ -22,8 +22,10 @@
    *
    * These are a paged ranking rather than a timeline, so the page mounts `ResultsView` — the flat
    * counterpart of the library view — which binds the same session and the same FL-32 selection
-   * bar. The legacy gallery grid and select bar are gone; the ranking score rides on the tile as
-   * its rating, which is what the score was drawn as before.
+   * bar. The legacy gallery grid and select bar are gone. The order is the server's quality ranking
+   * (`GET /best-photos`), never star ratings; each tile shows the item's own star rating like every
+   * other grid (T-6, `AssetTile.jsx:278-291`), so a rating is never presented as the quality score.
+   * With no scored items the page says so rather than falling back to ratings.
    */
   interface Props {
     data: PageData;

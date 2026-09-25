@@ -78,6 +78,8 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000171-UserPreferenceHistory' },
       { name: '0000000000175-FaceCorrectionHistory' },
       { name: '0000000000176-PetObservationSourceAndRecognitionRuns' },
+      { name: '0000000000187-MemoryCuration' },
+      { name: '0000000000188-MemoryShowLess' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

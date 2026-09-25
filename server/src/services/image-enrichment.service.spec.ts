@@ -811,7 +811,10 @@ describe(ImageEnrichmentService.name, () => {
         action: AssetImageEnrichmentAction.MarkSafe,
       });
 
-      expect(mocks.asset.unlock).toHaveBeenCalledWith([assetId], trx);
+      expect(mocks.asset.unlock).toHaveBeenCalledWith([assetId], trx, [
+        AssetLockReason.Marked,
+        AssetLockReason.Detected,
+      ]);
       expect(mocks.asset.lock).not.toHaveBeenCalled();
       // the elevation check reads the group under the transaction's row locks
       expect(mocks.asset.lockGroupMembers).toHaveBeenCalledWith([assetId], trx);

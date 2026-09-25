@@ -72,6 +72,10 @@ const updatedConfig = Object.freeze<SystemConfig>({
     enabled: false,
     masterUserId: null,
   },
+  analytics: {
+    enabled: true,
+    historyDays: 730,
+  },
   localFeatures: {
     askSearch: {
       enabled: true,

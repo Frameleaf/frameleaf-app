@@ -316,6 +316,10 @@ export const adminConfigDefaults = {
     enabled: false,
     masterUserId: null,
   },
+  analytics: {
+    enabled: true,
+    historyDays: 730,
+  },
   localFeatures: {
     askSearch: {
       enabled: true,

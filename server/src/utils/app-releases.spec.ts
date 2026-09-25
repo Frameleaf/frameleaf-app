@@ -1,4 +1,4 @@
-import { apkLinks, normalizeFingerprint, parseAppReleases } from 'src/utils/app-releases.js';
+import { apkLinks, normalizeFingerprint, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 
 const fingerprint = 'ab'.repeat(32);
 
@@ -88,5 +88,58 @@ describe('apkLinks', () => {
 describe('normalizeFingerprint', () => {
   it('accepts separators and case', () => {
     expect(normalizeFingerprint(`${'Ab:'.repeat(31)}ab`)).toBe(`${'AB:'.repeat(31)}AB`);
+  });
+});
+
+describe('Android store listing (FL-135)', () => {
+  it('reads an https store page and refuses anything else', () => {
+    expect(parseAppReleases({ FRAMELEAF_ANDROID_STORE_URL: 'https://f-droid.example/app/' })).toEqual({
+      androidStoreUrl: 'https://f-droid.example/app',
+    });
+    // eslint-disable-next-line unicorn/prefer-https -- an insecure address must be refused
+    expect(() => parseAppReleases({ FRAMELEAF_ANDROID_STORE_URL: 'http://play.example/app' })).toThrow(
+      'FRAMELEAF_ANDROID_STORE_URL: must be an https address',
+    );
+  });
+});
+
+describe('parseHelpLinks (FL-135)', () => {
+  it('hides every help link that is not configured, never falling back upstream', () => {
+    expect(parseHelpLinks({})).toEqual({
+      documentationUrl: undefined,
+      supportUrl: undefined,
+      bugFeatureUrl: undefined,
+      sourceUrl: undefined,
+    });
+  });
+
+  it('prefers the Frameleaf names and requires https for them', () => {
+    expect(
+      parseHelpLinks({
+        FRAMELEAF_DOCS_URL: 'https://docs.frameleaf.example/',
+        IMMICH_THIRD_PARTY_DOCUMENTATION_URL: 'https://old.example/docs',
+        FRAMELEAF_SUPPORT_URL: 'https://help.frameleaf.example',
+      }),
+    ).toMatchObject({
+      documentationUrl: 'https://docs.frameleaf.example',
+      supportUrl: 'https://help.frameleaf.example',
+    });
+    // eslint-disable-next-line unicorn/prefer-https -- an insecure address must be refused
+    expect(() => parseHelpLinks({ FRAMELEAF_DOCS_URL: 'http://docs.example' })).toThrow(
+      'FRAMELEAF_DOCS_URL: must be an https address',
+    );
+    expect(() => parseHelpLinks({ FRAMELEAF_SUPPORT_URL: 'https://user:secret@help.example' })).toThrow(
+      'FRAMELEAF_SUPPORT_URL: must not contain credentials',
+    );
+  });
+
+  it('keeps an inherited https link and leaves out one that is not https', () => {
+    expect(
+      parseHelpLinks({
+        IMMICH_THIRD_PARTY_SUPPORT_URL: 'https://support.example',
+        // eslint-disable-next-line unicorn/prefer-https -- an insecure address must be refused
+        IMMICH_THIRD_PARTY_DOCUMENTATION_URL: 'http://docs.example',
+      }),
+    ).toMatchObject({ supportUrl: 'https://support.example', documentationUrl: undefined });
   });
 });
