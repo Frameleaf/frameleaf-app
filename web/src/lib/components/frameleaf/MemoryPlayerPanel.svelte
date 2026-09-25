@@ -503,6 +503,13 @@
     handlePromiseError(handleNavigate(current?.nextHref));
   };
 
+  /** data-initial-focus (MemoryPlayer.jsx:343, 414): the card's main action takes focus when it appears. */
+  const focusOnShow = (button: HTMLButtonElement) => {
+    if (!assetViewerManager.isViewing) {
+      button.focus({ preventScroll: true });
+    }
+  };
+
   function showEndCard() {
     if (!current) {
       return;
@@ -898,7 +905,7 @@
                   <p class="fmp-title-count">
                     {$t('frameleaf_memories_item_count', { values: { count: titleCard.count } })}
                   </p>
-                  <button type="button" class="fmp-play-large" onclick={playFromTitleCard}>
+                  <button type="button" class="fmp-play-large" onclick={playFromTitleCard} {@attach focusOnShow}>
                     <Icon icon={mdiPlay} size="22" aria-hidden="true" />
                     {$t('frameleaf_memories_play')}
                   </button>
@@ -918,13 +925,23 @@
                   />
                 {/if}
                 <div class="fmp-title-copy">
-                  <span class="fmp-overline">{$t('frameleaf_memories_end_overline')}</span>
+                  <span class="fmp-overline">
+                    {titleCard.count > 0
+                      ? $t('frameleaf_memories_end_overline')
+                      : $t('frameleaf_memories_end_overline_empty')}
+                  </span>
                   <h2>{titleCard.title}</h2>
                   {#if titleCard.subtitle}
                     <p>{titleCard.subtitle}</p>
                   {/if}
                   <div class="fmp-end-actions">
-                    <button type="button" class="fmp-play-large" onclick={playAgain}>
+                    <button
+                      type="button"
+                      class="fmp-play-large"
+                      onclick={playAgain}
+                      disabled={titleCard.count === 0}
+                      {@attach focusOnShow}
+                    >
                       <Icon icon={mdiRepeat} size="20" aria-hidden="true" />
                       {$t('frameleaf_memories_play_again')}
                     </button>
@@ -1475,6 +1492,10 @@
     border: 0;
     border-radius: var(--fl-radius-pill);
     font-weight: 600;
+  }
+  .fmp-play-large:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   /* memories.css:77-104, 124-133 */
   .fmp-lower-third {
