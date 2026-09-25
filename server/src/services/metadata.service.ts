@@ -9,7 +9,7 @@ import { join, parse } from 'node:path';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { Asset, AssetFile } from 'src/database.js';
+import { Asset, AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AssetFileType,
@@ -526,7 +526,11 @@ export class MetadataService extends BaseService {
       await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
     }
 
-    await this.assetRepository.unlockProperties(asset.id, lockedProperties);
+    // FL-36 (V-24): the sidecar has no place names, so a typed city, state or country stays locked.
+    await this.assetRepository.unlockProperties(
+      asset.id,
+      lockedProperties.filter((property) => !(placeProperties as readonly string[]).includes(property)),
+    );
 
     return JobStatus.Success;
   }

@@ -445,6 +445,50 @@ describe('/asset', () => {
       expect(status).toEqual(200);
     });
 
+    // FL-36 (V-24): a place name typed in the information panel is kept over reverse geocoding.
+    it('should keep a typed place name through metadata extraction', async () => {
+      const { status, body } = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ latitude: 51.1784, longitude: -115.5708, city: ' Banff ', state: '', country: 'Canada' });
+      expect(status).toEqual(200);
+      expect(body).toMatchObject({
+        exifInfo: expect.objectContaining({ city: 'Banff', state: null, country: 'Canada' }),
+      });
+
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+
+      const asset = await getAssetInfo({ id: user1Assets[0].id }, { headers: asBearerAuth(user1.accessToken) });
+      expect(asset.exifInfo).toMatchObject({ city: 'Banff', state: null, country: 'Canada' });
+    });
+
+    it('should let a moved item be named again when no place is typed', async () => {
+      await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ city: 'Typed City' });
+      const { status } = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ latitude: 0, longitude: 0 });
+      expect(status).toEqual(200);
+
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+
+      const asset = await getAssetInfo({ id: user1Assets[0].id }, { headers: asBearerAuth(user1.accessToken) });
+      expect(asset.exifInfo?.city).not.toBe('Typed City');
+    });
+
+    it('should refuse a place name for an item the user cannot change', async () => {
+      const { status } = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user2.accessToken}`)
+        .send({ city: 'Elsewhere' });
+      expect(status).toEqual(400);
+    });
+
     it.skip('should geocode country from gps data in the middle of nowhere', async () => {
       const { status } = await request(app)
         .put(`/assets/${user1Assets[0].id}`)
