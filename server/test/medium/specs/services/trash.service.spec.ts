@@ -464,19 +464,28 @@ describe(TrashService.name, () => {
   });
 
   describe('restore', () => {
-    it('should keep albums, favourites and the archive when restoring', async () => {
+    it('should keep albums, favourites, the archive, tags and source provenance when restoring', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user });
+      const originalPath = own();
       const { asset } = await ctx.newAsset({
         ownerId: user.id,
-        originalPath: own(),
+        originalPath,
+        originalFileName: 'IMG_0001.HEIC',
         isFavorite: true,
         visibility: AssetVisibility.Archive,
         status: AssetStatus.Trashed,
         deletedAt: new Date(),
       });
       const { album } = await ctx.newAlbum({ ownerId: user.id }, [asset.id]);
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'kept' });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [asset.id] });
+      const before = await ctx.database
+        .selectFrom('asset')
+        .select(['originalPath', 'originalFileName', 'checksum', 'libraryId', 'fileCreatedAt'])
+        .where('id', '=', asset.id)
+        .executeTakeFirstOrThrow();
 
       const review = await sut.review(auth, { action: TrashReviewAction.Restore, ids: [asset.id] });
       await expect(
@@ -497,6 +506,18 @@ describe(TrashService.name, () => {
       await expect(
         ctx.database.selectFrom('album_asset').select('assetId').where('albumId', '=', album.id).execute(),
       ).resolves.toEqual([{ assetId: asset.id }]);
+      await expect(
+        ctx.database.selectFrom('tag_asset').select('tagId').where('assetId', '=', asset.id).execute(),
+      ).resolves.toEqual([{ tagId: tag.id }]);
+      // where it came from is untouched: the same original, name, checksum, library and capture date
+      await expect(
+        ctx.database
+          .selectFrom('asset')
+          .select(['originalPath', 'originalFileName', 'checksum', 'libraryId', 'fileCreatedAt'])
+          .where('id', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual(before);
+      expect(before.originalPath).toBe(originalPath);
     });
 
     it('should not report a stale restore', async () => {
