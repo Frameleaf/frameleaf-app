@@ -37,7 +37,8 @@ export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
 /**
  * Why a discovery document must not be used, or null. The token issuer, the API and every regional
  * gateway must be on the configured cloud's host or a subdomain of it, over https unless the
- * configured `FRAMELEAF_CLOUD_URL` is itself http (a development cloud). Otherwise a tampered or
+ * configured `FRAMELEAF_CLOUD_URL` is itself http (a development cloud), on the configured address's
+ * effective port. Otherwise a tampered or
  * misconfigured document could send the signed client assertion or an access token elsewhere.
  */
 export const discoveryProblem = (cloudUrl: string, document: FrameleafDiscoveryDocument): string | null => {
@@ -49,6 +50,8 @@ export const discoveryProblem = (cloudUrl: string, document: FrameleafDiscoveryD
   }
   const host = configured.hostname.toLowerCase();
   const allowHttp = configured.protocol === 'http:';
+  const effectivePort = (url: URL) => url.port || (url.protocol === 'http:' ? '80' : '443');
+  const port = effectivePort(configured);
   const entries: Array<[string, string]> = [
     ['issuer', document.issuer],
     ['api', document.api],
@@ -62,6 +65,9 @@ export const discoveryProblem = (cloudUrl: string, document: FrameleafDiscoveryD
     const candidate = url.hostname.toLowerCase();
     if (candidate !== host && !candidate.endsWith(`.${host}`)) {
       return `discovery ${name} ${value} is not on ${host}`;
+    }
+    if (effectivePort(url) !== port) {
+      return `discovery ${name} ${value} is not on port ${port}`;
     }
     if (url.username || url.password) {
       return `discovery ${name} carries credentials`;
