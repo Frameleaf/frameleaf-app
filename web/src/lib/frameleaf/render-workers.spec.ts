@@ -148,6 +148,7 @@ describe('vocabulary', () => {
     expect(auditEventIsRefusal(RenderWorkerAuditEvent.Refused)).toBe(true);
     expect(auditEventIsRefusal(RenderWorkerAuditEvent.ClaimRefused)).toBe(true);
     expect(auditEventIsRefusal(RenderWorkerAuditEvent.LimitExceeded)).toBe(true);
+    expect(auditEventIsRefusal(RenderWorkerAuditEvent.DeviceLost)).toBe(true);
     expect(auditEventIsRefusal(RenderWorkerAuditEvent.Admitted)).toBe(false);
     expect(auditEventIsRefusal(RenderWorkerAuditEvent.Enrolled)).toBe(false);
   });

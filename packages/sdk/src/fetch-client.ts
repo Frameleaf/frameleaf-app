@@ -6143,6 +6143,8 @@ export type RenderWorkerAdmissionDto = {
     /** Digest of the engine and patches actually loaded */
     engineDigest: string;
     enrolmentSecret: string;
+    /** Containers the check verified writing, such as `mp4`, `webm` or `mov` */
+    formats?: string[];
     /** GPU memory measured by the conformance check */
     gpuMemoryBytes: string | null;
     /** True when the renderer is a software or fallback device */
@@ -8052,6 +8054,23 @@ export type StudioProjectDiffDto = {
     to: number;
     /** More paths changed than are listed */
     truncated: boolean;
+};
+export type StudioWorkspaceDto = {
+    /** The engine revision that wrote the layout */
+    engineRevision: string | null;
+    /** The engine layout, byte for byte; null when none is stored */
+    layout: {
+        [key: string]: any;
+    } | null;
+    savedAt: string | null;
+};
+export type StudioWorkspaceSaveDto = {
+    /** The pinned engine revision writing it */
+    engineRevision: string;
+    /** The engine layout; stored and returned byte for byte */
+    layout: {
+        [key: string]: any;
+    };
 };
 export type SyncAckDeleteDto = {
     /** Sync entity types to delete acks for */
@@ -16572,6 +16591,32 @@ export function restoreStudioProjectFromTrash({ id }: {
     }));
 }
 /**
+ * Get your Studio workspace layout
+ */
+export function getStudioWorkspace(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioWorkspaceDto;
+    }>("/studio/workspace", {
+        ...opts
+    }));
+}
+/**
+ * Save your Studio workspace layout
+ */
+export function saveStudioWorkspace({ studioWorkspaceSaveDto }: {
+    studioWorkspaceSaveDto: StudioWorkspaceSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioWorkspaceDto;
+    }>("/studio/workspace", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: studioWorkspaceSaveDto
+    })));
+}
+/**
  * Delete acknowledgements
  */
 export function deleteSyncAck({ syncAckDeleteDto }: {
@@ -18126,7 +18171,8 @@ export enum RenderWorkerAuditEvent {
     ClaimRefused = "claim_refused",
     LimitExceeded = "limit_exceeded",
     Revoked = "revoked",
-    Updated = "updated"
+    Updated = "updated",
+    DeviceLost = "device_lost"
 }
 export enum RenderWorkerRefusalReason {
     InvalidCredential = "invalid_credential",
@@ -18145,7 +18191,8 @@ export enum RenderWorkerRefusalReason {
     WallClockExceeded = "wall_clock_exceeded",
     OutputBytesExceeded = "output_bytes_exceeded",
     DestinationUnavailable = "destination_unavailable",
-    ManifestIncomplete = "manifest_incomplete"
+    ManifestIncomplete = "manifest_incomplete",
+    CodecUnsupported = "codec_unsupported"
 }
 export enum UserStatus {
     Active = "active",
