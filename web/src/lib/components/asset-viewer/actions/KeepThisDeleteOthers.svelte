@@ -10,12 +10,14 @@
   import type { OnAction } from './action';
 
   interface Props {
+    /** The menu's wording; the viewer's More menu passes the template's label (FL-35, V-11). */
+    text?: string;
     stack: StackResponseDto;
     asset: AssetResponseDto;
     onAction: OnAction;
   }
 
-  let { stack, asset, onAction }: Props = $props();
+  let { stack, asset, onAction, text }: Props = $props();
 
   const handleKeepThisDeleteOthers = async () => {
     const isConfirmed = await modalManager.showDialog({
@@ -35,4 +37,4 @@
   };
 </script>
 
-<MenuOption icon={mdiPinOutline} onClick={handleKeepThisDeleteOthers} text={$t('keep_this_delete_others')} />
+<MenuOption icon={mdiPinOutline} onClick={handleKeepThisDeleteOthers} text={text ?? $t('keep_this_delete_others')} />

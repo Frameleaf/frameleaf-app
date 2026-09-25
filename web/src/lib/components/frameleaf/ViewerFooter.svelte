@@ -100,6 +100,7 @@
       class="fl-tool"
       aria-label={$t('frameleaf_viewer_slideshow_settings')}
       title={$t('frameleaf_viewer_slideshow_settings')}
+      data-slideshow-settings
       aria-expanded={$settingsOpen}
       class:active={$settingsOpen}
       onclick={(event) => slideshowStore.toggleSettings(event.currentTarget)}

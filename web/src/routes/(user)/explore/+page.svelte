@@ -14,6 +14,7 @@
   import { Route } from '$lib/route';
   import { getAssetMediaUrl, memoryLaneTitle } from '$lib/utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
+  import { getNextAsset, getPreviousAsset } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo } from '@immich/sdk';
   import Portal from '$lib/elements/Portal.svelte';
@@ -53,9 +54,27 @@
     assetViewerManager.setAsset(asset);
   };
 
+  /**
+   * V-17: an item opened from "Recent captures" steps through that row, with its filmstrip; anything
+   * else opens on its own. The address carries no item here, so the viewer moves by opening the
+   * neighbour in place.
+   */
+  const recents = $derived(
+    assetViewerManager.asset && data.recentCaptures.some(({ id }) => id === assetViewerManager.asset!.id)
+      ? data.recentCaptures
+      : [],
+  );
   const assetCursor = $derived({
     current: assetViewerManager.asset!,
+    nextAsset: getNextAsset(recents, assetViewerManager.asset),
+    previousAsset: getPreviousAsset(recents, assetViewerManager.asset),
   });
+  const filmstripAssets = $derived(recents.map((asset) => toTimelineAsset(asset)));
+  const openInPlace = async ({ id }: { id: string }) => {
+    assetViewerManager.setAsset(
+      recents.find((asset) => asset.id === id) ?? (await getAssetInfo({ ...authManager.params, id })),
+    );
+  };
 </script>
 
 <OnEvents {onPersonThumbnailReady} />
@@ -80,7 +99,9 @@
     <Portal target="body">
       <AssetViewer
         cursor={assetCursor}
-        showNavigation={false}
+        showNavigation={recents.length > 1}
+        {filmstripAssets}
+        onNavigateToAsset={openInPlace}
         onClose={() => assetViewerManager.showAssetViewer(false)}
         onAssetUpdate={(updatedAsset) => {
           // assetCursor is `$derived` from `assetViewerManager.asset`. Mutating cursor.current

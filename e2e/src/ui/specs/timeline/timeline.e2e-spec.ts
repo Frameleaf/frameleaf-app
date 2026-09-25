@@ -240,7 +240,7 @@ test.describe('Timeline', () => {
         await page.getByLabel('View next asset').click();
         await assetViewerUtils.waitForViewerLoad(page, assets[index]);
       }
-      await page.getByRole('button', { name: /^(Go back|Close viewer \(Escape\))$/ }).click();
+      await page.getByRole('button', { name: /^(Go back|Close viewer)$/ }).click();
       await expect.poll(() => new URL(page.url()).pathname).toBe('/photos');
       await thumbnailUtils.expectInViewport(page, assets[index].id);
       await thumbnailUtils.expectBottomIsTimelineBottom(page, assets[index].id);
@@ -259,7 +259,7 @@ test.describe('Timeline', () => {
         await page.getByLabel('View previous asset').click();
         await assetViewerUtils.waitForViewerLoad(page, assets.at(-1 - back)!);
       }
-      await page.getByRole('button', { name: /^(Go back|Close viewer \(Escape\))$/ }).click();
+      await page.getByRole('button', { name: /^(Go back|Close viewer)$/ }).click();
       await expect.poll(() => new URL(page.url()).pathname).toBe('/photos');
       await thumbnailUtils.expectInViewport(page, assets.at(-1 - back)!.id);
       await thumbnailUtils.expectTopIsTimelineTop(page, assets.at(-1 - back)!.id);
