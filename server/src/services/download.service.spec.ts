@@ -1,10 +1,14 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { vitest } from 'vitest';
 import { DownloadResponseDto } from 'src/dtos/download.dto.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { getForPartner } from 'test/mappers.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 
 const downloadResponse: DownloadResponseDto = {
@@ -27,6 +31,94 @@ describe(DownloadService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DownloadService));
+    mocks.partner.getAll.mockResolvedValue([]);
+  });
+
+  describe('downloadArchive location policy (FL-54)', () => {
+    const newArchive = () => ({ addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable({ read() {} }) });
+
+    it("zips a location-free copy of a hiding partner's files and releases it once the archive ends", async () => {
+      const me = UserFactory.create();
+      const hiding = UserFactory.create();
+      const archiveMock = newArchive();
+      const own = AssetFactory.create({ ownerId: me.id, originalPath: '/library/mine.jpg', originalFileName: 'a.jpg' });
+      const theirs = AssetFactory.create({
+        ownerId: hiding.id,
+        originalPath: '/library/theirs.jpg',
+        originalFileName: 'b.jpg',
+      });
+      const release = vitest.fn();
+
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([own.id]));
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([theirs.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([own, theirs]);
+      mocks.storage.createZipStream.mockReturnValue(archiveMock);
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith(me).build()),
+      ]);
+      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue({ path: '/tmp/copy.jpg', release });
+
+      await sut.downloadArchive(AuthFactory.create(me), { assetIds: [own.id, theirs.id] });
+
+      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledTimes(1);
+      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/library/theirs.jpg');
+      expect(archiveMock.addFile).toHaveBeenNthCalledWith(1, '/library/mine.jpg', 'a.jpg');
+      expect(archiveMock.addFile).toHaveBeenNthCalledWith(2, '/tmp/copy.jpg', 'b.jpg');
+      expect(release).not.toHaveBeenCalled();
+
+      archiveMock.stream.push(null);
+      archiveMock.stream.resume();
+      await vitest.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    });
+
+    it('leaves a file out rather than zip its location when removal fails', async () => {
+      const me = UserFactory.create();
+      const hiding = UserFactory.create();
+      const archiveMock = newArchive();
+      const theirs = AssetFactory.create({ ownerId: hiding.id });
+
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([theirs.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([theirs]);
+      mocks.storage.createZipStream.mockReturnValue(archiveMock);
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith(me).build()),
+      ]);
+      mocks.metadata.acquireLocationFreeOriginal.mockRejectedValue(new Error('exiftool failed'));
+
+      await sut.downloadArchive(AuthFactory.create(me), { assetIds: [theirs.id] });
+
+      expect(archiveMock.addFile).not.toHaveBeenCalled();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(theirs.id));
+    });
+
+    it('zips a partner who may see locations the original bytes', async () => {
+      const me = UserFactory.create();
+      const sharing = UserFactory.create();
+      const archiveMock = newArchive();
+      const theirs = AssetFactory.create({ ownerId: sharing.id });
+
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([theirs.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([theirs]);
+      mocks.storage.createZipStream.mockReturnValue(archiveMock);
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: true }).sharedBy(sharing).sharedWith(me).build()),
+      ]);
+
+      await sut.downloadArchive(AuthFactory.create(me), { assetIds: [theirs.id] });
+
+      expect(archiveMock.addFile).toHaveBeenCalledWith(theirs.originalPath, theirs.originalFileName);
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('refuses an archive through a shared link that hides metadata', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([asset]);
+      const auth = AuthFactory.from().sharedLink({ showExif: false, allowDownload: true }).build();
+
+      await expect(sut.downloadArchive(auth, { assetIds: [asset.id] })).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.storage.createZipStream).not.toHaveBeenCalled();
+    });
   });
 
   describe('downloadArchive', () => {

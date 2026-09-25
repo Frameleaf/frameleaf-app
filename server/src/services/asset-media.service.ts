@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
@@ -38,6 +44,7 @@ import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension }
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { OriginalLocationPolicy, OriginalPurpose, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 
 export interface AssetMediaRedirectResponse {
@@ -285,19 +292,56 @@ export class AssetMediaService extends BaseService {
       dto.edited = true;
     }
 
-    const { originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
+    const { ownerId, originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
       id,
       dto.edited ?? false,
     );
 
     const path = editedPath ?? originalPath!;
 
-    return new ImmichFileResponse({
+    return this.withOriginalLocationPolicy(auth, ownerId, 'download', {
       path,
       fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(path),
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
     });
+  }
+
+  /**
+   * FL-54: a file served as-is carries its embedded EXIF/XMP/QuickTime location. For a partner who may not
+   * see the owner's locations (and for playback through a link that hides metadata) serve a verified
+   * location-free copy instead; when none can be made, refuse rather than send the original bytes. A
+   * link that hides metadata never downloads (AL-27). Every other case is the untouched original.
+   */
+  private async withOriginalLocationPolicy(
+    auth: AuthDto,
+    ownerId: string,
+    purpose: OriginalPurpose,
+    response: ImmichFileResponse,
+  ): Promise<ImmichFileResponse> {
+    const policyFor = await getOriginalLocationPolicies({
+      auth,
+      ownerIds: [ownerId],
+      purpose,
+      repository: this.partnerRepository,
+    });
+
+    switch (policyFor(ownerId)) {
+      case OriginalLocationPolicy.Serve: {
+        return new ImmichFileResponse(response);
+      }
+
+      case OriginalLocationPolicy.Refuse: {
+        throw new ForbiddenException('Downloads are turned off while metadata is hidden');
+      }
+
+      case OriginalLocationPolicy.RemoveLocation: {
+        const lease = await this.metadataRepository.acquireLocationFreeOriginal(response.path).catch(() => {
+          throw new ForbiddenException('The location of this file could not be removed');
+        });
+        return new ImmichFileResponse({ ...response, path: lease.path, release: lease.release });
+      }
+    }
   }
 
   async viewThumbnail(
@@ -373,7 +417,7 @@ export class AssetMediaService extends BaseService {
 
     const filepath = asset.editedVideoPath || asset.encodedVideoPath || asset.originalPath;
 
-    return new ImmichFileResponse({
+    return this.withOriginalLocationPolicy(auth, asset.ownerId, 'playback', {
       path: filepath,
       contentType: mimeTypes.lookup(filepath),
       cacheControl: CacheControl.PrivateWithCache,

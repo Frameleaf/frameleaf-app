@@ -1,11 +1,15 @@
 import { vitest } from 'vitest';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import {
+  OriginalLocationPolicy,
   applyPartnerLocationPolicy,
   getLocationHiddenPartnerIds,
+  getOriginalLocationPolicies,
+  getOriginalLocationPolicy,
   hideAssetLocation,
   hideLocation,
 } from 'src/utils/partner-location.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
 import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { getForPartner } from 'test/mappers.js';
@@ -112,6 +116,110 @@ describe('partner location policy', () => {
       expect(result[2].exifInfo).toEqual(located);
       // input is never mutated
       expect(assets[1].exifInfo.city).toBe('Calgary');
+    });
+  });
+
+  describe(getOriginalLocationPolicy.name, () => {
+    const me = UserFactory.create();
+    const hiding = UserFactory.create();
+    const sharing = UserFactory.create();
+    const locationHiddenOwnerIds = new Set([hiding.id]);
+
+    it('serves the owner their own original untouched', () => {
+      const auth = AuthFactory.create(me);
+      for (const purpose of ['download', 'playback'] as const) {
+        expect(
+          getOriginalLocationPolicy({ auth, ownerId: me.id, locationHiddenOwnerIds: new Set([me.id]), purpose }),
+        ).toBe(OriginalLocationPolicy.Serve);
+      }
+    });
+
+    it('serves a partner who may see locations the original untouched', () => {
+      const auth = AuthFactory.create(me);
+      expect(
+        getOriginalLocationPolicy({ auth, ownerId: sharing.id, locationHiddenOwnerIds, purpose: 'download' }),
+      ).toBe(OriginalLocationPolicy.Serve);
+    });
+
+    it('removes the location for a partner the owner hides locations from', () => {
+      const auth = AuthFactory.create(me);
+      for (const purpose of ['download', 'playback'] as const) {
+        expect(getOriginalLocationPolicy({ auth, ownerId: hiding.id, locationHiddenOwnerIds, purpose })).toBe(
+          OriginalLocationPolicy.RemoveLocation,
+        );
+      }
+    });
+
+    it('serves a shared link that shows metadata untouched', () => {
+      const auth = AuthFactory.from(me).sharedLink({ showExif: true, allowDownload: true }).build();
+      expect(getOriginalLocationPolicy({ auth, ownerId: hiding.id, locationHiddenOwnerIds, purpose: 'download' })).toBe(
+        OriginalLocationPolicy.Serve,
+      );
+    });
+
+    it('refuses downloads through a shared link that hides metadata, even when download is on', () => {
+      const auth = AuthFactory.from(me).sharedLink({ showExif: false, allowDownload: true }).build();
+      expect(getOriginalLocationPolicy({ auth, ownerId: me.id, locationHiddenOwnerIds, purpose: 'download' })).toBe(
+        OriginalLocationPolicy.Refuse,
+      );
+    });
+
+    it('removes the location when a shared link that hides metadata plays an original', () => {
+      const auth = AuthFactory.from(me).sharedLink({ showExif: false }).build();
+      expect(getOriginalLocationPolicy({ auth, ownerId: me.id, locationHiddenOwnerIds, purpose: 'playback' })).toBe(
+        OriginalLocationPolicy.RemoveLocation,
+      );
+    });
+  });
+
+  describe(getOriginalLocationPolicies.name, () => {
+    it('skips the partner lookup when every file belongs to the viewer', async () => {
+      const me = UserFactory.create();
+      const policyFor = await getOriginalLocationPolicies({
+        auth: AuthFactory.create(me),
+        ownerIds: [me.id],
+        purpose: 'download',
+        repository,
+      });
+
+      expect(policyFor(me.id)).toBe(OriginalLocationPolicy.Serve);
+      expect(repository.getAll).not.toHaveBeenCalled();
+    });
+
+    it('skips the partner lookup for a shared link', async () => {
+      const policyFor = await getOriginalLocationPolicies({
+        auth: AuthFactory.from().sharedLink({ showExif: false }).build(),
+        ownerIds: [newUuid()],
+        purpose: 'download',
+        repository,
+      });
+
+      expect(policyFor(newUuid())).toBe(OriginalLocationPolicy.Refuse);
+      expect(repository.getAll).not.toHaveBeenCalled();
+    });
+
+    it("resolves each owner from the viewer's partner settings", async () => {
+      const me = UserFactory.create();
+      const hiding = UserFactory.create();
+      const sharing = UserFactory.create();
+      vitest
+        .mocked(repository.getAll)
+        .mockResolvedValue([
+          getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith(me).build()),
+          getForPartner(PartnerFactory.from({ shareLocation: true }).sharedBy(sharing).sharedWith(me).build()),
+        ]);
+
+      const policyFor = await getOriginalLocationPolicies({
+        auth: AuthFactory.create(me),
+        ownerIds: [me.id, hiding.id, sharing.id],
+        purpose: 'download',
+        repository,
+      });
+
+      expect(policyFor(me.id)).toBe(OriginalLocationPolicy.Serve);
+      expect(policyFor(hiding.id)).toBe(OriginalLocationPolicy.RemoveLocation);
+      expect(policyFor(sharing.id)).toBe(OriginalLocationPolicy.Serve);
+      expect(repository.getAll).toHaveBeenCalledTimes(1);
     });
   });
 });
