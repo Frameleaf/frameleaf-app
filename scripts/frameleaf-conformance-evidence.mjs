@@ -806,7 +806,7 @@ const actions = {
   "grid-list-compare-and-persisted-query-selection-layout": [
     "partial",
     ["T-8", "S-15", "S-17"],
-    "Toolbar count, Slideshow, information toggle, Sort and More library actions are in (S-15, FL-30 library gaps); Grid/List and the filename and rating sorts remain",
+    "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); the Browse/Work grid remains (T-8)",
     { production: [`${W}/lib/components/frameleaf/ResultsToolbar.svelte`] },
   ],
   "jump-scroll-to-time-restore-asset-position": [
