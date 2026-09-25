@@ -398,11 +398,43 @@ export const evaluateRunningLimits = ({
  * A worker proves a family by reporting any encoder whose name carries one of its tokens, so
  * `hevc_nvenc`, `libx265` and `hevc_vaapi` all prove HEVC.
  */
+/**
+ * The ffmpeg *encoder* names that can write each export format. Evidence must name one of them
+ * exactly: a decoder such as `h264_cuvid` or `hevc_qsv`'s decode-only sibling proves nothing about
+ * writing the format, so substring matching is not allowed.
+ */
 const OUTPUT_FORMATS: Readonly<Record<string, { codec: readonly string[]; container: string }>> = {
-  'mp4-hevc-main10': { codec: ['hevc', 'h265', 'x265'], container: 'mp4' },
-  'mp4-h264': { codec: ['h264', 'x264', 'avc'], container: 'mp4' },
-  'webm-av1': { codec: ['av1'], container: 'webm' },
-  'prores-422-hq': { codec: ['prores'], container: 'mov' },
+  'mp4-hevc-main10': {
+    codec: [
+      'libx265',
+      'hevc_nvenc',
+      'hevc_qsv',
+      'hevc_vaapi',
+      'hevc_videotoolbox',
+      'hevc_amf',
+      'hevc_rkmpp',
+      'hevc_v4l2m2m',
+    ],
+    container: 'mp4',
+  },
+  'mp4-h264': {
+    codec: [
+      'libx264',
+      'h264_nvenc',
+      'h264_qsv',
+      'h264_vaapi',
+      'h264_videotoolbox',
+      'h264_amf',
+      'h264_rkmpp',
+      'h264_v4l2m2m',
+    ],
+    container: 'mp4',
+  },
+  'webm-av1': {
+    codec: ['libsvtav1', 'libaom-av1', 'librav1e', 'av1_nvenc', 'av1_qsv', 'av1_vaapi', 'av1_amf'],
+    container: 'webm',
+  },
+  'prores-422-hq': { codec: ['prores_ks', 'prores', 'prores_aw', 'prores_videotoolbox'], container: 'mov' },
 };
 
 export type RequiredOutput = { format: string; codec: readonly string[]; container: string };
@@ -417,7 +449,7 @@ export const requiredOutput = (settings: Record<string, unknown> | undefined): R
   return known ? { format, ...known } : { format, codec: [], container: format };
 };
 
-/** Did the session's evidence prove this encoder family and container? */
+/** Did the session's evidence name one of this format's encoders, exactly, and its container? */
 export const provesOutput = (
   capabilities: { codecs: readonly string[]; formats: readonly string[] } | null,
   output: RequiredOutput,
@@ -425,11 +457,9 @@ export const provesOutput = (
   if (!capabilities || output.codec.length === 0) {
     return false;
   }
-  const codecs = capabilities.codecs.map((codec) => codec.toLowerCase());
+  const codecs = new Set(capabilities.codecs.map((codec) => codec.toLowerCase()));
   const formats = capabilities.formats.map((format) => format.toLowerCase());
-  return (
-    output.codec.some((token) => codecs.some((codec) => codec.includes(token))) && formats.includes(output.container)
-  );
+  return output.codec.some((encoder) => codecs.has(encoder)) && formats.includes(output.container);
 };
 
 const snapshotString = (snapshot: Record<string, unknown>, key: string): string | null => {
