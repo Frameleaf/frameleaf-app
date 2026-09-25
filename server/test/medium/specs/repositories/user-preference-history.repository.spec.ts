@@ -11,6 +11,7 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
+  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 
 const isHistory = (entry: { identity: string }) => entry.identity.startsWith('immich_fork.user_preference_history');
@@ -84,4 +85,29 @@ it('refuses changes that are not a list', async () => {
       db,
     ),
   ).rejects.toThrow();
+});
+
+it('forgets a deleted account’s history and leaves everyone else’s, and writes nothing while the fork schema is read-only', async () => {
+  const sut = new UserRepository(db);
+  const gone = randomUUID();
+  const kept = randomUUID();
+  const change = { path: 'tags.enabled', before: 'false', after: 'true' };
+  for (const userId of [gone, kept]) {
+    await sut.addPreferenceHistory({ userId, deviceLabel: null, changes: [change], omittedChanges: 0 });
+  }
+
+  await sut.deletePreferenceHistory(gone);
+
+  await expect(sut.getPreferenceHistory(gone)).resolves.toEqual([]);
+  await expect(sut.getPreferenceHistory(kept)).resolves.toHaveLength(1);
+
+  await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
+  try {
+    await sut.addPreferenceHistory({ userId: gone, deviceLabel: null, changes: [change], omittedChanges: 0 });
+    await sut.deletePreferenceHistory(kept);
+    await expect(sut.getPreferenceHistory(gone)).resolves.toEqual([]);
+    await expect(sut.getPreferenceHistory(kept)).resolves.toHaveLength(1);
+  } finally {
+    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
+  }
 });

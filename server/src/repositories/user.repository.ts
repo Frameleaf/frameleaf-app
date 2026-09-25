@@ -7,6 +7,7 @@ import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
+import { canWriteFork } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { bestPhotoRank, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
@@ -177,6 +178,10 @@ export class UserRepository {
     omittedChanges: number;
   }): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
+      // Skipped (never blocking the save) while the fork schema is not writable, as recipient groups are.
+      if (!(await canWriteFork(trx))) {
+        return;
+      }
       await sql`
         INSERT INTO immich_fork.user_preference_history ("userId", "deviceLabel", changes, "omittedChanges")
         VALUES (${entry.userId}::uuid, ${entry.deviceLabel}, ${JSON.stringify(entry.changes)}::text::jsonb, ${entry.omittedChanges})
@@ -191,6 +196,19 @@ export class UserRepository {
             LIMIT ${USER_PREFERENCE_HISTORY_LIMIT}
           )
       `.execute(trx);
+    });
+  }
+
+  /**
+   * FL-71 (CC-10): a deleted account leaves no preference history behind. Skipped (never blocking
+   * the delete) while the fork schema is not writable, like `forgetRecipient`.
+   */
+  async deletePreferenceHistory(userId: string): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      if (!(await canWriteFork(trx))) {
+        return;
+      }
+      await sql`DELETE FROM immich_fork.user_preference_history WHERE "userId" = ${userId}::uuid`.execute(trx);
     });
   }
 
