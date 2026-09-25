@@ -71,12 +71,28 @@ const YearInReviewSchema = z
   .meta({ id: 'YearInReviewDto' });
 
 /**
+ * A month with one of the owner's named pets (FL-58): built from the photos the owner confirmed the
+ * pet in. `name` is the pet's current name when the memory is read.
+ */
+const PetStorySchema = z
+  .object({
+    kind: z.literal('pet_story').describe('Discriminator for a pet story'),
+    year: z.int().min(1000).max(9999).describe('Year of the month'),
+    month: z.string().describe("The owner's local month, 'yyyy-MM'"),
+    petId: z.uuidv4().describe('The pet the story is about'),
+    name: z.string().describe('The pet name'),
+    species: z.string().describe('The pet species'),
+    assetCount: z.int().min(0).describe('Confirmed photos of the pet that month, before the diversity pass'),
+  })
+  .meta({ id: 'PetStoryDto' });
+
+/**
  * Union order is load-bearing: the two story shapes carry a required `kind` literal that
  * `on_this_day` data does not, so an existing `{ year }` payload only ever matches
  * `OnThisDayDto`.
  */
 const MemoryDataSchema = z
-  .union([EventStorySchema, YearInReviewSchema, OnThisDaySchema])
+  .union([EventStorySchema, YearInReviewSchema, PetStorySchema, OnThisDaySchema])
   .describe('Memory data')
   .meta({ id: 'MemoryData' });
 

@@ -31,6 +31,7 @@ import {
   mdiImageSearchOutline,
   mdiMagnify,
   mdiMovieOpenOutline,
+  mdiPawOutline,
   mdiPencilOutline,
   mdiServerOutline,
   mdiShieldCheckOutline,
@@ -258,6 +259,16 @@ export const JOB_QUEUES: readonly JobQueueDefinition[] = Object.freeze([
     canPause: true,
   },
   { name: QueueName.Editor, key: 'editor', category: 'media', icon: mdiPencilOutline, canPause: true },
+  {
+    // FL-58: pet recognition reads the CLIP data smart search stores, so it follows that switch.
+    name: QueueName.PetRecognition,
+    key: 'pet_recognition',
+    category: 'intelligence',
+    icon: mdiPawOutline,
+    run: 'task',
+    canPause: true,
+    feature: ml('smartSearch'),
+  },
 ]);
 
 export const jobQueue = (name: QueueName | undefined) => JOB_QUEUES.find((queue) => queue.name === name);
