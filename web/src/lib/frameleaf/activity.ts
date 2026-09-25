@@ -511,24 +511,36 @@ export const fromUpload = (upload: UploadAsset): ActivityItem => {
   };
 };
 
-/** An archive this tab asked the server to prepare and is still receiving. */
+const DOWNLOAD_STATUS_KEY: Record<DownloadState['status'], Translations> = {
+  preparing: 'frameleaf_activity_download_running',
+  ready: 'frameleaf_activity_download_done',
+  error: 'frameleaf_activity_download_failed',
+};
+
+const DOWNLOAD_TONE: Record<DownloadState['status'], ActivityTone> = {
+  preparing: 'info',
+  ready: 'success',
+  error: 'danger',
+};
+
+/** A file this tab is receiving from the server (FL-45), or has received and not yet saved. */
 export const fromDownload = (key: string, download: DownloadState): ActivityItem => ({
   id: `download:${key}`,
   source: 'download',
   kindKey: 'frameleaf_activity_kind_download',
-  statusKey: download.downloaded ? 'frameleaf_activity_download_done' : 'frameleaf_activity_download_running',
-  tone: download.downloaded ? 'success' : 'info',
+  statusKey: DOWNLOAD_STATUS_KEY[download.status],
+  tone: DOWNLOAD_TONE[download.status],
   title: download.archiveName || key,
-  progress: download.downloaded ? 100 : null,
-  running: !download.downloaded,
+  progress: download.status === 'error' ? null : clampPercent(download.progress),
+  running: download.status === 'preparing',
   paused: false,
   pausePending: false,
   canPause: false,
   canResume: false,
   done: null,
   total: null,
-  finished: download.downloaded,
-  failed: false,
+  finished: download.status !== 'preparing',
+  failed: download.status === 'error',
   details: [],
   startedAt: 0,
   canCancel: false,
