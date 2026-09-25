@@ -2819,6 +2819,7 @@ export type MirrorParameters = {
 export type TrimParameters = {
     /** Trim end time in milliseconds */
     endMs: number;
+    mode?: VideoTrimMode;
     /** Trim start time in milliseconds */
     startMs: number;
 };
@@ -2828,18 +2829,33 @@ export type StraightenParameters = {
 };
 export type AdjustParameters = {
     blackPoint?: number;
+    blacks?: number;
     blueTone?: number;
     brightness?: number;
+    clarity?: number;
     contrast?: number;
+    dehaze?: number;
+    /** Exposure in EV (develop model) */
+    exposure?: number;
+    grain?: number;
     hdr?: number;
     highlights?: number;
+    model?: VideoAdjustModel;
+    noiseReduction?: number;
+    preset?: VideoDevelopPreset;
+    /** Strength of the preset, 0 to 100 */
+    presetStrength?: number;
     saturation?: number;
     shadows?: number;
+    sharpen?: number;
     skinTone?: number;
+    temperature?: number;
     tint?: number;
+    vibrance?: number;
     vignette?: number;
     warmth?: number;
     whitePoint?: number;
+    whites?: number;
 };
 export type LookParameters = {
     /** Filter or effect intensity */
@@ -2855,6 +2871,9 @@ export type TextOverlayParameters = {
     color?: string;
     /** Overlay end time in milliseconds */
     endMs?: number;
+    position?: TextOverlayPosition;
+    /** Draw a soft drop shadow behind the text */
+    shadow?: boolean;
     /** Font size as a percentage of video height */
     size?: number;
     /** Overlay start time in milliseconds */
@@ -18699,6 +18718,36 @@ export enum AssetEditAction {
 export enum MirrorAxis {
     Horizontal = "horizontal",
     Vertical = "vertical"
+}
+export enum VideoTrimMode {
+    Precise = "precise",
+    Fast = "fast"
+}
+export enum VideoAdjustModel {
+    Develop = "develop"
+}
+export enum VideoDevelopPreset {
+    Original = "Original",
+    Vivid = "Vivid",
+    Natural = "Natural",
+    Warm = "Warm",
+    Cool = "Cool",
+    Mono = "Mono",
+    Silvertone = "Silvertone",
+    Noir = "Noir",
+    Fade = "Fade",
+    BW = "B&W"
+}
+export enum TextOverlayPosition {
+    TopLeft = "top-left",
+    Top = "top",
+    TopRight = "top-right",
+    Left = "left",
+    Center = "center",
+    Right = "right",
+    BottomLeft = "bottom-left",
+    Bottom = "bottom",
+    BottomRight = "bottom-right"
 }
 export enum VideoEditVersionPurpose {
     Save = "save",

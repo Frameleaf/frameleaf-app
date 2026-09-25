@@ -37082,6 +37082,12 @@
             "minimum": -100,
             "type": "number"
           },
+          "blacks": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
           "blueTone": {
             "format": "double",
             "maximum": 100,
@@ -37094,10 +37100,35 @@
             "minimum": -100,
             "type": "number"
           },
+          "clarity": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
           "contrast": {
             "format": "double",
             "maximum": 100,
             "minimum": -100,
+            "type": "number"
+          },
+          "dehaze": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "description": "Exposure in EV (develop model)",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "grain": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
             "type": "number"
           },
           "hdr": {
@@ -37112,6 +37143,25 @@
             "minimum": -100,
             "type": "number"
           },
+          "model": {
+            "$ref": "#/components/schemas/VideoAdjustModel"
+          },
+          "noiseReduction": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/VideoDevelopPreset"
+          },
+          "presetStrength": {
+            "description": "Strength of the preset, 0 to 100",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
           "saturation": {
             "format": "double",
             "maximum": 100,
@@ -37124,13 +37174,31 @@
             "minimum": -100,
             "type": "number"
           },
+          "sharpen": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
           "skinTone": {
             "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
+          "temperature": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
           "tint": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vibrance": {
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -37149,6 +37217,12 @@
             "type": "number"
           },
           "whitePoint": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -72837,12 +72911,19 @@
             "minimum": 1,
             "type": "integer"
           },
+          "position": {
+            "$ref": "#/components/schemas/TextOverlayPosition"
+          },
+          "shadow": {
+            "description": "Draw a soft drop shadow behind the text",
+            "type": "boolean"
+          },
           "size": {
             "default": 0.06,
             "description": "Font size as a percentage of video height",
             "format": "double",
             "maximum": 0.2,
-            "minimum": 0.02,
+            "minimum": 0.01,
             "type": "number"
           },
           "startMs": {
@@ -72877,6 +72958,21 @@
           "y"
         ],
         "type": "object"
+      },
+      "TextOverlayPosition": {
+        "description": "Anchor on a 3 × 3 grid; when set, the text is aligned to it and x/y are ignored",
+        "enum": [
+          "top-left",
+          "top",
+          "top-right",
+          "left",
+          "center",
+          "right",
+          "bottom-left",
+          "bottom",
+          "bottom-right"
+        ],
+        "type": "string"
       },
       "TimeBucketAssetResponseDto": {
         "properties": {
@@ -73492,6 +73588,9 @@
             "maximum": 9007199254740991,
             "minimum": 1,
             "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/VideoTrimMode"
           },
           "startMs": {
             "description": "Trim start time in milliseconds",
@@ -74878,6 +74977,13 @@
         ],
         "type": "object"
       },
+      "VideoAdjustModel": {
+        "description": "develop: the values follow the photo develop model (exposure, whites, blacks, temperature…), as the Frameleaf quick editor writes them. Absent: the earlier video adjustment model.",
+        "enum": [
+          "develop"
+        ],
+        "type": "string"
+      },
       "VideoCodec": {
         "description": "Target video codec",
         "enum": [
@@ -74895,6 +75001,21 @@
           "mp4",
           "ogg",
           "webm"
+        ],
+        "type": "string"
+      },
+      "VideoDevelopPreset": {
+        "enum": [
+          "Original",
+          "Vivid",
+          "Natural",
+          "Warm",
+          "Cool",
+          "Mono",
+          "Silvertone",
+          "Noir",
+          "Fade",
+          "B&W"
         ],
         "type": "string"
       },
@@ -75379,6 +75500,14 @@
           "state"
         ],
         "type": "object"
+      },
+      "VideoTrimMode": {
+        "description": "Precise cuts are frame accurate and re-encode; fast cuts snap to keyframes and copy the streams when nothing else in the recipe needs a re-encode",
+        "enum": [
+          "precise",
+          "fast"
+        ],
+        "type": "string"
       },
       "WorkerCredentialState": {
         "description": "How a worker credential is held",
