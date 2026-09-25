@@ -557,7 +557,11 @@ export type JobItem =
 
   // Image enrichment
   | { name: JobName.ImageDescriptionQueueAll; data: IBaseJob }
-  | { name: JobName.ImageDescription; data: IEntityJob }
+  | {
+      name: JobName.ImageDescription;
+      /** `onlyAffected`: a full rerun under Library care's "Reprocess only affected outputs" (FL-69). */
+      data: IEntityJob & { onlyAffected?: boolean };
+    }
   | { name: JobName.NsfwDetectionQueueAll; data: IBaseJob }
   | { name: JobName.NsfwDetection; data: IEntityJob }
 

@@ -9,10 +9,13 @@ import {
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LivePhotoCandidateRow, LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
+import { getConfig } from 'src/utils/config.js';
 
 // A live photo's still and motion video are written within the same capture
 // instant, so a tight window keeps the filename fallback conservative.
@@ -31,11 +34,23 @@ export class LivePhotoService {
     private albumRepository: AlbumRepository,
     private eventRepository: EventRepository,
     private livePhotoRepository: LivePhotoRepository,
+    private configRepository: ConfigRepository,
+    private systemMetadataRepository: SystemMetadataRepository,
   ) {
     this.logger.setContext(LivePhotoService.name);
   }
 
   async getCandidates(auth: AuthDto): Promise<LivePhotoCandidatesResponseDto> {
+    // Library care → "Suggest Live Photo relinking" (FL-69, settings-catalog.mjs:939-944): off, no
+    // pairs are suggested. Pairs a person already chose can still be relinked.
+    const { libraryCare } = await getConfig(
+      { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+      { withCache: true },
+    );
+    if (!libraryCare.livePhotoRepair) {
+      return { candidates: [], total: 0, suggestionsEnabled: false };
+    }
+
     const ownerId = auth.user.id;
     const [byContentId, byFilename] = await Promise.all([
       this.livePhotoRepository.getUnlinkedByContentId(ownerId),
@@ -70,7 +85,7 @@ export class LivePhotoService {
       });
     }
 
-    return { candidates, total: candidates.length };
+    return { candidates, total: candidates.length, suggestionsEnabled: true };
   }
 
   async relink(auth: AuthDto, dto: LivePhotoRelinkDto): Promise<LivePhotoRelinkResponseDto> {

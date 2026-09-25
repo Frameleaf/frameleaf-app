@@ -2110,6 +2110,8 @@ export enum DatabaseLock {
   HlsSessionCleanup = 850,
   /** FL-66: an administrator's settings save compares the revision and writes as one step. */
   SystemConfigUpdate = 930,
+  /** FL-69: one server schedules Library Care's incremental health scans. */
+  LibraryCareSchedule = 940,
   /** FL-159: creating this server's Frameleaf identity key happens once, on one worker. */
   FrameleafIdentity = 945,
 }
