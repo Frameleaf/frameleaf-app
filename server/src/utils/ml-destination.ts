@@ -23,7 +23,7 @@ import {
   MlUsage,
 } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
-import { isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
+import { cloudModelFor, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Explicit destination selection (FL-110).
@@ -584,6 +584,8 @@ export const selectMlDestination = async (
     kind: destination.kind,
     workload: request.workload,
     endpoint: endpoint as MlEndpoint,
+    cloudModelId:
+      destination.kind === MlDestinationKind.FrameleafCloud ? cloudModelFor(request.workload, modelId) : null,
     record: (usage: MlUsage) => {
       void mlDestinationRepository
         .recordAccounting({

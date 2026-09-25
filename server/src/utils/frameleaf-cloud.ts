@@ -298,6 +298,21 @@ export type CloudProbeFacts = {
 const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small|qwen2\.5-vl-3b/i;
 export const isLocalOnlyModel = (id: string | null | undefined): boolean => !!id && LOCAL_ONLY_MODEL.test(id);
 
+/**
+ * The Frameleaf Cloud model a kind of work uses when none is chosen (FL-146), matching the web
+ * catalogue's `CLOUD_DEFAULT_MODELS`: descriptions use Qwen3.5 9B (Apache-2.0). Cloud work never
+ * falls back to the local description setting (`machineLearning.imageDescription.modelName`).
+ */
+export const CLOUD_DESCRIPTION_DEFAULT_MODEL = 'qwen3.5-9b@1';
+
+/** The model a Frameleaf Cloud job for `workload` names: the chosen one, or the licensed default. */
+export const cloudModelFor = (workload: MlWorkload, chosen: string | null | undefined): string | null => {
+  if (chosen && !isLocalOnlyModel(chosen)) {
+    return chosen;
+  }
+  return workload === MlWorkload.Enrichment ? CLOUD_DESCRIPTION_DEFAULT_MODEL : null;
+};
+
 export const isEntitled = (entitlement: CloudCapabilities['entitlement']): boolean =>
   typeof entitlement === 'boolean' ? entitlement : entitlement.active;
 
