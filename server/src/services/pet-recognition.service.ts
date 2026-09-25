@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -175,6 +175,23 @@ export class PetRecognitionService {
     return this.petRepository.cancelRun(ownerId);
   }
 
+  /**
+   * A run write from a job during a database handoff: the run table is fork-owned and refuses
+   * (ConflictException); the job logs it and leaves the run as it is instead of failing. The owner's
+   * own start and cancel answer 409 instead.
+   */
+  private async duringForkWrites<T>(what: string, write: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await write();
+    } catch (error) {
+      if (!(error instanceof ConflictException)) {
+        throw error;
+      }
+      this.logger.warn(`Did not ${what} during a database handoff`);
+      return undefined;
+    }
+  }
+
   // ------------------------------------------------------------------------------- jobs
 
   /**
@@ -191,13 +208,21 @@ export class PetRecognitionService {
 
     const owners = userId ? [userId] : await this.petRepository.getOwnersWithConfirmedPets();
     for (const ownerId of owners) {
-      const run = userId ? await this.petRepository.getRun(ownerId) : await this.petRepository.startRun(ownerId, null);
+      const run = userId
+        ? await this.petRepository.getRun(ownerId)
+        : await this.duringForkWrites('start a pet recognition run', () => this.petRepository.startRun(ownerId, null));
       if (!run || !(await this.petRepository.isRunActive(run.id))) {
         continue;
       }
 
       const assetIds = await this.petRepository.getRecognizableAssetIds(ownerId);
-      await this.petRepository.setRunAssets(run.id, assetIds.length);
+      const counted = await this.duringForkWrites('count a pet recognition run', async () => {
+        await this.petRepository.setRunAssets(run.id, assetIds.length);
+        return true;
+      });
+      if (!counted) {
+        continue;
+      }
       for (let index = 0; index < assetIds.length; index += QUEUE_BATCH) {
         await this.jobRepository.queueAll(
           assetIds
@@ -232,7 +257,9 @@ export class PetRecognitionService {
 
     const { status, proposals } = await this.recognize(id, runId ?? null);
     if (runId && status !== JobStatus.Failed) {
-      await this.petRepository.recordRunProgress(runId, proposals);
+      await this.duringForkWrites('record pet recognition progress', () =>
+        this.petRepository.recordRunProgress(runId, proposals),
+      );
     }
     return status;
   }
@@ -282,7 +309,9 @@ export class PetRecognitionService {
       if (error instanceof MlDestinationRefusedError || error instanceof MlDestinationNotFoundError) {
         this.logger.warn(`Pet recognition for ${asset.id} refused: ${error.message}`);
         if (runId) {
-          await this.petRepository.failRun(runId, error.message);
+          await this.duringForkWrites('fail a pet recognition run', () =>
+            this.petRepository.failRun(runId, error.message),
+          );
         }
         return done(JobStatus.Failed);
       }

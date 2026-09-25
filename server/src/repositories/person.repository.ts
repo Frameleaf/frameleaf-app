@@ -2,12 +2,11 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { type ExpressionBuilder, type Insertable, type Kysely, type Transaction, type Updateable, sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { lockForkWrites } from 'src/utils/fork-write-lock.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
-import { isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -1435,19 +1434,8 @@ export class PersonRepository {
     });
   }
 
-  private async lockForkWrites(tx: Transaction<DB>, what = 'Merge suggestion answers') {
-    const { rows } = await sql<{ phase: ForkSchemaPhase }>`
-      SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE
-    `.execute(tx);
-    const handoff = await sql`
-      SELECT 1 FROM immich_fork.migration_audit
-      WHERE status = 'running' AND name IN ('official-handoff-preparation', 'fork-return-reconciliation')
-      LIMIT 1
-    `.execute(tx);
-    const phase = rows[0]?.phase;
-    if (!phase || !(isLegacyAuthoritative(phase) || isForkWriteEnabled(phase)) || handoff.rows.length > 0) {
-      throw new ConflictException(`${what} are unavailable during database handoff`);
-    }
+  private lockForkWrites(tx: Transaction<DB>, what = 'Merge suggestion answers') {
+    return lockForkWrites(tx, what);
   }
 
   /* ------------------------------------------------------------------------------------------ */
