@@ -64303,6 +64303,10 @@
               "signingCertificateSha256": {
                 "description": "SHA-256 fingerprint of the release signing certificate, as AA:BB:...",
                 "type": "string"
+              },
+              "storeUrl": {
+                "description": "Store listing of the Android app, when the operator configured one (FL-135)",
+                "type": "string"
               }
             },
             "required": [
