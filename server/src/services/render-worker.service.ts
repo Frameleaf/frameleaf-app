@@ -62,6 +62,7 @@ import { StudioProjectRepository } from 'src/repositories/studio-project.reposit
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
+import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { RENDER_WORKER_MEDIA_OPERATION_KINDS, isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
@@ -258,6 +259,7 @@ export class RenderWorkerService {
     private studioResources: StudioResourceService,
     private studioProjects: StudioProjectRepository,
     private studioExports: StudioExportService,
+    private studioPreviews: StudioPreviewService,
     @Optional() @Inject(DESTINATION_HEALTH_PROVIDER) destinationHealth?: DestinationHealthProvider,
   ) {
     this.logger.setContext(RenderWorkerService.name);
@@ -728,6 +730,10 @@ export class RenderWorkerService {
             entries: resolved.studio.entries,
           });
         }
+        if (operation.kind === MediaOperationKind.StudioPreview) {
+          // FL-96: the frame's own directory, which is the only place its output is accepted from.
+          this.studioPreviews.onRenderClaimed(operation);
+        }
         const checkpoints = await this.operations.getCheckpoints(operation.id);
         const manifest = resolved.studio
           ? this.studioInputs(operation, resolved.studio, worker.id, now)
@@ -971,6 +977,25 @@ export class RenderWorkerService {
       return { accepted, refusal: null };
     }
 
+    if (operation.kind === MediaOperationKind.StudioPreview) {
+      if (dto.resultAssetId !== null) {
+        throw new BadRequestException('A preview frame is published by the server; a worker cannot name its result');
+      }
+      if (!dto.output) {
+        throw new BadRequestException('A preview render must report the frame it produced');
+      }
+      // FL-96: the frame is published (or, when superseded meanwhile, discarded) before the job
+      // completes, so the person never waits on a finished render whose frame is missing.
+      const { published } = await this.studioPreviews.onRenderCompleted(operation, dto.output);
+      const accepted = await this.operations.complete(operation.id, dto.claimToken, { resultAssetId: null });
+      if (accepted) {
+        this.logger.log(
+          `Render worker ${worker.id} completed preview ${operation.id}${published ? '' : ' (superseded, discarded)'}`,
+        );
+      }
+      return { accepted, refusal: null };
+    }
+
     if (dto.resultAssetId && !(await this.operations.isPublishableResult(operation.ownerId, dto.resultAssetId))) {
       this.logger.warn(
         `Render worker ${worker.id} named a result for media operation ${operation.id} that is not the owner's`,
@@ -1007,6 +1032,9 @@ export class RenderWorkerService {
     const accepted = outcome !== false;
     if (outcome === 'failed' && operation.kind === MediaOperationKind.StudioExport) {
       await this.studioExports.onRenderFailed(operation, { errorCode: dto.errorCode, error: dto.error });
+    }
+    if (outcome === 'failed' && operation.kind === MediaOperationKind.StudioPreview) {
+      await this.studioPreviews.onRenderFailed(operation, dto.errorCode);
     }
     if (accepted) {
       this.logger.warn(

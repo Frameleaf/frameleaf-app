@@ -370,6 +370,8 @@ export class BaseService {
   protected async afterAssetsLocked(assetIds: string[]): Promise<void> {
     await queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, assetIds);
     await this.replaceLockedProfileImages();
+    // FL-90: Studio previews of the newly Locked sources stop now rather than at their next read.
+    await this.eventRepository.emit('AssetLocked', { assetIds });
   }
 
   /**
