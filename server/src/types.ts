@@ -1,5 +1,6 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
+import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
@@ -891,6 +892,8 @@ export type FrameleafMlWallet = {
   dailyCapUsd: number | null;
   spentTodayUsd: number;
   topUpUrl: string | null;
+  /** Automatic top-up is on for the account (read from Frameleaf Cloud). */
+  autoTopUp?: boolean;
   updatedAt: string;
 };
 
@@ -918,6 +921,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
   [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
+  [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;

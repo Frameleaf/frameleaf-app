@@ -37,6 +37,48 @@ export const discoverySchema = z.object({
 });
 export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
 
+/**
+ * Why a discovery document must not be used, or null. The token issuer, the API and every regional
+ * gateway must be on the configured cloud's host or a subdomain of it, over https unless the
+ * configured `FRAMELEAF_CLOUD_URL` is itself http (a development cloud), on the configured address's
+ * effective port. Otherwise a tampered or
+ * misconfigured document could send the signed client assertion or an access token elsewhere.
+ */
+export const discoveryProblem = (cloudUrl: string, document: FrameleafDiscoveryDocument): string | null => {
+  let configured: URL;
+  try {
+    configured = new URL(cloudUrl);
+  } catch {
+    return `the configured Frameleaf Cloud address ${cloudUrl} is not a URL`;
+  }
+  const host = configured.hostname.toLowerCase();
+  const allowHttp = configured.protocol === 'http:';
+  const effectivePort = (url: URL) => url.port || (url.protocol === 'http:' ? '80' : '443');
+  const port = effectivePort(configured);
+  const entries: Array<[string, string]> = [
+    ['issuer', document.issuer],
+    ['api', document.api],
+    ...Object.entries(document.ml).map(([region, url]): [string, string] => [`ml.${region}`, url]),
+  ];
+  for (const [name, value] of entries) {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && !(allowHttp && url.protocol === 'http:')) {
+      return `discovery ${name} ${value} is not https`;
+    }
+    const candidate = url.hostname.toLowerCase();
+    if (candidate !== host && !candidate.endsWith(`.${host}`)) {
+      return `discovery ${name} ${value} is not on ${host}`;
+    }
+    if (effectivePort(url) !== port) {
+      return `discovery ${name} ${value} is not on port ${port}`;
+    }
+    if (url.username || url.password) {
+      return `discovery ${name} carries credentials`;
+    }
+  }
+  return null;
+};
+
 export const tokenResponseSchema = z.object({
   access_token: z.string().min(1).max(8192),
   token_type: z.string().optional(),
@@ -87,7 +129,12 @@ export const walletResponseSchema = walletSchema.extend({
     .url({ protocol: /^https$/ })
     .nullable()
     .default(null),
+  /** Automatic top-up with the payment method saved on the account (§2.5: $25 when below $5). */
+  autoTopUp: z.boolean().default(false),
 });
+
+/** `PATCH /v2/wallet`: the wallet settings a linked server may change for its account. */
+export type CloudWalletSettings = { dailyCapUsd?: number; autoTopUp?: boolean };
 export type CloudWallet = z.infer<typeof walletResponseSchema>;
 
 export const catalogSchema = z.object({
@@ -140,6 +187,11 @@ export const usageSchema = z.object({
         settledUsd: z.number().min(0),
         credits: z.number().nullable().default(null),
         settledAt: z.string(),
+        // What the settlement is made of (metered GPU time, start fees per worker), when reported.
+        modelId: z.string().max(200).nullable().default(null),
+        gpuSeconds: z.number().min(0).nullable().default(null),
+        workers: z.number().int().min(1).max(64).nullable().default(null),
+        estimateUsd: z.number().min(0).nullable().default(null),
       }),
     )
     .max(1000),
@@ -251,6 +303,31 @@ export type CloudProbeFacts = {
   catalogEtag: string | null;
   modelIds: string[];
   refusal: { refusal: MlAdmissionRefusal; detail: string } | null;
+};
+
+/**
+ * Models that run on this server only (FL-146 owner decisions, 2026-09-25): the nllb-clip search
+ * models (base and large, every variant; CC-BY-NC-4.0), MusicGen-small (CC-BY-NC-4.0) and
+ * Qwen2.5-VL-3B-Instruct (Qwen Research License, including its OpenVINO conversion). They are never
+ * taken from a Frameleaf Cloud catalogue, never routed or configured there, and admission refuses a
+ * cloud job for them. They stay available on this server and home-network workers.
+ */
+const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small|qwen2\.5-vl-3b/i;
+export const isLocalOnlyModel = (id: string | null | undefined): boolean => !!id && LOCAL_ONLY_MODEL.test(id);
+
+/**
+ * The Frameleaf Cloud model a kind of work uses when none is chosen (FL-146), matching the web
+ * catalogue's `CLOUD_DEFAULT_MODELS`: descriptions use Qwen3.5 9B (Apache-2.0). Cloud work never
+ * falls back to the local description setting (`machineLearning.imageDescription.modelName`).
+ */
+export const CLOUD_DESCRIPTION_DEFAULT_MODEL = 'qwen3.5-9b@1';
+
+/** The model a Frameleaf Cloud job for `workload` names: the chosen one, or the licensed default. */
+export const cloudModelFor = (workload: MlWorkload, chosen: string | null | undefined): string | null => {
+  if (chosen && !isLocalOnlyModel(chosen)) {
+    return chosen;
+  }
+  return workload === MlWorkload.Enrichment ? CLOUD_DESCRIPTION_DEFAULT_MODEL : null;
 };
 
 export const isEntitled = (entitlement: CloudCapabilities['entitlement']): boolean =>

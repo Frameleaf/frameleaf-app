@@ -45,6 +45,7 @@ import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -294,6 +295,7 @@ export type ServiceOverrides = {
   frameleafConsent: FrameleafConsentRepository;
   frameleafUserLicense: FrameleafUserLicenseRepository;
   frameleafAccount: FrameleafAccountRepository;
+  hardwareProbe: HardwareProbeRepository;
   instanceIdentity: InstanceIdentityRepository;
   search: SearchRepository;
   serverInfo: ServerInfoRepository;
@@ -396,6 +398,7 @@ export const getMocks = () => {
     frameleafConsent: automock(FrameleafConsentRepository, { strict: false }),
     frameleafUserLicense: automock(FrameleafUserLicenseRepository, { strict: false }),
     frameleafAccount: automock(FrameleafAccountRepository, { strict: false }),
+    hardwareProbe: automock(HardwareProbeRepository, { strict: false }),
     instanceIdentity: automock(InstanceIdentityRepository, { strict: false }),
     search: automock(SearchRepository, { strict: false }),
     // eslint-disable-next-line no-sparse-arrays
@@ -519,6 +522,7 @@ export const newTestService = <T extends BaseService>(
     overrides.frameleafConsent || (mocks.frameleafConsent as As<FrameleafConsentRepository>),
     overrides.frameleafUserLicense || (mocks.frameleafUserLicense as As<FrameleafUserLicenseRepository>),
     overrides.frameleafAccount || (mocks.frameleafAccount as As<FrameleafAccountRepository>),
+    overrides.hardwareProbe || (mocks.hardwareProbe as As<HardwareProbeRepository>),
     overrides.instanceIdentity || (mocks.instanceIdentity as As<InstanceIdentityRepository>),
     overrides.search || (mocks.search as As<SearchRepository>),
     overrides.serverInfo || (mocks.serverInfo as As<ServerInfoRepository>),

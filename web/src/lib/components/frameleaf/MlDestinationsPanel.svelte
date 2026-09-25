@@ -43,7 +43,7 @@
     workloadBlockedInDraft,
     workloadsForKind,
   } from '$lib/frameleaf/ml-destinations';
-  import { formatUsd as formatCloudUsd } from '$lib/frameleaf/cloud-ml';
+  import { formatUsd } from '$lib/frameleaf/cloud-ml';
   import { allowsRestoration } from '$lib/frameleaf/restoration-models';
   import { Route } from '$lib/route';
   import { roleLabelKey } from '$lib/frameleaf/worker-inventory';
@@ -114,6 +114,7 @@
   let consentTarget = $state<MlDestinationResponseDto | null>(null);
   let cloudConsent = $state<CloudMlConsentStateDto | null>(null);
   let cloudConsentOpen = $state(false);
+  let cloudRegion = $state<string | null>(null);
 
   const openConsent = async (destination: MlDestinationResponseDto) => {
     busy = `consent-${destination.id}`;
@@ -122,6 +123,7 @@
       if (status.consent) {
         consentTarget = destination;
         cloudConsent = status.consent;
+        cloudRegion = status.region;
         cloudConsentOpen = true;
       } else {
         statusMessage = $t('admin.frameleaf_cloud_ml_consent_needs_cloud');
@@ -330,9 +332,6 @@
           new Date(value),
         )
       : null;
-
-  const formatUsd = (value: number) =>
-    new Intl.NumberFormat($locale ?? undefined, { style: 'currency', currency: 'USD' }).format(value);
 </script>
 
 <Pane label={$t('admin.frameleaf_ml_destinations_title')}>
@@ -506,8 +505,8 @@
                 <dd>
                   {$t('admin.frameleaf_ml_destinations_cloud_wallet_value', {
                     values: {
-                      available: formatCloudUsd(destination.cloud.balanceUsd - destination.cloud.heldUsd, $locale),
-                      held: formatCloudUsd(destination.cloud.heldUsd, $locale),
+                      available: formatUsd(destination.cloud.balanceUsd - destination.cloud.heldUsd),
+                      held: formatUsd(destination.cloud.heldUsd),
                     },
                   })}
                 </dd>
@@ -637,6 +636,7 @@
     bind:open={cloudConsentOpen}
     destinationId={consentTarget.id}
     consent={cloudConsent}
+    region={cloudRegion}
     onRecorded={() => {
       statusMessage = $t('admin.frameleaf_ml_destinations_consent_recorded', {
         values: { name: consentTarget?.name ?? '' },

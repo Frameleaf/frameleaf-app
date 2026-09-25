@@ -198,16 +198,24 @@ export class MlDestinationRepository {
    * rows changed; a settlement for a job this server never recorded changes nothing.
    */
   async applySettlements(settlements: MlSettlement[]): Promise<number> {
-    let changed = 0;
-    for (const { cloudJobId, costUsd, credits } of settlements) {
-      const result = await this.db
-        .updateTable('ml_workload_accounting')
-        .set({ costUsd, credits })
-        .where('cloudJobId', '=', cloudJobId)
-        .executeTakeFirst();
-      changed += Number(result.numUpdatedRows ?? 0);
+    // A job reported twice counts once, with its last report: Postgres would otherwise apply one of
+    // the duplicate rows arbitrarily.
+    const unique = new Map(settlements.map((settlement) => [settlement.cloudJobId, settlement])).values().toArray();
+    if (unique.length === 0) {
+      return 0;
     }
-    return changed;
+    // One statement per reconcile, matched through the cloud job id index (fork migration 201); a
+    // row already carrying the settled figures is left alone.
+    const result = await sql<{ id: string }>`
+      UPDATE public.ml_workload_accounting AS a
+      SET "costUsd" = s."costUsd", credits = s.credits
+      FROM jsonb_to_recordset(${JSON.stringify(unique)}::text::jsonb)
+        AS s("cloudJobId" text, "costUsd" double precision, credits double precision)
+      WHERE a."cloudJobId" = s."cloudJobId"
+        AND (a."costUsd" IS DISTINCT FROM s."costUsd" OR a.credits IS DISTINCT FROM s.credits)
+      RETURNING a.id
+    `.execute(this.db);
+    return result.rows.length;
   }
 
   /**

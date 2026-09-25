@@ -89,7 +89,8 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 137 public tables and 52 fork tables in the integrated catalog.
+    // 137 public tables and the fork tables, among them the supporter keys (FL-156), Frameleaf
+    // account links and Sign in with Frameleaf sessions (FL-158), in the integrated catalog.
     expect(getCatalogTableLocks(fork)).toHaveLength(189);
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
@@ -107,14 +108,14 @@ describe('catalog manifests', () => {
         'immich_fork.memory_show_less',
         'immich_fork.render_worker_session_capability',
         'immich_fork.studio_workspace_layout',
+        'immich_fork.utility_activity',
         'immich_fork.frameleaf_consent',
         'immich_fork.frameleaf_user_license',
         'immich_fork.frameleaf_account_link',
         'immich_fork.frameleaf_session',
-        'immich_fork.utility_activity',
       ]),
     );
-    // 66 v3.1.0 public + the 52 fork tables
+    // 66 v3.1.0 public + every fork table
     expect(getCatalogTableLocks(originalOfficial)).toHaveLength(118);
   });
 

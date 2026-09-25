@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRenderWorker } from 'src/repositories/render-worker.repository.js';
 import { defaults } from 'src/config.js';
@@ -20,6 +20,7 @@ import {
 } from 'src/enum.js';
 import { FRAMELEAF_CLOUD_ENDPOINT } from 'src/repositories/machine-learning.repository.js';
 import { ML_URL_REMOVED_SUMMARY, MlDestinationService } from 'src/services/ml-destination.service.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
@@ -412,15 +413,51 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
 
-    it('revokes consent by clearing it on the destination and in the consent records', async () => {
+    it('withdraws Frameleaf Cloud consent here in one step, then with the cloud (FL-159)', async () => {
+      linkCloud();
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
       await sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id);
+      // The consent records and the destination are cleared together by the repository, first.
       expect(mocks.frameleafConsent.revoke).toHaveBeenCalledWith(mlDestinationStub.frameleafCloudConsented.id);
-      expect(mocks.mlDestination.update).toHaveBeenCalledWith(mlDestinationStub.frameleafCloudConsented.id, {
-        consentAcknowledgedAt: null,
-        consentAcknowledgedBy: null,
-        consentVersion: null,
+      expect(mocks.frameleafConsent.revoke.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.frameleafCloudMl.revokeConsent.mock.invocationCallOrder[0],
+      );
+      expect(mocks.frameleafCloudMl.revokeConsent).toHaveBeenCalledWith({
+        url: 'https://ml.eu.cloud.test',
+        bearer: 'instance-token',
       });
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
+    });
+
+    it('keeps the withdrawal when Frameleaf Cloud does not answer, and logs it (FL-159)', async () => {
+      linkCloud();
+      mocks.frameleafCloudMl.revokeConsent.mockRejectedValue(
+        new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, 'offline'),
+      );
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).resolves.toBeDefined();
+      expect(mocks.frameleafConsent.revoke).toHaveBeenCalledWith(mlDestinationStub.frameleafCloudConsented.id);
+    });
+
+    it('keeps the withdrawal when reaching Frameleaf Cloud fails in any other way (FL-159)', async () => {
+      linkCloud();
+      mocks.frameleafCloud.discovery.mockRejectedValue(new TypeError('socket hang up'));
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).resolves.toBeDefined();
+      expect(mocks.frameleafConsent.revoke).toHaveBeenCalledWith(mlDestinationStub.frameleafCloudConsented.id);
+      expect(mocks.frameleafCloudMl.revokeConsent).not.toHaveBeenCalled();
+    });
+
+    it('refuses to withdraw consent during a handoff with 409, before contacting Frameleaf Cloud (FL-159)', async () => {
+      linkCloud();
+      mocks.frameleafConsent.revoke.mockRejectedValue(
+        new ConflictException('Consent cannot be withdrawn while the server is being handed over'),
+      );
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(mocks.frameleafCloudMl.revokeConsent).not.toHaveBeenCalled();
     });
   });
 

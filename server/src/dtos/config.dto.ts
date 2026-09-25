@@ -1,5 +1,6 @@
 import { CronExpression } from '@nestjs/schedule';
 import { validateCronExpression } from 'cron';
+import { cloneDeep, defaultsDeep } from 'lodash-es';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
@@ -36,6 +37,7 @@ import {
   VideoContainer,
   VideoContainerSchema,
 } from 'src/enum.js';
+import { CLOUD_DESCRIPTION_DEFAULT_MODEL, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 
 const { Admin, User, Public } = ConfigVisibility;
 
@@ -173,14 +175,32 @@ const nsfwDetectionDefaults = {
  * FL-159: Frameleaf Cloud processing. Everything is off until an administrator turns it on and adds the
  * destination; faces are refused by policy and cannot be turned on in this version.
  */
+const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studio', 'interpolation'] as const;
 const frameleafCloudDefaults = {
   // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it; the client secret
   // is only for a cloud that registered this server with one (private_key_jwt needs none).
   signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, clientSecret: '' },
   cloudMl: {
     enabled: false,
-    descriptions: { enabled: false, defaultModel: '', autoBatch: false, dailyBudgetUsd: 0 },
-    restoration: { enabled: false, defaultModel: '' },
+    // Where each kind of work may run (§3.2): this server only until an administrator chooses.
+    routing: {
+      descriptions: 'local' as 'local' | 'both' | 'cloud',
+      upscale: 'local' as 'local' | 'both' | 'cloud',
+      restoration: 'local' as 'local' | 'both' | 'cloud',
+      studio: 'local' as 'local' | 'both' | 'cloud',
+      interpolation: 'local' as 'local' | 'both' | 'cloud',
+    },
+    startWith: 'local' as 'local' | 'cloud',
+    // The model slider's saved position per kind of work; empty = the heaviest that runs well here.
+    // Descriptions start at the licensed cloud default (FL-146), never the local Qwen2.5-VL-3B.
+    models: {
+      descriptions: CLOUD_DESCRIPTION_DEFAULT_MODEL,
+      upscale: '',
+      restoration: '',
+      studio: '',
+      interpolation: '',
+    },
+    autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
     faces: { enabled: false as const },
   },
 };
@@ -451,6 +471,21 @@ export const NsfwDetectionConfigSchema = AdminConfigMachineLearningModelSchema.e
     .describe('Hide NSFW assets from library views unless the session has PIN-elevated access'),
 }).meta({ id: 'AdminConfigNsfwDetectionDto' });
 
+const CloudRouteModeSchema = z
+  .enum(['local', 'both', 'cloud'])
+  .describe(
+    'local: this server or a home-network worker only; both: each job lets the person pick; cloud: Frameleaf Cloud only',
+  )
+  .meta({ id: 'CloudRouteMode' });
+
+const routedRecord = <T extends z.ZodType>(schema: T) =>
+  z.object(
+    Object.fromEntries(CLOUD_ROUTED_WORKLOADS.map((workload) => [workload, schema])) as Record<
+      (typeof CLOUD_ROUTED_WORKLOADS)[number],
+      T
+    >,
+  );
+
 const AdminConfigFrameleafCloudSchema = z
   .object({
     signIn: z
@@ -471,33 +506,81 @@ const AdminConfigFrameleafCloudSchema = z
       .meta({ id: 'AdminConfigFrameleafSignInDto' }),
     cloudMl: z
       .object({
-        enabled: configBool.describe('Allow Frameleaf Cloud processing at all (the destination still needs consent)'),
-        descriptions: z
+        enabled: configBool.describe(
+          'Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation)',
+        ),
+        routing: routedRecord(CloudRouteModeSchema)
+          .describe('Where each kind of work may run')
+          .meta({ id: 'AdminConfigFrameleafCloudRoutingDto' }),
+        startWith: z
+          .enum(['local', 'cloud'])
+          .describe('The destination a job preselects when its kind of work may run in both places'),
+        models: routedRecord(z.string().max(200))
+          .describe('The model slider position per kind of work; empty = the heaviest that runs well here')
+          .meta({ id: 'AdminConfigFrameleafCloudModelsDto' }),
+        autoDescribe: z
           .object({
-            enabled: configBool.describe('Allow image descriptions on Frameleaf Cloud'),
-            defaultModel: z.string().max(200).describe('Catalogue model id used for descriptions; empty = none chosen'),
-            autoBatch: configBool.describe('Run background description batches automatically (needs a daily budget)'),
+            enabled: configBool.describe('Describe new photos automatically on Frameleaf Cloud'),
             dailyBudgetUsd: z
               .number()
-              .min(0)
-              .max(100_000)
+              .min(0.5)
+              .max(100)
               .meta({ format: 'double' })
-              .describe('Daily spending limit for background batches, USD'),
+              .describe('Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap'),
           })
-          .meta({ id: 'AdminConfigFrameleafCloudDescriptionsDto' }),
-        restoration: z
-          .object({
-            enabled: configBool.describe('Allow restoration and upscaling on Frameleaf Cloud'),
-            defaultModel: z.string().max(200).describe('Catalogue model id preselected for restoration'),
-          })
-          .meta({ id: 'AdminConfigFrameleafCloudRestorationDto' }),
+          .meta({ id: 'AdminConfigFrameleafCloudAutoDescribeDto' }),
         faces: z
-          .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud in this version') })
+          .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud') })
           .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
+      })
+      // FL-146: a local-only model (Qwen2.5-VL-3B, nllb-clip, MusicGen-small) is never the choice for
+      // work allowed on Frameleaf Cloud.
+      .superRefine((cloudMl, context) => {
+        for (const workload of CLOUD_ROUTED_WORKLOADS) {
+          if (cloudMl.routing[workload] !== 'local' && isLocalOnlyModel(cloudMl.models[workload])) {
+            context.addIssue({
+              code: 'custom',
+              path: ['models', workload],
+              message: `${cloudMl.models[workload]} runs on this server only; choose another model or set this work to Local only`,
+            });
+          }
+        }
       })
       .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
   })
   .meta({ id: 'AdminConfigFrameleafCloudDto' });
+
+/**
+ * A stored Frameleaf Cloud configuration read back over the defaults, so a value saved before a
+ * field existed (or in an older shape) still yields a complete configuration. Unknown keys are dropped.
+ * A model entry naming a local-only model for work allowed on the cloud (FL-146) is reset to its
+ * default on its own, with a warning; enabled, routing and budgets are kept. Only a configuration
+ * that is still invalid after that falls back to the defaults.
+ */
+export const readFrameleafCloudConfig = (
+  value: unknown,
+  warn: (message: string) => void = () => {},
+): SystemConfig['frameleafCloud'] => {
+  const merged = defaultsDeep({}, value ?? {}, frameleafCloudDefaults) as SystemConfig['frameleafCloud'];
+  const cloudMl = merged.cloudMl;
+  if (cloudMl?.models && cloudMl.routing) {
+    for (const workload of CLOUD_ROUTED_WORKLOADS) {
+      const model = cloudMl.models[workload];
+      if (cloudMl.routing[workload] !== 'local' && isLocalOnlyModel(model)) {
+        cloudMl.models[workload] = frameleafCloudDefaults.cloudMl.models[workload];
+        warn(
+          `Frameleaf Cloud: ${model} runs on this server only; the ${workload} model was reset to ${cloudMl.models[workload] || 'the default'}`,
+        );
+      }
+    }
+  }
+  const parsed = AdminConfigFrameleafCloudSchema.safeParse(merged);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  warn(`Frameleaf Cloud settings could not be read and were reset to the defaults: ${parsed.error.message}`);
+  return cloneDeep(frameleafCloudDefaults);
+};
 
 // Admin-controlled but unbounded strings flow into background-job log lines
 // and the smart-album evaluator. Cap to 256 chars and reject control characters

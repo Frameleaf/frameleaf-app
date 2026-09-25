@@ -41,7 +41,7 @@ export const probeStudioCapabilities = async (): Promise<StudioCapabilities> => 
  */
 export const toStudioRenderEvidence = (studio: Pick<StudioCapabilitiesDto, 'render'>): StudioRenderEvidence[] =>
   (Array.isArray(studio.render) ? studio.render : []).filter(
-    (row): row is StudioRenderEvidence =>
+    (row) =>
       !!row &&
       typeof row.destination === 'string' &&
       typeof row.sessions === 'number' &&

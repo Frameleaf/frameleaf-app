@@ -77,7 +77,7 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   authentication: ['passwordLogin', 'oauth'],
   backup: ['backup'],
   image: ['image'],
-  'cloud-ml': ['frameleafCloud'],
+  'cloud-processing': ['frameleafCloud'],
   'integrity-checks': ['integrityChecks', 'libraryCare'],
   'external-library': ['library'],
   // FL-71: "Logs & diagnostics" also holds the local analytics settings; the search models page

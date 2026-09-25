@@ -28,6 +28,7 @@ from immich_ml.models.base import InferenceModel
 from immich_ml.models.transforms import decode_pil
 
 from .config import PreloadModelData, log, settings
+from .hardware_report import container_report
 from .models.cache import ModelCache
 from .schemas import (
     ImageDescriptionAcceleration,
@@ -341,6 +342,8 @@ def hardware() -> ORJSONResponse:
             "torchCudaAvailable": torch_cuda_available,
             "cudaDeviceCount": cuda_device_count,
             "preferredAcceleration": preferred_acceleration,
+            # FL-159: which GPU this container reaches, through which backend (Hardware & GPU).
+            "container": container_report(providers, openvino_device_ids),
         }
     )
 
