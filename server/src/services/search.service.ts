@@ -45,11 +45,7 @@ import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
-import {
-  applyPartnerLocationPolicy,
-  getLocationHiddenOwnerIdsForView,
-  getLocationHiddenPartnerIds,
-} from 'src/utils/partner-location.js';
+import { applyPartnerLocationPolicy, getLocationHiddenOwnerIdsForView } from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import {
@@ -205,13 +201,23 @@ export class SearchService extends BaseService {
    */
   async searchFacets(auth: AuthDto, dto: SearchFacetsDto): Promise<SearchFacetsResponseDto> {
     const { facets: requested, facetLimit, ...body } = dto;
+    // FL-54 owner default: places of items reached through an album never count for owners who hide
+    // their locations from that album's owner, just as they never count for owners who hide them from
+    // the viewer (for a link, its creator)
+    const albumIds = isNewShapeRequest(body)
+      ? collectFilterIds(body.filter ?? {}, 'albumIds')
+      : ((body as { albumIds?: string[] }).albumIds ?? []);
     const facetOptions: SearchFacetOptions = {
       viewerId: auth.user.id,
       // each facet once, in the order asked
       facets: [...new Set(requested ?? Object.values(SearchFacetField))],
       limit: facetLimit ?? SEARCH_FACET_DEFAULT_LIMIT,
       locationHiddenOwnerIds: [
-        ...(await getLocationHiddenPartnerIds({ userId: auth.user.id, repository: this.partnerRepository })),
+        ...(await getLocationHiddenOwnerIdsForView({
+          viewerId: auth.sharedLink?.userId ?? auth.user.id,
+          albumIds,
+          repository: this.partnerRepository,
+        })),
       ],
       suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
       suppressedTagIds: auth.hiddenContent?.tagIds ?? [],
