@@ -77,11 +77,16 @@ export class FrameleafConsentRepository {
     return result.rows;
   }
 
-  /** Revoke every consent in force for a destination. */
+  /** Revoke every consent in force for a destination. Refused, like `record`, during a handoff. */
   async revoke(destinationId: string): Promise<void> {
-    await sql`
-      UPDATE immich_fork.frameleaf_consent SET "revokedAt" = clock_timestamp()
-      WHERE "destinationId" = ${destinationId}::uuid AND "revokedAt" IS NULL
-    `.execute(this.db);
+    await this.db.transaction().execute(async (trx) => {
+      if (!(await canWriteFork(trx))) {
+        throw new Error('Consent cannot be withdrawn while the server is being handed over');
+      }
+      await sql`
+        UPDATE immich_fork.frameleaf_consent SET "revokedAt" = clock_timestamp()
+        WHERE "destinationId" = ${destinationId}::uuid AND "revokedAt" IS NULL
+      `.execute(trx);
+    });
   }
 }
