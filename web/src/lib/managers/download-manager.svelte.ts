@@ -248,7 +248,8 @@ class DownloadManager {
    * reservation only grows, and ends when its file is ready (then held), fails, streams or is removed.
    */
   reserve(key: string, bytes: number) {
-    if (bytes > bufferLimit() - this.heldBytes() - this.reservedBytes(key)) {
+    // A removed row's request may still be finishing; it must not take room back.
+    if (!this.assets.has(key) || bytes > bufferLimit() - this.heldBytes() - this.reservedBytes(key)) {
       return false;
     }
     this.#reserved.set(key, Math.max(this.#reserved.get(key) ?? 0, bytes));
