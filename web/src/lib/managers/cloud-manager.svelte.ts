@@ -152,11 +152,22 @@ export class CloudManager {
   async #run(call: () => Promise<CloudStatusResponseDto>) {
     const generation = ++this.#generation;
     this.#stopPolling();
-    const status = await call();
-    if (generation === this.#generation) {
-      this.#apply(status);
+    let applied = false;
+    try {
+      const status = await call();
+      if (generation === this.#generation) {
+        this.#apply(status);
+        applied = true;
+      }
+      return status;
+    } finally {
+      // a failed action (for example "Get a new code" or Cancel) leaves a pending code waiting:
+      // keep checking it, or the page would sit on "Waiting" for good
+      const pending = this.#status?.state === 'pending' ? this.#status.pending : null;
+      if (!applied && generation === this.#generation && pending) {
+        this.#schedulePoll(Math.max(1, pending.intervalSeconds));
+      }
     }
-    return status;
   }
 
   #apply(status: CloudStatusResponseDto) {
