@@ -95,6 +95,18 @@
       .join(' · '),
   );
 
+  /**
+   * The prototype's row status names (`UploadPanel.jsx:257-268`) for `data-status`: `UploadState` is
+   * a numeric enum, so a selector on the raw value would never match.
+   */
+  const STATUS_ATTRIBUTE: Record<UploadState, string> = {
+    [UploadState.PENDING]: 'queued',
+    [UploadState.STARTED]: 'uploading',
+    [UploadState.DONE]: 'done',
+    [UploadState.DUPLICATED]: 'duplicate',
+    [UploadState.ERROR]: 'error',
+  };
+
   /** `STATUS_TEXT` in `UploadPanel.jsx:262-268`. */
   const statusText = (item: UploadAsset) => {
     switch (item.state) {
@@ -202,7 +214,7 @@
 
         <ul class="fl-list">
           {#each $uploadAssetsStore as item (item.id)}
-            <li class="fl-row" data-state={item.state}>
+            <li class="fl-row" data-status={STATUS_ATTRIBUTE[item.state ?? UploadState.PENDING]}>
               <span class="fl-thumb">
                 {#if item.file.type.startsWith('image/')}
                   <img use:thumbnail={item.file} alt="" />
@@ -364,7 +376,7 @@
   .fl-progress span {
     display: block;
     block-size: 100%;
-    background: var(--fl-accent);
+    background: var(--fl-teal);
     transition: width var(--fl-motion) var(--fl-ease);
   }
   .fl-progress.has-errors span {
@@ -430,7 +442,7 @@
     color: var(--fl-muted);
     font-size: 0.6875rem;
   }
-  .fl-row[data-state='error'] .fl-meta {
+  .fl-row[data-status='error'] .fl-meta {
     color: var(--fl-danger);
   }
   /* upload.css:263-275: the thin per-row bar under an upload in flight. */
@@ -445,11 +457,11 @@
   .fl-mini span {
     display: block;
     block-size: 100%;
-    background: var(--fl-accent);
+    background: var(--fl-teal);
     transition: width var(--fl-motion) linear;
   }
   :global(.fl-success) {
-    color: var(--fl-accent);
+    color: var(--fl-teal);
   }
   :global(.fl-warning) {
     color: var(--fl-warning);
@@ -468,13 +480,22 @@
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+  /* upload.css:245-262: a donut, the teal arc over the border colour with a panel-coloured hole. */
   .fl-ring {
     --pct: 0;
-    display: inline-block;
-    inline-size: 1.125rem;
-    block-size: 1.125rem;
+    display: inline-grid;
+    place-items: center;
+    inline-size: 1.375rem;
+    block-size: 1.375rem;
     border-radius: 50%;
-    background: conic-gradient(var(--fl-accent) calc(var(--pct) * 1%), var(--fl-border) 0);
+    background: conic-gradient(var(--fl-teal) calc(var(--pct) * 1%), var(--fl-border) 0);
+  }
+  .fl-ring::after {
+    content: '';
+    inline-size: 0.875rem;
+    block-size: 0.875rem;
+    border-radius: 50%;
+    background: var(--fl-panel);
   }
   .fl-panel-foot {
     display: flex;
@@ -536,6 +557,10 @@
   .fl-pill .fl-ring {
     inline-size: 1.625rem;
     block-size: 1.625rem;
+  }
+  .fl-pill .fl-ring::after {
+    inline-size: 1.125rem;
+    block-size: 1.125rem;
   }
   .fl-pill strong {
     font-size: 0.8125rem;
