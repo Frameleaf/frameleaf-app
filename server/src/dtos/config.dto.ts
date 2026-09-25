@@ -182,6 +182,23 @@ const frameleafCloudDefaults = {
   },
 };
 
+/**
+ * Library care (FL-69, settings-catalog.mjs:905-977): the template's Media health & integrity,
+ * Repair queues and Enrichment completeness toggles. Hoisted like the other fork defaults so the
+ * schema can default a configuration saved before the section existed.
+ */
+const libraryCareDefaults = {
+  healthScan: true,
+  healthScanCronExpression: CronExpression.EVERY_DAY_AT_2AM as string,
+  checksumScan: true,
+  integrityAudit: true,
+  livePhotoRepair: true,
+  rawRecovery: true,
+  duplicateReview: true,
+  incrementalEnrichment: true,
+  manualMetadata: true,
+};
+
 const smartAlbumRulesDefaults = {
   visualCategories: true,
   defaultAction: ClassificationRuleAction.Review,
@@ -512,6 +529,26 @@ const AdminConfigSmartAlbumsSchema = z
       .meta({ id: 'AdminConfigSmartAlbumBuiltInDto' }),
   })
   .meta({ id: 'AdminConfigSmartAlbumsDto' });
+
+const AdminConfigLibraryCareSchema = z
+  .object({
+    healthScan: configBool.describe(
+      'Schedule incremental health scans of every account; each resumes from its recorded checkpoints',
+    ),
+    healthScanCronExpression: cronExpressionSchema.describe('When the scheduled health scan starts'),
+    checksumScan: configBool.describe('Health scans verify each original against its recorded checksum'),
+    integrityAudit: configBool.describe(
+      'Run the scheduled database and file reference audits (missing and untracked files)',
+    ),
+    livePhotoRepair: configBool.describe('Suggest Live Photo pairs to relink; ambiguous pairs stay in review'),
+    rawRecovery: configBool.describe('Search for recoverable copies of RAW originals when locating originals'),
+    duplicateReview: configBool.describe('Group near-duplicates for review; deletion stays explicit'),
+    incrementalEnrichment: configBool.describe(
+      'A full description rerun reprocesses only results that are missing, failed or out of date',
+    ),
+    manualMetadata: configBool.describe('A description rerun replaces only generated text and keeps manual text'),
+  })
+  .meta({ id: 'AdminConfigLibraryCareDto' });
 
 const AdminConfigGeneratedImageSchema = z
   .object({
@@ -894,6 +931,7 @@ const AdminConfigSchemaWithVisibility = z
       .meta({ id: 'AdminConfigUserDto' }),
     smartAlbums: AdminConfigSmartAlbumsSchema.default(smartAlbumsDefaults),
     frameleafCloud: AdminConfigFrameleafCloudSchema.default(frameleafCloudDefaults),
+    libraryCare: AdminConfigLibraryCareSchema.default(libraryCareDefaults),
   })
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
@@ -1318,4 +1356,5 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   smartAlbums: smartAlbumsDefaults,
   frameleafCloud: frameleafCloudDefaults,
+  libraryCare: libraryCareDefaults,
 });

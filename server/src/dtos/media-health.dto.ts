@@ -18,6 +18,31 @@ const MediaHealthRootKindSchema = z
   .describe('Kind of search location')
   .meta({ id: 'MediaHealthRootKind' });
 
+/** One recorded checksum, as lowercase hex (FL-69): what "exact match" was measured against. */
+const MediaHealthChecksumSchema = z
+  .object({
+    algorithm: z.enum(['sha1', 'sha256']).describe('Checksum algorithm').meta({ id: 'MediaHealthChecksumAlgorithm' }),
+    value: z.string().describe('Checksum as lowercase hex'),
+  })
+  .meta({ id: 'MediaHealthChecksumDto' });
+
+/**
+ * Who relinked or recovered a finding's original, from where and when (FL-69). Administrators only:
+ * for anybody else the operator locations stay private and this is null.
+ */
+const MediaHealthProvenanceSchema = z
+  .object({
+    action: z.enum(['relinked', 'recovered']).describe('What was done').meta({ id: 'MediaHealthProvenanceAction' }),
+    userId: z.string().nullable().describe('The account that did it'),
+    rootId: z.string().nullable().describe('Search location the copy came from'),
+    rootKind: MediaHealthRootKindSchema.nullable(),
+    rootLabel: z.string().nullable().describe('Name of the search location'),
+    at: z.string().meta({ format: 'date-time' }).nullable().describe('When it was done'),
+    previousPath: z.string().nullable().describe('The path the original had before'),
+    sourcePath: z.string().nullable().describe('The verified copy that was used'),
+  })
+  .meta({ id: 'MediaHealthProvenanceDto' });
+
 const MediaHealthCandidateSchema = z
   .object({
     id: z.uuidv4().describe('Candidate ID'),
@@ -33,6 +58,7 @@ const MediaHealthCandidateSchema = z
     checksumMatch: z.boolean().describe('The candidate has exactly the checksum recorded for the original'),
     decodeValid: z.boolean().nullable().describe('The candidate decoded successfully; null when not checked'),
     chosen: z.boolean().describe('The reviewer chose this candidate for the finding'),
+    checksums: z.array(MediaHealthChecksumSchema).describe('The checksums the candidate matched, as measured'),
   })
   .meta({ id: 'MediaHealthCandidateDto' });
 
@@ -52,6 +78,10 @@ const MediaHealthItemSchema = z
     resolvedAt: z.string().meta({ format: 'date-time' }).nullable(),
     asset: AssetResponseSchema,
     candidates: z.array(MediaHealthCandidateSchema),
+    expectedChecksums: z
+      .array(MediaHealthChecksumSchema)
+      .describe('The checksums recorded for the original, which a copy must match exactly'),
+    provenance: MediaHealthProvenanceSchema.nullable(),
   })
   .meta({ id: 'MediaHealthItemDto' });
 
@@ -242,9 +272,21 @@ const MediaHealthRunsSchema = z
   })
   .meta({ id: 'MediaHealthRunsDto' });
 
+/** The Library care settings that decide what Library Care offers (FL-69, settings-catalog.mjs:905-977). */
+const MediaHealthCareSettingsSchema = z
+  .object({
+    healthScan: z.boolean().describe('Incremental health scans run on a schedule'),
+    checksumScan: z.boolean().describe('Health scans verify original checksums'),
+    integrityAudit: z.boolean().describe('Database and file reference audits run on their schedules'),
+    rawRecovery: z.boolean().describe('Searches for originals include RAW originals'),
+    duplicateReview: z.boolean().describe('Near-duplicates are grouped for review'),
+  })
+  .meta({ id: 'MediaHealthCareSettingsDto' });
+
 const MediaHealthSummaryResponseSchema = z
   .object({
     queues: MediaHealthQueuesSchema,
+    care: MediaHealthCareSettingsSchema,
     operation: MediaHealthOperationSchema.nullable(),
     runs: MediaHealthRunsSchema,
     recent: z.array(MediaHealthActivitySchema),
@@ -271,6 +313,7 @@ export class MediaHealthOperationDto extends createZodDto(MediaHealthOperationSc
 export class MediaHealthSummaryResponseDto extends createZodDto(MediaHealthSummaryResponseSchema) {}
 
 export type MediaHealthCandidateResponse = z.infer<typeof MediaHealthCandidateSchema>;
+export type MediaHealthItemResponse = z.infer<typeof MediaHealthItemSchema>;
 export type MediaHealthRootResponse = z.infer<typeof MediaHealthRootSchema>;
 export type MediaHealthActivityResponse = z.infer<typeof MediaHealthActivitySchema>;
 

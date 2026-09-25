@@ -586,6 +586,102 @@ describe(ImageEnrichmentService.name, () => {
     expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: assetId } });
   });
 
+  it('replaces the whole description on rerun when Library care keeps no manual text (FL-69)', async () => {
+    mocks.systemMetadata.get.mockResolvedValue({
+      machineLearning: {
+        enabled: true,
+        nsfwDetection: { enabled: false },
+        imageDescription: { enabled: true, modelName: 'Qwen/Qwen2.5-VL-3B-Instruct' },
+      },
+      libraryCare: { manualMetadata: false },
+    });
+    mocks.assetJob.getForImageEnrichment.mockResolvedValue({
+      id: assetId,
+      ownerId,
+      type: AssetType.Image,
+      status: AssetStatus.Active,
+      deletedAt: null,
+      visibility: AssetVisibility.Timeline,
+      description: 'User note\n\nAI description: A dim kitchen.',
+      previewFile,
+    });
+    mocks.asset.getMetadataByKey.mockResolvedValue({
+      key: AssetMetadataKey.MlEnrichment,
+      updatedAt: new Date(),
+      value: {
+        description: {
+          status: 'success',
+          modelName: 'Qwen/Qwen2.5-VL-3B-Instruct',
+          updatedAt: '2026-05-05T00:00:00.000Z',
+          appliedDescriptionHash: 'old-hash',
+          result: {
+            description: 'A dim kitchen.',
+            people: [],
+            environment: 'kitchen',
+            objects: [],
+            visible_text: [],
+            context: '',
+            tags: [],
+          },
+        },
+      },
+    });
+    mocks.machineLearning.describeImage.mockResolvedValue({
+      description: 'A bright kitchen with a wooden table.',
+      people: [],
+      environment: 'kitchen',
+      objects: ['table'],
+      visible_text: [],
+      context: 'indoor home photo',
+      tags: [],
+    });
+
+    await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+    expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
+      exif: expect.objectContaining({ assetId, description: 'AI description: A bright kitchen with a wooden table.' }),
+      lockedPropertiesBehavior: 'append',
+    });
+  });
+
+  describe('Library care → Reprocess only affected outputs (FL-69)', () => {
+    it('marks a full rerun so each photo is redone only when affected', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
+        libraryCare: { incrementalEnrichment: true },
+      });
+      mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));
+
+      await sut.handleQueueImageDescription({ force: true });
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.ImageDescription, data: { id: assetId, onlyAffected: true } },
+      ]);
+    });
+
+    it('reruns everything when it is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
+        libraryCare: { incrementalEnrichment: false },
+      });
+      mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));
+
+      await sut.handleQueueImageDescription({ force: true });
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.ImageDescription, data: { id: assetId } }]);
+    });
+
+    it('keeps a current description and redoes one that is missing', async () => {
+      const affected = vi.spyOn(sut, 'isDescriptionAffected').mockResolvedValueOnce(false);
+      await expect(sut.handleImageDescription({ id: assetId, onlyAffected: true })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+      affected.mockRestore();
+
+      mocks.asset.getMetadataByKey.mockResolvedValue(undefined);
+      await expect(sut.isDescriptionAffected(assetId)).resolves.toBe(true);
+    });
+  });
+
   it.each([
     ['trashed', AssetStatus.Trashed, new Date()] as const,
     ['deleted', AssetStatus.Deleted, new Date()] as const,
