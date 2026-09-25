@@ -260,6 +260,25 @@ describe(VideoMomentIndexService.name, () => {
     });
   });
 
+  describe('no automatic speech recognition (FL-59)', () => {
+    it('indexes and captions a video without transcribing it or writing a transcript', async () => {
+      const imageDescription = defaults.machineLearning.imageDescription;
+      mocks.machineLearning.encodeImage.mockResolvedValue('[0.1,0.2]');
+      mocks.machineLearning.describeImage.mockResolvedValue({ description: 'Waves at dusk.' } as never);
+
+      await sut.runIndexStage(assetId, { destinationId: mlDestinationStub.local.id });
+      await sut.runCaptionStage(assetId, { imageDescription });
+
+      const called = Object.entries(mocks.machineLearning)
+        .filter(([, fn]) => vi.isMockFunction(fn) && fn.mock.calls.length > 0)
+        .map(([name]) => name);
+      expect(called).toEqual(expect.arrayContaining(['describeImage', 'encodeImage']));
+      expect(called.filter((name) => /transcri|speech|audio|asr/i.test(name))).toEqual([]);
+      const published = [...moments.publishIndex.mock.calls, ...moments.publishCaptions.mock.calls];
+      expect(JSON.stringify(published)).not.toMatch(/transcript/i);
+    });
+  });
+
   describe('getMoments', () => {
     it('answers a missing frame exactly like a frame of a video the caller cannot read', async () => {
       moments.getFrame = vi.fn().mockResolvedValue(undefined);
