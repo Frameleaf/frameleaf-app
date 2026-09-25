@@ -531,6 +531,35 @@ describe(FrameleafCloudService.name, () => {
       expect(after.retiring.kid).toBe(before.kid);
     });
 
+    it('keeps counting failed check-ins while a candidate key is unresolved', async () => {
+      await writeFile(
+        join(identityDir, CANDIDATE_KEY_FILE),
+        generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }),
+        { mode: 0o600 },
+      );
+      // the current key is refused; the answer for the candidate never comes back
+      cloud.on('POST /id/token', (request) => {
+        const header = JSON.parse(
+          Buffer.from(request.form().get('client_assertion')!.split('.', 1)[0], 'base64url').toString('utf8'),
+        );
+        const current = (metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string }).kid;
+        return header.kid === current
+          ? { status: 401, body: { error: 'invalid_client' } }
+          : { status: 503, body: { code: 'unavailable', message: 'no answer' } };
+      });
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        sutForgetTokens();
+        makeDue();
+        await sut.handleHeartbeat();
+      }
+      expect(storedLink()?.status).toBe('linked');
+      expect(storedLink()?.heartbeat?.failures).toBe(3);
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:heartbeat-failing' }),
+      );
+    });
+
     it('revokes at once on an explicit instance-revoked, without trying the candidate', async () => {
       await writeFile(
         join(identityDir, CANDIDATE_KEY_FILE),
