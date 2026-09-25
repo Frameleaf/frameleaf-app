@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import { ReleaseChannel } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { GitHubRelease, newestFrameleafRelease } from 'src/utils/frameleaf-release.js';
 
 export interface VersionResponse {
   version: string;
@@ -56,8 +57,37 @@ export class ServerInfoRepository {
     this.logger.setContext(ServerInfoRepository.name);
   }
 
-  getLatestRelease(_channel: ReleaseChannel): Promise<VersionResponse> {
-    return Promise.reject(new Error('External version checks are disabled in this fork'));
+  /**
+   * The newest Frameleaf release on the channel (FL-80 S-4 / O-8). Only Frameleaf's GitHub releases
+   * are asked (`versionCheck.url`); no Immich service is contacted. Stable reads the latest published
+   * release; Release candidate reads the recent releases and includes prereleases. The version is
+   * parsed from the `frameleaf-v<semver>-<n>` tag and returned with a leading "v".
+   */
+  async getLatestRelease(channel: ReleaseChannel): Promise<VersionResponse> {
+    try {
+      const { versionCheck } = this.configRepository.getEnv();
+      const includePrerelease = channel === ReleaseChannel.ReleaseCandidate;
+      const url = includePrerelease ? `${versionCheck.url}?per_page=30` : `${versionCheck.url}/latest`;
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'Frameleaf-Server',
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Release lookup failed with status ${response.status}`);
+      }
+
+      const body = (await response.json()) as GitHubRelease | GitHubRelease[];
+      const newest = newestFrameleafRelease(Array.isArray(body) ? body : [body], includePrerelease);
+      if (!newest) {
+        throw new Error('No Frameleaf release tag found');
+      }
+      return { version: `v${newest.tag.version}`, published_at: newest.release.published_at ?? '' };
+    } catch (error) {
+      throw new Error('Failed to fetch latest release', { cause: error });
+    }
   }
 
   buildVersions?: ServerBuildVersions;
