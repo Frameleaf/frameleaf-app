@@ -1001,18 +1001,18 @@
       "readbackAt": "2026-09-25T08:41:17.294Z"
     },
     {
-      "bytes": 64087,
+      "bytes": 64702,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "ef2605355f2b6b5afa654c7ee8815217f2d891163fe8432e3ad557c7613ee0ba",
+      "sourceSha256": "120edbeb629c2b4d7fc77025348c75c2dea1b3b48b23ebff33ff98555898edcc",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 3,
+      "version": 4,
       "sourceBranch": "codex/FL-93-complete-media",
-      "sourceState": "committed-fl-153-5521f13375",
-      "readbackResult": "Version 3 published as markdown after the FL-153 docs fix (design-record link replaced by its repository path; CLD-201 \"the the\" typo). Markdown read-back header carries SHA-256 ef260535 and 64087 bytes; compared with the version 2 read-back, the only differences are the header and those two source lines.",
-      "readbackAt": "2026-09-25T13:42:30.000Z"
+      "sourceState": "committed-fl-153-bf52ec62c0",
+      "readbackResult": "Version 4 published as markdown after the FL-153 naming fix (the previous GPU-provider integration named generically, located via CLOUD_ML_DESTINATION_KINDS). Markdown read-back header carries SHA-256 120edbeb and 64702 bytes; its delta from the version 3 read-back equals the source delta except the usual markdown normalization (a space before one inline code span, continuation-line indent); no provider name on the page.",
+      "readbackAt": "2026-09-25T14:08:10.000Z"
     }
   ],
   "spaceId": "61374475",
