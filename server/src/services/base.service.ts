@@ -35,6 +35,7 @@ import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -131,6 +132,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   FrameleafCloudRepository,
   FrameleafCloudMlRepository,
   FrameleafConsentRepository,
+  FrameleafUserLicenseRepository,
   InstanceIdentityRepository,
   SearchRepository,
   ServerInfoRepository,
@@ -204,6 +206,7 @@ export class BaseService {
     protected frameleafCloudRepository: FrameleafCloudRepository,
     protected frameleafCloudMlRepository: FrameleafCloudMlRepository,
     protected frameleafConsentRepository: FrameleafConsentRepository,
+    protected frameleafUserLicenseRepository: FrameleafUserLicenseRepository,
     protected instanceIdentityRepository: InstanceIdentityRepository,
     protected searchRepository: SearchRepository,
     protected serverInfoRepository: ServerInfoRepository,
@@ -286,6 +289,7 @@ export class BaseService {
       ctx.frameleafCloudRepository,
       ctx.frameleafCloudMlRepository,
       ctx.frameleafConsentRepository,
+      ctx.frameleafUserLicenseRepository,
       ctx.instanceIdentityRepository,
       ctx.searchRepository,
       ctx.serverInfoRepository,

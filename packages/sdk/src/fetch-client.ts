@@ -1010,6 +1010,67 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
+export type LicenseEntitlementsDto = {
+    cloudBackup: boolean;
+    cloudMl: boolean;
+    frameleafCloud: boolean;
+    remoteAccess: boolean;
+    supporter: boolean;
+};
+export type LicenseSlotDto = {
+    /** When this server received the certificate */
+    activatedAt: string;
+    /** When the certificate or its period ends; null for a lifetime key */
+    expiresAt: string | null;
+    graceUntil: string | null;
+    /** Last four symbols of the key, for a key activation */
+    keyHint: string | null;
+    kind: LicenseKind;
+    refreshedAt: string | null;
+    /** Activated by key, installed from a file, or from the account */
+    source: Source;
+    state: LicenseState;
+};
+export type LicenseStatusResponseDto = {
+    /** Frameleaf Cloud is set up on this server (FRAMELEAF_CLOUD_URL) */
+    configured: boolean;
+    entitlements: LicenseEntitlementsDto;
+    expiresAt: string | null;
+    /** What a licence is bound to: this server’s instance ID and key thumbprint */
+    fingerprint: {
+        instanceId: string | null;
+        jkt: string | null;
+    };
+    graceUntil: string | null;
+    /** The supporter key held by this server */
+    key: (LicenseSlotDto) | null;
+    keyHint: string | null;
+    kind: (LicenseKind) | null;
+    /** A supporter key or plan is active or in grace; plans then cost 20% less */
+    licensed: boolean;
+    /** This server is linked to a Frameleaf account */
+    linked: boolean;
+    /** The licence came from a file and is not refreshed online */
+    offline: boolean;
+    /** The Frameleaf Cloud plan held by this server */
+    plan: (LicenseSlotDto) | null;
+    /** The daily certificate refresh */
+    refresh: {
+        lastError: string | null;
+        nextRefreshAt: string | null;
+        refreshedAt: string | null;
+    };
+    /** The overall state: the plan’s when there is one, else the key’s */
+    state: LicenseState;
+};
+export type LicenseActivateDto = {
+    /** A licence key, FL-KXXX-XXXX-XXXX */
+    key: string;
+};
+export type LicenseCertificateDto = {
+    /** The contents of a licence file: the signed certificate, or a JSON file holding it */
+    certificate: string;
+};
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails */
@@ -1491,10 +1552,10 @@ export type RenderWorkerUpdateDto = {
 export type UserLicense = {
     /** Activation date */
     activatedAt: string;
-    /** Activation key */
-    activationKey: string;
-    /** License key (format: /^IM(SV|CL)(-[\dA-Za-z]{4}){8}$/) */
-    licenseKey: string;
+    /** Last four symbols of the key */
+    keyHint: string;
+    /** Supporter key kind; personal keys are always individual */
+    kind: Kind;
 };
 export type UserAdminResponseDto = {
     avatarColor: UserAvatarColor;
@@ -4968,6 +5029,27 @@ export type ValidateLibraryResponseDto = {
     /** Validation results for import paths */
     importPaths?: ValidateLibraryImportPathResponseDto[];
 };
+export type LicenseProductDto = {
+    id: string;
+    kind: Kind2;
+    period: Period;
+    priceUsd: number;
+    /** Where to buy it; null when no store is configured */
+    storeUrl: string | null;
+};
+export type LicenseProductsResponseDto = {
+    /** Cloud backup is usage based, not part of a plan */
+    backup: {
+        minimumTb: number;
+        usdPerTbMonth: number;
+    };
+    currency: Currency;
+    /** Share taken off plans on a licensed server */
+    licensedDiscount: number;
+    products: LicenseProductDto[];
+    /** The store this server was deployed with; null when there is none */
+    storeUrl: string | null;
+};
 export type LivePhotoCandidateDto = {
     confidence: LivePhotoMatchConfidence;
     /** Why these two assets are believed to be a separated live photo pair */
@@ -5425,7 +5507,7 @@ export type EventStoryDto = {
     /** Last local day of the event, 'yyyy-MM-dd' */
     endDate: string;
     /** Discriminator for an event story */
-    kind: Kind;
+    kind: Kind3;
     place?: MemoryStoryPlaceDto;
     /** First local day of the event, 'yyyy-MM-dd' */
     startDate: string;
@@ -5438,7 +5520,7 @@ export type YearInReviewDto = {
     /** Number of assets captured that year */
     assetCount: number;
     /** Discriminator for a year in review recap */
-    kind: Kind2;
+    kind: Kind4;
     /** Number of distinct months represented */
     monthCount: number;
     /** Calendar year being recapped */
@@ -5448,7 +5530,7 @@ export type PetStoryDto = {
     /** Confirmed photos of the pet that month, before the diversity pass */
     assetCount: number;
     /** Discriminator for a pet story */
-    kind: Kind3;
+    kind: Kind5;
     /** The owner's local month, 'yyyy-MM' */
     month: string;
     /** The pet name */
@@ -5466,7 +5548,7 @@ export type BirthdayMemoryDto = {
     /** The birthday this year, 'yyyy-MM-dd' */
     date: string;
     /** Discriminator for a birthday */
-    kind: Kind4;
+    kind: Kind6;
     /** Their name when the memory was made */
     name: string;
     /** Whether the birthday is a person's or a pet's */
@@ -5480,7 +5562,7 @@ export type PersonRecapDto = {
     /** Number of their photos and videos that year */
     assetCount: number;
     /** Discriminator for a person or pet recap */
-    kind: Kind5;
+    kind: Kind7;
     /** Their name when the memory was made */
     name: string;
     /** Whether the recap is about a person or a pet */
@@ -7678,6 +7760,10 @@ export type ServerConfigDto = {
     userDeleteDelay: number;
 };
 export type ServerFeaturesDto = {
+    /** Whether the Frameleaf Cloud plan includes cloud backup (FL-156) */
+    cloudBackup: boolean;
+    /** Whether the Frameleaf Cloud plan includes cloud processing (FL-156) */
+    cloudMl: boolean;
     /** Whether config file is available */
     configFile: boolean;
     /** Whether duplicate detection is enabled */
@@ -7686,6 +7772,8 @@ export type ServerFeaturesDto = {
     email: boolean;
     /** Whether facial recognition is enabled */
     facialRecognition: boolean;
+    /** Whether this server is linked to Frameleaf Cloud (FL-156) */
+    frameleafCloud: boolean;
     /** Whether image description and tag generation is enabled */
     imageDescription: boolean;
     /** Whether face import is enabled */
@@ -7708,6 +7796,8 @@ export type ServerFeaturesDto = {
     physicalDeduplication: boolean;
     /** Whether real-time transcoding is enabled */
     realtimeTranscoding: boolean;
+    /** Whether the Frameleaf Cloud plan includes remote access (FL-156) */
+    remoteAccess: boolean;
     /** Whether reverse geocoding is enabled */
     reverseGeocoding: boolean;
     /** Whether search is enabled */
@@ -7716,14 +7806,10 @@ export type ServerFeaturesDto = {
     sidecar: boolean;
     /** Whether smart search is enabled */
     smartSearch: boolean;
+    /** Whether this server carries a Frameleaf supporter licence (FL-156) */
+    supporter: boolean;
     /** Whether trash feature is enabled */
     trash: boolean;
-};
-export type LicenseKeyDto = {
-    /** Activation key */
-    activationKey: string;
-    /** License key (format: /^IM(SV|CL)(-[\dA-Za-z]{4}){8}$/) */
-    licenseKey: string;
 };
 export type ServerMediaTypesResponseDto = {
     /** Supported image MIME types */
@@ -10386,6 +10472,83 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
         data: IntegrityReportSummaryResponseDto;
     }>("/admin/integrity/summary", {
         ...opts
+    }));
+}
+/**
+ * Remove the licence key
+ */
+export function removeLicenseKey(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get the licence status
+ */
+export function getLicenseStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license", {
+        ...opts
+    }));
+}
+/**
+ * Activate a server licence key
+ */
+export function activateLicense({ licenseActivateDto }: {
+    licenseActivateDto: LicenseActivateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license/activate", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: licenseActivateDto
+    })));
+}
+/**
+ * Install a licence file
+ */
+export function installLicenseCertificate({ licenseCertificateDto }: {
+    licenseCertificateDto: LicenseCertificateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license/certificate", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: licenseCertificateDto
+    })));
+}
+/**
+ * Remove the plan from this server
+ */
+export function removeLicensePlan(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license/plan", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Refresh the licence now
+ */
+export function refreshLicense(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license/refresh", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -13577,6 +13740,17 @@ export function validate({ id, validateLibraryDto }: {
     })));
 }
 /**
+ * Get Support Frameleaf prices
+ */
+export function getLicenseProducts(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseProductsResponseDto;
+    }>("/license/products", {
+        ...opts
+    }));
+}
+/**
  * List live photo relink candidates
  */
 export function getLivePhotoCandidates(opts?: Oazapfts.RequestOpts) {
@@ -16214,43 +16388,6 @@ export function getServerFeatures(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
- * Delete server product key
- */
-export function deleteServerLicense(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/server/license", {
-        ...opts,
-        method: "DELETE"
-    }));
-}
-/**
- * Get product key
- */
-export function getServerLicense(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: UserLicense;
-    } | {
-        status: 404;
-    }>("/server/license", {
-        ...opts
-    }));
-}
-/**
- * Set server product key
- */
-export function setServerLicense({ licenseKeyDto }: {
-    licenseKeyDto: LicenseKeyDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: UserLicense;
-    }>("/server/license", oazapfts.json({
-        ...opts,
-        method: "PUT",
-        body: licenseKeyDto
-    })));
-}
-/**
  * Get supported media types
  */
 export function getSupportedMediaTypes(opts?: Oazapfts.RequestOpts) {
@@ -18456,7 +18593,7 @@ export function getMyCalendarHeatmap({ $from, to, $type }: {
     }));
 }
 /**
- * Delete user product key
+ * Remove your supporter key
  */
 export function deleteUserLicense(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText("/users/me/license", {
@@ -18465,7 +18602,7 @@ export function deleteUserLicense(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
- * Retrieve user product key
+ * Get your supporter key
  */
 export function getUserLicense(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -18476,10 +18613,10 @@ export function getUserLicense(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
- * Set user product key
+ * Activate your supporter key
  */
-export function setUserLicense({ licenseKeyDto }: {
-    licenseKeyDto: LicenseKeyDto;
+export function setUserLicense({ licenseActivateDto }: {
+    licenseActivateDto: LicenseActivateDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -18487,7 +18624,7 @@ export function setUserLicense({ licenseKeyDto }: {
     }>("/users/me/license", oazapfts.json({
         ...opts,
         method: "PUT",
-        body: licenseKeyDto
+        body: licenseActivateDto
     })));
 }
 /**
@@ -18994,6 +19131,23 @@ export enum IntegrityReport {
     MissingFile = "missing_file",
     ChecksumMismatch = "checksum_mismatch"
 }
+export enum LicenseKind {
+    Server = "server",
+    Individual = "individual",
+    Plan = "plan"
+}
+export enum Source {
+    Key = "key",
+    File = "file",
+    Account = "account"
+}
+export enum LicenseState {
+    None = "none",
+    Active = "active",
+    Grace = "grace",
+    Expired = "expired",
+    Invalid = "invalid"
+}
 export enum MaintenanceAction {
     Start = "start",
     End = "end",
@@ -19158,6 +19312,9 @@ export enum RenderWorkerRefusalReason {
     DestinationUnavailable = "destination_unavailable",
     ManifestIncomplete = "manifest_incomplete",
     CodecUnsupported = "codec_unsupported"
+}
+export enum Kind {
+    Individual = "individual"
 }
 export enum UserStatus {
     Active = "active",
@@ -19947,6 +20104,18 @@ export enum LibraryImportPathReason {
     Nested = "nested",
     OtherLibrary = "other_library"
 }
+export enum Currency {
+    Usd = "USD"
+}
+export enum Kind2 {
+    Plan = "plan",
+    Supporter = "supporter"
+}
+export enum Period {
+    Month = "month",
+    Year = "year",
+    OneTime = "one-time"
+}
 export enum LivePhotoMatchConfidence {
     High = "high",
     Low = "low"
@@ -20026,23 +20195,23 @@ export enum MemoryType {
     Birthday = "birthday",
     PersonRecap = "person_recap"
 }
-export enum Kind {
+export enum Kind3 {
     EventStory = "event_story"
 }
-export enum Kind2 {
+export enum Kind4 {
     YearInReview = "year_in_review"
 }
-export enum Kind3 {
+export enum Kind5 {
     PetStory = "pet_story"
 }
-export enum Kind4 {
+export enum Kind6 {
     Birthday = "birthday"
 }
 export enum Subject {
     Person = "person",
     Pet = "pet"
 }
-export enum Kind5 {
+export enum Kind7 {
     PersonRecap = "person_recap"
 }
 export enum MemoryShowLessKind {

@@ -29,6 +29,7 @@ import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
 import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
 import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
+import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
@@ -110,6 +111,7 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 export const services = [
   CloudMlService,
   FrameleafCloudService,
+  FrameleafLicenseService,
   ICloudMetadataService,
   ICloudRelationsService,
   ICloudAlbumService,

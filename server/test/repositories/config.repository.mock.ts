@@ -38,11 +38,6 @@ export const envData: EnvData = {
     config: {},
   },
 
-  licensePublicKey: {
-    client: 'client-public-key',
-    server: 'server-public-key',
-  },
-
   versionCheck: {
     url: 'https://version.immich.cloud/version',
   },
