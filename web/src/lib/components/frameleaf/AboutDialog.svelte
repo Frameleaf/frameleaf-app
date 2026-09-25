@@ -101,7 +101,7 @@
       </div>
     {/each}
   </dl>
-  {#if info.sourceRef === 'main' && info.repository === 'immich-app/immich'}
+  {#if info.sourceRef === 'main' && info.repository === 'Frameleaf/frameleaf-app'}
     <p class="about-attribution warning">
       <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
       <span>{$t('main_branch_warning')}</span>

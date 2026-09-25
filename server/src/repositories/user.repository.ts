@@ -297,12 +297,16 @@ export class UserRepository {
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
-  getByStorageLabel(storageLabel: string) {
+  /**
+   * `withDeleted` (FL-76): the unique constraint on `storageLabel` covers soft-deleted accounts too, so
+   * a duplicate check before an insert or update must see them.
+   */
+  getByStorageLabel(storageLabel: string, withDeleted = false) {
     return this.db
       .selectFrom('user')
       .select(columns.userAdmin)
       .where('user.storageLabel', '=', storageLabel)
-      .where('user.deletedAt', 'is', null)
+      .$if(!withDeleted, (qb) => qb.where('user.deletedAt', 'is', null))
       .executeTakeFirst();
   }
 
@@ -331,7 +335,7 @@ export class UserRepository {
       .selectFrom('user')
       .select(columns.userAdmin)
       .select(withMetadata)
-      .$if(!withDeleted, (eb) => eb.where('user.deletedAt', 'is', null))
+      .$if(!withDeleted, (qb) => qb.where('user.deletedAt', 'is', null))
       .$if(!!id, (eb) => eb.where('user.id', '=', id!))
       .orderBy('createdAt', 'desc')
       .execute();

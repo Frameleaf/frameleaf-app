@@ -19,11 +19,11 @@
     "webActions": 153,
     "routes": 83,
     "byStatus": {
-      "match": 61,
-      "partial": 67,
+      "match": 62,
+      "partial": 63,
       "missing": 1,
-      "fixed": 81,
-      "in-flight": 12,
+      "fixed": 88,
+      "in-flight": 8,
       "studio-parked": 3,
       "retained-live-route": 8,
       "intentional-product-change": 3
@@ -1917,9 +1917,9 @@
         "web/src/routes/admin/library-management/(list)/+page.ts",
         "web/src/lib/components/frameleaf/LibrariesManager.svelte"
       ],
-      "status": "in-flight",
+      "status": "fixed",
       "gaps": ["CC-34"],
-      "followUp": "FL-78 external libraries"
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
     },
     {
       "route": "/admin/library-management/[id]",
@@ -1928,9 +1928,9 @@
         "web/src/routes/admin/library-management/[id]/+page.ts",
         "web/src/lib/components/frameleaf/LibraryDetail.svelte"
       ],
-      "status": "in-flight",
+      "status": "fixed",
       "gaps": ["CC-34"],
-      "followUp": "FL-78 external libraries"
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
     },
     {
       "route": "/admin/library-management/[id]/edit",
@@ -1939,9 +1939,9 @@
         "web/src/routes/admin/library-management/[id]/edit/+page.ts",
         "web/src/lib/components/frameleaf/LibraryFormDialog.svelte"
       ],
-      "status": "in-flight",
+      "status": "fixed",
       "gaps": ["CC-34"],
-      "followUp": "FL-78 external libraries"
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
     },
     {
       "route": "/admin/library-management/new",
@@ -1950,9 +1950,9 @@
         "web/src/routes/admin/library-management/(list)/new/+page.ts",
         "web/src/lib/components/frameleaf/LibraryFormDialog.svelte"
       ],
-      "status": "in-flight",
+      "status": "fixed",
       "gaps": ["CC-34"],
-      "followUp": "FL-78 external libraries"
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
     },
     {
       "route": "/admin/maintenance",
@@ -1989,9 +1989,9 @@
         "web/src/routes/admin/physical-deduplication/+page.ts",
         "web/src/lib/components/frameleaf/PhysicalDedupManager.svelte"
       ],
-      "status": "partial",
-      "gaps": ["UT-23", "UT-24"],
-      "followUp": "Configuration-error state; file availability"
+      "status": "fixed",
+      "gaps": ["UT-23", "UT-24", "UT-25"],
+      "followUp": "Configuration-error state with Open settings; per-read file availability with the unavailable overlay; detail line, picker and Change link (FL-71, September 25)"
     },
     {
       "route": "/admin/processing-destinations",
@@ -2062,7 +2062,7 @@
       ],
       "status": "partial",
       "gaps": ["CC-1", "CC-2", "CC-3", "CC-4", "CC-5", "CC-6", "CC-7", "CC-8", "CC-11", "CC-12"],
-      "followUp": "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); open: the platform shortcut hint (CC-7, shared with the top bar); configuration transfer fixed by FL-71 (CC-46..CC-48)"
+      "followUp": "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); the platform shortcut hint fixed (CC-7, September 25); configuration transfer fixed by FL-71 (CC-46..CC-48)"
     },
     {
       "route": "/admin/user-management",
@@ -2188,9 +2188,9 @@
       "route": "/auth/onboarding",
       "prototype": ["design/frameleaf/template/src/AuthScreens.jsx", "design/frameleaf/template/src/system-data.mjs"],
       "production": ["web/src/routes/auth/onboarding/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["O-8", "O-12"],
-      "followUp": "Version check stays off by privacy policy; app store links await the owner. Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)"
+      "followUp": "Store links only when configured (O-12, FL-135); the version check stays off under the FL-146 privacy default (O-8, intentional). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)"
     },
     {
       "route": "/auth/pin-prompt",
@@ -2598,9 +2598,9 @@
         "design/frameleaf/template/src/SharingAccess.jsx"
       ],
       "production": ["web/src/routes/(user)/user-settings/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["CC-49", "AL-46", "US-2"],
-      "followUp": "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54)"
+      "followUp": "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54, AL-46); server key product name fixed (US-2)"
     },
     {
       "route": "/utilities",
@@ -2612,9 +2612,9 @@
         "web/src/routes/(user)/utilities/+page.ts",
         "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte"
       ],
-      "status": "partial",
+      "status": "match",
       "gaps": ["UT-12"],
-      "followUp": "Hub scope line (UT-12). PL-0, UT-1 and UT-1a are fixed on claude/frameleaf-implementation: utilities are the Command Center utilities area and application setup is a utility"
+      "followUp": "UT-12 obsolete: the September 24 prototype has no hub cards, utilities are Command Center directory rows. PL-0, UT-1 and UT-1a are fixed on claude/frameleaf-implementation: utilities are the Command Center utilities area and application setup is a utility"
     },
     {
       "route": "/utilities/corrupt-media",

@@ -676,6 +676,9 @@ describe(UserService.name, () => {
       expect(revealed.privacy.suppression).toMatchObject({ tagIds: [tagId], personIds: [personId] });
       // the revision covers the stored rules either way, so a stale save is still detected
       expect(locked.revision).toBe(revealed.revision);
+      // FL-67: the response says whether the rules were revealed, so a client never edits blanked ones
+      expect(locked.lockedRulesRevealed).toBe(false);
+      expect(revealed.lockedRulesRevealed).toBe(true);
     });
 
     it('should keep Locked people and tags out of the response to a save from a session that is not unlocked', async () => {

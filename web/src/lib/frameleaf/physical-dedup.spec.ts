@@ -45,6 +45,7 @@ const retained = (overrides: Partial<PhysicalDeduplicationRetainedDto> = {}): Ph
   referencesBefore: 1,
   referencesAfter: 3,
   hiddenCopies: 0,
+  fileAvailable: true,
   ...overrides,
 });
 

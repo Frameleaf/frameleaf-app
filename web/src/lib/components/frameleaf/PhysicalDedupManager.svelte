@@ -26,6 +26,7 @@
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
+  import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import {
     applyBlockedReason,
     applyForPlan,
@@ -116,7 +117,8 @@
     { label: $t('frameleaf_dedup_scope_all'), value: DEDUP_SCOPE_ALL },
     ...users.filter((user) => user.id !== effectiveMaster).map((user) => ({ label: user.name, value: user.id })),
   ]);
-  const masterOptions = $derived(users.map((user) => ({ label: `${user.name} (${user.email})`, value: user.id })));
+  // The template lists retained accounts by name (`PhysicalDedupManager.jsx:519-531`).
+  const masterOptions = $derived(users.map((user) => ({ label: user.name, value: user.id })));
   const groups = $derived(plan ? groupPlanCopies(plan) : []);
   const metrics = $derived(plan ? planMetrics(plan) : null);
   const selection = $derived(plan ? planSelection(plan, excluded) : null);
@@ -387,6 +389,20 @@
   });
 
   const settingsHref = Route.systemSettings({ isOpen: OpenQueryParam.STORAGE_TEMPLATE });
+
+  /**
+   * FL-71 UT-23: the template's `dedupConfigurationError` (`physical-dedup-data.mjs:76-86`). File
+   * reuse must be on, and an account must hold the retained originals (the saved one, or the one
+   * chosen here for a preview), before a plan can be prepared; the page says which and offers
+   * "Open settings" with Prepare disabled.
+   */
+  const configError = $derived(
+    preview.enabled
+      ? effectiveMaster
+        ? ''
+        : $t('frameleaf_dedup_config_error_no_account')
+      : $t('frameleaf_dedup_config_error_disabled'),
+  );
 </script>
 
 <div class="dedup">
@@ -407,7 +423,7 @@
       <div class="retained-saved">
         <span>{$t('frameleaf_dedup_retain_in')}</span>
         <strong>{nameOf(preview.savedMasterUserId)}</strong>
-        <a href={settingsHref}>{$t('frameleaf_dedup_retained_change')}</a>
+        <a class="button" href={settingsHref}>{$t('frameleaf_dedup_retained_change')}</a>
       </div>
     {:else}
       <div class="toolbar-field">
@@ -424,7 +440,7 @@
       </div>
     {/if}
     <div class="toolbar-actions">
-      <Button variant="primary" disabled={!effectiveMaster || preview.running || busy} onclick={prepare}>
+      <Button variant="primary" disabled={!!configError || preview.running || busy} onclick={prepare}>
         <Icon icon={mdiFolderSearchOutline} size="1em" aria-hidden={true} />
         {plan ? $t('frameleaf_dedup_prepare_new') : $t('frameleaf_dedup_prepare')}
       </Button>
@@ -436,10 +452,24 @@
       ? $t('frameleaf_dedup_scope_all_body')
       : $t('frameleaf_dedup_scope_one_body', { values: { name: nameOf(scope) } })}
     {#if !masterSaved}
-      {$t('frameleaf_dedup_preview_uses_chosen')}
-      <a href={settingsHref}>{$t('frameleaf_dedup_apply_blocked_no_saved_master')}</a>
+      <FormatMessage key="frameleaf_dedup_preview_uses_chosen">
+        {#snippet children({ tag, message })}
+          {#if tag === 'link'}
+            <a href={settingsHref}>{message}</a>
+          {:else}
+            {message}
+          {/if}
+        {/snippet}
+      </FormatMessage>
     {/if}
   </p>
+
+  {#if configError}
+    <p class="message error config-error" role="status">
+      <span>{configError}</span>
+      <a class="button" href={settingsHref}>{$t('frameleaf_dedup_open_settings')}</a>
+    </p>
+  {/if}
 
   {#if preview.running}
     <Status message={$t('frameleaf_dedup_plan_running')} busy />
@@ -597,6 +627,7 @@
                   assetId={group.retained.assetId}
                   type={group.retained.type}
                   canView={group.retained.canView}
+                  unavailable={!group.retained.fileAvailable}
                   size="retained"
                 />
                 <div class="retained-text">
@@ -742,7 +773,11 @@
                 <td>
                   {#if retained}
                     <strong>{retained.ownerName}</strong>
-                    <small>{$t('frameleaf_dedup_table_file_available')}</small>
+                    <small class:unavailable-text={!retained.fileAvailable}>
+                      {retained.fileAvailable
+                        ? $t('frameleaf_dedup_table_file_available')
+                        : $t('frameleaf_dedup_table_file_unavailable')}
+                    </small>
                     <details>
                       <summary>{$t('frameleaf_dedup_location')}</summary>
                       <code>{retained.originalPath}</code>
@@ -956,7 +991,6 @@
   .retained-saved > strong {
     font-weight: 550;
   }
-  .retained-saved a,
   .scope-note a {
     color: var(--fl-accent);
     text-decoration: underline;
@@ -1305,6 +1339,17 @@
   }
   .message.error {
     border-color: var(--fl-danger);
+    color: var(--fl-danger-text);
+  }
+  /* The template's `.jm-message.jm-error` with its "Open settings" button (UT-23). */
+  .config-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .unavailable-text {
     color: var(--fl-danger-text);
   }
   .message :global(svg) {

@@ -353,5 +353,82 @@ describe('/admin/database-backups', () => {
         ({ status, body }) => status === 200 && !body.maintenanceMode,
       );
     });
+
+    // FL-81: a backup from a newer server cannot be migrated down; it is refused before anything changes.
+    it.sequential('refuses a backup made by a newer server', { timeout: 60_000 }, async () => {
+      const created = await utils.createBackup(admin.accessToken);
+      const filename = 'immich-db-backup-20260114T184016-v999.0.0-pg14.19.sql.gz';
+      await utils.move(`/data/backups/${created}`, `/data/backups/${filename}`);
+
+      const { status, headers } = await request(app)
+        .post('/admin/maintenance')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ action: 'restore_database', restoreBackupFilename: filename });
+
+      expect(status).toBe(201);
+      cookie = headers['set-cookie'][0].split(';', 1)[0];
+
+      await expect
+        .poll(
+          async () => {
+            const { status, body } = await request(app).get('/admin/maintenance/status').set('cookie', cookie!);
+            expect(status).toBe(200);
+            return body;
+          },
+          { interval: 500, timeout: 30_000 },
+        )
+        .toEqual(
+          expect.objectContaining({
+            action: 'restore_database',
+            task: 'error',
+            error: expect.stringContaining('This backup was made by a newer server (v999.0.0)'),
+          }),
+        );
+
+      await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' });
+      await utils.poll(
+        () => request(app).get('/server/config'),
+        ({ status, body }) => status === 200 && !body.maintenanceMode,
+      );
+    });
+
+    // FL-81: while a restore runs, a second restore or End (which would restart the worker mid-restore) is refused.
+    it.sequential('refuses conflicting actions while a restore runs', { timeout: 60_000 }, async () => {
+      let filename = await utils.createBackup(admin.accessToken);
+      await utils.move(
+        `/data/backups/${filename}`,
+        '/data/backups/immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz',
+      );
+      filename = 'immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz';
+
+      const { status, headers } = await request(app)
+        .post('/admin/maintenance')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ action: 'restore_database', restoreBackupFilename: filename });
+
+      expect(status).toBe(201);
+      cookie = headers['set-cookie'][0].split(';', 1)[0];
+
+      await utils.poll(
+        () => request(app).get('/admin/maintenance/status').set('cookie', cookie!),
+        ({ status, body }) => status === 200 && body.action === 'restore_database' && body.task !== undefined,
+      );
+
+      for (const action of [{ action: 'end' }, { action: 'restore_database', restoreBackupFilename: filename }]) {
+        const { status: conflict } = await request(app).post('/admin/maintenance').set('cookie', cookie!).send(action);
+        expect(conflict).toBe(409);
+      }
+
+      await expect
+        .poll(
+          async () => {
+            const { status, body } = await request(app).get('/server/config');
+            expect(status).toBe(200);
+            return body.maintenanceMode;
+          },
+          { interval: 500, timeout: 60_000 },
+        )
+        .toBeFalsy();
+    });
   });
 });

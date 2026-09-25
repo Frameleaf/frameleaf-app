@@ -7,6 +7,7 @@
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -138,23 +139,29 @@
       await handleSystemConfigSave({ storageTemplate: configToEdit.storageTemplate });
     }
   });
+
+  // FL-135: this installation's documentation, or no link at all
+  const templateDocs = $derived(helpLinks.docs('administration/storage-template'));
+  const implicationsDocs = $derived(
+    helpLinks.docs('administration/backup-and-restore#asset-types-and-storage-locations'),
+  );
 </script>
 
 <section class="mt-2 dark:text-immich-dark-fg">
   <div in:fade={{ duration }} class="mx-4 flex flex-col gap-4 py-4">
-    <p class="text-sm dark:text-immich-dark-fg">
-      <FormatMessage key="admin.storage_template_more_details">
-        {#snippet children({ tag, message })}
-          {#if tag === 'template-link'}
-            <Link href="https://docs.immich.app/administration/storage-template">{message}</Link>
-          {:else if tag === 'implications-link'}
-            <Link href="https://docs.immich.app/administration/backup-and-restore#asset-types-and-storage-locations">
-              {message}
-            </Link>
-          {/if}
-        {/snippet}
-      </FormatMessage>
-    </p>
+    {#if templateDocs && implicationsDocs}
+      <p class="text-sm dark:text-immich-dark-fg">
+        <FormatMessage key="admin.storage_template_more_details">
+          {#snippet children({ tag, message })}
+            {#if tag === 'template-link'}
+              <Link href={templateDocs}>{message}</Link>
+            {:else if tag === 'implications-link'}
+              <Link href={implicationsDocs}>{message}</Link>
+            {/if}
+          {/snippet}
+        </FormatMessage>
+      </p>
+    {/if}
   </div>
   {#await getTemplateOptions() then}
     <div id="directory-path-builder" class="flex flex-col gap-4">

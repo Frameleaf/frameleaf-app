@@ -1,6 +1,12 @@
 import { MaintenanceAction } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
-import { maintenanceErrorText, maintenancePageState, maintenanceRestoreTasks } from './maintenance-page';
+import {
+  backupFileVersion,
+  backupVersionCompatibility,
+  maintenanceErrorText,
+  maintenancePageState,
+  maintenanceRestoreTasks,
+} from './maintenance-page';
 
 describe('maintenance page state (FL-80 MS-1)', () => {
   it('shows plain maintenance until a status says otherwise', () => {
@@ -55,5 +61,26 @@ describe('maintenance page state (FL-80 MS-1)', () => {
       kind: 'finished',
     });
     expect(maintenanceErrorText('a\nb')).toBe('a\nb');
+  });
+});
+
+describe('backup version compatibility (FL-81)', () => {
+  it('reads the version from a routine backup name', () => {
+    expect(backupFileVersion('immich-db-backup-20260101T000000-v2.5.0-pg14.19.sql.gz')).toBe('2.5.0');
+    expect(backupFileVersion('uploaded.sql')).toBeUndefined();
+  });
+
+  it('compares the backup with the running server', () => {
+    expect(backupVersionCompatibility('3.2.0', '3.2.0')).toBe('same');
+    expect(backupVersionCompatibility('3.1.9', '3.2.0')).toBe('older');
+    expect(backupVersionCompatibility('2.10.0', '3.2.0')).toBe('older');
+    expect(backupVersionCompatibility('3.10.0', '3.2.0')).toBe('newer');
+    expect(backupVersionCompatibility('4.0.0', '3.2.0')).toBe('newer');
+  });
+
+  it('is unknown without a readable version on either side', () => {
+    expect(backupVersionCompatibility(undefined, '3.2.0')).toBe('unknown');
+    expect(backupVersionCompatibility('3.2.0', '0.0.0')).toBe('unknown');
+    expect(backupVersionCompatibility('nightly', '3.2.0')).toBe('unknown');
   });
 });
