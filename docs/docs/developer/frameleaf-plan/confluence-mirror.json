@@ -987,32 +987,32 @@
       "readbackAt": "2026-09-23T19:55:00Z"
     },
     {
-      "bytes": 37906,
+      "bytes": 41419,
       "category": "plan",
       "id": "63832108",
       "source": "docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md",
-      "sourceSha256": "d7ad288828dfbf24583e79a418459802426f3a44c6ea571475305d543d97ad65",
+      "sourceSha256": "7dcb684b9c0f21d2c4c3ec88852e6f19869a94b64ebf7c8da14db6701dd1792a",
       "title": "Frameleaf Cloud program plan",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63832108",
-      "version": 2,
-      "sourceBranch": "codex/CLD-000-frameleaf-cloud-workstream",
-      "sourceState": "uncommitted-candidate-cld-000",
-      "readbackResult": "Markdown read-back begins with the six-line header carrying SHA-256 d7ad2888, 37906 bytes and the FL-153 (CLD-000) registration; body matches the posted source except table separator padding.",
-      "readbackAt": "2026-09-25T08:41:17.294Z"
+      "version": 3,
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceState": "committed-fl-153-serverless-pricing-2026-09-25",
+      "readbackResult": "Markdown read-back of version 3 begins with the six-line header carrying SHA-256 7dcb684b, 41419 bytes and the FL-153 (CLD-000) registration; body matches the posted source (2026-09-25 owner decisions: serverless-only Frameleaf Cloud ML, metered GPU time with start fees, top-ups, where ML work runs, hardware check and model slider, InsightFace licence) except table separator padding.",
+      "readbackAt": "2026-09-25T14:41:32.000Z"
     },
     {
-      "bytes": 64702,
+      "bytes": 68897,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "120edbeb629c2b4d7fc77025348c75c2dea1b3b48b23ebff33ff98555898edcc",
+      "sourceSha256": "285c0759d1b4a77be645694c65794dc5fddbcbdf82b105da4435b1e453f9268e",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 4,
-      "sourceBranch": "codex/FL-93-complete-media",
-      "sourceState": "committed-fl-153-bf52ec62c0",
-      "readbackResult": "Version 4 published as markdown after the FL-153 naming fix (the previous GPU-provider integration named generically, located via CLOUD_ML_DESTINATION_KINDS). Markdown read-back header carries SHA-256 120edbeb and 64702 bytes; its delta from the version 3 read-back equals the source delta except the usual markdown normalization (a space before one inline code span, continuation-line indent); no provider name on the page.",
-      "readbackAt": "2026-09-25T14:08:10.000Z"
+      "version": 5,
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceState": "committed-fl-153-serverless-pricing-2026-09-25",
+      "readbackResult": "Markdown read-back of version 5 begins with the header carrying SHA-256 285c0759, 68897 bytes and the FL-153 (CLD-000) registration and ends with the source's closing rule; body matches the posted source (CLD-201 hardware check, routing and model slider; CLD-202 metered pricing, chunked serverless restoration and Smooth motion; CLD-203 GPU-time estimates) except wrapped inline code joined onto one line and one normalized space at a nested-backtick boundary.",
+      "readbackAt": "2026-09-25T14:45:55.000Z"
     }
   ],
   "spaceId": "61374475",

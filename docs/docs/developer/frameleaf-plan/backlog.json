@@ -5321,7 +5321,10 @@
     {
       "acceptance": [
         "The Frameleaf Cloud destination row is created only by an explicit administrator action and authenticates with a short-lived instance token; the probe reads ping, capabilities and hardware from the regional gateway.",
-        "Admission refuses on missing or outdated consent, an empty wallet, missing entitlement or an unreachable cloud and never falls back; faces are refused by policy; per-feature consent is versioned with names and medical signals off by default.",
+        "Admission refuses on missing or outdated consent, an empty wallet, missing entitlement or an unreachable cloud and never falls back; faces are refused by policy and stay local on InsightFace buffalo_l under the purchased commercial licence; per-feature consent is versioned with names and medical signals off by default.",
+        "A hardware check under Compute & jobs \u2192 Hardware & GPU reports per container whether a GPU is present, visible and usable (NVIDIA Container Toolkit versus /dev/dri and the render group), shows a fix with a copy-ready compose snippet for each detected misconfiguration and runs a short benchmark per workload.",
+        "Each workload is routed Local only, Both or Cloud only; with Both each job picks local or Frameleaf Cloud at confirmation, and a job is never moved to the cloud silently.",
+        "A colour-banded model slider (white = CPU, green = fits your GPU, blue = Frameleaf Cloud) appears in Where each job runs, Cloud processing, the per-job confirmation, the editor Enhance panel and Studio; models whose licence forbids commercial hosted use never get a blue band; prices show as GPU time \u00d7 rate + start fee with per-unit estimates.",
         "The previous provider's code, configuration, credentials, metadata keys, documents and strings are gone and a test proves no customer-facing string names it; accounting cost is filled from settlements."
       ],
       "dependencies": ["CLD-002", "CLD-003", "FN-302", "AI-101"],
@@ -5335,7 +5338,10 @@
         "server/src/dtos/config.dto.ts",
         "web/src/lib/components/frameleaf/MlDestinationsPanel.svelte",
         "docs/docs/administration/workers-and-endpoints.md",
-        "i18n/en.json"
+        "i18n/en.json",
+        "server/src/utils/ml-destination.ts",
+        "server/src/services/ml-destination.service.ts",
+        "machine-learning/immich_ml"
       ],
       "phase": 4,
       "priority": "High",
@@ -5352,8 +5358,9 @@
     },
     {
       "acceptance": [
-        "A job is a durable media operation with lease, cursor, pause, resume and cancel; the estimate, wallet balance and per-job consent are shown before confirmation.",
-        "Inputs upload to presigned addresses, progress is polled, results are checksum-verified, cancel releases the hold, provider failures refund and an insufficient balance refuses without downgrading.",
+        "A job is a durable media operation with lease, cursor, pause, resume and cancel; the estimate (GPU time \u00d7 rate + start fee, with per-photo or per-minute estimates as a p50\u2013p90 range), wallet balance, model slider choice and per-job consent are shown before confirmation.",
+        "Restoration runs on serverless workers only: long video is cut into 20\u201330 second chunks across at most five workers with a checkpoint per chunk; inputs upload to presigned addresses, progress is polled, results are checksum-verified, cancel releases the hold, provider failures refund and an insufficient balance refuses without downgrading.",
+        "A Smooth motion frame-interpolation job (RIFE locally, FILM on Frameleaf Cloud) is offered in the editor video Enhance panel and Studio for slow motion and export frame-rate conversion; it previews a short clip first and saves the result as a new version.",
         "No metadata leaves the server in clips or stills; Activity shows estimated, so-far and settled cost."
       ],
       "dependencies": ["CLD-201"],
@@ -5366,7 +5373,9 @@
         "server/src/dtos/asset-restoration.dto.ts",
         "server/src/services/restoration-worker.service.ts",
         "web/src/lib/frameleaf/activity.ts",
-        "web/src/lib/components/frameleaf/ActivityView.svelte"
+        "web/src/lib/components/frameleaf/ActivityView.svelte",
+        "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
+        "web/src/routes/(user)/studio/+page.svelte"
       ],
       "phase": 4,
       "priority": "High",
@@ -5384,7 +5393,8 @@
     {
       "acceptance": [
         "Descriptions routed to the cloud submit per-owner batches keyed for packing and never one run per asset.",
-        "Automatic batching is off by default with a daily budget; exhaustion stops new batches and notifies administrators once; backfill shows the estimate before enqueueing.",
+        "Automatic batching is off by default with a daily budget; exhaustion stops new batches and notifies administrators once; backfill shows the estimate by GPU time (with a per-photo estimate) before enqueueing.",
+        "The model comes from the descriptions ladder through the model slider; for the 72B class a minimum batch of about 200 photos is suggested, and smaller batches are steered to the 27B/35B class.",
         "Prompts exclude names and medical signals unless consented."
       ],
       "dependencies": ["CLD-201"],
@@ -5392,7 +5402,11 @@
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "CLD-203",
       "objective": "Send routed description work to Frameleaf Cloud in per-owner batches with a daily budget instead of one job per asset.",
-      "paths": ["server/src/services/enrichment-plan.service.ts", "server/src/services/image-enrichment.service.ts"],
+      "paths": [
+        "server/src/services/enrichment-plan.service.ts",
+        "server/src/services/image-enrichment.service.ts",
+        "server/src/utils/ml-destination.ts"
+      ],
       "phase": 4,
       "priority": "Medium",
       "risks": ["Waiting assets are listed in Library Care."],
