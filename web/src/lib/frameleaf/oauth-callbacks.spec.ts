@@ -8,6 +8,13 @@ describe('appCallbacks (FL-131)', () => {
     });
   });
 
+  it('treats an override with an empty address like no override, as the server does', () => {
+    const plain = { immich: IMMICH_APP_CALLBACK, frameleaf: FRAMELEAF_APP_CALLBACK };
+    expect(appCallbacks(true, '')).toEqual(plain);
+    // a blank-but-not-empty address is applied by the server, which then refuses Frameleaf sign-in
+    expect(appCallbacks(true, ' '.repeat(3))).toEqual({ immich: ' '.repeat(3) });
+  });
+
   it('derives the Frameleaf sibling of the configured mobile redirect', () => {
     expect(appCallbacks(true, 'https://photos.example.com/api/oauth/mobile-redirect/?x=1#y')).toEqual({
       immich: 'https://photos.example.com/api/oauth/mobile-redirect/?x=1#y',

@@ -23,7 +23,8 @@ export type AppCallbacks = {
 };
 
 export function appCallbacks(overrideEnabled: boolean, mobileRedirectUri: string): AppCallbacks {
-  if (!overrideEnabled) {
+  // Like the server (`resolveRedirectUri`), an override with no address is not applied.
+  if (!overrideEnabled || !mobileRedirectUri) {
     return { immich: IMMICH_APP_CALLBACK, frameleaf: FRAMELEAF_APP_CALLBACK };
   }
 
