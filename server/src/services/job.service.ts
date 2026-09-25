@@ -128,6 +128,10 @@ export class JobService extends BaseService {
       }
     } catch (error: any) {
       await this.eventRepository.emit('JobError', { job, error });
+      // FL-71: a job whose handler throws is a failed job. Rethrown, BullMQ records it as failed with
+      // its reason and attempts, which the Job manager's Failed tab, "Retry failed" and "Remove failed
+      // records" work on; swallowed, every such job was recorded as completed and nothing ever failed.
+      throw error;
     } finally {
       await this.eventRepository.emit('JobComplete', queueName, job);
     }
