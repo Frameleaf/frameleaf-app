@@ -541,6 +541,43 @@ describe(RestorationWorkerService.name, () => {
       });
     });
 
+    it('refuses a full render when the destination no longer runs the reviewed model', async () => {
+      await sut.run(
+        operation({
+          kind: MediaOperationKind.Restoration,
+          snapshot: snapshot({ stage: 'full', model: { name: 'faithful-v1', version: '0.9' } }),
+        }),
+        CLAIM,
+      );
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({
+          errorCode: RestorationErrorCode.ModelChanged,
+          error: expect.stringContaining('request a new preview'),
+        }),
+      );
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('publishes a full render that ran the reviewed model', async () => {
+      await sut.run(
+        operation({
+          kind: MediaOperationKind.Restoration,
+          snapshot: snapshot({ stage: 'full', model: { name: 'faithful-v1', version: '1.0' } }),
+        }),
+        CLAIM,
+      );
+
+      expect(restore).toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({ errorCode: RestorationErrorCode.ModelChanged }),
+      );
+    });
+
     it('never sets a retention date on a preview stage that stops', async () => {
       restorations.get.mockResolvedValue(row());
       restore.mockRejectedValue(new Error('worker unreachable'));

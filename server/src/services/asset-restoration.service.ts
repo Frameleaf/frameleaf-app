@@ -729,6 +729,9 @@ export class AssetRestorationService {
       destinationKind: restoration.destinationKind as MlDestinationKind,
       region: asRegion(restoration.previewRegion),
       output,
+      // FL-115: the full render is bound to the model the reviewed preview ran.
+      ...(stage === 'full' &&
+        restoration.modelName && { model: { name: restoration.modelName, version: restoration.modelVersion } }),
     };
   }
 
