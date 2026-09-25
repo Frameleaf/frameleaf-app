@@ -9,6 +9,7 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { email: false, oauth: false, passwordLogin: true } },
 }));
 
+// Edit fixtures use a whole-GiB quota: jsdom treats the factory's 1000-byte quota (9.3e-7 GiB) as badInput.
 const GiB = 1024 ** 3;
 const field = (label: string) => screen.getByLabelText<HTMLInputElement>(label);
 const type = (element: HTMLElement, value: string) => fireEvent.input(element, { target: { value } });
@@ -40,7 +41,12 @@ describe('AccountFormDialog (FL-76)', () => {
   });
 
   it('refuses to overwrite an account that changed since the form opened', async () => {
-    const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie', updatedAt: '2026-09-01T00:00:00.000Z' });
+    const jamie = userAdminFactory.build({
+      id: 'jamie',
+      name: 'Jamie',
+      quotaSizeInBytes: 10 * GiB,
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    });
     sdkMock.getUserAdmin.mockResolvedValue({ ...jamie, isAdmin: true, updatedAt: '2026-09-02T00:00:00.000Z' });
     renderWithTooltips(AccountFormDialog, { user: jamie, onClose: vi.fn() });
 
@@ -53,7 +59,12 @@ describe('AccountFormDialog (FL-76)', () => {
   });
 
   it('saves an edit when the account is unchanged', async () => {
-    const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie', updatedAt: '2026-09-01T00:00:00.000Z' });
+    const jamie = userAdminFactory.build({
+      id: 'jamie',
+      name: 'Jamie',
+      quotaSizeInBytes: 10 * GiB,
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    });
     sdkMock.getUserAdmin.mockResolvedValue(jamie);
     sdkMock.updateUserAdmin.mockResolvedValue({ ...jamie, name: 'Jamie Lee' });
     renderWithTooltips(AccountFormDialog, { user: jamie, onClose: vi.fn() });
