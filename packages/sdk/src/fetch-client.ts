@@ -547,6 +547,8 @@ export type AdminConfigServerDto = {
     externalDomain: string;
     /** Login page message */
     loginPageMessage: string;
+    /** Server name shown in settings; empty uses the host name */
+    name: string;
     /** Public users */
     publicUsers: boolean;
 };
@@ -703,6 +705,29 @@ export type DatabaseBackupDto = {
 export type DatabaseBackupListResponseDto = {
     /** List of backups */
     backups: DatabaseBackupDto[];
+};
+export type BackupRestoreVerificationResponseDto = {
+    /** When the next test is due; null when a part has never been proved */
+    dueAt: string | null;
+    /** How often a restore test is due */
+    intervalDays: number;
+    /** When restoring the database was last proved */
+    metadataVerifiedAt: string | null;
+    /** When restoring the original files was last proved */
+    originalsVerifiedAt: string | null;
+    /** Whether a restore test is due */
+    overdue: boolean;
+    /** The administrator who recorded the last test; null once that account is gone */
+    verifiedBy: {
+        id: string;
+        name: string;
+    } | null;
+};
+export type BackupRestoreVerificationRecordDto = {
+    /** The database restored and was checked */
+    metadata: boolean;
+    /** Original files restored and their checksums were verified */
+    originals: boolean;
 };
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
@@ -1109,6 +1134,12 @@ export type RenderWorkerAuditDto = {
     operationId: string | null;
     reason: (RenderWorkerRefusalReason) | null;
     workerId: string | null;
+};
+export type RenderWorkerCompatibilityResponseDto = {
+    /** Render kinds a qualified worker can take now */
+    qualified: MediaOperationKind[];
+    /** Render kinds no qualified worker can take now */
+    unavailable: MediaOperationKind[];
 };
 export type RenderWorkerLimitDto = {
     /** Operations one account may have claimed at once */
@@ -3586,6 +3617,8 @@ export type UserConfigServerDto = {
     externalDomain: string;
     /** Login page message */
     loginPageMessage: string;
+    /** Server name shown in settings; empty uses the host name */
+    name: string;
     /** Public users */
     publicUsers: boolean;
 };
@@ -6022,6 +6055,8 @@ export type PublicConfigPasswordLoginDto = {
 export type PublicConfigServerDto = {
     /** Login page message */
     loginPageMessage: string;
+    /** Server name shown in settings; empty uses the host name */
+    name: string;
 };
 export type PublicConfigThemeDto = {
     /** Custom CSS for theming */
@@ -6080,6 +6115,22 @@ export type QueueJobResponseDto = {
 export type QueueRetryFailedResponseDto = {
     /** How many failed jobs were put back in the queue */
     count: number;
+};
+export type QueueOwnerStatisticsResponseDto = {
+    /** Number of active jobs */
+    active: number;
+    /** Number of completed jobs */
+    completed: number;
+    /** Number of delayed jobs */
+    delayed: number;
+    /** Number of failed jobs */
+    failed: number;
+    /** Number of paused jobs */
+    paused: number;
+    /** Whether a state had more jobs than were scanned, so its count is a lower bound */
+    truncated: boolean;
+    /** Number of waiting jobs */
+    waiting: number;
 };
 export type RenderWorkerAdmissionDto = {
     /** Encoder and decoder names the check verified */
@@ -7042,6 +7093,8 @@ export type ServerConfigDto = {
     oauthButtonText: string;
     /** Whether public user registration is enabled */
     publicUsers: boolean;
+    /** Server name set by an administrator; empty when none is set */
+    serverName: string;
     /** Number of days before trashed assets are permanently deleted */
     trashDays: number;
     /** Delay in days before deleted users are permanently removed */
@@ -9390,6 +9443,32 @@ export function listDatabaseBackups(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get backup restore verification
+ */
+export function getBackupRestoreVerification(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupRestoreVerificationResponseDto;
+    }>("/admin/database-backups/restore-verification", {
+        ...opts
+    }));
+}
+/**
+ * Record a backup restore test
+ */
+export function recordBackupRestoreVerification({ backupRestoreVerificationRecordDto }: {
+    backupRestoreVerificationRecordDto: BackupRestoreVerificationRecordDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupRestoreVerificationResponseDto;
+    }>("/admin/database-backups/restore-verification", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: backupRestoreVerificationRecordDto
+    })));
+}
+/**
  * Start database backup restore flow
  */
 export function startDatabaseRestoreFlow(opts?: Oazapfts.RequestOpts) {
@@ -9689,6 +9768,17 @@ export function searchRenderWorkerAudit({ take, workerId }: {
         take,
         workerId
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get render worker compatibility
+ */
+export function getRenderWorkerCompatibility(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerCompatibilityResponseDto;
+    }>("/admin/render-workers/compatibility", {
         ...opts
     }));
 }
@@ -14427,14 +14517,16 @@ export function emptyQueue({ name, queueDeleteDto }: {
 /**
  * Retrieve queue jobs
  */
-export function getQueueJobs({ name, status }: {
+export function getQueueJobs({ name, ownerId, status }: {
     name: QueueName;
+    ownerId?: string;
     status?: QueueJobStatus[];
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: QueueJobResponseDto[];
     }>(`/queues/${encodeURIComponent(name)}/jobs${QS.query(QS.explode({
+        ownerId,
         status
     }))}`, {
         ...opts
@@ -14452,6 +14544,22 @@ export function retryFailedQueueJobs({ name }: {
     }>(`/queues/${encodeURIComponent(name)}/jobs/retry-failed`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Retrieve queue statistics for an account
+ */
+export function getQueueOwnerStatistics({ name, ownerId }: {
+    name: QueueName;
+    ownerId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: QueueOwnerStatisticsResponseDto;
+    }>(`/queues/${encodeURIComponent(name)}/statistics${QS.query(QS.explode({
+        ownerId
+    }))}`, {
+        ...opts
     }));
 }
 /**

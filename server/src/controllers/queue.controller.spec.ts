@@ -74,4 +74,38 @@ describe(QueueController.name, () => {
       expect(service.retryFailedJobs).not.toHaveBeenCalled();
     });
   });
+
+  describe('GET /queues/:name/statistics (FL-71 J-1)', () => {
+    it("counts one account's jobs, for an administrator with queueJob.read", async () => {
+      const ownerId = 'af1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a03';
+      service.getOwnerStatistics.mockResolvedValue({
+        active: 0,
+        completed: 0,
+        failed: 1,
+        delayed: 0,
+        waiting: 0,
+        paused: 0,
+        truncated: false,
+      });
+
+      const { status } = await request(ctx.getHttpServer())
+        .get(`/queues/${QueueName.SmartSearch}/statistics`)
+        .query({ ownerId });
+
+      expect(status).toBe(200);
+      expect(service.getOwnerStatistics).toHaveBeenCalledWith(undefined, QueueName.SmartSearch, ownerId);
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ adminRoute: true, permission: Permission.QueueJobRead }),
+        }),
+      );
+    });
+
+    it('requires an account', async () => {
+      const { status } = await request(ctx.getHttpServer()).get(`/queues/${QueueName.SmartSearch}/statistics`);
+
+      expect(status).toBe(400);
+      expect(service.getOwnerStatistics).not.toHaveBeenCalled();
+    });
+  });
 });

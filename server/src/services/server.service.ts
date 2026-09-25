@@ -156,6 +156,7 @@ export class ServerService extends BaseService {
 
     return {
       loginPageMessage: config.server.loginPageMessage,
+      serverName: config.server.name,
       trashDays: config.trash.days,
       userDeleteDelay: config.user.deleteDelay,
       oauthButtonText: config.oauth.buttonText,

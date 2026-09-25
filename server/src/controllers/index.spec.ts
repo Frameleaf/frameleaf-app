@@ -69,6 +69,7 @@ const ADMIN_ROUTES = new Set([
   'GET queues',
   'GET queues/:name',
   'GET queues/:name/jobs',
+  'GET queues/:name/statistics',
   'GET server/license',
   'GET server/statistics',
   'GET system-config',

@@ -805,7 +805,15 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
+  [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
 }
+
+/** FL-71: the last recorded restore test of each part of a backup (ISO date-times), and who recorded it. */
+export type BackupRestoreVerification = {
+  metadataVerifiedAt?: string | null;
+  originalsVerifiedAt?: string | null;
+  verifiedBy?: string | null;
+};
 
 /**
  * FL-81: per integrity check, when its last full run completed (ISO date-time), and the run in

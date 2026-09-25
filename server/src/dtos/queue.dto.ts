@@ -41,8 +41,15 @@ const QueueDeleteSchema = z
 const QueueJobSearchSchema = z
   .object({
     status: z.array(QueueJobStatusSchema).optional().describe('Filter jobs by status'),
+    ownerId: z.uuidv4().optional().describe('Only jobs whose item belongs to this account (FL-71 account filter)'),
   })
   .meta({ id: 'QueueJobSearchDto' });
+
+const QueueOwnerStatisticsSearchSchema = z
+  .object({
+    ownerId: z.uuidv4().describe('The account whose jobs are counted'),
+  })
+  .meta({ id: 'QueueOwnerStatisticsSearchDto' });
 
 /** FL-71: the Job manager's Account column (`JobsManager.jsx` 760, 784). Administrators only. */
 const QueueJobAccountSchema = z
@@ -92,6 +99,15 @@ export const QueueStatisticsSchema = z
   })
   .meta({ id: 'QueueStatisticsDto' });
 
+/**
+ * FL-71 (J-1): one account's jobs in a queue, for the Job manager's account filter. Jobs are
+ * attributed through the item they name; at most QUEUE_OWNER_SCAN_LIMIT jobs of each state are
+ * read, and `truncated` says a state had more than that, so its count is a lower bound.
+ */
+const QueueOwnerStatisticsResponseSchema = QueueStatisticsSchema.extend({
+  truncated: z.boolean().describe('Whether a state had more jobs than were scanned, so its count is a lower bound'),
+}).meta({ id: 'QueueOwnerStatisticsResponseDto' });
+
 const QueueResponseSchema = z
   .object({
     name: QueueNameSchema,
@@ -107,5 +123,7 @@ export class QueueDeleteDto extends createZodDto(QueueDeleteSchema) {}
 export class QueueJobSearchDto extends createZodDto(QueueJobSearchSchema) {}
 export class QueueJobResponseDto extends createZodDto(QueueJobResponseSchema) {}
 export class QueueRetryFailedResponseDto extends createZodDto(QueueRetryFailedResponseSchema) {}
+export class QueueOwnerStatisticsSearchDto extends createZodDto(QueueOwnerStatisticsSearchSchema) {}
+export class QueueOwnerStatisticsResponseDto extends createZodDto(QueueOwnerStatisticsResponseSchema) {}
 export class QueueStatisticsDto extends createZodDto(QueueStatisticsSchema) {}
 export class QueueResponseDto extends createZodDto(QueueResponseSchema) {}

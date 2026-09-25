@@ -478,6 +478,11 @@ export enum SystemMetadataKey {
   SystemConfigHistory = 'system-config-history',
   /** FL-81 (CC-21): when each integrity check last ran in full, for "Last run …" in Maintenance. */
   IntegrityCheckRuns = 'integrity-check-runs',
+  /**
+   * FL-71 (CC-9): when an administrator last proved a backup restores: the database (metadata) and
+   * the original files, each recorded separately, and who recorded it.
+   */
+  BackupRestoreVerification = 'backup-restore-verification',
 }
 
 export enum UserMetadataKey {
