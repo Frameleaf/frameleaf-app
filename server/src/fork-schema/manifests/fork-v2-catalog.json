@@ -9224,12 +9224,12 @@
     "0000000000182-StudioWorkspaceLayout",
     "0000000000187-MemoryCuration",
     "0000000000188-MemoryShowLess",
-    "0000000000190-FrameleafUserLicenses",
     "0000000000191-UtilityActivity",
     "0000000000200-FrameleafConsents",
     "0000000000201-MlWorkloadAccountingCloudJobIndex",
     "0000000000202-FrameleafAccountLinks",
-    "0000000000203-FrameleafSessions"
+    "0000000000203-FrameleafSessions",
+    "0000000000204-FrameleafUserLicenses"
   ],
   "functions": [
     {
