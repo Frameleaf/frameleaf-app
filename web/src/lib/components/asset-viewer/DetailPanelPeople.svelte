@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
   import PersonFaceActions from '$lib/components/frameleaf/PersonFaceActions.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -8,8 +9,8 @@
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl, getPeopleThumbnailUrl } from '$lib/utils';
   import { AssetMediaSize, type AssetFaceResponseDto, type AssetResponseDto } from '@immich/sdk';
-  import { Button, Text } from '@immich/ui';
-  import { mdiEye, mdiEyeOff, mdiPlus } from '@mdi/js';
+  import { Button, Icon, Text } from '@immich/ui';
+  import { mdiEye, mdiEyeOff, mdiEyeOffOutline, mdiPlus } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
@@ -34,6 +35,22 @@
    * `peopleChips` does (media-viewer.mjs:451; MediaViewer.jsx PeopleSection 2071-2285).
    */
   const unassignedFaces = $derived(isOwner ? faceManager.data.filter((face) => !face.person) : []);
+  /**
+   * FL-38: faces the owner hid ("Hide face" is restorable). They count toward the prototype's
+   * "Show hidden (n)" toggle (MediaViewer.jsx:2820-2833) and, while it is on, get a dimmed chip
+   * whose menu offers "Show face", like a hidden person's chip (`mv-chip-wrap hidden-person`).
+   */
+  // Hovering a chip highlights its face box on a photo (PhotoViewer). A video's faces were found
+  // on its preview still, one frame of the video, so their boxes are not drawn over playback.
+  const hiddenFaces = $derived(isOwner ? faceManager.hiddenFaces : []);
+  const shownHiddenFaces = $derived(assetViewerManager.isShowingHiddenPeople ? hiddenFaces : []);
+  $effect(() => {
+    // re-read whenever the viewer re-reads the asset's faces (after any face change)
+    void faceManager.data;
+    if (isOwner && !authManager.isSharedLink) {
+      void faceManager.loadHiddenFaces(asset.id);
+    }
+  });
   const previewUrl = $derived(
     getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }),
   );
@@ -50,7 +67,31 @@
       `background-position: ${offset(face.boundingBoxX1, width, face.imageWidth)} ${offset(face.boundingBoxY1, height, face.imageHeight)}`,
     ].join('; ');
   };
-  const hiddenCount = $derived(people.filter((person) => person.isHidden).length);
+  /**
+   * FL-37: a person on this photo was renamed, hidden, given a birthday or a featured photo, or
+   * faces moved between people (a merge, Fix incorrect match) somewhere else: re-read this photo's
+   * faces so the chips show current names and photos. Only what the server returns for this photo
+   * is drawn, so no other person's (or anyone's private) thumbnail can appear here.
+   */
+  const refreshChips = async () => {
+    try {
+      await onFacesChanged();
+    } catch {
+      // the chips keep what they showed; opening the next photo reads its faces again
+    }
+  };
+  const onPersonUpdate = ({ id }: { id: string }) => {
+    if (!authManager.isSharedLink && people.some((person) => person.id === id)) {
+      void refreshChips();
+    }
+  };
+  const onPersonFacesChange = () => {
+    if (!authManager.isSharedLink) {
+      void refreshChips();
+    }
+  };
+
+  const hiddenCount = $derived(people.filter((person) => person.isHidden).length + hiddenFaces.length);
   const visiblePeople = $derived(
     people
       .filter((p) => assetViewerManager.isShowingHiddenPeople || !p.isHidden)
@@ -87,6 +128,8 @@
   );
 </script>
 
+<OnEvents {onPersonUpdate} {onPersonFacesChange} />
+
 {#if !authManager.isSharedLink}
   <section class="px-4 pt-4 text-sm">
     {#if isOwner || visiblePeople.length > 0 || unassignedFaces.length > 0}
@@ -121,13 +164,15 @@
           {/if}
         </div>
       </div>
-      {#if visiblePeople.length === 0 && unassignedFaces.length === 0}
+      {#if visiblePeople.length === 0 && unassignedFaces.length === 0 && shownHiddenFaces.length === 0}
         <Text size="small" color="muted">{$t('frameleaf_viewer_no_people')}</Text>
       {/if}
     {/if}
 
     <div
-      class="mt-2 grid {visiblePeople.length + unassignedFaces.length <= 6 ? 'grid-cols-3 gap-3' : 'grid-cols-4 gap-2'}"
+      class="mt-2 grid {visiblePeople.length + unassignedFaces.length + shownHiddenFaces.length <= 6
+        ? 'grid-cols-3 gap-3'
+        : 'grid-cols-4 gap-2'}"
     >
       {#each visiblePeople as person (person.id)}
         {@const personFaces = faceManager.facesByPersonId.get(person.id) ?? []}
@@ -202,6 +247,39 @@
           </div>
           <div class="absolute -inset-e-1 -top-1">
             <PersonFaceActions person={null} {face} {previousRoute} {onFacesChanged} />
+          </div>
+        </div>
+      {/each}
+      {#each shownHiddenFaces as face (face.id)}
+        {@const isHighlighted = assetViewerManager.highlightedFaces.some((b) => b.id === face.id)}
+        {@const label = face.person?.name || $t('unnamed_person')}
+        <div
+          class="relative"
+          data-testid="hidden-face"
+          role="presentation"
+          onpointerenter={() => assetViewerManager.setHighlightedFaces([face])}
+          onpointerleave={() => assetViewerManager.clearHighlightedFaces()}
+          onfocusin={() => assetViewerManager.setHighlightedFaces([face])}
+          onfocusout={() => assetViewerManager.clearHighlightedFaces()}
+        >
+          <div class="opacity-60">
+            <span
+              class="fl-squircle block p-1 {isHighlighted ? 'bg-immich-primary dark:bg-immich-dark-primary' : ''}"
+              data-highlighted={isHighlighted || undefined}
+            >
+              <span
+                class="fl-squircle block aspect-square w-full bg-gray-200 bg-no-repeat dark:bg-gray-700"
+                style={faceCropStyle(face)}
+                aria-hidden="true"
+              ></span>
+            </span>
+            <p class="mt-1 flex items-center gap-1 truncate font-medium" title={label}>
+              <span class="truncate">{label}</span>
+              <Icon icon={mdiEyeOffOutline} size="13" aria-label={$t('frameleaf_faces_hidden_label')} />
+            </p>
+          </div>
+          <div class="absolute -inset-e-1 -top-1">
+            <PersonFaceActions person={face.person} {face} {previousRoute} {onFacesChanged} />
           </div>
         </div>
       {/each}

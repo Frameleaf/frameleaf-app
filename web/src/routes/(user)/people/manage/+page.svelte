@@ -25,14 +25,22 @@
   let nextPage = $state(untrack(() => (data.people.hasNextPage ? 2 : null)));
   const overrides = new SvelteMap<string, boolean>();
   let saving = $state(false);
-  let loadingPage = $state(false);
+  let loadingAll = $state(false);
   let pageFailed = $state(false);
+  /**
+   * Hidden people confirmed by saves on this page, on top of the server's count. The summary
+   * covers everyone (the server's `total`/`hidden`) until every page is loaded, then counts the
+   * loaded list itself.
+   */
+  let savedHiddenDelta = $state(0);
   let failedCount = $state(0);
   let search = $state('');
   let confirmLeave = $state(false);
   let status = $state('');
   let retired = false;
   let pageRequest: AbortController | undefined;
+  let pageLoad: Promise<void> | undefined;
+  let allLoad: Promise<boolean> | undefined;
   let saveRequest: AbortController | undefined;
   const ownerId = untrack(() => (authManager.authenticated ? authManager.user.id : undefined));
 
@@ -45,6 +53,7 @@
     overrides.clear();
     failedCount = 0;
     pageFailed = false;
+    loadingAll = false;
     confirmLeave = false;
     status = '';
   };
@@ -78,7 +87,20 @@
 
   const rows = $derived(sortPeopleForManage(filterPeopleByName(people, search)));
   const pending = $derived(overrides.size);
-  const hiddenCount = $derived(people.filter((person) => overrides.get(person.id) ?? person.isHidden).length);
+  const draftHiddenDelta = $derived.by(() => {
+    let delta = 0;
+    for (const isHidden of overrides.values()) {
+      delta += isHidden ? 1 : -1;
+    }
+    return delta;
+  });
+  const totalCount = $derived(nextPage === null ? people.length : Math.max(data.people.total, people.length));
+  const hiddenCount = $derived(
+    nextPage === null
+      ? people.filter((person) => overrides.get(person.id) ?? person.isHidden).length
+      : Math.min(totalCount, Math.max(0, data.people.hidden + savedHiddenDelta + draftHiddenDelta)),
+  );
+  const busy = $derived(saving || loadingAll);
   const leave = () => {
     if (saving) {
       return;
@@ -90,21 +112,35 @@
     }
   };
   const setHiddenOverride = (person: PersonResponseDto, isHidden: boolean) => {
-    if (blocked || saving) {
+    if (blocked || busy) {
       return;
     }
-    status = '';
     if (isHidden === person.isHidden) {
       overrides.delete(person.id);
     } else {
       overrides.set(person.id, isHidden);
     }
   };
-  const batch = (action: 'hide' | 'unnamed' | 'show') => {
-    if (blocked || saving) {
+  const toggle = (person: PersonResponseDto, hidden: boolean) => {
+    if (blocked || busy) {
       return;
     }
-    // These existing bulk controls apply to loaded people, not an all-matching server snapshot.
+    setHiddenOverride(person, !hidden);
+    const name = isUnnamedPerson(person) ? $t('unnamed_person') : person.name;
+    status = $t(hidden ? 'frameleaf_people_will_be_shown' : 'frameleaf_people_will_be_hidden', { values: { name } });
+  };
+  /**
+   * Hide all / Hide unnamed / Show all apply to everyone, as ManagePeople.jsx:56-84 does: the
+   * remaining pages are read first (keeping every draft), then the shortcut drafts a change for
+   * each person. Nothing is drafted when a page fails to load; Retry picks the load up again.
+   */
+  const batch = async (action: 'hide' | 'unnamed' | 'show') => {
+    if (blocked || busy) {
+      return;
+    }
+    if (!(await loadAllPages())) {
+      return;
+    }
     for (const person of people) {
       if (action !== 'unnamed' || isUnnamedPerson(person)) {
         setHiddenOverride(person, action !== 'show');
@@ -119,7 +155,7 @@
     );
   };
   const reset = () => {
-    if (blocked || saving) {
+    if (blocked || busy) {
       return;
     }
     overrides.clear();
@@ -128,7 +164,7 @@
   };
 
   const handleSaveVisibility = async () => {
-    if (blocked || retired || saving || !pending) {
+    if (blocked || retired || busy || !pending) {
       return;
     }
     saving = true;
@@ -149,6 +185,7 @@
           person.isHidden = isHidden;
         }
         overrides.delete(id);
+        savedHiddenDelta += isHidden ? 1 : -1;
       }
       failedCount = changed.length - confirmed.length;
       if (confirmed.length > 0) {
@@ -169,14 +206,55 @@
       }
     }
   };
-  const loadNextPage = async () => {
-    if (!nextPage || loadingPage || blocked || retired) {
-      return;
+  /** Reads the next page; a call while one is in flight shares it rather than asking again. */
+  const loadNextPage = (): Promise<void> => {
+    if (pageLoad) {
+      return pageLoad;
     }
-    const page = nextPage;
+    if (!nextPage || blocked || retired) {
+      return Promise.resolve();
+    }
+    const load = readNextPage(nextPage);
+    pageLoad = load;
+    void load.finally(() => {
+      if (pageLoad === load) {
+        pageLoad = undefined;
+      }
+    });
+    return load;
+  };
+  /**
+   * Reads every remaining page; false when a page failed or the page was retired meanwhile. A call
+   * while a run is going shares that run.
+   */
+  const loadAllPages = (): Promise<boolean> => {
+    if (nextPage === null) {
+      return Promise.resolve(!blocked && !retired);
+    }
+    allLoad ??= (async () => {
+      loadingAll = true;
+      pageFailed = false;
+      try {
+        while (nextPage !== null && !pageFailed && !blocked && !retired) {
+          await loadNextPage();
+        }
+        return nextPage === null && !pageFailed && !blocked && !retired;
+      } finally {
+        loadingAll = false;
+        allLoad = undefined;
+      }
+    })();
+    return allLoad;
+  };
+  // "Find a person" searches everyone, so a search reads the remaining pages.
+  $effect(() => {
+    if (search.trim() && nextPage !== null && !pageFailed && !blocked) {
+      untrack(() => void loadAllPages());
+    }
+  });
+  const readNextPage = async (page: number) => {
     const request = new AbortController();
     pageRequest = request;
-    loadingPage = true;
     pageFailed = false;
     try {
       const result = await getAllPeople({ withHidden: true, page }, { signal: request.signal });
@@ -200,7 +278,6 @@
       }
     } finally {
       if (pageRequest === request) {
-        loadingPage = false;
         pageRequest = undefined;
       }
     }
@@ -229,16 +306,16 @@
               bind:value={search}
             />
             <div class="pm-batches" role="group" aria-label={$t('frameleaf_people_visibility_shortcuts')}>
-              <FrameleafButton disabled={saving} onclick={() => batch('hide')}
+              <FrameleafButton disabled={busy} onclick={() => void batch('hide')}
                 ><Icon icon={mdiEyeOffOutline} size="18" />{$t('frameleaf_people_hide_all')}</FrameleafButton
               >
-              <FrameleafButton disabled={saving} onclick={() => batch('unnamed')}
+              <FrameleafButton disabled={busy} onclick={() => void batch('unnamed')}
                 ><Icon icon={mdiAccountOffOutline} size="18" />{$t('frameleaf_people_hide_unnamed')}</FrameleafButton
               >
-              <FrameleafButton disabled={saving} onclick={() => batch('show')}
+              <FrameleafButton disabled={busy} onclick={() => void batch('show')}
                 ><Icon icon={mdiEyeOutline} size="18" />{$t('frameleaf_people_show_all')}</FrameleafButton
               >
-              <FrameleafButton disabled={saving || !pending} label={$t('reset_people_visibility')} onclick={reset}
+              <FrameleafButton disabled={busy || !pending} label={$t('reset_people_visibility')} onclick={reset}
                 ><Icon icon={mdiRestore} size="18" />{$t('reset')}</FrameleafButton
               >
             </div>
@@ -251,10 +328,9 @@
       {:else}
         <p class="pm-summary">
           {$t('frameleaf_people_manage_summary', {
-            values: { shown: people.length - hiddenCount, hidden: hiddenCount },
+            values: { shown: totalCount - hiddenCount, hidden: hiddenCount },
           })}
         </p>
-        {#if nextPage}<p class="pm-scope">{$t('frameleaf_people_loaded_scope')}</p>{/if}
         <div class="pm-grid">
           <PeopleInfiniteScroll
             people={rows}
@@ -265,13 +341,7 @@
             {#snippet children({ person })}
               {@const hidden = overrides.get(person.id) ?? person.isHidden}
               {@const changed = hidden !== person.isHidden}
-              <ManagePersonCard
-                {person}
-                {hidden}
-                {changed}
-                disabled={saving}
-                onToggle={() => setHiddenOverride(person, !hidden)}
-              />
+              <ManagePersonCard {person} {hidden} {changed} disabled={busy} onToggle={() => toggle(person, hidden)} />
             {/snippet}
           </PeopleInfiniteScroll>
         </div>
@@ -290,7 +360,8 @@
                 {$t('errors.unable_to_change_visibility', { values: { count: failedCount } })}
               </p>{/if}
             <span class="pm-pending" role="status" aria-live="polite"
-              >{status ||
+              >{(loadingAll && $t('frameleaf_people_loading_everyone')) ||
+                status ||
                 $t(pending ? 'frameleaf_people_pending_changes' : 'frameleaf_people_no_pending_changes', {
                   values: { count: pending },
                 })}</span
@@ -298,7 +369,7 @@
           </div>
           <div class="pm-footer-actions">
             <FrameleafButton disabled={saving} onclick={leave}>{$t('cancel')}</FrameleafButton>
-            <FrameleafButton variant="primary" disabled={saving || !pending} onclick={handleSaveVisibility}>
+            <FrameleafButton variant="primary" disabled={busy || !pending} onclick={handleSaveVisibility}>
               <Icon icon={mdiCheck} size="18" />
               {$t(
                 saving
@@ -389,7 +460,6 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
-  .pm-scope,
   .pm-empty,
   .pm-dialog-hint {
     color: var(--fl-muted);

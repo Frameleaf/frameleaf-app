@@ -32,6 +32,7 @@
   import OnEvents from '../OnEvents.svelte';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
   import DetailPanelPeople from '$lib/components/asset-viewer/DetailPanelPeople.svelte';
+  import DetailPanelPets from '$lib/components/asset-viewer/DetailPanelPets.svelte';
   import { faceManager } from '$lib/stores/face.svelte';
 
   interface Props {
@@ -140,6 +141,8 @@
   <VideoMomentsPanel {asset} {isOwner} />
   <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
   <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
+  <!-- FL-58: the owner's pets in this photo, with add, draw and undo. -->
+  <DetailPanelPets {asset} {isOwner} />
 
   <!-- FL-36: the design's Captured section carries the date, the timezone and the place. -->
   <div class="p-4">

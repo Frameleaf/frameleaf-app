@@ -6,12 +6,14 @@ import {
   AssetType,
   AssetVisibility,
   EnrichmentItemState,
+  JobName,
   VideoMomentIndexState,
   VideoMomentMatch,
   VideoMomentSource,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -70,6 +72,9 @@ const setup = () => {
   mlDestinations.recordAccounting.mockResolvedValue();
 
   const moments = ctx.get(VideoMomentRepository);
+  const jobs = automock(JobRepository, { args: [undefined, undefined, undefined, { setContext: () => {} }] });
+  jobs.queue.mockResolvedValue();
+  jobs.queueAll.mockResolvedValue();
   const sut = new VideoMomentIndexService(
     ctx.getMock(LoggingRepository),
     ctx.get(AccessRepository),
@@ -81,6 +86,7 @@ const setup = () => {
     ctx.get(PersonRepository),
     ctx.get(ConfigRepository),
     ctx.get(SystemMetadataRepository),
+    jobs,
   );
 
   const newOwner = async () => {
@@ -156,6 +162,7 @@ const setup = () => {
     ctx,
     sut,
     moments,
+    jobs,
     media,
     storage,
     machineLearning,
@@ -336,8 +343,18 @@ describe(VideoMomentIndexService.name, () => {
 
   describe('invalidateGenerated', () => {
     it('drops generated results of a changed original and keeps manual moments, transcripts and the cover', async () => {
-      const { sut, storage, newOwner, newVideo, replaceOriginal, fingerprintOf, framesOf, embeddingsOf, momentsOf } =
-        setup();
+      const {
+        sut,
+        storage,
+        jobs,
+        newOwner,
+        newVideo,
+        replaceOriginal,
+        fingerprintOf,
+        framesOf,
+        embeddingsOf,
+        momentsOf,
+      } = setup();
       const { user, auth } = await newOwner();
       const video = await newVideo(user.id);
       await sut.runIndexStage(video.id);
@@ -350,6 +367,8 @@ describe(VideoMomentIndexService.name, () => {
         transcript: 'Happy birthday to you',
       });
       await sut.setCover(auth, video.id, { timestampMs: oldFrames[2].timestampMs });
+      // the video's own thumbnail follows the chosen cover
+      expect(jobs.queue).toHaveBeenCalledWith({ name: JobName.AssetGenerateThumbnails, data: { id: video.id } });
 
       await replaceOriginal(video.id);
       await sut.onAssetMetadataExtracted({ assetId: video.id, userId: user.id });

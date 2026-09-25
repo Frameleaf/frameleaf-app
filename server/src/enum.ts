@@ -151,6 +151,8 @@ export enum MemoryType {
   EventStory = 'event_story',
   /** a recap of one calendar year of the owner's library */
   YearInReview = 'year_in_review',
+  /** a month of photos in which the owner confirmed one of their named pets (FL-58) */
+  PetStory = 'pet_story',
   /** a named person's birthday, from the birth date the owner entered (FL-62) */
   Birthday = 'birthday',
   /** a year with one person or pet the owner named (FL-62) */
@@ -828,6 +830,13 @@ export enum MlWorkload {
   RestorationCreative = 'restoration-creative',
   /** Studio AI features (transcription, captioning, speech, music, interpolation). */
   StudioAi = 'studio-ai',
+  /**
+   * Pet recognition (FL-58): the CLIP text prompts that tell cats and dogs apart. It runs on the
+   * ordinary `/predict` container with the configured CLIP model and is routed on its own, so an
+   * administrator can keep pet recognition on this network while search runs elsewhere, or the
+   * other way round.
+   */
+  PetRecognition = 'pet-recognition',
 }
 
 export const MlWorkloadSchema = z.enum(MlWorkload).describe('Machine-learning workload').meta({ id: 'MlWorkload' });
@@ -838,6 +847,7 @@ export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Clip,
   MlWorkload.Ocr,
   MlWorkload.Enrichment,
+  MlWorkload.PetRecognition,
 ];
 
 /** The workloads only the separate restoration worker serves (FL-114, FL-72). */
@@ -948,6 +958,8 @@ export enum MlAdmissionRefusal {
   DestinationUnhealthy = 'destination-unhealthy',
   /** A restoration on an endpoint that library analysis is allowed or routed to (FL-72). */
   RoleConflict = 'role-conflict',
+  /** The worker reported its GPU memory and none of its GPUs has enough for the workload (FL-58). */
+  InsufficientMemory = 'insufficient-memory',
 }
 
 export const MlAdmissionRefusalSchema = z
@@ -998,6 +1010,46 @@ export const PetObservationSourceSchema = z
   .enum(PetObservationSource)
   .describe('How a pet observation was recorded')
   .meta({ id: 'PetObservationSource' });
+
+/** Where an owner's run of pet recognition over their library stands (FL-58). */
+export enum PetRecognitionRunStatus {
+  Queued = 'queued',
+  Running = 'running',
+  Completed = 'completed',
+  Cancelled = 'cancelled',
+  Failed = 'failed',
+}
+
+export const PetRecognitionRunStatusSchema = z
+  .enum(PetRecognitionRunStatus)
+  .describe('State of a pet recognition run')
+  .meta({ id: 'PetRecognitionRunStatus' });
+
+/**
+ * Why pet recognition cannot propose anything right now (FL-58). The destination refusals are the
+ * FL-110 admission refusals, so the Pets page and the Processing destinations page say the same
+ * thing; the first two are the reasons that come before any destination is considered.
+ */
+export enum PetRecognitionUnavailableReason {
+  MachineLearningDisabled = 'machine-learning-disabled',
+  SmartSearchDisabled = 'smart-search-disabled',
+  DestinationMissing = 'destination-missing',
+  DestinationDisabled = 'destination-disabled',
+  WorkloadNotRouted = 'workload-not-routed',
+  WorkloadNotAllowed = 'workload-not-allowed',
+  WorkloadNotServed = 'workload-not-served',
+  ConsentMissing = 'consent-missing',
+  BudgetExceeded = 'budget-exceeded',
+  EndpointUnresolved = 'endpoint-unresolved',
+  DestinationUnhealthy = 'destination-unhealthy',
+  RoleConflict = 'role-conflict',
+  InsufficientMemory = 'insufficient-memory',
+}
+
+export const PetRecognitionUnavailableReasonSchema = z
+  .enum(PetRecognitionUnavailableReason)
+  .describe('Why pet recognition is unavailable')
+  .meta({ id: 'PetRecognitionUnavailableReason' });
 
 /**
  * Documents: text read from photos, and the owner's corrections to it (FL-63).
@@ -1878,6 +1930,7 @@ export enum QueueName {
   Workflow = 'workflow',
   IntegrityCheck = 'integrityCheck',
   Editor = 'editor',
+  PetRecognition = 'petRecognition',
 }
 
 export const QueueNameSchema = z.enum(QueueName).describe('Queue name').meta({ id: 'QueueName' });
@@ -1982,6 +2035,7 @@ export enum JobName {
   PersonCleanup = 'PersonCleanup',
   PersonFileMigration = 'PersonFileMigration',
   PersonGenerateThumbnail = 'PersonGenerateThumbnail',
+  PersonIdentityRefresh = 'PersonIdentityRefresh',
 
   SessionCleanup = 'SessionCleanup',
 
@@ -2012,6 +2066,11 @@ export enum JobName {
   ImageDescription = 'ImageDescription',
   NsfwDetectionQueueAll = 'NsfwDetectionQueueAll',
   NsfwDetection = 'NsfwDetection',
+
+  // Pet recognition (FL-58)
+  PetRecognitionQueueAll = 'PetRecognitionQueueAll',
+  PetRecognition = 'PetRecognition',
+  PetRecognitionNearest = 'PetRecognitionNearest',
 
   // Smart albums
   SmartAlbumReevaluateAll = 'SmartAlbumReevaluateAll',

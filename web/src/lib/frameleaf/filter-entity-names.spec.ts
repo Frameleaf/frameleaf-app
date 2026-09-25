@@ -1,6 +1,11 @@
 import { getAlbumInfo, getPerson, getPet, getTagById } from '@immich/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetFilterEntityNameCache, resolveEntityName, resolveEntityNames } from './filter-entity-names';
+import {
+  forgetEntityNames,
+  resetFilterEntityNameCache,
+  resolveEntityName,
+  resolveEntityNames,
+} from './filter-entity-names';
 
 vi.mock('@immich/sdk', () => ({
   getAlbumInfo: vi.fn(),
@@ -108,5 +113,25 @@ describe('resolveEntityNames', () => {
       null,
       'Name-person-3',
     ]);
+  });
+});
+
+describe('forgetEntityNames (FL-37)', () => {
+  it('reads a renamed or hidden person again, leaving other cached names alone', async () => {
+    vi.mocked(getPerson)
+      .mockResolvedValueOnce(person({ name: 'Ada' }) as never)
+      .mockResolvedValueOnce(person({ name: 'Ada Lovelace' }) as never)
+      .mockResolvedValueOnce(person({ isHidden: true }) as never);
+    vi.mocked(getTagById).mockResolvedValue(tag() as never);
+    expect(await resolveEntityName('person', 'person-1')).toBe('Ada');
+    await resolveEntityName('tag', 'tag-1');
+
+    forgetEntityNames('person', ['person-1']);
+    expect(await resolveEntityName('person', 'person-1')).toBe('Ada Lovelace');
+    forgetEntityNames('person', ['person-1']);
+    expect(await resolveEntityName('person', 'person-1')).toBeNull();
+
+    await resolveEntityName('tag', 'tag-1');
+    expect(getTagById).toHaveBeenCalledTimes(1);
   });
 });
