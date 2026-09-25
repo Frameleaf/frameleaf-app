@@ -495,7 +495,7 @@ describe(SystemConfigService.name, () => {
           signInRequired: true,
           via: 'relay',
           relayHost: 'r.label.frameleaf-direct.test',
-          localUrl: 'http://192.168.1.10:2283',
+          localUrl: null,
           sameNetwork: false,
         },
       });
@@ -503,14 +503,16 @@ describe(SystemConfigService.name, () => {
 
     it('offers the local address to a remote-access visitor on the home network', async () => {
       await expect(sut.getPublicConfig({ headers: relay, clientIp: '192.168.1.44' })).resolves.toMatchObject({
-        frameleaf: { signInRequired: true, sameNetwork: true },
+        frameleaf: { signInRequired: true, sameNetwork: true, localUrl: 'http://192.168.1.10:2283' },
       });
     });
 
     it('ignores a via header without the edge secret, and is unavailable when not linked', async () => {
       await expect(
         sut.getPublicConfig({ headers: { 'x-frameleaf-via': 'relay' }, clientIp: '203.0.113.9' }),
-      ).resolves.toMatchObject({ frameleaf: { signInRequired: false, via: null, signInAvailable: true } });
+      ).resolves.toMatchObject({
+        frameleaf: { signInRequired: false, via: null, signInAvailable: true, localUrl: null },
+      });
       mocks.systemMetadata.get.mockResolvedValue(null as never);
       await expect(sut.getPublicConfig()).resolves.toMatchObject({
         frameleaf: { signInAvailable: false, signInRequired: false },

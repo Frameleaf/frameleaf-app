@@ -172,13 +172,15 @@ export class SystemConfigService extends BaseService {
     } catch {
       relayHost = null;
     }
+    const sameNetwork = signInRequired && !!env.localUrl && isHomeAddress(arrival?.clientIp, env.trustedLanCidrs);
     return mapPublicConfig(config, {
       signInAvailable: !!signInClient(link, linked),
       signInRequired,
       via,
       relayHost,
-      localUrl: env.localUrl,
-      sameNetwork: signInRequired && !!env.localUrl && isHomeAddress(arrival?.clientIp, env.trustedLanCidrs),
+      // the home address is told only to a visitor who is already on the home network
+      localUrl: sameNetwork ? env.localUrl : null,
+      sameNetwork,
     });
   }
 
