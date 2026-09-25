@@ -18,7 +18,7 @@ describe('ProfileSection avatar (FL-67)', () => {
   });
 
   it('refuses a file that is not an image before uploading anything', async () => {
-    renderWithTooltips(ProfileSection);
+    renderWithTooltips(ProfileSection, {});
 
     await choose(new File(['text'], 'notes.txt', { type: 'text/plain' }));
 
@@ -30,7 +30,7 @@ describe('ProfileSection avatar (FL-67)', () => {
     sdkMock.createProfileImage.mockRejectedValue(
       Object.assign(new Error('Bad Request'), { status: 400, data: { message: 'File is too large' } }),
     );
-    renderWithTooltips(ProfileSection);
+    renderWithTooltips(ProfileSection, {});
 
     await choose(new File(['jpeg'], 'me.jpg', { type: 'image/jpeg' }));
 
