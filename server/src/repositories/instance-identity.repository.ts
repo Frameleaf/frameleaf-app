@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { type KeyObject, createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, chmod, copyFile, link, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, link, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { v7 as uuidv7 } from 'uuid';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
@@ -20,6 +20,8 @@ export const PROVEN_KEY_FILE = 'instance-key.proven.pem';
 const RECOVERED_RETIRE_HOURS = 24;
 /** A new key whose registration answer was lost; see `FrameleafInstanceIdentity.candidate`. */
 export const CANDIDATE_KEY_FILE = 'instance-key.candidate.pem';
+/** When the candidate key became one, by this server's clock (not the file system's): `{kid, since}`. */
+const CANDIDATE_META_FILE = 'instance-key.candidate.json';
 /** How long a candidate key is kept (the cloud's retire window). */
 export const CANDIDATE_HOURS = 24;
 /** The rotation that retired the current retiring key: `{rotationId, kid, until}`. */
@@ -126,7 +128,9 @@ export class InstanceIdentityRepository {
     if (await exists(join(dir, PROVEN_KEY_FILE))) {
       await this.finishRotation(dir, { rotationId: randomUUID(), until: this.hoursFrom(now, RECOVERED_RETIRE_HOURS) });
     }
-    await rename(join(dir, NEXT_KEY_FILE), join(dir, CANDIDATE_KEY_FILE)).catch(ignore(['ENOENT']));
+    if (await exists(join(dir, NEXT_KEY_FILE))) {
+      await this.makeCandidate(dir, now);
+    }
   }
 
   /**
@@ -194,20 +198,46 @@ export class InstanceIdentityRepository {
   }
 
   /** The candidate key, while its question is open (at most `CANDIDATE_HOURS`); older ones go. */
+  /** The in-flight key becomes the candidate; its start time goes in a 0600 sidecar first. */
+  private async makeCandidate(dir: string, now: number) {
+    const nextFile = join(dir, NEXT_KEY_FILE);
+    const kid = ed25519Thumbprint(publicJwkOf(createPrivateKey(await readFile(nextFile))));
+    await this.writeSidecar(join(dir, CANDIDATE_META_FILE), { kid, since: new Date(now).toISOString() });
+    await rename(nextFile, join(dir, CANDIDATE_KEY_FILE));
+  }
+
+  /**
+   * The candidate key, while its question is open: at most `CANDIDATE_HOURS` after the time in its
+   * sidecar (this server's clock, so a file system with a skewed clock cannot keep it alive). A
+   * candidate without a matching sidecar starts its window now.
+   */
   private async candidateOf(dir: string, now: number) {
     const keyFile = join(dir, CANDIDATE_KEY_FILE);
-    let since: Date;
-    try {
-      since = (await stat(keyFile)).mtime;
-    } catch {
-      return;
-    }
-    if (now - since.getTime() > CANDIDATE_HOURS * 60 * 60 * 1000) {
-      await rm(keyFile, { force: true });
+    const metaFile = join(dir, CANDIDATE_META_FILE);
+    if (!(await exists(keyFile))) {
+      await rm(metaFile, { force: true });
       return;
     }
     const kid = ed25519Thumbprint(publicJwkOf(createPrivateKey(await readFile(keyFile))));
-    return { kid, keyFile, since: since.toISOString() };
+    const meta = await readFile(metaFile, 'utf8')
+      .then((text) => JSON.parse(text) as { kid?: unknown; since?: unknown })
+      .catch(() => null);
+    let since = meta?.kid === kid && typeof meta.since === 'string' ? Date.parse(meta.since) : NaN;
+    if (Number.isNaN(since)) {
+      since = now;
+      await this.writeSidecar(metaFile, { kid, since: new Date(since).toISOString() });
+    }
+    if (now - since > CANDIDATE_HOURS * 60 * 60 * 1000 || since - now > CANDIDATE_HOURS * 60 * 60 * 1000) {
+      await rm(keyFile, { force: true });
+      await rm(metaFile, { force: true });
+      return;
+    }
+    return { kid, keyFile, since: new Date(since).toISOString() };
+  }
+
+  private async writeSidecar(file: string, content: Record<string, unknown>) {
+    await writeFile(`${file}.tmp`, JSON.stringify(content), { mode: 0o600 });
+    await rename(`${file}.tmp`, file);
   }
 
   private hoursFrom(now: number, hours: number) {
@@ -275,7 +305,7 @@ export class InstanceIdentityRepository {
     try {
       await prove({ ...publicJwk, kid }, (payload) => this.signJws(identity.kid, payload));
     } catch (error) {
-      await (isRefusal(error) ? rm(nextFile, { force: true }) : rename(nextFile, join(dir, CANDIDATE_KEY_FILE)));
+      await (isRefusal(error) ? rm(nextFile, { force: true }) : this.makeCandidate(dir, now));
       throw error;
     }
     // accepted by the cloud: from here a crash finishes the rotation on the next load
@@ -294,6 +324,7 @@ export class InstanceIdentityRepository {
     const dir = dirname(identity.keyFile);
     const privateKey = createPrivateKey(await readFile(identity.candidate.keyFile));
     await rename(identity.candidate.keyFile, join(dir, PROVEN_KEY_FILE));
+    await rm(join(dir, CANDIDATE_META_FILE), { force: true });
     return this.swapIn(identity, privateKey, retireHours, now);
   }
 
@@ -301,6 +332,7 @@ export class InstanceIdentityRepository {
   async discardCandidate(identity: FrameleafInstanceIdentity): Promise<FrameleafInstanceIdentity> {
     if (identity.candidate) {
       await rm(identity.candidate.keyFile, { force: true });
+      await rm(join(dirname(identity.candidate.keyFile), CANDIDATE_META_FILE), { force: true });
     }
     const { candidate: _candidate, ...rest } = identity;
     return rest;
