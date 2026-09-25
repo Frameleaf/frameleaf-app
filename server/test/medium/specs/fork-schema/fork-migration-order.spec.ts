@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { Migration, Migrator } from 'kysely/migration';
 import { join } from 'node:path';
+import manifest from 'src/fork-schema/manifests/fork-migration-order.json' with { type: 'json' };
 import { createForkMigrationProvider } from 'src/fork-schema/migration-provider.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -8,21 +9,16 @@ import { getKyselyDB } from 'test/utils.js';
 /**
  * Fork migrations run in Kysely's ordered mode (`DatabaseRepository.runForkMigrations`): a pending
  * migration whose name sorts before the last one a database already ran fails as "corrupted
- * migrations" and the server does not start. A migration this branch adds must therefore sort after
- * every migration already on `master/frameleaf-implementation`.
+ * migrations" and the server does not start.
  *
- * `BRANCH_MIGRATIONS` lists the migrations this branch adds; once the branch lands they are released
- * and leave the list, and the next branch lists its own. The spec replays the upgrade a real server
- * makes: the released migrations first, then the rest, through Kysely's own ordering check (the
- * migrations' bodies are replaced with no-ops; only their order is under test).
+ * `manifests/fork-migration-order.json` is the append-only list of shipped fork migrations. Every
+ * migration file must be in it or sort after its last entry, so a branch cannot add a migration
+ * numbered below one already released. The spec also replays the upgrade a real server makes
+ * (listed migrations first, then any new ones) through Kysely's own ordering check, with the
+ * migrations' bodies replaced by no-ops: only their order is under test.
  */
-const BRANCH_MIGRATIONS = [
-  '0000000000202-FrameleafAccountLinks',
-  '0000000000203-FrameleafSessions',
-  '0000000000204-FrameleafUserLicenses',
-];
-
 const SCHEMA = 'fork_migration_order_probe';
+const released: string[] = manifest.migrations;
 
 describe('fork migration order', () => {
   let db: Kysely<DB>;
@@ -57,23 +53,34 @@ describe('fork migration order', () => {
       },
     });
 
+  it('keeps the manifest strictly ascending', () => {
+    for (let index = 1; index < released.length; index++) {
+      expect(released[index] > released[index - 1], `${released[index]} after ${released[index - 1]}`).toBe(true);
+    }
+  });
+
   it('lists only migrations that exist', () => {
-    for (const name of BRANCH_MIGRATIONS) {
+    for (const name of released) {
       expect(names).toContain(name);
     }
   });
 
-  it('adds every branch migration after the released ones', async () => {
-    const released = names.filter((name) => !BRANCH_MIGRATIONS.includes(name));
+  it('adds every unlisted migration after the last listed one', () => {
     const last = released.at(-1)!;
-    for (const name of BRANCH_MIGRATIONS) {
-      expect(name > last, `${name} must sort after the released ${last}`).toBe(true);
+    for (const name of names) {
+      if (!released.includes(name)) {
+        expect(name > last, `${name} must sort after ${last}; append it to fork-migration-order.json`).toBe(true);
+      }
     }
+  });
 
+  it('upgrades a database that ran the listed migrations, through Kysely’s ordering check', async () => {
     const first = await migrator(released).migrateToLatest();
     expect(first.error).toBeUndefined();
     const second = await migrator(names).migrateToLatest();
     expect(second.error).toBeUndefined();
-    expect(second.results?.map(({ migrationName }) => migrationName)).toEqual(BRANCH_MIGRATIONS);
+    expect(second.results?.map(({ migrationName }) => migrationName)).toEqual(
+      names.filter((name) => !released.includes(name)),
+    );
   });
 });
