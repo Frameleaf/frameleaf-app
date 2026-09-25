@@ -579,6 +579,14 @@ export class AssetService extends BaseService {
       return JobStatus.Failed;
     }
 
+    // FL-71: a failed deletion can be retried long after it was queued. Only an asset that is still in
+    // the trash (or force-deleted) goes, or a live photo's hidden motion part that no photo uses any
+    // more; one restored since is kept.
+    if (!asset.deletedAt && !(await this.isOrphanedMotionPart(asset))) {
+      this.logger.warn(`Skipped deleting asset ${id}: it is no longer in the trash`);
+      return JobStatus.Skipped;
+    }
+
     if (asset.stack) {
       // asset.stack.assets only includes timeline visible assets and excludes the primary asset
       const remainingStackAssetIds = asset.stack.assets.map((a) => a.id).filter((assetId) => assetId !== id);
@@ -651,6 +659,12 @@ export class AssetService extends BaseService {
     await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: files.filter(Boolean) } });
 
     return JobStatus.Success;
+  }
+
+  private async isOrphanedMotionPart(asset: { id: string; visibility: AssetVisibility }) {
+    return (
+      asset.visibility === AssetVisibility.Hidden && (await this.assetRepository.getLivePhotoCount(asset.id)) === 0
+    );
   }
 
   async deleteAll(auth: AuthDto, dto: AssetBulkDeleteDto): Promise<void> {

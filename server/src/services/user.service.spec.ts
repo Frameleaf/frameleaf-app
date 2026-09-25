@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserAdmin } from 'src/database.js';
-import { AssetVisibility, CacheControl, CalendarHeatmapType, JobName, UserMetadataKey } from 'src/enum.js';
+import { AssetVisibility, CacheControl, CalendarHeatmapType, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
 import { UserService, describePreferenceChanges } from 'src/services/user.service.js';
 import { UserMetadataItem } from 'src/types.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
@@ -475,6 +475,36 @@ describe(UserService.name, () => {
       const options = { force: true, recursive: true };
 
       expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining('data/library/admin'), options);
+    });
+
+    it('removes an account an administrator removed now (force) at once (FL-71)', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(0), status: UserStatus.Removing } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id, force: true });
+
+      expect(mocks.user.delete).toHaveBeenCalledWith(user, true);
+    });
+
+    it('keeps an account restored since a forced removal was queued, when that job is retried (FL-71)', async () => {
+      const user = { id: 'deleted-user', deletedAt: null, status: UserStatus.Active } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id, force: true });
+
+      expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.user.delete).not.toHaveBeenCalled();
+    });
+
+    it('leaves an account deleted again without "remove now" to the delete delay, when a forced removal is retried (FL-71)', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(0), status: UserStatus.Deleted } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id, force: true });
+
+      expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
+      expect(mocks.user.delete).not.toHaveBeenCalled();
     });
   });
 

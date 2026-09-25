@@ -170,6 +170,31 @@ describe(JobRepository.name, () => {
       const [job] = await repository.searchJobs(QueueName.FaceDetection, { status: [] });
       expect(job.failedReason).toHaveLength(500);
     });
+
+    it('never returns the data of a signup notice or its mail, which carry a password (FL-71)', async () => {
+      const getJobs = vi.fn().mockResolvedValue([
+        {
+          id: '1',
+          name: JobName.NotifyUserSignup,
+          timestamp: 1,
+          data: { id: 'u', password: 'secret' },
+          attemptsMade: 1,
+        },
+        { id: '2', name: JobName.SendMail, timestamp: 1, data: { html: 'secret', text: 'secret' }, attemptsMade: 1 },
+        { id: '3', name: JobName.AssetDetectFaces, timestamp: 1, data: { id: 'asset-1' }, attemptsMade: 1 },
+      ]);
+      const moduleRef = { get: vi.fn().mockReturnValue({ getJobs }) } as unknown as ModuleRef;
+      const repository = new JobRepository(
+        moduleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+
+      const jobs = await repository.searchJobs(QueueName.Notification, { status: [QueueJobStatus.Failed] });
+      expect(jobs.map(({ data }) => data)).toEqual([{}, {}, { id: 'asset-1' }]);
+      expect(JSON.stringify(jobs)).not.toContain('secret');
+    });
   });
 
   it('should use a longer lock for the database backup worker', () => {
@@ -204,6 +229,70 @@ describe(JobRepository.name, () => {
     });
     expect(getForkSchemaBackfillJobOptions('privacy')).toEqual({
       deduplication: { id: `${JobName.ForkSchemaBackfill}:privacy`, keepLastIfActive: true },
+    });
+  });
+
+  describe('jobs that are never retried (FL-71)', () => {
+    const queueWith = () => {
+      const queue = { add: vi.fn(), addBulk: vi.fn() };
+      const repository = new JobRepository(
+        { get: vi.fn().mockReturnValue(queue) } as unknown as ModuleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+      // one queue is enough here; the handlers that map a job to its queue are not registered
+      vi.spyOn(repository as unknown as { getQueueName(): QueueName }, 'getQueueName').mockReturnValue(
+        QueueName.BackgroundTask,
+      );
+      return { queue, repository };
+    };
+
+    it('are queued with removeOnFail, so a stalled or failed one is not kept either', async () => {
+      const { queue, repository } = queueWith();
+
+      await repository.queueAll([
+        { name: JobName.NotifyUserSignup, data: { id: 'user-1', password: 'secret' } },
+        { name: JobName.FacialRecognition, data: { id: 'face-1' } },
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } },
+      ]);
+
+      expect(queue.addBulk.mock.calls.flatMap(([jobs]) => jobs)).toEqual(
+        expect.arrayContaining([
+          { name: JobName.NotifyUserSignup, data: expect.anything(), opts: { removeOnFail: true } },
+          { name: JobName.FacialRecognition, data: expect.anything(), opts: { removeOnFail: true } },
+          { name: JobName.AssetGenerateThumbnails, data: expect.anything(), opts: undefined },
+        ]),
+      );
+    });
+
+    it('keep their own options next to removeOnFail', async () => {
+      const { queue, repository } = queueWith();
+
+      await repository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { id: 'asset-1' } });
+      await repository.queue({ name: JobName.NotifyAlbumUpdate, data: { id: 'album-1', recipientId: 'user-1' } });
+
+      expect(queue.add).toHaveBeenCalledWith(JobName.StorageTemplateMigrationSingle, expect.anything(), {
+        jobId: 'asset-1',
+        removeOnFail: true,
+      });
+      expect(queue.add).toHaveBeenCalledWith(JobName.NotifyAlbumUpdate, expect.anything(), {
+        jobId: 'album-1/user-1',
+        delay: undefined,
+        removeOnFail: true,
+      });
+    });
+
+    it('queues person thumbnails without a priority, which would hide them from the waiting counts', async () => {
+      const { queue, repository } = queueWith();
+
+      await repository.queueAll([
+        { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'user-1', personGroupId: 'group-1' } },
+      ]);
+
+      expect(queue.addBulk).toHaveBeenCalledWith([
+        { name: JobName.PersonGenerateThumbnail, data: expect.anything(), opts: undefined },
+      ]);
     });
   });
 
