@@ -2125,6 +2125,132 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/physical-deduplication/applies/{id}/restore": {
+      "post": {
+        "description": "Point one copy back at its own former file, only while that file is still on disk with the reviewed checksum and size, and answer with the plan verified again. A copy whose own file was removed cannot be restored.",
+        "operationId": "restorePhysicalDeduplicationCopy",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhysicalDeduplicationRestoreRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhysicalDeduplicationVerificationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a copy of an applied physical deduplication plan",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/physical-deduplication/applies/{id}/verify": {
+      "post": {
+        "description": "Hash every retained original the applied plan shares again and check that every copy it changed still resolves to one. Reports, per copy, whether its own former file is gone (which cannot be undone) or still on disk (which can be restored). Nothing is written.",
+        "operationId": "verifyPhysicalDeduplicationApply",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhysicalDeduplicationVerificationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Verify an applied physical deduplication plan",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/physical-deduplication/plan/apply": {
       "post": {
         "description": "Queue exactly the reviewed copies as a durable, pausable job. Requires the review token and the typed confirmation. Answers 409 when another plan is being applied or anything changed since the review.",
@@ -15917,6 +16043,61 @@
           }
         ],
         "summary": "Start missing media scan",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/reopen": {
+      "post": {
+        "description": "Undo a dismissal, or reopen confirmed damage whose item was restored from the trash, putting the findings back in review.",
+        "operationId": "reopen",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthBulkActionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthBulkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reopen media health findings",
         "tags": [
           "Media Health"
         ],
@@ -37053,6 +37234,9 @@
           "library": {
             "$ref": "#/components/schemas/AdminConfigLibraryDto"
           },
+          "libraryCare": {
+            "$ref": "#/components/schemas/AdminConfigLibraryCareDto"
+          },
           "localFeatures": {
             "$ref": "#/components/schemas/AdminConfigLocalFeaturesDto"
           },
@@ -38069,6 +38253,58 @@
         },
         "required": [
           "concurrency"
+        ],
+        "type": "object"
+      },
+      "AdminConfigLibraryCareDto": {
+        "properties": {
+          "checksumScan": {
+            "description": "Health scans verify each original against its recorded checksum",
+            "type": "boolean"
+          },
+          "duplicateReview": {
+            "description": "Group near-duplicates for review; deletion stays explicit",
+            "type": "boolean"
+          },
+          "healthScan": {
+            "description": "Schedule incremental health scans of every account; each resumes from its recorded checkpoints",
+            "type": "boolean"
+          },
+          "healthScanCronExpression": {
+            "description": "When the scheduled health scan starts",
+            "type": "string"
+          },
+          "incrementalEnrichment": {
+            "description": "A full description rerun reprocesses only results that are missing, failed or out of date",
+            "type": "boolean"
+          },
+          "integrityAudit": {
+            "description": "Run the scheduled database and file reference audits (missing and untracked files)",
+            "type": "boolean"
+          },
+          "livePhotoRepair": {
+            "description": "Suggest Live Photo pairs to relink; ambiguous pairs stay in review",
+            "type": "boolean"
+          },
+          "manualMetadata": {
+            "description": "A description rerun replaces only generated text and keeps manual text",
+            "type": "boolean"
+          },
+          "rawRecovery": {
+            "description": "Search for recoverable copies of RAW originals when locating originals",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "checksumScan",
+          "duplicateReview",
+          "healthScan",
+          "healthScanCronExpression",
+          "incrementalEnrichment",
+          "integrityAudit",
+          "livePhotoRepair",
+          "manualMetadata",
+          "rawRecovery"
         ],
         "type": "object"
       },
@@ -51091,6 +51327,10 @@
             },
             "type": "array"
           },
+          "suggestionsEnabled": {
+            "description": "Library care suggests Live Photo pairs; when false no pairs are looked for",
+            "type": "boolean"
+          },
           "total": {
             "description": "Total number of candidate pairs found",
             "maximum": 9007199254740991,
@@ -51100,6 +51340,7 @@
         },
         "required": [
           "candidates",
+          "suggestionsEnabled",
           "total"
         ],
         "type": "object"
@@ -51802,6 +52043,13 @@
             "description": "The candidate has exactly the checksum recorded for the original",
             "type": "boolean"
           },
+          "checksums": {
+            "description": "The checksums the candidate matched, as measured",
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthChecksumDto"
+            },
+            "type": "array"
+          },
           "chosen": {
             "description": "The reviewer chose this candidate for the finding",
             "type": "boolean"
@@ -51858,6 +52106,7 @@
           "candidatePath",
           "checkedAt",
           "checksumMatch",
+          "checksums",
           "chosen",
           "decodeValid",
           "evidence",
@@ -51871,6 +52120,38 @@
         ],
         "type": "object"
       },
+      "MediaHealthCareSettingsDto": {
+        "properties": {
+          "checksumScan": {
+            "description": "Health scans verify original checksums",
+            "type": "boolean"
+          },
+          "duplicateReview": {
+            "description": "Near-duplicates are grouped for review",
+            "type": "boolean"
+          },
+          "healthScan": {
+            "description": "Incremental health scans run on a schedule",
+            "type": "boolean"
+          },
+          "integrityAudit": {
+            "description": "Database and file reference audits run on their schedules",
+            "type": "boolean"
+          },
+          "rawRecovery": {
+            "description": "Searches for originals include RAW originals",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "checksumScan",
+          "duplicateReview",
+          "healthScan",
+          "integrityAudit",
+          "rawRecovery"
+        ],
+        "type": "object"
+      },
       "MediaHealthCategory": {
         "description": "Media health category",
         "enum": [
@@ -51878,6 +52159,30 @@
           "corrupt"
         ],
         "type": "string"
+      },
+      "MediaHealthChecksumAlgorithm": {
+        "description": "Checksum algorithm",
+        "enum": [
+          "sha1",
+          "sha256"
+        ],
+        "type": "string"
+      },
+      "MediaHealthChecksumDto": {
+        "properties": {
+          "algorithm": {
+            "$ref": "#/components/schemas/MediaHealthChecksumAlgorithm"
+          },
+          "value": {
+            "description": "Checksum as lowercase hex",
+            "type": "string"
+          }
+        },
+        "required": [
+          "algorithm",
+          "value"
+        ],
+        "type": "object"
       },
       "MediaHealthChooseCandidatesDto": {
         "properties": {
@@ -51952,6 +52257,13 @@
             "additionalProperties": {},
             "type": "object"
           },
+          "expectedChecksums": {
+            "description": "The checksums recorded for the original, which a copy must match exactly",
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthChecksumDto"
+            },
+            "type": "array"
+          },
           "id": {
             "description": "Media health finding ID",
             "format": "uuid",
@@ -51965,6 +52277,14 @@
           "originalPath": {
             "description": "Original media path",
             "type": "string"
+          },
+          "provenance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthProvenanceDto"
+              }
+            ],
+            "nullable": true
           },
           "resolution": {
             "additionalProperties": {},
@@ -51990,9 +52310,11 @@
           "checkedAt",
           "dismissedAt",
           "evidence",
+          "expectedChecksums",
           "id",
           "originalFileName",
           "originalPath",
+          "provenance",
           "resolution",
           "resolvedAt",
           "severity",
@@ -52145,6 +52467,71 @@
           "locate"
         ],
         "type": "string"
+      },
+      "MediaHealthProvenanceAction": {
+        "description": "What was done",
+        "enum": [
+          "relinked",
+          "recovered"
+        ],
+        "type": "string"
+      },
+      "MediaHealthProvenanceDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/MediaHealthProvenanceAction"
+          },
+          "at": {
+            "description": "When it was done",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "previousPath": {
+            "description": "The path the original had before",
+            "nullable": true,
+            "type": "string"
+          },
+          "rootId": {
+            "description": "Search location the copy came from",
+            "nullable": true,
+            "type": "string"
+          },
+          "rootKind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthRootKind"
+              }
+            ],
+            "nullable": true
+          },
+          "rootLabel": {
+            "description": "Name of the search location",
+            "nullable": true,
+            "type": "string"
+          },
+          "sourcePath": {
+            "description": "The verified copy that was used",
+            "nullable": true,
+            "type": "string"
+          },
+          "userId": {
+            "description": "The account that did it",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "at",
+          "previousPath",
+          "rootId",
+          "rootKind",
+          "rootLabel",
+          "sourcePath",
+          "userId"
+        ],
+        "type": "object"
       },
       "MediaHealthQueuesDto": {
         "properties": {
@@ -52412,6 +52799,9 @@
       },
       "MediaHealthSummaryResponseDto": {
         "properties": {
+          "care": {
+            "$ref": "#/components/schemas/MediaHealthCareSettingsDto"
+          },
           "operation": {
             "allOf": [
               {
@@ -52438,6 +52828,7 @@
           }
         },
         "required": [
+          "care",
           "operation",
           "queues",
           "recent",
@@ -57607,6 +57998,20 @@
           "decision": {
             "$ref": "#/components/schemas/PhysicalDeduplicationDecision"
           },
+          "duration": {
+            "description": "Video length in milliseconds, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "height": {
+            "description": "Height in pixels, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "originalFileName": {
             "type": "string"
           },
@@ -57642,6 +58047,13 @@
           },
           "type": {
             "$ref": "#/components/schemas/AssetTypeEnum"
+          },
+          "width": {
+            "description": "Width in pixels, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           }
         },
         "required": [
@@ -57650,6 +58062,8 @@
           "checksum",
           "checksumMatch",
           "decision",
+          "duration",
+          "height",
           "originalFileName",
           "originalPath",
           "ownerId",
@@ -57657,9 +58071,19 @@
           "reason",
           "retainedAssetId",
           "sizeInBytes",
-          "type"
+          "type",
+          "width"
         ],
         "type": "object"
+      },
+      "PhysicalDeduplicationCopyFile": {
+        "description": "The copy's own former file: removed from disk, still the reviewed bytes, or different bytes now",
+        "enum": [
+          "removed",
+          "present",
+          "changed"
+        ],
+        "type": "string"
       },
       "PhysicalDeduplicationDecision": {
         "description": "Physical deduplication plan decision for a duplicate copy",
@@ -57688,6 +58112,7 @@
             "type": "boolean"
           },
           "deletedBytes": {
+            "description": "Measured: bytes actually removed from disk by applying this plan so far",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -57708,6 +58133,12 @@
             "type": "integer"
           },
           "linkedAssets": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "logicalBytes": {
+            "description": "Logical asset bytes (FL-73): the sizes of every asset that references a shared original once this plan is applied, counted once per asset",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -57734,6 +58165,7 @@
             "type": "string"
           },
           "reclaimableBytes": {
+            "description": "Estimate: bytes of the copies to share, with their generated files, that applying would free",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -57752,6 +58184,12 @@
           "scopeUserName": {
             "nullable": true,
             "type": "string"
+          },
+          "sharedOriginalBytes": {
+            "description": "Physical shared-original bytes (FL-73): the retained originals those assets share, counted once per file",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           },
           "skippedExternal": {
             "maximum": 9007199254740991,
@@ -57773,6 +58211,7 @@
           "fingerprint",
           "hiddenCopies",
           "linkedAssets",
+          "logicalBytes",
           "masterUserId",
           "masterUserName",
           "mode",
@@ -57782,6 +58221,7 @@
           "retained",
           "scopeUserId",
           "scopeUserName",
+          "sharedOriginalBytes",
           "skippedExternal",
           "skippedMissingMaster"
         ],
@@ -57858,6 +58298,20 @@
         ],
         "type": "object"
       },
+      "PhysicalDeduplicationRestoreRequestDto": {
+        "properties": {
+          "assetId": {
+            "description": "A copy of the applied plan whose own file is still on disk",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "type": "object"
+      },
       "PhysicalDeduplicationRetainedDto": {
         "properties": {
           "assetId": {
@@ -57871,6 +58325,24 @@
           "checksum": {
             "description": "Hex-encoded SHA-1 checksum of the original file",
             "type": "string"
+          },
+          "duration": {
+            "description": "Video length in milliseconds, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "fileAvailable": {
+            "description": "Whether the retained original was on disk when the preview ran; copies of a missing one are skipped",
+            "type": "boolean"
+          },
+          "height": {
+            "description": "Height in pixels, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           },
           "hiddenCopies": {
             "description": "Copies this retained original would share that are Locked media of another account; counted, never named (FL-73)",
@@ -57912,12 +58384,22 @@
           },
           "type": {
             "$ref": "#/components/schemas/AssetTypeEnum"
+          },
+          "width": {
+            "description": "Width in pixels, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           }
         },
         "required": [
           "assetId",
           "canView",
           "checksum",
+          "duration",
+          "fileAvailable",
+          "height",
           "hiddenCopies",
           "originalFileName",
           "originalPath",
@@ -57926,9 +58408,19 @@
           "referencesAfter",
           "referencesBefore",
           "sizeInBytes",
-          "type"
+          "type",
+          "width"
         ],
         "type": "object"
+      },
+      "PhysicalDeduplicationRetainedFile": {
+        "description": "The retained original on disk: still the reviewed bytes, gone, or different bytes",
+        "enum": [
+          "intact",
+          "missing",
+          "changed"
+        ],
+        "type": "string"
       },
       "PhysicalDeduplicationReviewRequestDto": {
         "properties": {
@@ -58027,6 +58519,156 @@
           "retained-file-missing"
         ],
         "type": "string"
+      },
+      "PhysicalDeduplicationVerificationDto": {
+        "properties": {
+          "copies": {
+            "description": "Copies the plan applied, listed or not",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hiddenCopies": {
+            "description": "Copies that are Locked media of another account; counted, never named",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PhysicalDeduplicationVerificationItemDto"
+            },
+            "type": "array"
+          },
+          "notLinked": {
+            "description": "Copies that no longer resolve to the retained original",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "removed": {
+            "description": "Copies whose own file is gone: that cannot be undone",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "restorable": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "restored": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedChanged": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedIntact": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedMissing": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedOriginals": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verified": {
+            "description": "Copies that resolve to a retained original still holding the reviewed bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verifiedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "copies",
+          "hiddenCopies",
+          "items",
+          "notLinked",
+          "operationId",
+          "planId",
+          "removed",
+          "restorable",
+          "restored",
+          "retainedChanged",
+          "retainedIntact",
+          "retainedMissing",
+          "retainedOriginals",
+          "verified",
+          "verifiedAt"
+        ],
+        "type": "object"
+      },
+      "PhysicalDeduplicationVerificationItemDto": {
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "canView": {
+            "description": "Whether the requesting administrator may view this asset and its thumbnail",
+            "type": "boolean"
+          },
+          "copyFile": {
+            "$ref": "#/components/schemas/PhysicalDeduplicationCopyFile"
+          },
+          "linked": {
+            "description": "Whether the asset still resolves to the retained original",
+            "type": "boolean"
+          },
+          "originalFileName": {
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "restorable": {
+            "description": "Whether the asset can go back to its own file: it is linked and that file still holds the reviewed bytes",
+            "type": "boolean"
+          },
+          "restored": {
+            "description": "Whether the asset is back on its own former file",
+            "type": "boolean"
+          },
+          "retainedFile": {
+            "$ref": "#/components/schemas/PhysicalDeduplicationRetainedFile"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          }
+        },
+        "required": [
+          "assetId",
+          "canView",
+          "copyFile",
+          "linked",
+          "originalFileName",
+          "ownerName",
+          "restorable",
+          "restored",
+          "retainedFile",
+          "type"
+        ],
+        "type": "object"
       },
       "PinCodeChangeDto": {
         "properties": {
