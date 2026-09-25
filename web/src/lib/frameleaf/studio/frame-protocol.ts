@@ -72,7 +72,9 @@ export type StudioFrameToHostMessage =
   | { type: 'navigate'; target: StudioNavigationTarget }
   | { type: 'dirty'; dirty: boolean }
   | { type: 'fatal'; error: string }
-  | { type: 'playhead'; time: { num: number; den: number } };
+  | { type: 'playhead'; time: { num: number; den: number } }
+  /** The editor's Export: the host opens its own export dialog (render workers, rights, Activity). */
+  | { type: 'request-export'; kind: 'video' };
 
 /* Host → command frame (FL-92): apply canonical commands to a graph with the real engine. */
 export interface StudioCommandApplyRequest {

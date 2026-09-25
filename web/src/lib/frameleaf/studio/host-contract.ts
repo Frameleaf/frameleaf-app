@@ -290,6 +290,11 @@ export interface StudioHostServices {
    * the start of the sequence. Optional; fire and forget.
    */
   reportPlayhead?(time: { num: number; den: number }): void;
+  /**
+   * The editor's own Export control. The host opens its export dialog, which queues a render-worker
+   * job followed in Activity (FL-104, FL-106); the editor never renders or saves an export itself.
+   */
+  requestExport?(kind: 'video'): void;
 }
 
 /* ------------------------------------------------------------------ */
