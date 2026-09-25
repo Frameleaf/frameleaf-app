@@ -987,32 +987,32 @@
       "readbackAt": "2026-09-23T19:55:00Z"
     },
     {
-      "bytes": 41419,
+      "bytes": 53015,
       "category": "plan",
       "id": "63832108",
       "source": "docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md",
-      "sourceSha256": "7dcb684b9c0f21d2c4c3ec88852e6f19869a94b64ebf7c8da14db6701dd1792a",
+      "sourceSha256": "757795b70f56e73d008cb7d020ab07bbea9e6c6c635d601c2a5a8365e25892f8",
       "title": "Frameleaf Cloud program plan",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63832108",
-      "version": 3,
+      "version": 4,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceState": "committed-fl-153-serverless-pricing-2026-09-25",
-      "readbackResult": "Markdown read-back of version 3 begins with the six-line header carrying SHA-256 7dcb684b, 41419 bytes and the FL-153 (CLD-000) registration; body matches the posted source (2026-09-25 owner decisions: serverless-only Frameleaf Cloud ML, metered GPU time with start fees, top-ups, where ML work runs, hardware check and model slider, InsightFace licence) except table separator padding.",
-      "readbackAt": "2026-09-25T14:41:32.000Z"
+      "sourceState": "committed-fl-153-prototype-decisions-2026-09-25",
+      "readbackResult": "Markdown read-back of version 4 begins with the header carrying SHA-256 757795b7, 53015 bytes, the FL-153 (CLD-000) registration and the committed-on-master/frameleaf-implementation status; body matches the posted source (2026-09-25 prototype decisions: mobile-apps benefit, separate Plan and Licence pages with 20 % off plans only for licensed servers, custom public hostname and Public server URL move, backup key-setup choice, Studio exports local only, Activity stages, settings icons and plain-language copy) except table separator padding and escaped brackets.",
+      "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 68897,
+      "bytes": 72785,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "285c0759d1b4a77be645694c65794dc5fddbcbdf82b105da4435b1e453f9268e",
+      "sourceSha256": "5e09bafc2e256174360f7fec4b98ad232c8c363ef5bf308d9f038456ece45204",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 5,
+      "version": 6,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceState": "committed-fl-153-serverless-pricing-2026-09-25",
-      "readbackResult": "Markdown read-back of version 5 begins with the header carrying SHA-256 285c0759, 68897 bytes and the FL-153 (CLD-000) registration and ends with the source's closing rule; body matches the posted source (CLD-201 hardware check, routing and model slider; CLD-202 metered pricing, chunked serverless restoration and Smooth motion; CLD-203 GPU-time estimates) except wrapped inline code joined onto one line and one normalized space at a nested-backtick boundary.",
-      "readbackAt": "2026-09-25T14:45:55.000Z"
+      "sourceState": "committed-fl-153-prototype-decisions-2026-09-25",
+      "readbackResult": "Markdown read-back of version 6 begins with the header carrying SHA-256 5e09bafc, 72785 bytes, the FL-153 (CLD-000) registration and the committed-on-master/frameleaf-implementation status and ends with the source closing rule; body matches the posted source (A3/A4/A5 and CLD-002/003/004/006/102/104/201/202/301/302 prototype decisions; no cloud Studio render workload) except wrapped inline code joined onto one line and one normalized space at a nested-backtick boundary.",
+      "readbackAt": "2026-09-25T15:41:10.000Z"
     }
   ],
   "spaceId": "61374475",
