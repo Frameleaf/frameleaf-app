@@ -6,11 +6,14 @@
    * the image is fetched through the ordinary `/assets/{id}/thumbnail` endpoint, which enforces
    * asset access on its own; otherwise a labelled placeholder stands in, so an administrator
    * never sees another account's photo just because it appears in an operational aggregate.
+   *
+   * A retained original that is no longer on disk (`unavailable`, FL-71 UT-24) is dimmed with the
+   * template's "Unavailable" overlay (`PhysicalDedupManager.jsx` `Thumb`, `.pd-thumb-unavailable`).
    */
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, AssetTypeEnum } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiEyeOffOutline, mdiPlay } from '@mdi/js';
+  import { mdiEyeOffOutline, mdiFileAlertOutline, mdiPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let {
@@ -18,23 +21,31 @@
     type,
     canView,
     size = 'copy',
+    unavailable = false,
   }: {
     assetId: string;
     type: AssetTypeEnum;
     canView: boolean;
     size?: 'retained' | 'copy' | 'cell';
+    unavailable?: boolean;
   } = $props();
 
   const src = $derived(canView ? getAssetMediaUrl({ id: assetId, size: AssetMediaSize.Thumbnail }) : undefined);
 </script>
 
-<span class="thumb {size}" class:hidden-media={!canView}>
+<span class="thumb {size}" class:hidden-media={!canView} class:unavailable>
   {#if src}
     <img {src} alt="" loading="lazy" draggable="false" />
   {:else}
     <span class="placeholder">
       <Icon icon={mdiEyeOffOutline} size="1.125rem" aria-hidden={true} />
       <span>{$t('frameleaf_dedup_hidden_thumbnail')}</span>
+    </span>
+  {/if}
+  {#if unavailable}
+    <span class="unavailable-overlay">
+      <Icon icon={mdiFileAlertOutline} size="1.125rem" aria-hidden={true} />
+      <span>{$t('frameleaf_dedup_thumb_unavailable')}</span>
     </span>
   {/if}
   {#if type === AssetTypeEnum.Video}
@@ -89,8 +100,26 @@
     font-weight: 600;
   }
   .cell .placeholder span,
-  .copy .placeholder span {
+  .copy .placeholder span,
+  .cell .unavailable-overlay span {
     display: none;
+  }
+  /* The template's `.pd-thumb.unavailable img` and `.pd-thumb-unavailable` (physical-dedup-manager.css). */
+  .unavailable img {
+    filter: grayscale(1) brightness(0.45);
+  }
+  .unavailable-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    color: #f3f5f6;
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
   }
   .kind {
     position: absolute;

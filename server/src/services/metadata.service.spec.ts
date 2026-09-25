@@ -94,6 +94,7 @@ describe(MetadataService.name, () => {
     ({ sut, mocks } = newTestService(MetadataService));
 
     mockReadTags();
+    mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
 
     mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
 
@@ -402,6 +403,28 @@ describe(MetadataService.name, () => {
         width: null,
         height: null,
       });
+    });
+
+    it('keeps a location the owner removed or set instead of reading the file coordinates (FL-51)', async () => {
+      const asset = AssetFactory.from().exif({ latitude: null, longitude: null }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude']);
+      mocks.systemMetadata.get.mockResolvedValue({ reverseGeocoding: { enabled: true } });
+      mocks.storage.stat.mockResolvedValue({
+        size: 123_456,
+        mtime: asset.fileModifiedAt,
+        mtimeMs: asset.fileModifiedAt.valueOf(),
+        birthtimeMs: asset.fileCreatedAt.valueOf(),
+      } as Stats);
+      mockReadTags({ GPSLatitude: 10, GPSLongitude: 20 });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.map.reverseGeocode).not.toHaveBeenCalled();
+      const [{ exif }] = mocks.asset.upsertExif.mock.calls.at(-1)!;
+      expect(exif).not.toHaveProperty('city');
+      expect(exif).not.toHaveProperty('state');
+      expect(exif).not.toHaveProperty('country');
     });
 
     it('should discard latitude and longitude on null island', async () => {
@@ -2118,6 +2141,43 @@ describe(MetadataService.name, () => {
         'dateTimeOriginal',
         'timeZone',
       ]);
+    });
+
+    it('writes a removed location as no coordinates and keeps it locked (FL-51)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: null, longitude: null })
+        .build();
+
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude', 'rating']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+        asset.files[0].path,
+        expect.objectContaining({ GPSLatitude: null, GPSLongitude: null }),
+      );
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+    });
+
+    it('keeps a removed location and a typed place name locked together (FL-51, FL-36)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: null, longitude: null })
+        .build();
+
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([
+        'latitude',
+        'longitude',
+        'city',
+        'rating',
+      ]);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
     });
 
     it('should write rating', async () => {

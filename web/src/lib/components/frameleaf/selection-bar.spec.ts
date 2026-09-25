@@ -46,7 +46,9 @@ describe('Frameleaf selection bar', () => {
   it('announces the count and deselects', async () => {
     mount();
     expect(screen.getByText('2 selected')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: /Deselect All/i }));
+    const deselect = screen.getByRole('button', { name: 'Deselect all' });
+    expect(deselect).toHaveTextContent('Deselect');
+    await fireEvent.click(deselect);
     expect(onClear).toHaveBeenCalledOnce();
   });
 
@@ -54,7 +56,7 @@ describe('Frameleaf selection bar', () => {
     const { rerender } = render(SelectionBar, {
       props: { count: 2, assets: [photo('a'), photo('b')], total: 2, onAction, onClear, onSelectAllMatching },
     });
-    // Anchored: "Deselect All" is always there and must not satisfy this.
+    // Anchored: "Deselect all" is always there and must not satisfy this.
     expect(screen.queryByRole('button', { name: /^Select all/i })).not.toBeInTheDocument();
 
     await rerender({ total: 4200 });

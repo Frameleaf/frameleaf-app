@@ -1,3 +1,4 @@
+import { isHttpError } from '@immich/sdk';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import type { RouteId } from '$app/types';
@@ -25,6 +26,22 @@ export const isAssetViewerRoute = (
 export function getAssetInfoFromParam({ assetId, slug, key }: { assetId?: string; key?: string; slug?: string }) {
   return assetId ? assetCacheManager.getAsset({ id: assetId, slug, key }, false) : undefined;
 }
+
+/**
+ * FL-33: the page a deep link to `assetId` opens over, without the item (`/photos/<id>` → `/photos`,
+ * `/albums/<a>/photos/<id>` → `/albums/<a>`), keeping the page's own query. Used when the linked
+ * item is gone or no longer readable, so the library opens instead of an error page.
+ */
+export const libraryUrlWithoutAsset = (url: URL, assetId: string): string => {
+  const suffixes = [`/photos/${assetId}`, `/${assetId}`];
+  const suffix = suffixes.find((candidate) => url.pathname.endsWith(candidate));
+  const pathname = suffix ? url.pathname.slice(0, -suffix.length) || Route.photos() : url.pathname;
+  return `${pathname === '/' ? Route.photos() : pathname}${url.search}`;
+};
+
+/** An item that is gone or that the session may no longer read: not found, forbidden or refused. */
+export const isInaccessibleAssetError = (error: unknown) =>
+  isHttpError(error) && [400, 403, 404].includes(error.status);
 
 /** The Command Center (FL-71) opens an item over its page with `?assetId=`, for utilities and Trash alike. */
 const isCommandCenter = () => page.url.pathname === COMMAND_CENTER_PATH;
