@@ -43,7 +43,8 @@
 {#if shouldShow}
   <div class="absolute inset-x-0 bottom-0 z-10">
     <div
-      class="w-full px-6 pt-4 pb-[76px]"
+      class="w-full px-6 pt-4"
+      style:padding-bottom="calc(var(--fl-viewer-footer-height, 60px) + 16px)"
       style="background: linear-gradient(to top, rgba(0, 0, 0, {opacity}) 0%, rgba(0, 0, 0, {opacity * 0.8}) 100%);"
     >
       <div class="flex flex-col gap-2 text-white">

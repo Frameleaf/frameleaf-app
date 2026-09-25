@@ -34,8 +34,10 @@ test.describe('Asset Viewer Navbar', () => {
       await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      // FL-35: zoom moved to the footer, as in the template (MediaViewer.jsx:1765-1790).
-      const expected = ['Copy Image', 'Download'];
+      // FL-35: zoom moved to the footer, as in the template (MediaViewer.jsx:1765-1790). A link that hides
+      // metadata never allows downloads (the server turns allowDownload off with it), so there is no
+      // Download and no "Send a copy…" (FL-54 needs downloads and metadata).
+      const expected = ['Copy Image'];
       const buttons = await page.getByTestId('asset-viewer-navbar-actions').getByRole('button').all();
       expect(buttons).toHaveLength(expected.length);
 
@@ -54,7 +56,9 @@ test.describe('Asset Viewer Navbar', () => {
       await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      const expected = ['Share', 'Copy Image', 'Download'];
+      // The owner may share, but the item the link serves is stripped of its owner, so the owner sees the
+      // link's own rules: no Download on a link without metadata.
+      const expected = ['Share', 'Copy Image'];
       const buttons = await page.getByTestId('asset-viewer-navbar-actions').getByRole('button').all();
       expect(buttons).toHaveLength(expected.length);
 

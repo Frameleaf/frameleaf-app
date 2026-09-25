@@ -24,7 +24,7 @@ const base = {
 describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
   afterEach(() => {
     slideshowStore.slideshowState.set(SlideshowState.None);
-    slideshowStore.closeSettings();
+    void slideshowStore.closeSettings();
     assetViewerManager.resetZoomState();
     showFilmstrip.set(false);
   });

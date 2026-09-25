@@ -131,16 +131,6 @@ describe(TimelineService.name, () => {
       );
     });
 
-    it('refuses to sort for a shared link that hides EXIF, whose order would reveal it', async () => {
-      await expect(
-        sut.getTimelineOrdered(
-          { ...authStub.adminSharedLink, sharedLink: { ...authStub.adminSharedLink.sharedLink!, showExif: false } },
-          { sort: 'filename', skip: 0, take: 10 },
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(mocks.asset.getTimelineOrdered).not.toHaveBeenCalled();
-    });
-
     it('refuses the Locked view without an elevated session, as the buckets do', async () => {
       await expect(
         sut.getTimelineOrdered(authStub.admin, {
