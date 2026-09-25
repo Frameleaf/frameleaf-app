@@ -55,6 +55,7 @@ export const cloudStatus = (mock: CloudMockState) => {
     cloneSuspected: false,
     relinkRequested: false,
     linkTokenConfigured: false,
+    remoteAccessEnabled: false,
     signInClientId: linked ? '018f3a7c-5e2b-7c91-9a4d-2f6b1e0c8d55' : null,
     signInIssuer: linked ? 'https://id.frameleaf.cloud.test' : null,
     signInLinkedAccounts: linked ? 1 : 0,

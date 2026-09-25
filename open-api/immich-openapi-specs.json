@@ -49875,6 +49875,10 @@
             "description": "Frameleaf Cloud asked an administrator to link again",
             "type": "boolean"
           },
+          "remoteAccessEnabled": {
+            "description": "Remote access is switched on for this linked server",
+            "type": "boolean"
+          },
           "revoked": {
             "nullable": true,
             "properties": {
@@ -49936,6 +49940,7 @@
           "pending",
           "permissions",
           "relinkRequested",
+          "remoteAccessEnabled",
           "revoked",
           "signInButtonText",
           "signInClientId",
