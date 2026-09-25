@@ -46,6 +46,7 @@ import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
@@ -272,6 +273,7 @@ export type ServiceOverrides = {
   machineLearning: MachineLearningRepository;
   map: MapRepository;
   media: MediaRepository;
+  mediaOperation: MediaOperationRepository;
   memory: MemoryRepository;
   metadata: MetadataRepository;
   mlDestination: MlDestinationRepository;
@@ -371,6 +373,7 @@ export const getMocks = () => {
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
     map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
     media: newMediaRepositoryMock(),
+    mediaOperation: automock(MediaOperationRepository, { strict: false }),
     memory: automock(MemoryRepository),
     metadata: newMetadataRepositoryMock(),
     mlDestination: automock(MlDestinationRepository),
@@ -491,6 +494,7 @@ export const newTestService = <T extends BaseService>(
     overrides.machineLearning || (mocks.machineLearning as As<MachineLearningRepository>),
     overrides.map || (mocks.map as As<MapRepository>),
     overrides.media || (mocks.media as As<MediaRepository>),
+    overrides.mediaOperation || (mocks.mediaOperation as As<MediaOperationRepository>),
     overrides.memory || (mocks.memory as As<MemoryRepository>),
     overrides.metadata || (mocks.metadata as As<MetadataRepository>),
     overrides.mlDestination || (mocks.mlDestination as As<MlDestinationRepository>),

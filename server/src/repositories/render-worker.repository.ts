@@ -13,6 +13,7 @@ import {
   RenderWorkerSessionTable,
   RenderWorkerTable,
 } from 'src/schema/tables/render-worker.table.js';
+import { notJobQueueExecuted } from 'src/utils/edit-operation.js';
 import { CLAIMED_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
@@ -405,6 +406,8 @@ export class RenderWorkerRepository {
         .where('destination', '=', options.destination)
         .where('kind', 'in', [...options.kinds])
         .where('cancelRequestedAt', 'is', null)
+        // FL-43: a quick edit this server's job queue runs is never offered to a render worker.
+        .where(notJobQueueExecuted())
         // A job waiting for its automatic retry is not offered before its retry time (FL-104).
         .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
         .$if(options.excludeIds.length > 0, (qb) => qb.where('id', 'not in', [...options.excludeIds]))

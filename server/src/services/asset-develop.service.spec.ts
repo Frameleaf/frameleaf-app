@@ -144,7 +144,10 @@ describe(AssetDevelopService.name, () => {
       photoTools as unknown as PhotoToolsRepository,
       mocks.storage as never,
       mocks.systemMetadata as never,
+      mocks.mediaOperation as never,
     );
+    mocks.mediaOperation.getTrackedRevisionIds.mockResolvedValue(new Set());
+    mocks.mediaOperation.listActiveEditsOfRevision.mockResolvedValue([]);
   });
 
   describe('access', () => {
@@ -520,6 +523,220 @@ describe(AssetDevelopService.name, () => {
         { name: JobName.AssetDevelopRender, data: { id: 'queued' } },
         { name: JobName.AssetDevelopRender, data: { id: 'lost' } },
       ]);
+    });
+  });
+
+  describe('onBootstrap with Activity jobs (FL-43)', () => {
+    it('leaves a render its Activity job will recover to that job', async () => {
+      developRepository.listUnfinished.mockResolvedValue([
+        { id: 'tracked', status: AssetDevelopRevisionStatus.Queued, updatedAt: new Date() },
+        { id: 'untracked', status: AssetDevelopRevisionStatus.Queued, updatedAt: new Date() },
+      ]);
+      mocks.mediaOperation.getTrackedRevisionIds.mockResolvedValue(new Set(['tracked']));
+
+      await sut.onBootstrap();
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetDevelopRender, data: { id: 'untracked' } },
+      ]);
+    });
+  });
+
+  describe('as a job in Activity (FL-43)', () => {
+    const claimed = {
+      operation: { id: 'op-1', ownerId: authStub.user1.user.id, assetId: asset.id },
+      claimToken: 'token-1',
+    };
+
+    beforeEach(() => {
+      mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
+      mocks.mediaOperation.beginJobQueueRun.mockResolvedValue(claimed as never);
+      mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+      mocks.mediaOperation.beginValidation.mockResolvedValue(true);
+      mocks.mediaOperation.complete.mockResolvedValue(true);
+      mocks.mediaOperation.heartbeat.mockResolvedValue(true);
+      mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: 'token-1' } as never);
+    });
+
+    it('records a queued render as a photo version job for the photo, and queues it with the job', async () => {
+      const created = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Saved });
+      developRepository.create.mockResolvedValue(created);
+
+      await sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: true });
+
+      expect(mocks.mediaOperation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerId: created.ownerId,
+          kind: 'quick_edit',
+          destination: 'local',
+          label: asset.originalFileName,
+          assetId: asset.id,
+          revisionId: created.id,
+          settings: { edit: 'photo_version' },
+          claimedBy: 'job-queue',
+          snapshot: expect.objectContaining({
+            executor: 'job_queue',
+            job: { name: JobName.AssetDevelopRender, data: { id: created.id } },
+          }),
+        }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetDevelopRender,
+        data: { id: created.id, operationId: 'op-1' },
+      });
+    });
+
+    it('still queues the render when the job row cannot be written', async () => {
+      const created = revisionStub({ assetId: asset.id });
+      developRepository.create.mockResolvedValue(created);
+      mocks.mediaOperation.create.mockRejectedValue(new Error('database busy'));
+
+      await sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: true });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetDevelopRender, data: { id: created.id } });
+    });
+
+    it('reports each stage, validates, makes the version current and completes with the photo', async () => {
+      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+      developRepository.get.mockResolvedValue(revision);
+
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.mediaOperation.beginJobQueueRun).toHaveBeenCalledWith('op-1', expect.any(Number));
+      const reported = mocks.mediaOperation.reportProgress.mock.calls.map((call) => call[2].progress);
+      expect(reported).toEqual([0, 25, 60, 85, 95]);
+      expect(mocks.mediaOperation.beginValidation.mock.invocationCallOrder[0]).toBeLessThan(
+        developRepository.setCurrent.mock.invocationCallOrder[0],
+      );
+      expect(mocks.mediaOperation.complete).toHaveBeenCalledWith('op-1', 'token-1', { resultAssetId: asset.id });
+    });
+
+    it('stops at the next stage when the job is cancelled in Activity, leaving the working version', async () => {
+      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+      developRepository.get.mockResolvedValue(revision);
+      // the cancel lands after the first stage: progress writes are refused from then on
+      mocks.mediaOperation.reportProgress.mockResolvedValueOnce(true).mockResolvedValue(false);
+      mocks.mediaOperation.getForWorker.mockResolvedValue({
+        cancelRequestedAt: new Date(),
+        claimToken: 'token-1',
+      } as never);
+      mocks.mediaOperation.acknowledgeCancel.mockResolvedValue(true);
+
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      expect(developRepository.update).toHaveBeenCalledWith(revision.id, {
+        status: AssetDevelopRevisionStatus.Cancelled,
+        progress: 0,
+      });
+      expect(mocks.mediaOperation.acknowledgeCancel).toHaveBeenCalledWith('op-1', 'token-1', { released: true });
+      expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+    });
+
+    it('never starts a render whose job was cancelled while it waited, and marks the version cancelled', async () => {
+      mocks.mediaOperation.beginJobQueueRun.mockResolvedValue(undefined);
+      mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: new Date(), claimToken: null } as never);
+
+      await expect(sut.handleRender({ id: 'rev', operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(developRepository.update).toHaveBeenCalledWith('rev', {
+        status: AssetDevelopRevisionStatus.Cancelled,
+        cancelRequested: true,
+        progress: 0,
+      });
+      expect(developRepository.beginAttempt).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for a second delivery of a job another run already holds', async () => {
+      mocks.mediaOperation.beginJobQueueRun.mockResolvedValue(undefined);
+      mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: 'other' } as never);
+
+      await expect(sut.handleRender({ id: 'rev', operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(developRepository.get).not.toHaveBeenCalled();
+      expect(developRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('keeps the previous working version when the claim is lost before publishing', async () => {
+      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+      developRepository.get.mockResolvedValue(revision);
+      mocks.mediaOperation.beginValidation.mockResolvedValue(false);
+      mocks.mediaOperation.getForWorker.mockResolvedValue({
+        cancelRequestedAt: null,
+        claimToken: 'recovered',
+      } as never);
+
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+    });
+
+    it('lets the job decide the automatic retry: the version waits queued and nothing requeues itself', async () => {
+      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+      developRepository.get.mockResolvedValue(revision);
+      mocks.media.encodeDevelopOutput.mockRejectedValueOnce(new Error('libvips: out of memory'));
+      mocks.mediaOperation.fail.mockResolvedValue('retrying');
+
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Failed);
+
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        'op-1',
+        'token-1',
+        { error: 'libvips: out of memory', errorCode: 'edit_render_failed' },
+        { retry: true },
+      );
+      expect(developRepository.update).toHaveBeenCalledWith(revision.id, {
+        status: AssetDevelopRevisionStatus.Queued,
+        progress: 0,
+        error: 'libvips: out of memory',
+      });
+      // the sweep dispatches the retry with its row; a second job here would run it twice
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    });
+
+    it('reports the failure once the job has used its automatic retry', async () => {
+      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+      developRepository.get.mockResolvedValue(revision);
+      mocks.media.encodeDevelopOutput.mockRejectedValueOnce(new Error('libvips: out of memory'));
+      mocks.mediaOperation.fail.mockResolvedValue('failed');
+
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Failed);
+
+      expect(developRepository.update).toHaveBeenCalledWith(revision.id, {
+        status: AssetDevelopRevisionStatus.Failed,
+        error: 'libvips: out of memory',
+      });
+    });
+
+    it('hands the job back to wait while another render still holds the version', async () => {
+      developRepository.get.mockResolvedValue(
+        revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Rendering, updatedAt: new Date() }),
+      );
+      mocks.mediaOperation.requeue.mockResolvedValue(true);
+
+      await expect(sut.handleRender({ id: 'rev', operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.mediaOperation.requeue).toHaveBeenCalledWith('op-1', 'token-1', {
+        delayMs: DEVELOP_RENDER_LEASE_MS,
+        returnAttempt: true,
+      });
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
+
+    it('cancels the version’s Activity job when the editor cancels it', async () => {
+      const rendering = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Rendering });
+      developRepository.get.mockResolvedValue(rendering);
+      mocks.mediaOperation.listActiveEditsOfRevision.mockResolvedValue([{ id: 'op-1', status: 'rendering' }] as never);
+
+      await sut.cancel(authStub.user1, asset.id, rendering.id);
+
+      expect(mocks.mediaOperation.listActiveEditsOfRevision).toHaveBeenCalledWith(rendering.ownerId, rendering.id);
+      expect(mocks.mediaOperation.requestCancel).toHaveBeenCalledWith('op-1', rendering.ownerId);
     });
   });
 
