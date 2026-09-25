@@ -232,6 +232,19 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       await expect(viewer.locator('.fmp-lower-third')).toBeVisible();
     });
 
+    test('Previous from the first item returns to the title card', async ({ page }) => {
+      const firstMemory = memories[0];
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[0].id);
+      const titleCard = memoryViewerUtils.locator(page).locator('.fmp-title-card');
+      await titleCard.getByRole('button', { name: 'Play' }).click();
+      await expect(titleCard).toHaveCount(0);
+
+      await page.keyboard.press('ArrowLeft');
+      await expect(titleCard).toBeVisible();
+      await expect(titleCard.locator('img.fmp-title-bg')).toHaveCount(1);
+    });
+
     test('does not show the title card when opened part way through', async ({ page }) => {
       const firstMemory = memories[0];
 
