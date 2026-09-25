@@ -70,6 +70,14 @@ export function markLoaded(state: DraftSendState, mount: EditorMount): void {
   if (state.mount === mount) mount.loaded = true
 }
 
+/**
+ * Whether a Freecut save of `projectId` may start now. A save snapshots the global timeline stores
+ * when it starts and writes later, so it is judged here, at the start: only the current mount, once
+ * loaded, may save. A save started while that mount loads would snapshot the replaced timeline.
+ */
+export const saveMayStart = (state: DraftSendState, projectId: string): boolean =>
+  state.mount.projectId === projectId && acceptsWrite(state, state.mount)
+
 /** Whether a write from this mount may become a draft. */
 export const acceptsWrite = (state: DraftSendState, mount: EditorMount): boolean =>
   !state.disposed && state.mount === mount && mount.loaded
