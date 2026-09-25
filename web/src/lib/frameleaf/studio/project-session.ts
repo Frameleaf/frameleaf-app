@@ -298,6 +298,11 @@ type Draft = {
   unchecked: number;
   /** Assigned on the first attempt and kept for retries; a new `stage` clears it. */
   requestKey: string | null;
+  /**
+   * The revision this draft was built on. It is the save's `expectedRevision` and the only thing a
+   * moved head is judged against: `state.project.revision` may already show someone else's save.
+   */
+  baseRevision: number;
 };
 
 const defaultTimer = (callback: () => void, ms: number): CancelTimer => {
@@ -447,6 +452,12 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     renew = null;
     cancel(debounce);
     debounce = null;
+    if (state.status === 'conflict') {
+      // An unresolved stale revision outranks the lease: only Reload or Save as copy settle it, so a
+      // take over or reacquire can never send the draft over the newer head.
+      emit({ project: { ...state.project, hasLease: false } });
+      return;
+    }
     emit({
       status: 'lease-lost',
       project: { ...state.project, hasLease: false },
@@ -608,7 +619,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           const saved = await api.save(projectId, {
             clientId,
             requestKey: current.requestKey as string,
-            expectedRevision: state.project.revision,
+            expectedRevision: current.baseRevision,
             envelope: emptyEnvelope(engineRevision, current.graph),
             summary: summaryOf(current),
             ...(current.envelopes.length > 0 && {
@@ -650,9 +661,13 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         // A newer stage while this one was in flight keeps its own draft and gets its own save.
         if (draft === current) {
           draft = null;
+        } else if (draft && draft.baseRevision === current.baseRevision) {
+          // The newer draft was built on top of this one, so it now follows the revision just stored.
+          draft.baseRevision = result.revision;
         }
         emit({
-          project: { ...state.project, revision: result.revision, graph: current.graph },
+          // The graph shown stays the newest edit; a newer draft is not rolled back to this save.
+          project: { ...state.project, revision: result.revision, graph: (draft ?? current).graph },
           lastSavedAt: now(),
           conflict: null,
           error: null,
@@ -745,10 +760,11 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       if (gen !== generation) {
         return false;
       }
-      const headMoved = detail.revision !== state.project.revision;
-      if (headMoved && draft) {
-        applyDetail(detail, gen, true);
+      const headMoved = draft !== null && detail.revision !== draft.baseRevision;
+      if (headMoved) {
+        // The draft stays what the person sees and edits (as after a refused save); Reload shows the head.
         emit({
+          project: { ...state.project, hasLease: true },
           status: 'conflict',
           conflict: { reason: 'stale-revision', currentRevision: detail.revision, lease },
         });
@@ -772,7 +788,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       }
       const conflict = readStudioConflict(error);
       if (conflict) {
-        emit({ status: 'lease-lost', conflict });
+        loseLease(conflict);
         return false;
       }
       fail(error, gen);
@@ -793,7 +809,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     stage(graph, commands = [], envelopes = []) {
       // Edits made after the lease was lost are kept with the draft until the person reacquires,
       // takes over or saves a copy; they are never dropped (FL-89).
-      const keepsDraft = state.status === 'lease-lost' && state.access === 'owner';
+      const keepsDraft = (state.status === 'lease-lost' || state.status === 'conflict') && state.access === 'owner';
       if (disposed || state.access === 'reviewer' || (!state.project.hasLease && !keepsDraft)) {
         return;
       }
@@ -815,6 +831,8 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         unchecked: (base?.unchecked ?? 0) + overflow,
         // A different document is a different request; the key is assigned when it is sent.
         requestKey: null,
+        // Later edits share the first unsaved edit's base, even while that one is in flight.
+        baseRevision: draft?.baseRevision ?? state.project.revision,
       };
       if (keepsDraft) {
         emit({ project: { ...state.project, graph } });
