@@ -365,6 +365,18 @@ const AssetEditsResponseSchema = z
 export class AssetEditActionItemResponseDto extends createZodDto(AssetEditActionItemResponseSchema) {}
 export class AssetEditsCreateDto extends createZodDto(AssetEditsCreateSchema) {}
 export class AssetEditsResponseDto extends createZodDto(AssetEditsResponseSchema) {}
+
+const AssetEditKeyframesResponseSchema = z
+  .object({
+    keyframesMs: z
+      .array(z.number().int().min(0))
+      .describe(
+        "Times of the original's video keyframes in milliseconds from its start, ascending. A fast trim starts at the last one at or before its in point.",
+      ),
+  })
+  .meta({ id: 'AssetEditKeyframesResponseDto' });
+
+export class AssetEditKeyframesResponseDto extends createZodDto(AssetEditKeyframesResponseSchema) {}
 export type CropParameters = z.infer<typeof CropParametersSchema>;
 
 const VideoEditVersionParamsSchema = z.object({
