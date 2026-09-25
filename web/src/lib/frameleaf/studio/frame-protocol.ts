@@ -26,7 +26,7 @@ import type {
 } from './host-contract';
 
 /** Bumped when a message changes shape; a frame built for another version is refused. */
-export const STUDIO_FRAME_PROTOCOL_VERSION = 1;
+export const STUDIO_FRAME_PROTOCOL_VERSION = 2;
 
 /** The engine build publishes this next to its documents (`/studio-engine/manifest.json`). */
 export interface StudioFrameManifest {
