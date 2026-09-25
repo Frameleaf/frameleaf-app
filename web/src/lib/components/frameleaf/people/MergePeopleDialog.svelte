@@ -3,6 +3,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import { isUnnamedPerson, sortMergeCandidates } from '$lib/frameleaf/people';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { getAllPeople, getPerson, mergePeople, type PeopleListItemDto, type PersonResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
@@ -78,6 +79,9 @@
     busy = true;
     try {
       await mergePeople({ mergePersonDto: { ids: [target.id, person.id] } });
+      // FL-37: every face of `person` now belongs to `target`; open face chips, search chips and
+      // person pages re-read them
+      eventManager.emit('PersonFacesChange', { personIds: [target.id, person.id], removedPersonIds: [person.id] });
       open = false;
       await onMerged(target);
     } catch (error) {
