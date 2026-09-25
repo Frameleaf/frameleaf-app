@@ -1919,9 +1919,9 @@ const routes = {
     ],
   ],
   "/utilities/large-files/[[photos=photos]]/[[assetId=id]]": [
-    "match",
+    "fixed",
     ["UT-11", "UT-15", "UT-16"],
-    "Recent utility activity; nits",
+    "Recent utility activity, row type and resolution, title (fixed on codex/FL-35-complete-viewer, FL-47)",
     [`${P}/UtilitiesManager.jsx`],
     [
       `${W}/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.ts`,
