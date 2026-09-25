@@ -20,6 +20,7 @@ vi.mock('@immich/sdk', async () => {
   return {
     ...sdk,
     getAssetEdits: vi.fn(),
+    getAssetEditKeyframes: vi.fn().mockResolvedValue({ keyframesMs: [0, 2000, 4000] }),
     editAsset: vi.fn(),
     removeAssetEdits: vi.fn(),
     getVideoEditVersions: vi.fn().mockResolvedValue([]),
@@ -111,6 +112,13 @@ describe('VideoQuickEditor', () => {
     );
     expect(onClose).toHaveBeenCalledWith(true);
     expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_video_editor_saved');
+  });
+
+  it('shows where a fast trim really cuts once the keyframes are known', async () => {
+    await opened();
+    await fireEvent.change(screen.getByLabelText('frameleaf_video_editor_in_seconds'), { target: { value: '3' } });
+    await fireEvent.click(screen.getByRole('radio', { name: 'frameleaf_video_editor_trim_fast' }));
+    expect(await screen.findByText(/frameleaf_video_editor_trim_fast_actual/)).toBeInTheDocument();
   });
 
   it('adds a text overlay on the grid and saves it anchored, with its shadow', async () => {
