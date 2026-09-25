@@ -145,6 +145,20 @@ test.describe('Shared Links', () => {
     await expect(page.getByRole('button', { name: 'Download all' })).toBeVisible();
   });
 
+  test('a link without downloads still plays a slideshow (FL-56, AL-37)', async ({ page }) => {
+    const noDownload = await utils.createSharedLink(admin.accessToken, {
+      type: SharedLinkType.Individual,
+      assetIds: [asset.id, asset2.id],
+      allowDownload: false,
+    });
+    await page.goto(`/share/${noDownload.key}`);
+    await page.locator(`[data-asset-id="${asset.id}"]`).click();
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+
+    await expect(page.getByRole('button', { name: /^Download/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Play slideshow' }).first()).toBeEnabled();
+  });
+
   test('enter password for a shared link', async ({ page }) => {
     await page.goto(`/share/${sharedLinkPassword.key}`);
     await page.getByPlaceholder('Password').fill('test-password');

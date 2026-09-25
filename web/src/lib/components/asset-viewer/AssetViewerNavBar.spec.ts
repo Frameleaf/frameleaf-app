@@ -279,15 +279,19 @@ describe('AssetViewerNavBar component', () => {
       slideshowStore.slideshowState.set(SlideshowState.None);
     });
 
-    it('leaves the slideshow out when the link does not allow downloads', () => {
+    it('offers the slideshow when the link does not allow downloads (AL-37)', () => {
       setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
-      const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+      const asset = assetFactory.build({
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        visibility: AssetVisibility.Timeline,
+      });
       const { queryByLabelText } = renderWithTooltips(AssetViewerNavBar, {
         asset,
         ...additionalProps,
         canNavigateCollection: true,
       });
-      expect(queryByLabelText(slideshow)).not.toBeInTheDocument();
+      expect(queryByLabelText(slideshow)).toBeInTheDocument();
     });
 
     it('leaves the slideshow out when there is nothing to move to', () => {

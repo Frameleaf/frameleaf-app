@@ -236,6 +236,8 @@
   let announce = $state('');
   let openGroups = $state<Record<DevelopGroupId, boolean>>({ light: true, color: true, effects: false, detail: false });
   let restorationCompare = $state<RestorationCompareRequest | null>(null);
+  // Prototype RestorePanel "Loupe" (Studio.jsx:1634).
+  let restorationLoupe = $state(false);
   let saving = $state(false);
   let saveChangedCurrent = false;
 
@@ -1107,7 +1109,7 @@
       <div class="ed-canvas" bind:this={canvasEl}>
         {#if tool === 'restore' && restorationCompare}
           <div class="ed-restore-stage">
-            <RestorationCompare {...restorationCompare} alt={asset.originalFileName} />
+            <RestorationCompare {...restorationCompare} alt={asset.originalFileName} loupe={restorationLoupe} />
           </div>
         {:else if loadFailed}
           <div class="ed-unavailable"><strong>{$t('frameleaf_video_editor_load_error')}</strong></div>
@@ -1903,6 +1905,9 @@
           {asset}
           onCompare={(compare) => (restorationCompare = compare)}
           onCurrentChanged={() => (saveChangedCurrent = true)}
+          loupe={restorationLoupe}
+          onLoupeChange={(value) => (restorationLoupe = value)}
+          currentFrameSeconds={() => (restorationCompare || videoError ? null : (videoEl?.currentTime ?? null))}
         />
       {/if}
     </div>

@@ -40,7 +40,12 @@ describe('HelpFeedbackDialog (S-3)', () => {
     // Without a configured community address that row is left out.
     expect(screen.queryByRole('link', { name: /Community chat/ })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Built on Immich' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Discord/ })).toHaveAttribute('href', 'https://discord.immich.app');
+    // FL-135: attribution links only; the Immich community is not offered as help with Frameleaf.
+    expect(screen.queryByRole('link', { name: /Discord/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Source/ })).toHaveAttribute(
+      'href',
+      'https://github.com/immich-app/immich/',
+    );
     expect(screen.getByText('Third-party notices')).toBeInTheDocument();
     expect(screen.getByText('AGPL-3.0')).toBeInTheDocument();
   });

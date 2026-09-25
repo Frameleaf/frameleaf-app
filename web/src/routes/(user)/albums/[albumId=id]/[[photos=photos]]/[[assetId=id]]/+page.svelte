@@ -451,7 +451,6 @@
         {:else}
           <LibraryView
             enableRouting
-            syncUrl={false}
             selectAll={isSpace ? 'matching' : 'loaded'}
             bind:timelineManager
             {options}

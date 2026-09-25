@@ -297,18 +297,18 @@ export function buildReconciliation({ currentMain, root = repository }) {
   };
   assert.deepEqual(summary, {
     alreadyRepresented: 164,
-    epicRoutingReferences: 44,
+    epicRoutingReferences: 49,
     mainBlobAbsent: 3164,
     mainBlobDifferent: 192,
     mainBlobIdentical: 164,
     pathCount: 3520,
-    pathsWithEpicRouting: 36,
+    pathsWithEpicRouting: 40,
     preservedOnlyUnaccepted: 3356,
-    uniqueEpicRoutingIds: 17,
-    withSourceBackedRouting: 1917,
-    withoutExactRouting: 1603,
+    uniqueEpicRoutingIds: 20,
+    withSourceBackedRouting: 1925,
+    withoutExactRouting: 1595,
     withoutExactRoutingLocalEvidence: 1,
-    withoutExactRoutingUnreviewedLocalChange: 1602,
+    withoutExactRoutingUnreviewedLocalChange: 1594,
   });
   assert.equal(
     summary.withSourceBackedRouting + summary.withoutExactRouting,

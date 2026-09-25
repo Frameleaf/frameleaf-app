@@ -391,6 +391,20 @@ describe(AssetService.name, () => {
       );
     });
 
+    it("removes a Live Photo's location from its paired video too (FL-51)", async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getByIds.mockResolvedValue([{ id: asset.id, livePhotoVideoId: 'motion-1' }] as never);
+
+      await sut.update(authStub.admin, asset.id, { latitude: null, longitude: null });
+
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith([asset.id, 'motion-1']);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: asset.id } });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: 'motion-1' } });
+    });
+
     it('should update the exif rating', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -571,6 +585,27 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
         visibility: AssetVisibility.Archive,
       });
+    });
+
+    it('removes the location for null coordinates and rewrites the sidecars (FL-51)', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      mocks.asset.getByIds.mockResolvedValue([
+        { id: 'asset-1', livePhotoVideoId: 'motion-1' },
+        { id: 'asset-2', livePhotoVideoId: null },
+      ] as never);
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], latitude: null, longitude: null });
+
+      // the Live Photo's paired video loses its location with the photo
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['asset-1', 'asset-2', 'motion-1']);
+      expect(mocks.asset.updateAllExif).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SidecarWrite, data: { id: 'asset-1' } },
+        { name: JobName.SidecarWrite, data: { id: 'asset-2' } },
+        { name: JobName.SidecarWrite, data: { id: 'motion-1' } },
+      ]);
     });
 
     it('should keep album membership when assets are locked (FL-32, FL-34)', async () => {
