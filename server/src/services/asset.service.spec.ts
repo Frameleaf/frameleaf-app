@@ -411,6 +411,65 @@ describe(AssetService.name, () => {
       );
     });
 
+    it('stores and locks a typed place name, clearing an empty one (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, {
+        latitude: 51.4,
+        longitude: -116.2,
+        city: '  Lake Louise ',
+        state: 'Alberta',
+        country: '',
+      });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: {
+            assetId: asset.id,
+            latitude: 51.4,
+            longitude: -116.2,
+            city: 'Lake Louise',
+            state: 'Alberta',
+            country: null,
+            lockedProperties: ['latitude', 'longitude', 'city', 'state', 'country'],
+          },
+          lockedPropertiesBehavior: 'append',
+        }),
+      );
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+    });
+
+    it('lets geocoding name a moved item whose place was not typed (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { latitude: 10, longitude: 20 });
+
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['city', 'state', 'country']);
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: { assetId: asset.id, latitude: 10, longitude: 20, lockedProperties: ['latitude', 'longitude'] },
+        }),
+      );
+    });
+
+    it('never passes place names to the asset row (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { city: 'Banff' });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.not.objectContaining({ city: expect.anything() }));
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+    });
+
     it('should fail linking a live video if the motion part could not be found', async () => {
       const auth = AuthFactory.create();
       const asset = AssetFactory.create();

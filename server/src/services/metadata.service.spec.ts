@@ -2131,6 +2131,17 @@ describe(MetadataService.name, () => {
       expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
     });
 
+    it('keeps a typed place name locked after writing the sidecar (FL-36, V-24)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).exif().build();
+      asset.exifInfo.rating = 2;
+
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['rating', 'city', 'state', 'country']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, { Rating: 2 });
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+    });
+
     it('should write null rating as 0', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).exif().build();
       asset.exifInfo.rating = null;

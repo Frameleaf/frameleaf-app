@@ -4,7 +4,7 @@ import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
-import { AssetFile } from 'src/database.js';
+import { AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -193,7 +193,8 @@ export class AssetService extends BaseService {
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
-    const { description, dateTimeOriginal, latitude, longitude, rating, visibility, ...rest } = dto;
+    const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
+      dto;
     const repos = { asset: this.assetRepository, event: this.eventRepository };
 
     let previousMotion: { id: string } | null = null;
@@ -206,7 +207,7 @@ export class AssetService extends BaseService {
       }
     }
 
-    await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating });
+    await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating, city, state, country });
 
     const storedVisibility = await this.applyLockedVisibility(auth, [id], visibility);
     const asset = await this.assetRepository.update({
@@ -818,8 +819,21 @@ export class AssetService extends BaseService {
     latitude?: number;
     longitude?: number;
     rating?: number | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
   }) {
     const { id, description, dateTimeOriginal, latitude, longitude, rating } = dto;
+    // FL-36 (V-24): a typed place name is stored as typed (an empty one clears it) and locked, so
+    // reverse geocoding keeps it; moving the item without naming its place lets geocoding name it again.
+    const place = omitBy(
+      {
+        city: this.placeName(dto.city),
+        state: this.placeName(dto.state),
+        country: this.placeName(dto.country),
+      },
+      isUndefined,
+    );
     const writes = omitBy(
       {
         description,
@@ -828,9 +842,14 @@ export class AssetService extends BaseService {
         latitude,
         longitude,
         rating,
+        ...place,
       },
       isUndefined,
     );
+
+    if (latitude !== undefined && Object.keys(place).length === 0) {
+      await this.assetRepository.unlockProperties(id, [...placeProperties]);
+    }
 
     if (Object.keys(writes).length > 0) {
       await this.assetRepository.upsertExif({
@@ -842,6 +861,13 @@ export class AssetService extends BaseService {
       });
       await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
     }
+  }
+
+  private placeName(value: string | null | undefined): string | null | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    return value?.trim() || null;
   }
 
   async getAssetEdits(auth: AuthDto, id: string): Promise<AssetEditsResponseDto> {
