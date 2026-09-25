@@ -123,11 +123,11 @@ const rows = [
   ],
   [
     "sidecar",
-    "Metadata sidecars",
+    "Photo detail files",
     "Media",
     5,
     "mdiTextBoxSearchOutline",
-    "Discover sidecars or synchronize their metadata.",
+    "Find and read the small detail files saved next to photos.",
     "SidecarQueueAll",
   ],
   [
@@ -265,7 +265,7 @@ export const QUEUE_CATALOG = Object.freeze(
       canRefresh: id === "faceDetection",
       runLabel:
         id === "sidecar"
-          ? "Discover sidecars"
+          ? "Find detail files"
           : id === "library"
             ? "Rescan libraries"
             : singleRun.has(id)
@@ -328,7 +328,7 @@ const manualRows = [
     "best-photos-backfill",
     "Recalculate Best Photos",
     "backgroundTask",
-    "Score the library again, including previously scored assets.",
+    "Score the whole library again, including photos already scored.",
   ],
   [
     "physical-deduplication-dry-run",
@@ -415,7 +415,9 @@ const statuses = new Set([
   "completed",
 ]);
 const ownerIds = new Set(JOB_OWNERS.slice(1).map((owner) => owner.id));
-const targets = new Set(["local", "runpod", "server"]);
+// "runpod" is the retired destination id; saved jobs are read as Frameleaf Cloud.
+const targets = new Set(["local", "cloud", "server"]);
+const destinationId = (value) => (value === "runpod" ? "cloud" : value);
 const plain = (value) =>
   value !== null &&
   typeof value === "object" &&
@@ -488,7 +490,7 @@ export function createJobsState() {
             ? "Hardware encoder could not initialize. Check the selected acceleration device and available memory."
             : queue.id === "sidecar"
               ? "Source folder is unavailable. Reconnect the volume before retrying."
-              : "The ML endpoint did not respond before the request timeout. Check worker status and model availability.";
+              : "The AI computer didn't answer in time. Check that it's on and has the model installed.";
       jobs.push({
         id: `sample-${queue.id}-${n}`,
         queueId: queue.id,
@@ -504,7 +506,7 @@ export function createJobsState() {
         destination:
           queue.category === "Intelligence"
             ? n === 5
-              ? "runpod"
+              ? "cloud"
               : "local"
             : "server",
         createdAt: new Date(
@@ -555,7 +557,10 @@ export function createJobsState() {
     },
   };
 }
-function parseJob(value) {
+function parseJob(input) {
+  const value = plain(input)
+    ? { ...input, destination: destinationId(input.destination) }
+    : input;
   if (
     !plain(value) ||
     !text(value.id, 128) ||
@@ -797,15 +802,15 @@ export function validateConcurrency(value) {
     : "Enter a whole number from 1 to 1,000.";
 }
 const titleFor = {
-  pause: "Pause queue",
-  resume: "Resume queue",
+  pause: "Pause this work",
+  resume: "Resume this work",
   "clear-waiting": "Clear waiting jobs",
   "remove-failed": "Remove failed records",
   "retry-failed": "Retry failed jobs",
   missing: "Run missing",
   force: "Reprocess all",
   refresh: "Refresh face detection",
-  "resume-all": "Resume paused queues",
+  "resume-all": "Resume all paused work",
 };
 export function reviewJobsAction(state, action, settings = {}) {
   const queue = queueById(action.queueId);
@@ -827,7 +832,7 @@ export function reviewJobsAction(state, action, settings = {}) {
     detail =
       action.type === "description-defer"
         ? "Keep a reminder to rerun descriptions after reviewing the saved model and prompt."
-        : "Queue a full description pass for eligible assets using the saved settings. Existing active or waiting description work prevents a duplicate request.";
+        : "Write captions for the whole library again with your saved settings. Nothing is added if captions are already being written.";
     affected = action.type === "description-defer" ? 0 : 1;
     if (settings.descriptions === false)
       error = "Enable descriptions before scheduling this task.";
@@ -858,7 +863,7 @@ export function reviewJobsAction(state, action, settings = {}) {
             JSON.stringify(action.kind ? { kind: action.kind } : {}, null, 2),
       )
     )
-      error = "A re-evaluation with this category scope is already queued.";
+      error = "This category is already waiting to be re-checked.";
   } else if (action.type === "manual") {
     if (!manual) error = "Choose an available task.";
     else {
@@ -875,27 +880,27 @@ export function reviewJobsAction(state, action, settings = {}) {
       (item) => state.queues[item.id].paused && item.canPause,
     ).length;
     detail =
-      "Resume paused queues for every account. Existing active work continues.";
-    if (!affected) error = "No queues are paused.";
-  } else if (!queue) error = "Choose an available queue.";
+      "Resume paused work for everyone. Running work continues.";
+    if (!affected) error = "Nothing is paused.";
+  } else if (!queue) error = "Choose a kind of work.";
   else if (action.type === "pause") {
     if (!queue.canPause) error = "Essential background tasks cannot be paused.";
     else if (state.queues[queue.id].paused)
-      error = "This queue is already paused.";
+      error = "This work is already paused.";
     affected = count.waiting;
     detail =
       "Stop taking new work. Active jobs continue; delayed jobs keep their schedule.";
   } else if (action.type === "resume") {
     if (!state.queues[queue.id].paused)
-      error = "This queue is already running.";
+      error = "This work is already running.";
     affected = count.paused;
     detail =
-      "Allow waiting work to start, using the current concurrency limit.";
+      "Let waiting work start, up to the number that can run at once.";
   } else if (action.type === "clear-waiting") {
     affected = count.waiting + count.paused;
     dangerous = true;
     detail =
-      "Remove waiting jobs from this queue. Active, delayed, and failed jobs remain. Original files are not deleted.";
+      "Remove jobs that haven't started. Running, delayed and failed jobs stay. Your photos are not deleted.";
     if (!affected) error = "There are no waiting jobs to clear.";
   } else if (action.type === "remove-failed") {
     affected = count.failed;
@@ -906,7 +911,7 @@ export function reviewJobsAction(state, action, settings = {}) {
   } else if (action.type === "retry-failed") {
     affected = count.failed;
     detail =
-      "Put failed jobs back in the queue with their saved inputs and destination. Resolve the reported problem first.";
+      "Try failed jobs again, on the same computer. Fix the reported problem first.";
     if (!affected) error = "There are no failed jobs to retry.";
     else if (
       state.jobs.some(
@@ -924,7 +929,7 @@ export function reviewJobsAction(state, action, settings = {}) {
       (action.type === "force" && !queue.canForce) ||
       (action.type === "refresh" && !queue.canRefresh)
     )
-      error = "This action is not available for this queue.";
+      error = "This isn't available for this kind of work.";
     else if (featureDisabled(queue, settings))
       error = "Enable this feature before starting a library scan.";
     else if (
@@ -934,7 +939,7 @@ export function reviewJobsAction(state, action, settings = {}) {
       state.queues[queue.id].paused
     )
       error =
-        "Wait for this queue to finish, or clear its waiting work and resume it first.";
+        "Wait for this work to finish, or clear what's waiting and resume it first.";
     affected = 1;
     title =
       action.type === "missing"
@@ -948,10 +953,10 @@ export function reviewJobsAction(state, action, settings = {}) {
       ["faceDetection", "facialRecognition"].includes(queue.id)
         ? "Reset generated face results and reprocess the library. Review the effect on face assignments before continuing."
         : action.type === "force"
-          ? "Queue a library-wide scan including previously processed assets. This can require substantial processing time."
+          ? "Scan the whole library again, including photos already processed. This can require substantial processing time."
           : action.type === "refresh"
             ? "Refresh face results without requesting a complete reset."
-            : "Queue one coordinator task to find eligible work across the library.";
+            : "Look through the library for anything that still needs doing.";
   } else error = "This action is not available.";
   return {
     title,
@@ -978,7 +983,7 @@ export function applyJobsAction(
   if (review.error) throw new Error(review.error);
   if (expectedRevision !== state.revision)
     throw new Error(
-      "The queue changed. Review the latest counts before continuing.",
+      "Things changed. Check the latest numbers before continuing.",
     );
   if (review.dangerous && !confirmed)
     throw new Error("Review and confirm this action first.");
@@ -1091,7 +1096,6 @@ export function applyJobsAction(
   return next;
 }
 
-export const RUNPOD_STORAGE_KEY = "frameleaf:runpod-manager:v1";
 export const SMART_ALBUM_KINDS = Object.freeze([
   "documents",
   "food",
@@ -1099,11 +1103,6 @@ export const SMART_ALBUM_KINDS = Object.freeze([
   "pets",
   "screenshots",
   "travel",
-]);
-export const RUNPOD_GPUS = Object.freeze([
-  { id: "NVIDIA RTX A5000", name: "RTX A5000", memory: 24, rate: 0.29 },
-  { id: "NVIDIA RTX A6000", name: "RTX A6000", memory: 48, rate: 0.49 },
-  { id: "NVIDIA A100 80GB PCIe", name: "A100 80 GB", memory: 80, rate: 1.19 },
 ]);
 export function descriptionHardwarePreset(acceleration, detected) {
   if (!["auto", "openvino", "cuda"].includes(acceleration))
@@ -1119,302 +1118,4 @@ export function descriptionHardwarePreset(acceleration, detected) {
       advancedSensitiveDevice: "AUTO",
     });
   return changes;
-}
-export function createRunPodState() {
-  return {
-    version: 1,
-    revision: 0,
-    status: "idle",
-    mode: "pod",
-    podId: null,
-    endpointId: null,
-    workerReady: false,
-    cloudAcknowledged: false,
-    gpuId: RUNPOD_GPUS[0].id,
-    gpuCount: 1,
-    runtimeHours: 4,
-    history: [],
-    lastRequest: null,
-  };
-}
-const providerStatuses = new Set([
-  "idle",
-  "provisioning",
-  "starting",
-  "running",
-  "stopping",
-  "stopped",
-  "error",
-  "serverless-provisioning",
-  "serverless-ready",
-]);
-export function parseRunPodState(raw) {
-  const fallback = createRunPodState();
-  let source = raw;
-  if (typeof raw === "string") {
-    if (raw.length > 200_000) return fallback;
-    try {
-      source = JSON.parse(raw);
-    } catch {
-      return fallback;
-    }
-  }
-  if (
-    !plain(source) ||
-    source.version !== 1 ||
-    !integer(source.revision) ||
-    !providerStatuses.has(source.status) ||
-    !["pod", "serverless"].includes(source.mode) ||
-    !Array.isArray(source.history)
-  )
-    return fallback;
-  const podId =
-    source.podId === null
-      ? null
-      : text(source.podId, 128)
-        ? source.podId
-        : null;
-  const endpointId =
-    source.endpointId === null
-      ? null
-      : text(source.endpointId, 128)
-        ? source.endpointId
-        : null;
-  const status =
-    (source.mode === "pod" && source.status.startsWith("serverless")) ||
-    (source.mode === "serverless" &&
-      ["provisioning", "starting", "running", "stopping", "stopped"].includes(
-        source.status,
-      ))
-      ? "error"
-      : source.status;
-  return {
-    ...fallback,
-    revision: source.revision,
-    status,
-    mode: source.mode,
-    podId,
-    endpointId,
-    workerReady:
-      source.workerReady === true &&
-      ["running", "serverless-ready"].includes(status),
-    cloudAcknowledged: source.cloudAcknowledged === true,
-    gpuId: RUNPOD_GPUS.some((gpu) => gpu.id === source.gpuId)
-      ? source.gpuId
-      : fallback.gpuId,
-    gpuCount:
-      integer(source.gpuCount) && source.gpuCount >= 1 && source.gpuCount <= 8
-        ? source.gpuCount
-        : 1,
-    runtimeHours:
-      integer(source.runtimeHours) &&
-      source.runtimeHours >= 1 &&
-      source.runtimeHours <= 168
-        ? source.runtimeHours
-        : 4,
-    history: unique(source.history, 60, (value) =>
-      plain(value) &&
-      text(value.id, 128) &&
-      value.id &&
-      text(value.title) &&
-      text(value.detail, 1000) &&
-      date(value.at)
-        ? {
-            id: value.id,
-            title: value.title,
-            detail: value.detail,
-            at: value.at,
-          }
-        : null,
-    ),
-    lastRequest:
-      plain(source.lastRequest) &&
-      text(source.lastRequest.action, 100) &&
-      text(source.lastRequest.payload, 4000)
-        ? {
-            action: source.lastRequest.action,
-            payload: source.lastRequest.payload,
-          }
-        : null,
-  };
-}
-export function runPodActionReview(state, action) {
-  const { type } = action;
-  let error = "";
-  let title = "";
-  let detail = "";
-  let cloud = false;
-  let dangerous = false;
-  if (type === "launch") {
-    title = "Launch managed GPU";
-    cloud = true;
-    detail =
-      "Start a billed GPU worker. Ordinary ML may send image previews to RunPod after the worker becomes available. Existing video-restoration jobs keep their selected destination.";
-    if (
-      !["idle", "error"].includes(state.status) ||
-      state.podId ||
-      state.endpointId
-    )
-      error =
-        "Stop and remove existing resources before launching a new worker.";
-  } else if (type === "resume") {
-    title = "Resume managed GPU";
-    cloud = true;
-    detail =
-      "Restart the stopped worker and reuse its cached models. GPU billing resumes.";
-    if (state.status !== "stopped" || !state.podId)
-      error = "A stopped managed worker is required.";
-  } else if (type === "stop") {
-    title = "Stop managed GPU";
-    dangerous = true;
-    detail =
-      "Stop compute while retaining the model-cache volume. Active ordinary ML requests can fail; review jobs first. Retained storage may still be billed.";
-    if (
-      !["running", "provisioning", "starting"].includes(state.status) ||
-      !state.podId
-    )
-      error = "There is no running managed worker to stop.";
-  } else if (type === "terminate") {
-    title = "Terminate managed GPU";
-    dangerous = true;
-    detail =
-      "Destroy the managed worker and its persistent model-cache volume. The next launch starts with an empty cache.";
-    if (!state.podId) error = "There is no managed worker to terminate.";
-  } else if (type === "setup" || type === "recreate") {
-    title =
-      type === "setup" ? "Set up serverless ML" : "Verify serverless endpoint";
-    cloud = true;
-    detail =
-      "Create or reuse this server’s endpoint and template. Existing owned resources are reused; this is not a forced replacement. Workers may cold-start when a request arrives.";
-    if (state.podId)
-      error = "Remove the managed Pod before setting up serverless ML.";
-  } else if (type === "teardown") {
-    title = "Remove serverless endpoint";
-    dangerous = true;
-    detail =
-      "Remove the endpoint and template owned by this server. Requests using that endpoint can fail. Other provider resources remain untouched.";
-    if (!state.endpointId) error = "There is no serverless endpoint to remove.";
-  } else if (type === "backfill") {
-    title = "Backfill ML results";
-    cloud = true;
-    detail =
-      "Queue visual search, face detection, duplicate detection, OCR, descriptions, and Locked-content analysis across all accounts. This can incur GPU charges.";
-    if (!["running", "serverless-ready"].includes(state.status))
-      error = "Launch a managed GPU or set up serverless ML first.";
-  } else if (type === "clear") {
-    title = "Clear unavailable worker state";
-    dangerous = true;
-    detail =
-      "Clear local status only after the provider confirms the resource no longer exists. This does not stop a running resource or its charges.";
-    error =
-      "Provider confirmation is required before clearing resource references.";
-  } else if (type === "refresh") {
-    title = "Refresh worker status";
-    detail =
-      "Refresh the displayed lifecycle state. A running GPU or provisioned endpoint does not qualify a model, Studio renderer, HDR, or Dolby Vision.";
-  } else if (type === "connect") {
-    title = "Check provider connection";
-    detail =
-      "Check whether the configured provider credential can manage resources. No key is displayed or stored here.";
-  } else error = "Choose an available provider action.";
-  return { title, detail, error, cloud, dangerous, revision: state.revision };
-}
-export function applyRunPodAction(
-  state,
-  action,
-  {
-    id,
-    at,
-    expectedRevision,
-    confirmed = false,
-    cloudAcknowledged = false,
-  } = {},
-) {
-  const review = runPodActionReview(state, action);
-  if (review.error) throw new Error(review.error);
-  if (state.revision !== expectedRevision)
-    throw new Error("Worker state changed. Review it again.");
-  if (review.dangerous && !confirmed)
-    throw new Error("Confirm the resource change.");
-  if (review.cloud && !cloudAcknowledged)
-    throw new Error(
-      "Explicitly choose RunPod and acknowledge cloud processing.",
-    );
-  if (!text(id, 120) || !id || !date(at))
-    throw new Error("The action could not be recorded.");
-  const next = { ...state, revision: state.revision + 1, workerReady: false };
-  let payload = {};
-  if (action.type === "launch") {
-    const gpu = RUNPOD_GPUS.find((item) => item.id === action.gpuId);
-    const count = Number(action.gpuCount);
-    const runtime = Number(action.runtimeHours);
-    if (
-      !gpu ||
-      !Number.isInteger(count) ||
-      count < 1 ||
-      count > 8 ||
-      !Number.isInteger(runtime) ||
-      runtime < 1 ||
-      runtime > 168
-    )
-      throw new Error("Choose a GPU, 1–8 GPUs, and 1–168 runtime hours.");
-    Object.assign(next, {
-      mode: "pod",
-      status: "provisioning",
-      podId: `sample-pod-${id}`,
-      endpointId: null,
-      gpuId: gpu.id,
-      gpuCount: count,
-      runtimeHours: runtime,
-      cloudAcknowledged: true,
-    });
-    payload = {
-      gpuTypeId: gpu.id,
-      gpuCount: count,
-      maxRuntimeHours: runtime,
-      acknowledgeDataPrivacy: true,
-    };
-  } else if (action.type === "resume") {
-    next.status = "starting";
-    next.cloudAcknowledged = true;
-  } else if (action.type === "stop") next.status = "stopping";
-  else if (action.type === "terminate" || action.type === "teardown")
-    Object.assign(next, {
-      status: "idle",
-      podId: null,
-      endpointId: null,
-      cloudAcknowledged: false,
-    });
-  else if (action.type === "setup" || action.type === "recreate")
-    Object.assign(next, {
-      mode: "serverless",
-      status: state.endpointId ? "serverless-ready" : "serverless-provisioning",
-      endpointId: state.endpointId || `sample-endpoint-${id}`,
-      cloudAcknowledged: true,
-    });
-  else if (action.type === "refresh")
-    next.status =
-      {
-        provisioning: "running",
-        starting: "running",
-        stopping: "stopped",
-        "serverless-provisioning": "serverless-ready",
-      }[state.status] || state.status;
-  next.lastRequest = {
-    action: action.type,
-    payload: JSON.stringify(payload, null, 2),
-  };
-  next.history = [
-    {
-      id,
-      title: review.title,
-      detail:
-        action.type === "backfill"
-          ? "Backfill request prepared for all accounts."
-          : review.detail,
-      at,
-    },
-    ...state.history,
-  ].slice(0, 60);
-  return next;
 }
