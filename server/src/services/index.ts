@@ -16,7 +16,6 @@ import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { CloudMlService } from 'src/services/cloud-ml.service.js';
-import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
@@ -29,6 +28,7 @@ import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verifi
 import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
 import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
 import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
+import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';

@@ -1,12 +1,12 @@
 import {
+  type MlContainerReport,
+  type ServerHardwareFacts,
   benchmarkFactors,
   detectHardwareIssues,
   median,
   mlCheckFrom,
   serverCheckFrom,
   testEncoderFor,
-  type MlContainerReport,
-  type ServerHardwareFacts,
 } from 'src/utils/hardware-check.js';
 
 const GB = 1024 ** 3;
