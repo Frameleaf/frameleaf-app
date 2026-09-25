@@ -418,5 +418,7 @@ export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { not
 };
 
 export const handleDownloadAlbum = async (album: AlbumResponseDto) => {
-  await downloadArchive(album.albumName, { albumId: album.id });
+  // The download's row (panel or public strip) shows a failure or a cancel with its recovery, so
+  // callers that fire and forget get no unhandled rejection.
+  await downloadArchive(album.albumName, { albumId: album.id }).catch(() => {});
 };

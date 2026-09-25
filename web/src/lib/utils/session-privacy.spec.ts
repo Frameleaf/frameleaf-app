@@ -16,11 +16,17 @@ describe('revokeSessionView', () => {
     const video = document.createElement('video');
     document.body.append(video);
     const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
-    downloadManager.add('export', '/download', ['protected-asset'], 'private', 1);
+    let request: AbortSignal | undefined;
+    downloadManager.start({ name: 'private.zip', assetIds: ['protected-asset'] }, ({ signal }) => {
+      request = signal;
+      return new Promise<Blob>(() => {});
+    });
     const replace = vi.spyOn(location, 'replace').mockImplementation(() => {
       expect(document.documentElement.style.display).toBe('none');
       expect(pause).toHaveBeenCalled();
+      // FL-45: the protected download is aborted, not only hidden.
       expect(downloadManager.assets.size).toBe(0);
+      expect(request?.aborted).toBe(true);
     });
 
     revokeSessionView('/photos');

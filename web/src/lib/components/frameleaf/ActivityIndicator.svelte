@@ -19,7 +19,7 @@
    */
 
   const pendingDownloads = $derived(
-    [...downloadManager.assets.entries()].filter(([, download]) => !download.downloaded),
+    [...downloadManager.assets.entries()].filter(([, download]) => download.status === 'preparing'),
   );
 
   const indicator = $derived(

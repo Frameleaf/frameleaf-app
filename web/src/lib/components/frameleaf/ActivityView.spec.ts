@@ -234,7 +234,7 @@ describe('Frameleaf Activity page', () => {
   });
 
   it('names a row whose id holds spaces, and never draws an upload picture', async () => {
-    downloadManager.add('Holiday (1/2)', '/download', ['a'], 'Holiday (1/2)', 10);
+    downloadManager.start({ name: 'Holiday (1/2).zip', assetIds: ['a'], total: 10 }, () => new Promise<Blob>(() => {}));
     uploadAssetsStore.addItem({
       id: 'upload-1',
       file: new File([''], 'private.jpg'),
