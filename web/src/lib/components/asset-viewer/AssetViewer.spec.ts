@@ -267,6 +267,27 @@ describe('AssetViewer', () => {
       expect(viewer).not.toHaveClass('chrome-hidden');
     });
 
+    it('never restarts the swipe when one finger of a pinch is lifted and put back', async () => {
+      const onClose = vi.fn();
+      const { viewer, canvas } = renderImage({ onClose });
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 300, clientY: 200 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 200 });
+      // Finger 2 is still down: putting finger 1 back is still a pinch, not a new swipe.
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 420 });
+      expect(viewer).not.toHaveClass('dragging');
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 420 });
+      await fireEvent.pointerUp(document, { pointerId: 2, clientX: 300, clientY: 200 });
+      expect(onClose).not.toHaveBeenCalled();
+
+      // With every finger up, a single finger swipes again.
+      await fireEvent.pointerDown(canvas, { pointerId: 3, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 3, clientX: 200, clientY: 300 });
+      await fireEvent.pointerUp(document, { pointerId: 3, clientX: 200, clientY: 360 });
+      expect(onClose).toHaveBeenCalledOnce();
+    });
+
     it('ignores another pointer’s moves and releases while following one', async () => {
       const onClose = vi.fn();
       const { canvas } = renderImage({ onClose });
