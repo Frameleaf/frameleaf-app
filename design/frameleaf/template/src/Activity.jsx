@@ -6,6 +6,7 @@ import { destinationName, formatBytes, shortTimecode } from "./studio-project.mj
 import {
   CLOUD_STORAGE_KEY,
   advanceBackupRun,
+  advanceRestoreRun,
   cloudAdmission,
   cloudJobs as cloudBatches,
   formatUsd,
@@ -60,7 +61,7 @@ const jobKindIcon = (job) => (job.kind === "Export" ? "mdiExportVariant" : "mdiA
 /** Same-tab signal that the background queues moved (storage events only reach other tabs). */
 export const JOBS_TICK_EVENT = "frameleaf-jobs-tick";
 
-/** One second of server-side work: background queues and a cloud backup run, saved to their storage keys. */
+/** One second of server-side work: background queues and cloud backup and restore runs, saved to their storage keys. */
 function tickBackground(now) {
   try {
     const state = parseJobsState(localStorage.getItem(JOBS_STORAGE_KEY));
@@ -73,7 +74,7 @@ function tickBackground(now) {
     // Blocked storage: background rows stay as they are.
   }
   const cloud = loadCloudState();
-  const nextCloud = advanceBackupRun(cloud, now);
+  const nextCloud = advanceRestoreRun(advanceBackupRun(cloud, now), now);
   if (nextCloud !== cloud) saveCloudState(nextCloud);
 }
 

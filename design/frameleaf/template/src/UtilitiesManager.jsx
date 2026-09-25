@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button, Dialog } from "./App";
 import { Icon } from "./Icon";
 import { DuplicateReview } from "./DuplicateReview";
 import { UtilityRecovery } from "./UtilityRecovery";
 import { UtilityMapPicker } from "./UtilityMapPicker";
 import { WorkflowDesigner } from "./WorkflowDesigner";
+import { ItemRestoreDialog, RestoreKeyPrompt, restoreNeedsKey, useCloudState } from "./FrameleafCloud";
+import { backupManifests, restoreRunActive, startRestoreRun } from "./frameleaf-cloud-data.mjs";
 import {
   workflowExecutionErrors,
   workflowPersistenceError,
@@ -20,6 +22,8 @@ import {
   ownerName,
   formatBytes,
   parseWorkflowImport,
+  RESTORE_REFUSED,
+  resolveBackupChecks,
 } from "./utilities-data.mjs";
 import "./utilities-manager.css";
 const read = () => {
@@ -61,7 +65,34 @@ export function UtilitiesManager({
     [lng, setLng] = useState("-116.1860"),
     [workflow, setWorkflow] = useState(null),
     [confirmation, setConfirmation] = useState(""),
-    [recovery, setRecovery] = useState(null);
+    [recovery, setRecovery] = useState(null),
+    [restores, setRestores] = useState({}),
+    [restoreDialog, setRestoreDialog] = useState(null);
+  const [cloud, commitCloud] = useCloudState();
+  const stateRef = useRef(null);
+  const restoreTimers = useRef([]);
+  const backupOn =
+    cloud.backup.configured && ["missing-media", "corrupt-media"].includes(tool);
+  useEffect(() => {
+    if (!backupOn) return undefined;
+    // "Checking…" rows resolve into stored state once the kept manifests have been searched.
+    const timer = setTimeout(
+      () =>
+        setState((current) => {
+          const next = resolveBackupChecks(current);
+          if (next !== current)
+            try {
+              localStorage.setItem(utilityStorageKey, JSON.stringify(next));
+            } catch {
+              // Blocked storage: the check resolves again after a reload.
+            }
+          return next;
+        }),
+      1600,
+    );
+    return () => clearTimeout(timer);
+  }, [tool, backupOn]);
+  useEffect(() => () => restoreTimers.current.forEach(clearTimeout), []);
   useEffect(() => {
     setOwner(["taylor", "jamie", "emma"].includes(scope) ? scope : "all");
     setSelected([]);
@@ -76,6 +107,7 @@ export function UtilitiesManager({
   const running =
     state.runs.find((run) => run.tool === tool)?.status === "Queued";
   const definition = utilityTools.find((x) => x.id === tool);
+  stateRef.current = state;
   function commit(next, message) {
     try {
       localStorage.setItem(utilityStorageKey, JSON.stringify(next));
@@ -113,6 +145,76 @@ export function UtilitiesManager({
         .includes(query.toLowerCase()),
   );
   const chosen = rows.filter((r) => selected.includes(r.id));
+  const coverage = (row) => row.backup?.status;
+  const restorable = (row) =>
+    backupOn &&
+    coverage(row) === "in-backup" &&
+    restores[row.id] !== "verifying" &&
+    !["Restored", "Relinked", "Dismissed", "Trashed"].includes(row.status);
+  const backupDay = (id) => {
+    const manifest = backupManifests.find((item) => item.id === id);
+    return manifest
+      ? new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(manifest.createdAt))
+      : "—";
+  };
+  function restoreRows(targets) {
+    if (!targets.length) return;
+    setRestores((current) => ({
+      ...current,
+      ...Object.fromEntries(targets.map((row) => [row.id, "verifying"])),
+    }));
+    setNotice(
+      targets.length === 1
+        ? `Restoring ${targets[0].name}. It is checked against its fingerprint first.`
+        : `Restoring ${targets.length} items. Follow the progress in Activity.`,
+    );
+    if (!restoreRunActive(cloud))
+      commitCloud((current) =>
+        startRestoreRun(current, {
+          title: targets.length === 1 ? `Restore ${targets[0].name}` : `Restore ${targets.length} items from backup`,
+          files: targets.length,
+        }),
+      );
+    const timer = setTimeout(() => {
+      const verified = targets.filter((row) => !row.backup.fingerprintMismatch);
+      const refused = targets.filter((row) => row.backup.fingerprintMismatch);
+      setRestores((current) => ({
+        ...current,
+        ...Object.fromEntries(targets.map((row) => [row.id, refused.includes(row) ? "refused" : undefined])),
+      }));
+      if (!verified.length) {
+        setNotice("");
+        setError(RESTORE_REFUSED);
+        return;
+      }
+      try {
+        commit(
+          applyUtilityAction(stateRef.current, {
+            action: "restore",
+            ids: verified.map((row) => row.id),
+            actorId: "taylor",
+            admin: true,
+          }),
+          refused.length
+            ? `Restored ${verified.length} of ${targets.length}. ${refused.length} refused because the fingerprint didn’t match.`
+            : `Restored ${verified.length === 1 ? verified[0].name : `${verified.length} items`}. The fingerprint matched.`,
+        );
+      } catch (failure) {
+        setRestores((current) => ({
+          ...current,
+          ...Object.fromEntries(verified.map((row) => [row.id, undefined])),
+        }));
+        setNotice("");
+        setError(failure.message);
+      }
+    }, 1400);
+    restoreTimers.current.push(timer);
+  }
+  const restoreSelected = () => {
+    const targets = chosen.filter((row) => restorable(row) && canEdit(row));
+    if (restoreNeedsKey(cloud.backup)) setRestoreDialog({ kind: "key", rows: targets });
+    else restoreRows(targets);
+  };
   const canEdit = (row) =>
     row.status !== "Deleted" && (row.ownerId === "taylor" || definition?.admin);
   const ask = (action, targets = chosen, extra = {}) => {
@@ -240,6 +342,7 @@ export function UtilitiesManager({
               <th>Original</th>
               <th>Account</th>
               <th>{tool === "large-files" ? "Size" : "Finding"}</th>
+              {backupOn && <th>Backup</th>}
               <th>Review</th>
             </tr>
           </thead>
@@ -272,9 +375,42 @@ export function UtilitiesManager({
                 </td>
                 <td>
                   {tool === "large-files" ? formatBytes(row.bytes) : row.status}
+                  {restores[row.id] === "refused" && (
+                    <small role="alert" style={{ color: "var(--fl-warning)", maxWidth: 280 }}>
+                      {RESTORE_REFUSED}
+                    </small>
+                  )}
                 </td>
+                {backupOn && (
+                  <td>
+                    {!row.backup
+                      ? "—"
+                      : coverage(row) === "checking"
+                        ? "Checking…"
+                        : coverage(row) === "none"
+                          ? "Not in any backup"
+                          : `In backup · ${backupDay(row.backup.newest)}`}
+                  </td>
+                )}
                 <td>
-                  <Button onClick={() => setInspect(row)}>Inspect</Button>
+                  <span style={{ display: "flex", gap: 8, alignItems: "center", whiteSpace: "nowrap" }}>
+                    <Button onClick={() => setInspect(row)}>Inspect</Button>
+                    {backupOn &&
+                      row.backup &&
+                      (restores[row.id] === "verifying" ? (
+                        <span role="status">Verifying…</span>
+                      ) : row.status === "Restored" ? (
+                        <span>Restored</span>
+                      ) : (
+                        <Button
+                          icon="mdiBackupRestore"
+                          disabled={!restorable(row) || !canEdit(row)}
+                          onClick={() => setRestoreDialog({ kind: "item", row })}
+                        >
+                          Restore from backup
+                        </Button>
+                      ))}
+                  </span>
                 </td>
               </tr>
             ))}
@@ -291,6 +427,7 @@ export function UtilitiesManager({
     );
   }
   return (
+    <>
     <div className="utilities-manager">
       {error && (
         <p role="alert" className="um-message error">
@@ -592,6 +729,15 @@ export function UtilitiesManager({
                 }
               >
                 Trash confirmed damage
+              </Button>
+            )}
+            {backupOn && (
+              <Button
+                icon="mdiBackupRestore"
+                disabled={!chosen.some(restorable)}
+                onClick={restoreSelected}
+              >
+                Restore all from backup
               </Button>
             )}
             <Button disabled={!chosen.length} onClick={() => ask("dismiss")}>
@@ -955,6 +1101,31 @@ export function UtilitiesManager({
         </details>
       )}
     </div>
+      {/* Outside the manager so its form styles don’t reach the dialog. */}
+      {restoreDialog?.kind === "item" && (
+        <ItemRestoreDialog
+          item={{
+            name: restoreDialog.row.name,
+            path: restoreDialog.row.path,
+            newest: restoreDialog.row.backup.newest,
+          }}
+          close={() => setRestoreDialog(null)}
+          onRestore={() => {
+            setRestoreDialog(null);
+            restoreRows([restoreDialog.row]);
+          }}
+        />
+      )}
+      {restoreDialog?.kind === "key" && (
+        <RestoreKeyPrompt
+          close={() => setRestoreDialog(null)}
+          done={() => {
+            setRestoreDialog(null);
+            restoreRows(restoreDialog.rows);
+          }}
+        />
+      )}
+    </>
   );
 }
 function ICloudPanel({ state, commit, onNavigate }) {

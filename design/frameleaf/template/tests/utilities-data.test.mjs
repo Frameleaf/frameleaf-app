@@ -179,3 +179,25 @@ test("keyboard and button offsets clamp at geographic limits and zoom maintains 
     }
   assert.throws(() => offsetCoordinates(NaN, 0, "north"), /valid/);
 });
+
+test("Elk.jpg restores from backup once its backup check resolves", async () => {
+  const { applyUtilityAction, resolveBackupChecks } = await import("../src/utilities-data.mjs");
+  const state = initialUtilities();
+  const restore = (current) =>
+    applyUtilityAction(current, { action: "restore", ids: ["corrupt-suspect"], actorId: "taylor", admin: true });
+  assert.equal(state.rows.find((row) => row.id === "corrupt-suspect").backup.status, "checking");
+  assert.throws(() => restore(state), /kept backup/);
+  const checked = resolveBackupChecks(state);
+  assert.equal(resolveBackupChecks(checked), checked);
+  assert.equal(checked.rows.find((row) => row.id === "corrupt-suspect").backup.status, "in-backup");
+  const restored = restore(checked);
+  assert.equal(restored.rows.find((row) => row.id === "corrupt-suspect").status, "Restored");
+  assert.throws(
+    () => applyUtilityAction(checked, { action: "restore", ids: ["missing-cabin"], actorId: "taylor", admin: true }),
+    /fingerprint/,
+  );
+  assert.throws(
+    () => applyUtilityAction(checked, { action: "restore", ids: ["missing-kayak"], actorId: "taylor", admin: true }),
+    /kept backup/,
+  );
+});
