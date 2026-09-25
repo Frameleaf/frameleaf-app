@@ -338,6 +338,8 @@
     | 'description-requeue'
     | 'description-defer'
     | 'smart-album';
+  /** The commands `request` reviews; the enrichment tasks are reviewed by `requestEnrichment` (CC-42). */
+  type QueueCommand = Exclude<Command, 'description-requeue' | 'description-defer' | 'smart-album'>;
   type Review = {
     command: Command;
     name?: QueueName;
@@ -362,14 +364,14 @@
   const forceLabel = (definition: JobQueueDefinition) => $t(`frameleaf_jobs_force_${definition.force}` as Translations);
 
   const request = (
-    command: Command,
+    command: QueueCommand,
     row?: { definition: JobQueueDefinition; queue: QueueResponseDto },
     manual?: ManualJobDefinition,
   ) => {
     const queueCounts = row ? jobCounts(row.queue.statistics) : undefined;
     const faces = row?.definition.force === 'reset';
     const failed = queueCounts?.failed ?? 0;
-    const reviews: Record<Command, Omit<Review, 'command' | 'name' | 'manual'>> = {
+    const reviews: Record<QueueCommand, Omit<Review, 'command' | 'name' | 'manual'>> = {
       pause: {
         title: $t('frameleaf_jobs_pause_queue'),
         detail: $t('frameleaf_jobs_review_pause'),
