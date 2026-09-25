@@ -213,6 +213,7 @@ export class MetadataRepository {
   });
   private locationFree = new Map<string, LocationFreeEntry>();
   private locationFreeSweep?: NodeJS.Timeout;
+  private locationFreeDirProblemReported = false;
 
   async teardown() {
     clearInterval(this.locationFreeSweep);
@@ -336,7 +337,10 @@ export class MetadataRepository {
       released = true;
       current.refs--;
       if (current.refs === 0 && this.locationFree.get(key) === current) {
-        current.timer = setTimeout(() => void this.evictLocationFree(key, current), LOCATION_FREE_TTL_MS);
+        current.timer = setTimeout(
+          () => this.runInBackground('evict', this.evictLocationFree(key, current)),
+          LOCATION_FREE_TTL_MS,
+        );
         current.timer.unref?.();
       }
     };
@@ -373,7 +377,7 @@ export class MetadataRepository {
       }
       return { path: destination, isCopy: true };
     } catch (error) {
-      await rm(destination, { force: true });
+      await this.removeCopy(destination);
       this.logger.warn(`Unable to remove the location from ${source}: ${error}`);
       throw error;
     }
@@ -387,27 +391,70 @@ export class MetadataRepository {
   private async prepareLocationFreeDir(): Promise<string> {
     const mediaLocation = StorageCore.getMediaLocation();
     const directory = join(mediaLocation, 'tmp', 'location-free');
-    await mkdir(directory, { recursive: true, mode: 0o700 });
 
-    const info = await lstat(directory);
-    const uid = process.getuid?.();
-    const expected = join(await realpath(mediaLocation), 'tmp', 'location-free');
-    if (
-      !info.isDirectory() ||
-      (uid !== undefined && info.uid !== uid) ||
-      (info.mode & 0o777) !== 0o700 ||
-      (await realpath(directory)) !== expected
-    ) {
-      throw new Error(`Refusing to use ${directory} for location-free copies: not a private directory`);
+    try {
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+
+      const info = await lstat(directory);
+      const uid = process.getuid?.();
+      const expected = join(await realpath(mediaLocation), 'tmp', 'location-free');
+      const problems = [
+        !info.isDirectory() && 'it is not a real directory',
+        uid !== undefined && info.uid !== uid && `it is owned by uid ${info.uid}, not the server's uid ${uid}`,
+        (info.mode & 0o777) !== 0o700 && `its mode is ${(info.mode & 0o777).toString(8)}, not 700`,
+        (await realpath(directory)) !== expected && `it resolves outside ${expected}`,
+      ].filter(Boolean);
+      if (problems.length > 0) {
+        throw new Error(`not a private directory: ${problems.join('; ')}`);
+      }
+    } catch (error) {
+      this.reportLocationFreeDirProblem(directory, error);
+      throw new Error(`Refusing to use ${directory} for location-free copies: ${error}`, { cause: error });
     }
+    this.locationFreeDirProblemReported = false;
 
     if (!this.locationFreeSweep) {
-      this.locationFreeSweep = setInterval(() => void this.sweepLocationFree(directory), LOCATION_FREE_SWEEP_MS);
+      this.locationFreeSweep = setInterval(
+        () => this.runInBackground('sweep', this.sweepLocationFree(directory)),
+        LOCATION_FREE_SWEEP_MS,
+      );
       this.locationFreeSweep.unref?.();
-      await this.sweepLocationFree(directory);
+      this.runInBackground('sweep', this.sweepLocationFree(directory));
     }
 
     return directory;
+  }
+
+  /**
+   * FL-54 review item 6: every download that needs a location-free copy is refused while the directory is
+   * unusable, which on a network mount (NFS/SMB mapping ownership or permissions) can be permanent. Say so
+   * once, loudly and with what to change, rather than a warning per request.
+   */
+  private reportLocationFreeDirProblem(directory: string, error: unknown) {
+    if (this.locationFreeDirProblemReported) {
+      return;
+    }
+    this.locationFreeDirProblemReported = true;
+    this.logger.error(
+      `Location-free copies cannot be made in ${directory} (${error}). Until this is fixed, downloads and ` +
+        `video playback of originals for partners who may not see an owner's locations are refused. The ` +
+        `directory must be a local directory owned by the user the server runs as, with mode 700; network ` +
+        `mounts that remap ownership or permissions fail this check. Fix its owner and mode, or mount the ` +
+        `media location's tmp folder on a local volume.`,
+    );
+  }
+
+  /** a background clean-up must never take the server down: log and carry on */
+  private runInBackground(task: string, work: Promise<unknown>) {
+    work.catch((error) => this.logger.error(`Location-free copy ${task} failed: ${error}`));
+  }
+
+  private async removeCopy(path: string) {
+    try {
+      await rm(path, { force: true });
+    } catch (error) {
+      this.logger.error(`Unable to remove location-free copy ${path}: ${error}`);
+    }
   }
 
   /**
@@ -432,7 +479,7 @@ export class MetadataRepository {
       const path = join(directory, name);
       const info = await lstat(path).catch(() => null);
       if (info && !active.has(path) && now - info.mtimeMs > LOCATION_FREE_STALE_MS) {
-        await rm(path, { force: true });
+        await this.removeCopy(path);
       }
     }
   }
@@ -445,7 +492,7 @@ export class MetadataRepository {
 
     const ready = await entry.ready.catch(() => null);
     if (ready?.isCopy) {
-      await rm(ready.path, { force: true });
+      await this.removeCopy(ready.path);
     }
   }
 }
