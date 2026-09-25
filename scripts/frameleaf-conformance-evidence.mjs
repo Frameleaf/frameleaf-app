@@ -1429,10 +1429,10 @@ const routes = {
     [`${W}/routes/auth/logout/+page.svelte`],
   ],
   "/auth/onboarding": [
-    "fixed",
-    ["O-8", "O-12"],
-    "Store links only when configured (O-12, FL-135); Check for new versions is a real switch that asks only Frameleaf's releases (O-8, FL-80). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)",
-    [`${P}/AuthScreens.jsx`, `${P}/system-data.mjs`],
+    "partial",
+    ["FS-1", "O-8", "O-12"],
+    "FL-176 redesigned first-run setup in the prototype (two admin flows and the personal account tool, FS-1); production still runs the FL-80 onboarding port (ON-1, O-1..O-12) until the FS-1 port lands",
+    [`${P}/FirstRunSetup.jsx`, `${P}/first-run-setup.mjs`],
     [`${W}/routes/auth/onboarding/+page.svelte`],
   ],
   "/auth/pin-prompt": [
@@ -1446,10 +1446,10 @@ const routes = {
     ],
   ],
   "/auth/register": [
-    "fixed",
-    ["AU-2"],
-    "Prototype copy, field order, strength meter (fixed on claude/frameleaf-implementation by the FL-80 auth screens)",
-    [`${P}/AuthScreens.jsx`],
+    "partial",
+    ["FS-1", "AU-2"],
+    "FL-176 replaced Register with the new-server setup flow in the prototype (FS-1); production keeps the FL-80 register screen (AU-2 fixed) until the FS-1 port lands",
+    [`${P}/FirstRunSetup.jsx`, `${P}/first-run-setup.mjs`],
     [`${W}/routes/auth/register/+page.svelte`],
   ],
   "/best-photos/[[photos=photos]]/[[assetId=id]]": [

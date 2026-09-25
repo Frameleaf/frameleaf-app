@@ -11,6 +11,7 @@ import {
   cloudBackupQuote,
   createSetup,
   examplePath,
+  firstInvalidStep,
   existingLibrary,
   flowSteps,
   goToStep,
@@ -23,6 +24,7 @@ import {
   reindexHours,
   saveAccountTool,
   saveSetup,
+  setLinked,
   setupChapters,
   setupStageTheme,
   themeAfterSetup,
@@ -137,7 +139,8 @@ test("progress is saved per step and a reload resumes; passwords never persist",
   const hostile = parseSetup(
     JSON.stringify({ version: 1, flow: "new", step: 99, completed: "yes", choices: { layout: "../", processing: "gpu", theme: "neon" } }),
   );
-  assert.equal(hostile.step, flowSteps("new").length - 1);
+  assert.equal(hostile.step, 2, "clamped, then back to the unfinished account step");
+  assert.equal(parseSetup(JSON.stringify({ version: 1, flow: "new", step: 99, choices: { linked: true } })).step, flowSteps("new").length - 1);
   assert.equal(hostile.completed, false);
   assert.equal(hostile.choices.layout, "year-month");
   assert.equal(hostile.choices.processing, "local");
@@ -206,4 +209,41 @@ test("the account tool's sections can be finished in any order and resume", () =
   storage.setItem(ACCOUNT_SETUP_KEY, JSON.stringify({ version: 1, done: ["mobile", "admin"], theme: "neon" }));
   assert.deepEqual(loadAccountTool(storage).done, ["mobile"]);
   assert.equal(loadAccountTool(storage).theme, "dark");
+});
+
+test("the existing flow keeps the local admin by default, and can unlink again", () => {
+  const state = createSetup("existing");
+  assert.equal(state.choices.signIn, "local");
+  assert.equal(createSetup("new").choices.signIn, "frameleaf");
+  const linked = setLinked({ ...state, choices: { ...state.choices, processing: "cloud" } }, true);
+  assert.equal(linked.choices.processing, "cloud");
+  const unlinked = setLinked(linked, false);
+  assert.equal(unlinked.choices.linked, false);
+  assert.equal(unlinked.choices.processing, "local", "Cloud processing needs a link");
+  assert.deepEqual(processingOptions(unlinked), ["local", "later"]);
+});
+
+test("resume and finish fall back to the first required step that no longer checks out", () => {
+  const storage = memoryStorage();
+  const state = createSetup("new");
+  // Linked, passed library, then the link and storage were lost before a reload.
+  saveSetup({ ...state, step: 6, reached: 6, choices: { ...state.choices, linked: false, storage: "" } }, storage);
+  assert.equal(loadSetup("new", storage).step, 2);
+  const local = goToStep(
+    { ...state, step: 2, reached: 2, choices: { ...state.choices, signIn: "local", admin: { name: "Taylor", email: "taylor@example.test" } } },
+    3,
+    strong,
+  );
+  assert.equal(local.step, 3);
+  assert.equal(local.choices.accountCreated, true, "the admin exists once the step is passed");
+  assert.equal(firstInvalidStep(local), -1);
+  assert.equal(firstInvalidStep({ ...local, choices: { ...local.choices, storage: "/proc" } }), 3);
+  saveSetup(local, storage);
+  assert.equal(loadSetup("new", storage).step, 3, "a created local admin resumes without the password");
+  const signedIn = goToStep(createSetup("existing"), 1, { password: "secret" });
+  assert.equal(signedIn.choices.signedIn, true);
+  saveSetup(signedIn, storage);
+  assert.equal(loadSetup("existing", storage).step, 1);
+  saveSetup({ ...createSetup("existing"), step: 4, reached: 4 }, storage);
+  assert.equal(loadSetup("existing", storage).step, 0, "never signed in: back to the sign-in gate");
 });
