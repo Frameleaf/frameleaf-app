@@ -29,6 +29,8 @@ export class ImmichFileResponse {
   public readonly contentType!: string;
   public readonly cacheControl!: CacheControl;
   public readonly fileName?: string;
+  /** called once the file has been sent or the send failed, e.g. to let a temporary copy go (FL-54) */
+  public readonly release?: () => void;
 
   constructor(response: ImmichFileResponse) {
     Object.assign(this, response);
@@ -54,8 +56,9 @@ export const sendFile = async (
   const _sendFile = (path: string, options: SendFileOptions) =>
     promisify<string, SendFileOptions>(res.sendFile).bind(res)(path, options);
 
+  let file: ImmichFileResponse | undefined;
   try {
-    const file = await handler();
+    file = await handler();
 
     await access(file.path, constants.R_OK);
 
@@ -76,6 +79,8 @@ export const sendFile = async (
     if (canWrite) {
       next(new NotFoundException());
     }
+  } finally {
+    file?.release?.();
   }
 };
 

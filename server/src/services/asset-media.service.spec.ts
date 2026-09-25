@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { vitest } from 'vitest';
 import { AssetFile } from 'src/database.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
 import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -18,10 +20,12 @@ import { ImmichFileResponse } from 'src/utils/file.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { fileStub } from 'test/fixtures/file.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
-import { getForAsset } from 'test/mappers.js';
+import { getForAsset, getForPartner } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
@@ -177,6 +181,7 @@ describe(AssetMediaService.name, () => {
   beforeEach(() => {
     clearConfigCache();
     ({ sut, mocks } = newTestService(AssetMediaService));
+    mocks.partner.getAll.mockResolvedValue([]);
   });
 
   describe('getUploadAssetIdByChecksum', () => {
@@ -782,6 +787,90 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('downloadOriginal location policy (FL-54)', () => {
+    const lease = { path: '/tmp/immich-location-free/copy.jpg', release: vitest.fn() };
+
+    const setup = ({ shareLocation }: { shareLocation: boolean }) => {
+      const me = UserFactory.create();
+      const owner = UserFactory.create();
+      const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation }).sharedBy(owner).sharedWith(me).build()),
+      ]);
+      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
+      return { auth: AuthFactory.create(me), asset };
+    };
+
+    it('serves the owner the original bytes without a partner lookup or a copy', async () => {
+      const owner = UserFactory.create();
+      const asset = AssetFactory.create({ ownerId: owner.id });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue(asset);
+
+      const response = await sut.downloadOriginal(AuthFactory.create(owner), asset.id, {});
+
+      expect(response.path).toBe(asset.originalPath);
+      expect(response.release).toBeUndefined();
+      expect(mocks.partner.getAll).not.toHaveBeenCalled();
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('serves a partner who may see locations the original bytes', async () => {
+      const { auth, asset } = setup({ shareLocation: true });
+
+      const response = await sut.downloadOriginal(auth, asset.id, {});
+
+      expect(response.path).toBe(asset.originalPath);
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('serves a location-free copy to a partner the owner hides locations from', async () => {
+      const { auth, asset } = setup({ shareLocation: false });
+
+      const response = await sut.downloadOriginal(auth, asset.id, {});
+
+      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/original/photo.jpg');
+      expect(response).toEqual(
+        new ImmichFileResponse({
+          path: lease.path,
+          fileName: asset.originalFileName,
+          contentType: 'image/jpeg',
+          cacheControl: CacheControl.PrivateWithCache,
+          release: lease.release,
+        }),
+      );
+    });
+
+    it('refuses rather than leak when the location cannot be removed', async () => {
+      const { auth, asset } = setup({ shareLocation: false });
+      mocks.metadata.acquireLocationFreeOriginal.mockRejectedValue(new Error('exiftool failed'));
+
+      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('refuses a shared link that hides metadata even when its download flag is on', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      const auth = AuthFactory.from().sharedLink({ showExif: false, allowDownload: true }).build();
+
+      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('serves a shared link that shows metadata the file untouched', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      const auth = AuthFactory.from().sharedLink({ showExif: true, allowDownload: true }).build();
+
+      await expect(sut.downloadOriginal(auth, asset.id, {})).resolves.toMatchObject({ path: asset.originalPath });
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+  });
+
   describe('viewThumbnail', () => {
     it('should require asset.view permissions', async () => {
       await expect(sut.viewThumbnail(authStub.admin, 'id', {})).rejects.toBeInstanceOf(BadRequestException);
@@ -926,6 +1015,34 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('playbackVideo', () => {
+    it('plays a location-free copy of the original for a partner the owner hides locations from', async () => {
+      const me = UserFactory.create();
+      const owner = UserFactory.create();
+      const asset = AssetFactory.create({ type: AssetType.Video, ownerId: owner.id, originalPath: '/original/v.mp4' });
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({
+        originalPath: asset.originalPath,
+        encodedVideoPath: null,
+        editedVideoPath: null,
+        ownerId: owner.id,
+      });
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(owner).sharedWith(me).build()),
+      ]);
+      const release = vitest.fn();
+      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue({ path: '/tmp/copy.mp4', release });
+
+      await expect(sut.playbackVideo(AuthFactory.create(me), asset.id)).resolves.toEqual(
+        new ImmichFileResponse({
+          path: '/tmp/copy.mp4',
+          contentType: 'video/mp4',
+          cacheControl: CacheControl.PrivateWithCache,
+          release,
+        }),
+      );
+      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/original/v.mp4');
+    });
+
     it('should require asset.view permissions', async () => {
       await expect(sut.playbackVideo(authStub.admin, 'id')).rejects.toBeInstanceOf(BadRequestException);
 
@@ -950,6 +1067,7 @@ describe(AssetMediaService.name, () => {
         originalPath: asset.originalPath,
         encodedVideoPath: asset.files[0].path,
         editedVideoPath: null,
+        ownerId: authStub.admin.user.id,
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
@@ -971,6 +1089,7 @@ describe(AssetMediaService.name, () => {
         originalPath: asset.originalPath,
         encodedVideoPath: '/path/to/encoded/video.mp4',
         editedVideoPath: '/path/to/encoded/video_edited.mp4',
+        ownerId: authStub.admin.user.id,
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
@@ -989,6 +1108,7 @@ describe(AssetMediaService.name, () => {
         originalPath: asset.originalPath,
         encodedVideoPath: null,
         editedVideoPath: null,
+        ownerId: authStub.admin.user.id,
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(

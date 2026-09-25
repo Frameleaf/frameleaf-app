@@ -1,3 +1,4 @@
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 
 /**
@@ -69,4 +70,72 @@ export const applyPartnerLocationPolicy = async <T extends { ownerId?: string; e
   }
 
   return assets.map((asset) => (asset.ownerId && hidden.has(asset.ownerId) ? hideAssetLocation(asset) : asset));
+};
+
+/**
+ * FL-54: what may happen to the metadata embedded in an original (or any file served as-is) when it
+ * leaves the server. The database fields above are cleared per read; the file's own EXIF/XMP/QuickTime
+ * location travels with its bytes, so the serving paths need a decision of their own.
+ */
+export enum OriginalLocationPolicy {
+  /** send the bytes unchanged: the owner, a partner who may see locations, or a link that shows metadata */
+  Serve = 'serve',
+  /** send a copy without its embedded location, or nothing when that copy cannot be guaranteed */
+  RemoveLocation = 'remove-location',
+  /** do not send the file at all */
+  Refuse = 'refuse',
+}
+
+/** `download` hands the file over for keeping (original, archive); `playback` streams it for viewing. */
+export type OriginalPurpose = 'download' | 'playback';
+
+export const getOriginalLocationPolicy = ({
+  auth,
+  ownerId,
+  locationHiddenOwnerIds,
+  purpose,
+}: {
+  auth: AuthDto;
+  ownerId: string;
+  locationHiddenOwnerIds: ReadonlySet<string>;
+  purpose: OriginalPurpose;
+}): OriginalLocationPolicy => {
+  if (auth.sharedLink) {
+    if (auth.sharedLink.showExif) {
+      return OriginalLocationPolicy.Serve;
+    }
+
+    // AL-27: a link that hides metadata never offers downloads (the file carries it all); playback of
+    // an original video stays possible but without its location
+    return purpose === 'download' ? OriginalLocationPolicy.Refuse : OriginalLocationPolicy.RemoveLocation;
+  }
+
+  if (ownerId === auth.user.id) {
+    return OriginalLocationPolicy.Serve;
+  }
+
+  return locationHiddenOwnerIds.has(ownerId) ? OriginalLocationPolicy.RemoveLocation : OriginalLocationPolicy.Serve;
+};
+
+/**
+ * Resolves the policy for every owner in `ownerIds`. The partner lookup only runs when a signed-in user
+ * reads someone else's files, so the owner's own downloads cost nothing extra.
+ */
+export const getOriginalLocationPolicies = async ({
+  auth,
+  ownerIds,
+  purpose,
+  repository,
+}: {
+  auth: AuthDto;
+  ownerIds: Iterable<string>;
+  purpose: OriginalPurpose;
+  repository: PartnerRepository;
+}): Promise<(ownerId: string) => OriginalLocationPolicy> => {
+  const needsLookup = !auth.sharedLink && [...ownerIds].some((ownerId) => ownerId !== auth.user.id);
+  const locationHiddenOwnerIds = needsLookup
+    ? await getLocationHiddenPartnerIds({ userId: auth.user.id, repository })
+    : new Set<string>();
+
+  return (ownerId) => getOriginalLocationPolicy({ auth, ownerId, locationHiddenOwnerIds, purpose });
 };
