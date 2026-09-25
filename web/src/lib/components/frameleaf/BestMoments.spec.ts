@@ -24,8 +24,15 @@ const ranked = (id: string, type: AssetTypeEnum, bestFrameTimestampMs: number | 
     },
   }) as BestPhotoAssetResponseDto;
 
-const index = (frames: number, coverTimestampMs: number | null = null) =>
-  ({ frames: Array.from({ length: frames }, () => ({})), coverTimestampMs }) as never;
+/** A moments index with `frames` frames a second apart; `coverAt` is the effective cover frame's time. */
+const index = (frames: number, coverAt: number | null = null) =>
+  ({
+    frames: Array.from({ length: frames }, (_, i) => ({
+      id: `f${i}`,
+      timestampMs: i * 1000,
+      isCover: i * 1000 === coverAt,
+    })),
+  }) as never;
 
 /** FL-50: ranked video-frame moment and cover actions, only where supported. */
 describe('BestMoments', () => {
@@ -73,7 +80,7 @@ describe('BestMoments', () => {
   });
 
   it('makes the best moment the cover', async () => {
-    sdkMock.getVideoMoments.mockResolvedValue(index(4));
+    sdkMock.getVideoMoments.mockResolvedValue(index(4, 0));
     sdkMock.setVideoMomentCover.mockResolvedValue(index(4, 2000));
     render(BestMoments, { assets: [ranked('framed', AssetTypeEnum.Video, 2000)], onPlay: vi.fn() });
 
@@ -82,8 +89,18 @@ describe('BestMoments', () => {
       id: 'framed',
       videoMomentCoverDto: { timestampMs: 2000 },
     });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Cover' })).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Use as cover' })).toBeNull());
+    expect(screen.getByText('Cover')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('framed.mov now uses its moment at 0:02 as the cover.');
+  });
+
+  it('offers no cover action for the moment that already is the cover, by default or by choice', async () => {
+    // no cover chosen: the best-ranked frame (here at 2s, nearest the moment at 2.3s) is the cover
+    sdkMock.getVideoMoments.mockResolvedValue(index(4, 2000));
+    render(BestMoments, { assets: [ranked('framed', AssetTypeEnum.Video, 2300)], onPlay: vi.fn() });
+
+    expect(await screen.findByText('Cover')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use as cover' })).toBeNull();
   });
 
   it('plays but never covers when the moments index cannot be read', async () => {
