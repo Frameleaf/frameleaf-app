@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 61,
-      "partial": 70,
-      "missing": 2,
-      "fixed": 77,
+      "partial": 68,
+      "missing": 1,
+      "fixed": 80,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 8,
@@ -259,9 +259,9 @@
       "title": "Real folders and external-library path browsing",
       "prototype": ["design/frameleaf/template/src/Folders.jsx"],
       "production": ["web/src/lib/components/frameleaf/FolderBrowserPanel.svelte"],
-      "status": "missing",
+      "status": "fixed",
       "gaps": ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6"],
-      "followUp": "Browsable folder file list, sort, counts, Frameleaf tree"
+      "followUp": "Folders browser: storage-folder tree, sort, counts and sizes, browsable files with the viewer and bulk actions (fixed on codex/FL-46-complete-browsers)"
     },
     {
       "requirementId": "action:albums-organization:remove-selected-assets-from-album",
@@ -2258,9 +2258,9 @@
         "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/FolderBrowserPanel.svelte"
       ],
-      "status": "partial",
-      "gaps": ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6", "FD-7"],
-      "followUp": "Browsable folder files, sort, counts, tree"
+      "status": "fixed",
+      "gaps": ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6", "FD-7", "FD-8"],
+      "followUp": "Folders browser ported from Folders.jsx (fixed on codex/FL-46-complete-browsers)"
     },
     {
       "route": "/link",
@@ -2563,9 +2563,9 @@
         "web/src/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/TagBrowserPanel.svelte"
       ],
-      "status": "partial",
-      "gaps": ["TG-1", "TG-2", "TG-3", "TG-4", "TG-5", "TG-6", "TG-7", "TG-8", "TG-9", "TG-10", "TG-11"],
-      "followUp": "Frameleaf tag tree and actions"
+      "status": "fixed",
+      "gaps": ["TG-1", "TG-2", "TG-3", "TG-4", "TG-5", "TG-6", "TG-7", "TG-8", "TG-9", "TG-10", "TG-11", "TG-12"],
+      "followUp": "Tags browser ported from Tags.jsx (fixed on codex/FL-46-complete-browsers)"
     },
     {
       "route": "/takeout",

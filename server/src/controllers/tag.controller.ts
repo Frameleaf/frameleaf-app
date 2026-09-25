@@ -8,6 +8,7 @@ import {
   TagBulkAssetsResponseDto,
   TagCreateDto,
   TagResponseDto,
+  TagStatisticsResponseDto,
   TagUpdateDto,
   TagUpsertDto,
 } from 'src/dtos/tag.dto.js';
@@ -41,6 +42,18 @@ export class TagController {
   })
   getAllTags(@Auth() auth: AuthDto): Promise<TagResponseDto[]> {
     return this.service.getAll(auth);
+  }
+
+  @Get('statistics')
+  @Authenticated({ permission: Permission.TagRead })
+  @Endpoint({
+    summary: 'Retrieve tag statistics',
+    description:
+      'Count the Timeline items that carry each tag: exactly that tag, and that tag or any tag nested under it. Archived, Locked and hidden items are never counted, and tags the session may not see are left out.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getTagStatistics(@Auth() auth: AuthDto): Promise<TagStatisticsResponseDto[]> {
+    return this.service.getStatistics(auth);
   }
 
   @Put()
