@@ -4,6 +4,7 @@ import { MapMarkerDto, MapMarkerResponseDto, MapReverseGeocodeDto } from 'src/dt
 import { BaseService } from 'src/services/base.service.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
 
 @Injectable()
 export class MapService extends BaseService {
@@ -20,10 +21,16 @@ export class MapService extends BaseService {
     }
 
     const albumIds = options.withSharedAlbums ? await this.albumRepository.getAllIds(auth.user.id) : [];
+    // FL-54: a shared album can hold items of an owner who hides their locations from this viewer
+    const locationHiddenOwnerIds =
+      albumIds.length > 0
+        ? [...(await getLocationHiddenPartnerIds({ userId: auth.user.id, repository: this.partnerRepository }))]
+        : [];
 
     return this.mapRepository.getMapMarkers(auth.user.id, userIds, albumIds, {
       ...options,
       ...getHiddenContentQueryOptions(auth),
+      ...(locationHiddenOwnerIds.length > 0 && { locationHiddenOwnerIds }),
     });
   }
 
