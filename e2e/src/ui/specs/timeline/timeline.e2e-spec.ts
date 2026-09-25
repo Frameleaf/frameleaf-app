@@ -379,6 +379,30 @@ test.describe('Timeline', () => {
       await expect(actions.getByRole('button', { name: 'Compare selected items' })).toBeDisabled();
     });
 
+    test('Browse sorts by file name through the flat order, and List shows rows (S-15)', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await timelineUtils.setLayout(page, 'Browse');
+      const toolbar = page.getByTestId('frameleaf-results-toolbar');
+      const ordered = page.waitForRequest((request) => request.url().includes('/api/timeline/ordered'));
+      await toolbar.getByRole('combobox', { name: 'Sort assets' }).selectOption('filename');
+      await ordered;
+      const first = assets.map((asset) => asset.id).toSorted((a, b) => a.localeCompare(b))[0];
+      await expect(page.locator('[data-testid="frameleaf-asset-tile"]').first()).toHaveAttribute(
+        'data-asset-id',
+        first,
+      );
+
+      await toolbar.getByRole('button', { name: 'List view' }).click();
+      await expect(page.locator('[data-testid="frameleaf-asset-tile"]').first()).toHaveAttribute('data-layout', 'list');
+      await toolbar.getByRole('button', { name: 'Grid view' }).click();
+      await toolbar.getByRole('combobox', { name: 'Sort assets' }).selectOption('captured-desc');
+
+      // The Timeline keeps its dates: only newest-first and oldest-first are offered there.
+      await timelineUtils.setLayout(page, 'Timeline');
+      await expect(toolbar.getByRole('option', { name: 'Filename' })).toBeDisabled();
+      await expect(toolbar.getByRole('button', { name: 'List view' })).toHaveCount(0);
+    });
+
     test('? opens the Frameleaf shortcuts sheet, closed with Done', async ({ page }) => {
       await pageUtils.openPhotosPage(page);
       await timelineUtils.locator(page).hover();

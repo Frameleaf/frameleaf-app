@@ -16,7 +16,13 @@
   import { buildCommandIndex, type CommandItem } from '$lib/frameleaf/command-palette';
   import { isSettingsRoute } from '$lib/frameleaf/navigation';
   import { searchContextFor } from '$lib/frameleaf/search-context';
-  import { FILTER_PANEL_EVENT, SEARCH_SHORTCUT_EVENT, type FilterPanelRequest } from '$lib/frameleaf/search-shortcuts';
+  import {
+    announceFilterPanel,
+    FILTER_PANEL_CLOSE_EVENT,
+    FILTER_PANEL_EVENT,
+    SEARCH_SHORTCUT_EVENT,
+    type FilterPanelRequest,
+  } from '$lib/frameleaf/search-shortcuts';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -211,8 +217,22 @@
       requestedSection = detail.section;
       openSearch();
     };
+    const onClose = () => {
+      if (requestedSection) {
+        closeAll();
+      }
+    };
     addEventListener(FILTER_PANEL_EVENT, onFilters);
-    return () => removeEventListener(FILTER_PANEL_EVENT, onFilters);
+    addEventListener(FILTER_PANEL_CLOSE_EVENT, onClose);
+    return () => {
+      removeEventListener(FILTER_PANEL_EVENT, onFilters);
+      removeEventListener(FILTER_PANEL_CLOSE_EVENT, onClose);
+    };
+  });
+
+  // The toolbar's Filter shows whether the panel it asked for is up, and closes it again.
+  $effect(() => {
+    announceFilterPanel(showSearch && !!requestedSection);
   });
 </script>
 

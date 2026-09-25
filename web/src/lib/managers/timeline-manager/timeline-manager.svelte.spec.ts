@@ -279,6 +279,76 @@ describe('TimelineManager', () => {
     });
   });
 
+  describe('a flat order (FL-30, S-15)', () => {
+    const at = (iso: string) => fromISODateTimeUTCToObject(iso);
+    // Server order: a (oldest) first, then c, then b. Nothing may re-sort them by date.
+    const [a, b, c] = ['2020-01-01T00:00:00.000Z', '2024-06-01T00:00:00.000Z', '2022-03-01T00:00:00.000Z'].map(
+      (iso, index) =>
+        deriveLocalDateTimeFromFileCreatedAt({
+          ...timelineAssetFactory.build({ rating: index }),
+          fileCreatedAt: at(iso),
+        }),
+    );
+    const setup = async (orderedBy: 'filename' | 'rating' = 'filename') => {
+      const timelineManager = new TimelineManager();
+      sdkMock.getTimeBuckets.mockResolvedValue([
+        { count: 2, timeBucket: '2024-06-01T00:00:00.000Z' },
+        { count: 1, timeBucket: '2020-01-01T00:00:00.000Z' },
+      ]);
+      sdkMock.getTimelineOrdered.mockResolvedValue(toResponseDto(a, c, b));
+      await timelineManager.updateOptions({ orderedBy: orderedBy as never });
+      await timelineManager.updateViewport({ width: 1588, height: 0 });
+      return timelineManager;
+    };
+
+    it('pages the ordered endpoint in synthetic pages, keeps the server order and has no scrubber', async () => {
+      const timelineManager = await setup();
+      expect(timelineManager.ordered).toBe('filename');
+      expect(timelineManager.months).toHaveLength(1);
+      expect(timelineManager.months[0].title).toBe('');
+      expect(timelineManager.scrubberMonths).toEqual([]);
+
+      const assets = await getAssets(timelineManager);
+      expect(sdkMock.getTimelineOrdered).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 'filename', skip: 0, take: 500 }),
+        expect.anything(),
+      );
+      expect(sdkMock.getTimeBucket).not.toHaveBeenCalled();
+      expect(assets.map(({ id }) => id)).toEqual([a.id, c.id, b.id]);
+      timelineManager.destroy();
+    });
+
+    it('selects a range by position in the order, not by date', async () => {
+      const timelineManager = await setup();
+      await getAssets(timelineManager);
+      const range = await timelineManager.retrieveRange({ id: b.id }, { id: a.id });
+      expect(range.map(({ id }) => id)).toEqual([a.id, c.id, b.id]);
+      const single = await timelineManager.retrieveRange({ id: c.id }, { id: b.id });
+      expect(single.map(({ id }) => id)).toEqual([c.id, b.id]);
+      timelineManager.destroy();
+    });
+
+    it('keeps an item in place when its date changes, and reads the pages again when a rating changes', async () => {
+      const timelineManager = await setup('rating');
+      await getAssets(timelineManager);
+      timelineManager.update([c.id], (asset) => void (asset.fileCreatedAt = at('1999-01-01T00:00:00.000Z')));
+      expect((await getAssets(timelineManager)).map(({ id }) => id)).toEqual([a.id, c.id, b.id]);
+      expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(1);
+
+      timelineManager.update([b.id], (asset) => void (asset.rating = 5));
+      await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
+      timelineManager.destroy();
+    });
+
+    it('finds an item on a page that is not loaded yet', async () => {
+      const timelineManager = await setup();
+      sdkMock.getAssetInfo.mockResolvedValue(assetFactory.build({ id: c.id }));
+      const month = await timelineManager.findTimelineMonthForAsset({ id: c.id });
+      expect(month).toBe(timelineManager.months[0]);
+      timelineManager.destroy();
+    });
+  });
+
   describe('upsertAssets', () => {
     let timelineManager: TimelineManager;
 

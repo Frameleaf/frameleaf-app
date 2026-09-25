@@ -157,7 +157,33 @@
       return null;
     }
   });
-  const imageHeight = $derived(withCaption ? Math.max(1, height - captionHeight) : height);
+  /** The List view (S-15, template asset-tile.css `[data-layout="list"]`): a 96px 3:2 thumbnail and columns. */
+  const listed = $derived(layout === 'list');
+  const LIST_THUMB_WIDTH = 96;
+  const LIST_THUMB_HEIGHT = 64;
+  const imageWidth = $derived(listed ? LIST_THUMB_WIDTH : width);
+  const imageHeight = $derived(listed ? LIST_THUMB_HEIGHT : withCaption ? Math.max(1, height - captionHeight) : height);
+  /** The list's name column: the file name without its extension, never a Locked item's. */
+  const listName = $derived(isLocked ? $t('frameleaf_library_list_locked_item') : (fileName ?? title));
+  const listDate = $derived.by(() => {
+    try {
+      return fromTimelinePlainDateTime(asset.localDateTime).toLocaleString(DateTime.DATE_MED, {
+        locale: $locale ?? undefined,
+      });
+    } catch {
+      return '';
+    }
+  });
+  /** Template: a video's duration, else the pixel size, else the file size. */
+  const listDetail = $derived.by(() => {
+    if (asset.isVideo) {
+      return durationLabel(durationSeconds);
+    }
+    if (asset.width && asset.height) {
+      return `${asset.width} × ${asset.height}`;
+    }
+    return asset.fileSizeInByte ? fileSizeLabel(asset.fileSizeInByte) : '';
+  });
   // A durable bulk job working on this item (owner decision, September 22, 2026): a loader until
   // the job answers for it, then a failure mark if it did not work.
   const job = $derived(durableBulkTracker.stateOf(asset.id));
@@ -179,6 +205,10 @@
     }
     return null;
   });
+
+  /** Template `fileSize`: megabytes, or gigabytes from 1 GB. */
+  const fileSizeLabel = (bytes: number) =>
+    bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${(bytes / 1e6).toFixed(1)} MB`;
 
   const durationLabel = (seconds: number) => {
     if (!Number.isFinite(seconds) || seconds < 0) {
@@ -311,7 +341,8 @@
   <button
     type="button"
     class="fl-tile-open"
-    style:height={withCaption ? `${imageHeight}px` : undefined}
+    style:height={withCaption || listed ? `${imageHeight}px` : undefined}
+    style:width={listed ? `${imageWidth}px` : undefined}
     {tabindex}
     title={layout === 'work' && fileName && !showFileName ? (asset.originalFileName ?? undefined) : undefined}
     aria-label={jobLabel ? `${title}, ${jobLabel}` : title}
@@ -333,7 +364,7 @@
     <ImageThumbnail
       url={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
       altText={title}
-      widthStyle="{width}px"
+      widthStyle="{imageWidth}px"
       heightStyle="{imageHeight}px"
       class="fl-tile-image"
     />
@@ -493,6 +524,16 @@
         </button>
       {/if}
     </div>
+  {/if}
+
+  {#if listed}
+    <!-- Template `.at-list-name` and `.at-list-cell`: name, date, kind, then duration, size or bytes. -->
+    <span class="fl-list-name" title={isLocked ? undefined : (asset.originalFileName ?? undefined)}>{listName}</span>
+    <span class="fl-list-cell fl-list-date">{listDate}</span>
+    <span class="fl-list-cell fl-list-kind"
+      >{asset.isVideo ? $t('frameleaf_library_list_video') : $t('frameleaf_library_list_photo')}</span
+    >
+    <span class="fl-list-cell">{listDetail}</span>
   {/if}
 
   {#if withCaption}
@@ -750,6 +791,61 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  /* Template asset-tile.css "List layout". */
+  .fl-tile[data-layout='list'] {
+    display: grid;
+    grid-template-columns: 96px minmax(140px, 1fr) 110px 70px 120px;
+    gap: 14px;
+    align-items: center;
+    padding: 6px 8px;
+    overflow: visible;
+    border-radius: 0;
+    border-bottom: 1px solid var(--fl-border);
+    background: transparent;
+  }
+  .fl-tile[data-layout='list'] .fl-tile-open {
+    position: relative;
+    inset: auto;
+    overflow: hidden;
+    border-radius: 6px;
+    background: var(--fl-raised);
+  }
+  .fl-tile[data-layout='list'] .fl-tile-actions {
+    top: 50%;
+    inset-inline-end: 10px;
+    transform: translateY(-50%);
+  }
+  .fl-tile[data-layout='list']:hover .fl-tile-actions,
+  .fl-tile[data-layout='list']:focus-within .fl-tile-actions {
+    transform: translateY(-50%);
+  }
+  .fl-tile[data-layout='list'] .fl-tile-select {
+    inset-inline-start: 12px;
+    top: 10px;
+  }
+  .fl-list-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fl-text);
+    font-size: var(--fl-font-small, 13px);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fl-list-cell {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small, 12px);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  @media (max-width: 700px) {
+    .fl-tile[data-layout='list'] {
+      grid-template-columns: 96px minmax(0, 1fr) 70px;
+    }
+    .fl-list-date,
+    .fl-list-kind {
+      display: none;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .fl-tile-actions {

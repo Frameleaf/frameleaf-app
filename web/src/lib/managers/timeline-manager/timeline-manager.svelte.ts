@@ -16,7 +16,12 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import { GroupInsertionCache } from '$lib/managers/timeline-manager/group-insertion-cache.svelte';
 import { updateTimelineMonthViewportProximity } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
-import { loadFromTimeBuckets } from '$lib/managers/timeline-manager/internal/load-support.svelte';
+import {
+  loadFromTimeBuckets,
+  loadOrderedPage,
+  ORDERED_PAGE_SIZE,
+  orderedPageYearMonth,
+} from '$lib/managers/timeline-manager/internal/load-support.svelte';
 import {
   findClosestTimelineMonthForDate,
   findTimelineMonthForAsset as findTimelineMonthForAssetUtil,
@@ -314,6 +319,11 @@ export class TimelineManager extends VirtualScrollManager {
     }
   }
 
+  /** FL-30 (S-15): the flat order the assets are laid out in, or undefined for the dated timeline. */
+  get ordered() {
+    return this.#options.orderedBy;
+  }
+
   async #initializeTimelineMonths() {
     const revision = sessionAccess.revision;
     const timebuckets = await getTimeBuckets({
@@ -322,6 +332,29 @@ export class TimelineManager extends VirtualScrollManager {
     });
 
     if (revision !== sessionAccess.revision) {
+      return;
+    }
+
+    if (this.#options.orderedBy) {
+      // The same assets, counted by the buckets, paged in the flat order: one synthetic "month" per
+      // page, in page order, so loading, layout, selection and the viewer work unchanged.
+      const total = timebuckets.reduce((sum, bucket) => sum + bucket.count, 0);
+      const pages = Math.ceil(total / ORDERED_PAGE_SIZE);
+      this.months = Array.from(
+        { length: pages },
+        (_, page) =>
+          new TimelineMonth(
+            this,
+            orderedPageYearMonth(page),
+            Math.min(ORDERED_PAGE_SIZE, total - page * ORDERED_PAGE_SIZE),
+            false,
+            this.#options.order,
+            this.#options.dateType,
+            '',
+          ),
+      );
+      this.albumAssets.clear();
+      this.updateViewportGeometry(false);
       return;
     }
 
@@ -432,7 +465,8 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   #createScrubberMonths() {
-    this.scrubberMonths = this.months.map((month) => ({
+    // A flat order has no dates to scrub through.
+    this.scrubberMonths = (this.ordered ? [] : this.months).map((month) => ({
       assetCount: month.assetsCount,
       year: month.yearMonth.year,
       month: month.yearMonth.month,
@@ -454,7 +488,9 @@ export class TimelineManager extends VirtualScrollManager {
     }
 
     const executionStatus = await timelineMonth.loader?.execute(async (signal: AbortSignal) => {
-      await loadFromTimeBuckets(this, timelineMonth, this.#options, signal);
+      await (this.#options.orderedBy
+        ? loadOrderedPage(timelineMonth, this.months.indexOf(timelineMonth), this.#options, signal)
+        : loadFromTimeBuckets(this, timelineMonth, this.#options, signal));
     }, cancelable);
     if (executionStatus === 'LOADED') {
       updateGeometry(this, timelineMonth, { invalidateHeight: false });
@@ -464,12 +500,19 @@ export class TimelineManager extends VirtualScrollManager {
 
   upsertAssets(assets: TimelineAsset[]) {
     const notUpdated = this.#updateAssets(assets);
+    // A flat order only learns where a new item belongs from the server, on the next load.
+    if (this.ordered) {
+      return;
+    }
     const notExcluded = notUpdated.filter((asset) => !this.isExcluded(asset));
     this.addAssetsUpsertSegments([...notExcluded]);
   }
 
   upsertAssetsFromLiveEvent(assets: TimelineAsset[]) {
     const notUpdated = this.#updateAssets(assets);
+    if (this.ordered) {
+      return;
+    }
     const insertable = notUpdated.filter((asset) => this.canInsertAssetFromLiveEvent(asset));
     this.addAssetsUpsertSegments(insertable);
   }
@@ -494,6 +537,20 @@ export class TimelineManager extends VirtualScrollManager {
 
     const timelineAsset = toTimelineAsset(response);
     if (this.isExcluded(timelineAsset)) {
+      return;
+    }
+
+    if (this.ordered) {
+      // No date says which page holds it: read the pages in order until it turns up.
+      for (const month of this.months) {
+        if (month.isLoaded) {
+          continue;
+        }
+        await this.loadTimelineMonth(month.yearMonth, { cancelable: false });
+        if (month.findAssetById({ id })) {
+          return month;
+        }
+      }
       return;
     }
 
@@ -614,7 +671,7 @@ export class TimelineManager extends VirtualScrollManager {
    * present in the timeline. For updating existing assets, use updateAssetOperation().
    */
   protected addAssetsUpsertSegments(assets: TimelineAsset[]) {
-    if (assets.length === 0) {
+    if (assets.length === 0 || this.ordered) {
       return;
     }
     const context = new GroupInsertionCache();
@@ -640,6 +697,24 @@ export class TimelineManager extends VirtualScrollManager {
     if (ids.size === 0) {
       return { updated: new Set<string>(), notUpdated: ids, changedGeometry: false };
     }
+    if (this.#options.orderedBy === 'rating') {
+      // Ordered by rating, a new rating moves the item: the pages are read again in the new order.
+      let reordered = false;
+      const result = this.#runAssetCallbackInPlace(ids, (asset) => {
+        const before = asset.rating ?? null;
+        const outcome = callback(asset);
+        reordered ||= (asset.rating ?? null) !== before;
+        return outcome;
+      });
+      if (reordered) {
+        void this.refresh();
+      }
+      return result;
+    }
+    return this.#runAssetCallbackInPlace(ids, callback);
+  }
+
+  #runAssetCallbackInPlace(ids: Set<string>, callback: (asset: TimelineAsset) => void | { remove?: boolean }) {
     const changedTimelineMonths = new Set<TimelineMonth>();
     let notUpdated = new Set(ids);
     const updated = new Set<string>();
@@ -722,8 +797,19 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   async retrieveRange(start: AssetDescriptor, end: AssetDescriptor) {
-    return retrieveRangeUtil(this, start, end);
+    return retrieveRangeUtil(this, start, end, this.ordered ? this.#orderedPosition : undefined);
   }
+
+  /** Where an item sits in a flat order: page, then place on the page. */
+  #orderedPosition = (asset: TimelineAsset): number => {
+    for (const [page, month] of this.months.entries()) {
+      const index = month.timelineDays[0]?.viewerAssets.findIndex((viewerAsset) => viewerAsset.id === asset.id) ?? -1;
+      if (index !== -1) {
+        return page * ORDERED_PAGE_SIZE + index;
+      }
+    }
+    return Infinity;
+  };
 
   /**
    * FL-34: an unlocked session reveals the owner's own sensitive marks and detections in the timeline

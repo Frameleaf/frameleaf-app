@@ -1,7 +1,8 @@
 <script lang="ts">
   /**
-   * The results toolbar: the layout switch, the result count, the one Filter control, Slideshow,
-   * the information-panel toggle, Sort and "More library actions".
+   * The results toolbar: the result count, the one Filter control, Slideshow, the information-panel
+   * toggle, Sort, Grid/List and "More library actions". The layout switch lives in the collection
+   * header, as in the prototype (`LibraryLayoutSwitch`).
    *
    * Ported from the results toolbar in `design/frameleaf/template/src/App.jsx` (`.results-toolbar`,
    * `.active-filter-bar`). The September 22, 2026 revision replaced the in-page search filter row
@@ -17,11 +18,16 @@
   import FilterChip from '$lib/components/frameleaf/FilterChip.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
-  import { DISCOVERY_FILTER_SECTIONS, withoutDiscoveryFilters } from '$lib/components/discovery/query';
+  import { withoutDiscoveryFilters } from '$lib/components/discovery/query';
   import { describeFilterFields } from '$lib/frameleaf/library-filters';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
-  import type { LibraryLayout, LibrarySort } from '$lib/frameleaf/library-session';
-  import { requestFilterPanel } from '$lib/frameleaf/search-shortcuts';
+  import type { LibrarySort } from '$lib/frameleaf/library-session';
+  import {
+    FILTER_PANEL_STATE_EVENT,
+    requestFilterPanel,
+    requestFilterPanelClose,
+    type FilterPanelState,
+  } from '$lib/frameleaf/search-shortcuts';
   import { Icon } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
@@ -29,16 +35,14 @@
     mdiCheck,
     mdiChevronDown,
     mdiDotsHorizontal,
+    mdiFormatListBulleted,
     mdiMagnify,
     mdiMapMarker,
-    mdiPawOutline,
     mdiPlayBoxOutline,
     mdiSort,
     mdiTagOutline,
     mdiTuneVariant,
-    mdiViewComfyOutline,
-    mdiViewDashboardOutline,
-    mdiViewDayOutline,
+    mdiViewGridOutline,
   } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -46,6 +50,9 @@
     session: LibrarySessionStore;
     /** Open the filter panel at a section. Without it the search palette's Advanced view opens. */
     onOpenFilterPanel?: (section: DiscoveryFilterSection) => void;
+    /** A host's own filter panel is open; Filter then closes it (prototype Filter toggles the panel). */
+    filterPanelOpen?: boolean;
+    onCloseFilterPanel?: () => void;
     /** The number of results, or null while it is not known (prototype `.result-count`). */
     count?: number | null;
     /** Start the slideshow over these results. Without it, no Slideshow control is drawn. */
@@ -58,6 +65,9 @@
      * source cannot order by are shown but not offered. Undefined draws no Sort control.
      */
     sorts?: readonly LibrarySort[];
+    /** Grid or List (prototype "Grid view" / "List view"); undefined draws neither, as in the Timeline. */
+    view?: 'grid' | 'list';
+    onViewChange?: (view: 'grid' | 'list') => void;
     /** Open the "More library actions" dialog. */
     onMoreActions?: () => void;
     /** Extra controls (Work's file-name toggle, a page's own) supplied by the host. */
@@ -67,27 +77,21 @@
   let {
     session,
     onOpenFilterPanel,
+    filterPanelOpen,
+    onCloseFilterPanel,
     count = null,
     onSlideshow,
     inspectorOpen,
     onToggleInspector,
     sorts,
+    view,
+    onViewChange,
     onMoreActions,
     children,
   }: Props = $props();
 
-  // Timeline precedes Browse and Work.
-  const LAYOUT_ORDER: LibraryLayout[] = ['timeline', 'browse', 'work'];
-  const LAYOUT_LABELS: Record<LibraryLayout, Translations> = {
-    timeline: 'frameleaf_library_layout_timeline',
-    browse: 'frameleaf_library_layout_browse',
-    work: 'frameleaf_library_layout_work',
-  };
-  const LAYOUT_ICONS: Record<LibraryLayout, string> = {
-    timeline: mdiViewDayOutline,
-    browse: mdiViewComfyOutline,
-    work: mdiViewDashboardOutline,
-  };
+  /** The prototype's "Choose a filter" menu, in its order (`App.jsx`); Pets live under All filters. */
+  const MENU_SECTIONS: DiscoveryFilterSection[] = ['people', 'date', 'places', 'media', 'tags', 'all'];
   const SECTION_LABELS: Record<DiscoveryFilterSection, Translations> = {
     people: 'people',
     pets: 'frameleaf_pets_title',
@@ -100,7 +104,7 @@
   // Prototype filter menu icons (`App.jsx` "Choose a filter").
   const SECTION_ICONS: Record<DiscoveryFilterSection, string> = {
     people: mdiAccountMultipleOutline,
-    pets: mdiPawOutline,
+    pets: mdiAccountMultipleOutline,
     date: mdiCalendarRange,
     places: mdiMapMarker,
     media: mdiPlayBoxOutline,
@@ -130,6 +134,30 @@
     menuOpen = false;
     if (focus) {
       menuButton?.focus();
+    }
+  };
+
+  /** Whether the search palette's filters, opened from here, are showing. */
+  let paletteFiltersOpen = $state(false);
+  $effect(() => {
+    const onState = (event: Event) => {
+      paletteFiltersOpen = !!(event as CustomEvent<FilterPanelState>).detail?.open;
+    };
+    addEventListener(FILTER_PANEL_STATE_EVENT, onState);
+    return () => removeEventListener(FILTER_PANEL_STATE_EVENT, onState);
+  });
+  const filterOpen = $derived(filterPanelOpen ?? paletteFiltersOpen);
+
+  /** Prototype Filter: `panel === "filters" ? setPanel(null) : openFilters(filterSection || "people")`. */
+  const toggleFilters = () => {
+    if (!filterOpen) {
+      openFilters(session.filterSection ?? 'people');
+      return;
+    }
+    if (onCloseFilterPanel) {
+      onCloseFilterPanel();
+    } else {
+      requestFilterPanelClose();
     }
   };
 
@@ -228,26 +256,6 @@
   {/if}
 
   <div class="fl-toolbar-row">
-    <div class="fl-layouts" role="group" aria-label={$t('frameleaf_library_layout')}>
-      {#each LAYOUT_ORDER as layout (layout)}
-        <button
-          type="button"
-          class="fl-layout"
-          aria-pressed={session.layout === layout}
-          onclick={() => {
-            session.setLayout(layout);
-            // As in the prototype: the Timeline opens grouped by day rather than as one "All" group.
-            if (layout === 'timeline' && session.state.grouping === 'all') {
-              session.patchView({ grouping: 'days' });
-            }
-          }}
-        >
-          <Icon icon={LAYOUT_ICONS[layout]} size="16" />
-          {$t(LAYOUT_LABELS[layout])}
-        </button>
-      {/each}
-    </div>
-
     {#if count !== null}
       <span class="fl-result-count" aria-live="polite" data-testid="frameleaf-result-count">
         {$t('items_count', { values: { count } })}
@@ -260,7 +268,8 @@
         type="button"
         class="fl-filter-button"
         class:is-active={filterCount > 0}
-        onclick={() => openFilters(session.filterSection ?? 'people')}
+        aria-expanded={filterOpen}
+        onclick={toggleFilters}
       >
         <Icon icon={mdiTuneVariant} size="16" />
         {$t('filter')}
@@ -289,7 +298,7 @@
           bind:this={menu}
           onkeydown={menuKeydown}
         >
-          {#each DISCOVERY_FILTER_SECTIONS as section (section)}
+          {#each MENU_SECTIONS as section (section)}
             <li role="none">
               <button type="button" role="menuitem" onclick={() => chooseSection(section)}>
                 <Icon icon={SECTION_ICONS[section]} size="16" />
@@ -347,6 +356,23 @@
       </label>
     {/if}
 
+    {#if view && onViewChange}
+      <IconButton
+        label={$t('frameleaf_library_grid_view')}
+        pressed={view === 'grid'}
+        onclick={() => onViewChange('grid')}
+      >
+        <Icon icon={mdiViewGridOutline} size="18" aria-hidden />
+      </IconButton>
+      <IconButton
+        label={$t('frameleaf_library_list_view')}
+        pressed={view === 'list'}
+        onclick={() => onViewChange('list')}
+      >
+        <Icon icon={mdiFormatListBulleted} size="18" aria-hidden />
+      </IconButton>
+    {/if}
+
     {@render children?.()}
 
     {#if onMoreActions}
@@ -371,27 +397,6 @@
   }
   .fl-grow {
     flex: 1 1 auto;
-  }
-  .fl-layouts {
-    display: inline-flex;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    overflow: hidden;
-  }
-  .fl-layout {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 10px;
-    border: 0;
-    background: transparent;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-size, 14px);
-  }
-  .fl-layout[aria-pressed='true'] {
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    font-weight: 600;
   }
   /* Prototype `.result-count`. */
   .fl-result-count {
