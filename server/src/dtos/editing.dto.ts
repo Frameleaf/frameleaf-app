@@ -57,10 +57,23 @@ const MirrorParametersSchema = z
   })
   .meta({ id: 'MirrorParameters' });
 
+export enum VideoTrimMode {
+  Precise = 'precise',
+  Fast = 'fast',
+}
+
+const VideoTrimModeSchema = z
+  .enum(VideoTrimMode)
+  .describe(
+    'Precise cuts are frame accurate and re-encode; fast cuts snap to keyframes and copy the streams when nothing else in the recipe needs a re-encode',
+  )
+  .meta({ id: 'VideoTrimMode' });
+
 const TrimParametersSchema = z
   .object({
     startMs: z.int().min(0).describe('Trim start time in milliseconds'),
     endMs: z.int().min(1).describe('Trim end time in milliseconds'),
+    mode: VideoTrimModeSchema.optional(),
   })
   .refine((parameters) => parameters.endMs > parameters.startMs, {
     error: 'Trim end time must be after the start time',
@@ -74,9 +87,56 @@ const StraightenParametersSchema = z
   .meta({ id: 'StraightenParameters' });
 
 const AdjustmentValueSchema = z.number().meta({ format: 'double' }).min(-100).max(100);
+const PositiveAdjustmentValueSchema = z.number().meta({ format: 'double' }).min(0).max(100);
+
+export enum VideoAdjustModel {
+  Develop = 'develop',
+}
+
+const VideoAdjustModelSchema = z
+  .enum(VideoAdjustModel)
+  .describe(
+    'develop: the values follow the photo develop model (exposure, whites, blacks, temperature…), as the Frameleaf quick editor writes them. Absent: the earlier video adjustment model.',
+  )
+  .meta({ id: 'VideoAdjustModel' });
+
+/** The develop looks plus the video-only B&W look (prototype `develop.mjs` PRESETS, `scope: 'video'`). */
+export enum VideoDevelopPreset {
+  Original = 'Original',
+  Vivid = 'Vivid',
+  Natural = 'Natural',
+  Warm = 'Warm',
+  Cool = 'Cool',
+  Mono = 'Mono',
+  Silvertone = 'Silvertone',
+  Noir = 'Noir',
+  Fade = 'Fade',
+  BlackAndWhite = 'B&W',
+}
+
+const VideoDevelopPresetSchema = z.enum(VideoDevelopPreset).meta({ id: 'VideoDevelopPreset' });
 
 const AdjustParametersSchema = z
   .object({
+    model: VideoAdjustModelSchema.optional(),
+    exposure: z
+      .number()
+      .meta({ format: 'double' })
+      .min(-2)
+      .max(2)
+      .optional()
+      .describe('Exposure in EV (develop model)'),
+    whites: AdjustmentValueSchema.optional(),
+    blacks: AdjustmentValueSchema.optional(),
+    temperature: AdjustmentValueSchema.optional(),
+    vibrance: AdjustmentValueSchema.optional(),
+    clarity: AdjustmentValueSchema.optional(),
+    dehaze: AdjustmentValueSchema.optional(),
+    grain: PositiveAdjustmentValueSchema.optional(),
+    sharpen: PositiveAdjustmentValueSchema.optional(),
+    noiseReduction: PositiveAdjustmentValueSchema.optional(),
+    preset: VideoDevelopPresetSchema.optional(),
+    presetStrength: PositiveAdjustmentValueSchema.optional().describe('Strength of the preset, 0 to 100'),
     brightness: AdjustmentValueSchema.optional(),
     contrast: AdjustmentValueSchema.optional(),
     whitePoint: AdjustmentValueSchema.optional(),
@@ -112,9 +172,28 @@ const ToggleParametersSchema = z
   })
   .meta({ id: 'ToggleParameters' });
 
+export enum TextOverlayPosition {
+  TopLeft = 'top-left',
+  Top = 'top',
+  TopRight = 'top-right',
+  Left = 'left',
+  Center = 'center',
+  Right = 'right',
+  BottomLeft = 'bottom-left',
+  Bottom = 'bottom',
+  BottomRight = 'bottom-right',
+}
+
+const TextOverlayPositionSchema = z
+  .enum(TextOverlayPosition)
+  .describe('Anchor on a 3 × 3 grid; when set, the text is aligned to it and x/y are ignored')
+  .meta({ id: 'TextOverlayPosition' });
+
 const TextOverlayParametersSchema = z
   .object({
     text: z.string().min(1).max(200),
+    position: TextOverlayPositionSchema.optional(),
+    shadow: z.boolean().optional().describe('Draw a soft drop shadow behind the text'),
     x: z
       .number()
       .meta({ format: 'double' })
@@ -132,7 +211,7 @@ const TextOverlayParametersSchema = z
     size: z
       .number()
       .meta({ format: 'double' })
-      .min(0.02)
+      .min(0.01)
       .max(0.2)
       .default(0.06)
       .describe('Font size as a percentage of video height'),

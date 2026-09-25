@@ -19,6 +19,30 @@ describe('AssetEditsCreateDto', () => {
     [AssetEditAction.TextOverlay, { text: 'caption', x: 0.5, y: 0.2, size: 0.1, color: '#ffffff' }],
     [AssetEditAction.Audio, { volume: 1.5, muted: true }],
     [AssetEditAction.Speed, { rate: 2, startMs: 10, endMs: 100 }],
+    // FL-113: the quick editor's fast trim, develop model and anchored, shadowed text.
+    [AssetEditAction.Trim, { startMs: 10, endMs: 100, mode: 'fast' }],
+    [
+      AssetEditAction.Adjust,
+      {
+        model: 'develop',
+        exposure: -0.5,
+        whites: 10,
+        blacks: -10,
+        temperature: 20,
+        vibrance: 15,
+        clarity: 5,
+        dehaze: 5,
+        grain: 10,
+        sharpen: 10,
+        noiseReduction: 10,
+        preset: 'B&W',
+        presetStrength: 60,
+      },
+    ],
+    [
+      AssetEditAction.TextOverlay,
+      { text: 'caption', x: 0, y: 1, position: 'bottom-left', shadow: true, size: 0.012, color: '#ffffff' },
+    ],
   ])('preserves %s parameters through runtime validation', (action, parameters) => {
     expect(parse(action, parameters)).toEqual({ action, parameters });
   });
