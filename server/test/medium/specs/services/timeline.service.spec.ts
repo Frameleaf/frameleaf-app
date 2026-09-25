@@ -464,7 +464,7 @@ describe(TimelineService.name, () => {
       expect(bucket.id.toSorted()).toEqual(page.id.toSorted());
     });
 
-    it('returns dimensions and size for the list view, and hides them from a shared link without EXIF', async () => {
+    it('returns dimensions and size for the list view; a shared link without EXIF hides them and may not sort', async () => {
       const { sut, ctx } = setup();
       const sharedLinkRepo = ctx.get(SharedLinkRepository);
       const { user } = await ctx.newUser();
@@ -491,13 +491,15 @@ describe(TimelineService.name, () => {
         albumId: album.id,
       });
       const linkAuth = factory.auth({ sharedLink: { id: sharedLinkId, showExif: false } });
-      const hidden = JSON.parse(
-        await sut.getTimelineOrdered(linkAuth, { albumId: album.id, sort: 'filename', skip: 0, take: 10 }),
-      );
-      expect(hidden.id).toEqual([asset.id]);
+      // Its buckets hide the columns, and it may not sort: the order would reveal them.
+      const bucket = JSON.parse(await sut.getTimeBucket(linkAuth, { albumId: album.id, timeBucket: '1970-02-01' }));
+      expect(bucket.id).toEqual([asset.id]);
       for (const field of ['width', 'height', 'fileSizeInByte', 'originalFileName', 'rating']) {
-        expect(hidden).not.toHaveProperty(field);
+        expect(bucket).not.toHaveProperty(field);
       }
+      await expect(
+        sut.getTimelineOrdered(linkAuth, { albumId: album.id, sort: 'filename', skip: 0, take: 10 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

@@ -49,6 +49,11 @@ export class TimelineService extends BaseService {
    */
   async getTimelineOrdered(auth: AuthDto, dto: TimelineOrderedDto): Promise<string> {
     const { sort, skip, take, ...bucketDto } = dto;
+    // An order by file name or rating would reveal the metadata a link that hides EXIF withholds;
+    // public pages never sort, so such a link may not ask.
+    if (auth.sharedLink && !auth.sharedLink.showExif) {
+      throw new BadRequestException('Sorting is not available for this shared link');
+    }
     await this.timeBucketChecks(auth, bucketDto);
     const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
     const page = await this.assetRepository.getTimelineOrdered(timeBucketOptions, auth, { sort, skip, take });
