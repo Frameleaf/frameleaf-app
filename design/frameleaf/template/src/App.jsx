@@ -78,7 +78,7 @@ import {
   Buy,
 } from "./AuthScreens";
 import { AccountSetupTool, FirstRunSetup } from "./FirstRunSetup";
-import { setupStageTheme } from "./first-run-setup.mjs";
+import { loadAccountTool, setupStageTheme } from "./first-run-setup.mjs";
 import {
   NotificationsBell,
   NotificationsPanel,
@@ -2256,8 +2256,10 @@ export function App() {
       });
       document.head.append(meta);
     }
-    meta.content = theme === "light" ? "#f4f6f7" : "#101416";
-  }, [theme]);
+    // Setup screens always run dark, whatever the saved theme.
+    const shown = screen === "setup" || screen === "account-setup" ? setupStageTheme() : theme;
+    meta.content = shown === "light" ? "#f4f6f7" : "#101416";
+  }, [theme, screen]);
   // Timeline day headers and the scrubber stick below the frosted toolbar, whatever its height.
   useEffect(() => {
     const container = grid.current;
@@ -2496,7 +2498,10 @@ export function App() {
           onLock={hideLocked}
           onOpenLocked={() => navigate("Locked")}
           onAccountSettings={() => openSettings("preferences")}
-          onAccountSetup={() => setScreen("account-setup")}
+          // Admins go through first-run setup; everyone else gets the account tool,
+          // reopenable here once they've finished it.
+          onAccountSetup={currentUser?.isAdmin ? undefined : () => setScreen("account-setup")}
+          accountSetupDone={loadAccountTool().completed}
           onAdministration={() => openSettings("overview")}
           onFrameleafCloud={() => openSettings("cloud", "cloud-account")}
           onSupportFrameleaf={() => setScreen("buy")}

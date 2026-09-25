@@ -174,8 +174,12 @@ export function createSetup(flow = "new") {
     completed: false,
     choices: {
       language: "en",
-      signIn: "frameleaf",
+      // New servers recommend a Frameleaf account; existing ones keep the local admin.
+      signIn: existing ? "local" : "frameleaf",
       linked: false,
+      // Set once the local admin exists or the admin has signed in; never the password.
+      accountCreated: false,
+      signedIn: false,
       restore: null,
       admin: { name: "", email: "" },
       storage: "/mnt/photos",
@@ -216,7 +220,7 @@ export function parseSetup(raw, flow) {
   const privacy = record(choices.privacy) ? choices.privacy : {};
   const admin = record(choices.admin) ? choices.admin : {};
   const reached = Math.max(clampStep(source.reached), clampStep(source.step));
-  return {
+  const parsed = {
     ...base,
     step: clampStep(source.step),
     reached,
@@ -225,6 +229,8 @@ export function parseSetup(raw, flow) {
       language: text(choices.language, 12) || defaults.language,
       signIn: oneOf(choices.signIn, ["frameleaf", "local"], defaults.signIn),
       linked: bool(choices.linked, false),
+      accountCreated: bool(choices.accountCreated, false),
+      signedIn: bool(choices.signedIn, false),
       restore: oneOf(choices.restore, ["restore", "fresh"], null),
       admin: { name: text(admin.name), email: text(admin.email) },
       storage: typeof choices.storage === "string" ? text(choices.storage, 240) : defaults.storage,
@@ -242,6 +248,9 @@ export function parseSetup(raw, flow) {
       theme: oneOf(choices.theme, ["dark", "light"], "dark"),
     },
   };
+  // Resume never lands past a required step that no longer checks out.
+  const invalid = firstInvalidStep(parsed, parsed.step);
+  return invalid < 0 ? parsed : { ...parsed, step: invalid, completed: false };
 }
 
 export function loadSetup(flow, storage = globalThis.localStorage) {
@@ -282,14 +291,15 @@ export function validateStep(state, stepId, secrets = {}) {
     } else {
       if (!choices.admin.name.trim()) errors.name = "Enter your name.";
       if (!validateEmail(choices.admin.email.trim())) errors.email = "Enter a valid email address.";
-      if (!passwordStrength(secrets.password).acceptable)
+      const created = choices.accountCreated && !secrets.password;
+      if (!created && !passwordStrength(secrets.password).acceptable)
         errors.password = "Choose a stronger password that meets the requirements.";
-      else if (secrets.password !== secrets.confirm) errors.confirm = "The passwords don't match.";
+      else if (!created && secrets.password !== secrets.confirm) errors.confirm = "The passwords don't match.";
     }
   }
   if (stepId === "library" && checkStorage(choices.storage).status !== "ok")
     errors.storage = checkStorage(choices.storage).message;
-  if (stepId === "admin-sign-in" && !String(secrets.password ?? "").trim())
+  if (stepId === "admin-sign-in" && !choices.signedIn && !String(secrets.password ?? "").trim())
     errors.password = "Enter your password.";
   return { ok: Object.keys(errors).length === 0, errors };
 }
@@ -303,7 +313,32 @@ export function goToStep(state, target, secrets) {
       if (!validateStep(state, steps[index].id, secrets).ok) return state;
     }
   }
-  return { ...state, step: next, reached: Math.max(state.reached, next) };
+  const passed = steps.slice(0, next).map((step) => step.id);
+  const choices = { ...state.choices };
+  if (passed.includes("account") && state.flow === "new" && choices.signIn === "local") choices.accountCreated = true;
+  if (passed.includes("admin-sign-in")) choices.signedIn = true;
+  return { ...state, choices, step: next, reached: Math.max(state.reached, next) };
+}
+
+/**
+ * The first required step before `upTo` (every step when omitted) that doesn't
+ * validate without secrets, or -1. Used on resume and before finishing.
+ */
+export function firstInvalidStep(state, upTo = Infinity) {
+  const steps = flowSteps(state.flow);
+  return steps.findIndex(
+    (step, index) => index < upTo && step.required && !validateStep(state, step.id).ok,
+  );
+}
+
+/** Links or unlinks the server; unlinking drops the choices that need Frameleaf. */
+export function setLinked(state, linked) {
+  const choices = { ...state.choices, linked };
+  if (!linked) {
+    if (choices.processing === "cloud") choices.processing = "local";
+    choices.restore = null;
+  }
+  return { ...state, choices };
 }
 
 /** Steps that apply: the Cloud processing option only shows when linked. */

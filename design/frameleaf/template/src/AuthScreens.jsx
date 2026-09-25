@@ -234,10 +234,18 @@ export function SwitchRow({ label, description, checked, onChange }) {
 export function useTimer() {
   const timer = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
-  return (callback, delay) => {
+  const cancel = () => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(callback, delay);
+    timer.current = null;
   };
+  /** Schedules one callback (replacing any pending one) and returns its cancel. */
+  const schedule = (callback, delay) => {
+    cancel();
+    timer.current = setTimeout(callback, delay);
+    return cancel;
+  };
+  schedule.cancel = cancel;
+  return schedule;
 }
 
 // ---------------------------------------------------------------------- Login
