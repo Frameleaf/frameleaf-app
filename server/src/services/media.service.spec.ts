@@ -2,7 +2,7 @@ import { ShallowDehydrateObject } from 'kysely';
 import { OutputInfo } from 'sharp';
 import { Exif } from 'src/database.js';
 import { type SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { AssetEditAction } from 'src/dtos/editing.dto.js';
+import { AssetEditAction, VideoTrimMode } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   AssetPathType,
@@ -3160,6 +3160,33 @@ describe(MediaService.name, () => {
         expect(command.outputOptions).toEqual(expect.arrayContaining(['-c', 'copy']));
         expect(command.outputOptions).not.toContain('-vf');
         expect(command.outputOptions).not.toContain('-crf');
+      });
+
+      it('records the probed length of a stream-copied fast trim, which starts at a keyframe (FL-113)', async () => {
+        mocks.assetEdit.getAll.mockResolvedValue([
+          {
+            id: 'edit-id',
+            action: AssetEditAction.Trim,
+            parameters: { startMs: 1500, endMs: 4000, mode: VideoTrimMode.Fast },
+          },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+        mocks.media.probe.mockResolvedValue({
+          format: { duration: 3.2 },
+          videoStreams: [probeStub.videoStreamH264.videoStream],
+          audioStreams: [],
+        } as any);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.transcode.mock.calls.at(-1)![2].outputOptions).toEqual(
+          expect.arrayContaining(['-c', 'copy']),
+        );
+        // Out minus in would be 2500 ms; the copy ran from the keyframe before the in point.
+        expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'video-id', duration: 3200 }));
       });
 
       it('re-encodes a rotation that is combined with another edit', async () => {

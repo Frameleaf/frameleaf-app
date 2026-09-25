@@ -1200,7 +1200,7 @@ export class MediaService extends BaseService {
     await this.assetRepository.update({
       id: asset.id,
       thumbhash: generated.thumbhash,
-      duration: this.getVideoEditDurationMs(edits, format),
+      duration: await this.getRenderedVideoDurationMs(edits, { videoStream, audioStream, format }, output),
       ...fullsizeDimensions,
     });
 
@@ -1439,7 +1439,11 @@ export class MediaService extends BaseService {
         isProgressive: false,
         isTransparent: false,
       };
-      const duration = this.getVideoEditDurationMs(edits, original.format);
+      const duration = await this.getRenderedVideoDurationMs(
+        edits,
+        { videoStream, audioStream, format: original.format },
+        masterInfo,
+      );
 
       if (version.purpose === 'export') {
         published = await this.publishVideoVersion(version, {
@@ -2232,6 +2236,26 @@ export class MediaService extends BaseService {
     }
 
     return { width, height };
+  }
+
+  /**
+   * The rendered length to record. A stream-copied fast trim starts at the keyframe at or before
+   * the in point, so it runs longer than out minus in (FL-113): its length is read from the file
+   * that was written. Every other render is exactly the recipe's timeline.
+   */
+  private async getRenderedVideoDurationMs(
+    edits: AssetEditActionItem[],
+    source: { videoStream: VideoStreamInfo; audioStream?: AudioStreamInfo; format: VideoFormat },
+    output: string | VideoInfo,
+  ): Promise<number> {
+    if (qualifyStreamCopyTrim({ edits, ...source })) {
+      const info = typeof output === 'string' ? await this.mediaRepository.probe(output) : output;
+      const probed = Math.round((info.format.duration ?? 0) * 1000);
+      if (probed > 0) {
+        return probed;
+      }
+    }
+    return this.getVideoEditDurationMs(edits, source.format);
   }
 
   private getVideoEditDurationMs(edits: AssetEditActionItem[], format: VideoFormat) {

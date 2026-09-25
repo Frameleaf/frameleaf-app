@@ -944,7 +944,12 @@ export class StudioResourceService extends BaseService {
       workerId,
       manifest: manifest.digest,
       assetIds: [
-        ...new Set(manifest.entries.filter((entry) => LIBRARY_BACKED_KINDS.has(entry.kind)).map((entry) => entry.id)),
+        // Every source that reaches the user through a library asset, whatever kind the graph uses it as.
+        ...new Set(
+          manifest.entries
+            .filter((entry) => entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared')
+            .map((entry) => entry.id),
+        ),
       ],
     };
     return this.cryptoRepository.signJwt(payload, this.secret, { expiresIn: ttlSeconds });
