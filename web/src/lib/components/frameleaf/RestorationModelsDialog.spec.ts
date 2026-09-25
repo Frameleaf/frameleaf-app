@@ -119,7 +119,7 @@ describe('RestorationModelsDialog (FL-114)', () => {
     const item = await screen.findByRole('listitem', { name: 'RealBasicVSR x4' });
     expect(within(item).getByText('Available')).toBeInTheDocument();
     expect(
-      within(item).getByText('640 × 360 on GPU A: 4.2 frames per second, peak 9 GB of GPU memory'),
+      within(item).getByText('640 × 360 on GPU A: 4.2 frames per second, peak 9 GiB of GPU memory'),
     ).toBeInTheDocument();
     expect(screen.getByText('Serves Restoration (faithful)')).toBeInTheDocument();
   });
@@ -138,7 +138,7 @@ describe('RestorationModelsDialog (FL-114)', () => {
 
     render(RestorationModelsDialog, { destination: lan, open: true });
 
-    expect(await screen.findByText('NVIDIA GeForce RTX 4090 · 24 GB · driver 550.54.14')).toBeInTheDocument();
+    expect(await screen.findByText('NVIDIA GeForce RTX 4090 · 24 GiB · driver 550.54.14')).toBeInTheDocument();
     const item = screen.getByRole('listitem', { name: 'RealBasicVSR x4' });
     expect(
       within(item).getByText('Inputs up to 1280 px on the long edge and 300 frames per run · SDR'),

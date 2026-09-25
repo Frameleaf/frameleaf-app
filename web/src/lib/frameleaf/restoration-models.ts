@@ -87,7 +87,7 @@ export const measurementValues = (measurement: RestorationMeasuredThroughputDto)
   memory: Math.round((measurement.peakVramBytes / 1024 ** 3) * 10) / 10,
 });
 
-/** FL-110: a worker GPU as the admin reads it — name, memory in GB and driver. */
+/** FL-110: a worker GPU as the admin reads it — name, memory in GiB (1024³ bytes) and driver. */
 export const gpuValues = (gpu: RestorationGpuDto) => ({
   name: gpu.name,
   memory: Math.round((gpu.memoryTotalBytes / 1024 ** 3) * 10) / 10,
