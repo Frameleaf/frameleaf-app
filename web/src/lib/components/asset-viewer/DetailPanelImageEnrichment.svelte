@@ -56,7 +56,7 @@
     mdiShimmer,
     mdiTagRemove,
   } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -94,6 +94,11 @@
     enrichmentController?.abort();
     const controller = new AbortController();
     enrichmentController = controller;
+    // Another item's review must never show against this one while its own loads.
+    if (enrichment?.assetId !== assetId) {
+      enrichment = undefined;
+      failure = null;
+    }
     isLoading = true;
     try {
       const result = await getAssetImageEnrichment({ id: assetId }, { signal: controller.signal });
@@ -294,8 +299,12 @@
 
   $effect(() => {
     if (canReview) {
-      handlePromiseError(loadEnrichment(asset.id));
+      const assetId = asset.id;
+      handlePromiseError(untrack(() => loadEnrichment(assetId)));
+      return;
     }
+    enrichmentController?.abort();
+    enrichment = undefined;
   });
 
   $effect(() => {

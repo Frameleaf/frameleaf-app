@@ -41,15 +41,16 @@
   const source = $derived(review?.source ?? 'none');
   /** "Written by AI · model · 87% confident", as the template's badge title. */
   const confidence = $derived(review?.confidencePercent ?? null);
-  const aiDetail = $derived(
+  /** The model and its confidence; the visible "AI" already says who wrote it. */
+  const aiModelDetail = $derived(
     [
-      $t('frameleaf_info_written_by_ai'),
       review?.modelName,
       confidence === null ? null : $t('frameleaf_info_confidence', { values: { percent: confidence } }),
     ]
       .filter(Boolean)
       .join(' · '),
   );
+  const aiDetail = $derived([$t('frameleaf_info_written_by_ai'), aiModelDetail].filter(Boolean).join(' · '));
 
   let description = $derived(asset.exifInfo?.description ?? '');
   let failure = $state<InlineEditFailure | null>(null);
@@ -97,7 +98,7 @@
         <span class="fl-provenance fl-provenance-ai" title={aiDetail} data-testid="frameleaf-description-provenance">
           <Icon icon={mdiShimmer} size="12" aria-hidden />
           {$t('frameleaf_info_description_ai')}
-          <span class="sr-only">{aiDetail}</span>
+          {#if aiModelDetail}<span class="sr-only">· {aiModelDetail}</span>{/if}
         </span>
       {:else if source === 'manual'}
         <span
@@ -107,7 +108,6 @@
         >
           <Icon icon={mdiPencilOutline} size="11" aria-hidden />
           {$t('frameleaf_info_description_yours')}
-          <span class="sr-only">{$t('frameleaf_info_written_by_you')}</span>
         </span>
       {/if}
     </div>
