@@ -3465,6 +3465,7 @@
   "frameleaf_cloud_permission_remote_help": "Lets you turn remote access on or off from your Frameleaf account when you are away.",
   "frameleaf_cloud_permissions_description": "Choose what your Frameleaf account can ask this server to do. The server always decides and records each request.",
   "frameleaf_cloud_permissions_title": "Allow Frameleaf Cloud to…",
+  "frameleaf_cloud_poll_failed": "This server could not check whether the code was approved. It keeps trying.",
   "frameleaf_cloud_qr_copy": "Copy link",
   "frameleaf_cloud_qr_download": "Download QR code",
   "frameleaf_cloud_qr_error": "The QR code could not be drawn. Use the address instead.",
