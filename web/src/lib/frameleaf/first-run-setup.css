@@ -864,16 +864,27 @@
   font-size: var(--fl-font-small);
 }
 .frs-health-ring {
+  position: relative;
   display: grid;
   place-items: center;
   width: 60px;
   height: 60px;
   border-radius: 50%;
   color: var(--fl-teal);
-  background: conic-gradient(var(--fl-teal) 0 99.7%, var(--fl-warning) 0);
-  -webkit-mask: radial-gradient(circle, #000 0 48%, transparent 49% 55%, #000 56%);
-  mask: radial-gradient(circle, #000 0 48%, transparent 49% 55%, #000 56%);
   flex-shrink: 0;
+}
+/* The ring is its own layer (FL-176): masking the element itself hid the shield under the fill. */
+.frs-health-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(var(--fl-teal) 0 99.7%, var(--fl-warning) 0);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+}
+.frs-health-ring > svg {
+  position: relative;
 }
 .frs-health-grid {
   display: grid;
