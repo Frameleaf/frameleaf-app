@@ -70,7 +70,7 @@ export const memorySlideClass = ({
 
 /**
  * The overline above a memory's title, by kind (memory-engine.mjs:48-50): a trip for an event
- * story, highlights for a year in review, and "Memory" otherwise.
+ * story, highlights for a year in review, a birthday, a recap, and "Memory" otherwise.
  */
 export const memoryOverlineKey = (kind: MemoryStoryKind | undefined): Translations => {
   switch (kind) {
@@ -79,6 +79,13 @@ export const memoryOverlineKey = (kind: MemoryStoryKind | undefined): Translatio
     }
     case 'year_in_review': {
       return 'frameleaf_memories_overline_highlights';
+    }
+    // FL-62: the two server kinds the template has no card for keep the same one-word overline.
+    case 'birthday': {
+      return 'frameleaf_memories_overline_birthday';
+    }
+    case 'person_recap': {
+      return 'frameleaf_memories_overline_recap';
     }
     default: {
       return 'frameleaf_memories_overline_memory';

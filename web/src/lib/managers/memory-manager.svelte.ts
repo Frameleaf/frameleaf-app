@@ -2,9 +2,14 @@ import {
   type AssetResponseDto,
   MemorySearchOrder,
   addMemoryAssets,
+  addMemoryShowLess,
   deleteMemory,
+  getMemoryShowLess,
   type MemoryResponseDto,
+  type MemoryShowLessDto,
+  type MemoryShowLessResponseDto,
   removeMemoryAssets,
+  removeMemoryShowLess,
   searchMemories,
   updateAsset,
   updateMemory,
@@ -24,7 +29,7 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
 import { Route } from '$lib/route';
-import { memoryLaneTitle } from '$lib/utils';
+import { memoryHeadline } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
 import { toTimelineAsset } from '$lib/utils/timeline-util';
 
@@ -63,6 +68,8 @@ class MemoryManager {
   #queued: boolean = false;
 
   constructor() {
+    // FL-62: the first page already honours the owner's Memory settings.
+    this.#filters = omitBy(this.#preferenceFilters(), (item) => item === undefined);
     eventManager.on({
       AuthLogout: () => this.clearCache(),
       AuthUserLoaded: () => this.initialize(),
@@ -94,19 +101,29 @@ class MemoryManager {
   }
 
   applyPreferences() {
-    const { showUpcoming, onlyFavorites } = userPreferencesManager.memories;
-    this.setFilters({
-      order: MemorySearchOrder.Desc,
-      isSaved: onlyFavorites ? true : undefined,
-      isUpcoming: showUpcoming ? undefined : false,
-    });
+    this.setFilters(this.#preferenceFilters());
 
     return this.refresh();
   }
 
+  #preferenceFilters(): MemoriesSearchDto {
+    const { showUpcoming, onlyFavorites } = userPreferencesManager.memories;
+    return {
+      size: 250,
+      order: MemorySearchOrder.Desc,
+      isSaved: onlyFavorites ? true : undefined,
+      isUpcoming: showUpcoming ? undefined : false,
+    };
+  }
+
   memories = $state<MemoryResponseDto[]>([]);
 
-  #memoryLaneTitle = fromStore(memoryLaneTitle);
+  /** FL-62: memories the owner hid, listed only under "Hidden memories" on the index. */
+  hidden = $state<MemoryResponseDto[]>([]);
+  /** FL-62: the owner's show-less rules (people, pets, days and kinds). */
+  showLess = $state<MemoryShowLessResponseDto[]>([]);
+
+  #memoryHeadline = fromStore(memoryHeadline);
 
   #url = $derived({
     memoryId: page.params.id,
@@ -183,7 +200,7 @@ class MemoryManager {
       return;
     }
 
-    return { href, assetId: asset.id, title: this.#memoryLaneTitle.current(memory) };
+    return { href, assetId: asset.id, title: this.#memoryHeadline.current(memory).title };
   }
 
   // the memory holding an asset, checking the given memory first, then the ones next to it
@@ -347,21 +364,10 @@ class MemoryManager {
     }
   }
 
-  async #deleteCurrentMemory() {
-    const current = this.current;
-    if (!current) {
-      return;
-    }
-
-    const { id } = current.memory;
-    await this.#goto(current.nextMemory?.href ?? current.previousMemory?.href ?? this.memoriesHref);
-    await this.#deleteMemory(id);
-    toastManager.primary(get(t)('removed_memory'));
-  }
-
   /**
    * Toggles the saved (favorite) flag of any loaded memory, not just the one currently open.
-   * Used by the memory index, whose cards act on a memory without opening the player.
+   * Used by the memory index, whose cards act on a memory without opening the player. A saved
+   * memory is kept: the server never cleans it up.
    */
   async toggleMemorySaved(id: string) {
     const memory = this.#getMemory(id);
@@ -372,21 +378,97 @@ class MemoryManager {
     const isSaved = !memory.isSaved;
     await updateMemory({ id, memoryUpdateDto: { isSaved } });
     memory.isSaved = isSaved;
-    toastManager.primary(get(t)(isSaved ? 'added_to_favorites' : 'removed_from_favorites'));
   }
 
   /**
-   * Removes any loaded memory, not just the one currently open. Navigates away first when the
-   * removed memory is the one currently open, so the url never points at a deleted position.
+   * FL-62 (MI-1, Memories.jsx:208-211): hiding replaces deleting. The memory leaves the index and
+   * the player and waits under "Hidden memories", where Restore brings it back. Navigates away first
+   * when it is the memory currently open, so the url never points at a hidden position.
    */
-  async removeMemory(id: string) {
-    if (this.current?.memory.id === id) {
-      await this.#deleteCurrentMemory();
+  async hideMemory(id: string) {
+    const memory = this.#getMemory(id);
+    if (!memory) {
       return;
     }
 
-    await this.#deleteMemory(id);
-    toastManager.primary(get(t)('removed_memory'));
+    if (this.current?.memory.id === id) {
+      await this.#goto(this.current.nextMemory?.href ?? this.current.previousMemory?.href ?? this.memoriesHref);
+    }
+    const updated = await updateMemory({ id, memoryUpdateDto: { isHidden: true } });
+    this.memories = this.memories.filter((item) => item.id !== id);
+    this.hidden = [{ ...memory, ...updated, assets: updated.assets ?? memory.assets }, ...this.hidden];
+  }
+
+  /** FL-62: Restore from "Hidden memories" puts the memory back in its place in the index. */
+  async restoreMemory(id: string) {
+    const memory = this.hidden.find((item) => item.id === id);
+    if (!memory) {
+      return;
+    }
+
+    const updated = await updateMemory({ id, memoryUpdateDto: { isHidden: false } });
+    const restored = { ...memory, ...updated, assets: updated.assets ?? memory.assets };
+    this.hidden = this.hidden.filter((item) => item.id !== id);
+    if (restored.assets.length > 0 && !this.#lookup.has(id)) {
+      // memories are ordered by date, descending
+      const index = this.memories.findIndex(({ memoryAt }) => memoryAt < restored.memoryAt);
+      this.memories.splice(index === -1 ? this.memories.length : index, 0, restored);
+    }
+  }
+
+  /** The owner's hidden memories, for the index's "Hidden memories" section. */
+  async loadHidden() {
+    const items = await searchMemories({ isHidden: true, order: MemorySearchOrder.Desc, size: 250 });
+    this.hidden = items.filter((item) => item.assets.length > 0);
+  }
+
+  /**
+   * FL-62: the owner's own title and item order. The title replaces the generated one everywhere
+   * (null returns to it); the order is the memory's own items in the order the owner chose, and the
+   * player plays them in that order from then on.
+   */
+  async updateCuration(id: string, curation: { title?: string | null; assetOrder?: string[] }) {
+    const memory = this.#getMemory(id);
+    if (!memory) {
+      return;
+    }
+
+    const updated = await updateMemory({ id, memoryUpdateDto: curation });
+    if (curation.title !== undefined) {
+      memory.title = updated.title ?? null;
+    }
+    if (curation.assetOrder) {
+      const byId = new Map(memory.assets.map((asset) => [asset.id, asset] as const));
+      const ordered = curation.assetOrder.map((assetId) => byId.get(assetId)).filter((asset) => asset !== undefined);
+      const rest = memory.assets.filter((asset) => !curation.assetOrder!.includes(asset.id));
+      memory.assets = [...ordered, ...rest];
+    }
+  }
+
+  /** The owner's show-less rules, for Memory settings. */
+  async loadShowLess() {
+    this.showLess = await getMemoryShowLess();
+  }
+
+  /**
+   * FL-62: "Show less" for a person or pet, a day or a kind. The server drops matching memories from
+   * every search and stops generating them, so the index reloads rather than guessing which to drop.
+   */
+  async addShowLess(rule: MemoryShowLessDto) {
+    await addMemoryShowLess({ memoryShowLessDto: rule });
+    await Promise.all([this.loadShowLess(), this.#reload()]);
+  }
+
+  async removeShowLess(rule: MemoryShowLessDto) {
+    await removeMemoryShowLess({ memoryShowLessDto: { kind: rule.kind, value: rule.value } });
+    await Promise.all([this.loadShowLess(), this.#reload()]);
+  }
+
+  async #reload() {
+    // a page already in flight was asked for before the change; let it land, then start over
+    await this.#loading?.catch(() => undefined);
+    this.clearCache();
+    return this.initialize();
   }
 
   // navigate away before removing something, so the url never points at a deleted position
@@ -397,15 +479,6 @@ class MemoryManager {
 
   #goto(href: string) {
     return goto(href, { replaceState: true, noScroll: true, keepFocus: true });
-  }
-
-  async #deleteMemory(id: string) {
-    if (!this.#getMemory(id)) {
-      return;
-    }
-
-    await deleteMemory({ id });
-    this.memories = this.memories.filter((memory) => memory.id !== id);
   }
 
   loadNextPage() {
