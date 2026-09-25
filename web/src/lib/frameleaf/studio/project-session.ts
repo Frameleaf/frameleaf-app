@@ -66,6 +66,13 @@ export const STUDIO_AUTOSAVE_DEBOUNCE_MS = 1500;
 export const STUDIO_LEASE_RENEW_MS = 30_000;
 /** First retry after a transport failure; doubles up to the cap. */
 export const STUDIO_SAVE_RETRY_MS = 5000;
+/** Canonical commands one save may carry; the server's `STUDIO_MAX_COMMANDS_PER_SAVE` (FL-92). */
+export const STUDIO_MAX_COMMANDS_PER_SAVE = 500;
+/**
+ * Summary id for commands a save could not carry as envelopes (beyond the limit, or refused by the
+ * server as a batch). Not a catalogue id, so the server keeps its count as reported.
+ */
+export const STUDIO_UNCHECKED_COMMANDS_SUMMARY = 'commands.unchecked';
 export const STUDIO_SAVE_RETRY_MAX_MS = 60_000;
 /** The id a project has before its first save creates it on the server. */
 export const STUDIO_DRAFT_PROJECT_ID = 'draft';
@@ -135,6 +142,9 @@ export const readStudioConflict = (error: unknown): StudioConflict | null => {
     lease: body.lease && typeof body.lease === 'object' ? (body.lease as StudioProjectLeaseDto) : null,
   };
 };
+
+/** The server refused the request itself (`400`): sending it again unchanged cannot succeed. */
+const isBadRequest = (error: unknown): boolean => httpFailure(error)?.status === 400;
 
 const isNotFound = (error: unknown): boolean => {
   const status = httpFailure(error)?.status;
@@ -282,8 +292,10 @@ type Draft = {
   graph: unknown;
   counts: Record<string, number>;
   total: number;
-  /** Canonical commands behind this draft (FL-92), sent with the save. */
+  /** Canonical commands behind this draft (FL-92), sent with the save; at most the per-save limit. */
   envelopes: StudioCommandEnvelope[];
+  /** Commands over the per-save envelope limit, reported as a count only. */
+  unchecked: number;
   /** Assigned on the first attempt and kept for retries; a new `stage` clears it. */
   requestKey: string | null;
 };
@@ -550,7 +562,20 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     retryMs = Math.min(retryMs * 2, STUDIO_SAVE_RETRY_MAX_MS);
   };
 
-  const summaryOf = (current: Draft) => ({ counts: current.counts, total: current.total });
+  /**
+   * The summary a save reports. With envelopes, the server counts catalogue commands from them, so
+   * commands over the per-save limit are added under one non-catalogue id; without envelopes (after
+   * a quarantine) the counts are reported as they are, unchecked.
+   */
+  const summaryOf = (current: Draft) => {
+    if (current.unchecked === 0 || current.envelopes.length === 0) {
+      return { counts: current.counts, total: current.total };
+    }
+    return {
+      counts: { ...current.counts, [STUDIO_UNCHECKED_COMMANDS_SUMMARY]: current.unchecked },
+      total: current.total + current.unchecked,
+    };
+  };
 
   /** One save attempt for the current draft. Serialized: a second call waits for the first. */
   const flush = async (): Promise<void> => {
@@ -662,6 +687,23 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           fail(error, gen);
           return;
         }
+        if (isBadRequest(error)) {
+          // Final: the same request would be refused again. When the draft carried canonical
+          // commands, they are the likely cause (FL-92): quarantine them as a count and save the
+          // document on its own, once, with a fresh key. Otherwise the document itself was refused;
+          // it stays in memory for Save as copy, and the next edit sends a new document.
+          const message = error instanceof Error ? error.message : String(error);
+          current.requestKey = null;
+          if (current.envelopes.length > 0 && draft === current) {
+            current.unchecked = 0;
+            current.envelopes = [];
+            emit({ status: 'dirty', error: message });
+            scheduleFlush();
+            return;
+          }
+          emit({ status: 'error', error: message });
+          return;
+        }
         if (!isOnline()) {
           emit({ status: 'offline' });
           return;
@@ -749,7 +791,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     },
 
     stage(graph, commands = [], envelopes = []) {
-      if (disposed || state.access === 'reviewer' || !state.project.hasLease) {
+      // Edits made after the lease was lost are kept with the draft until the person reacquires,
+      // takes over or saves a copy; they are never dropped (FL-89).
+      const keepsDraft = state.status === 'lease-lost' && state.access === 'owner';
+      if (disposed || state.access === 'reviewer' || (!state.project.hasLease && !keepsDraft)) {
         return;
       }
       // Commands already travelling in a save belong to that revision's summary, not the next.
@@ -758,22 +803,36 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       for (const id of commands) {
         counts[id] = (counts[id] ?? 0) + 1;
       }
+      // A save carries at most the per-save limit of envelopes (FL-92); the oldest beyond it travel
+      // as a count, and a draft that reaches the limit is sent now rather than after the pause.
+      const merged = [...(base?.envelopes ?? []), ...envelopes];
+      const overflow = Math.max(0, merged.length - STUDIO_MAX_COMMANDS_PER_SAVE);
       draft = {
         graph,
         counts,
         total: (base?.total ?? 0) + commands.length,
-        envelopes: [...(base?.envelopes ?? []), ...envelopes],
+        envelopes: merged.slice(overflow),
+        unchecked: (base?.unchecked ?? 0) + overflow,
         // A different document is a different request; the key is assigned when it is sent.
         requestKey: null,
       };
+      if (keepsDraft) {
+        emit({ project: { ...state.project, graph } });
+        return;
+      }
       if (state.status === 'conflict') {
         // The person has not decided yet; more edits join the draft and wait with it.
         emit({ project: { ...state.project, graph } });
         return;
       }
+      // A document the server refused ('error') gets a fresh attempt with the next edit.
       emit({ project: { ...state.project, graph }, status: isOnline() ? 'dirty' : 'offline' });
       if (isOnline()) {
-        scheduleFlush();
+        if (draft.envelopes.length >= STUDIO_MAX_COMMANDS_PER_SAVE) {
+          void flush();
+        } else {
+          scheduleFlush();
+        }
       }
     },
 
