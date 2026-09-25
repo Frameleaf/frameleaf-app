@@ -88,6 +88,7 @@
     mdiShieldCheckOutline,
     mdiShieldLockOutline,
     mdiTools,
+    mdiCloudOutline,
   } from '@mdi/js';
   import { untrack, type Snippet } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
@@ -149,6 +150,12 @@
       title: $t('frameleaf_settings_area_processing'),
       description: $t('frameleaf_settings_area_processing_description'),
       icon: mdiDesktopTowerMonitor,
+    },
+    // FL-154: the template's Frameleaf Cloud area (settings-catalog.mjs:125-131).
+    cloud: {
+      title: $t('frameleaf_settings_area_cloud'),
+      description: $t('frameleaf_settings_area_cloud_description'),
+      icon: mdiCloudOutline,
     },
     security: {
       title: $t('frameleaf_settings_area_security'),
@@ -263,6 +270,10 @@
     'routing',
     'render-workers',
     'cloud-ml',
+    // FL-155..FL-157: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
+    'cloud-account',
+    'cloud-plan',
+    'cloud-license',
     'deduplication',
     'mode',
     'backups',
