@@ -2488,8 +2488,9 @@ function StudioEditor(props) {
   const [cloudKind, setCloudKind] = useState(null);
   /** Local jobs queue straight away; Frameleaf Cloud jobs confirm model, cost and consent first. */
   const submitJob = (kind) => {
-    if (destination === "cloud") setCloudKind(kind);
-    else enqueue(kind);
+    // Studio exports always render at home; only restoration may use Frameleaf Cloud.
+    if (destination === "cloud" && kind !== "Export") setCloudKind(kind);
+    else enqueue(kind, kind === "Export" && destination === "cloud" ? { destination: "local" } : undefined);
   };
   const duration = durationFor(selected);
   const [tab, setTab] = useState("Trim");
@@ -3097,8 +3098,8 @@ function StudioEditor(props) {
       )}
       {cloudKind && (
         <CloudJobDialog
-          title={cloudKind === "Export" ? "Render on Frameleaf Cloud" : "Restore on Frameleaf Cloud"}
-          workload={cloudKind === "Export" ? "render" : "restoration"}
+          title="Restore on Frameleaf Cloud"
+          workload="restoration"
           {...(() => {
             const { quantity, label } = jobQuantity("restoration", {
               durationSeconds: Math.max(0, (edit.end ?? duration) - (edit.start ?? 0)),
