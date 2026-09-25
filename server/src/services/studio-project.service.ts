@@ -47,6 +47,7 @@ import {
   StudioRefusedReference,
   StudioResourceService,
 } from 'src/services/studio-resource.service.js';
+import { checkStudioCommandBatch, studioCommandMirror } from 'src/utils/studio-commands.js';
 import {
   STUDIO_AUTOSAVE_DEBOUNCE_MS,
   STUDIO_LEASE_MS,
@@ -133,6 +134,28 @@ const asRequiredIso = (value: Date | string): string => asIso(value) as string;
 
 const envelopeOf = (revision: Pick<StudioProjectRevision, 'envelope'>): StudioProjectEnvelope =>
   revision.envelope as unknown as StudioProjectEnvelope;
+
+/**
+ * A revision's summary when its commands were sent (FL-92): catalogue commands are counted from the
+ * checked envelopes, never from the client's own counts; the editor's other entries (its own saves)
+ * are kept as reported.
+ */
+const summaryWithCommands = (
+  reported: { counts: Record<string, number>; total: number },
+  commands: { counts: Record<string, number>; total: number },
+) => {
+  const counts: Record<string, number> = { ...commands.counts };
+  let total = commands.total;
+  for (const [id, count] of Object.entries(reported.counts)) {
+    if (Object.hasOwn(studioCommandMirror, id)) {
+      continue;
+    }
+
+    counts[id] = count;
+    total += count;
+  }
+  return { counts, total };
+};
 
 /**
  * Studio projects: storage, autosave, history, leases and review (FL-89, `STU-202`).
@@ -517,6 +540,13 @@ export class StudioProjectService {
     }
     const digest = studioEnvelopeDigest(checked.envelope);
 
+    // FL-92: canonical commands that claim to have produced this document must be commands of the
+    // published catalogue, issued against the head this save builds on, each key once.
+    const commands = dto.commands ? checkStudioCommandBatch(dto.commands, dto.expectedRevision) : null;
+    if (commands && !commands.ok) {
+      throw new BadRequestException(commands.detail);
+    }
+
     const replay = await this.replayIfAnswered(project, dto.requestKey, digest, auth.user.id, dto.clientId);
     if (replay) {
       return replay;
@@ -544,7 +574,9 @@ export class StudioProjectService {
       envelope: checked.envelope,
       digest,
       graphBytes: checked.graphBytes,
-      summary: normalizeCommandSummary(dto.summary),
+      summary: commands?.ok
+        ? summaryWithCommands(normalizeCommandSummary(dto.summary), commands)
+        : normalizeCommandSummary(dto.summary),
       requestKey: dto.requestKey,
       restoredFromRevision: null,
     });

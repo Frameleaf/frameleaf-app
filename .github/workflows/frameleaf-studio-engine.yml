@@ -4,12 +4,14 @@ name: Frameleaf Studio engine
     branches: [fork/main]
     paths:
       - studio/**
+      - web/src/lib/frameleaf/studio/**
       - scripts/frameleaf-studio-contracts.mjs
       - .github/workflows/frameleaf-studio-engine.yml
   push:
     branches: [fork/main]
     paths:
       - studio/**
+      - web/src/lib/frameleaf/studio/**
       - scripts/frameleaf-studio-contracts.mjs
       - .github/workflows/frameleaf-studio-engine.yml
   workflow_dispatch:
@@ -49,6 +51,12 @@ jobs:
           npm --prefix studio/engine run build
           node studio/tools/engine.mjs attest
           cp studio/engine/frameleaf-build.json "$RUNNER_TEMP/frameleaf-build-first.json"
+      - name: Frameleaf adapter tests and editor build (FL-88, FL-92)
+        run: |
+          node studio/tools/adapter.mjs test
+          node studio/tools/adapter.mjs build
+          test -f web/static/studio-engine/manifest.json
+          test -f web/static/studio-engine/notices/freecut.txt
       - name: Reproduce from a fresh generated workspace
         run: |
           rm -rf studio/engine

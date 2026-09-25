@@ -28,6 +28,7 @@
   import {
     mdiAlertCircleOutline,
     mdiArrowLeft,
+    mdiTune,
     mdiCheckCircle,
     mdiCloudOffOutline,
     mdiCommentTextOutline,
@@ -83,6 +84,9 @@
     renderEvidence = [],
     services,
     onBack,
+    onBackToEditor,
+    handoffPlayhead = null,
+    draftHeld = false,
     onOpenActivity,
     onExportBundle,
     onExport,
@@ -120,6 +124,15 @@
     renderEvidence?: readonly StudioRenderEvidence[];
     services: StudioHostServices;
     onBack: () => void;
+    /**
+     * Back to the quick editor that opened Studio (FL-113), with the draft the person left there.
+     * Absent when Studio was not opened from a quick editor.
+     */
+    onBackToEditor?: () => void;
+    /** Where the quick editor's playhead was (FL-113), so the engine starts at the same instant. */
+    handoffPlayhead?: { num: number; den: number } | null;
+    /** The session holds undecided edits (a conflict or a lost lease): the engine keeps what it shows. */
+    draftHeld?: boolean;
     /**
      * Opens Activity (FL-104), where queued jobs such as bundle exports (FL-91) are followed.
      * When it is absent the host renders no link rather than a control that goes nowhere.
@@ -210,6 +223,19 @@
     online,
     mode,
     workspace,
+    handoffPlayhead,
+    draftHeld,
+    // The adapter's own chrome (its server preview panel) speaks the host's language (FL-96).
+    strings: {
+      previewTitle: $t('frameleaf_studio_server_preview'),
+      previewShow: $t('frameleaf_studio_server_preview_show'),
+      previewHide: $t('frameleaf_studio_server_preview_hide'),
+      previewRendering: $t('frameleaf_studio_preview_rendering'),
+      previewStale: $t('frameleaf_studio_preview_stale'),
+      previewUnavailable: $t('frameleaf_studio_preview_unavailable'),
+      previewToneMapped: $t('frameleaf_studio_preview_tone_mapped'),
+      previewNoWorker: $t('frameleaf_studio_server_preview_no_worker'),
+    },
   });
 
   const disposeEngine = async () => {
@@ -412,6 +438,12 @@
       <Icon icon={mdiArrowLeft} size="18" />
       {$t('frameleaf_studio_back_to_library')}
     </Button>
+    {#if onBackToEditor && !accessLost}
+      <Button variant="quiet" onclick={onBackToEditor}>
+        <Icon icon={mdiTune} size="18" />
+        {$t('frameleaf_studio_back_to_quick_edit')}
+      </Button>
+    {/if}
 
     <div class="fl-studio-project">
       {#if onRename && !accessLost}

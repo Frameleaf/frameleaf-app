@@ -21,10 +21,40 @@ const row = (uses: Partial<Record<StudioRightsUse, 'allowed' | 'blocked'>> = {})
   localRuntime: 'blocked' as const,
   hostedUse: 'blocked' as const,
   approvedOn: null,
+  restrictions: {},
   ...uses,
 });
 
+const MUSICGEN = 'model:Xenova/musicgen-small';
+
 describe('studio rights (FL-86)', () => {
+  it('keeps MusicGen-small local only: its CC-BY-NC-4.0 licence withholds hosted use (FL-146 comment 34944)', () => {
+    expect(studioResourceRights[MUSICGEN]).toMatchObject({
+      license: 'cc-by-nc-4.0',
+      localRuntime: 'allowed',
+      hostedUse: 'blocked',
+      approvedOn: '2026-09-25',
+    });
+    expect(checkStudioRights(MUSICGEN, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id: MUSICGEN });
+    const hosted = checkStudioRights(MUSICGEN, StudioRightsUse.HostedUse);
+    expect(hosted).toMatchObject({ allowed: false, id: MUSICGEN });
+    expect(hosted.allowed ? '' : hosted.detail).toMatch(/hosted use is not allowed\. CC-BY-NC-4\.0/);
+    // Music generation on the cloud destination is refused by name; on this server it resolves.
+    expect(checkStudioProducerRights('musicgen', studioRightsUseFor(StudioDestination.FrameleafCloud))).toMatchObject({
+      allowed: false,
+      id: MUSICGEN,
+    });
+    expect(checkStudioProducerRights('musicgen', studioRightsUseFor(StudioDestination.Local))).toEqual({
+      allowed: true,
+      id: MUSICGEN,
+    });
+    // Every other approved row keeps hosted use.
+    const hostedBlocked = Object.entries(studioResourceRights)
+      .filter(([, rights]) => rights.hostedUse !== 'allowed')
+      .map(([id]) => id);
+    expect(hostedBlocked).toEqual([MUSICGEN]);
+  });
+
   it('admits every one of the 210 resources the owner approved, and records the approval (FL-146)', () => {
     const rows = Object.entries(studioResourceRights);
     expect(rows).toHaveLength(210);
@@ -35,7 +65,9 @@ describe('studio rights (FL-86)', () => {
     for (const [id, rights] of rows) {
       expect(rights.approvedOn, id).toBe('2026-09-25');
       expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
-      expect(checkStudioRights(id, StudioRightsUse.HostedUse)).toEqual({ allowed: true, id });
+      if (id !== MUSICGEN) {
+        expect(checkStudioRights(id, StudioRightsUse.HostedUse)).toEqual({ allowed: true, id });
+      }
       // The rows allow redistribution; the engine distribution itself is still unapproved.
       expect(rights.redistribution).toBe('allowed');
       expect(checkStudioRights(id, StudioRightsUse.Redistribution).allowed).toBe(STUDIO_DISTRIBUTION_APPROVAL);

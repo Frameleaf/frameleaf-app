@@ -40,6 +40,7 @@ const admit = (id: string, uses: Partial<Pick<StudioResourceRights, 'localRuntim
     localRuntime: 'allowed',
     hostedUse: 'blocked',
     approvedOn: null,
+    restrictions: {},
     ...uses,
   };
 };
@@ -53,6 +54,7 @@ const block = (id: string) => {
     localRuntime: 'blocked',
     hostedUse: 'blocked',
     approvedOn: null,
+    restrictions: {},
   };
 };
 
