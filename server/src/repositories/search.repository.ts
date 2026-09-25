@@ -59,6 +59,8 @@ export interface SearchAssetIdOptions {
 export interface SearchUserIdOptions {
   libraryId?: string | null;
   userIds?: string[];
+  /** FL-54: server derived; owners whose assets a place filter must never match. Never client-controlled. */
+  locationHiddenOwnerIds?: string[];
 }
 
 export type SearchIdOptions = SearchAssetIdOptions & SearchUserIdOptions;
@@ -219,6 +221,8 @@ export type AssetSearchScope = {
    * except those of `lockedMotion.lockedOwnerId`, the viewer when their session is elevated.
    */
   lockedMotion?: LockedVisibilityOptions;
+  /** FL-54: owners whose assets a place filter must never match (set only when the filter uses a place) */
+  locationHiddenOwnerIds?: string[];
 };
 
 export type SmartSearchOptions = SearchDateOptions &

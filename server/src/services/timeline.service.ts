@@ -17,7 +17,7 @@ import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
-import { getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
+import { getLocationHiddenOwnerIdsForView } from 'src/utils/partner-location.js';
 import { requirePetFilterAllowed } from 'src/utils/search-filter.js';
 
 const getRevealOptions = (auth: AuthDto) => {
@@ -98,8 +98,15 @@ export class TimelineService extends BaseService {
     // their locations from this viewer get their location columns nulled in the bucket SQL
     const canSeeOthersAssets =
       dto.withPartners || !!dto.albumId || !!dto.personId || (!!userId && userId !== auth.user.id);
+    // an album view also hides owners who hide their locations from the album's owner (owner default)
     const locationHiddenOwnerIds = canSeeOthersAssets
-      ? [...(await getLocationHiddenPartnerIds({ userId: auth.user.id, repository: this.partnerRepository }))]
+      ? [
+          ...(await getLocationHiddenOwnerIdsForView({
+            viewerId: auth.user.id,
+            albumIds: dto.albumId ? [dto.albumId] : [],
+            repository: this.partnerRepository,
+          })),
+        ]
       : [];
 
     return {

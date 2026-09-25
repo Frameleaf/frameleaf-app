@@ -719,8 +719,12 @@ export class SyncService extends BaseService {
           options.userId,
         );
 
-        for await (const { updateId, ...data } of backfill) {
-          await send(response, { type: backfillType, ids: [createId, updateId], data });
+        for await (const { updateId, locationHidden, ...data } of backfill) {
+          await send(response, {
+            type: backfillType,
+            ids: [createId, updateId],
+            data: locationHidden ? hideLocation(data) : data,
+          });
         }
 
         await sendEntityBackfillCompleteAck(response, backfillType, createId);
@@ -738,14 +742,14 @@ export class SyncService extends BaseService {
         { ...options, ack: upsertCheckpoint },
         createCheckpoint,
       );
-      for await (const { updateId, ...data } of updates) {
-        await send(response, { type: updateType, ids: [updateId], data });
+      for await (const { updateId, locationHidden, ...data } of updates) {
+        await send(response, { type: updateType, ids: [updateId], data: locationHidden ? hideLocation(data) : data });
       }
     }
 
     const creates = this.syncRepository.albumAssetExif.getCreates({ ...options, ack: createCheckpoint });
     let isFirst = true;
-    for await (const { updateId, ...data } of creates) {
+    for await (const { updateId, locationHidden, ...data } of creates) {
       if (isFirst) {
         await send(response, {
           type: SyncEntityType.SyncAckV1,
@@ -755,7 +759,9 @@ export class SyncService extends BaseService {
         });
         isFirst = false;
       }
-      await send(response, { type: createType, ids: [updateId], data });
+      // FL-54: an owner who hides locations from this user, directly or from the album's owner, never
+      // streams coordinates or place names; the row itself still arrives, as in the partner stream
+      await send(response, { type: createType, ids: [updateId], data: locationHidden ? hideLocation(data) : data });
     }
   }
 

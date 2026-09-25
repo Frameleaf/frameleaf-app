@@ -16,6 +16,7 @@ import { Permission, SharedLinkType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
+import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 
 @Injectable()
 export class SharedLinkService extends BaseService {
@@ -287,7 +288,18 @@ export class SharedLinkService extends BaseService {
     sharedLink: SharedLink,
     options: { stripAssetMetadata: boolean },
   ): Promise<SharedLinkResponseDto> {
-    return mapSharedLink(await this.applyNsfwPrivacy(auth, sharedLink), options);
+    const response = mapSharedLink(await this.applyNsfwPrivacy(auth, sharedLink), options);
+    if (options.stripAssetMetadata || response.assets.length === 0) {
+      return response;
+    }
+
+    // FL-54: a link shows at most what its creator may see, so an owner who hides their locations from
+    // the creator never has them handed out through the link's own assets
+    const assets = await applyPartnerLocationPolicy(response.assets, {
+      userId: sharedLink.userId,
+      repository: this.partnerRepository,
+    });
+    return { ...response, assets };
   }
 
   private async applyNsfwPrivacy(auth: AuthDto, sharedLink: SharedLink): Promise<SharedLink> {

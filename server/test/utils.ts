@@ -440,6 +440,9 @@ export const getMocks = () => {
   mocks.mlDestination.recordAccounting.mockResolvedValue();
   mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
   mocks.machineLearning.getRunPodEndpoint.mockReturnValue(null);
+  // no owner hides their locations from an album's owner unless a test says otherwise (FL-54)
+  mocks.partner.getLocationHiddenOwnerIdsForAlbums.mockResolvedValue([]);
+  mocks.partner.getLocationHiddenThroughAlbums.mockResolvedValue(new Set());
 
   return mocks;
 };

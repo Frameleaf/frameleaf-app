@@ -5,6 +5,7 @@ import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { getForPartner } from 'test/mappers.js';
+import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(TimelineService.name, () => {
@@ -270,6 +271,28 @@ describe(TimelineService.name, () => {
       expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
         'bucket',
         expect.objectContaining({ userIds: [me, sharing.id] }),
+        authStub.admin,
+      );
+    });
+
+    it("hides owners who hide locations from an album's owner in that album's view (FL-54 owner default)", async () => {
+      const albumId = newUuid();
+      const hidingFromAlbumOwner = UserFactory.create();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '[]' });
+      mocks.partner.getAll.mockResolvedValue([]);
+      mocks.partner.getLocationHiddenOwnerIdsForAlbums.mockResolvedValue([hidingFromAlbumOwner.id]);
+
+      await sut.getTimeBucket(authStub.admin, {
+        timeBucket: 'bucket',
+        albumId,
+        bbox: { west: -115, south: 50, east: -113, north: 52 },
+      });
+
+      expect(mocks.partner.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith([albumId], authStub.admin.user.id);
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        expect.objectContaining({ albumId, locationHiddenOwnerIds: [hidingFromAlbumOwner.id] }),
         authStub.admin,
       );
     });

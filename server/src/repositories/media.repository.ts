@@ -38,6 +38,7 @@ import {
   RawExtractedFormat,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
@@ -132,6 +133,21 @@ export class MediaRepository {
       return true;
     } catch (error: any) {
       this.logger.warn(`Could not write exif data to image: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * FL-54: removes every location tag from a derived file in place. A preview extracted from a RAW keeps the
+   * camera's own EXIF, GPS included; nobody needs it in a derived image, and the fullsize file is served to
+   * partners and shared links without the original's location policy. Returns false when exiftool fails.
+   */
+  async removeLocation(path: string): Promise<boolean> {
+    try {
+      await exiftool.write(path, {}, { writeArgs: [...LOCATION_DELETE_ARGS, '-overwrite_original'] });
+      return true;
+    } catch (error: any) {
+      this.logger.warn(`Could not remove the location from ${path}: ${error.message}`);
       return false;
     }
   }
