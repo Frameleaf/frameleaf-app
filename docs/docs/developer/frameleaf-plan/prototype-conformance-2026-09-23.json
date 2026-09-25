@@ -19,14 +19,14 @@
     "webActions": 153,
     "routes": 83,
     "byStatus": {
-      "match": 60,
-      "partial": 53,
-      "missing": 2,
-      "fixed": 96,
-      "in-flight": 12,
+      "match": 61,
+      "partial": 27,
+      "missing": 1,
+      "fixed": 125,
+      "in-flight": 8,
       "studio-parked": 3,
       "retained-live-route": 8,
-      "intentional-product-change": 2
+      "intentional-product-change": 3
     }
   },
   "webActions": [
@@ -259,9 +259,9 @@
       "title": "Real folders and external-library path browsing",
       "prototype": ["design/frameleaf/template/src/Folders.jsx"],
       "production": ["web/src/lib/components/frameleaf/FolderBrowserPanel.svelte"],
-      "status": "missing",
+      "status": "fixed",
       "gaps": ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6"],
-      "followUp": "Browsable folder file list, sort, counts, Frameleaf tree"
+      "followUp": "Folders browser: storage-folder tree, sort, counts and sizes, browsable files with the viewer and bulk actions (fixed on codex/FL-46-complete-browsers)"
     },
     {
       "requirementId": "action:albums-organization:remove-selected-assets-from-album",
@@ -606,10 +606,13 @@
       "requirementId": "action:quick-edit:ai-preview-full-job-faithful-creative-local-lan-versus-runpod",
       "title": "AI preview/full job, Faithful/Creative, local/LAN versus RunPod",
       "prototype": ["design/frameleaf/template/src/Studio.jsx"],
-      "production": ["web/src/lib/components/frameleaf/editor/RestorationPanel.svelte"],
-      "status": "partial",
+      "production": [
+        "web/src/lib/components/frameleaf/editor/RestorationPanel.svelte",
+        "web/src/lib/components/frameleaf/editor/RestorationCompare.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["R-1", "R-2", "R-3"],
-      "followUp": "Cost/size estimate, loupe, labels"
+      "followUp": "Estimate Output and Cloud cost rows, 100% loupe, Use current frame and the video labels (fixed in FL-115)"
     },
     {
       "requirementId": "action:quick-edit:audio-mute-gain-channel-timing-preservation",
@@ -732,7 +735,7 @@
       "production": ["web/src/lib/components/frameleaf/editor/QuickEditor.svelte"],
       "status": "partial",
       "gaps": ["E-1", "MPY-10"],
-      "followUp": "Open in Studio from the editor (fix-editor-albums); Studio handoff is studio-parked"
+      "followUp": "Open in Studio from the editor (fix-editor-albums); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62)"
     },
     {
       "requirementId": "action:quick-edit:persistent-render-status-cancel-retry-reload-revision-supersession",
@@ -888,7 +891,7 @@
         "web/src/lib/components/frameleaf/ResultsToolbar.svelte",
         "web/src/lib/components/frameleaf/FilterChip.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["S-19", "SD-12"],
       "followUp": "Chips open their section, the search text is a chip and Clear all shows whenever anything is active (S-19, fixed by the FL-30 library gaps); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette"
     },
@@ -1082,9 +1085,9 @@
       "title": "Map search results, clustering, bounded/truncated result disclosure",
       "prototype": ["design/frameleaf/template/src/MapView.jsx"],
       "production": ["web/src/lib/components/shared-components/map/Map.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["MV-2", "MV-4", "MV-5", "MV-6"],
-      "followUp": "Cluster zoom, In-view chip, empty state, list rows"
+      "followUp": "Cluster zoom, In-view chip, empty state, list rows (fixed, FL-51 on codex/FL-50-complete-discovery)"
     },
     {
       "requirementId": "action:search-discovery:moment-search-frame-caption-transcript-timestamp-matches-and-jump-playback",
@@ -1222,9 +1225,9 @@
         "web/src/lib/components/frameleaf/ShowMore.svelte",
         "web/src/lib/components/frameleaf/LibraryView.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-14"],
-      "followUp": "ShowMore only outside the timeline layout; Select all N on matching pages"
+      "followUp": "ShowMore only where a page pages its results (never under the timeline); Select all N reads the grid's count until the server has counted (FL-33 shell completion)"
     },
     {
       "requirementId": "action:timeline-bulk:bulk-add-remove-tags",
@@ -1264,9 +1267,9 @@
         "web/src/lib/components/frameleaf/BulkDateDialog.svelte",
         "web/src/lib/components/frameleaf/BulkLocationDialog.svelte"
       ],
-      "status": "partial",
+      "status": "intentional-product-change",
       "gaps": ["T-13", "T-19"],
-      "followUp": "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); location place-name fields need a server field and an owner decision (T-13)"
+      "followUp": "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); the location place-name fields are not built by owner decision (T-13, FL-146 2026-09-25)"
     },
     {
       "requirementId": "action:timeline-bulk:bulk-delete-undo-with-partial-failures",
@@ -1290,9 +1293,9 @@
         "design/frameleaf/template/src/selection.mjs"
       ],
       "production": ["web/src/lib/frameleaf/bulk-operations.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-17"],
-      "followUp": "Archived items leave the library scope"
+      "followUp": "Archived items leave a Timeline view and unarchived ones leave Archive; no Archived badge; Offline badge from the bucket (FL-33 shell completion)"
     },
     {
       "requirementId": "action:timeline-bulk:bulk-favorite-unfavorite",
@@ -1351,9 +1354,9 @@
         "design/frameleaf/template/src/selection.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/AssetTile.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-4", "T-20"],
-      "followUp": "Tile hover quick actions are done (T-4, FL-33 library gaps); aria nits remain (T-20)"
+      "followUp": "Tile hover quick actions are done (T-4, FL-33 library gaps); Deselect label, full day titles and Timeline-only Locked (T-20, FL-33 shell completion)"
     },
     {
       "requirementId": "action:timeline-bulk:date-grouped-photos-browse-chronological-library",
@@ -1364,9 +1367,9 @@
         "design/frameleaf/template/src/selection.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/LibraryTimeline.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-3", "T-7", "T-10"],
-      "followUp": "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); grouping remains (T-3)"
+      "followUp": "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); Years/Months/Days/All grouping with ⌘-wheel, pinch, D/M/Y and the announcement (T-3)"
     },
     {
       "requirementId": "action:timeline-bulk:grid-list-compare-and-persisted-query-selection-layout",
@@ -1377,9 +1380,9 @@
         "design/frameleaf/template/src/selection.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/ResultsToolbar.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-8", "S-15", "S-17"],
-      "followUp": "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); the Browse/Work grid remains (T-8)"
+      "followUp": "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); square Browse and Work grids with Thumbnail size (T-8; the month-boundary row gap is owner decision FL-143)"
     },
     {
       "requirementId": "action:timeline-bulk:jump-scroll-to-time-restore-asset-position",
@@ -1422,9 +1425,9 @@
         "web/src/lib/frameleaf/library-shortcuts.ts",
         "web/src/lib/components/frameleaf/LibraryView.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-5", "S-22", "T-14"],
-      "followUp": "Library action shortcuts work on every library page (T-5, FL-33 library gaps); key-map drift (S-22) and Select all N (T-14) remain"
+      "followUp": "Library action shortcuts work on every library page (T-5, FL-33 library gaps); ←/→ move focus in the timeline and Delete has no Shift path there (S-22); Select all N (T-14)"
     },
     {
       "requirementId": "action:timeline-bulk:stack-selected-photos",
@@ -1761,9 +1764,9 @@
       "title": "Shared-link download with link restrictions",
       "prototype": ["design/frameleaf/template/src/PublicViewer.jsx"],
       "production": ["web/src/lib/components/pages/SharedLinkPage.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["AL-37"],
-      "followUp": "Labelled Download in the public viewer; decouple the slideshow gate"
+      "followUp": "Labelled Download in the public viewer; slideshow no longer gated on downloads (fixed, FL-56)"
     },
     {
       "requirementId": "action:viewer:slideshow-ascending-descending-order",
@@ -1920,9 +1923,9 @@
         "web/src/routes/admin/library-management/(list)/+page.ts",
         "web/src/lib/components/frameleaf/LibrariesManager.svelte"
       ],
-      "status": "in-flight",
+      "status": "fixed",
       "gaps": ["CC-34"],
-      "followUp": "FL-78 external libraries"
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
     },
     {
       "route": "/admin/library-management/[id]",
@@ -1931,9 +1934,9 @@
         "web/src/routes/admin/library-management/[id]/+page.ts",
         "web/src/lib/components/frameleaf/LibraryDetail.svelte"
       ],
-      "status": "in-flight",
+      "status": "fixed",
       "gaps": ["CC-34"],
-      "followUp": "FL-78 external libraries"
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
     },
     {
       "route": "/admin/library-management/[id]/edit",
@@ -1942,9 +1945,9 @@
         "web/src/routes/admin/library-management/[id]/edit/+page.ts",
         "web/src/lib/components/frameleaf/LibraryFormDialog.svelte"
       ],
-      "status": "in-flight",
+      "status": "fixed",
       "gaps": ["CC-34"],
-      "followUp": "FL-78 external libraries"
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
     },
     {
       "route": "/admin/library-management/new",
@@ -1953,9 +1956,9 @@
         "web/src/routes/admin/library-management/(list)/new/+page.ts",
         "web/src/lib/components/frameleaf/LibraryFormDialog.svelte"
       ],
-      "status": "in-flight",
+      "status": "fixed",
       "gaps": ["CC-34"],
-      "followUp": "FL-78 external libraries"
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
     },
     {
       "route": "/admin/maintenance",
@@ -1992,9 +1995,9 @@
         "web/src/routes/admin/physical-deduplication/+page.ts",
         "web/src/lib/components/frameleaf/PhysicalDedupManager.svelte"
       ],
-      "status": "partial",
-      "gaps": ["UT-23", "UT-24"],
-      "followUp": "Configuration-error state; file availability"
+      "status": "fixed",
+      "gaps": ["UT-23", "UT-24", "UT-25"],
+      "followUp": "Configuration-error state with Open settings; per-read file availability with the unavailable overlay; detail line, picker and Change link (FL-71, September 25)"
     },
     {
       "route": "/admin/processing-destinations",
@@ -2065,7 +2068,7 @@
       ],
       "status": "partial",
       "gaps": ["CC-1", "CC-2", "CC-3", "CC-4", "CC-5", "CC-6", "CC-7", "CC-8", "CC-11", "CC-12"],
-      "followUp": "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); open: the platform shortcut hint (CC-7, shared with the top bar); configuration transfer fixed by FL-71 (CC-46..CC-48)"
+      "followUp": "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); the platform shortcut hint fixed (CC-7, September 25); configuration transfer fixed by FL-71 (CC-46..CC-48)"
     },
     {
       "route": "/admin/user-management",
@@ -2191,9 +2194,9 @@
       "route": "/auth/onboarding",
       "prototype": ["design/frameleaf/template/src/AuthScreens.jsx", "design/frameleaf/template/src/system-data.mjs"],
       "production": ["web/src/routes/auth/onboarding/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["O-8", "O-12"],
-      "followUp": "Version check stays off by privacy policy; app store links await the owner. Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)"
+      "followUp": "Store links only when configured (O-12, FL-135); the version check stays off under the FL-146 privacy default (O-8, intentional). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)"
     },
     {
       "route": "/auth/pin-prompt",
@@ -2215,9 +2218,9 @@
       "route": "/best-photos/[[photos=photos]]/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/App.jsx", "design/frameleaf/template/src/AssetTile.jsx"],
       "production": ["web/src/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-6"],
-      "followUp": "Score as tile rating (T-6 open); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map"
+      "followUp": "Tiles show each item's own rating and Best Photos keeps the server quality order (T-6 fixed, FL-50); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map"
     },
     {
       "route": "/buy",
@@ -2264,9 +2267,9 @@
         "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/FolderBrowserPanel.svelte"
       ],
-      "status": "partial",
-      "gaps": ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6", "FD-7"],
-      "followUp": "Browsable folder files, sort, counts, tree"
+      "status": "fixed",
+      "gaps": ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6", "FD-7", "FD-8"],
+      "followUp": "Folders browser ported from Folders.jsx (fixed on codex/FL-46-complete-browsers)"
     },
     {
       "route": "/link",
@@ -2283,9 +2286,9 @@
         "design/frameleaf/template/src/locked-content.mjs"
       ],
       "production": ["web/src/routes/(user)/locked/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["S-6", "S-7", "T-20"],
-      "followUp": "Locked control and in-place unlock dialog (fixed on claude/frameleaf-implementation by FL-80); layout forced to Timeline (T-20)"
+      "followUp": "Locked control and in-place unlock dialog (fixed on claude/frameleaf-implementation by FL-80); the layout switch offers the Timeline only (T-20)"
     },
     {
       "route": "/maintenance",
@@ -2299,9 +2302,9 @@
       "route": "/map/[[photos=photos]]/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/MapView.jsx", "design/frameleaf/template/src/discovery-data.mjs"],
       "production": ["web/src/routes/(user)/map/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
-      "gaps": ["MV-1", "MV-2", "MV-3", "MV-4", "MV-5", "MV-6", "MV-7"],
-      "followUp": "Map settings sheet, cluster zoom, chips, empty state, list rows"
+      "status": "fixed",
+      "gaps": ["MV-1", "MV-2", "MV-3", "MV-4", "MV-5", "MV-6", "MV-7", "MV-8"],
+      "followUp": "Map settings sheet with counts, cluster zoom, chips, empty, offline and disabled states, list rows and hover card (fixed, FL-51)"
     },
     {
       "route": "/memories",
@@ -2310,9 +2313,9 @@
         "web/src/routes/(user)/memories/+page.svelte",
         "web/src/lib/components/frameleaf/MemoriesPanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["MI-1", "MI-2", "MI-3", "MI-4", "MI-5", "MI-6", "MI-7"],
-      "followUp": "Memories sections, remove confirm (fix-discovery), settings; card overline and preview fixed (MI-5)"
+      "followUp": "Today/Upcoming/Earlier from the local date, badges, quiet card, Hide memory with Hidden memories, show-less, Memory settings (fixed, FL-62)"
     },
     {
       "route": "/memories/[id]/[[photos=photos]]/[[assetId=id]]",
@@ -2321,9 +2324,9 @@
         "web/src/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/MemoryPlayerPanel.svelte"
       ],
-      "status": "partial",
-      "gaps": ["MPY-1", "MPY-2", "MPY-3", "MPY-4", "MPY-5", "MPY-6", "MPY-7", "MPY-8", "MPY-9"],
-      "followUp": "Player P0s (fix-discovery), shortcuts, soundtrack; title and end cards fixed (MPY-4)"
+      "status": "fixed",
+      "gaps": ["MPY-1", "MPY-2", "MPY-3", "MPY-4", "MPY-5", "MPY-6", "MPY-7", "MPY-8", "MPY-9", "MPY-10"],
+      "followUp": "Header and segment labels, Show all items (G), Space/M/G/Home/End, soundtrack, Open item, people, rename/reorder/favorite, Make a movie opens Studio (fixed, FL-62)"
     },
     {
       "route": "/memory/[[photos=photos]]/[[assetId=id]]",
@@ -2403,17 +2406,17 @@
         "web/src/routes/(user)/photos/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/LibraryView.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-3", "T-4", "T-5", "T-6", "T-7", "T-8", "T-10", "T-14", "T-15", "S-15", "S-16", "S-17", "S-19"],
-      "followUp": "Timeline, toolbar and bottom bar conformance"
+      "followUp": "Timeline, toolbar and bottom bar conformance (FL-30/FL-33 shell completion)"
     },
     {
       "route": "/places",
       "prototype": ["design/frameleaf/template/src/Places.jsx", "design/frameleaf/template/src/discovery-data.mjs"],
       "production": ["web/src/routes/(user)/places/+page.svelte"],
-      "status": "partial",
-      "gaps": ["PL-1", "PL-2", "PL-3", "PL-4", "PL-5", "PL-6", "PL-7"],
-      "followUp": "Frameleaf Places panel (PL-1/PL-6/PL-7 by fix-discovery)"
+      "status": "fixed",
+      "gaps": ["PL-1", "PL-2", "PL-3", "PL-4", "PL-5", "PL-6", "PL-7", "PL-8"],
+      "followUp": "Frameleaf Places panel: summary, counts, grouping, state map, search and empty states (fixed, FL-51)"
     },
     {
       "route": "/recently-added/[[assetId=id]]",
@@ -2438,9 +2441,9 @@
         "web/src/routes/(user)/s/[slug]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/pages/SharedLinkPage.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
-      "followUp": "Public viewer states and title line"
+      "followUp": "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)"
     },
     {
       "route": "/search/[[photos=photos]]/[[assetId=id]]",
@@ -2465,9 +2468,9 @@
         "web/src/routes/(user)/share/[key]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/pages/SharedLinkPage.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
-      "followUp": "Public viewer states and title line"
+      "followUp": "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)"
     },
     {
       "route": "/shared-links",
@@ -2569,9 +2572,9 @@
         "web/src/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/TagBrowserPanel.svelte"
       ],
-      "status": "partial",
-      "gaps": ["TG-1", "TG-2", "TG-3", "TG-4", "TG-5", "TG-6", "TG-7", "TG-8", "TG-9", "TG-10", "TG-11"],
-      "followUp": "Frameleaf tag tree and actions"
+      "status": "fixed",
+      "gaps": ["TG-1", "TG-2", "TG-3", "TG-4", "TG-5", "TG-6", "TG-7", "TG-8", "TG-9", "TG-10", "TG-11", "TG-12"],
+      "followUp": "Tags browser ported from Tags.jsx (fixed on codex/FL-46-complete-browsers)"
     },
     {
       "route": "/takeout",
@@ -2601,9 +2604,9 @@
         "design/frameleaf/template/src/SharingAccess.jsx"
       ],
       "production": ["web/src/routes/(user)/user-settings/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["CC-49", "AL-46", "US-2"],
-      "followUp": "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54)"
+      "followUp": "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54, AL-46); server key product name fixed (US-2)"
     },
     {
       "route": "/utilities",
@@ -2615,9 +2618,9 @@
         "web/src/routes/(user)/utilities/+page.ts",
         "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte"
       ],
-      "status": "partial",
+      "status": "match",
       "gaps": ["UT-12"],
-      "followUp": "Hub scope line (UT-12). PL-0, UT-1 and UT-1a are fixed on claude/frameleaf-implementation: utilities are the Command Center utilities area and application setup is a utility"
+      "followUp": "UT-12 obsolete: the September 24 prototype has no hub cards, utilities are Command Center directory rows. PL-0, UT-1 and UT-1a are fixed on claude/frameleaf-implementation: utilities are the Command Center utilities area and application setup is a utility"
     },
     {
       "route": "/utilities/corrupt-media",

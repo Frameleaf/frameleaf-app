@@ -12,12 +12,26 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import { applyClusterLabelLayout, clusterRadius, MAP_CLUSTER_DISTANCE } from '$lib/frameleaf/map-clusters';
+  import {
+    markerCardLine,
+    markerDetail,
+    markerPlace,
+    markerRowLine,
+    markerTypeCounts,
+  } from '$lib/frameleaf/map-markers';
   import { mapDateWindow, MAP_DATE_PRESETS, type MapArea } from '$lib/frameleaf/map-settings';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { mapSettings, type MapSettings } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, getAlbumMapMarkers, getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
+  import {
+    AssetMediaSize,
+    getAlbumMapMarkers,
+    getMapMarkers,
+    getMapStatistics,
+    type MapMarkerResponseDto,
+    type MapStatisticsResponseDto,
+  } from '@immich/sdk';
   import { Icon, Theme, themeManager } from '@immich/ui';
   import {
     mdiArrowExpandAll,
@@ -25,6 +39,7 @@
     mdiCogOutline,
     mdiCrosshairsGps,
     mdiImageOutline,
+    mdiMapMarkerOffOutline,
     mdiMagnify,
     mdiMapMarkerMultipleOutline,
     mdiMapMarkerOutline,
@@ -95,6 +110,14 @@
   let settingsSheet = $state<HTMLElement>();
   let fitted = false;
   let abort: AbortController | undefined;
+  /** MapView.jsx settings counts: archived and partner items and items without a location (library scope). */
+  let statistics = $state<MapStatisticsResponseDto>();
+  /**
+   * FL-51: the configured tile source cannot be reached (offline, or the style or its tiles fail).
+   * The located items stay reachable through the "In view" list, which needs no tiles.
+   */
+  let tilesFailed = $state(false);
+  let offline = $state(typeof navigator !== 'undefined' && !navigator.onLine);
 
   const markers = $derived(loadedMarkers);
   const listOpen = $derived($mapSettings.showAssetPanel);
@@ -161,17 +184,61 @@
 
   onDestroy(() => abort?.abort());
 
-  const placeOf = (marker: Pick<MapMarkerResponseDto, 'city' | 'state' | 'country'>) =>
-    [marker.city ?? marker.state, marker.country].filter(Boolean).join(', ');
+  // The settings sheet's counts follow its date and favorite filters (not the switches they count for).
+  const statisticsKey = $derived(
+    JSON.stringify({ isFavorite: $mapSettings.onlyFavorites || undefined, ...mapDateWindow($mapSettings) }),
+  );
+  $effect(() => {
+    const query = JSON.parse(statisticsKey) as Parameters<typeof getMapStatistics>[0];
+    if (scoped) {
+      statistics = undefined;
+      return;
+    }
+    let stale = false;
+    getMapStatistics(query)
+      .then((result) => {
+        if (!stale) {
+          statistics = result;
+        }
+      })
+      .catch(() => {
+        // the counts are a hint beside the switches; the markers still load without them
+        if (!stale) {
+          statistics = undefined;
+        }
+      });
+    return () => {
+      stale = true;
+    };
+  });
+
+  const placeOf = markerPlace;
 
   const features = $derived({
     type: 'FeatureCollection' as const,
-    features: markers.map((marker): Feature<Point, { id: string; place: string }> => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [marker.lon, marker.lat] },
-      properties: { id: marker.id, place: placeOf(marker) },
-    })),
+    features: markers.map(
+      (marker): Feature<Point, { id: string; place: string; name: string; line: string; video: boolean }> => {
+        const detail = markerDetail(marker);
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [marker.lon, marker.lat] },
+          properties: {
+            id: marker.id,
+            place: detail.place,
+            name: detail.name ?? '',
+            line: markerCardLine(detail),
+            video: detail.video,
+          },
+        };
+      },
+    ),
   });
+  const counts = $derived(markerTypeCounts(inView));
+
+  const retryTiles = () => {
+    tilesFailed = false;
+    map?.setStyle(styleUrl);
+  };
 
   /* ------------------------------------------------------------------ */
   /* Viewport                                                            */
@@ -313,6 +380,16 @@
   };
 </script>
 
+<svelte:window
+  ononline={() => {
+    offline = false;
+    if (tilesFailed) {
+      retryTiles();
+    }
+  }}
+  onoffline={() => (offline = true)}
+/>
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="fl-map" class:with-list={listOpen} onkeydown={onKeydown}>
   <div
@@ -343,6 +420,13 @@
             changed = true;
           }
           updateInView();
+        });
+        // FL-51: a style or tile that cannot be fetched (offline, or the tile server is unreachable)
+        // shows the offline state instead of a silently blank map
+        instance.on('error', (event) => {
+          if ((event as { sourceId?: string }).sourceId !== 'geojson') {
+            tilesFailed = true;
+          }
         });
       }}
       bind:map
@@ -389,17 +473,26 @@
           {#snippet children({ feature })}
             {@const id = feature.properties?.id as string}
             {@const place = feature.properties?.place as string}
+            {@const name = (feature.properties?.name as string) || $t('frameleaf_map_item')}
+            {@const line = feature.properties?.line as string}
+            <!-- MapView.jsx:582-584, 626-628, 634-658: "Open name, place", a video dot, and the hover
+                 card with the file name over the capture day and place. -->
             <span class="single">
               <img
                 src={getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail })}
-                alt={place ? $t('frameleaf_map_open_item_at', { values: { place } }) : $t('frameleaf_map_open_item')}
+                alt={place
+                  ? $t('frameleaf_map_open_named_at', { values: { name, place } })
+                  : $t('frameleaf_map_open_named', { values: { name } })}
               />
+              {#if feature.properties?.video}
+                <span class="video-dot" aria-hidden="true"></span>
+              {/if}
               {#if hoveredSingle?.properties?.id === id}
                 <span class="card" aria-hidden="true">
                   <img src={getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail })} alt="" />
                   <span class="card-copy">
-                    <strong>{place || $t('frameleaf_map_item')}</strong>
-                    <small>{coordinatesOf(feature)}</small>
+                    <strong>{name}</strong>
+                    <small>{line || coordinatesOf(feature)}</small>
                   </span>
                 </span>
               {/if}
@@ -456,7 +549,28 @@
       <span><i class="dot small"></i> 1</span>
       <span><i class="dot"></i> 2–9</span>
       <span><i class="dot large"></i> 10+</span>
+      <span class="legend-counts">
+        {$t('frameleaf_map_legend_counts', { values: { photos: counts.photos, videos: counts.videos } })}
+      </span>
     </div>
+
+    {#if tilesFailed || offline}
+      <!-- FL-51: the tile source cannot be reached; the prototype's empty-state card, with the list
+           as the way to the located items. -->
+      <div class="offline" role="status">
+        <Icon icon={mdiMapMarkerOffOutline} size="24" />
+        <strong>{offline ? $t('frameleaf_map_offline_title') : $t('frameleaf_map_tiles_failed_title')}</strong>
+        <p>{$t('frameleaf_map_tiles_failed_help')}</p>
+        <div class="offline-actions">
+          {#if !listOpen}
+            <Button onclick={() => patchSettings({ showAssetPanel: true })}>{$t('frameleaf_map_show_list')}</Button>
+          {/if}
+          {#if !offline}
+            <Button onclick={retryTiles}>{$t('frameleaf_map_try_again')}</Button>
+          {/if}
+        </div>
+      </div>
+    {/if}
 
     {#if settingsOpen}
       <div class="settings" role="dialog" aria-label={$t('frameleaf_map_settings')} bind:this={settingsSheet}>
@@ -513,6 +627,12 @@
         <fieldset>
           <legend>{$t('frameleaf_map_include')}</legend>
           {#each switches as option (option.key)}
+            {@const count =
+              option.key === 'includeArchived'
+                ? statistics?.archived
+                : option.key === 'withPartners'
+                  ? statistics?.partner
+                  : undefined}
             <button
               type="button"
               role="switch"
@@ -522,7 +642,9 @@
               onclick={() => patchSettings({ [option.key]: !$mapSettings[option.key] })}
             >
               <span class="track" aria-hidden="true"></span>
-              <span>{option.label}</span>
+              <span
+                >{option.label}{#if count !== undefined}&nbsp;<small>{count.toLocaleString()}</small>{/if}</span
+              >
             </button>
           {/each}
         </fieldset>
@@ -535,6 +657,12 @@
             <dt>{$t('frameleaf_map_count_in_view')}</dt>
             <dd>{inView.length}</dd>
           </div>
+          {#if statistics}
+            <div>
+              <dt>{$t('frameleaf_map_count_unlocated')}</dt>
+              <dd>{statistics.unlocated}</dd>
+            </div>
+          {/if}
         </dl>
       </div>
     {/if}
@@ -554,8 +682,11 @@
       {#if inView.length > 0}
         <ul>
           {#each inView as marker (marker.id)}
-            {@const place = placeOf(marker) || $t('frameleaf_map_item')}
+            {@const detail = markerDetail(marker)}
+            {@const place = detail.name ?? (detail.place || $t('frameleaf_map_item'))}
+            {@const line = markerRowLine(detail, $t('frameleaf_map_video'))}
             <li>
+              <!-- MapView.jsx:806-829: the file name over "day · city · Video", and "Centre map on name". -->
               <button
                 type="button"
                 class="row"
@@ -568,7 +699,7 @@
                 <img src={getAssetMediaUrl({ id: marker.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
                 <span>
                   <strong>{place}</strong>
-                  <small>{marker.lat.toFixed(3)}, {marker.lon.toFixed(3)}</small>
+                  <small>{line || `${marker.lat.toFixed(3)}, ${marker.lon.toFixed(3)}`}</small>
                 </span>
               </button>
               <button
@@ -693,6 +824,55 @@
     border: 2px solid var(--fl-text);
     border-radius: 50%;
     background: var(--fl-raised);
+  }
+  .switch small {
+    color: var(--fl-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .legend-counts {
+    padding-left: 12px;
+    border-left: 1px solid var(--fl-border);
+  }
+  .video-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--fl-panel);
+    border-radius: 50%;
+    background: var(--fl-accent);
+  }
+  .offline {
+    position: absolute;
+    top: 56px;
+    left: 50%;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: min(320px, calc(100% - 32px));
+    padding: 18px;
+    transform: translateX(-50%);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-2);
+    text-align: center;
+    color: var(--fl-muted);
+  }
+  .offline strong {
+    color: var(--fl-text);
+  }
+  .offline p {
+    margin: 0;
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+  .offline-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
   }
   .dot.small {
     width: 9px;

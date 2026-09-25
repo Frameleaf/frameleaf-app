@@ -1,8 +1,9 @@
 import {
   mdiAccountOutline,
-  mdiArchiveArrowDownOutline,
+  mdiArchiveOutline,
   mdiClockOutline,
   mdiCogOutline,
+  mdiDeleteOutline,
   mdiFolderMultipleOutline,
   mdiHandHeartOutline,
   mdiHeartOutline,
@@ -21,7 +22,6 @@ import {
   mdiStarOutline,
   mdiTagMultipleOutline,
   mdiTextBoxSearchOutline,
-  mdiTrashCanOutline,
   mdiTuneVariant,
 } from '@mdi/js';
 import type { Translations } from 'svelte-i18n';
@@ -269,7 +269,8 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
         destination('favorites', 'favorites', mdiHeartOutline, Route.favorites()),
         destination('recentlyAdded', 'recently_added', mdiClockOutline, Route.recentlyAdded()),
         destination('bestPhotos', 'best_photos', mdiStarOutline, Route.bestPhotos()),
-        destination('archive', 'archive', mdiArchiveArrowDownOutline, Route.archive()),
+        // S-26: the rail icons are LibraryRail.jsx's (Archive `mdiArchiveOutline`, Trash `mdiDeleteOutline`).
+        destination('archive', 'archive', mdiArchiveOutline, Route.archive()),
         // The one Locked view (FL-34): every item its owner locked, whatever locked it, behind
         // the PIN. Locking is metadata; nothing is relocated.
         destination('locked', 'frameleaf_locked', mdiShieldLockOutline, Route.locked()),
@@ -314,7 +315,7 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       labelKey: 'frameleaf_tools',
       destinations: [
         destination('workflows', 'workflows', mdiTuneVariant, Route.workflows()),
-        ...keep(capabilities.trash, destination('trash', 'trash', mdiTrashCanOutline, Route.trash())),
+        ...keep(capabilities.trash, destination('trash', 'trash', mdiDeleteOutline, Route.trash())),
       ],
     },
     {

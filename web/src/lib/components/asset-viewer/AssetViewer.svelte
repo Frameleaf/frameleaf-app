@@ -14,6 +14,7 @@
   import ViewerLiveBadge from '$lib/components/frameleaf/ViewerLiveBadge.svelte';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import ViewerOfflineBanner from '$lib/components/frameleaf/ViewerOfflineBanner.svelte';
+  import { bumpPlaybackRevision, playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
   import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
@@ -270,9 +271,15 @@
     onClose?.(asset.id);
   };
 
+  // FL-115: choosing a restored version (or the original again) for playback changes the file the
+  // video playback, photo preview and photo full-size URLs serve without changing the asset's thumbhash,
+  // so all of them get a fresh cache key (see playback-revision.svelte.ts; getAssetUrl reads it too).
+  const videoCacheKey = $derived(playbackCacheKey(asset));
+
   // FL-113: the quick editor says whether a saved version changed what the viewer should show.
   const closeEditor = async (refreshAsset = false) => {
     if (refreshAsset) {
+      bumpPlaybackRevision(asset.id);
       const refreshedAsset = await getAssetInfo({ id: asset.id });
       onAssetChange?.(refreshedAsset);
       assetViewerManager.setAsset(refreshedAsset);
@@ -893,7 +900,7 @@
     {:else if viewerKind === 'VideoViewer'}
       <VideoViewer
         {asset}
-        cacheKey={asset.thumbhash}
+        cacheKey={videoCacheKey}
         projectionType={asset.exifInfo?.projectionType}
         loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
         extendedControls

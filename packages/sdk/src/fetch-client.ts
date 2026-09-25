@@ -54,6 +54,12 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type AdminConfigAnalyticsDto = {
+    /** Collect local analytics history every night */
+    enabled: boolean;
+    /** Days of local analytics history to keep */
+    historyDays: number;
+};
 export type AdminConfigDatabaseBackupDto = {
     /** Cron expression */
     cronExpression: string;
@@ -618,6 +624,7 @@ export type AdminConfigUserDto = {
     deleteDelay: number;
 };
 export type AdminConfigDto = {
+    analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
     ffmpeg: AdminConfigFFmpegDto;
     image: AdminConfigImageDto;
@@ -1012,6 +1019,8 @@ export type PhysicalDeduplicationRetainedDto = {
     canView: boolean;
     /** Hex-encoded SHA-1 checksum of the original file */
     checksum: string;
+    /** Whether the retained original file is on disk now, checked on every read (FL-71 UT-24) */
+    fileAvailable: boolean;
     /** Copies this retained original would share that are Locked media of another account; counted, never named (FL-73) */
     hiddenCopies: number;
     originalFileName: string;
@@ -1401,6 +1410,8 @@ export type UserPreferencesResponseDto = {
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
+    /** Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67) */
+    lockedRulesRevealed: boolean;
     memories: MemoriesResponse;
     people: PeopleResponse;
     privacy: PrivacyResponse;
@@ -2333,10 +2344,10 @@ export type AssetBulkUpdateDto = {
     ids: string[];
     /** Mark as favorite */
     isFavorite?: boolean;
-    /** Latitude coordinate */
-    latitude?: number;
-    /** Longitude coordinate */
-    longitude?: number;
+    /** Latitude coordinate; null together with a null longitude removes the location */
+    latitude?: number | null;
+    /** Longitude coordinate; null together with a null latitude removes the location */
+    longitude?: number | null;
     /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
     rating?: number | null;
     /** Time zone (IANA timezone) */
@@ -2584,12 +2595,12 @@ export type UpdateAssetDto = {
     description?: string;
     /** Mark as favorite */
     isFavorite?: boolean;
-    /** Latitude coordinate */
-    latitude?: number;
+    /** Latitude coordinate; null together with a null longitude removes the location */
+    latitude?: number | null;
     /** Live photo video ID */
     livePhotoVideoId?: string | null;
-    /** Longitude coordinate */
-    longitude?: number;
+    /** Longitude coordinate; null together with a null latitude removes the location */
+    longitude?: number | null;
     /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
     rating?: number | null;
     /** State or region name; kept over reverse geocoding until the item is moved again */
@@ -4614,6 +4625,14 @@ export type MapReverseGeocodeResponseDto = {
     /** State/Province name */
     state: string | null;
 };
+export type MapStatisticsResponseDto = {
+    /** The viewer's own located archived items */
+    archived: number;
+    /** Located timeline items of partners who share their locations with the viewer */
+    partner: number;
+    /** The viewer's own timeline items without a location */
+    unlocated: number;
+};
 export type MediaHealthCandidateDto = {
     /** Candidate file path */
     candidatePath: string;
@@ -5003,11 +5022,41 @@ export type YearInReviewDto = {
     /** Calendar year being recapped */
     year: number;
 };
+export type BirthdayMemoryDto = {
+    /** Age reached on this birthday */
+    age: number | null;
+    /** The birthday this year, 'yyyy-MM-dd' */
+    date: string;
+    /** Discriminator for a birthday */
+    kind: Kind3;
+    /** Their name when the memory was made */
+    name: string;
+    /** Whether the birthday is a person's or a pet's */
+    subject: Subject;
+    /** The owner's person or pet whose birthday it is */
+    subjectId: string;
+    /** Year of this birthday */
+    year: number;
+};
+export type PersonRecapDto = {
+    /** Number of their photos and videos that year */
+    assetCount: number;
+    /** Discriminator for a person or pet recap */
+    kind: Kind4;
+    /** Their name when the memory was made */
+    name: string;
+    /** Whether the recap is about a person or a pet */
+    subject: Subject;
+    /** The owner's person or pet */
+    subjectId: string;
+    /** Calendar year being recapped */
+    year: number;
+};
 export type OnThisDayDto = {
     /** Year for on this day memory */
     year: number;
 };
-export type MemoryData = EventStoryDto | YearInReviewDto | OnThisDayDto;
+export type MemoryData = EventStoryDto | YearInReviewDto | BirthdayMemoryDto | PersonRecapDto | OnThisDayDto;
 export type MemoryResponseDto = {
     assets: AssetResponseDto[];
     /** Creation date */
@@ -5019,6 +5068,8 @@ export type MemoryResponseDto = {
     hideAt?: string;
     /** Memory ID */
     id: string;
+    /** Hidden by the owner; shown only in the hidden memories list */
+    isHidden: boolean;
     /** Is memory saved */
     isSaved: boolean;
     /** Memory date */
@@ -5029,6 +5080,8 @@ export type MemoryResponseDto = {
     seenAt?: string;
     /** Date when memory should be shown */
     showAt?: string;
+    /** The owner's own title, when they set one */
+    title: string | null;
     "type": MemoryType;
     /** Last update date */
     updatedAt: string;
@@ -5049,17 +5102,37 @@ export type MemoryCreateDto = {
     showAt?: string;
     "type": MemoryType;
 };
+export type MemoryShowLessDto = {
+    kind: MemoryShowLessKind;
+    /** A person or pet id, a date as 'MM-dd', or a memory type */
+    value: string;
+};
+export type MemoryShowLessResponseDto = {
+    /** When the rule was added */
+    createdAt: string;
+    kind: MemoryShowLessKind;
+    /** The person's or pet's name, for person and pet rules */
+    name: string | null;
+    /** A person or pet id, a date as 'MM-dd', or a memory type */
+    value: string;
+};
 export type MemoryStatisticsResponseDto = {
     /** Total number of memories */
     total: number;
 };
 export type MemoryUpdateDto = {
+    /** The memory's items in the order the owner chose; items not listed follow in capture order */
+    assetOrder?: string[];
+    /** Hide the memory from the memories list; false restores it */
+    isHidden?: boolean;
     /** Is memory saved */
     isSaved?: boolean;
     /** Memory date */
     memoryAt?: string;
     /** Date when memory was seen */
     seenAt?: string;
+    /** The owner's own title for the memory; null returns to the generated one */
+    title?: string | null;
 };
 export type MemoryExportCreateDto = {
     /** Export format, defaults to an archive of the originals */
@@ -7074,6 +7147,8 @@ export type ServerAppReleasesResponseDto = {
         links?: ServerApkLinksDto;
         /** SHA-256 fingerprint of the release signing certificate, as AA:BB:... */
         signingCertificateSha256?: string;
+        /** Store listing of the Android app, when the operator configured one (FL-135) */
+        storeUrl?: string;
     };
     /** iOS application */
     ios: {
@@ -8176,6 +8251,14 @@ export type TagBulkAssetsResponseDto = {
     /** Number of assets tagged */
     count: number;
 };
+export type TagStatisticsResponseDto = {
+    /** Timeline items tagged with exactly this tag */
+    count: number;
+    /** Tag ID */
+    id: string;
+    /** Timeline items tagged with this tag or any tag nested under it */
+    total: number;
+};
 export type TagUpdateDto = {
     /** Tag color (hex) */
     color?: string | null;
@@ -8420,6 +8503,8 @@ export type TimeBucketAssetResponseDto = {
     isFavorite: boolean[];
     /** Array indicating whether each asset is an image (false for videos) */
     isImage: boolean[];
+    /** Array indicating whether each asset is offline (its file is missing from an external library) */
+    isOffline?: boolean[];
     /** Array indicating whether each asset is in the trash */
     isTrashed: boolean[];
     /** Array of latitude coordinates extracted from EXIF GPS data */
@@ -8590,6 +8675,14 @@ export type CreateProfileImageResponseDto = {
     profileImagePath: string;
     /** User ID */
     userId: string;
+};
+export type FolderSummaryResponseDto = {
+    /** Originals directly in this folder */
+    count: number;
+    /** Folder path, without a trailing slash */
+    path: string;
+    /** Bytes of the originals directly in this folder */
+    size: number;
 };
 export type WorkflowIssueDto = {
     code: WorkflowIssueCode;
@@ -12803,6 +12896,31 @@ export function reverseGeocode({ lat, lon }: {
     }));
 }
 /**
+ * Retrieve map statistics
+ */
+export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withPartners, withSharedAlbums }: {
+    fileCreatedAfter?: string;
+    fileCreatedBefore?: string;
+    isArchived?: boolean;
+    isFavorite?: boolean;
+    withPartners?: boolean;
+    withSharedAlbums?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MapStatisticsResponseDto;
+    }>(`/map/statistics${QS.query(QS.explode({
+        fileCreatedAfter,
+        fileCreatedBefore,
+        isArchived,
+        isFavorite,
+        withPartners,
+        withSharedAlbums
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * List media health findings
  */
 export function list({ allAccounts, category, needsAttention, ownerId, page, size, status }: {
@@ -13100,9 +13218,10 @@ export function retryMediaOperation({ id }: {
 /**
  * Retrieve memories
  */
-export function searchMemories({ $for, id, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
     $for?: string;
     id?: string;
+    isHidden?: boolean;
     isSaved?: boolean;
     isTrashed?: boolean;
     isUpcoming?: boolean;
@@ -13117,6 +13236,7 @@ export function searchMemories({ $for, id, isSaved, isTrashed, isUpcoming, order
     }>(`/memories${QS.query(QS.explode({
         "for": $for,
         id,
+        isHidden,
         isSaved,
         isTrashed,
         isUpcoming,
@@ -13210,11 +13330,53 @@ export function downloadMemoryExport({ id }: {
     }));
 }
 /**
+ * Remove a memories show-less rule
+ */
+export function removeMemoryShowLess({ memoryShowLessDto }: {
+    memoryShowLessDto: MemoryShowLessDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryShowLessResponseDto[];
+    }>("/memories/show-less", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: memoryShowLessDto
+    })));
+}
+/**
+ * Retrieve memories show-less rules
+ */
+export function getMemoryShowLess(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryShowLessResponseDto[];
+    }>("/memories/show-less", {
+        ...opts
+    }));
+}
+/**
+ * Show less of a person, pet, date or kind of memory
+ */
+export function addMemoryShowLess({ memoryShowLessDto }: {
+    memoryShowLessDto: MemoryShowLessDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryShowLessResponseDto[];
+    }>("/memories/show-less", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: memoryShowLessDto
+    })));
+}
+/**
  * Retrieve memories statistics
  */
-export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
     $for?: string;
     id?: string;
+    isHidden?: boolean;
     isSaved?: boolean;
     isTrashed?: boolean;
     isUpcoming?: boolean;
@@ -13229,6 +13391,7 @@ export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, o
     }>(`/memories/statistics${QS.query(QS.explode({
         "for": $for,
         id,
+        isHidden,
         isSaved,
         isTrashed,
         isUpcoming,
@@ -16853,6 +17016,17 @@ export function bulkTagAssets({ tagBulkAssetsDto }: {
     })));
 }
 /**
+ * Retrieve tag statistics
+ */
+export function getTagStatistics(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TagStatisticsResponseDto[];
+    }>("/tags/statistics", {
+        ...opts
+    }));
+}
+/**
  * Delete a tag
  */
 export function deleteTag({ id }: {
@@ -17710,6 +17884,17 @@ export function getAssetsByOriginalPath({ path }: {
     }>(`/view/folder${QS.query(QS.explode({
         path
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve folder summaries
+ */
+export function getFolderSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FolderSummaryResponseDto[];
+    }>("/view/folder/summary", {
         ...opts
     }));
 }
@@ -19004,13 +19189,31 @@ export enum MemorySearchOrder {
 export enum MemoryType {
     OnThisDay = "on_this_day",
     EventStory = "event_story",
-    YearInReview = "year_in_review"
+    YearInReview = "year_in_review",
+    Birthday = "birthday",
+    PersonRecap = "person_recap"
 }
 export enum Kind {
     EventStory = "event_story"
 }
 export enum Kind2 {
     YearInReview = "year_in_review"
+}
+export enum Kind3 {
+    Birthday = "birthday"
+}
+export enum Subject {
+    Person = "person",
+    Pet = "pet"
+}
+export enum Kind4 {
+    PersonRecap = "person_recap"
+}
+export enum MemoryShowLessKind {
+    Person = "person",
+    Pet = "pet",
+    Date = "date",
+    Type = "type"
 }
 export enum RestorationDynamicRange {
     Sdr = "sdr",

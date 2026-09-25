@@ -142,6 +142,53 @@ describe('/tags', () => {
     });
   });
 
+  describe('GET /tags/statistics', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app).get('/tags/statistics');
+      expect(status).toBe(401);
+    });
+
+    it('should count items per tag, including subtags, and never an archived or trashed one (FL-46)', async () => {
+      const [rockies] = await upsert(user.accessToken, ['trips/rockies']);
+      const [trips] = await upsert(user.accessToken, ['trips']);
+      await upsert(user.accessToken, ['empty']);
+      const visible = await utils.createAsset(user.accessToken);
+      const tripsOnly = await utils.createAsset(user.accessToken);
+      // a hidden descendant item: tagged with the subtag, but archived, so never counted
+      const archived = await utils.createAsset(user.accessToken);
+      const trashed = await utils.createAsset(user.accessToken);
+      await utils.archiveAssets(user.accessToken, [archived.id]);
+      await utils.deleteAssets(user.accessToken, [trashed.id]);
+      await utils.tagAssets(user.accessToken, rockies.id, [visible.id, archived.id, trashed.id]);
+      await utils.tagAssets(user.accessToken, trips.id, [tripsOnly.id]);
+
+      const { status, body } = await request(app)
+        .get('/tags/statistics')
+        .set('Authorization', `Bearer ${user.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toHaveLength(2);
+      expect(body).toEqual(
+        expect.arrayContaining([
+          { id: trips.id, count: 1, total: 2 },
+          { id: rockies.id, count: 1, total: 1 },
+        ]),
+      );
+    });
+
+    it("should not count another user's tags", async () => {
+      const [tag] = await upsert(user.accessToken, ['mine']);
+      await utils.tagAssets(user.accessToken, tag.id, [userAsset.id]);
+
+      const { status, body } = await request(app)
+        .get('/tags/statistics')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual([]);
+    });
+  });
+
   describe('PUT /tags', () => {
     it('should upsert tags', async () => {
       const { status, body } = await request(app)

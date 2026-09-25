@@ -72,6 +72,7 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
     changes.assetFavorites = [];
     memoryChanges.memoryDeletions = [];
     memoryChanges.assetRemovals.clear();
+    memoryChanges.hiddenMemories = [];
   });
 
   test.describe('Asset viewer navigation from gallery', () => {
@@ -292,6 +293,70 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       await expect(memoryViewerUtils.locator(page).locator('.fmp-title-card')).toHaveCount(0);
     });
   });
+
+  // FL-62 (MPY-5..MPY-10): the template's header, gallery, keys, Open item and Make a movie.
+  test.describe('Memory player controls', () => {
+    test('names each progress segment and shows all items with G', async ({ page }) => {
+      const firstMemory = memories[0];
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[1].id);
+
+      const progress = page.getByRole('group', { name: 'Memory progress' });
+      await expect(
+        progress.getByRole('link', { name: `Go to item 2 of ${firstMemory.assets.length}` }),
+      ).toHaveAttribute('aria-current', 'true');
+
+      await page.keyboard.press('g');
+      const gallery = page.getByRole('region', { name: 'All items in this memory' });
+      await expect(gallery).toBeVisible();
+      await gallery.getByRole('button', { name: new RegExp(`^Item 1: `) }).click();
+      await expect(gallery).toHaveCount(0);
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, firstMemory.assets[0].id);
+    });
+
+    test('Home returns to the title card and End goes to the last item', async ({ page }) => {
+      const firstMemory = memories[0];
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[1].id);
+
+      await page.keyboard.press('End');
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, firstMemory.assets.at(-1)!.id);
+
+      await page.keyboard.press('Home');
+      await expect(memoryViewerUtils.locator(page).locator('.fmp-title-card')).toBeVisible();
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, firstMemory.assets[0].id);
+    });
+
+    test('M toggles the soundtrack', async ({ page }) => {
+      const firstMemory = memories[0];
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[1].id);
+
+      await page.keyboard.press('m');
+      await expect(page.getByRole('button', { name: 'Mute soundtrack' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test('Make a movie opens Studio with the memory items', async ({ page }) => {
+      const firstMemory = memories[0];
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[1].id);
+
+      await page.getByRole('button', { name: 'Make a movie in Studio' }).click();
+      await expect(page).toHaveURL(new RegExp(String.raw`/studio\?.*${firstMemory.assets[0].id}`));
+    });
+  });
+
+  // FL-62 (MI-1): Hide memory replaces deletion, and Restore brings it back.
+  test.describe('Memories index', () => {
+    test('hides a memory and restores it from Hidden memories', async ({ page }) => {
+      await page.goto('/memories');
+      const firstCardMenu = page.getByRole('button', { name: /^More actions for / }).first();
+      await firstCardMenu.click();
+      await page.getByRole('menuitem', { name: 'Hide memory' }).click();
+
+      const hidden = page.getByRole('region', { name: 'Hidden memories' });
+      await expect(hidden).toBeVisible();
+      await hidden.getByRole('button', { name: /^Show 1/ }).click();
+      await hidden.getByRole('button', { name: 'Restore' }).click();
+      await expect(hidden).toHaveCount(0);
+    });
+  });
 });
 
 test.describe('Memory Viewer - Single Asset Memory Edge Cases', () => {
@@ -350,6 +415,7 @@ test.describe('Memory Viewer - Single Asset Memory Edge Cases', () => {
     changes.assetFavorites = [];
     memoryChanges.memoryDeletions = [];
     memoryChanges.assetRemovals.clear();
+    memoryChanges.hiddenMemories = [];
   });
 
   test('single asset memory shows both prev/next when surrounded by other memories', async ({ page }) => {

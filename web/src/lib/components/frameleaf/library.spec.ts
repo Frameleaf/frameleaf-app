@@ -74,6 +74,15 @@ describe('AssetTile', () => {
     expect(text).toContain('4');
   });
 
+  it('badges an offline item from its own flag and never draws an Archived badge (T-17)', () => {
+    const { container } = tile({ asset: asset({ isOffline: true, visibility: AssetVisibility.Archive }) });
+    const text = screen.getByTestId('frameleaf-asset-tile').textContent ?? '';
+    expect(text).toContain('asset_offline');
+    expect(text).not.toContain('archived');
+    // T-16: the badges sit on the photo's bottom-left plates, the durable job state keeps the top corner
+    expect(container.querySelector('.fl-tile-badges .fl-tile-job-slot')).toBeNull();
+  });
+
   it('scrubs the preview transcode on hover and never the original file', async () => {
     vi.useFakeTimers();
     try {
@@ -408,6 +417,41 @@ describe('AssetGrid', () => {
     expect(px(second.style.insetInlineStart) - px(first.style.width)).toBe(2);
     expect(container.querySelector('.fl-tile-caption')).toBeNull();
     expect(container.querySelector('[data-layout="browse"]')).not.toBeNull();
+  });
+
+  it('draws a fixed square file grid with a caption under each tile and no zoom (FL-46 Folders)', async () => {
+    const { libraryGridPreferences } = await import('$lib/frameleaf/library-grid-preferences.svelte');
+    const { createRawSnippet } = await import('svelte');
+    libraryGridPreferences.thumbnailSize = 200;
+    const session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
+    const caption = createRawSnippet((item: () => TimelineAsset) => ({
+      render: () => `<span class="test-caption">${item().id}</span>`,
+    }));
+    const { container } = render(AssetGrid, {
+      assets: results(4),
+      session,
+      layout: 'work',
+      cellOptions: { minCellWidth: 132, aspect: 1, gap: 12, captionHeight: 40 },
+      caption,
+      offlineFor: (item: TimelineAsset) => item.id === 'asset-1',
+    });
+    await waitFor(() => expect(cells(container).length).toBe(4));
+    const [first, second] = cells(container);
+    // 1000px holds seven 132px columns with 12px gutters, whatever the Thumbnail size.
+    expect(px(second.style.insetInlineStart) - px(first.style.width)).toBe(12);
+    expect(px(first.style.height) - px(first.style.width)).toBe(40);
+    expect(container.querySelector('[data-layout="browse"]')).not.toBeNull();
+    expect([...container.querySelectorAll('.test-caption')].map((node) => node.textContent)).toEqual([
+      'asset-0',
+      'asset-1',
+      'asset-2',
+      'asset-3',
+    ]);
+    // the offline badge marks only the missing original
+    expect(cells(container)[1].querySelector('[title*="ffline"]')).not.toBeNull();
+    expect(cells(container)[0].querySelector('[title*="ffline"]')).toBeNull();
+    await fireEvent.keyDown(document.body, { key: '+' });
+    expect(libraryGridPreferences.thumbnailSize).toBe(200);
   });
 
   it('mounts only the rows near the viewport, not every result', async () => {

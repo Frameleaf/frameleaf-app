@@ -80,12 +80,13 @@
 
   /**
    * A shared link's viewer has no More menu, so its one slideshow entry point sits in the bar itself
-   * (FL-83; `action:viewer:slideshow-play-pause-previous-next-repeat-shuffle`). It keeps the gate the
-   * old public header had: only when the link allows downloads, and only with something to move to.
+   * (FL-83; `action:viewer:slideshow-play-pause-previous-next-repeat-shuffle`), whenever there is
+   * something to move to. FL-56 (AL-37): a slideshow shows the same previews the link already shows,
+   * so it no longer depends on the link allowing downloads; the viewer footer's Play offers it too.
    */
   const SharedLinkSlideshow: ActionItem = $derived({
     ...Actions.PlaySlideshow,
-    $if: () => !!sharedLink?.allowDownload && canNavigateCollection && (Actions.PlaySlideshow.$if?.() ?? true),
+    $if: () => !!sharedLink && canNavigateCollection && (Actions.PlaySlideshow.$if?.() ?? true),
   });
 
   /**

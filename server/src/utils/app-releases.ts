@@ -12,6 +12,8 @@
  * - `FRAMELEAF_ANDROID_SIGNING_SHA256`: the SHA-256 fingerprint of their signing certificate, shown
  *   to people so they can check what they install. Android releases are unavailable without it.
  * - `FRAMELEAF_IOS_APP_URL`: the https App Store or TestFlight page of the iOS app.
+ * - `FRAMELEAF_ANDROID_STORE_URL` (FL-135): the https store listing of the Android app (Google Play,
+ *   F-Droid or another store), offered next to the signed APKs when it is set.
  *
  * A value that is set but wrong fails at startup, so a typo is noticed instead of silently hiding
  * the downloads.
@@ -19,6 +21,7 @@
 export type AppReleaseConfig = {
   android?: { releaseUrl: string; appId: string; signingSha256: string };
   iosUrl?: string;
+  androidStoreUrl?: string;
 };
 
 export const APK_FILES = {
@@ -33,9 +36,10 @@ type AppReleaseEnv = {
   FRAMELEAF_ANDROID_APP_ID?: string;
   FRAMELEAF_ANDROID_SIGNING_SHA256?: string;
   FRAMELEAF_IOS_APP_URL?: string;
+  FRAMELEAF_ANDROID_STORE_URL?: string;
 };
 
-const httpsUrl = (name: string, value: string) => {
+export const httpsUrl = (name: string, value: string) => {
   let url: URL;
   try {
     url = new URL(value.replace('{version}', '0.0.0'));
@@ -43,7 +47,7 @@ const httpsUrl = (name: string, value: string) => {
     throw new Error(`${name}: "${value}" is not a URL`);
   }
   if (url.protocol !== 'https:') {
-    throw new Error(`${name}: signed releases must be served over https`);
+    throw new Error(`${name}: must be an https address`);
   }
   if (url.username || url.password) {
     throw new Error(`${name}: must not contain credentials`);
@@ -92,6 +96,10 @@ export const parseAppReleases = (env: AppReleaseEnv): AppReleaseConfig => {
   if (iosUrl) {
     config.iosUrl = httpsUrl('FRAMELEAF_IOS_APP_URL', iosUrl);
   }
+  const androidStoreUrl = env.FRAMELEAF_ANDROID_STORE_URL?.trim();
+  if (androidStoreUrl) {
+    config.androidStoreUrl = httpsUrl('FRAMELEAF_ANDROID_STORE_URL', androidStoreUrl);
+  }
   return config;
 };
 
@@ -102,4 +110,55 @@ export const apkLinks = (releaseUrl: string, version: string) => {
     keyof typeof APK_FILES,
     string
   >;
+};
+
+/**
+ * Where this installation's help lives (FL-135): the operator's documentation, support, issue and
+ * source addresses. `FRAMELEAF_DOCS_URL`, `FRAMELEAF_SUPPORT_URL`, `FRAMELEAF_BUG_FEATURE_URL` and
+ * `FRAMELEAF_SOURCE_URL` must be https and fail at startup otherwise. The inherited
+ * `IMMICH_THIRD_PARTY_*` names still work, but only an https value is used; anything else is left
+ * out, so the link is hidden rather than pointing somewhere unchecked. Nothing falls back to the
+ * upstream project's sites.
+ */
+export type HelpLinkConfig = {
+  documentationUrl?: string;
+  supportUrl?: string;
+  bugFeatureUrl?: string;
+  sourceUrl?: string;
+};
+
+type HelpLinkEnv = {
+  FRAMELEAF_DOCS_URL?: string;
+  FRAMELEAF_SUPPORT_URL?: string;
+  FRAMELEAF_BUG_FEATURE_URL?: string;
+  FRAMELEAF_SOURCE_URL?: string;
+  IMMICH_THIRD_PARTY_DOCUMENTATION_URL?: string;
+  IMMICH_THIRD_PARTY_SUPPORT_URL?: string;
+  IMMICH_THIRD_PARTY_BUG_FEATURE_URL?: string;
+  IMMICH_THIRD_PARTY_SOURCE_URL?: string;
+};
+
+const legacyHttpsUrl = (value: string | undefined) => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return;
+  }
+  try {
+    return httpsUrl('legacy', trimmed);
+  } catch {
+    return;
+  }
+};
+
+export const parseHelpLinks = (env: HelpLinkEnv): HelpLinkConfig => {
+  const pick = (name: keyof HelpLinkEnv, legacy: keyof HelpLinkEnv) => {
+    const value = env[name]?.trim();
+    return value ? httpsUrl(name, value) : legacyHttpsUrl(env[legacy]);
+  };
+  return {
+    documentationUrl: pick('FRAMELEAF_DOCS_URL', 'IMMICH_THIRD_PARTY_DOCUMENTATION_URL'),
+    supportUrl: pick('FRAMELEAF_SUPPORT_URL', 'IMMICH_THIRD_PARTY_SUPPORT_URL'),
+    bugFeatureUrl: pick('FRAMELEAF_BUG_FEATURE_URL', 'IMMICH_THIRD_PARTY_BUG_FEATURE_URL'),
+    sourceUrl: pick('FRAMELEAF_SOURCE_URL', 'IMMICH_THIRD_PARTY_SOURCE_URL'),
+  };
 };

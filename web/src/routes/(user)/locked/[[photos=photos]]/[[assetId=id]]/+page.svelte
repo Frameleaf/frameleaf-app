@@ -81,7 +81,6 @@
     bulkContext={{ locked: true }}
     downloadFileName={brandedArchiveName($t('frameleaf_archive_name_locked'))}
     enableRouting
-    syncUrl={false}
     selectAll="loaded"
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >

@@ -58,4 +58,5 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
     sidebarWeb: false,
   },
   revision: 'revision-1',
+  lockedRulesRevealed: true,
 });

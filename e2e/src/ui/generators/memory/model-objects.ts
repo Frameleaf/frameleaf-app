@@ -30,6 +30,8 @@ export function generateMemory(config: MemoryConfig, assets: MockTimelineAsset[]
     createdAt: now,
     updatedAt: now,
     isSaved: config.isSaved ?? false,
+    isHidden: false,
+    title: null,
     ownerId: config.ownerId,
     type: MemoryType.OnThisDay,
   };

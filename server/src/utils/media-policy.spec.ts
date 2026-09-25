@@ -10,6 +10,7 @@ import {
   ToneMapping,
   VideoCodec,
 } from 'src/enum.js';
+import { DecodeSupport } from 'src/utils/media-decode.js';
 import {
   AudioChannelPolicy,
   EDITED_MASTER_HIGH_BIT_DEPTH_FORMAT,
@@ -557,6 +558,22 @@ describe('buildEditedMasterLineage', () => {
 
   it('stamps the render time', () => {
     expect(lineage.createdAt).toBe('2026-09-22T00:00:00.000Z');
+  });
+
+  it('records how a video source was qualified for decoding only when given one (FL-101)', () => {
+    expect(lineage.decode).toBeUndefined();
+    const video = buildEditedMasterLineage({
+      sourceAssetId: 'asset-id',
+      sourceOriginalPath: '/library/a.mp4',
+      edits: [crop],
+      color: preserve,
+      decode: { matrixEntry: null, support: DecodeSupport.Supported, reason: 'outside the advertised tested matrix' },
+    });
+    expect(video.decode).toEqual({
+      matrixEntry: null,
+      support: 'supported',
+      reason: 'outside the advertised tested matrix',
+    });
   });
 });
 

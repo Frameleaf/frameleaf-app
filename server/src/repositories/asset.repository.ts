@@ -453,6 +453,32 @@ export class AssetRepository {
       .execute();
   }
 
+  /**
+   * FL-51: removes the location of these assets (the geolocation utility's "Remove location"): the
+   * coordinates and the place names read from them. The coordinates stay locked, so the sidecar is
+   * written without them and a later metadata read keeps the location removed instead of reading
+   * the original file's coordinates back.
+   */
+  @Chunked()
+  async clearLocation(ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+
+    await this.db
+      .updateTable('asset_exif')
+      .set((eb) => ({
+        latitude: null,
+        longitude: null,
+        city: null,
+        state: null,
+        country: null,
+        lockedProperties: distinctLocked(eb, ['latitude', 'longitude']),
+      }))
+      .where('assetId', 'in', ids)
+      .execute();
+  }
+
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.NUMBER, DummyValue.STRING] })
   @Chunked()
   updateDateTimeOriginal(ids: string[], delta?: number, timeZone?: string) {
@@ -1011,16 +1037,29 @@ export class AssetRepository {
    * left as it is, so an item goes back exactly where it was. Returns what was unlocked and why it had
    * been locked. With `kysely` (a caller's transaction) the unlock commits with the caller's writes.
    */
-  async unlock(ids: string[], kysely?: Kysely<DB>): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+  /**
+   * Unlocks `ids` with their whole stacks and live photos. `reasons` limits the release to locks of
+   * those reasons (FL-34: Mark Safe answers a sensitive verdict, so it releases marked and detected
+   * locks and leaves an item the owner kept in the upstream Locked folder where it is).
+   */
+  async unlock(
+    ids: string[],
+    kysely?: Kysely<DB>,
+    reasons?: AssetLockReason[],
+  ): Promise<{ assetId: string; reason: AssetLockReason }[]> {
     if (ids.length === 0) {
       return [];
     }
 
-    return kysely ? this.unlockIn(kysely, ids) : this.inTransaction((tx) => this.unlockIn(tx, ids));
+    return kysely ? this.unlockIn(kysely, ids, reasons) : this.inTransaction((tx) => this.unlockIn(tx, ids, reasons));
   }
 
   /** `unlock` inside the caller's transaction `tx`. */
-  private async unlockIn(tx: Kysely<DB>, ids: string[]): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+  private async unlockIn(
+    tx: Kysely<DB>,
+    ids: string[],
+    reasons?: AssetLockReason[],
+  ): Promise<{ assetId: string; reason: AssetLockReason }[]> {
     const targetIds = await this.getLockGroupIds(tx, ids);
     if (targetIds.length === 0) {
       return [];
@@ -1031,6 +1070,7 @@ export class AssetRepository {
     const unlocked = await tx
       .deleteFrom('asset_lock')
       .where('asset_lock.assetId', '=', anyUuid(targetIds))
+      .$if(!!reasons, (qb) => qb.where('asset_lock.reason', 'in', reasons!))
       .returning(['asset_lock.assetId', 'asset_lock.reason'])
       .execute();
     if (unlocked.length > 0) {
@@ -1771,6 +1811,8 @@ export class AssetRepository {
             sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
+            // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
+            'asset.isOffline',
             livePhotoVideoId,
             localOffsetHours.as('localOffsetHours'),
             'asset.ownerId',
@@ -1926,6 +1968,7 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['isImage']), sql.lit('{}')).as('isImage'),
             // TODO: isTrashed is redundant as it will always be all true or false depending on the options
             eb.fn.coalesce(eb.fn('array_agg', ['isTrashed']), sql.lit('{}')).as('isTrashed'),
+            eb.fn.coalesce(eb.fn('array_agg', ['isOffline']), sql.lit('{}')).as('isOffline'),
             eb.fn.coalesce(eb.fn('array_agg', ['livePhotoVideoId']), sql.lit('{}')).as('livePhotoVideoId'),
             eb.fn.coalesce(eb.fn('array_agg', ['fileCreatedAt']), sql.lit('{}')).as('fileCreatedAt'),
             eb.fn.coalesce(eb.fn('array_agg', ['createdAt']), sql.lit('{}')).as('createdAt'),

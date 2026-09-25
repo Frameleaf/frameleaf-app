@@ -97,7 +97,8 @@
     saving = true;
     try {
       updated = await updateAsset({ id: asset.id, updateAssetDto: patch });
-      if (patch.latitude !== undefined && patch.longitude !== undefined) {
+      // The DTO now also takes null (location removal, FL-51); this dialog only ever sends numbers.
+      if (typeof patch.latitude === 'number' && typeof patch.longitude === 'number') {
         geolocationManager.onSelected({ lat: patch.latitude, lng: patch.longitude });
       }
       open = false;
