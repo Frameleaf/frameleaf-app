@@ -1,5 +1,11 @@
 import { AssetVisibility, updateAsset, type AssetResponseDto } from '@immich/sdk';
-import { canCopyImageToClipboard, getAssetFilename, getFilenameExtension, toggleArchive } from './asset-utils';
+import {
+  canCopyImageToClipboard,
+  getAssetFilename,
+  getFilenameExtension,
+  ignoreCancelledDownload,
+  toggleArchive,
+} from './asset-utils';
 
 vi.mock('@immich/sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@immich/sdk')>();
@@ -102,5 +108,17 @@ describe('toggleArchive', () => {
 
     expect(asset.isArchived).toBe(false);
     expect(asset.visibility).toBe(AssetVisibility.Timeline);
+  });
+});
+
+describe('ignoreCancelledDownload', () => {
+  it('settles quietly when the user cancels a download', async () => {
+    const cancelled = Promise.reject(new DOMException('The download was cancelled', 'AbortError'));
+    await expect(cancelled.catch(ignoreCancelledDownload)).resolves.toBeUndefined();
+  });
+
+  it('passes every other failure on', async () => {
+    const failed = Promise.reject(new Error('network'));
+    await expect(failed.catch(ignoreCancelledDownload)).rejects.toThrow('network');
   });
 });
