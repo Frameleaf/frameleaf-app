@@ -28,19 +28,19 @@ test("model choice is filtered by workload and only lists cloud-hosted models", 
     modelsFor("restoration", Date.parse("2026-09-25")).map((model) => model.id),
     ["realbasicvsr@1", "seedvr2-3b@1", "seedvr2-7b@1"],
   );
-  assert.ok(modelsFor("render").length >= 1);
+  // Studio exports are local only.
+  assert.deepEqual(modelsFor("render"), []);
   assert.ok(modelsFor("upscale").every((model) => model.workload === "upscale"));
-  // Local-only encoders never appear as cloud choices.
-  assert.ok(!modelsFor("render").some((model) => model.id === "render-hardware@1"));
 });
 
-test("estimates are start fees + GPU time × rate with a p50-p90 band and a hold from p90, including render models", () => {
-  for (const id of ["realbasicvsr@1", "render-standard@1"]) {
+test("estimates are start fees + GPU time × rate with a p50-p90 band and a hold from p90", () => {
+  for (const id of ["realbasicvsr@1", "whisper-large-v3@1"]) {
     const estimate = estimateJob(id, 3);
     assert.ok(estimate.p50 > 0 && estimate.p90 > estimate.p50 && estimate.hold >= estimate.p90);
     assert.ok(Math.abs(estimate.p50 - (estimate.startFee * estimate.workers + estimate.workSeconds.p50 * estimate.rate)) < 1e-6);
   }
-  assert.equal(estimateJob("render-standard@1", 0), null);
+  assert.equal(estimateJob("realbasicvsr@1", 0), null);
+  assert.equal(estimateJob("render-standard@1", 3), null, "cloud rendering was removed");
   assert.equal(estimateJob("render-hardware@1", 3), null, "local-only positions have no cloud estimate");
   assert.deepEqual(jobQuantity("restoration", { durationSeconds: 90 }), { quantity: 1.5, label: "1.5 min" });
   assert.equal(jobQuantity("upscale", { count: 3 }).quantity, 3);
