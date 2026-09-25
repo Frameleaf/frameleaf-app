@@ -14,6 +14,7 @@ import { AuthController } from 'src/controllers/auth.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
 import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
+import { FrameleafAuthController } from 'src/controllers/frameleaf-auth.controller.js';
 import { CloudMlAdminController } from 'src/controllers/cloud-ml-admin.controller.js';
 import { ClusterGroupController } from 'src/controllers/cluster-group.controller.js';
 import { ConfigAdminController } from 'src/controllers/config-admin.controller.js';
@@ -77,6 +78,7 @@ import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
   CloudAdminController,
+  FrameleafAuthController,
   LicenseAdminController,
   LicenseController,
   CloudMlAdminController,

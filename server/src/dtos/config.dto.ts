@@ -174,6 +174,9 @@ const nsfwDetectionDefaults = {
  * destination; faces are refused by policy and cannot be turned on in this version.
  */
 const frameleafCloudDefaults = {
+  // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it; the client secret
+  // is only for a cloud that registered this server with one (private_key_jwt needs none).
+  signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, clientSecret: '' },
   cloudMl: {
     enabled: false,
     descriptions: { enabled: false, defaultModel: '', autoBatch: false, dailyBudgetUsd: 0 },
@@ -450,6 +453,22 @@ export const NsfwDetectionConfigSchema = AdminConfigMachineLearningModelSchema.e
 
 const AdminConfigFrameleafCloudSchema = z
   .object({
+    signIn: z
+      .object({
+        buttonText: z.string().max(100).describe('Sign in with Frameleaf button text').meta({ visibility: Public }),
+        showOnLocalLogin: configBool
+          .describe('Show Sign in with Frameleaf on the local sign-in page too')
+          .meta({ visibility: Public }),
+        // Write-only, like oauth.clientSecret: mapAdminConfig() returns '' and saving '' keeps it.
+        // Replace or clear it through /admin/config/credentials/frameleaf-oidc-client-secret.
+        clientSecret: z.string().describe('Frameleaf client secret (write-only; empty preserves the existing secret)'),
+        clientSecretConfigured: z
+          .boolean()
+          .optional()
+          .describe('Read-only indicator that a client secret is stored. Set by the server; ignored on write.'),
+      })
+      .default(frameleafCloudDefaults.signIn)
+      .meta({ id: 'AdminConfigFrameleafSignInDto' }),
     cloudMl: z
       .object({
         enabled: configBool.describe('Allow Frameleaf Cloud processing at all (the destination still needs consent)'),
@@ -1089,6 +1108,14 @@ export function mapAdminConfig(config: SystemConfig): AdminConfigDto {
       ...config.oauth,
       clientSecret: '',
       clientSecretConfigured: config.oauth.clientSecret.length > 0,
+    },
+    frameleafCloud: {
+      ...config.frameleafCloud,
+      signIn: {
+        ...config.frameleafCloud.signIn,
+        clientSecret: '',
+        clientSecretConfigured: (config.frameleafCloud.signIn?.clientSecret ?? '').length > 0,
+      },
     },
   };
 }
