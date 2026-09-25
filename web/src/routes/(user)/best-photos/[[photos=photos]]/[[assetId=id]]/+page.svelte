@@ -1,9 +1,12 @@
 <script lang="ts">
+  import BestMoments from '$lib/components/frameleaf/BestMoments.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
+  import type { BestMoment } from '$lib/frameleaf/best-moments';
+  import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { navigateToAsset } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -64,6 +67,12 @@
     }
   };
 
+  /** A ranked video's best moment: open it in the viewer, starting there (FL-50). */
+  const playMoment = ({ asset, timestampMs }: BestMoment) => {
+    videoSeek.request(asset.id, timestampMs);
+    void navigateToAsset(asset);
+  };
+
   const handleSelectAll = () => librarySession.selectAll(assets.map((asset) => asset.id));
 
   const updateAsset = (updated: { id: string }) => {
@@ -80,6 +89,7 @@
 
 <UserPageLayout title={data.meta.title} scrollbar={false}>
   <section class="m-4 mb-12 bg-immich-bg dark:bg-immich-dark-bg">
+    <BestMoments {assets} onPlay={playMoment} />
     <ResultsView
       assets={timelineAssets}
       downloadFileName={brandedArchiveName($t('frameleaf_archive_name_best_photos'))}

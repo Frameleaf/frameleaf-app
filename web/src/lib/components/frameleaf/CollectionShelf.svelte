@@ -161,30 +161,39 @@
 </section>
 
 <style>
+  /*
+   * A collection shelf (collections.css .al-shelf) at the Albums page's tighter rhythm
+   * (apple-style.css:951-968): no card around it, 28px between shelves, a 44px mosaic and a
+   * 17px title. Dragging an album onto it tints it like the prototype's drop target.
+   */
   .shelf {
-    padding: 0.75rem;
-    border: 1px solid var(--fl-border);
-    border-radius: 10px;
-    background: var(--fl-panel);
+    margin-bottom: 28px;
+    padding: 0;
+    border-radius: 16px;
     transition:
-      border-color 120ms,
-      box-shadow 120ms;
+      box-shadow var(--fl-motion) var(--fl-ease),
+      background var(--fl-motion) var(--fl-ease);
   }
   .shelf.accepts {
-    border-style: dashed;
+    outline: 1px dashed var(--fl-border);
+    outline-offset: 4px;
   }
   .shelf.drop-target {
-    border-color: var(--fl-accent);
+    background: color-mix(in srgb, var(--fl-accent), transparent 90%);
     box-shadow: 0 0 0 2px var(--fl-accent);
   }
   .head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-block-end: 0.5rem;
+    gap: 8px;
+    margin-bottom: 10px;
   }
   .toggle {
+    display: grid;
+    place-items: center;
     flex-shrink: 0;
+    width: 30px;
+    height: 30px;
     border: 0;
     background: transparent;
     color: var(--fl-muted);
@@ -192,24 +201,34 @@
   }
   .open {
     display: flex;
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     align-items: center;
-    gap: 0.75rem;
+    gap: 14px;
+    padding: 2px 8px 2px 2px;
     color: inherit;
     text-decoration: none;
-    border-radius: var(--fl-radius);
+    border-radius: 14px;
+    transition: background var(--fl-motion-fast) var(--fl-ease);
+  }
+  .open:hover {
+    background: var(--fl-raised);
+  }
+  .open:hover h2 {
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
   .mosaic {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 2px;
-    width: 3.5rem;
-    height: 3.5rem;
+    width: 44px;
+    height: 44px;
     flex-shrink: 0;
     overflow: hidden;
-    border-radius: var(--fl-radius);
+    border-radius: 10px;
     background: var(--fl-raised);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fl-text), transparent 90%);
   }
   .mosaic.single {
     grid-template-columns: 1fr;
@@ -236,15 +255,18 @@
   }
   h2 {
     margin: 0;
-    font-size: 1rem;
+    font-size: 17px;
     font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   small {
+    margin-top: 3px;
     color: var(--fl-muted);
-    font-size: 0.75rem;
+    font-size: var(--fl-font-small);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -252,7 +274,8 @@
   .side {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 8px;
+    margin-left: auto;
     flex-shrink: 0;
   }
   .new {
@@ -269,9 +292,20 @@
   .new:hover {
     border-color: var(--fl-accent);
   }
-  @media (max-width: 640px) {
-    .new span {
-      display: none;
+  @media (max-width: 700px) {
+    .head {
+      flex-wrap: wrap;
+    }
+    .open {
+      flex: 1 1 0%;
+    }
+    .side {
+      flex-basis: 100%;
+      margin-left: 0;
+      padding-left: 38px;
+    }
+    .toggle {
+      min-height: 44px;
     }
     small {
       white-space: normal;

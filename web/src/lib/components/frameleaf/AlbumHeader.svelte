@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCoverDialog from '$lib/components/frameleaf/AlbumCoverDialog.svelte';
@@ -163,6 +164,10 @@
   /** The albums a cover may be picked from: this album, or a collection's albums. */
   const coverSourceIds = $derived(isCollection ? childAlbums.map(({ id }) => id) : [album.id]);
 
+  /** Phones (apple-style.css `max-width: 700px`): the secondary actions live in the "…" menu. */
+  const phone = new MediaQuery('max-width: 700px');
+  const compact = $derived(phone.current);
+
   let iconOpen = $state(false);
   let shareOpen = $state(false);
   let coverOpen = $state(false);
@@ -192,6 +197,8 @@
   let reevaluateOpen = $state(false);
   let reviewOpen = $state(false);
   let ruleOpen = $state(false);
+  /** Edit details, owner badges, rule, cover and options: the "…" menu's middle group. */
+  const hasMiddleItems = $derived(editor || canShowOwnerBadges || !!rule);
 
   const loadRule = async (id: string) => {
     try {
@@ -533,46 +540,53 @@
       <span>{owner ? $t('share') : $t('frameleaf_albums_members')}</span>
     </button>
 
-    {#if owner}
-      <button type="button" class="action" onclick={() => void openLinks()}>
-        <Icon icon={mdiLinkVariant} size="18" />
-        <span>{$t('shared_links')}</span>
+    <!--
+      On phones the secondary actions move into the "…" menu instead of running off-screen
+      (CollectionHeader.jsx:1142-1154, 1410-1510; apple-style.css:872-877): only Add photos (or New
+      album), Re-evaluate and Share stay in the row.
+    -->
+    {#if !compact}
+      {#if owner}
+        <button type="button" class="action" onclick={() => void openLinks()}>
+          <Icon icon={mdiLinkVariant} size="18" />
+          <span>{$t('shared_links')}</span>
+        </button>
+      {/if}
+
+      {#if mapEnabled}
+        <button type="button" class="action" disabled={mapMarkers.length === 0} onclick={() => void openMap()}>
+          <Icon icon={mdiMapOutline} size="18" />
+          <span>{$t('map')}</span>
+        </button>
+      {/if}
+
+      <button type="button" class="action" disabled={assetCount === 0} onclick={() => onSlideshow?.()}>
+        <Icon icon={mdiPlayCircleOutline} size="18" />
+        <span>{$t('slideshow')}</span>
       </button>
-    {/if}
 
-    {#if mapEnabled}
-      <button type="button" class="action" disabled={mapMarkers.length === 0} onclick={() => void openMap()}>
-        <Icon icon={mdiMapOutline} size="18" />
-        <span>{$t('map')}</span>
+      <button type="button" class="action" disabled={assetCount === 0} onclick={() => void handleDownloadAlbum(album)}>
+        <Icon icon={mdiDownloadOutline} size="18" />
+        <span>{$t('download')}</span>
       </button>
-    {/if}
 
-    <button type="button" class="action" disabled={assetCount === 0} onclick={() => onSlideshow?.()}>
-      <Icon icon={mdiPlayCircleOutline} size="18" />
-      <span>{$t('slideshow')}</span>
-    </button>
-
-    <button type="button" class="action" disabled={assetCount === 0} onclick={() => void handleDownloadAlbum(album)}>
-      <Icon icon={mdiDownloadOutline} size="18" />
-      <span>{$t('download')}</span>
-    </button>
-
-    <!-- Always offered, as in the design (CollectionHeader.jsx:1290-1297), shared or not. -->
-    {#if onToggleActivity}
-      <!-- The count badge and "Activity, N entries" name follow CollectionHeader.jsx:1290-1297. -->
-      <button
-        type="button"
-        class="action"
-        aria-pressed={activityOpen}
-        aria-label={$t('frameleaf_album_activity_button', { values: { count: likeCount + commentCount } })}
-        onclick={() => onToggleActivity?.()}
-      >
-        <Icon icon={mdiCommentTextOutline} size="18" />
-        <span>{$t('activity')}</span>
-        {#if likeCount + commentCount > 0}
-          <span class="count" aria-hidden="true">{likeCount + commentCount}</span>
-        {/if}
-      </button>
+      <!-- Always offered, as in the design (CollectionHeader.jsx:1290-1297), shared or not. -->
+      {#if onToggleActivity}
+        <!-- The count badge and "Activity, N entries" name follow CollectionHeader.jsx:1290-1297. -->
+        <button
+          type="button"
+          class="action"
+          aria-pressed={activityOpen}
+          aria-label={$t('frameleaf_album_activity_button', { values: { count: likeCount + commentCount } })}
+          onclick={() => onToggleActivity?.()}
+        >
+          <Icon icon={mdiCommentTextOutline} size="18" />
+          <span>{$t('activity')}</span>
+          {#if likeCount + commentCount > 0}
+            <span class="count" aria-hidden="true">{likeCount + commentCount}</span>
+          {/if}
+        </button>
+      {/if}
     {/if}
 
     <span class="spacer"></span>
@@ -581,6 +595,37 @@
       {#snippet trigger()}
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
+      {#if compact}
+        {#if owner}
+          <MenuItem onSelect={() => void openLinks()}>
+            <Icon icon={mdiLinkVariant} size="18" />
+            {$t('shared_links')}
+          </MenuItem>
+        {/if}
+        {#if mapEnabled}
+          <MenuItem disabled={mapMarkers.length === 0} onSelect={() => void openMap()}>
+            <Icon icon={mdiMapOutline} size="18" />
+            {$t('map')}
+          </MenuItem>
+        {/if}
+        <MenuItem disabled={assetCount === 0} onSelect={() => onSlideshow?.()}>
+          <Icon icon={mdiPlayCircleOutline} size="18" />
+          {$t('slideshow')}
+        </MenuItem>
+        <MenuItem disabled={assetCount === 0} onSelect={() => void handleDownloadAlbum(album)}>
+          <Icon icon={mdiDownloadOutline} size="18" />
+          {$t('download')}
+        </MenuItem>
+        {#if onToggleActivity}
+          <MenuItem checked={activityOpen} onSelect={() => onToggleActivity?.()}>
+            <Icon icon={mdiCommentTextOutline} size="18" />
+            {likeCount + commentCount > 0
+              ? $t('frameleaf_album_activity_menu', { values: { count: likeCount + commentCount } })
+              : $t('activity')}
+          </MenuItem>
+        {/if}
+        <div class="menu-separator" role="separator"></div>
+      {/if}
       {#if editor && !rule && !album.isSmart}
         <MenuItem onSelect={() => (editOpen = true)}>
           <Icon icon={mdiPencilOutline} size="18" />
@@ -615,15 +660,24 @@
           {$t('options')}
         </MenuItem>
       {/if}
+      <!-- A separator only between two groups: never doubled, never first. -->
+      {#if hasMiddleItems}
+        <div class="menu-separator" role="separator"></div>
+      {/if}
+      <!-- Delete and Leave are the danger items (CollectionHeader.jsx:1520-1536). -->
       {#if owner}
         <MenuItem onSelect={() => (deleteOpen = true)}>
-          <Icon icon={mdiDeleteOutline} size="18" />
-          {$t('frameleaf_album_delete', { values: { kind: kindLabel } })}
+          <span class="danger-item">
+            <Icon icon={mdiDeleteOutline} size="18" />
+            {$t('frameleaf_album_delete', { values: { kind: kindLabel } })}
+          </span>
         </MenuItem>
       {:else}
         <MenuItem onSelect={() => (leaveOpen = true)}>
-          <Icon icon={mdiLogoutVariant} size="18" />
-          {$t('frameleaf_album_leave', { values: { kind: kindLabel } })}
+          <span class="danger-item">
+            <Icon icon={mdiLogoutVariant} size="18" />
+            {$t('frameleaf_album_leave', { values: { kind: kindLabel } })}
+          </span>
         </MenuItem>
       {/if}
     </Menu>
@@ -958,10 +1012,17 @@
   .strip-head small {
     color: var(--fl-muted);
   }
+  /* The collection's albums: the compact Albums grid (apple-style.css:973-983 .al-grid.compact). */
   .strip-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 18px 12px;
+    align-items: start;
+  }
+  @media (max-width: 700px) {
+    .strip-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
   .new-tile {
     display: flex;
@@ -985,9 +1046,49 @@
     color: var(--fl-muted);
     font-size: 0.875rem;
   }
-  @media (max-width: 40rem) {
-    .action span {
-      display: none;
+  .menu-separator {
+    height: 1px;
+    margin: 0.25rem 0.375rem;
+    background: var(--fl-border);
+  }
+  .danger-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--fl-danger);
+  }
+  /*
+   * The large title that shrinks as you scroll (apple-style.css:219-244), on album, collection and
+   * shared-space headers alike: it follows whichever scroller holds the header (the timeline, the
+   * collection's results or the page), and only fades under Reduce Motion.
+   */
+  .main .title-row :global(h1) {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    transform-origin: left bottom;
+  }
+  @supports (animation-timeline: scroll()) {
+    .main .title-row :global(h1) {
+      animation: fl-album-title-shrink linear both;
+      animation-timeline: scroll(nearest block);
+      animation-range: 0 90px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .main .title-row :global(h1) {
+        animation-name: fl-album-title-fade;
+      }
+    }
+  }
+  @keyframes fl-album-title-shrink {
+    to {
+      scale: 0.62;
+      opacity: 0.2;
+    }
+  }
+  @keyframes fl-album-title-fade {
+    to {
+      opacity: 0.2;
     }
   }
 </style>

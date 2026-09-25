@@ -1,18 +1,28 @@
 import {
+  AssetOrder,
   AssetTypeEnum,
+  AssetVisibility,
   getAlbumTree,
   getAllPeople,
   getAssetStatistics,
   getBestPhotos,
-  getExploreData,
   MemorySearchOrder,
   searchAssetStatistics,
+  searchAssets,
+  searchFacets,
+  SearchFacetField,
   type AlbumResponseDto,
   type AlbumTreeResponseDto,
 } from '@immich/sdk';
 import {
   BEST_PHOTOS_PREVIEW_LIMIT,
   BEST_PHOTOS_QUALITY_MIN_SCORE,
+  buildExplorePeople,
+  buildExplorePlaces,
+  buildExploreThings,
+  EXPLORE_RECENT_LIMIT,
+  exploreFacetsBody,
+  facetCounts,
   type ExploreBestPhotosPreview,
   type ExploreShortcutCounts,
 } from '$lib/frameleaf/explore';
@@ -39,7 +49,6 @@ export const load = (async ({ url }) => {
   await memoryManager.applyPreferences();
 
   const [
-    explore,
     people,
     albums,
     memories,
@@ -48,24 +57,39 @@ export const load = (async ({ url }) => {
     videoStatistics,
     withoutPeopleStatistics,
     bestPhotos,
+    facets,
+    recentCaptures,
   ] = await Promise.all([
-    getExploreData(),
     getAllPeople({ withHidden: false }),
     getAlbumTree(),
     memoryManager.refresh().then(() => memoryManager.memories),
     // Card counts share the same scope/archive/privacy rules as the destinations they link to.
-    // Favorites shares `getAssetStatistics`' default (timeline-only) visibility with the
-    // dedicated Favorites route, which is itself a timeline scoped by `isFavorite`.
+    // Favorites: with no visibility, statistics and the Favorites timeline (time buckets scoped by
+    // `isFavorite`) both take the server's default visibility, Timeline and Archive, never Locked.
     getAssetStatistics({ isFavorite: true }).catch(() => null),
-    // Photos/Videos/Without-people route to the search page, so their counts come from the
-    // same `searchAssetStatistics` shapes `Route.search(...)` below resolves through: the flat
-    // `type` field takes the legacy (non-locked, archive-inclusive) scope search already uses,
-    // and the `filter.hasPeople` shape takes the new-shape scope the search page also honors.
-    searchAssetStatistics({ statisticsSearchDto: { type: AssetTypeEnum.Image } }).catch(() => null),
-    searchAssetStatistics({ statisticsSearchDto: { type: AssetTypeEnum.Video } }).catch(() => null),
+    // Photos/Videos/Without-people route to the search page, so their counts are taken with the
+    // body that page sends: a flat body gets the Timeline visibility the search session adds to
+    // every flat search (`library-search-session.svelte.ts`), so nothing archived, Locked or a
+    // Live Photo's video part is counted; the structured `filter.hasPeople` body is sent as is.
+    searchAssetStatistics({
+      statisticsSearchDto: { type: AssetTypeEnum.Image, visibility: AssetVisibility.Timeline },
+    }).catch(() => null),
+    searchAssetStatistics({
+      statisticsSearchDto: { type: AssetTypeEnum.Video, visibility: AssetVisibility.Timeline },
+    }).catch(() => null),
     searchAssetStatistics({ statisticsSearchDto: { filter: { hasPeople: { eq: false } } } }).catch(() => null),
     // Never a star-rating fallback: only assets with a computed quality score count here.
     getBestPhotos({ minScore: BEST_PHOTOS_QUALITY_MIN_SCORE, limit: BEST_PHOTOS_PREVIEW_LIMIT }).catch(() => null),
+    // T-12: People, Places and Things counts and covers, in the scope of the flat search each card
+    // opens (Timeline visibility, as the search session sends it), in one request.
+    searchFacets({ searchFacetsDto: exploreFacetsBody }).catch(() => null),
+    // "Recent captures" (ExploreLibrary.jsx:223-250) are the newest by capture date, not upload
+    // ("Recently added" keeps upload order); the Timeline's own visibility, so nothing archived.
+    searchAssets({
+      metadataSearchDto: { size: EXPLORE_RECENT_LIMIT, order: AssetOrder.Desc, visibility: AssetVisibility.Timeline },
+    })
+      .then(({ assets }) => assets.items)
+      .catch(() => null),
   ]);
   const $t = await getFormatter();
 
@@ -82,8 +106,11 @@ export const load = (async ({ url }) => {
   };
 
   return {
-    explore,
-    people,
+    peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people.people),
+    places: buildExplorePlaces(facetCounts(facets?.facets, SearchFacetField.City)),
+    things: buildExploreThings(facetCounts(facets?.facets, SearchFacetField.Tags)),
+    libraryTotal: facets ? facets.total : null,
+    recentCaptures: recentCaptures ?? [],
     albums: previewAlbums(albums),
     memories,
     shortcutCounts,

@@ -151,17 +151,22 @@
 </article>
 
 <style>
+  /* collections.css .al-card at the Albums page's denser rhythm (apple-style.css:941-984). */
   .tile {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 8px;
     min-width: 0;
     color: var(--fl-text);
-    border-radius: 10px;
+    border-radius: var(--fl-radius-card);
+    transition:
+      opacity var(--fl-motion) var(--fl-ease),
+      transform var(--fl-motion) var(--fl-ease);
   }
   .tile.dragging {
     opacity: 0.45;
+    transform: scale(0.97);
   }
   .tile[draggable='true'] {
     cursor: grab;
@@ -176,15 +181,26 @@
     display: block;
     aspect-ratio: 1;
     overflow: hidden;
-    border-radius: 10px;
+    border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fl-text), transparent 91%);
+    transition:
+      transform var(--fl-motion) var(--fl-ease),
+      box-shadow var(--fl-motion) var(--fl-ease);
   }
   .cover img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+    transition: transform var(--fl-motion-slow) var(--fl-ease);
+  }
+  .tile.grid:hover .cover {
+    transform: translateY(-2px);
+    box-shadow: var(--fl-shadow-2);
+  }
+  .tile.grid:hover .cover img {
+    transform: scale(1.03);
   }
   .cover-empty {
     display: flex;
@@ -214,12 +230,16 @@
   .text {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: 2px;
     min-width: 0;
+    padding: 0 2px;
   }
   .name {
-    font-size: 0.875rem;
+    align-self: flex-start;
+    max-width: 100%;
+    font-size: var(--fl-font-size);
     font-weight: 600;
+    line-height: 1.3;
     color: inherit;
     text-decoration: none;
     overflow: hidden;
@@ -228,13 +248,15 @@
   }
   .name:hover {
     text-decoration: underline;
+    text-underline-offset: 3px;
   }
   .meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    font-size: 0.75rem;
+    gap: 8px;
+    min-height: 20px;
+    font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
   .meta small {

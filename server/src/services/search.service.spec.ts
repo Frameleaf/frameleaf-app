@@ -949,8 +949,8 @@ describe(SearchService.name, () => {
       mocks.search.searchFacets.mockResolvedValue({
         total: 3,
         rows: [
-          { field: SearchFacetField.Type, value: 'IMAGE', label: null, count: 3 },
-          { field: SearchFacetField.People, value: 'person-1', label: 'Emma', count: 2 },
+          { field: SearchFacetField.Type, value: 'IMAGE', label: null, count: 3, coverAssetId: null },
+          { field: SearchFacetField.People, value: 'person-1', label: 'Emma', count: 2, coverAssetId: null },
         ],
       });
       const hiddenContent = {
@@ -990,7 +990,33 @@ describe(SearchService.name, () => {
         locationHiddenOwnerIds: [hiding.sharedById],
         suppressedPersonIds: ['person-locked'],
         suppressedTagIds: ['tag-locked'],
+        covers: false,
       });
+    });
+
+    it('returns a cover per value only when asked, in the same scope as the counts (Explore, FL-50)', async () => {
+      mocks.search.searchFacets.mockResolvedValue({
+        total: 2,
+        rows: [
+          { field: SearchFacetField.City, value: 'Lisbon', label: null, count: 2, coverAssetId: 'asset-new' },
+          { field: SearchFacetField.Tags, value: 'tag-1', label: 'beach', count: 1, coverAssetId: 'asset-tag' },
+        ],
+      });
+
+      const result = await sut.searchFacets(authStub.user1, {
+        visibility: AssetVisibility.Timeline,
+        facets: [SearchFacetField.City, SearchFacetField.Tags],
+        facetCovers: true,
+      });
+
+      expect(result.facets).toEqual([
+        { fieldName: 'city', counts: [{ value: 'Lisbon', count: 2, coverAssetId: 'asset-new' }] },
+        { fieldName: 'tags', counts: [{ value: 'tag-1', label: 'beach', count: 1, coverAssetId: 'asset-tag' }] },
+      ]);
+      const [options, facetOptions] = mocks.search.searchFacets.mock.calls[0];
+      expect(options).toEqual(expect.objectContaining({ visibility: AssetVisibility.Timeline }));
+      expect(options).not.toHaveProperty('facetCovers');
+      expect(facetOptions).toEqual(expect.objectContaining({ covers: true }));
     });
 
     it('uses the structured scope for a filter body', async () => {
