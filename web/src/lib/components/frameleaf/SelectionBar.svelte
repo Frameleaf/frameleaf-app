@@ -59,8 +59,10 @@
     mdiTagPlusOutline,
     mdiTextBoxOutline,
   } from '@mdi/js';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
+  import type { CaptureTime } from '$lib/frameleaf/time-zones';
 
   /**
    * The bar's own icons, imported one by one. The whole Material catalogue is served as data to the
@@ -138,6 +140,8 @@
     onRetryOperation,
     onDismissOperation,
     leading = [],
+    onDialogSettled,
+    resolveCaptureTimes,
   }: {
     count?: number;
     total?: number | null;
@@ -157,6 +161,10 @@
     onDismissOperation?: (requestId: string) => void;
     /** The page's own actions, labelled, ahead of the bulk actions (SelectionBar.jsx `leading`). */
     leading?: SelectionBarLeadingAction[];
+    /** An action's dialog closed: submitted, or cancelled. */
+    onDialogSettled?: (id: BulkActionId, submitted: boolean) => void;
+    /** The selection's real capture times, for Change date (FL-32). */
+    resolveCaptureTimes?: (ids: string[]) => Promise<Record<string, CaptureTime> | null>;
   } = $props();
 
   let menuOpen = $state(false);
@@ -243,13 +251,17 @@
   const submitDialog = (id: BulkActionId, payload?: BulkPayload) => {
     dialog = null;
     dialogOpen = false;
+    onDialogSettled?.(id, true);
     onAction(id, payload);
   };
 
   $effect(() => {
-    if (!dialogOpen && dialog) {
-      dialog = null;
+    if (dialogOpen || !dialog) {
+      return;
     }
+    const cancelled = dialog;
+    dialog = null;
+    untrack(() => onDialogSettled?.(cancelled, false));
   });
 
   const closeMenu = () => {
@@ -309,6 +321,9 @@
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
   });
+
+  /** Run an action as if chosen from the bar, for the library's keyboard shortcuts and tile actions. */
+  export const performAction = (id: BulkActionId) => perform(id);
 
   /** Escape closes the menu before it clears the selection, as the prototype does. */
   const handleEscape = () => (menuOpen ? closeMenu() : onClear());
@@ -455,7 +470,13 @@
 </div>
 
 {#if dialog === 'change-date'}
-  <BulkDateDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('change-date', payload)} />
+  <BulkDateDialog
+    {count}
+    assets={assets.length === count ? assets : []}
+    {resolveCaptureTimes}
+    bind:open={dialogOpen}
+    onSubmit={(payload) => submitDialog('change-date', payload)}
+  />
 {:else if dialog === 'change-description'}
   <BulkDescriptionDialog
     {count}

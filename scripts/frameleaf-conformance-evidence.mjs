@@ -583,7 +583,7 @@ const actions = {
   "clear-all-removable-chips-filter-presets": [
     "partial",
     ["S-19", "SD-12"],
-    "Chips open their section and Clear all whenever active (S-19); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette",
+    "Chips open their section, the search text is a chip and Clear all shows whenever anything is active (S-19, fixed by the FL-30 library gaps); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette",
     {
       production: [
         `${W}/lib/components/frameleaf/ResultsToolbar.svelte`,
@@ -632,9 +632,9 @@ const actions = {
     },
   ],
   "explore-memories-carousel-and-open-memory-story": [
-    "partial",
+    "fixed",
     ["T-15"],
-    "Memory strip belongs to the Memories destination, not the library",
+    "The upstream memory strip is gone from the library (FL-33 library gaps); memories open from the Memories destination",
     {
       prototype: [`${P}/ExploreLibrary.jsx`, `${P}/Memories.jsx`],
       production: [`${W}/lib/components/frameleaf/ExplorePanel.svelte`],
@@ -768,7 +768,7 @@ const actions = {
   "bulk-change-date-location-description": [
     "partial",
     ["T-13", "T-19"],
-    "Location place-name fields (server); friendly zones and pre-fill",
+    "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); location place-name fields need a server field and an owner decision (T-13)",
     {
       production: [
         `${W}/lib/components/frameleaf/BulkDateDialog.svelte`,
@@ -794,19 +794,19 @@ const actions = {
   "click-open-asset-select-deselect-items": [
     "partial",
     ["T-4", "T-20"],
-    "Tile hover quick actions; aria nits",
+    "Tile hover quick actions are done (T-4, FL-33 library gaps); aria nits remain (T-20)",
     { production: [`${W}/lib/components/frameleaf/AssetTile.svelte`] },
   ],
   "date-grouped-photos-browse-chronological-library": [
     "partial",
     ["T-3", "T-7", "T-10"],
-    "Grouping control, captions, Frameleaf empty states",
+    "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); grouping remains (T-3)",
     { production: [`${W}/lib/components/frameleaf/LibraryTimeline.svelte`] },
   ],
   "grid-list-compare-and-persisted-query-selection-layout": [
     "partial",
     ["T-8", "S-15", "S-17"],
-    "Browse/Work grid, thumbnail size, toolbar sort/view controls, bottom bar",
+    "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); the Browse/Work grid remains (T-8)",
     { production: [`${W}/lib/components/frameleaf/ResultsToolbar.svelte`] },
   ],
   "jump-scroll-to-time-restore-asset-position": [
@@ -819,7 +819,7 @@ const actions = {
   "select-all-select-groups-range-multi-selection-keyboard-bulk-behavior": [
     "partial",
     ["T-5", "S-22", "T-14"],
-    "Library shortcuts, arrow focus movement, Select all N",
+    "Library action shortcuts work on every library page (T-5, FL-33 library gaps); key-map drift (S-22) and Select all N (T-14) remain",
     {
       production: [
         `${W}/lib/frameleaf/library-shortcuts.ts`,
@@ -1125,9 +1125,9 @@ const routes = {
     [`${W}/routes/+page.ts`],
   ],
   "/activity": [
-    "partial",
+    "fixed",
     ["A-1", "A-6"],
-    'Indicator, filter count and running line still say "tasks" (A-1); status line with percent, ETA and "Paused at N%" (A-6). A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port',
+    'The indicator and filter count say "jobs" (A-1) and rows carry the status line with percent, ETA, "Paused at N%" and "Waiting for connection" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port',
     [`${P}/Activity.jsx`],
     [
       `${W}/routes/(user)/activity/+page.svelte`,
@@ -1373,9 +1373,9 @@ const routes = {
     ],
   ],
   "/archive/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["T-10", "S-10"],
-    "Frameleaf empty state (S-10 fixed)",
+    "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)",
     [`${P}/TimelineLibrary.jsx`, `${P}/App.jsx`],
     [
       `${W}/routes/(user)/archive/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1462,9 +1462,9 @@ const routes = {
     ],
   ],
   "/favorites/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["T-10", "S-10"],
-    "Frameleaf empty state (S-10 fixed)",
+    "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)",
     [`${P}/TimelineLibrary.jsx`, `${P}/App.jsx`],
     [
       `${W}/routes/(user)/favorites/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1645,16 +1645,16 @@ const routes = {
     [`${W}/routes/(user)/places/+page.svelte`],
   ],
   "/recently-added/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["T-10", "S-10"],
-    "Frameleaf empty state (S-10 fixed)",
+    "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)",
     [`${P}/TimelineLibrary.jsx`],
     [`${W}/routes/(user)/recently-added/[[assetId=id]]/+page.svelte`],
   ],
   "/recently-added/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["T-10", "S-10"],
-    "Frameleaf empty state (S-10 fixed)",
+    "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)",
     [`${P}/TimelineLibrary.jsx`],
     [
       `${W}/routes/(user)/recently-added/[[photos=photos]]/[[assetId=id]]/+page.svelte`,

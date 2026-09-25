@@ -54,6 +54,17 @@ describe('cellGridOptions', () => {
   });
 });
 
+describe('the List view (S-15)', () => {
+  it('is one column of fixed-height rows, whatever the width', () => {
+    const grid = cellGrid(3, 1200, cellGridOptions('list', 200, false));
+    expect(grid.columns).toBe(1);
+    expect(grid.cellWidth).toBe(1200);
+    expect(grid.cellHeight).toBe(77);
+    expect(grid.position(2)).toEqual({ top: 154, left: 0, width: 1200, height: 77 });
+    expect(cellGrid(3, 320, cellGridOptions('list', 290, true)).cellHeight).toBe(77);
+  });
+});
+
 describe('cellGrid', () => {
   it('fits as many minimum-width columns as the width allows and stretches them to fill it', () => {
     const grid = cellGrid(10, 1000, cellGridOptions('browse', 200, false));

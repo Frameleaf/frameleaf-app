@@ -129,6 +129,52 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(api.updateAssets).toHaveBeenLastCalledWith({ assetBulkUpdateDto: { ids: ['a'], dateTimeRelative: -120 } });
   });
 
+  it('keeps each item’s own zone: the same wall time at every item’s own offset (FL-32, T-19)', async () => {
+    vi.mocked(api.updateAssets).mockClear();
+    const result = await runBulkAction('change-date', ['a', 'b', 'c', 'd'], {
+      gateway: api,
+      payload: {
+        dateMode: 'set',
+        dateTimeOriginal: '2024-12-11T18:42',
+        offsetMinutesById: { a: -480, b: 60, c: -480 },
+      },
+    });
+    expect(api.updateAssets).toHaveBeenCalledWith({
+      assetBulkUpdateDto: { ids: ['a', 'c'], dateTimeOriginal: '2024-12-11T18:42:00-08:00' },
+    });
+    expect(api.updateAssets).toHaveBeenCalledWith({
+      assetBulkUpdateDto: { ids: ['b'], dateTimeOriginal: '2024-12-11T18:42:00+01:00' },
+    });
+    expect(api.updateAssets).toHaveBeenCalledTimes(2);
+    // An item whose offset is unknown is reported, not guessed.
+    expect(result.outcomes.find((outcome) => outcome.id === 'd')?.status).toBe('failed');
+  });
+
+  it('keeps an item’s own IANA zone, with that zone’s offset on the new date (FL-32 review N3)', async () => {
+    vi.mocked(api.updateAssets).mockClear();
+    await runBulkAction('change-date', ['a', 'b'], {
+      gateway: api,
+      payload: {
+        dateMode: 'set',
+        dateTimeOriginal: '2026-07-01T12:00',
+        // a was taken in winter (-08:00); the new July date is on daylight time.
+        offsetMinutesById: { a: -480, b: 60 },
+        timeZoneById: { a: 'America/Vancouver' },
+      },
+    });
+    expect(api.updateAssets).toHaveBeenCalledWith({
+      assetBulkUpdateDto: { ids: ['a'], dateTimeOriginal: '2026-07-01T12:00:00-07:00', timeZone: 'America/Vancouver' },
+    });
+    expect(api.updateAssets).toHaveBeenCalledWith({
+      assetBulkUpdateDto: { ids: ['b'], dateTimeOriginal: '2026-07-01T12:00:00+01:00' },
+    });
+  });
+
+  it('never hands a keep-each-zone change to the server as a durable job', () => {
+    expect(shouldRunDurably('change-date', DURABLE_BULK_THRESHOLD + 1)).toBe(true);
+    expect(shouldRunDurably('change-date', DURABLE_BULK_THRESHOLD + 1, { offsetMinutesById: {} })).toBe(false);
+  });
+
   it('creates the tags the user typed before applying them', async () => {
     vi.mocked(api.upsertTags).mockResolvedValue([{ id: 'tag-new', name: 'Hikes' }] as never);
     const result = await runBulkAction('tag', ['a'], {

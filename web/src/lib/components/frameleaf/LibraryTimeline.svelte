@@ -23,7 +23,9 @@
     THUMBNAIL_SIZE_DEFAULT,
     timelineRowHeight,
     type TileLayout,
+    WORK_CAPTION_HEIGHT,
   } from '$lib/frameleaf/library-grid';
+  import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { captureLibraryAnchor, restoreLibraryAnchor, type LibraryAnchor } from '$lib/frameleaf/library-layout';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
@@ -95,6 +97,13 @@
     onTileClick?: (asset: TimelineAsset) => boolean;
     /** Extra chrome drawn over every tile by the page that mounts the timeline. */
     tileOverlay?: Snippet<[TimelineAsset]>;
+    /** The hover quick actions each tile may offer (prototype `AssetTile.jsx` `.at-actions`). */
+    quickActions?: (asset: TimelineAsset) => TileQuickActions | null;
+    /**
+     * Timeline captions (prototype `TimelineLibrary.jsx` `showCaptions`, on in every layout but
+     * Browse). Work's cell grid reserves its own caption row.
+     */
+    timelineCaptions?: boolean;
     /** Rendered above the timeline; the results toolbar and any page header go here. */
     header?: Snippet;
     empty?: Snippet;
@@ -118,6 +127,8 @@
     onSelect,
     onTileClick,
     tileOverlay,
+    quickActions,
+    timelineCaptions = false,
     header,
     empty,
   }: Props = $props();
@@ -136,6 +147,12 @@
   const selection = $derived(session.selection);
   // In picking mode the tiles show their checkboxes from the start, as the legacy grid did.
   const selecting = $derived(selection.length > 0 || (selectionMode && !singleSelect));
+
+  /**
+   * Timeline captions sit under each justified row (template timeline-library.css: the photo keeps
+   * `--tl-h` and `.at-caption` follows it), so the manager adds the caption to the row pitch.
+   */
+  const rowCaptionHeight = $derived(tileLayout === 'timeline' && timelineCaptions ? WORK_CAPTION_HEIGHT : 0);
 
   /** Browse and Work lay each month out as a cell grid; `null` keeps Timeline's justified rows. */
   const cells = $derived(
@@ -159,12 +176,14 @@
             headerHeight: showDayHeaders ? 32 : 8,
             gap: 8,
             fillRowWidth: true,
+            captionHeight: rowCaptionHeight,
           }
         : {
             rowHeight: timelineRowHeight(235, thumbnailSize),
             headerHeight: showDayHeaders ? 48 : 12,
             gap: 12,
             fillRowWidth: true,
+            captionHeight: rowCaptionHeight,
           },
     );
   });
@@ -213,7 +232,7 @@
   // Browse and Work zoom with pinch, Ctrl-scroll and + / −; the Timeline keeps them for grouping.
   $effect(() => {
     const element = root;
-    if (!element || tileLayout === 'timeline' || !onThumbnailSizeChange) {
+    if (!element || tileLayout === 'timeline' || tileLayout === 'list' || !onThumbnailSizeChange) {
       return;
     }
     return bindGridZoom(element, {
@@ -1083,7 +1102,7 @@
 <div
   class="fl-timeline"
   class:is-groupable={onGroupingChange && showDayHeaders}
-  class:is-zoomable={tileLayout !== 'timeline' && !!onThumbnailSizeChange}
+  class:is-zoomable={tileLayout !== 'timeline' && tileLayout !== 'list' && !!onThumbnailSizeChange}
   data-testid="frameleaf-timeline"
   bind:this={root}
 >
@@ -1106,7 +1125,8 @@
       />
     </div>
     <!-- Template TimelineLibrary.jsx:460: the scrubber stays beside the cards. -->
-    {#if timelineManager.months.length > 0}
+    <!-- A flat order (filename, rating) has no dates to scrub through. -->
+    {#if timelineManager.months.length > 0 && !timelineManager.ordered}
       <YearScrubber
         {timelineManager}
         height={measuredHeight}
@@ -1203,7 +1223,8 @@
                   {selecting}
                   {ratingFor}
                   layout={tileLayout}
-                  captionHeight={cells?.captionHeight ?? 0}
+                  captionHeight={cells ? cells.captionHeight : rowCaptionHeight}
+                  captionBelow={!cells}
                   {showFileNames}
                   showHeader={showDayHeaders}
                   grouped={effectiveGrouping !== 'days' || !!cells}
@@ -1213,6 +1234,7 @@
                   onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
                   onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
                   {tileOverlay}
+                  {quickActions}
                 />
               {/each}
             </div>
@@ -1227,7 +1249,8 @@
       </div>
     </section>
 
-    {#if timelineManager.months.length > 0}
+    <!-- A flat order (filename, rating) has no dates to scrub through. -->
+    {#if timelineManager.months.length > 0 && !timelineManager.ordered}
       <YearScrubber
         {timelineManager}
         height={timelineManager.viewportHeight}

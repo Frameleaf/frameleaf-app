@@ -10,6 +10,7 @@ import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import AssetGrid from './AssetGrid.svelte';
 import AssetTile from './AssetTile.svelte';
 import LibraryDayGroup from './LibraryDayGroup.svelte';
+import LibraryLayoutSwitch from './LibraryLayoutSwitch.svelte';
 import ResultsToolbar from './ResultsToolbar.svelte';
 import ShowMore from './ShowMore.svelte';
 
@@ -260,6 +261,104 @@ describe('AssetTile', () => {
   });
 });
 
+describe('AssetTile quick actions and captions (FL-33)', () => {
+  it('offers favorite, edit, share and more on hover, and none while selecting', async () => {
+    const onFavorite = vi.fn();
+    const onEdit = vi.fn();
+    const onShare = vi.fn();
+    const onMore = vi.fn();
+    const onOpen = vi.fn();
+    const quickActions = { onFavorite, onEdit, onShare, onMore };
+    const { rerender } = tile({ quickActions, onOpen });
+    const group = screen.getByRole('group', { name: 'frameleaf_tile_actions' });
+    expect(group.querySelectorAll('button')).toHaveLength(4);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_tile_favorite' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_tile_edit' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_tile_share' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_tile_more' }));
+    expect([onFavorite, onEdit, onShare, onMore].map((spy) => spy.mock.calls.length)).toEqual([1, 1, 1, 1]);
+    // A quick action never also opens the tile under it.
+    expect(onOpen).not.toHaveBeenCalled();
+
+    await rerender({ quickActions, selecting: true });
+    expect(screen.queryByRole('group', { name: 'frameleaf_tile_actions' })).toBeNull();
+  });
+
+  it('draws only the actions the tile may offer, and says when an item is a favorite', () => {
+    tile({ asset: asset({ isFavorite: true }), quickActions: { onFavorite: vi.fn(), onMore: vi.fn() } });
+    const favorite = screen.getByRole('button', { name: 'frameleaf_tile_unfavorite' });
+    expect(favorite).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'frameleaf_tile_share' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'frameleaf_tile_edit' })).toBeNull();
+  });
+
+  it('captions a Timeline tile with its name and time, but never names a Locked item', () => {
+    const { unmount } = tile({
+      asset: asset({ originalFileName: 'IMG_0042.HEIC' }),
+      layout: 'timeline',
+      height: 157,
+      captionHeight: 24,
+    });
+    const caption = screen.getByTestId('frameleaf-asset-tile').querySelector('.fl-tile-caption');
+    expect(caption?.textContent).toContain('IMG_0042');
+    expect(caption?.querySelector('time')).not.toBeNull();
+    unmount();
+
+    tile({
+      asset: asset({ originalFileName: 'private.jpg', visibility: AssetVisibility.Locked }),
+      layout: 'timeline',
+      height: 157,
+      captionHeight: 24,
+    });
+    const locked = screen.getByTestId('frameleaf-asset-tile').querySelector('.fl-tile-caption');
+    expect(locked).not.toBeNull();
+    expect(locked?.textContent).not.toContain('private');
+  });
+
+  it('draws a list row: thumbnail, name, date, kind and pixel size, duration or file size (S-15)', () => {
+    const { unmount } = tile({
+      asset: asset({ originalFileName: 'IMG_0042.HEIC', width: 4000, height: 3000 }),
+      layout: 'list',
+      width: 900,
+      height: 77,
+    });
+    const row = screen.getByTestId('frameleaf-asset-tile');
+    expect(row).toHaveAttribute('data-layout', 'list');
+    expect(row.querySelector('.fl-list-name')?.textContent).toBe('IMG_0042');
+    expect(row.querySelector('.fl-list-kind')?.textContent?.trim()).toBe('frameleaf_library_list_photo');
+    expect(row.textContent).toContain('4000 × 3000');
+    unmount();
+
+    const video = tile({
+      asset: asset({ isVideo: true, isImage: false, duration: 96_000 }),
+      layout: 'list',
+      height: 77,
+    });
+    expect(screen.getByTestId('frameleaf-asset-tile').textContent).toContain('1:36');
+    video.unmount();
+
+    tile({ asset: asset({ fileSizeInByte: 2_500_000 }), layout: 'list', height: 77 });
+    expect(screen.getByTestId('frameleaf-asset-tile').textContent).toContain('2.5 MB');
+  });
+
+  it('never names a Locked item in the list', () => {
+    tile({
+      asset: asset({ originalFileName: 'private.jpg', visibility: AssetVisibility.Locked }),
+      layout: 'list',
+      height: 77,
+    });
+    const row = screen.getByTestId('frameleaf-asset-tile');
+    expect(row.querySelector('.fl-list-name')?.textContent).toBe('frameleaf_library_list_locked_item');
+    expect(row.getHTML()).not.toContain('private');
+  });
+
+  it('draws no caption in Browse', () => {
+    tile({ layout: 'browse', captionHeight: 24 });
+    expect(screen.getByTestId('frameleaf-asset-tile').querySelector('.fl-tile-caption')).toBeNull();
+  });
+});
+
 describe('AssetGrid', () => {
   const results = (count: number) => Array.from({ length: count }, (_, index) => asset({ id: `asset-${index}` }));
   const cells = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('.fl-grid-cell')];
@@ -435,7 +534,7 @@ describe('ResultsToolbar', () => {
   it('draws no chips and no badge while nothing is filtered', () => {
     render(ResultsToolbar, { session });
     expect(screen.queryByTestId('frameleaf-filter-chips')).toBeNull();
-    expect(screen.getByRole('button', { name: /filter/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'filter' })).toBeTruthy();
   });
 
   it('badges the active filter count and draws one removable chip per field', async () => {
@@ -453,20 +552,155 @@ describe('ResultsToolbar', () => {
     expect(session.filterCount).toBe(1);
   });
 
-  it('deep-links the filter panel into the chosen section', async () => {
+  it('deep-links the filter panel into the section chosen from the chevron menu', async () => {
     const onOpenFilterPanel = vi.fn();
     render(ResultsToolbar, { session, onOpenFilterPanel });
-    await fireEvent.click(screen.getByRole('button', { name: /filter/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_choose_filter' }));
     await fireEvent.click(screen.getByRole('menuitem', { name: 'places' }));
     expect(onOpenFilterPanel).toHaveBeenCalledWith('places');
     expect(session.filterSection).toBe('places');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
 
+  it('opens the panel from Filter itself at the last section, or People (S-16)', async () => {
+    const onOpenFilterPanel = vi.fn();
+    render(ResultsToolbar, { session, onOpenFilterPanel });
+    await fireEvent.click(screen.getByRole('button', { name: 'filter' }));
+    expect(onOpenFilterPanel).toHaveBeenLastCalledWith('people');
+    session.openFilterSection('tags');
+    await fireEvent.click(screen.getByRole('button', { name: 'filter' }));
+    expect(onOpenFilterPanel).toHaveBeenLastCalledWith('tags');
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('asks the search palette for its Advanced filters when the page has no panel of its own', async () => {
+    const requests: string[] = [];
+    const listener = (event: Event) => {
+      requests.push((event as CustomEvent<{ section: string }>).detail.section);
+    };
+    addEventListener('frameleaf:open-filters', listener);
+    render(ResultsToolbar, { session });
+    await fireEvent.click(screen.getByRole('button', { name: 'filter' }));
+    removeEventListener('frameleaf:open-filters', listener);
+    expect(requests).toEqual(['people']);
+  });
+
+  it('opens a chip’s own section, draws the search text as a chip and clears everything (S-19)', async () => {
+    const onOpenFilterPanel = vi.fn();
+    session.setQuery({ ...emptyDiscoveryQuery(), text: 'beach', filter: { city: { eq: 'Halifax' } } });
+    render(ResultsToolbar, { session, onOpenFilterPanel });
+    const chips = screen.getByTestId('frameleaf-filter-chips');
+    expect(chips.textContent).toContain('beach');
+    expect(screen.getByTestId('frameleaf-results-toolbar').textContent).toContain('2');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'city: Halifax' }));
+    expect(onOpenFilterPanel).toHaveBeenCalledWith('places');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_remove_search_text' }));
+    expect(session.query.text).toBe('');
+    expect(session.filterCount).toBe(1);
+
+    // Clear all shows whenever anything is active, even a single chip.
+    await fireEvent.click(screen.getByRole('button', { name: 'clear_all' }));
+    expect(session.filterCount).toBe(0);
+    expect(screen.queryByTestId('frameleaf-filter-chips')).toBeNull();
+  });
+
+  it('carries the count, Slideshow, the information toggle, Sort and More library actions (S-15)', async () => {
+    const onSlideshow = vi.fn();
+    const onToggleInspector = vi.fn();
+    const onMoreActions = vi.fn();
+    render(ResultsToolbar, {
+      session,
+      count: 42,
+      onSlideshow,
+      inspectorOpen: false,
+      onToggleInspector,
+      sorts: ['captured-desc', 'captured-asc', 'imported-desc'],
+      onMoreActions,
+    });
+    expect(screen.getByTestId('frameleaf-result-count').textContent).toContain('items_count');
+    await fireEvent.click(screen.getByRole('button', { name: 'slideshow' }));
+    expect(onSlideshow).toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+    expect(onToggleInspector).toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_more_actions' }));
+    expect(onMoreActions).toHaveBeenCalled();
+
+    const sort = screen.getByRole('combobox', { name: 'frameleaf_library_sort' }) as HTMLSelectElement;
+    expect([...sort.options].map((option) => [option.value, option.disabled])).toEqual([
+      ['captured-desc', false],
+      ['captured-asc', false],
+      ['imported-desc', false],
+      ['filename', true],
+      ['rating', true],
+    ]);
+    await fireEvent.change(sort, { target: { value: 'captured-asc' } });
+    expect(session.state.sort).toBe('captured-asc');
+  });
+
+  it('lists the prototype’s six filter sections, without Pets, and toggles a host panel closed (S-16)', async () => {
+    const onOpenFilterPanel = vi.fn();
+    const onCloseFilterPanel = vi.fn();
+    const { rerender } = render(ResultsToolbar, {
+      session,
+      onOpenFilterPanel,
+      filterPanelOpen: false,
+      onCloseFilterPanel,
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_choose_filter' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      'people',
+      'date',
+      'places',
+      'media',
+      'tags',
+      'frameleaf_library_filter_section_all',
+    ]);
+    await fireEvent.keyDown(globalThis as unknown as Window, { key: 'Escape' });
+
+    await rerender({ session, onOpenFilterPanel, filterPanelOpen: true, onCloseFilterPanel });
+    const filter = screen.getByRole('button', { name: 'filter' });
+    expect(filter).toHaveAttribute('aria-expanded', 'true');
+    await fireEvent.click(filter);
+    expect(onCloseFilterPanel).toHaveBeenCalled();
+    expect(onOpenFilterPanel).not.toHaveBeenCalled();
+  });
+
+  it('draws no chip and no count for a condition the page’s grid does not apply (M3)', () => {
+    session.setQuery({
+      ...emptyDiscoveryQuery(),
+      text: 'beach',
+      filter: { city: { eq: 'Halifax' }, tagIds: { any: ['t1'] } },
+    });
+    render(ResultsToolbar, { session, unappliedFields: ['city', 'text'] });
+    const chips = screen.getByTestId('frameleaf-filter-chips');
+    expect(chips.textContent).not.toContain('Halifax');
+    expect(chips.textContent).not.toContain('beach');
+    expect(chips.textContent).toContain('tags');
+    expect(screen.getByTestId('frameleaf-results-toolbar').querySelector('.fl-filter-badge')?.textContent).toBe('1');
+  });
+
+  it('switches Grid and List where the page offers them (S-15)', async () => {
+    const onViewChange = vi.fn();
+    render(ResultsToolbar, { session, view: 'grid', onViewChange });
+    expect(screen.getByRole('button', { name: 'frameleaf_library_grid_view' })).toHaveAttribute('aria-pressed', 'true');
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_list_view' }));
+    expect(onViewChange).toHaveBeenCalledWith('list');
+  });
+
+  it('draws no Slideshow, Sort or More control where the page offers none', () => {
+    render(ResultsToolbar, { session });
+    expect(screen.queryByRole('button', { name: 'slideshow' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'frameleaf_library_sort' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'frameleaf_library_more_actions' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'frameleaf_library_list_view' })).toBeNull();
+  });
+
   it('switches layout without touching anything else in the session', async () => {
     session.select('asset-1');
     session.open('asset-2', 12);
-    render(ResultsToolbar, { session });
+    render(LibraryLayoutSwitch, { session });
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_layout_timeline' }));
     expect(session.layout).toBe('timeline');
     expect(session.selection).toEqual(['asset-1']);

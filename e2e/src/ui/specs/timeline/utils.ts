@@ -104,11 +104,15 @@ export const thumbnailUtils = {
         .map((tile) => tile.dataset.assetId!);
     }, TILE);
   },
+  /** The favorite badge, not the hover action that shares its tooltip (`AssetTile.jsx` `.at-actions`). */
+  favoriteBadge(page: Page, assetId: string) {
+    return thumbnailUtils.withAssetId(page, assetId).locator('.fl-tile-badges').getByTitle('Favorite', { exact: true });
+  },
   async expectThumbnailIsFavorite(page: Page, assetId: string) {
-    await expect(thumbnailUtils.withAssetId(page, assetId).getByTitle('Favorite', { exact: true })).toHaveCount(1);
+    await expect(thumbnailUtils.favoriteBadge(page, assetId)).toHaveCount(1);
   },
   async expectThumbnailIsNotFavorite(page: Page, assetId: string) {
-    await expect(thumbnailUtils.withAssetId(page, assetId).getByTitle('Favorite', { exact: true })).toHaveCount(0);
+    await expect(thumbnailUtils.favoriteBadge(page, assetId)).toHaveCount(0);
   },
   /** Whether any tile in the timeline's scroll area satisfies `predicate`. */
   async someInViewport(page: Page, predicate: (assetId: string) => boolean) {
