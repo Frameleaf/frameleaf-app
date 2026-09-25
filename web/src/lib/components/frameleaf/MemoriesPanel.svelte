@@ -59,6 +59,7 @@
     mdiHeartOutline,
     mdiImageMultipleOutline,
     mdiMapMarkerPath,
+    mdiPaw,
     mdiPlay,
     mdiTune,
   } from '@mdi/js';
@@ -78,6 +79,7 @@
     on_this_day: mdiCalendarHeart,
     event_story: mdiMapMarkerPath,
     year_in_review: mdiCalendarStar,
+    pet_story: mdiPaw,
   };
 
   /** The server already leaves Locked items out of memories; the cover never shows one regardless. */

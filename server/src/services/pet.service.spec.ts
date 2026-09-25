@@ -75,6 +75,7 @@ const reviewCandidate = (overrides: Record<string, unknown> = {}) => ({
   score: 0.61,
   petId,
   assetId,
+  assetChecksum: Buffer.from('current original'),
   detectionId,
   detectedSpecies: 'cat',
   modelName: 'pet-v1',
