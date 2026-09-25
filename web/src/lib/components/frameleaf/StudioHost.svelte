@@ -51,6 +51,7 @@
     StudioHostServices,
     StudioProjectHandle,
     StudioWorkspaceMode,
+    StudioWorkspaceView,
   } from '$lib/frameleaf/studio/host-contract';
   import type { Rational } from '$lib/frameleaf/studio/rational-time';
   import {
@@ -85,6 +86,7 @@
     onExport,
     onRename,
     mode = $bindable<StudioWorkspaceMode>('basic'),
+    workspace,
     unresolvedComments = 0,
     playhead = null,
     accessLost = false,
@@ -136,6 +138,8 @@
     onRename?: (name: string) => Promise<boolean>;
     /** Basic or Advanced (`Studio.jsx:2626-2633`), handed to the engine as part of its context. */
     mode?: StudioWorkspaceMode;
+    /** The account's stored workspace layout (FL-91), handed to the engine as part of its context. */
+    workspace?: StudioWorkspaceView;
     /** Open review comments on the head revision, shown on the Review button (`Studio.jsx:2640-2643`). */
     unresolvedComments?: number;
     /** Where the engine's playhead is; new review comments are pinned there. */
@@ -200,6 +204,7 @@
     preview,
     online,
     mode,
+    workspace,
   });
 
   const disposeEngine = async () => {
