@@ -87,7 +87,29 @@
     ...Actions.PlaySlideshow,
     $if: () => !!sharedLink?.allowDownload && canNavigateCollection && (Actions.PlaySlideshow.$if?.() ?? true),
   });
+
+  /**
+   * The footer (V-13) is 60px plus the bottom safe area and stacks at the header's level, later in the
+   * DOM, so it paints over anything of the header's that reaches it. The More menu therefore ends above
+   * it wherever it opens: from the top row on wide screens, or from the phone toolbar just above the
+   * footer (apple-style.css:756-790), where a height cap alone would still let it run down to the
+   * window's bottom. The footer's height is measured from `--fl-viewer-footer-height` so it includes
+   * env(safe-area-inset-bottom).
+   */
+  const VIEWER_FOOTER_HEIGHT = 60;
+  let footerProbe: HTMLElement | undefined = $state();
+  let footerInset = $state(VIEWER_FOOTER_HEIGHT);
+  const measureFooterInset = () => {
+    footerInset = Math.max(VIEWER_FOOTER_HEIGHT, footerProbe?.offsetHeight ?? 0);
+  };
+  $effect(() => {
+    if (footerProbe) {
+      measureFooterInset();
+    }
+  });
 </script>
+
+<svelte:window onresize={measureFooterInset} />
 
 <CommandPaletteDefaultProvider
   name={$t('assets')}
@@ -103,6 +125,7 @@
   above the footer, like iPhone Photos (apple-style.css:756-790).
 -->
 <div class="fl-viewer-header">
+  <div class="fl-viewer-footer-probe" aria-hidden="true" bind:this={footerProbe}></div>
   <div class="flex min-w-0 flex-1 items-center gap-2">
     <div class="dark shrink-0">
       <ActionButton action={Close} />
@@ -163,11 +186,12 @@
           title={$t('frameleaf_viewer_more_actions')}
           icon={mdiDotsHorizontal}
           menuMaxHeightInset={150}
+          menuBottomInset={footerInset}
         >
           <!--
             The menu is capped at the window height less 150px and scrolls inside (.mv-menu,
-            media-viewer.css:142-148), which keeps its lower entries (Play slideshow, Show filmstrip)
-            clear of the frosted footer instead of running under it.
+            media-viewer.css:142-148), and its bottom edge always ends above the footer, so its lower
+            entries (Play slideshow, Show filmstrip) are never under the frosted footer, on phones too.
           -->
           <!--
             FL-35: the complete grouped menu (Download, Organize, Stack, Set as, Go to, Jobs,
@@ -192,6 +216,17 @@
 </div>
 
 <style>
+  /* Measures the footer's height, safe area included, for the More menu's bottom inset. */
+  .fl-viewer-footer-probe {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    height: var(--fl-viewer-footer-height, calc(60px + env(safe-area-inset-bottom)));
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   .fl-viewer-header {
     position: relative;
     isolation: isolate;
