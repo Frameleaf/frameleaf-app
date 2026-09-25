@@ -230,7 +230,16 @@ describe('SlideshowBar (FL-36)', () => {
     beforeEach(() => {
       if (!('PointerEvent' in globalThis)) {
         // jsdom has no PointerEvent; a MouseEvent carries the coordinates a tap needs
-        vi.stubGlobal('PointerEvent', class extends MouseEvent {});
+        vi.stubGlobal(
+          'PointerEvent',
+          class extends MouseEvent {
+            pointerType: string;
+            constructor(type: string, init: PointerEventInit = {}) {
+              super(type, init);
+              this.pointerType = init.pointerType ?? '';
+            }
+          },
+        );
       }
       vi.useFakeTimers();
       canvas = document.createElement('div');
@@ -252,9 +261,32 @@ describe('SlideshowBar (FL-36)', () => {
       expect(controls()).toHaveClass('chrome-hidden');
       expect(document.body.style.cursor).toBe('none');
 
-      await fireEvent.mouseMove(document);
+      await fireEvent.pointerMove(document, { pointerType: 'mouse' });
       expect(controls()).not.toHaveClass('chrome-hidden');
       expect(document.body.style.cursor).toBe('');
+    });
+
+    it('still hides after a control is clicked', async () => {
+      renderBar();
+      const next = screen.getByLabelText('next');
+      await fireEvent.pointerDown(next, { pointerType: 'mouse' });
+      next.focus();
+      await fireEvent.click(next);
+      await fireEvent.pointerLeave(controls());
+
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(next).toHaveFocus();
+      expect(controls()).toHaveClass('chrome-hidden');
+      expect(document.body.style.cursor).toBe('none');
+    });
+
+    it('keeps a tap on a touch screen from being undone by its compatibility mouse move', async () => {
+      renderBar();
+      await fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerType: 'touch' });
+      await fireEvent.pointerUp(canvas, { clientX: 10, clientY: 10, pointerType: 'touch' });
+      await fireEvent.mouseMove(document);
+      await fireEvent.pointerMove(document, { pointerType: 'touch' });
+      expect(controls()).toHaveClass('chrome-hidden');
     });
 
     it('shows the controls when keyboard focus moves into them and keeps them while focused', async () => {
@@ -262,6 +294,7 @@ describe('SlideshowBar (FL-36)', () => {
       await vi.advanceTimersByTimeAsync(2500);
       expect(controls()).toHaveClass('chrome-hidden');
 
+      await fireEvent.keyDown(document, { key: 'Tab' });
       screen.getByLabelText('exit_slideshow').focus();
       await Promise.resolve();
       expect(controls()).not.toHaveClass('chrome-hidden');
