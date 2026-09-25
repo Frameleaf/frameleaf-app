@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { personFactory } from '@test-data/factories/person-factory';
 import MergePeopleDialog from './MergePeopleDialog.svelte';
 
@@ -48,6 +49,37 @@ describe('MergePeopleDialog (PD-4)', () => {
 
     await waitFor(() => expect(onMerged).toHaveBeenCalledWith(grace));
     expect(sdkMock.mergePeople).toHaveBeenCalledWith({ mergePersonDto: { ids: ['grace', 'ada'] } });
+  });
+
+  it('announces the moved faces so open chips and person pages re-read them (FL-37)', async () => {
+    sdkMock.mergePeople.mockResolvedValue([]);
+    const changes = vi.fn();
+    const stop = eventManager.on({ PersonFacesChange: changes });
+    render(MergePeopleDialog, { person: ada, candidates: [ada, grace], open: true, onMerged: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Grace/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Merge' }));
+
+    await waitFor(() =>
+      expect(changes).toHaveBeenCalledWith({ personIds: ['grace', 'ada'], removedPersonIds: ['ada'] }),
+    );
+    stop();
+  });
+
+  it('announces nothing when the merge is refused', async () => {
+    sdkMock.mergePeople.mockRejectedValue(new Error('no'));
+    const changes = vi.fn();
+    const stop = eventManager.on({ PersonFacesChange: changes });
+    const onMerged = vi.fn();
+    render(MergePeopleDialog, { person: ada, candidates: [ada, grace], open: true, onMerged });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Grace/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Merge' }));
+
+    await waitFor(() => expect(sdkMock.mergePeople).toHaveBeenCalled());
+    expect(changes).not.toHaveBeenCalled();
+    expect(onMerged).not.toHaveBeenCalled();
+    stop();
   });
 
   it('preselects the person a rename collided with', () => {
