@@ -8,6 +8,7 @@ import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
 import { canWriteFork } from 'src/repositories/fork-write-guard.js';
+import { UTILITY_ACTIVITY_RETENTION_DAYS } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { bestPhotoRank, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
@@ -201,8 +202,9 @@ export class UserRepository {
   }
 
   /**
-   * FL-71 (CC-10): a deleted account leaves no preference history behind. Skipped (never blocking
-   * the delete) while the fork schema is not writable, like `forgetRecipient`.
+   * FL-71 (CC-10): a deleted account leaves no preference history behind, nor (FL-47) its utility
+   * activity. Skipped (never blocking the delete) while the fork schema is not writable, like
+   * `forgetRecipient`.
    */
   async deletePreferenceHistory(userId: string): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
@@ -210,6 +212,7 @@ export class UserRepository {
         return false;
       }
       await sql`DELETE FROM immich_fork.user_preference_history WHERE "userId" = ${userId}::uuid`.execute(trx);
+      await sql`DELETE FROM immich_fork.utility_activity WHERE "userId" = ${userId}::uuid`.execute(trx);
       return true;
     });
   }
@@ -229,6 +232,7 @@ export class UserRepository {
         memoryCurations: number;
         peopleAndPets: number;
         workspaceLayouts: number;
+        utilityActivity: number;
       }
     | undefined
   > {
@@ -261,6 +265,12 @@ export class UserRepository {
           WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = member)
         )
       `.execute(trx);
+      // FL-47: utility activity of a removed account, and any past its retention window.
+      const activity = await sql`
+        DELETE FROM immich_fork.utility_activity AS activity
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = activity."userId")
+           OR activity."createdAt" < clock_timestamp() - make_interval(days => ${UTILITY_ACTIVITY_RETENTION_DAYS})
+      `.execute(trx);
       // FL-62: the removed account's memory show-less rules and memory curation.
       const showLess = await sql`
         DELETE FROM immich_fork.memory_show_less AS rule
@@ -286,6 +296,7 @@ export class UserRepository {
         preferenceHistory: Number(history.numAffectedRows ?? 0),
         recipientGroups: Number(groups.numAffectedRows ?? 0),
         workspaceLayouts: Number(layouts.numAffectedRows ?? 0),
+        utilityActivity: Number(activity.numAffectedRows ?? 0),
         memoryShowLess: Number(showLess.numAffectedRows ?? 0),
         memoryCurations: Number(curations.numAffectedRows ?? 0),
         peopleAndPets,
