@@ -3,6 +3,7 @@ import { PassThrough } from 'node:stream';
 import type { OnThisDayData } from 'src/types.js';
 import { JobName, JobStatus, MemoryExportFormat, MemoryExportStatus, MemoryType, PetSpecies } from 'src/enum.js';
 import { MemoryService } from 'src/services/memory.service.js';
+import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { MemoryFactory } from 'test/factories/memory.factory.js';
 import { getForMemory } from 'test/mappers.js';
@@ -100,6 +101,53 @@ describe(MemoryService.name, () => {
         ]);
 
         await expect(sut.search(factory.auth({ user: { id: userId } }), {})).resolves.toEqual([]);
+      });
+
+      /** A session that is not unlocked, with `petId` suppressed. */
+      const lockedAuth = (userId: string, petId: string) => {
+        const auth = factory.auth({ user: { id: userId } });
+        return { ...auth, hiddenContent: { ...emptyHiddenContentFilter(userId), petIds: [petId] } };
+      };
+
+      it('does not count a story about a suppressed or deleted pet in the statistics', async () => {
+        const [userId, suppressedId, deletedId, shownId] = newUuids();
+        mocks.memory.statistics.mockResolvedValue({ total: 5 });
+        mocks.memory.search.mockResolvedValue([
+          petStory(userId, suppressedId),
+          petStory(userId, deletedId),
+          petStory(userId, shownId),
+        ]);
+        mocks.memory.getStoryPets.mockResolvedValue([
+          { id: suppressedId, name: 'Secret', species: PetSpecies.Cat, isHidden: false },
+          { id: shownId, name: 'Biscuit', species: PetSpecies.Cat, isHidden: false },
+        ]);
+
+        await expect(sut.statistics(lockedAuth(userId, suppressedId), {})).resolves.toEqual({ total: 3 });
+        expect(mocks.memory.search.mock.calls[0].slice(0, 2)).toEqual([
+          userId,
+          expect.objectContaining({ type: MemoryType.PetStory }),
+        ]);
+      });
+
+      it('counts other memory types without reading pet stories', async () => {
+        mocks.memory.statistics.mockResolvedValue({ total: 4 });
+        await expect(sut.statistics(factory.auth(), { type: MemoryType.OnThisDay })).resolves.toEqual({ total: 4 });
+        expect(mocks.memory.search).not.toHaveBeenCalled();
+      });
+
+      it('answers 404 to an update of a story about a pet suppressed while locked', async () => {
+        const [userId, petId] = newUuids();
+        const story = petStory(userId, petId);
+        mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([story.id]));
+        mocks.memory.get.mockResolvedValue(story);
+        mocks.memory.getStoryPets.mockResolvedValue([
+          { id: petId, name: 'Secret', species: PetSpecies.Cat, isHidden: false },
+        ]);
+
+        await expect(sut.update(lockedAuth(userId, petId), story.id, { isSaved: true })).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+        expect(mocks.memory.update).not.toHaveBeenCalled();
       });
     });
   });
@@ -275,6 +323,7 @@ describe(MemoryService.name, () => {
       const memory = MemoryFactory.create();
 
       mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
       mocks.memory.update.mockResolvedValue(getForMemory(memory));
 
       await expect(sut.update(factory.auth(), memory.id, { isSaved: true })).resolves.toBeDefined();
@@ -286,6 +335,7 @@ describe(MemoryService.name, () => {
       const memory = MemoryFactory.create();
 
       mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
       mocks.memory.update.mockResolvedValue(getForMemory(memory));
 
       await expect(
