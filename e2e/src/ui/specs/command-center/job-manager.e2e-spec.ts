@@ -41,6 +41,7 @@ const setupQueueMocks = async (context: BrowserContext) => {
     jobs: [] as string[],
     commands: [] as Array<{ name: string; command: string }>,
     retries: [] as string[],
+    ownerQueries: [] as string[],
   };
 
   await context.route('**/api/queues', (route) => route.fulfill({ json: queues }));
@@ -63,6 +64,16 @@ const setupQueueMocks = async (context: BrowserContext) => {
             },
           ]
         : [],
+    });
+  });
+  // FL-71 (J-1): the Account filter's accounts and one account's counts.
+  await context.route('**/api/admin/users*', (route) =>
+    route.fulfill({ json: [{ id: 'a0000000-0000-4000-8000-000000000001', name: 'Grace Hopper', email: 'g@x.test' }] }),
+  );
+  await context.route('**/api/queues/*/statistics*', (route, request) => {
+    requests.ownerQueries.push(new URL(request.url()).searchParams.get('ownerId') ?? '');
+    return route.fulfill({
+      json: { active: 0, completed: 0, delayed: 0, failed: 0, paused: 0, waiting: 0, truncated: false },
     });
   });
   await context.route('**/api/queues/*/jobs/retry-failed', async (route, request) => {
@@ -184,6 +195,17 @@ test.describe('Job manager', () => {
     await review.getByRole('button', { name: 'Retry failed jobs' }).click();
 
     await expect.poll(() => requests.retries).toEqual(['faceDetection']);
+  });
+
+  test("narrows a queue to one account's work with the Account filter", async ({ page }) => {
+    await page.goto(`${jobManager}&queue=face-detection&tab=failed`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Face detection' })).toBeVisible();
+
+    await page.getByRole('combobox', { name: 'Account filter' }).selectOption({ label: 'Grace Hopper' });
+
+    await expect.poll(() => requests.ownerQueries).toContain('a0000000-0000-4000-8000-000000000001');
+    await expect(page.getByText(/Counts and job details: Grace Hopper\./)).toBeVisible();
+    await expect(page.getByRole('tab', { name: /Failed\s*0/ })).toBeVisible();
   });
 
   test('edits queue concurrency in the settings draft', async ({ page }) => {

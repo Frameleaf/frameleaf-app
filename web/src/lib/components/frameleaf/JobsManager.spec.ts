@@ -8,8 +8,10 @@ import {
   QueueJobStatus,
   QueueJobWorkerKind,
   QueueName,
+  getQueueOwnerStatistics,
   retryFailedQueueJobs,
   runQueueCommandLegacy,
+  searchUsersAdmin,
   updateQueue,
   type QueueResponseDto,
 } from '@immich/sdk';
@@ -38,6 +40,8 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   getQueue: vi.fn(),
   createJob: vi.fn(),
   retryFailedQueueJobs: vi.fn(),
+  searchUsersAdmin: vi.fn(),
+  getQueueOwnerStatistics: vi.fn(),
 }));
 vi.mock('$lib/frameleaf/job-history', async (importOriginal) => {
   const original = await importOriginal<typeof import('$lib/frameleaf/job-history')>();
@@ -102,6 +106,10 @@ beforeEach(() => {
     queue(QueueName.BackgroundTask, { active: 1 }),
   ];
   vi.mocked(getQueueJobs).mockResolvedValue([]);
+  vi.mocked(searchUsersAdmin).mockResolvedValue([
+    { id: 'ada', name: 'Ada Lovelace' },
+    { id: 'grace', name: 'Grace Hopper' },
+  ] as never);
 });
 
 describe('Job manager (FL-71, JobsManager.jsx)', () => {
@@ -306,7 +314,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     ]);
     render(JobsManager);
 
-    await screen.findByText('Ada Lovelace');
+    await screen.findAllByRole('button', { name: /^Detect faces/ });
     const table = screen.getByRole('table');
     expect(within(table).getByRole('columnheader', { name: 'Account' })).toBeInTheDocument();
     expect(within(table).getByRole('columnheader', { name: 'Worker' })).toBeInTheDocument();
@@ -344,5 +352,40 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     render(JobsManager);
 
     expect(screen.getByRole('button', { name: 'Retry failed' })).toBeDisabled();
+  });
+
+  it("narrows the counts and the jobs to one account's items (JobsManager.jsx 341-355, 838-840)", async () => {
+    at('&queue=face-detection&tab=failed');
+    vi.mocked(getQueueOwnerStatistics).mockResolvedValue({
+      active: 0,
+      completed: 0,
+      delayed: 0,
+      failed: 1,
+      paused: 0,
+      waiting: 0,
+      truncated: true,
+    });
+    render(JobsManager);
+
+    const filter = await screen.findByRole('combobox', { name: 'Account filter' });
+    await screen.findByRole('option', { name: 'Grace Hopper' });
+    await fireEvent.change(filter, { target: { value: 'grace' } });
+
+    await waitFor(() =>
+      expect(getQueueOwnerStatistics).toHaveBeenCalledWith({ name: QueueName.FaceDetection, ownerId: 'grace' }),
+    );
+    expect(await screen.findByRole('tab', { name: /Failed\s*1/ })).toBeInTheDocument();
+    expect(screen.getByText(/Counts and job details: Grace Hopper\./)).toBeInTheDocument();
+    expect(screen.getByText(/newest 1,000 jobs of each state/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(getQueueJobs).toHaveBeenCalledWith({
+        name: QueueName.FaceDetection,
+        status: [QueueJobStatus.Failed],
+        ownerId: 'grace',
+      }),
+    );
+    expect(
+      await screen.findByText('No matching jobs for Grace Hopper. Other accounts may still have work in this queue.'),
+    ).toBeInTheDocument();
   });
 });

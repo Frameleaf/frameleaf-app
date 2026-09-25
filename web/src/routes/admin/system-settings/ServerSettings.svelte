@@ -17,6 +17,16 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
+      <!-- CC-4: the template's "Server name" (settings-catalog.mjs identity). -->
+      <SettingField
+        inputType={SettingInputFieldType.TEXT}
+        label={$t('frameleaf_cc_server_name')}
+        description={$t('frameleaf_cc_server_name_description')}
+        {disabled}
+        bind:value={configToEdit.server.name}
+        isEdited={configToEdit.server.name !== config.server.name}
+      />
+
       <SettingField
         inputType={SettingInputFieldType.TEXT}
         label={$t('admin.server_external_domain_settings')}

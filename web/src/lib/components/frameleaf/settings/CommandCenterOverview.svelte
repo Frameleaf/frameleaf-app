@@ -11,15 +11,24 @@
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
   import { Route } from '$lib/route';
   import { jobQueue } from '$lib/frameleaf/job-queues';
+  import { cloudDestinationState, gpuStudioState, mlEndpointState } from '$lib/frameleaf/overview-readiness';
   import {
     AnalyticsRange,
     AnalyticsScopeKind,
     getAboutInfo,
     getAnalyticsReport,
+    getBackupRestoreVerification,
+    getMlWorkloadRoutes,
     getQueues,
+    getRenderWorkerCompatibility,
     getStorage,
     listDatabaseBackups,
+    listMlDestinations,
     type AnalyticsReportResponseDto,
+    type BackupRestoreVerificationResponseDto,
+    type MlDestinationResponseDto,
+    type MlWorkloadRouteDto,
+    type RenderWorkerCompatibilityResponseDto,
     type DatabaseBackupDto,
     type QueueName,
     type QueueResponseDto,
@@ -27,19 +36,56 @@
     type ServerStorageResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiChevronRight } from '@mdi/js';
+  import {
+    mdiAlertCircleOutline,
+    mdiBackupRestore,
+    mdiChevronRight,
+    mdiCloudOutline,
+    mdiDesktopTowerMonitor,
+    mdiImageSearchOutline,
+    mdiServerOutline,
+  } from '@mdi/js';
+  import { locale } from '$lib/stores/preferences.store';
   import { t, type Translations } from 'svelte-i18n';
   let report = $state<AnalyticsReportResponseDto>();
   let about = $state<ServerAboutResponseDto>();
   let storage = $state<ServerStorageResponseDto>();
   let queues = $state<QueueResponseDto[]>();
   let backups = $state<DatabaseBackupDto[]>();
+  // CC-9: the readiness rows (CommandCenter.jsx:1790-1812, 1905-1935); each stays "Not measured" when unread.
+  let restore = $state<BackupRestoreVerificationResponseDto>();
+  let compatibility = $state<RenderWorkerCompatibilityResponseDto>();
+  let ml = $state<{ destinations: MlDestinationResponseDto[]; routes: MlWorkloadRouteDto[] }>();
   let failed = $state(false);
   let retry = $state(0);
   const scope = $derived(page.url.searchParams.get('scope') ?? 'all');
   const failures = $derived(queues?.reduce((sum, queue) => sum + queue.statistics.failed, 0));
+  const restoreDue = $derived(restore?.overdue === true);
+  const workersDue = $derived(!!compatibility && compatibility.unavailable.length > 0);
   /** The "Needs your attention" items, counted for the health line (the template's "n things need attention"). */
-  const attentionCount = $derived(failures === undefined ? undefined : failures > 0 ? 1 : 0);
+  const attentionCount = $derived(
+    failures === undefined && !restore && !compatibility
+      ? undefined
+      : (failures ? 1 : 0) + (restoreDue ? 1 : 0) + (workersDue ? 1 : 0),
+  );
+  const when = (value: string) => new Intl.DateTimeFormat($locale, { dateStyle: 'medium' }).format(new Date(value));
+  const restoreDetail = $derived.by(() => {
+    if (!restore) {
+      return '';
+    }
+    if (!restore.metadataVerifiedAt && !restore.originalsVerifiedAt) {
+      return $t('frameleaf_cc_attention_restore_never');
+    }
+    if (!restore.originalsVerifiedAt) {
+      return $t('frameleaf_cc_attention_restore_originals');
+    }
+    if (!restore.metadataVerifiedAt) {
+      return $t('frameleaf_cc_attention_restore_metadata');
+    }
+    const oldest = [restore.metadataVerifiedAt, restore.originalsVerifiedAt].sort()[0];
+    return $t('frameleaf_cc_attention_restore_overdue', { values: { date: when(oldest), days: restore.intervalDays } });
+  });
+  const kindLabel = (kind: string) => $t(`frameleaf_render_workers_kind_${kind}` as Translations);
   const snapshotQueues = $derived(
     queues
       ?.filter((queue) => queue.statistics.active + queue.statistics.waiting + queue.statistics.failed > 0)
@@ -98,15 +144,23 @@
     storage = undefined;
     queues = undefined;
     backups = undefined;
+    restore = undefined;
+    compatibility = undefined;
+    ml = undefined;
     failed = false;
     void (async () => {
-      const [inventory, version, disk, jobs, backup] = await Promise.allSettled([
-        getAnalyticsReport({ scope: selected, range: AnalyticsRange.Year }),
-        getAboutInfo(),
-        getStorage(),
-        getQueues(),
-        listDatabaseBackups(),
-      ]);
+      const [inventory, version, disk, jobs, backup, restoreTest, workers, destinations, routes] =
+        await Promise.allSettled([
+          getAnalyticsReport({ scope: selected, range: AnalyticsRange.Year }),
+          getAboutInfo(),
+          getStorage(),
+          getQueues(),
+          listDatabaseBackups(),
+          getBackupRestoreVerification(),
+          getRenderWorkerCompatibility(),
+          listMlDestinations(),
+          getMlWorkloadRoutes(),
+        ]);
       if (cancelled) {
         return;
       }
@@ -126,6 +180,15 @@
       }
       if (backup.status === 'fulfilled') {
         backups = backup.value.backups;
+      }
+      if (restoreTest.status === 'fulfilled') {
+        restore = restoreTest.value;
+      }
+      if (workers.status === 'fulfilled') {
+        compatibility = workers.value;
+      }
+      if (destinations.status === 'fulfilled' && routes.status === 'fulfilled') {
+        ml = { destinations: destinations.value, routes: routes.value.routes };
       }
     })();
     return () => {
@@ -166,7 +229,12 @@
         >{backups
           ? (latestBackup ?? $t(backups.length > 0 ? 'frameleaf_cc_unmeasured' : 'frameleaf_cc_no_backup'))
           : $t('frameleaf_cc_unmeasured')}</strong
-      ><small>{$t('frameleaf_cc_section_backups')}<Icon icon={mdiChevronRight} size="16" /></small></a
+      ><small
+        >{restoreDue ? $t('frameleaf_cc_restore_drill_overdue') : $t('frameleaf_cc_section_backups')}<Icon
+          icon={mdiChevronRight}
+          size="16"
+        /></small
+      ></a
     >
     <a href={href('server', 'version-check')}
       ><span>{$t('frameleaf_cc_version')}</span><strong>{about?.version ?? $t('frameleaf_cc_unmeasured')}</strong><small
@@ -208,12 +276,29 @@
         <h2>{$t('frameleaf_cc_attention')}</h2>
         {#if attentionCount !== undefined}<span>{attentionCount}</span>{/if}
       </header>
+      {#if restoreDue}<a class="action" href={href('maintenance', 'backups')}
+          ><Icon icon={mdiBackupRestore} size="18" /><span
+            ><strong>{$t('frameleaf_cc_attention_restore')}</strong><small>{restoreDetail}</small></span
+          ><Icon icon={mdiChevronRight} size="18" /></a
+        >{/if}
+      {#if workersDue && compatibility}<a class="action" href={Route.systemWorkers()}
+          ><Icon icon={mdiDesktopTowerMonitor} size="18" /><span
+            ><strong>{$t('frameleaf_cc_attention_workers')}</strong><small
+              >{$t('frameleaf_cc_attention_workers_detail', {
+                values: { kinds: compatibility.unavailable.map((kind) => kindLabel(kind)).join(', ') },
+              })}</small
+            ></span
+          ><Icon icon={mdiChevronRight} size="18" /></a
+        >{/if}
       {#if failures}<a class="action" href={Route.queues()}
-          ><strong>{$t('frameleaf_cc_failed_jobs')}</strong><small>{failures} · {$t('frameleaf_cc_server')}</small><Icon
-            icon={mdiChevronRight}
-            size="18"
-          /></a
-        >{:else}<p class="subtle">{$t(queues ? 'frameleaf_cc_no_attention' : 'frameleaf_cc_unmeasured')}</p>{/if}
+          ><Icon icon={mdiAlertCircleOutline} size="18" /><span
+            ><strong>{$t('frameleaf_cc_failed_jobs')}</strong><small>{failures} · {$t('frameleaf_cc_server')}</small
+            ></span
+          ><Icon icon={mdiChevronRight} size="18" /></a
+        >{/if}
+      {#if !restoreDue && !workersDue && !failures}<p class="subtle">
+          {$t(queues ? 'frameleaf_cc_no_attention' : 'frameleaf_cc_unmeasured')}
+        </p>{/if}
       <!-- CommandCenter.jsx:1807 -->
       <p class="subtle">{$t('frameleaf_cc_attention_footer')}</p>
     </section>
@@ -274,24 +359,34 @@
     <h2>{$t('frameleaf_cc_glance')}</h2>
     <div>
       <a href={href('server')}
-        ><span><strong>{$t('frameleaf_cc_api')}</strong><small>{$t('frameleaf_cc_responding')}</small></span><Icon
-          icon={mdiChevronRight}
-          size="18"
-        /></a
-      >
-      <a href={href('processing')}
-        ><span><strong>{$t('frameleaf_cc_ml')}</strong><small>{$t('frameleaf_cc_unmeasured')}</small></span><Icon
-          icon={mdiChevronRight}
-          size="18"
-        /></a
-      >
-      <a href={href('processing')}
-        ><span><strong>{$t('frameleaf_cc_gpu_studio')}</strong><small>{$t('frameleaf_cc_unmeasured')}</small></span
+        ><Icon icon={mdiServerOutline} size="18" /><span
+          ><strong>{$t('frameleaf_cc_api')}</strong><small>{$t('frameleaf_cc_responding')}</small></span
         ><Icon icon={mdiChevronRight} size="18" /></a
       >
       <a href={href('processing')}
-        ><span
-          ><strong>{$t('frameleaf_cc_cloud_destination')}</strong><small>{$t('frameleaf_cc_review_destinations')}</small
+        ><Icon icon={mdiImageSearchOutline} size="18" /><span
+          ><strong>{$t('frameleaf_cc_ml')}</strong><small
+            >{ml
+              ? $t(`frameleaf_cc_ml_${mlEndpointState(ml.destinations, ml.routes)}` as Translations)
+              : $t('frameleaf_cc_unmeasured')}</small
+          ></span
+        ><Icon icon={mdiChevronRight} size="18" /></a
+      >
+      <a href={href('processing')}
+        ><Icon icon={mdiDesktopTowerMonitor} size="18" /><span
+          ><strong>{$t('frameleaf_cc_gpu_studio')}</strong><small
+            >{compatibility
+              ? $t(`frameleaf_cc_gpu_${gpuStudioState(compatibility)}` as Translations)
+              : $t('frameleaf_cc_unmeasured')}</small
+          ></span
+        ><Icon icon={mdiChevronRight} size="18" /></a
+      >
+      <a href={href('processing')}
+        ><Icon icon={mdiCloudOutline} size="18" /><span
+          ><strong>{$t('frameleaf_cc_cloud_destination')}</strong><small
+            >{ml
+              ? $t(`frameleaf_cc_cloud_${cloudDestinationState(ml.destinations, ml.routes)}` as Translations)
+              : $t('frameleaf_cc_review_destinations')}</small
           ></span
         ><Icon icon={mdiChevronRight} size="18" /></a
       >
@@ -314,6 +409,7 @@
   }
   .glance a {
     display: flex;
+    gap: 12px;
     justify-content: space-between;
     align-items: center;
     padding: 16px;
@@ -323,6 +419,9 @@
     font-size: 12px;
     color: var(--fl-text);
     text-decoration: none;
+  }
+  .glance a > span {
+    flex: 1;
   }
   .glance small {
     display: block;
@@ -442,10 +541,21 @@
     padding: 14px 0;
     border-bottom: 1px solid var(--fl-border);
   }
-  .action small,
   .service small {
     color: var(--fl-muted);
     margin-left: auto;
+  }
+  /* command-center.css `.cc-action-row`: icon, title over its detail, chevron. */
+  .action > span {
+    display: grid;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+    color: var(--fl-text);
+  }
+  .action small {
+    color: var(--fl-muted);
+    line-height: 1.5;
   }
   .service span {
     color: var(--fl-text);
