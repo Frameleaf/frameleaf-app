@@ -125,21 +125,22 @@ Closed: SD-1 … SD-12, FP-1 … FP-5 (FP-6 intentional). S-14 is closed: the ra
 
 ### September 24 upload and download panels (FL-45)
 
-On `codex/FL-45-download-panel`, based on `master/frameleaf-implementation` @ `f6d757f36d`: `3ce9a36215` (downloads) and `f32d1cebbb` (uploads), then the review fixes `8d0134ab14` (downloads) and `a985ff693f` (uploads). It closes **D-1 … D-5**, **U-1 … U-5** and **UP-1**.
+On `codex/FL-45-download-panel`, based on `master/frameleaf-implementation` @ `f6d757f36d`: `3ce9a36215` (downloads) and `f32d1cebbb` (uploads), then the review fixes `8d0134ab14` (downloads) and `a985ff693f` (uploads), and the re-review fix `885fbdbd9d`. It closes **D-1 … D-5**, **U-1 … U-5** and **UP-1**.
 
 - **Download manager** (`web/src/lib/managers/download-manager.svelte.ts`, prototype `system-data.mjs:442-490`). Each row has a status: `preparing`, `ready` or `error`. It also has a file name, an item count, the expected size, the bytes received and a whole-percent progress.
   - Each request runs through the SDK with the row's own `AbortController`. Cancel, Dismiss, logout and `clearAll()` abort the transfer instead of only hiding its row.
   - Progress is counted from the response body (`progressFetch`) against the archive plan's size or `Content-Length`, and never shows 100% before the last byte.
   - A failed row keeps its request, so Retry runs it again.
 - **Buffered and streamed files.**
-  - Only a file with a planned or known size up to 512 MiB (128 MiB on iOS and Safari), or of unknown size, is fetched into the tab. It follows the prototype: progress, Ready, then Save.
+  - A file is fetched into the tab only when it fits in what the tab may still hold: 512 MiB (128 MiB on iOS and Safari) less the prepared files it already holds, so the parts of a split archive never add up to more than about one limit. It follows the prototype: progress, Ready, then Save.
+  - When the size is unknown, and for every edited file (whose size is not the original's), the response must announce a `Content-Length` within that allowance. It is checked before the body is read; otherwise the request is cancelled and the row streams. A body that outgrows the allowance stops the same way.
   - A larger archive or original is not fetched. Its row is ready as soon as `/download/info` has planned it, and Save starts the browser's own streamed download: `downloadUrlPost` for an archive, an anchor to the original for a file. Save is a click, so browsers allow several in a row.
-  - The buffered parts of a split archive are fetched one at a time.
-  - While a buffered ready file is unsaved, the browser asks before the tab closes (`beforeunload`).
+  - The held parts of a split archive are fetched one at a time; each starts once the one before it is recorded. A part too large to hold is ready at once.
+  - While a buffered ready file is unsaved, the browser asks before the tab closes (`beforeunload`, with `returnValue` set for older browsers).
   - Object URLs are revoked a second after the click, as the prototype does, for Safari.
 - **Every download goes through a transfer surface (D-3).**
   - `downloadArchive()` adds a row at once and plans the archives with `/download/info`. A plan split by the archive size limit adds one row per part. A retry of the first part reuses the plan instead of adding the other parts again, and a cancel while the plan loads starts no later part.
-  - `downloadArchive()` keeps its signature. Its promise now settles when every part is ready, and rejects when one fails or is cancelled, so a bulk download reports failure and cancel truthfully.
+  - `downloadArchive()` keeps its signature. Its promise now settles when every part is ready, and rejects when one fails or is cancelled, so a bulk download reports failure and cancel truthfully. Each part's outcome is registered when the part starts, so saving a streamed part early is not mistaken for a cancel.
   - `downloadAssetFile()` does the same for one original or edited file and for a Live Photo's motion part. `handleDownloadAsset()` uses it in the private app, so the viewer's Download and Download original no longer save straight to disk.
 - **Panel** (`DownloadPanel.svelte`, `UploadPanel.jsx:441-569`).
   - The title follows the prototype: "Preparing N downloads", "N downloads ready" or "Downloads". It sits above "Archives are built on the server, then saved to this device".
@@ -148,7 +149,7 @@ On `codex/FL-45-download-panel`, based on `master/frameleaf-implementation` @ `f
   - The dock stacks the upload panel above the download panel, as `App.jsx` does.
 - **Public shares** (`PublicViewer.jsx`).
   - The lightbox saves one file directly (`:508-517`).
-  - Download all and Download selected use the inline strip under the header (`PublicDownloadStrip.svelte`, `:402-426`, `sharing.css:856-897`), not the Downloads panel. It shows "Preparing archive · n of m" with Cancel, then "Archive ready · n files · size" with Save archive. The next part of a split archive follows once the one before it is saved.
+  - Download all and Download selected use the inline strip under the header (`PublicDownloadStrip.svelte`, `:402-426`, `sharing.css:856-897`), not the Downloads panel. It shows "Preparing archive · n of m" with Cancel, then "Archive ready · n files · size" with Save archive. A ready part can be saved while later parts are still being prepared. The strip draws its border only in the light theme (`sharing.css:865-867`).
 - **Errors (D-2).** A failure stays as an error row with Retry and Dismiss instead of a toast. There are three messages: "Nothing was selected to download" (prototype copy), "These items can no longer be downloaded" (400/401/403/404) and a generic retry message. A public share still gets its revoked-link handling: a 401 goes to `handleError` without a toast.
 - **Upload panel (U-1 … U-5, UP-1).**
   - Dismiss errors removes only the failed rows and lowers the failed count and the batch total, so "Uploading N of M" stays right. It shows only when something failed.
