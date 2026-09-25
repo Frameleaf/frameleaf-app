@@ -300,11 +300,18 @@ export class VideoMomentIndexService {
               captionIdentityHash: names,
               captionDestinationId: selection.destinationId,
             },
+            // FL-57: a face correction or rename while captioning means these may name the wrong people
+            async () =>
+              identityHash((await this.knownPersons(assetId, frames.ownerId)).map(({ name }) => name)) === names,
           )
         : 0;
 
     if (claimLost) {
       return CLAIM_LOST;
+    }
+    if (written === 'identity-changed') {
+      // nothing was published; the plan's retry captions the frames again with the current names
+      return { state: EnrichmentItemState.Failed, reasonKey: 'identity-changed' };
     }
     if (captions.length > 0 && written === 0) {
       // The original was replaced while the frames were being captioned; a retry cuts them again.
