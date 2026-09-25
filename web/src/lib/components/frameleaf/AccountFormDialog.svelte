@@ -188,7 +188,8 @@
       </label>
       <label>
         <span>{$t('frameleaf_users_field_quota')}</span>
-        <input type="number" min="0" step="1" placeholder={$t('unlimited')} bind:value={quota} disabled={working} />
+        <!-- `step="any"`: a fractional GiB (or an existing quota that is not whole GiB) must not block the form. -->
+        <input type="number" min="0" step="any" placeholder={$t('unlimited')} bind:value={quota} disabled={working} />
       </label>
       <label>
         <span>{$t('frameleaf_users_field_storage_label')}</span>
