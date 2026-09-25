@@ -33,6 +33,10 @@
   const settingsDraft = requireSystemConfigDraft();
   const configToEdit = $derived(settingsDraft.draft);
   const config = $derived(settingsDraft.baseline);
+  // The server always returns `analytics`; the DTO marks it optional only because it has a default.
+  const analyticsDefault = { enabled: true, historyDays: 730 };
+  const analytics = $derived(configToEdit.analytics ?? analyticsDefault);
+  const savedAnalytics = $derived(config.analytics ?? analyticsDefault);
 
   // The template's "Keep analytics history for" choices, in days.
   const historyOptions = $derived([
@@ -103,18 +107,18 @@
           title={$t('frameleaf_diagnostics_local_title')}
           subtitle={$t('frameleaf_diagnostics_local_body')}
           {disabled}
-          bind:checked={configToEdit.analytics.enabled}
-          isEdited={configToEdit.analytics.enabled !== config.analytics.enabled}
+          bind:checked={analytics.enabled}
+          isEdited={analytics.enabled !== savedAnalytics.enabled}
         />
         <SettingSelect
           label={$t('frameleaf_diagnostics_history_title')}
           desc={$t('frameleaf_diagnostics_history_body')}
-          bind:value={configToEdit.analytics.historyDays}
+          bind:value={analytics.historyDays}
           options={historyOptions}
           name="analytics-history"
           number
-          isEdited={configToEdit.analytics.historyDays !== config.analytics.historyDays}
-          disabled={disabled || !configToEdit.analytics.enabled}
+          isEdited={analytics.historyDays !== savedAnalytics.historyDays}
+          disabled={disabled || !analytics.enabled}
         />
 
         <div class="diagnostics-action">

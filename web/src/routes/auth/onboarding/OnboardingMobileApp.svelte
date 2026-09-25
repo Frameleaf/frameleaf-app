@@ -15,7 +15,7 @@
   import { Icon } from '@immich/ui';
   import { mdiAndroid, mdiApple, mdiCellphoneArrowDownVariant, mdiOpenInNew, mdiPackageVariant } from '@mdi/js';
   import { onMount } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   let releases = $state<ServerAppReleasesResponseDto | null>(null);
   onMount(async () => {
@@ -44,8 +44,9 @@
     }
   };
 
-  const stores = $derived(
-    [
+  type StoreLink = { key: string; icon: string; label: Translations; hint: Translations; href?: string };
+  const stores = $derived.by(() => {
+    const all: StoreLink[] = [
       {
         key: 'ios',
         icon: mdiApple,
@@ -63,8 +64,9 @@
         hint: 'frameleaf_onboarding_mobile_google_play_hint',
         href: httpsOnly(releases?.android.storeUrl),
       },
-    ].filter((store) => !!store.href),
-  );
+    ];
+    return all.filter((store) => !!store.href);
+  });
 
   let setup = $state<'downloads' | 'obtainium' | null>(null);
   let open = $state(false);
