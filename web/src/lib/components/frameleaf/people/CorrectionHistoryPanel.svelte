@@ -40,8 +40,8 @@
   interface Props {
     person: PersonResponseDto;
     onOpenAsset?: (assetId: string) => void;
-    /** Called once when the panel closes, when a change was undone. */
-    onChanged?: () => void;
+    /** Called once when the panel closes, when a change was undone, with the people faces went back to or left. */
+    onChanged?: (personIds: string[]) => void;
     close: () => void;
   }
 
@@ -59,6 +59,7 @@
   const refused = new SvelteMap<string, string>();
   const undoing = new SvelteMap<string, boolean>();
   let changed = false;
+  const touched = new Set<string>();
   let previous: Element | null = null;
 
   const loadPage = async () => {
@@ -81,7 +82,7 @@
 
   const finish = () => {
     if (changed) {
-      onChanged?.();
+      onChanged?.([...touched]);
     }
     close();
   };
@@ -142,6 +143,11 @@
       const undone = await undoCorrection({ id: correction.id });
       corrections = corrections.map((entry) => (entry.id === undone.id ? undone : entry));
       changed = true;
+      for (const entry of [undone.fromPerson, undone.toPerson]) {
+        if (entry?.exists) {
+          touched.add(entry.id);
+        }
+      }
       message = $t('frameleaf_people_correction_undone_status');
     } catch (error) {
       const reason = refusal(error);

@@ -65,7 +65,7 @@ test.describe('face history', () => {
 
   const setup = async (context: BrowserContext) => {
     const calls = {
-      moves: [] as { personId: string; faceId: string }[],
+      moves: [] as { personId: string; faceId: string; expectedRevision: string }[],
       historyPages: [] as string[],
       undos: [] as string[],
     };
@@ -179,18 +179,22 @@ test.describe('face history', () => {
                   boundingBoxX2: 300,
                   boundingBoxY2: 300,
                   sourceType: 'machine-learning',
+                  revision: `rev-${index}`,
+                  hiddenAt: null,
                   person,
                 },
               ],
       });
     });
+    // moves are revision-checked corrections (FL-38 PATCH /faces/:id)
     await context.route('**/api/faces/*', async (route, request) => {
-      if (request.method() !== 'PUT') {
+      if (request.method() !== 'PATCH') {
         return route.fallback();
       }
-      const target = new URL(request.url()).pathname.split('/').pop()!;
-      calls.moves.push({ personId: target, faceId: request.postDataJSON().id });
-      return route.fulfill({ json: [other] });
+      const id = new URL(request.url()).pathname.split('/').pop()!;
+      const body = request.postDataJSON();
+      calls.moves.push({ personId: body.personId, faceId: id, expectedRevision: body.expectedRevision });
+      return route.fulfill({ json: { id, person: other, revision: `${body.expectedRevision}-next` } });
     });
     await context.route('**/api/assets/statistics*', (route) =>
       route.fulfill({ json: { images: 2, videos: 0, total: 2 } }),
@@ -228,8 +232,8 @@ test.describe('face history', () => {
 
     await expect(panel.getByText('2 faces moved to Blair')).toBeVisible();
     expect(calls.moves).toEqual([
-      { personId: otherId, faceId: faceId(0) },
-      { personId: otherId, faceId: faceId(1) },
+      { personId: otherId, faceId: faceId(0), expectedRevision: 'rev-0' },
+      { personId: otherId, faceId: faceId(1), expectedRevision: 'rev-1' },
     ]);
     await expect(panel.getByRole('checkbox', { name: 'Select the face in photo-1.jpg' })).toBeDisabled();
   });

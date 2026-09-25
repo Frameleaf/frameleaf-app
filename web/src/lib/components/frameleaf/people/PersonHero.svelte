@@ -117,6 +117,15 @@
     }
   };
 
+  /**
+   * Faces changed from the fix-match or history panel: announced once, from here only (the panels
+   * report the people involved and do not emit themselves), then this page re-reads its photos.
+   */
+  const announceFaceChanges = (personIds: string[]) => {
+    eventManager.emit('PersonFacesChange', { personIds: [...new Set([person.id, ...personIds])] });
+    onFacesChanged();
+  };
+
   const toggleHidden = () =>
     update(
       { isHidden: !person.isHidden },
@@ -302,18 +311,10 @@
   }}
 />
 {#if fixOpen}
-  <FixMatchPanel
-    {person}
-    {onOpenAsset}
-    onChanged={() => {
-      eventManager.emit('PersonFacesChange', { personIds: [person.id] });
-      onFacesChanged();
-    }}
-    close={() => (fixOpen = false)}
-  />
+  <FixMatchPanel {person} {onOpenAsset} onChanged={announceFaceChanges} close={() => (fixOpen = false)} />
 {/if}
 {#if historyOpen}
-  <CorrectionHistoryPanel {person} {onOpenAsset} onChanged={onFacesChanged} close={() => (historyOpen = false)} />
+  <CorrectionHistoryPanel {person} {onOpenAsset} onChanged={announceFaceChanges} close={() => (historyOpen = false)} />
 {/if}
 
 <style>

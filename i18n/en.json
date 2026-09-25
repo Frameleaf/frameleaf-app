@@ -5280,6 +5280,7 @@
   "frameleaf_people_featured_photo": "Featured photo",
   "frameleaf_people_featured_updated": "Featured photo updated.",
   "frameleaf_people_find_a_person": "Find a person",
+  "frameleaf_people_fix_changed_elsewhere": "Changed in another view",
   "frameleaf_people_fix_clear_selection": "Clear",
   "frameleaf_people_fix_close": "Close fix incorrect match",
   "frameleaf_people_fix_description": "Faces grouped as {name}. Move any that belong to someone else.",

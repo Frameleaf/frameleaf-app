@@ -89,7 +89,8 @@ describe('CorrectionHistoryPanel', () => {
     expect(screen.queryByRole('button', { name: 'Undo: Moved from Grace to Ada' })).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    expect(onChanged).toHaveBeenCalledOnce();
+    // the people the face went back to and left, announced once by the caller
+    expect(onChanged).toHaveBeenCalledExactlyOnceWith(['grace', 'ada']);
     expect(close).toHaveBeenCalledOnce();
   });
 
