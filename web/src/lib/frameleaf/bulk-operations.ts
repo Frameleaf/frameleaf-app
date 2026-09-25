@@ -878,6 +878,11 @@ export const runBulkAction = async (
       );
     }
 
+    /* The share sheet runs in the selection bar (FL-35 / FL-54); nothing reaches the server from here. */
+    case 'send-copy': {
+      return finish({ outcomes: [], cancelled: false });
+    }
+
     /* POST /download/info and /download/archive, through the web client's download manager. */
     case 'download': {
       try {

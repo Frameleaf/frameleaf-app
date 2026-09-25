@@ -394,8 +394,8 @@ const actions = {
   ],
   "show-offline-file-availability-and-ownership-context": [
     "partial",
-    ["V-6", "V-27"],
-    "Remove the legacy offline block; owner line for every non-owned asset",
+    ["V-27"],
+    "Owner line for every non-owned asset (the legacy offline block is gone, V-6 fixed in FL-35)",
     {
       production: [`${W}/lib/components/frameleaf/ViewerOfflineBanner.svelte`],
     },
@@ -916,9 +916,9 @@ const actions = {
     },
   ],
   "offline-asset-indicator-and-source-specific-behavior": [
-    "partial",
+    "fixed",
     ["V-6"],
-    "Remove the legacy Offline button and block",
+    "FL-35 September 24 viewer: the legacy Offline button and panel block are gone; the offline banner remains",
     {
       production: [`${W}/lib/components/frameleaf/ViewerOfflineBanner.svelte`],
     },
@@ -926,9 +926,14 @@ const actions = {
   "open-editor": ["partial", ["V-5"], 'Label "Edit (E)"'],
   "open-full-viewer-close-back-escape-previous-next": [
     "partial",
-    ["V-5", "V-12"],
-    'Close label; "n of N" position',
-    { production: [`${W}/lib/components/frameleaf/ViewerTitle.svelte`] },
+    ["V-5"],
+    'Close label ("n of N" is in the footer, V-12 fixed in FL-35)',
+    {
+      production: [
+        `${W}/lib/components/frameleaf/ViewerTitle.svelte`,
+        `${W}/lib/components/frameleaf/ViewerFooter.svelte`,
+      ],
+    },
   ],
   "open-info": ["fixed", ["V-5"], 'Label "Information (I)" (fix-viewer)'],
   "permanently-delete-in-the-appropriate-viewer-context": [
@@ -942,11 +947,14 @@ const actions = {
     },
   ],
   "play-pause-seek-volume-fullscreen-for-video": [
-    "partial",
+    "fixed",
     ["V-13"],
-    "Viewer footer with fullscreen and source segment",
+    "FL-35 September 24 viewer: the footer carries full screen and the source segment",
     {
-      production: [`${W}/lib/components/asset-viewer/VideoNativeViewer.svelte`],
+      production: [
+        `${W}/lib/components/asset-viewer/VideoNativeViewer.svelte`,
+        `${W}/lib/components/frameleaf/ViewerFooter.svelte`,
+      ],
     },
   ],
   "refresh-faces-for-this-asset": ["match", []],
@@ -1029,8 +1037,9 @@ const actions = {
   ],
   "toggle-original-video-versus-encoded-playback": [
     "partial",
-    ["V-13", "V-11"],
-    'Footer segment "Play original / Play encoded"',
+    ["V-11"],
+    'Menu label drift (the footer segment "Play original / Play encoded" is in, V-13 fixed in FL-35)',
+    { production: [`${W}/lib/components/frameleaf/ViewerFooter.svelte`] },
   ],
   "transcode-this-video": [
     "partial",
@@ -1046,10 +1055,15 @@ const actions = {
   "view-in-timeline": ["match", []],
   "view-similar-photos": ["partial", ["V-11"], 'Label "Find similar"'],
   "zoom-in-out-fit-image-pan": [
-    "partial",
+    "fixed",
     ["V-6", "V-13", "V-14"],
-    "Footer zoom Fit/% readout; zoom keys (fix-viewer)",
-    { production: [`${W}/lib/components/asset-viewer/PhotoViewer.svelte`] },
+    "FL-35: footer Zoom out / Fit or N% of fit / Zoom in; zoom keys (fix-viewer); legacy buttons gone",
+    {
+      production: [
+        `${W}/lib/components/asset-viewer/PhotoViewer.svelte`,
+        `${W}/lib/components/frameleaf/ViewerFooter.svelte`,
+      ],
+    },
   ],
 };
 

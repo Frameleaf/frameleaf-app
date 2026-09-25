@@ -37,6 +37,26 @@ test.describe('Detail Panel', () => {
     await expect(page.locator('#detail-panel')).toHaveCount(0);
   });
 
+  // FL-36: a 340px floating glass card from 761px (apple-style.css:515-560); phones keep the bottom sheet.
+  test('floats as a card on wide screens and becomes a bottom sheet on phones', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/photos/${asset.id}`);
+    await page.waitForSelector('#immich-asset-viewer');
+    await page.keyboard.press('i');
+    const panel = page.locator('#detail-panel');
+    await expect(panel).toBeVisible();
+    await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(340);
+    const card = (await panel.boundingBox())!;
+    expect(card.x + card.width).toBeLessThan(1280);
+    expect(card.y).toBeGreaterThan(60);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(390);
+    const sheet = (await panel.boundingBox())!;
+    expect(Math.round(sheet.y + sheet.height)).toBe(844);
+  });
+
   test('cannot be opened for shared links with hidden metadata', async ({ page }) => {
     const sharedLink = await utils.createSharedLink(admin.accessToken, {
       type: SharedLinkType.Individual,

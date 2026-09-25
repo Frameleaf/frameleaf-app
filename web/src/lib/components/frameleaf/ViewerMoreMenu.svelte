@@ -21,6 +21,7 @@
   import SetVisibilityAction from '$lib/components/asset-viewer/actions/SetVisibilityAction.svelte';
   import UnstackAction from '$lib/components/asset-viewer/actions/UnstackAction.svelte';
   import ViewerMenuGroupLabel from '$lib/components/frameleaf/ViewerMenuGroupLabel.svelte';
+  import { canSendCopies, sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import { folderOf } from '$lib/frameleaf/viewer-headline';
   import { isImageAsset, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { viewerMenuGroups, type ViewerActionId, type ViewerMenuGroup } from '$lib/frameleaf/viewer-menu';
@@ -91,6 +92,7 @@
       isLivePhoto: !!asset.livePhotoVideoId,
       isSharedLink: !!sharedLink,
       canDownload: authManager.authenticated,
+      canSendCopy: canSendCopies() && sendCopyPermitted(),
       canCopyImage: assetViewerManager.canCopyImage(),
       hasStack: !!stack,
       stackSize: stack?.assets.length ?? 0,
@@ -122,6 +124,9 @@
   {/if}
   {#if has(group, 'download-original')}
     <ActionMenuItem action={Actions.DownloadOriginal} />
+  {/if}
+  {#if has(group, 'send-copy')}
+    <ActionMenuItem action={Actions.SendCopy} />
   {/if}
   {#if has(group, 'copy-image')}
     <ActionMenuItem action={Actions.Copy} />

@@ -90,6 +90,28 @@ describe('descriptionReview', () => {
     expect(review?.canClear).toBe(false);
   });
 
+  // FL-36 AI provenance: the model's confidence, as a percentage, only when the server reported one.
+  it('reports the description confidence as a whole percentage when present', () => {
+    const withConfidence = (confidence: number | null) =>
+      descriptionReview(
+        asset({ exifInfo: exif({ description: 'A lake at dusk' }) }),
+        enrichment({
+          description: {
+            status: Status.Success,
+            appliedDescription: true,
+            appliedTags: false,
+            description: 'A lake at dusk',
+            confidence,
+          },
+        }),
+      )?.confidencePercent;
+
+    expect(withConfidence(0.873)).toBe(87);
+    expect(withConfidence(1)).toBe(100);
+    expect(withConfidence(null)).toBeNull();
+    expect(withConfidence(NaN)).toBeNull();
+  });
+
   it('reads an applied generated description as generated', () => {
     const review = descriptionReview(
       asset({ exifInfo: exif({ description: 'A lake at dusk' }) }),
@@ -106,6 +128,8 @@ describe('descriptionReview', () => {
 
     expect(review?.source).toBe('generated');
     expect(review?.modelName).toBe('model-a');
+    // No confidence was reported, so none is shown (the field is nullable).
+    expect(review?.confidencePercent).toBeNull();
     // Nothing to accept: the suggestion is already what is stored.
     expect(review?.canAccept).toBe(false);
     expect(review?.suggestion).toBeNull();
