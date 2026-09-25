@@ -20,8 +20,15 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
-  import { CLOUD_BACKUP_PRICING, LICENSED_DISCOUNT, cloudPlanPrice, formatUsd } from '$lib/frameleaf/cloud';
+  import {
+    CLOUD_BACKUP_PRICING,
+    LICENSED_DISCOUNT,
+    cloudPlanPrice,
+    formatUsd,
+    licensedDiscount,
+  } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -47,8 +54,12 @@
   const license = $derived(cloudManager.license);
   const products = $derived(cloudManager.products);
   const plan = $derived(license?.plan ?? null);
-  // FL-156: a licensed server (a supporter key) pays 20 % less for plans; AI credit never changes
-  const licensed = $derived(!!license?.entitlements.supporter);
+  // FL-156: an activated server key or this person's own supporter key takes 20 % off plans; AI
+  // credit never changes
+  const discount = $derived(
+    licensedDiscount({ serverLicensed: !!license?.entitlements.supporter, personalKey: !!authManager.user.license }),
+  );
+  const licensed = $derived(discount !== null);
   const linked = $derived(!!license?.linked);
   const plans = $derived(products?.products.filter((product) => product.kind === 'plan') ?? []);
   const pct = `${Math.round(LICENSED_DISCOUNT * 100)}%`;
@@ -193,8 +204,10 @@
       <p class="fc-note"><Icon icon={mdiShieldCheckOutline} size="16" /> {$t('frameleaf_plan_never_locked')}</p>
       <p class="fc-note">
         <Icon icon={mdiTagOutline} size="16" />
-        {#if licensed}
+        {#if discount === 'server'}
           {$t('frameleaf_plan_discount_licensed', { values: { pct } })}
+        {:else if discount === 'personal'}
+          {$t('frameleaf_plan_discount_personal', { values: { pct } })}
         {:else}
           {$t('frameleaf_plan_discount_offer', { values: { pct } })}
           <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-license')}
