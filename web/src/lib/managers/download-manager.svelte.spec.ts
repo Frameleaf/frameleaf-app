@@ -195,6 +195,16 @@ describe('downloadManager (review B1, B2, M3)', () => {
     await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('does not reserve room for a row that was removed', () => {
+    const key = downloadManager.start({ name: 'a.jpg' }, () => new Promise<Blob>(() => {}));
+    expect(downloadManager.reserve(key, 10)).toBe(true);
+
+    downloadManager.remove(key);
+
+    expect(downloadManager.reserve(key, 10)).toBe(false);
+    expect(downloadManager.reservedBytes()).toBe(0);
+  });
+
   it('keeps share rows out of the Downloads panel', () => {
     downloadManager.start({ name: 'share.zip', group: 'share' }, () => new Promise<Blob>(() => {}));
     downloadManager.start({ name: 'mine.zip' }, () => new Promise<Blob>(() => {}));
