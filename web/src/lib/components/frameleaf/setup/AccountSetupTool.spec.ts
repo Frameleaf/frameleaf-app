@@ -41,6 +41,7 @@ describe('Set up your account (FL-176)', () => {
     }
     expect(screen.getByRole('heading', { name: 'Link your Frameleaf account' })).toBeInTheDocument();
     expect(screen.getByLabelText('0 of 5 done')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sign out' })).toHaveAttribute('href', '/auth/logout');
 
     await fireEvent.click(screen.getByRole('switch', { name: 'Memories' }));
     const privacy = container.querySelector('[data-section="privacy"]')!;

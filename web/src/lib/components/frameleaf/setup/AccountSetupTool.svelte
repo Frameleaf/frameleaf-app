@@ -284,6 +284,7 @@
 
       <footer class="frs-tool-foot">
         <span class="auth-note">{$t('frameleaf_setup_tool_reopen')}</span>
+        <a class="auth-link" href={Route.logout()}>{$t('frameleaf_setup_sign_out')}</a>
         <button type="button" class="button primary" disabled={finishing} onclick={() => void finish()}>
           {$t('done')}
         </button>

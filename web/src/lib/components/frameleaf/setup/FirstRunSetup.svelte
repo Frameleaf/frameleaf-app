@@ -562,7 +562,10 @@
   {:else if current.id === 'welcome'}
     <div class="frs frs-stage-screen" data-flow={setup.flow}>
       <div class="frs-stage">
-        <div class="frs-stage-corner">{@render languagePicker()}</div>
+        <div class="frs-stage-corner">
+          {#if signedIn}<a class="auth-link" href={Route.logout()}>{$t('frameleaf_setup_sign_out')}</a>{/if}
+          {@render languagePicker()}
+        </div>
         {#if !existing}
           <SetupLogoIntro onSettled={() => (introReady = true)}>
             <p class="frs-tagline" data-intro>{$t('frameleaf_setup_tagline_new')}</p>
@@ -1197,6 +1200,10 @@
         </div>
         <footer class="frs-foot">
           <span class="auth-note">{$t('frameleaf_setup_saved_note')}</span>
+          {#if signedIn}
+            <!-- A way out when setup can't finish; the app's own sign-out page ends the session. -->
+            <a class="auth-link" href={Route.logout()}>{$t('frameleaf_setup_sign_out')}</a>
+          {/if}
         </footer>
       </main>
     </div>
