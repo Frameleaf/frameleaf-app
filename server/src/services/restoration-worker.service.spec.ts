@@ -17,7 +17,14 @@ import {
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
-import { RestorationErrorCode, RestorationSnapshot, restorationAdmissionOf } from 'src/utils/restoration.js';
+import {
+  RESTORATION_ABANDONED_RESULT_DAYS,
+  RestorationErrorCode,
+  RestorationSnapshot,
+  restorationAdmissionOf,
+} from 'src/utils/restoration.js';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
@@ -157,6 +164,7 @@ describe(RestorationWorkerService.name, () => {
       getForOwner: vi.fn(),
       listByAsset: vi.fn(),
       getCurrent: vi.fn(),
+      listRestoredForPlayback: vi.fn().mockResolvedValue([]),
       update: vi
         .fn()
         .mockImplementation((id: string, patch: Partial<AssetRestoration>) => Promise.resolve(row({ id, ...patch }))),
@@ -168,6 +176,7 @@ describe(RestorationWorkerService.name, () => {
       setCurrent: vi.fn(),
       listExpiredPreviews: vi.fn().mockResolvedValue([]),
       listExpiredResults: vi.fn().mockResolvedValue([]),
+      clearExpiredResult: vi.fn().mockImplementation((id: string) => Promise.resolve(row({ id }))),
       alignWithOperations: vi.fn().mockResolvedValue({ preview: 0, full: 0 }),
       getFilePaths: vi.fn(),
       deleteByAsset: vi.fn(),
@@ -484,6 +493,105 @@ describe(RestorationWorkerService.name, () => {
     });
   });
 
+  describe('run: full render retention (FL-115)', () => {
+    const fullOperation = () =>
+      operation({ kind: MediaOperationKind.Restoration, snapshot: snapshot({ stage: 'full' }) });
+
+    beforeEach(() => {
+      restorations.get.mockResolvedValue(row({ status: AssetRestorationStatus.RestoreFailed }));
+    });
+
+    it('takes the leftovers back from retention when a retry starts', async () => {
+      await sut.run(fullOperation(), CLAIM);
+
+      expect(restorations.update).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        expect.objectContaining({
+          status: AssetRestorationStatus.Restoring,
+          fullOperationId: OPERATION_ID,
+          resultExpiresAt: null,
+        }),
+      );
+    });
+
+    it('starts the retention clock when a full render fails for good', async () => {
+      restore.mockRejectedValue(new Error('worker unreachable'));
+      const before = Date.now();
+
+      await sut.run(fullOperation(), CLAIM);
+
+      const patch = restorations.transition.mock.calls
+        .map((call) => call[2] as Partial<AssetRestoration>)
+        .find((value) => value.status === AssetRestorationStatus.RestoreFailed)!;
+      const expiresAt = patch.resultExpiresAt as unknown as Date;
+      expect(expiresAt.getTime() - before).toBeGreaterThanOrEqual(RESTORATION_ABANDONED_RESULT_DAYS * DAY_MS - 1000);
+      expect(expiresAt.getTime() - before).toBeLessThanOrEqual(RESTORATION_ABANDONED_RESULT_DAYS * DAY_MS + 5000);
+    });
+
+    it('starts the retention clock when the owner cancels a full render', async () => {
+      operations.reportProgress.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      operations.getForOwner.mockResolvedValue(
+        operation({ status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() }),
+      );
+
+      await sut.run(fullOperation(), CLAIM);
+
+      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.Restoring], {
+        status: AssetRestorationStatus.RestoreCancelled,
+        resultExpiresAt: expect.any(Date),
+      });
+    });
+
+    it('refuses a full render when the destination no longer runs the reviewed model', async () => {
+      await sut.run(
+        operation({
+          kind: MediaOperationKind.Restoration,
+          snapshot: snapshot({ stage: 'full', model: { name: 'faithful-v1', version: '0.9' } }),
+        }),
+        CLAIM,
+      );
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({
+          errorCode: RestorationErrorCode.ModelChanged,
+          error: expect.stringContaining('request a new preview'),
+        }),
+      );
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('publishes a full render that ran the reviewed model', async () => {
+      await sut.run(
+        operation({
+          kind: MediaOperationKind.Restoration,
+          snapshot: snapshot({ stage: 'full', model: { name: 'faithful-v1', version: '1.0' } }),
+        }),
+        CLAIM,
+      );
+
+      expect(restore).toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({ errorCode: RestorationErrorCode.ModelChanged }),
+      );
+    });
+
+    it('never sets a retention date on a preview stage that stops', async () => {
+      restorations.get.mockResolvedValue(row());
+      restore.mockRejectedValue(new Error('worker unreachable'));
+
+      await sut.run(operation(), CLAIM);
+
+      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
+        status: AssetRestorationStatus.PreviewFailed,
+        error: 'worker unreachable',
+      });
+    });
+  });
+
   describe('run: cancellation', () => {
     it('acknowledges an owner cancel and marks the stage cancelled instead of failed', async () => {
       operations.reportProgress.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
@@ -683,6 +791,52 @@ describe(RestorationWorkerService.name, () => {
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/b.jpg', '/a.png'] } });
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/rb.jpg'] } });
       expect(result.removed).toBe(3);
+    });
+
+    it('gives aligned full-render failures a retention date', async () => {
+      const before = Date.now();
+      await sut.sweep();
+
+      const [expiresAt] = restorations.alignWithOperations.mock.calls[0] as [Date];
+      expect(expiresAt.getTime() - before).toBeGreaterThanOrEqual(RESTORATION_ABANDONED_RESULT_DAYS * DAY_MS - 1000);
+    });
+
+    it('removes the leftovers of an abandoned full render once its retention lapses (FL-115)', async () => {
+      restorations.listExpiredResults.mockResolvedValue([
+        row({ status: AssetRestorationStatus.RestoreCancelled, resultExpiresAt: new Date(0) as never }),
+      ]);
+
+      await sut.sweep();
+
+      expect(restorations.listExpiredResults).toHaveBeenCalledWith(expect.any(Date), expect.any(Number));
+      expect(restorations.clearExpiredResult).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        AssetRestorationStatus.RestoreCancelled,
+        expect.any(Date),
+      );
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining(RESTORATION_ID), {
+        recursive: true,
+        force: true,
+      });
+      // Nothing to delete file by file: the checkpoints live in the work folder.
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('leaves the files and work folder alone when the row changed since the read (FL-115)', async () => {
+      restorations.listExpiredResults.mockResolvedValue([
+        row({
+          status: AssetRestorationStatus.RestoreCancelled,
+          resultExpiresAt: new Date(0) as never,
+          resultPath: '/thumbs/restored.mp4',
+        }),
+      ]);
+      // A retry moved the row on between the read and the write.
+      restorations.clearExpiredResult.mockResolvedValue(undefined);
+
+      await sut.sweep();
+
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 });

@@ -24,6 +24,7 @@ import {
   isExactInTimeBase,
   isInteger,
   isRational,
+  lessThan,
   max,
   min,
   multiply,
@@ -290,6 +291,83 @@ describe('frames', () => {
       num: 7007,
       den: 30_000,
     });
+  });
+});
+
+/**
+ * FL-93 property tests: frame↔time conversion and trim boundaries hold for every cadence and
+ * index a deterministic generator produces, not only the hand-picked cases above.
+ */
+describe('frame and tick properties', () => {
+  // Park–Miller: deterministic, so a failure names a reproducible case.
+  const generator = (seed: number) => {
+    let state = seed;
+    return (bound: number) => {
+      state = (state * 48_271) % 2_147_483_647;
+      return state % bound;
+    };
+  };
+  const cadences = [
+    FRAME_RATE_NTSC_30,
+    FRAME_RATE_NTSC_24,
+    rational(60_000, 1001),
+    rational(25),
+    rational(50),
+    rational(24),
+    rational(120),
+    rational(15, 2),
+  ];
+
+  it('maps every frame start back to its own index and never between frames', () => {
+    const next = generator(93);
+    for (const frameRate of cadences) {
+      for (let sample = 0; sample < 200; sample++) {
+        // Up to about 24 hours of frames at the fastest cadence.
+        const index = next(10_000_000);
+        const start = frameStartTime(index, frameRate);
+        expect(frameIndexAt(start, frameRate)).toBe(index);
+        expect(snapToFrame(start, frameRate)).toEqual(start);
+        const inside = add(start, divide(frameDuration(frameRate), rational(2)));
+        expect(frameIndexAt(inside, frameRate)).toBe(index);
+        expect(snapToFrame(inside, frameRate)).toEqual(start);
+      }
+    }
+  });
+
+  it('keeps frame starts strictly increasing by exactly one frame duration', () => {
+    const next = generator(102);
+    for (const frameRate of cadences) {
+      for (let sample = 0; sample < 100; sample++) {
+        const index = next(5_000_000);
+        const gap = subtract(frameStartTime(index + 1, frameRate), frameStartTime(index, frameRate));
+        expect(gap).toEqual(frameDuration(frameRate));
+      }
+    }
+  });
+
+  it('gives the same trim boundary however the edit is expressed', () => {
+    const next = generator(16);
+    for (const frameRate of cadences) {
+      for (let sample = 0; sample < 100; sample++) {
+        const milliseconds = next(86_400_000);
+        const trim = fromMilliseconds(milliseconds);
+        const frame = frameIndexAt(trim, frameRate);
+        // Deterministic: the boundary never depends on how often it is recomputed.
+        expect(frameIndexAt(trim, frameRate)).toBe(frame);
+        expect(lessThan(trim, frameStartTime(frame, frameRate))).toBe(false);
+        expect(lessThan(trim, frameStartTime(frame + 1, frameRate))).toBe(true);
+      }
+    }
+  });
+
+  it('round-trips ticks through seconds exactly for common time bases', () => {
+    const next = generator(39);
+    for (const timeBase of [rational(1, 90_000), rational(1, 30_000), rational(1, 600), rational(1001, 24_000)]) {
+      for (let sample = 0; sample < 200; sample++) {
+        const ticks = next(2_000_000_000);
+        expect(secondsToTicks(ticksToSeconds(ticks, timeBase), timeBase)).toBe(ticks);
+      }
+    }
   });
 });
 
