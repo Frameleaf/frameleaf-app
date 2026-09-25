@@ -34,7 +34,7 @@ describe('logging interceptor redaction (FL-81)', () => {
       password: 'hunter2',
       newPassword: 'hunter3',
       pinCode: '123456',
-      credential: { apiKey: 'runpod', clientSecret: 'oauth' },
+      credential: { apiKey: 'api-key', clientSecret: 'oauth' },
       name: 'kept',
     };
     expect(JSON.parse(JSON.stringify(body, replacer))).toEqual({
