@@ -268,7 +268,10 @@ describe(AssetRestorationService.name, () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
 
       await expect(
-        sut.requestPreview(authStub.user1, asset.id, { ...request, destinationId: mlDestinationStub.frameleafCloud.id }),
+        sut.requestPreview(authStub.user1, asset.id, {
+          ...request,
+          destinationId: mlDestinationStub.frameleafCloud.id,
+        }),
       ).rejects.toBeInstanceOf(MlDestinationRefusedError);
       expect(restorations.create).not.toHaveBeenCalled();
       expect(operations.create).not.toHaveBeenCalled();

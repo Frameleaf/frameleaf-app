@@ -14,14 +14,13 @@ import {
   MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
-  MlWorkerRole,
   MlWorkload,
   RenderWorkerStatus,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { FRAMELEAF_CLOUD_ENDPOINT } from 'src/repositories/machine-learning.repository.js';
 import { ML_URL_REMOVED_SUMMARY, MlDestinationService } from 'src/services/ml-destination.service.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
-import { FRAMELEAF_CLOUD_ENDPOINT } from 'src/repositories/machine-learning.repository.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';

@@ -1,9 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  FRAMELEAF_CLOUD_ENDPOINT,
-  type MachineLearningRepository,
-  type MlEndpointProbe,
-} from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import {
   AssetRestorationMode,
@@ -17,6 +12,11 @@ import {
   MlDestinationKind,
   MlWorkload,
 } from 'src/enum.js';
+import {
+  FRAMELEAF_CLOUD_ENDPOINT,
+  type MachineLearningRepository,
+  type MlEndpointProbe,
+} from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRefusedError, selectMlDestination } from 'src/utils/ml-destination.js';
 import {
   RESTORATION_PREVIEW_AFTER_DECISION_DAYS,
@@ -82,7 +82,9 @@ describe('restoration rules (FL-115)', () => {
     it('maps destination kinds one to one and never invents a cloud destination', () => {
       expect(mediaOperationDestinationOf(MlDestinationKind.Local)).toBe(MediaOperationDestination.Local);
       expect(mediaOperationDestinationOf(MlDestinationKind.Lan)).toBe(MediaOperationDestination.Lan);
-      expect(mediaOperationDestinationOf(MlDestinationKind.FrameleafCloud)).toBe(MediaOperationDestination.FrameleafCloud);
+      expect(mediaOperationDestinationOf(MlDestinationKind.FrameleafCloud)).toBe(
+        MediaOperationDestination.FrameleafCloud,
+      );
     });
   });
 
@@ -282,7 +284,6 @@ describe('restoration rules (FL-115)', () => {
   });
 });
 
-
 const deps = (overrides: {
   destination?: MlDestinationRow;
   probe?: MlEndpointProbe;
@@ -416,7 +417,10 @@ describe('selectRestorationDestination (FL-114)', () => {
       acknowledgeCloudUpload: true,
     });
 
-    expect(selection).toMatchObject({ kind: MlDestinationKind.FrameleafCloud, workload: MlWorkload.RestorationCreative });
+    expect(selection).toMatchObject({
+      kind: MlDestinationKind.FrameleafCloud,
+      workload: MlWorkload.RestorationCreative,
+    });
     // FL-159: Frameleaf Cloud resolves to its sentinel; its check comes from the cloud processing service.
     expect(selection.endpoint).toEqual(FRAMELEAF_CLOUD_ENDPOINT);
     expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: true });

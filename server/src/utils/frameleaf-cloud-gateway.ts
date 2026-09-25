@@ -1,6 +1,4 @@
 import { join } from 'node:path';
-import { StorageCore } from 'src/cores/storage.core.js';
-import { DatabaseLock, MlAdmissionRefusal, SystemMetadataKey } from 'src/enum.js';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import type { DatabaseRepository } from 'src/repositories/database.repository.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
@@ -8,6 +6,8 @@ import type { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.
 import type { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { DatabaseLock, MlAdmissionRefusal, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudError, regionalGateway } from 'src/utils/frameleaf-cloud.js';
 
 export type CloudGatewayDeps = {
@@ -50,7 +50,10 @@ export const identityDirectory = (configRepository: ConfigRepository): string =>
 export const loadInstanceIdentity = async (deps: CloudGatewayDeps): Promise<FrameleafInstanceIdentity> =>
   deps.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, async () => {
     const existing = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafInstance);
-    const identity = await deps.instanceIdentityRepository.loadOrCreate(identityDirectory(deps.configRepository), existing);
+    const identity = await deps.instanceIdentityRepository.loadOrCreate(
+      identityDirectory(deps.configRepository),
+      existing,
+    );
     if (!existing || existing.kid !== identity.kid || existing.instanceId !== identity.instanceId) {
       await deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, identity);
     }
@@ -88,7 +91,10 @@ export const resolveCloudGateway = async (deps: CloudGatewayDeps): Promise<Cloud
     return {
       state: CloudConnectionState.NotLinked,
       refusal: MlAdmissionRefusal.CloudUnavailable,
-      detail: link?.status === 'revoked' ? 'The link to Frameleaf Cloud was revoked' : 'This server is not linked to a Frameleaf account',
+      detail:
+        link?.status === 'revoked'
+          ? 'The link to Frameleaf Cloud was revoked'
+          : 'This server is not linked to a Frameleaf account',
       link,
     };
   }

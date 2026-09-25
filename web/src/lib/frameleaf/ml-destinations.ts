@@ -258,11 +258,9 @@ export const canRouteTo = (
   // FL-72: restoration is never routed to a worker that also runs library analysis, except Frameleaf
   // Cloud, which schedules every job on its own capacity. (The server additionally refuses an
   // endpoint a library route uses.)
-  !(
-    isRestorationWorkload(workload) &&
-    destination.role === MlWorkerRole.Mixed &&
-    destination.kind !== MlDestinationKind.FrameleafCloud
-  );
+  (!isRestorationWorkload(workload) ||
+    destination.role !== MlWorkerRole.Mixed ||
+    destination.kind === MlDestinationKind.FrameleafCloud);
 
 /** Destinations that may currently be routed to for `workload`, in the order the server listed them. */
 export const routableDestinations = (

@@ -1,19 +1,19 @@
 import { createPublicKey, verify } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
-import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
+import { IncomingMessage, Server, ServerResponse, createServer } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import { MlAdmissionRefusal, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { INSTANCE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
-import { FrameleafCloudError, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
+import { FrameleafCloudError, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * A fake Frameleaf Cloud (FL-159): discovery, the token endpoint (which verifies the EdDSA client
@@ -38,6 +38,7 @@ const readBody = async (request: IncomingMessage) => {
 
 const startFakeCloud = async (): Promise<FakeCloud> => {
   const fake = { requests: [] } as unknown as FakeCloud;
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   const server: Server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
     const body = await readBody(request);
     const path = request.url ?? '/';
@@ -64,7 +65,7 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
     if (path === '/id/token' && request.method === 'POST') {
       const form = new URLSearchParams(body);
       const assertion = form.get('client_assertion') ?? '';
-      const [header, payload, signature] = assertion.split('.');
+      const [header, payload, signature] = assertion.split('.', 3);
       const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
       const valid =
         !!fake.publicJwk &&
@@ -91,7 +92,7 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
       if (path !== '/ml-eu/ping' && request.headers.authorization !== 'Bearer ml-token') {
         return send(401, { code: 'invalid-token', message: 'no token' });
       }
-      switch (path.split('?')[0]) {
+      switch (path.split('?', 1)[0]) {
         case '/ml-eu/ping': {
           return send(200, {});
         }
@@ -114,7 +115,13 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
           return send(200, {
             etag: 'etag-1',
             models: [
-              { id: 'describe', workload: 'enrichment', name: 'Describe', fingerprint: 'f1', pricing: { unit: 'image', usd: 0.002 } },
+              {
+                id: 'describe',
+                workload: 'enrichment',
+                name: 'Describe',
+                fingerprint: 'f1',
+                pricing: { unit: 'image', usd: 0.002 },
+              },
             ],
           });
         }
@@ -271,7 +278,9 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       features: { identityNames: false, medicalSignals: false, ocrAddon: true },
     });
 
-    const gatewayCalls = cloud.requests.filter((request) => request.path.startsWith('/ml-eu/') && request.path !== '/ml-eu/ping');
+    const gatewayCalls = cloud.requests.filter(
+      (request) => request.path.startsWith('/ml-eu/') && request.path !== '/ml-eu/ping',
+    );
     expect(gatewayCalls.every((request) => request.auth === 'Bearer ml-token')).toBe(true);
   });
 
@@ -309,7 +318,9 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       throw new Error('not ready');
     }
     cloud.respond = ({ path }) =>
-      path === '/ml-eu/capabilities' ? { status: 200, body: { workloads: ['enrichment'], entitlement: true } } : undefined;
+      path === '/ml-eu/capabilities'
+        ? { status: 200, body: { workloads: ['enrichment'], entitlement: true } }
+        : undefined;
 
     await expect(
       new FrameleafCloudMlRepository(cloudRepository).getCapabilities(resolution.gateway),

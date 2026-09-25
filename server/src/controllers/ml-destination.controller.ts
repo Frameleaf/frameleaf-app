@@ -93,8 +93,7 @@ export class MlDestinationController {
   @Endpoint({
     operationId: 'createMlDestination',
     summary: 'Create a machine-learning destination',
-    description:
-      'Add a LAN worker. Frameleaf Cloud is added from its own endpoint (POST admin/cloud/ml/destination).',
+    description: 'Add a LAN worker. Frameleaf Cloud is added from its own endpoint (POST admin/cloud/ml/destination).',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   create(@Body() dto: MlDestinationCreateDto): Promise<MlDestinationResponseDto> {

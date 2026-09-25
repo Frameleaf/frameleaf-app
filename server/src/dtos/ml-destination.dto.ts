@@ -93,7 +93,9 @@ export const MlDestinationResponseSchema = z
     consent: MlDestinationConsentSchema,
     costControls: MlDestinationCostControlsSchema,
     health: MlDestinationHealthStateSchema,
-    cloud: MlDestinationCloudSchema.nullable().describe('Frameleaf Cloud facts from the last check; null for other kinds'),
+    cloud: MlDestinationCloudSchema.nullable().describe(
+      'Frameleaf Cloud facts from the last check; null for other kinds',
+    ),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -117,7 +119,9 @@ const MlDestinationCreateSchema = z
     url: z
       .url()
       .optional()
-      .describe('Required for a LAN destination, optional for a local one; Frameleaf Cloud is added from its own endpoint'),
+      .describe(
+        'Required for a LAN destination, optional for a local one; Frameleaf Cloud is added from its own endpoint',
+      ),
     authToken: z.string().max(4096).optional().describe('Bearer token for a LAN worker (write-only)'),
     workloads: z.array(MlWorkloadSchema).max(16).default([]),
     enabled: z.boolean().default(true),
@@ -243,7 +247,9 @@ const MlCapabilityDestinationSchema = z
     leavesNetwork: z.boolean().describe('Work sent here leaves this network (Frameleaf Cloud)'),
     region: z.string().nullable().describe('Frameleaf Cloud data region, or null'),
     checkedAt: z.string().nullable().describe('When the destination was last checked, or null'),
-    stale: z.boolean().describe('The last check is too old to count as evidence; the destination is checked again first'),
+    stale: z
+      .boolean()
+      .describe('The last check is too old to count as evidence; the destination is checked again first'),
     acceleration: MlWorkerAccelerationSchema.describe('CPU or accelerator, from the last check; unknown without facts'),
     gpuMemoryBytes: z
       .number()

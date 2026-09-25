@@ -33,10 +33,9 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
-import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
-import { evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import {
   PENDING_STUDIO_EXPORT_STATES,
@@ -59,6 +58,7 @@ import { getConfig } from 'src/utils/config.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
+import { evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import {
   STUDIO_EXPORT_CONTENT_TYPES,
   STUDIO_EXPORT_LEASE_MS,

@@ -76,23 +76,20 @@ describe(WorkerInventoryService.name, () => {
     operations = { getDestinationLoad: vi.fn().mockResolvedValue([]), getClaimants: vi.fn().mockResolvedValue([]) };
     renderWorkers = { list: vi.fn().mockResolvedValue([]) };
 
-    mocks.mlDestination.getAll.mockResolvedValue([
-      mlDestinationStub.local,
-      mlDestinationStub.lan,
-      cloudUnlinked,
-    ]);
+    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan, cloudUnlinked]);
     mocks.mlDestination.getRoutes.mockResolvedValue([
       { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() },
       { workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() },
       { workload: MlWorkload.Enrichment, destinationId: cloudUnlinked.id, modelId: null, updatedAt: new Date() },
-      { workload: MlWorkload.RestorationFaithful, destinationId: mlDestinationStub.lan.id, modelId: null, updatedAt: new Date() },
+      {
+        workload: MlWorkload.RestorationFaithful,
+        destinationId: mlDestinationStub.lan.id,
+        modelId: null,
+        updatedAt: new Date(),
+      },
     ]);
     mocks.mlDestination.getById.mockImplementation((id: string) =>
-      Promise.resolve(
-        [mlDestinationStub.local, mlDestinationStub.lan, cloudUnlinked].find(
-          (row) => row.id === id,
-        ),
-      ),
+      Promise.resolve([mlDestinationStub.local, mlDestinationStub.lan, cloudUnlinked].find((row) => row.id === id)),
     );
     mocks.mlDestination.getSpend.mockResolvedValue(0);
     mocks.job.getJobCounts.mockResolvedValue(counts(0, 0));

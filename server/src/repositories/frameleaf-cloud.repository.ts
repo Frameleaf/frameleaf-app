@@ -147,7 +147,7 @@ export class FrameleafCloudRepository {
         const parsed = errorEnvelopeSchema.safeParse(JSON.parse(text));
         envelope = parsed.success ? parsed.data : null;
       } catch {
-        envelope = null;
+        // an unreadable body carries no envelope; the status decides the refusal
       }
       const refusal = refusalFromCloudError(response.status, envelope);
       if (response.status === 401) {
@@ -165,7 +165,11 @@ export class FrameleafCloudRepository {
     try {
       json = text.length > 0 ? JSON.parse(text) : {};
     } catch {
-      throw new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, response.status, 'Frameleaf Cloud sent invalid JSON');
+      throw new FrameleafCloudError(
+        MlAdmissionRefusal.CloudUnavailable,
+        response.status,
+        'Frameleaf Cloud sent invalid JSON',
+      );
     }
     const parsed = schema.safeParse(json);
     if (!parsed.success) {

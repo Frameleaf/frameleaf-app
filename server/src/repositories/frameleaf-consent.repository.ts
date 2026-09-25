@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { CloudConsentFeatures } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { canWriteFork } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
-import type { CloudConsentFeatures } from 'src/utils/frameleaf-cloud.js';
 
 export type FrameleafConsentRow = {
   id: string;

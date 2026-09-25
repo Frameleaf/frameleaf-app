@@ -7,6 +7,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import z from 'zod';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import {
   RESTORATION_MAX_OUTPUT_EDGE,
@@ -31,7 +32,6 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 // Restoration's selection registry and inference types live with the rest of restoration's
 // rules; that module only needs this one's types, so the import cycle is inert at load time.
 import {

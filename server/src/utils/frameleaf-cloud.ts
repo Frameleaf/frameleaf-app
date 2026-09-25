@@ -23,7 +23,11 @@ export const FRAMELEAF_CLOUD_ASSERTION_TTL_SECONDS = 120;
 
 export const discoverySchema = z.object({
   version: z.number().int(),
-  validFor: z.number().int().min(60).max(7 * 24 * 60 * 60),
+  validFor: z
+    .number()
+    .int()
+    .min(60)
+    .max(7 * 24 * 60 * 60),
   issuer: z.url({ protocol: /^https?$/ }),
   api: z.url({ protocol: /^https?$/ }),
   ml: z.record(z.string().min(1).max(16), z.url({ protocol: /^https?$/ })),
@@ -33,7 +37,11 @@ export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
 export const tokenResponseSchema = z.object({
   access_token: z.string().min(1).max(8192),
   token_type: z.string().optional(),
-  expires_in: z.number().int().min(1).max(24 * 60 * 60),
+  expires_in: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60 * 60),
 });
 
 const consentFeaturesSchema = z.object({
@@ -72,7 +80,10 @@ export const capabilitiesSchema = z.object({
 export type CloudCapabilities = z.infer<typeof capabilitiesSchema>;
 
 export const walletResponseSchema = walletSchema.extend({
-  topUpUrl: z.url({ protocol: /^https$/ }).nullable().default(null),
+  topUpUrl: z
+    .url({ protocol: /^https$/ })
+    .nullable()
+    .default(null),
 });
 export type CloudWallet = z.infer<typeof walletResponseSchema>;
 
@@ -105,7 +116,10 @@ export const consentCurrentSchema = z.object({
   recordedVersion: z.string().min(1).max(64).nullable().default(null),
   features: consentFeaturesSchema.default({ identityNames: false, medicalSignals: false, ocrAddon: false }),
   summary: z.string().max(4000).default(''),
-  documentUrl: z.url({ protocol: /^https$/ }).nullable().default(null),
+  documentUrl: z
+    .url({ protocol: /^https$/ })
+    .nullable()
+    .default(null),
 });
 export type CloudConsentCurrent = z.infer<typeof consentCurrentSchema>;
 
@@ -157,14 +171,19 @@ const CLOUD_REFUSALS = new Set<string>([
  * `refusal` in the envelope wins when it is one the server knows; otherwise the status decides.
  * Every outcome is a refusal of the named destination: nothing here ever picks another one.
  */
-export const refusalFromCloudError = (status: number | null, envelope: CloudErrorEnvelope | null): MlAdmissionRefusal => {
+export const refusalFromCloudError = (
+  status: number | null,
+  envelope: CloudErrorEnvelope | null,
+): MlAdmissionRefusal => {
   if (envelope?.refusal && CLOUD_REFUSALS.has(envelope.refusal)) {
     return envelope.refusal as MlAdmissionRefusal;
   }
   const code = envelope?.code ?? '';
   switch (status) {
     case 401: {
-      return code === 'entitlement-missing' ? MlAdmissionRefusal.EntitlementMissing : MlAdmissionRefusal.DestinationUnhealthy;
+      return code === 'entitlement-missing'
+        ? MlAdmissionRefusal.EntitlementMissing
+        : MlAdmissionRefusal.DestinationUnhealthy;
     }
     case 402: {
       return code === 'daily-cap' ? MlAdmissionRefusal.BudgetExceeded : MlAdmissionRefusal.WalletInsufficient;

@@ -81,7 +81,12 @@ export const mlDestinationStub = {
     consentAcknowledgedBy: 'admin-id',
     consentVersion: '2026-09-25',
     lastProbeWorkloads: [MlWorkload.Enrichment, MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
-    lastProbeHardware: { preferredAcceleration: 'cuda', providers: ['CUDAExecutionProvider'], cudaDeviceCount: 1, gpus: [] },
+    lastProbeHardware: {
+      preferredAcceleration: 'cuda',
+      providers: ['CUDAExecutionProvider'],
+      cudaDeviceCount: 1,
+      gpus: [],
+    },
     lastProbeCloud: {
       region: 'eu',
       consentRequiredVersion: '2026-09-25',

@@ -87,7 +87,9 @@ export const hasRequiredConsent = (destination: Pick<MlDestinationRow, 'kind' | 
  * Frameleaf Cloud destination resolves to the `FRAMELEAF_CLOUD_ENDPOINT` sentinel, whose check the
  * cloud processing service answers from the regional gateway (FL-159).
  */
-export const resolveEndpoint = (destination: Pick<MlDestinationRow, 'kind' | 'url' | 'authToken'>): MlEndpoint | null => {
+export const resolveEndpoint = (
+  destination: Pick<MlDestinationRow, 'kind' | 'url' | 'authToken'>,
+): MlEndpoint | null => {
   if (destination.kind === MlDestinationKind.FrameleafCloud) {
     return FRAMELEAF_CLOUD_ENDPOINT;
   }

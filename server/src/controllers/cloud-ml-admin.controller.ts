@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
@@ -9,7 +10,6 @@ import {
   CloudMlWalletDto,
 } from 'src/dtos/cloud-ml.dto.js';
 import { MlDestinationResponseDto } from 'src/dtos/ml-destination.dto.js';
-import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
 import { CloudMlService } from 'src/services/cloud-ml.service.js';

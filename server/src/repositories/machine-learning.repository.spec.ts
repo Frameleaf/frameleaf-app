@@ -139,9 +139,13 @@ describe(MachineLearningRepository.name, () => {
       vi.stubGlobal('fetch', fetch);
 
       await expect(
-        sut.encodeImage(selection(MlDestinationKind.Lan, lanUrl, () => {}, 'lan-token'), imagePath, {
-          ...defaults.machineLearning.clip,
-        }),
+        sut.encodeImage(
+          selection(MlDestinationKind.Lan, lanUrl, () => {}, 'lan-token'),
+          imagePath,
+          {
+            ...defaults.machineLearning.clip,
+          },
+        ),
       ).rejects.toThrow(/lan destination destination-lan failed: fetch failed/);
 
       expect(fetch).toHaveBeenCalledTimes(1);
@@ -160,9 +164,9 @@ describe(MachineLearningRepository.name, () => {
         record,
       };
 
-      await expect(
-        sut.encodeImage(cloud, imagePath, { ...defaults.machineLearning.clip }),
-      ).rejects.toBeInstanceOf(CloudJobsUnavailableError);
+      await expect(sut.encodeImage(cloud, imagePath, { ...defaults.machineLearning.clip })).rejects.toBeInstanceOf(
+        CloudJobsUnavailableError,
+      );
       expect(fetch).not.toHaveBeenCalled();
       expect(record).not.toHaveBeenCalled();
     });
@@ -585,7 +589,13 @@ describe(MachineLearningRepository.name, () => {
         getRoutes: vi.fn().mockResolvedValue([]),
       } as unknown as MlDestinationRepository;
       const machineLearningRepository = {
-        probe: vi.fn().mockResolvedValue(destination.kind === MlDestinationKind.FrameleafCloud ? mlProbeStub.frameleafCloud : mlProbeStub.restoration),
+        probe: vi
+          .fn()
+          .mockResolvedValue(
+            destination.kind === MlDestinationKind.FrameleafCloud
+              ? mlProbeStub.frameleafCloud
+              : mlProbeStub.restoration,
+          ),
       } as unknown as MachineLearningRepository;
       return selectRestorationDestination(
         { mlDestinationRepository, machineLearningRepository },

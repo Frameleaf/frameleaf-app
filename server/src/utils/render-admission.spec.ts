@@ -449,7 +449,9 @@ describe('evaluateRenderOutput (FL-42)', () => {
     expect(evaluateRenderOutput([{ ...sdr, gpuMemoryBytes: null }], request)).toMatchObject({
       refusal: RenderOutputRefusal.InsufficientMemory,
     });
-    expect(evaluateRenderOutput([{ ...sdr, gpuMemoryBytes: 4 * gib }], { ...request, resolution: '2160p' })).toMatchObject({
+    expect(
+      evaluateRenderOutput([{ ...sdr, gpuMemoryBytes: 4 * gib }], { ...request, resolution: '2160p' }),
+    ).toMatchObject({
       refusal: RenderOutputRefusal.InsufficientMemory,
     });
     expect(evaluateRenderOutput([{ ...sdr, codecs: [] }], request)).toMatchObject({
@@ -458,14 +460,18 @@ describe('evaluateRenderOutput (FL-42)', () => {
     expect(evaluateRenderOutput([sdr], { ...request, format: 'mp4-hevc-main10' })).toMatchObject({
       refusal: RenderOutputRefusal.IncompatibleColor,
     });
-    expect(evaluateRenderOutput([hdr], { ...request, format: 'mp4-hevc-main10', color: 'dolby-vision' })).toMatchObject({
-      refusal: RenderOutputRefusal.IncompatibleColor,
-    });
+    expect(evaluateRenderOutput([hdr], { ...request, format: 'mp4-hevc-main10', color: 'dolby-vision' })).toMatchObject(
+      {
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      },
+    );
   });
 
   it('admits what one session verified in full', () => {
     expect(evaluateRenderOutput([sdr], request)).toEqual({ supported: true });
-    expect(evaluateRenderOutput([sdr, hdr], { format: 'mp4-hevc-main10', color: 'hdr10', resolution: '2160p' })).toEqual({
+    expect(
+      evaluateRenderOutput([sdr, hdr], { format: 'mp4-hevc-main10', color: 'hdr10', resolution: '2160p' }),
+    ).toEqual({
       supported: true,
     });
   });
