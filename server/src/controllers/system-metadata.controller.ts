@@ -1,6 +1,12 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import {
+  FrameleafSetupLibraryResponseDto,
+  FrameleafSetupResponseDto,
+  FrameleafSetupStorageResponseDto,
+  FrameleafSetupUpdateDto,
+} from 'src/dtos/frameleaf-setup.dto.js';
 import {
   AdminOnboardingUpdateDto,
   ReverseGeocodingStateResponseDto,
@@ -36,6 +42,62 @@ export class SystemMetadataController {
   })
   updateAdminOnboarding(@Body() dto: AdminOnboardingUpdateDto): Promise<void> {
     return this.service.updateAdminOnboarding(dto);
+  }
+
+  @Get('frameleaf-setup')
+  @Authenticated({ permission: Permission.SystemMetadataRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve Frameleaf setup',
+    description: 'Retrieve whether Frameleaf first-run setup is complete, its flow and the saved progress.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getFrameleafSetup(): Promise<FrameleafSetupResponseDto> {
+    return this.service.getFrameleafSetup();
+  }
+
+  @Put('frameleaf-setup')
+  @Authenticated({ permission: Permission.SystemMetadataUpdate, admin: true })
+  @Endpoint({
+    summary: 'Save Frameleaf setup progress',
+    description: 'Save the per-step first-run setup progress. Passwords are never accepted.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  updateFrameleafSetup(@Body() dto: FrameleafSetupUpdateDto): Promise<FrameleafSetupResponseDto> {
+    return this.service.updateFrameleafSetup(dto);
+  }
+
+  @Post('frameleaf-setup/finish')
+  @Authenticated({ permission: Permission.SystemMetadataUpdate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Finish Frameleaf setup',
+    description: 'Finish first-run setup after checking that an admin exists and the library location is writable.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  finishFrameleafSetup(): Promise<FrameleafSetupResponseDto> {
+    return this.service.finishFrameleafSetup();
+  }
+
+  @Get('frameleaf-setup/library')
+  @Authenticated({ permission: Permission.SystemMetadataRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve library totals for setup',
+    description: 'Retrieve the items, people, albums and size of the library for first-run setup.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getFrameleafSetupLibrary(): Promise<FrameleafSetupLibraryResponseDto> {
+    return this.service.getFrameleafSetupLibrary();
+  }
+
+  @Get('frameleaf-setup/storage')
+  @Authenticated({ permission: Permission.SystemMetadataRead, admin: true })
+  @Endpoint({
+    summary: 'Check library storage for setup',
+    description: 'Check that the library location is writable and report its free space.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getFrameleafSetupStorage(): Promise<FrameleafSetupStorageResponseDto> {
+    return this.service.getFrameleafSetupStorage();
   }
 
   @Get('reverse-geocoding-state')

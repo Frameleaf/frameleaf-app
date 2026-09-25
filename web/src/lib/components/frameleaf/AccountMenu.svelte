@@ -15,6 +15,7 @@
   import { getAboutInfo, getCloudMlStatus, getCloudStatus, getVersionHistory } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
   import {
+    mdiAccountCheckOutline,
     mdiAccountEditOutline,
     mdiChevronDown,
     mdiChevronRight,
@@ -280,6 +281,12 @@
         <Icon icon={mdiAccountEditOutline} size="1.125em" aria-hidden={true} />
         <span>{$t('edit_avatar')}</span>
       </button>
+
+      <!-- FL-176: the one-time "Set up your account" page can be reopened from here. -->
+      <a href={Route.onboarding()} role="menuitem" class="fl-item" onclick={close}>
+        <Icon icon={mdiAccountCheckOutline} size="1.125em" aria-hidden={true} />
+        <span>{$t('frameleaf_setup_tool_title')}</span>
+      </a>
 
       <hr />
 

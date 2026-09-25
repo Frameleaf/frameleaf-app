@@ -1,4 +1,4 @@
-import { LicenseState, type LicenseProductsResponseDto } from '@immich/sdk';
+import { Currency, LicenseState, type LicenseProductsResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +18,7 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
 
 const store = 'https://frameleaf.cloud.test/store';
 const products = (storeUrl: string | null = store): LicenseProductsResponseDto => ({
-  currency: 'USD',
+  currency: Currency.Usd,
   licensedDiscount: 0.2,
   storeUrl,
   credit: { minimumUsd: 20, maximumUsd: 500 },
