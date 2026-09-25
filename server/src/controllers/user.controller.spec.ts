@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { UserController } from 'src/controllers/user.controller.js';
+import { Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { UserService } from 'src/services/user.service.js';
 import { errorDto } from 'test/medium/responses.js';
@@ -108,6 +109,23 @@ describe(UserController.name, () => {
     it('rejects an oversized query and a query that is not an object', async () => {
       expect((await put([{ name: 'big', query: { text: 'x'.repeat(9000) } }])).status).toBe(400);
       expect((await put([{ name: 'list', query: ['a'] }])).status).toBe(400);
+    });
+  });
+
+  describe('GET /users/me/preferences/history (FL-71 CC-10)', () => {
+    it("serves the signed-in account's own history with the preference read permission", async () => {
+      service.getMyPreferenceHistory.mockResolvedValue({ entries: [] });
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/users/me/preferences/history');
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ entries: [] });
+      expect(service.getMyPreferenceHistory).toHaveBeenCalledWith(undefined);
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ adminRoute: false, permission: Permission.UserPreferenceRead }),
+        }),
+      );
     });
   });
 });

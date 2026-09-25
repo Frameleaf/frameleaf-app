@@ -55,7 +55,7 @@ describe('AccountPinDialog', () => {
     render(AccountPinDialog, { user, mode: 'clear', onClose });
 
     expect(screen.queryByLabelText(en.frameleaf_users_pin_label)).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_users_pin_clear }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_users_pin_reset }));
 
     expect(handleUpdateUserAdmin).toHaveBeenCalledWith(user, { pinCode: null });
   });
@@ -69,5 +69,19 @@ describe('AccountPinDialog', () => {
 
     expect(input.value).toBe('');
     expect(handleUpdateUserAdmin).not.toHaveBeenCalled();
+  });
+
+  it("is named after the template's action: Set PIN, Change PIN or Reset PIN", () => {
+    const { unmount } = render(AccountPinDialog, { user, mode: 'set', onClose: vi.fn() });
+    expect(screen.getByRole('dialog', { name: en.frameleaf_users_pin_set })).toBeInTheDocument();
+    unmount();
+
+    const second = render(AccountPinDialog, { user, mode: 'set', hasPin: true, onClose: vi.fn() });
+    expect(screen.getByRole('dialog', { name: en.frameleaf_users_pin_change })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en.frameleaf_users_pin_change })).toBeInTheDocument();
+    second.unmount();
+
+    render(AccountPinDialog, { user, mode: 'clear', hasPin: true, onClose: vi.fn() });
+    expect(screen.getByRole('dialog', { name: en.frameleaf_users_pin_reset })).toBeInTheDocument();
   });
 });

@@ -95,6 +95,38 @@ describe('/admin/integrity', () => {
     await utils.copyFolder(`/data/bak/${admin.userId}`, `/data/upload/${admin.userId}`);
   });
 
+  describe('GET /runs (FL-81)', async () => {
+    it.sequential('records when each check last ran in full', async () => {
+      for (const name of [
+        ManualJobName.IntegrityUntrackedFiles,
+        ManualJobName.IntegrityMissingFiles,
+        ManualJobName.IntegrityChecksumMismatch,
+      ]) {
+        await utils.createJob(admin.accessToken, { name });
+      }
+      await utils.waitForQueueFinish(admin.accessToken, QueueName.IntegrityCheck);
+
+      const { status, body } = await request(app)
+        .get('/admin/integrity/runs')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual({
+        missing_file: expect.any(String),
+        untracked_file: expect.any(String),
+        checksum_mismatch: expect.any(String),
+      });
+    });
+
+    it('is for administrators only', async () => {
+      const { status } = await request(app)
+        .get('/admin/integrity/runs')
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+
+      expect(status).toBe(403);
+    });
+  });
+
   describe('POST /summary (& jobs)', async () => {
     it.sequential('reports no issues', async () => {
       await utils.createJob(admin.accessToken, {

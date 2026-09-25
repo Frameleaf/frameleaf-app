@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -7,7 +7,10 @@ import {
   QueueJobResponseDto,
   QueueJobSearchDto,
   QueueNameParamDto,
+  QueueOwnerStatisticsResponseDto,
+  QueueOwnerStatisticsSearchDto,
   QueueResponseDto,
+  QueueRetryFailedResponseDto,
   QueueUpdateDto,
 } from 'src/dtos/queue.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -69,6 +72,39 @@ export class QueueController {
     @Query() dto: QueueJobSearchDto,
   ): Promise<QueueJobResponseDto[]> {
     return this.service.searchJobs(auth, name, dto);
+  }
+
+  // FL-71 (J-1): the Job manager's account filter (`JobsManager.jsx` 341-355).
+  @Get(':name/statistics')
+  @Authenticated({ permission: Permission.QueueJobRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve queue statistics for an account',
+    description:
+      "Counts, per state, the jobs of the specified queue that work on one account's items. At most 1,000 jobs of each state are read; `truncated` marks lower bounds.",
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getQueueOwnerStatistics(
+    @Auth() auth: AuthDto,
+    @Param() { name }: QueueNameParamDto,
+    @Query() { ownerId }: QueueOwnerStatisticsSearchDto,
+  ): Promise<QueueOwnerStatisticsResponseDto> {
+    return this.service.getOwnerStatistics(auth, name, ownerId);
+  }
+
+  // FL-71: the Job manager's "Retry failed" (`JobsManager.jsx` 715-727).
+  @Post(':name/jobs/retry-failed')
+  @Authenticated({ permission: Permission.QueueJobCreate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Retry failed queue jobs',
+    description: 'Puts every failed job of the specified queue back in the queue with its saved data.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  retryFailedQueueJobs(
+    @Auth() auth: AuthDto,
+    @Param() { name }: QueueNameParamDto,
+  ): Promise<QueueRetryFailedResponseDto> {
+    return this.service.retryFailedJobs(auth, name);
   }
 
   @Delete(':name/jobs')

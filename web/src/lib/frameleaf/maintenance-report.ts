@@ -49,3 +49,30 @@ export const summarizeMaintenanceReportFilter = (
   total,
   isFiltered: filtered !== total,
 });
+
+/**
+ * The template's "Download report file" (`Maintenance.jsx:786-794`, `reportToText` and
+ * `reportFileName` in `maintenance-data.mjs:657-674`) on production's findings: a heading, when
+ * the check last ran and how many findings it has, then one path per line. Production findings
+ * carry no severity or message, so those lines are the path alone.
+ */
+export const maintenanceReportText = ({
+  title,
+  lastRunAt,
+  paths,
+}: {
+  title: string;
+  lastRunAt: string | null | undefined;
+  paths: readonly string[];
+}): string =>
+  [
+    `Frameleaf integrity report · ${title}`,
+    `Last run: ${lastRunAt ?? 'never'}`,
+    `Findings: ${paths.length}`,
+    '',
+    ...paths,
+  ].join('\n') + '\n';
+
+/** `frameleaf-integrity-<type>-<yyyy-mm-dd-hh-mm-ss>.txt`, from the moment the file is made. */
+export const maintenanceReportFileName = (type: string, at: Date): string =>
+  `frameleaf-integrity-${type}-${at.toISOString().slice(0, 19).replaceAll(/[:T]/g, '-')}.txt`;

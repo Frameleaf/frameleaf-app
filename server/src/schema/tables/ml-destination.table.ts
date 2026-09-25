@@ -132,6 +132,14 @@ export class MlWorkloadRouteTable {
  * duration. This is the accounting FL-115 reads for measured estimates and billing limits.
  */
 @Index({ columns: ['destinationId', 'startedAt'] })
+// FL-71: the Job manager's Worker lookup (fork migration 0000000000170-MlWorkloadAccountingJobIndex).
+@Index({
+  name: 'ml_workload_accounting_jobId_jobName_startedAt_idx',
+  expression: '"jobId", "jobName", "startedAt" DESC',
+  where: '("jobId" IS NOT NULL)',
+  // Created by the fork migration, not the schema generator (as media-operation.table.ts does).
+  synchronize: false,
+})
 @Table('ml_workload_accounting')
 export class MlWorkloadAccountingTable {
   @PrimaryGeneratedColumn()

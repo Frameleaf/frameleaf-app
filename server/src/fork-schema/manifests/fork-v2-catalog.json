@@ -1301,6 +1301,30 @@
       "identity": "immich_fork.state.upstreamVersion"
     },
     {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.user_preference_history.changes"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.user_preference_history.createdAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.user_preference_history.deviceLabel"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.user_preference_history.id"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.user_preference_history.omittedChanges"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.user_preference_history.userId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.video_edit_selection.assetId"
     },
@@ -6951,6 +6975,18 @@
       "identity": "immich_fork.state.state_pkey"
     },
     {
+      "definition": "CHECK (jsonb_typeof(changes) = 'array'::text)",
+      "identity": "immich_fork.user_preference_history.user_preference_history_changes_check"
+    },
+    {
+      "definition": "CHECK (\"omittedChanges\" >= 0)",
+      "identity": "immich_fork.user_preference_history.user_preference_history_omitted_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.user_preference_history.user_preference_history_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"currentVersionId\", \"assetId\", \"ownerId\") REFERENCES immich_fork.video_edit_version(id, \"assetId\", \"ownerId\")",
       "identity": "immich_fork.video_edit_selection.video_edit_selection_currentVersionId_assetId_ownerId_fkey"
     },
@@ -8658,7 +8694,9 @@
     "0000000000130-ArchiveOperations",
     "0000000000140-PersonMergeVerdicts",
     "0000000000150-AlbumPositions",
-    "0000000000160-RecipientGroups"
+    "0000000000160-RecipientGroups",
+    "0000000000170-MlWorkloadAccountingJobIndex",
+    "0000000000171-UserPreferenceHistory"
   ],
   "functions": [
     {
@@ -10100,6 +10138,14 @@
       "identity": "immich_fork.state.state_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX user_preference_history_pkey ON immich_fork.user_preference_history USING btree (id)",
+      "identity": "immich_fork.user_preference_history.user_preference_history_pkey"
+    },
+    {
+      "definition": "CREATE INDEX user_preference_history_user_created_idx ON immich_fork.user_preference_history USING btree (\"userId\", \"createdAt\" DESC)",
+      "identity": "immich_fork.user_preference_history.user_preference_history_user_created_idx"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX video_edit_selection_pkey ON immich_fork.video_edit_selection USING btree (\"assetId\")",
       "identity": "immich_fork.video_edit_selection.video_edit_selection_pkey"
     },
@@ -11058,6 +11104,10 @@
     {
       "definition": "CREATE INDEX \"ml_workload_accounting_destinationId_startedAt_idx\" ON public.ml_workload_accounting USING btree (\"destinationId\", \"startedAt\")",
       "identity": "public.ml_workload_accounting.ml_workload_accounting_destinationId_startedAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"ml_workload_accounting_jobId_jobName_startedAt_idx\" ON public.ml_workload_accounting USING btree (\"jobId\", \"jobName\", \"startedAt\" DESC) WHERE (\"jobId\" IS NOT NULL)",
+      "identity": "public.ml_workload_accounting.ml_workload_accounting_jobId_jobName_startedAt_idx"
     },
     {
       "definition": "CREATE UNIQUE INDEX ml_workload_accounting_pkey ON public.ml_workload_accounting USING btree (id)",
@@ -12505,6 +12555,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.state"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.user_preference_history"
     },
     {
       "definition": "table",

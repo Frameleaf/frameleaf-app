@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Updateable } from 'kysely';
+import { cloneDeep, get, isEqual, omit } from 'lodash-es';
 import { DateTime } from 'luxon';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -13,6 +14,7 @@ import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import {
   type PreferencesAudience,
+  UserPreferenceHistoryResponseDto,
   UserPreferencesResponseDto,
   UserPreferencesUpdateDto,
   mapPreferences,
@@ -24,12 +26,14 @@ import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
+import { CONFIG_HISTORY_LIMITS, describeObjectChanges } from 'src/utils/config-history.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { isLockedAsset } from 'src/utils/locked-state.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { findOrFail } from 'src/utils/misc.js';
 import {
+  type FrameleafUserPreferences,
   LOCKED_RULES_REQUIRE_UNLOCK_MESSAGE,
   changesLockedRules,
   getPreferences,
@@ -41,6 +45,33 @@ import { generateProfileImage } from 'src/utils/profile-image.js';
 /** FL-67: an account sees its own Locked people, pets and tags only while its session is unlocked. */
 const preferencesAudience = (auth: AuthDto): PreferencesAudience =>
   auth.session?.hasElevatedPermission ? 'self' : 'locked';
+
+/** At most this many changed preferences per history entry, as the settings history keeps. */
+const PREFERENCE_HISTORY_CHANGE_LIMIT = CONFIG_HISTORY_LIMITS.changes;
+
+/** Sections whose Locked-content values never enter the preference history, only that they changed. */
+const PROTECTED_PREFERENCE_SECTIONS = ['privacy.suppression', 'savedSearches'] as const;
+
+/**
+ * FL-71 (CC-10): what a preferences save changed, for the account's own history. Values come from
+ * the view a session without Locked access sees, redacted like the settings history; a Locked
+ * change is listed by its section only.
+ */
+export const describePreferenceChanges = (before: FrameleafUserPreferences, after: FrameleafUserPreferences) => {
+  const visibleBefore = omit(mapPreferences(before, 'locked'), 'revision');
+  const visibleAfter = omit(mapPreferences(after, 'locked'), 'revision');
+  const changes: Array<{ path: string; before: string | null; after: string | null; protected?: boolean }> =
+    describeObjectChanges(visibleBefore, visibleAfter).map(({ path, before, after }) => ({ path, before, after }));
+  for (const section of PROTECTED_PREFERENCE_SECTIONS) {
+    if (
+      isEqual(get(visibleBefore, section), get(visibleAfter, section)) &&
+      !isEqual(get(before, section), get(after, section))
+    ) {
+      changes.push({ path: section, before: null, after: null, protected: true });
+    }
+  }
+  return changes;
+};
 
 @Injectable()
 export class UserService extends BaseService {
@@ -113,9 +144,12 @@ export class UserService extends BaseService {
       throw new ForbiddenException(LOCKED_RULES_REQUIRE_UNLOCK_MESSAGE);
     }
 
-    const updated = await this.databaseRepository.withUserPreferencesLock(auth.user.id, async (trx) => {
+    const { previous, updated } = await this.databaseRepository.withUserPreferencesLock(auth.user.id, async (trx) => {
       const metadata = await this.userRepository.getMetadata(auth.user.id, trx);
-      const merged = mergePreferences(getPreferences(metadata), dto, 'user', {
+      const current = getPreferences(metadata);
+      // mergePreferences may write into the object it is given; the history needs the values before.
+      const previous = cloneDeep(current);
+      const merged = mergePreferences(current, dto, 'user', {
         lockedSession: !auth.session?.hasElevatedPermission,
       });
       await this.userRepository.upsertMetadata(
@@ -123,11 +157,64 @@ export class UserService extends BaseService {
         { key: UserMetadataKey.Preferences, value: getPreferencesPartial(merged) },
         trx,
       );
-      return merged;
+      return { previous, updated: merged };
     });
     await this.sessionRepository.requestSyncResetForUser(auth.user.id);
+    await this.recordPreferenceHistory(auth, previous, updated);
 
     return mapPreferences(updated, preferencesAudience(auth));
+  }
+
+  /** FL-71 (CC-10): the signed-in account's own preference history, newest first. */
+  async getMyPreferenceHistory(auth: AuthDto): Promise<UserPreferenceHistoryResponseDto> {
+    const rows = await this.userRepository.getPreferenceHistory(auth.user.id);
+    return {
+      entries: rows.map((row) => ({
+        id: row.id,
+        createdAt: new Date(row.createdAt).toISOString(),
+        deviceLabel: row.deviceLabel,
+        changes: row.changes,
+        omittedChanges: row.omittedChanges,
+      })),
+    };
+  }
+
+  /**
+   * Records a preferences save in the account's own history with the device that saved it. A
+   * failure is logged and never undoes the save.
+   */
+  private async recordPreferenceHistory(
+    auth: AuthDto,
+    before: FrameleafUserPreferences,
+    after: FrameleafUserPreferences,
+  ) {
+    const changes = describePreferenceChanges(before, after);
+    if (changes.length === 0) {
+      return;
+    }
+    try {
+      let deviceLabel: string | null = null;
+      if (auth.session) {
+        const session = (await this.sessionRepository.getByUserId(auth.user.id)).find(
+          ({ id }) => id === auth.session?.id,
+        );
+        deviceLabel = [session?.deviceOS, session?.deviceType].filter(Boolean).join(' · ') || null;
+      }
+      const kept = changes.slice(0, PREFERENCE_HISTORY_CHANGE_LIMIT);
+      const written = await this.userRepository.addPreferenceHistory({
+        userId: auth.user.id,
+        deviceLabel,
+        changes: kept,
+        omittedChanges: changes.length - kept.length,
+      });
+      if (!written) {
+        this.logger.warn(
+          `Preference history not recorded for user ${auth.user.id}: the fork schema is not writable (database handoff)`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(`Unable to record the preferences change in the history: ${error}`);
+    }
   }
 
   async get(id: string): Promise<UserResponseDto> {
@@ -347,6 +434,16 @@ export class UserService extends BaseService {
     const config = await this.getConfig({ withCache: false });
     const users = await this.userRepository.getDeletedAfter(DateTime.now().minus({ days: config.user.deleteDelay }));
     await this.jobRepository.queueAll(users.map((user) => ({ name: JobName.UserDelete, data: { id: user.id } })));
+
+    // FL-71, FL-55: fork rows of accounts removed while the fork schema was not writable.
+    const swept = await this.userRepository.sweepRemovedAccountForkRows();
+    if (swept === undefined) {
+      this.logger.warn('Removed-account fork rows not swept: the fork schema is not writable (database handoff)');
+    } else if (swept.preferenceHistory + swept.recipientGroups > 0) {
+      this.logger.log(
+        `Swept fork rows of removed accounts: ${swept.preferenceHistory} preference history entries, ${swept.recipientGroups} recipient groups`,
+      );
+    }
     return JobStatus.Success;
   }
 
@@ -394,6 +491,11 @@ export class UserService extends BaseService {
 
     await this.albumRepository.deleteAll(user.id);
     await this.albumUserRepository.forgetRecipient(user.id);
+    // FL-71 (CC-10): the account's own preference history goes with it. While the fork schema is
+    // not writable it stays behind and the next user cleanup sweeps it (handleUserDeleteCheck).
+    if (!(await this.userRepository.deletePreferenceHistory(user.id))) {
+      this.logger.warn(`Preference history of user ${user.id} kept until the fork schema is writable again`);
+    }
     await this.userRepository.delete(user, true);
 
     await this.eventRepository.emit('UserDelete', user);

@@ -359,3 +359,36 @@ export const mapPreferences = (
     revision: getPreferencesRevision(preferences),
   };
 };
+
+/**
+ * FL-71 (CC-10): an account's own preference history, the Change history area for accounts that
+ * are not administrators (`CommandCenter.jsx` `ChangeHistory`). Values are redacted like the
+ * settings history; Locked-content rules and saved searches that name Locked items are recorded
+ * only as changed (`protected`), never with their values.
+ */
+const UserPreferenceHistoryChangeSchema = z
+  .object({
+    path: z.string().describe('The changed preference, as a dotted path such as memories.enabled'),
+    before: z.string().nullable().describe('The value before, JSON encoded; null when protected'),
+    after: z.string().nullable().describe('The value after, JSON encoded; null when protected'),
+    protected: z.boolean().optional().describe('Changed, but its values are not recorded (Locked content)'),
+  })
+  .meta({ id: 'UserPreferenceHistoryChangeDto' });
+
+const UserPreferenceHistoryEntrySchema = z
+  .object({
+    id: z.string().describe('Entry ID'),
+    createdAt: z.string().meta({ format: 'date-time' }).describe('When the change was saved'),
+    deviceLabel: z.string().nullable().describe('The device that saved it, such as "macOS · Web"'),
+    changes: z.array(UserPreferenceHistoryChangeSchema).describe('Every changed preference'),
+    omittedChanges: z.int().min(0).describe('Changed preferences left out because the entry reached its limit'),
+  })
+  .meta({ id: 'UserPreferenceHistoryEntryDto' });
+
+const UserPreferenceHistoryResponseSchema = z
+  .object({
+    entries: z.array(UserPreferenceHistoryEntrySchema).describe('The newest preference changes first'),
+  })
+  .meta({ id: 'UserPreferenceHistoryResponseDto' });
+
+export class UserPreferenceHistoryResponseDto extends createZodDto(UserPreferenceHistoryResponseSchema) {}

@@ -180,6 +180,16 @@ const SystemConfigHistoryEntrySchema = z
     createdAt: z.string().describe('When the change was saved (ISO 8601)'),
     actorId: z.string().nullable().describe('The administrator who saved the change'),
     actorName: z.string().nullable().describe("The administrator's name when the change was saved"),
+    title: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('The entry title, such as "Updated RunPod API key"; absent for a settings save'),
+    kind: z
+      .enum(['settings', 'credential', 'review'])
+      .optional()
+      .describe('What the entry records; absent for entries saved before it was recorded')
+      .meta({ id: 'SystemConfigHistoryKind' }),
     changes: z.array(SystemConfigHistoryChangeSchema).describe('Every changed setting'),
     omittedChanges: z.int().min(0).describe('Changed settings left out because the entry reached its limit'),
   })

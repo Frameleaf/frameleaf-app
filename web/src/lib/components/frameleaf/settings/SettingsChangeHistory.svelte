@@ -1,27 +1,86 @@
 <script lang="ts">
   /**
-   * The settings change history (FL-66), the design template's `ChangeHistory` in
-   * `CommandCenter.jsx`: each saved change with its time, "View changes" with every changed
-   * setting before and after, and who saved it. The server keeps the history, so it is the same
-   * for every administrator; values are redacted there and credentials only say replaced or
-   * cleared.
+   * The Change history area (FL-66, FL-71 CC-10), the design template's `ChangeHistory` in
+   * `CommandCenter.jsx:2542-2583`: one timeline, newest first, each entry with its title, time,
+   * "View changes" (every change before and after) and who saved it.
+   *
+   * - For an administrator: the server's settings history, where settings saves read "n settings
+   *   changed", credential entries name the credential ("Updated RunPod API key", never a value) and
+   *   reviews read "Reviewed: …". Entries from before titles were recorded fall back to the count.
+   * - For everyone: the account's own preference history, with the device that saved each change.
+   *   Locked-content rules appear only as changed.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { historyValue, type HistoryValue } from '$lib/frameleaf/settings-history';
   import { configPathLabel } from '$lib/frameleaf/system-config-draft';
-  import { SystemConfigHistoryCredentialChange, type SystemConfigHistoryEntryDto } from '@immich/sdk';
+  import {
+    SystemConfigHistoryCredentialChange,
+    type SystemConfigHistoryChangeDto,
+    type SystemConfigHistoryEntryDto,
+    type UserPreferenceHistoryEntryDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiHistory } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   type Props = {
-    entries: SystemConfigHistoryEntryDto[] | null;
+    /** The server settings history; undefined for an account without administration. */
+    entries?: SystemConfigHistoryEntryDto[] | null;
+    /** The account's own preference history; null while it loads. */
+    preferences: UserPreferenceHistoryEntryDto[] | null;
+    /** The signed-in account's name, for its own entries. */
+    ownName: string;
     error?: boolean;
     onRetry: () => void;
     onConfigure: () => void;
+    configureLabel: string;
   };
 
-  let { entries, error = false, onRetry, onConfigure }: Props = $props();
+  let { entries, preferences, ownName, error = false, onRetry, onConfigure, configureLabel }: Props = $props();
+
+  type Change = { path: string; before: string | null; after: string | null; protected?: boolean } & Partial<
+    Pick<SystemConfigHistoryChangeDto, 'credential'>
+  >;
+  type Item = {
+    id: string;
+    createdAt: string;
+    title: string;
+    changes: Change[];
+    omittedChanges: number;
+    by: string;
+    preference: boolean;
+  };
+
+  const settingsTitle = (entry: SystemConfigHistoryEntryDto) =>
+    entry.title ||
+    $t('frameleaf_settings_history_title', { values: { count: entry.changes.length + entry.omittedChanges } });
+
+  const items = $derived.by((): Item[] | null => {
+    if (preferences === null || entries === null) {
+      return null;
+    }
+    const settings = (entries ?? []).map((entry) => ({
+      id: `settings:${entry.id}`,
+      createdAt: entry.createdAt,
+      title: settingsTitle(entry),
+      changes: entry.changes,
+      omittedChanges: entry.omittedChanges,
+      by: entry.actorName ?? $t('frameleaf_settings_history_unknown_actor'),
+      preference: false,
+    }));
+    const own = preferences.map((entry) => ({
+      id: `preferences:${entry.id}`,
+      createdAt: entry.createdAt,
+      title: $t('frameleaf_settings_history_preferences_title', {
+        values: { count: entry.changes.length + entry.omittedChanges },
+      }),
+      changes: entry.changes,
+      omittedChanges: entry.omittedChanges,
+      by: `${ownName} · ${entry.deviceLabel ?? $t('frameleaf_settings_history_unknown_device')}`,
+      preference: true,
+    }));
+    return [...settings, ...own].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  });
 
   const describe = (value: HistoryValue) => {
     switch (value.kind) {
@@ -48,6 +107,10 @@
     }
   };
 
+  /** A preference path reads from its first segment (the section), a setting path without it. */
+  const label = (item: Item, change: Change) =>
+    item.preference ? configPathLabel(`preferences.${change.path}`) : configPathLabel(change.path);
+
   const formatTime = (value: string) => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
@@ -59,52 +122,58 @@
     <span>{$t('frameleaf_settings_history_load_failed')}</span>
     <Button onclick={onRetry}>{$t('retry')}</Button>
   </div>
-{:else if entries && entries.length === 0}
+{:else if items && items.length === 0}
   <div class="empty">
     <Icon icon={mdiHistory} size="2.25rem" aria-hidden={true} />
     <h3>{$t('frameleaf_settings_history_empty_title')}</h3>
-    <p>{$t('frameleaf_settings_history_empty')}</p>
-    <Button onclick={onConfigure}>{$t('frameleaf_settings_history_empty_action')}</Button>
+    <p>
+      {entries === undefined
+        ? $t('frameleaf_settings_history_empty_preferences')
+        : $t('frameleaf_settings_history_empty')}
+    </p>
+    <Button onclick={onConfigure}>{configureLabel}</Button>
   </div>
-{:else if entries}
+{:else if items}
   <div class="history">
-    {#each entries as entry (entry.id)}
+    {#each items as item (item.id)}
       <article>
         <div class="line">
           <Icon icon={mdiHistory} size="1.125rem" aria-hidden={true} />
-          <strong>
-            {$t('frameleaf_settings_history_title', {
-              values: { count: entry.changes.length + entry.omittedChanges },
-            })}
-          </strong>
-          <time datetime={entry.createdAt}>{formatTime(entry.createdAt)}</time>
+          <strong>{item.title}</strong>
+          <time datetime={item.createdAt}>{formatTime(item.createdAt)}</time>
         </div>
-        {#if entry.changes.length > 0}
+        {#if item.changes.length > 0}
           <details>
             <summary>{$t('frameleaf_settings_history_view')}</summary>
             <ul>
-              {#each entry.changes as change (change.path)}
+              {#each item.changes as change (change.path)}
                 <li>
-                  <strong>{configPathLabel(change.path)}</strong>
-                  <span>
-                    <del>{describe(historyValue(change, 'before'))}</del>
-                    <span aria-hidden="true">→</span>
-                    <ins>{describe(historyValue(change, 'after'))}</ins>
-                  </span>
+                  <strong>{label(item, change)}</strong>
+                  {#if change.protected}
+                    <span>{$t('frameleaf_settings_history_protected')}</span>
+                  {:else}
+                    <span>
+                      <del>{describe(historyValue(change as SystemConfigHistoryChangeDto, 'before'))}</del>
+                      <span aria-hidden="true">→</span>
+                      <ins>{describe(historyValue(change as SystemConfigHistoryChangeDto, 'after'))}</ins>
+                    </span>
+                  {/if}
                 </li>
               {/each}
             </ul>
-            {#if entry.omittedChanges > 0}
+            {#if item.omittedChanges > 0}
               <p class="omitted">
-                {$t('frameleaf_settings_history_omitted', { values: { count: entry.omittedChanges } })}
+                {$t('frameleaf_settings_history_omitted', { values: { count: item.omittedChanges } })}
               </p>
             {/if}
           </details>
         {/if}
-        <small>{entry.actorName ?? $t('frameleaf_settings_history_unknown_actor')}</small>
+        <small>{item.by}</small>
       </article>
     {/each}
   </div>
+{:else}
+  <p role="status">{$t('loading')}</p>
 {/if}
 
 <style>

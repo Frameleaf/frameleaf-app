@@ -128,6 +128,7 @@ describe('/server', () => {
       const { defaultImageDescriptionRawPromptTemplate, ...rest } = body;
       expect(rest).toEqual({
         loginPageMessage: '',
+        serverName: '',
         oauthButtonText: 'Login with OAuth',
         oauthAccountManagementUrl: '',
         trashDays: 30,

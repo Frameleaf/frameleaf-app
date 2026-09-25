@@ -4,8 +4,11 @@ import { defaults } from 'src/dtos/config.dto.js';
 import {
   CONFIG_HISTORY_LIMITS,
   appendConfigHistory,
+  credentialHistoryTitle,
   describeConfigChanges,
+  describeObjectChanges,
   readConfigHistory,
+  reviewHistoryTitle,
   stripUrlCredentials,
 } from 'src/utils/config-history.js';
 
@@ -103,5 +106,22 @@ describe('settings change history (FL-66)', () => {
     ).toEqual({
       entries: [{ ...entry('ok'), changes: [], omittedChanges: 0 }],
     });
+  });
+});
+
+describe('FL-71 CC-10 history titles and object changes', () => {
+  it('names credential and review entries without values', () => {
+    expect(credentialHistoryTitle('runpod-api-key', 'replaced')).toBe('Updated RunPod API key');
+    expect(credentialHistoryTitle('smtp-password', 'cleared')).toBe('Cleared email server password');
+    expect(reviewHistoryTitle('Recovery readiness')).toBe('Reviewed: Recovery readiness');
+  });
+
+  it('lists leaf changes, leaves secret-looking keys out and strips URL credentials', () => {
+    expect(
+      describeObjectChanges(
+        { memories: { enabled: true }, apiToken: 'a', url: 'https://x.test/' },
+        { memories: { enabled: false }, apiToken: 'b', url: 'https://user:pw@x.test/' },
+      ),
+    ).toEqual([{ path: 'memories.enabled', before: 'true', after: 'false' }]);
   });
 });

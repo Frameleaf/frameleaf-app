@@ -547,6 +547,8 @@ export type AdminConfigServerDto = {
     externalDomain: string;
     /** Login page message */
     loginPageMessage: string;
+    /** Server name shown in settings; empty uses the host name */
+    name: string;
     /** Public users */
     publicUsers: boolean;
 };
@@ -671,8 +673,11 @@ export type SystemConfigHistoryEntryDto = {
     createdAt: string;
     /** Entry ID */
     id: string;
+    kind?: SystemConfigHistoryKind;
     /** Changed settings left out because the entry reached its limit */
     omittedChanges: number;
+    /** The entry title, such as "Updated RunPod API key"; absent for a settings save */
+    title?: string | null;
 };
 export type SystemConfigHistoryResponseDto = {
     /** The newest settings changes first */
@@ -704,6 +709,29 @@ export type DatabaseBackupListResponseDto = {
     /** List of backups */
     backups: DatabaseBackupDto[];
 };
+export type BackupRestoreVerificationResponseDto = {
+    /** When the next test is due; null when a part has never been proved */
+    dueAt: string | null;
+    /** How often a restore test is due */
+    intervalDays: number;
+    /** When restoring the database was last proved */
+    metadataVerifiedAt: string | null;
+    /** When restoring the original files was last proved */
+    originalsVerifiedAt: string | null;
+    /** Whether a restore test is due */
+    overdue: boolean;
+    /** The administrator who recorded the last test; null once that account is gone */
+    verifiedBy: {
+        id: string;
+        name: string;
+    } | null;
+};
+export type BackupRestoreVerificationRecordDto = {
+    /** The database restored and was checked */
+    metadata: boolean;
+    /** Original files restored and their checksums were verified */
+    originals: boolean;
+};
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
@@ -717,6 +745,14 @@ export type IntegrityReportResponseDto = {
         "type": IntegrityReport;
     }[];
     nextCursor?: string;
+};
+export type IntegrityCheckRunsResponseDto = {
+    /** When the checksum check last completed a full pass */
+    checksum_mismatch: string | null;
+    /** When the missing-file check last completed */
+    missing_file: string | null;
+    /** When the untracked-file check last completed */
+    untracked_file: string | null;
 };
 export type IntegrityReportSummaryResponseDto = {
     checksum_mismatch: number;
@@ -1102,6 +1138,12 @@ export type RenderWorkerAuditDto = {
     reason: (RenderWorkerRefusalReason) | null;
     workerId: string | null;
 };
+export type RenderWorkerCompatibilityResponseDto = {
+    /** Render kinds a qualified worker can take now */
+    qualified: MediaOperationKind[];
+    /** Render kinds no qualified worker can take now */
+    unavailable: MediaOperationKind[];
+};
 export type RenderWorkerLimitDto = {
     /** Operations one account may have claimed at once */
     maxConcurrentOperations: number;
@@ -1256,6 +1298,10 @@ export type UserAdminHistoryResponseDto = {
     events: UserAdminHistoryEventResponseDto[];
     /** True when older events exist beyond this page */
     hasMore: boolean;
+};
+export type UserAdminPinCodeStateResponseDto = {
+    /** Whether the account has a PIN set */
+    pinCode: boolean;
 };
 export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
@@ -3574,6 +3620,8 @@ export type UserConfigServerDto = {
     externalDomain: string;
     /** Login page message */
     loginPageMessage: string;
+    /** Server name shown in settings; empty uses the host name */
+    name: string;
     /** Public users */
     publicUsers: boolean;
 };
@@ -6010,6 +6058,8 @@ export type PublicConfigPasswordLoginDto = {
 export type PublicConfigServerDto = {
     /** Login page message */
     loginPageMessage: string;
+    /** Server name shown in settings; empty uses the host name */
+    name: string;
 };
 export type PublicConfigThemeDto = {
     /** Custom CSS for theming */
@@ -6035,7 +6085,20 @@ export type QueueDeleteDto = {
     /** If true, will also remove failed jobs from the queue. */
     failed?: boolean;
 };
+export type QueueJobAccountDto = {
+    /** Account ID */
+    id: string;
+    /** Account name */
+    name: string;
+};
+export type QueueJobWorkerDto = {
+    kind: QueueJobWorkerKind;
+    /** The processing destination name, for a machine-learning worker */
+    name: string | null;
+};
 export type QueueJobResponseDto = {
+    /** The account whose item the job works on, when the job names an asset, person, library or account */
+    account?: QueueJobAccountDto;
     /** How many times the job has been attempted */
     attemptsMade?: number;
     /** Job data payload */
@@ -6049,6 +6112,28 @@ export type QueueJobResponseDto = {
     name: JobName;
     /** Job creation timestamp */
     timestamp: number;
+    /** Where the job runs or ran */
+    worker: QueueJobWorkerDto;
+};
+export type QueueRetryFailedResponseDto = {
+    /** How many failed jobs were put back in the queue */
+    count: number;
+};
+export type QueueOwnerStatisticsResponseDto = {
+    /** Number of active jobs */
+    active: number;
+    /** Number of completed jobs */
+    completed: number;
+    /** Number of delayed jobs */
+    delayed: number;
+    /** Number of failed jobs */
+    failed: number;
+    /** Number of paused jobs */
+    paused: number;
+    /** Whether a state had more jobs than were scanned, so its count is a lower bound */
+    truncated: boolean;
+    /** Number of waiting jobs */
+    waiting: number;
 };
 export type RenderWorkerAdmissionDto = {
     /** Encoder and decoder names the check verified */
@@ -7015,6 +7100,8 @@ export type ServerConfigDto = {
     oauthButtonText: string;
     /** Whether public user registration is enabled */
     publicUsers: boolean;
+    /** Server name set by an administrator; empty when none is set */
+    serverName: string;
     /** Number of days before trashed assets are permanently deleted */
     trashDays: number;
     /** Delay in days before deleted users are permanently removed */
@@ -8454,6 +8541,32 @@ export type OnboardingDto = {
     /** Is user onboarded */
     isOnboarded: boolean;
 };
+export type UserPreferenceHistoryChangeDto = {
+    /** The value after, JSON encoded; null when protected */
+    after: string | null;
+    /** The value before, JSON encoded; null when protected */
+    before: string | null;
+    /** The changed preference, as a dotted path such as memories.enabled */
+    path: string;
+    /** Changed, but its values are not recorded (Locked content) */
+    "protected"?: boolean;
+};
+export type UserPreferenceHistoryEntryDto = {
+    /** Every changed preference */
+    changes: UserPreferenceHistoryChangeDto[];
+    /** When the change was saved */
+    createdAt: string;
+    /** The device that saved it, such as "macOS · Web" */
+    deviceLabel: string | null;
+    /** Entry ID */
+    id: string;
+    /** Changed preferences left out because the entry reached its limit */
+    omittedChanges: number;
+};
+export type UserPreferenceHistoryResponseDto = {
+    /** The newest preference changes first */
+    entries: UserPreferenceHistoryEntryDto[];
+};
 export type CreateProfileImageDto = {
     /** ID of the photo the image was copied from, if any. A Locked photo is refused. */
     assetId?: string;
@@ -9369,6 +9482,32 @@ export function listDatabaseBackups(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get backup restore verification
+ */
+export function getBackupRestoreVerification(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupRestoreVerificationResponseDto;
+    }>("/admin/database-backups/restore-verification", {
+        ...opts
+    }));
+}
+/**
+ * Record a backup restore test
+ */
+export function recordBackupRestoreVerification({ backupRestoreVerificationRecordDto }: {
+    backupRestoreVerificationRecordDto: BackupRestoreVerificationRecordDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupRestoreVerificationResponseDto;
+    }>("/admin/database-backups/restore-verification", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: backupRestoreVerificationRecordDto
+    })));
+}
+/**
  * Start database backup restore flow
  */
 export function startDatabaseRestoreFlow(opts?: Oazapfts.RequestOpts) {
@@ -9455,6 +9594,17 @@ export function getIntegrityReportCsv({ $type }: {
         status: 200;
         data: Blob;
     }>(`/admin/integrity/report/${encodeURIComponent($type)}/csv`, {
+        ...opts
+    }));
+}
+/**
+ * Get integrity check runs
+ */
+export function getIntegrityCheckRuns(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityCheckRunsResponseDto;
+    }>("/admin/integrity/runs", {
         ...opts
     }));
 }
@@ -9661,6 +9811,17 @@ export function searchRenderWorkerAudit({ take, workerId }: {
     }));
 }
 /**
+ * Get render worker compatibility
+ */
+export function getRenderWorkerCompatibility(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerCompatibilityResponseDto;
+    }>("/admin/render-workers/compatibility", {
+        ...opts
+    }));
+}
+/**
  * Get render limits
  */
 export function getRenderWorkerLimits(opts?: Oazapfts.RequestOpts) {
@@ -9850,6 +10011,19 @@ export function getUserHistoryAdmin({ before, id, take }: {
         before,
         take
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve whether a user has a PIN
+ */
+export function getUserPinCodeStateAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserAdminPinCodeStateResponseDto;
+    }>(`/admin/users/${encodeURIComponent(id)}/pin-code`, {
         ...opts
     }));
 }
@@ -14382,15 +14556,47 @@ export function emptyQueue({ name, queueDeleteDto }: {
 /**
  * Retrieve queue jobs
  */
-export function getQueueJobs({ name, status }: {
+export function getQueueJobs({ name, ownerId, status }: {
     name: QueueName;
+    ownerId?: string;
     status?: QueueJobStatus[];
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: QueueJobResponseDto[];
     }>(`/queues/${encodeURIComponent(name)}/jobs${QS.query(QS.explode({
+        ownerId,
         status
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retry failed queue jobs
+ */
+export function retryFailedQueueJobs({ name }: {
+    name: QueueName;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: QueueRetryFailedResponseDto;
+    }>(`/queues/${encodeURIComponent(name)}/jobs/retry-failed`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Retrieve queue statistics for an account
+ */
+export function getQueueOwnerStatistics({ name, ownerId }: {
+    name: QueueName;
+    ownerId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: QueueOwnerStatisticsResponseDto;
+    }>(`/queues/${encodeURIComponent(name)}/statistics${QS.query(QS.explode({
+        ownerId
     }))}`, {
         ...opts
     }));
@@ -17424,6 +17630,17 @@ export function updateMyPreferences({ userPreferencesUpdateDto }: {
     })));
 }
 /**
+ * Get my preference history
+ */
+export function getMyPreferenceHistory(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserPreferenceHistoryResponseDto;
+    }>("/users/me/preferences/history", {
+        ...opts
+    }));
+}
+/**
  * Delete user profile image
  */
 export function deleteProfileImage(opts?: Oazapfts.RequestOpts) {
@@ -17766,6 +17983,11 @@ export enum ConfigCredential {
 export enum SystemConfigHistoryCredentialChange {
     Replaced = "replaced",
     Cleared = "cleared"
+}
+export enum SystemConfigHistoryKind {
+    Settings = "settings",
+    Credential = "credential",
+    Review = "review"
 }
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
@@ -19035,6 +19257,12 @@ export enum JobName {
     IntegrityChecksumFilesRefresh = "IntegrityChecksumFilesRefresh",
     IntegrityDeleteReportType = "IntegrityDeleteReportType",
     IntegrityDeleteReports = "IntegrityDeleteReports"
+}
+export enum QueueJobWorkerKind {
+    Server = "server",
+    Local = "local",
+    Lan = "lan",
+    Runpod = "runpod"
 }
 export enum Status3 {
     Preparing = "preparing",
