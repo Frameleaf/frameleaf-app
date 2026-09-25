@@ -1,5 +1,6 @@
+import { tick } from 'svelte';
 import { persisted } from 'svelte-persisted-store';
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import {
   DEFAULT_SLIDESHOW_TRANSITION,
   slideshowTransitionSerializer,
@@ -56,7 +57,44 @@ function createSlideshowStore() {
     SlideshowMetadataOverlayMode.Full,
   );
 
+  /**
+   * FL-36: whether the slideshow settings panel is open (MediaViewer.jsx `settingsOpen`). Any
+   * control may open it (the slideshow controls, the viewer footer's cog, a More menu item); the
+   * viewer renders the panel. Closing it returns focus to the control that opened it
+   * (MediaViewer.jsx:740-744).
+   */
+  const settingsOpen = writable<boolean>(false);
+  let settingsReturnFocus: HTMLElement | undefined;
+  const openSettings = (returnFocus?: HTMLElement | null) => {
+    const active = typeof document === 'undefined' ? null : document.activeElement;
+    settingsReturnFocus = returnFocus ?? (active instanceof HTMLElement ? active : undefined);
+    settingsOpen.set(true);
+  };
+  const closeSettings = async ({ restoreFocus = true }: { restoreFocus?: boolean } = {}) => {
+    const target = settingsReturnFocus;
+    settingsReturnFocus = undefined;
+    settingsOpen.set(false);
+    if (!restoreFocus) {
+      return;
+    }
+    await tick();
+    if (target?.isConnected) {
+      target.focus();
+    }
+  };
+  const toggleSettings = (returnFocus?: HTMLElement | null) => {
+    if (get(settingsOpen)) {
+      void closeSettings();
+    } else {
+      openSettings(returnFocus);
+    }
+  };
+
   return {
+    settingsOpen: { subscribe: settingsOpen.subscribe },
+    openSettings,
+    closeSettings,
+    toggleSettings,
     restartProgress: {
       subscribe: restartState.subscribe,
       set: (value: boolean) => {
