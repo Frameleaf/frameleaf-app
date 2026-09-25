@@ -245,6 +245,42 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       await expect(titleCard.locator('img.fmp-title-bg')).toHaveCount(1);
     });
 
+    // MPY-4 (MemoryPlayer.jsx:403-446): the end card closes the memory after its last item.
+    test('ends a memory on its end card, and Previous returns to the last item', async ({ page }) => {
+      const firstMemory = memories[0];
+      const lastAsset = firstMemory.assets.at(-1)!;
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, lastAsset.id);
+      const viewer = memoryViewerUtils.locator(page);
+      await page.keyboard.press('ArrowRight');
+
+      const endCard = viewer.locator('.fmp-end-card');
+      await expect(endCard).toBeVisible();
+      await expect(endCard.getByText('That was', { exact: true })).toBeVisible();
+      await expect(endCard.getByRole('button', { name: 'Play again' })).toBeVisible();
+      await expect(endCard.getByRole('button', { name: 'Back to memories' })).toBeVisible();
+      await expect(endCard.getByRole('button', { name: /^Next memory: / })).toBeVisible();
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, lastAsset.id);
+
+      await page.keyboard.press('ArrowLeft');
+      await expect(endCard).toHaveCount(0);
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, lastAsset.id);
+    });
+
+    test('Play again starts the memory from its first item', async ({ page }) => {
+      const firstMemory = memories[0];
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets.at(-1)!.id);
+      await page.keyboard.press('ArrowRight');
+      await memoryViewerUtils
+        .locator(page)
+        .locator('.fmp-end-card')
+        .getByRole('button', { name: 'Play again' })
+        .click();
+
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, firstMemory.assets[0].id);
+    });
+
     test('does not show the title card when opened part way through', async ({ page }) => {
       const firstMemory = memories[0];
 

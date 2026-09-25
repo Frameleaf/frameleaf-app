@@ -107,6 +107,8 @@
     mdiMovieEditOutline,
     mdiPause,
     mdiPlay,
+    mdiRepeat,
+    mdiSkipNext,
     mdiShareVariantOutline,
     mdiStopCircleOutline,
     mdiVolumeHigh,
@@ -188,7 +190,14 @@
   let titleCardTimer: ReturnType<typeof setTimeout> | undefined;
   let titleCardRemaining = MEMORY_TITLE_MS;
   let titleCardStartedAt = 0;
-  /** MemoryPlayer.jsx:339-341: the cover behind the title card; never a Locked item. */
+  /**
+   * The end card closes a memory after its last item (MemoryPlayer.jsx:403-446, `ended`): "That
+   * was …" with Play again, the next memory and Back to memories, instead of running straight on
+   * into the next memory. Previous returns to the last item.
+   */
+  let endCardFor = $state<string | undefined>();
+  const atLastItem = $derived(current ? assetIndex === current.memory.assets.length - 1 : false);
+  /** MemoryPlayer.jsx:339-341: the cover behind the title and end cards; never a Locked item. */
   const titleCover = $derived(current?.memory.assets.find((asset) => asset.visibility !== AssetVisibility.Locked));
   const currentMemoryAssetFull = $derived.by(async () =>
     currentAssetId ? await getAssetInfo({ ...authManager.params, id: currentAssetId }) : undefined,
@@ -262,6 +271,11 @@
   const handleSelectAll = () => librarySession.selectAll((current?.memory.assets ?? []).map((asset) => asset.id));
 
   const handleAction = async (callingContext: string, action: 'reset' | 'pause' | 'play') => {
+    // on the end card, play starts the memory again (MemoryPlayer.jsx:193-200)
+    if (endCardFor && action === 'play') {
+      playAgain();
+      return;
+    }
     // on the title card, play and pause run its timer rather than an item
     if (titleCardFor) {
       if (action === 'pause') {
@@ -315,7 +329,9 @@
     }
 
     if (progress === 1 && !paused) {
-      if (current?.nextHref) {
+      if (atLastItem) {
+        showEndCard();
+      } else if (current?.nextHref) {
         await handleNavigate(current.nextHref, { replaceState: true });
       } else {
         await handleAction('handleProgressLast', 'pause');
@@ -376,7 +392,7 @@
   };
 
   const resetAndPlay = () => {
-    if (titleCardFor) {
+    if (titleCardFor || endCardFor) {
       return;
     }
     handlePromiseError(handleAction('resetAndPlay', 'reset'));
@@ -444,6 +460,7 @@
       clearTimeout(titleCardTimer);
       titleCardTimer = undefined;
       titleCardFor = undefined;
+      endCardFor = undefined;
       if (memoryId && atFirst) {
         showTitleCard();
       }
@@ -453,6 +470,10 @@
   /** Previous from the first item returns to the title card (MemoryPlayer.jsx:560-565). */
   const goPrevious = () => {
     if (assetViewerManager.isViewing) {
+      return;
+    }
+    if (endCardFor) {
+      endCardFor = undefined;
       return;
     }
     if (current && assetIndex === 0 && !titleCardFor) {
@@ -471,8 +492,49 @@
       dismissTitleCard();
       return;
     }
+    if (endCardFor) {
+      handlePromiseError(handleNavigate(current?.nextMemory?.href));
+      return;
+    }
+    if (atLastItem) {
+      showEndCard();
+      return;
+    }
     handlePromiseError(handleNavigate(current?.nextHref));
   };
+
+  function showEndCard() {
+    if (!current) {
+      return;
+    }
+    handlePromiseError(handleAction('endCard', 'pause'));
+    endCardFor = current.memory.id;
+  }
+
+  function playAgain() {
+    const first = current?.memory.assets[0];
+    endCardFor = undefined;
+    paused = false;
+    if (!first) {
+      return;
+    }
+    if (first.id === currentAssetId) {
+      resetAndPlay();
+      return;
+    }
+    handlePromiseError(handleNavigate(current?.getAssetHref(first.id)));
+  }
+
+  // Moving to another item (the gallery, the progress segments) leaves the end card.
+  let endCardAssetId: string | undefined;
+  $effect(() => {
+    const assetId = currentAssetId;
+    if (assetId === endCardAssetId) {
+      return;
+    }
+    endCardAssetId = assetId;
+    untrack(() => (endCardFor = undefined));
+  });
 
   $effect(() => () => clearTimeout(titleCardTimer));
 
@@ -709,10 +771,10 @@
 
       <div class="fmp-progress" role="group" aria-label={$t('memories')}>
         <IconButton
-          label={paused ? $t('play_memories') : $t('pause_memories')}
+          label={endCardFor ? $t('frameleaf_memories_play_again') : paused ? $t('play_memories') : $t('pause_memories')}
           onclick={() => handlePromiseError(handleAction('PlayPauseButtonClick', paused ? 'play' : 'pause'))}
         >
-          <Icon icon={paused ? mdiPlay : mdiPause} size="20" />
+          <Icon icon={endCardFor ? mdiRepeat : paused ? mdiPlay : mdiPause} size="20" />
         </IconButton>
 
         {#each current.memory.assets as asset, index (asset.id)}
@@ -844,6 +906,47 @@
               </section>
             {/if}
 
+            {#if titleCard && endCardFor === current.memory.id}
+              <!-- MemoryPlayer.jsx:403-446, memories.css:44-75 -->
+              <section class="fmp-title-card fmp-end-card" aria-label={titleCard.title}>
+                {#if titleCover}
+                  <img
+                    class="fmp-title-bg"
+                    src={getAssetMediaUrl({ id: titleCover.id, size: AssetMediaSize.Preview })}
+                    alt=""
+                    draggable="false"
+                  />
+                {/if}
+                <div class="fmp-title-copy">
+                  <span class="fmp-overline">{$t('frameleaf_memories_end_overline')}</span>
+                  <h2>{titleCard.title}</h2>
+                  {#if titleCard.subtitle}
+                    <p>{titleCard.subtitle}</p>
+                  {/if}
+                  <div class="fmp-end-actions">
+                    <button type="button" class="fmp-play-large" onclick={playAgain}>
+                      <Icon icon={mdiRepeat} size="20" aria-hidden="true" />
+                      {$t('frameleaf_memories_play_again')}
+                    </button>
+                    {#if current.nextMemory}
+                      {@const next = current.nextMemory}
+                      <button
+                        type="button"
+                        class="fmp-secondary"
+                        onclick={() => handlePromiseError(handleNavigate(next.href))}
+                      >
+                        <Icon icon={mdiSkipNext} size="20" aria-hidden="true" />
+                        {$t('frameleaf_memories_next_memory', { values: { title: next.title } })}
+                      </button>
+                    {/if}
+                    <button type="button" class="fmp-secondary" onclick={() => void goto(memoryManager.memoriesHref)}>
+                      {$t('frameleaf_memories_back_to_memories')}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            {/if}
+
             <div class="fmp-overlay" class:hidden={galleryInView}>
               <div class="fmp-overlay-top">
                 <!-- FL-83 (MPY-3): the heart favorites the item being shown; the memory's own
@@ -933,7 +1036,7 @@
               {/if}
             </div>
 
-            {#if current.previousHref || (assetIndex === 0 && titleCardFor !== current.memory.id)}
+            {#if current.previousHref || (assetIndex === 0 && titleCardFor !== current.memory.id) || endCardFor === current.memory.id}
               <div class="fmp-nav prev">
                 <IconButton label={$t('previous_memory')} onclick={goPrevious}>
                   <Icon icon={mdiChevronLeft} size="28" />
@@ -941,7 +1044,7 @@
               </div>
             {/if}
 
-            {#if current.nextHref || titleCardFor === current.memory.id}
+            {#if current.nextHref || titleCardFor === current.memory.id || (atLastItem && endCardFor !== current.memory.id)}
               <div class="fmp-nav next">
                 <IconButton label={$t('next_memory')} onclick={goNext}>
                   <Icon icon={mdiChevronRight} size="28" />
@@ -949,7 +1052,7 @@
               </div>
             {/if}
 
-            {#if titleCardFor !== current.memory.id && lowerThird}
+            {#if titleCardFor !== current.memory.id && endCardFor !== current.memory.id && lowerThird}
               <!-- MemoryPlayer.jsx:434-458, memories.css:77-104: the place over the day. -->
               {#key current.asset.id}
                 <div class="fmp-lower-third">
@@ -1337,6 +1440,29 @@
   .fmp-title-copy .fmp-title-count {
     font-size: var(--fl-font-small);
     opacity: 0.65;
+  }
+  /* discovery.css:1272-1301 */
+  .fmp-end-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .fmp-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 22px;
+    margin-block-start: 0.75rem;
+    color: var(--fl-viewer-text, #f1f1f2);
+    background: #ffffff1f;
+    border: 0;
+    border-radius: var(--fl-radius-pill);
+    font-weight: 500;
+  }
+  .fmp-secondary:hover {
+    background: #ffffff2e;
   }
   .fmp-play-large {
     display: inline-flex;
