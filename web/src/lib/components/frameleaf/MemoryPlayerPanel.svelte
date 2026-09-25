@@ -1222,7 +1222,7 @@
                 >
                   <Icon icon={current.asset.isFavorite ? mdiHeart : mdiHeartOutline} size="20" />
                 </IconButton>
-                <IconButton label={$t('share')} onclick={openShare}>
+                <IconButton label={$t('frameleaf_memories_share')} onclick={openShare}>
                   <Icon icon={mdiShareVariantOutline} size="20" />
                 </IconButton>
                 <!-- A direct action rather than a dropdown: .fmp-main-inner clips overflow to
@@ -1230,7 +1230,7 @@
                      positioned near this corner. Removal is undoable from its toast (FL-83
                      MPY-1); removing the whole memory belongs to the index (MPY-2). -->
                 <IconButton
-                  label={$t('remove_photo_from_memory')}
+                  label={$t('frameleaf_memories_remove_item')}
                   onclick={() =>
                     void memoryManager
                       .removeCurrentAsset()
