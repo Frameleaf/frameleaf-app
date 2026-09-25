@@ -55,6 +55,7 @@
   import DelayedLoadingSpinner from '$lib/components/DelayedLoadingSpinner.svelte';
   import ImageLayer from '$lib/components/ImageLayer.svelte';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
+  import { playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { getAssetUrls } from '$lib/utils';
   import { AdaptiveImageLoader, type QualityList } from '$lib/utils/adaptive-image-loader.svelte';
@@ -121,7 +122,8 @@
     return qualityList;
   };
 
-  const loaderKey = $derived(`${asset.id}:${asset.thumbhash}:${sharedLink?.id}`);
+  // FL-115: the playback cache key changes when the owner's playback choice does, so the loader rebuilds.
+  const loaderKey = $derived(`${asset.id}:${playbackCacheKey(asset)}:${sharedLink?.id}`);
 
   const adaptiveImageLoader = $derived.by(() => {
     void loaderKey;

@@ -25,6 +25,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { AudioStreamInfo, VideoColorRange, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import type { DecodeQualification } from 'src/utils/media-decode.js';
 import { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
 import { AssetEditAction, AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
@@ -223,6 +224,11 @@ export type EditedMasterLineage = {
   renderer: typeof FRAMELEAF_RENDERER;
   rendererVersion: string;
   color: EditedMasterColorDecision;
+  /**
+   * FL-101: how the source was qualified for decoding — the advertised matrix row it matched, or
+   * null with the reason when it decodes but is outside the tested matrix. Video masters only.
+   */
+  decode?: { matrixEntry: string | null; support: string; reason: string };
   createdAt: string;
 };
 
@@ -706,6 +712,7 @@ export const buildEditedMasterLineage = ({
   sourceChecksum = null,
   edits,
   color,
+  decode,
   rendererVersion = FRAMELEAF_RENDERER_VERSION,
   createdAt = new Date(),
 }: {
@@ -714,6 +721,7 @@ export const buildEditedMasterLineage = ({
   sourceChecksum?: string | null;
   edits: AssetEditActionItem[];
   color: EditedMasterColorDecision;
+  decode?: Pick<DecodeQualification, 'matrixEntry' | 'support' | 'reason'> | null;
   rendererVersion?: string;
   createdAt?: Date;
 }): EditedMasterLineage => ({
@@ -726,6 +734,7 @@ export const buildEditedMasterLineage = ({
   renderer: FRAMELEAF_RENDERER,
   rendererVersion,
   color,
+  ...(decode && { decode: { matrixEntry: decode.matrixEntry, support: decode.support, reason: decode.reason } }),
   createdAt: createdAt.toISOString(),
 });
 
