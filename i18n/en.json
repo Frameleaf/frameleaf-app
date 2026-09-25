@@ -5437,6 +5437,8 @@
   "frameleaf_license_remove_body": "The supporter badge and the licensed-server discount stop on this server. The licence stays yours: activate it again here or on another server. A Frameleaf Cloud plan is not affected.",
   "frameleaf_license_remove_confirm": "Remove key",
   "frameleaf_license_remove_personal_action": "Remove your supporter key…",
+  "frameleaf_license_remove_personal_body": "Your supporter badge and your supporter discount on Frameleaf Cloud plans stop. The key stays yours: you can activate it again later.",
+  "frameleaf_license_remove_personal_title": "Remove your supporter key?",
   "frameleaf_license_remove_title": "Remove the licence key from this server?",
   "frameleaf_license_removed_notice": "Licence key removed from this server.",
   "frameleaf_license_see_plans": "See Frameleaf Cloud plans",
