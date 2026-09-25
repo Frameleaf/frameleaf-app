@@ -52,6 +52,7 @@ import {
   type StudioProjectSaveDto,
   type StudioProjectSaveResponseDto,
 } from '@immich/sdk';
+import type { StudioCommandEnvelope } from './commands';
 import type { StudioProjectHandle } from './host-contract';
 
 /* ------------------------------------------------------------------ */
@@ -246,9 +247,11 @@ export interface StudioProjectSession {
   open(): Promise<void>;
   /**
    * Record the engine's current document and the command ids that produced it since the last
-   * stage. The save happens after the debounce, not now.
+   * stage. The save happens after the debounce, not now. `envelopes` are the canonical commands the
+   * engine applied (FL-92); they travel with the save, and the server checks them and counts the
+   * revision summary from them.
    */
-  stage(graph: unknown, commands?: readonly string[]): void;
+  stage(graph: unknown, commands?: readonly string[], envelopes?: readonly StudioCommandEnvelope[]): void;
   /** Send the staged draft now, if there is one. */
   flush(): Promise<void>;
   /** Discard the draft and re-read the project. Resolves a `conflict` by accepting the head. */
@@ -279,6 +282,8 @@ type Draft = {
   graph: unknown;
   counts: Record<string, number>;
   total: number;
+  /** Canonical commands behind this draft (FL-92), sent with the save. */
+  envelopes: StudioCommandEnvelope[];
   /** Assigned on the first attempt and kept for retries; a new `stage` clears it. */
   requestKey: string | null;
 };
@@ -581,6 +586,15 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
             expectedRevision: state.project.revision,
             envelope: emptyEnvelope(engineRevision, current.graph),
             summary: summaryOf(current),
+            ...(current.envelopes.length > 0 && {
+              commands: current.envelopes.map((envelope) => ({
+                id: envelope.id,
+                payload: envelope.payload as unknown as Record<string, unknown>,
+                revision: envelope.revision,
+                idempotencyKey: envelope.idempotencyKey,
+                issuedAt: envelope.issuedAt,
+              })),
+            }),
           });
           if (gen !== generation) {
             return;
@@ -734,7 +748,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       await load(generation, { keepDraft: false });
     },
 
-    stage(graph, commands = []) {
+    stage(graph, commands = [], envelopes = []) {
       if (disposed || state.access === 'reviewer' || !state.project.hasLease) {
         return;
       }
@@ -748,6 +762,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         graph,
         counts,
         total: (base?.total ?? 0) + commands.length,
+        envelopes: [...(base?.envelopes ?? []), ...envelopes],
         // A different document is a different request; the key is assigned when it is sent.
         requestKey: null,
       };

@@ -21,7 +21,7 @@ const context = (overrides: Partial<StudioBridgeContext> = {}): StudioBridgeCont
 const setup = (applyResult?: (graph: unknown) => StudioCommandApplication) => {
   let graph: unknown = { id: 'p', timeline: { items: [] }, step: 0 };
   let revision = 4;
-  const staged: Array<{ graph: unknown; ids: readonly string[] }> = [];
+  const staged: Array<{ graph: unknown; ids: readonly string[]; envelopes: readonly unknown[] }> = [];
   const engine: StudioCommandEngine = {
     apply: vi.fn(async (current: unknown) =>
       applyResult
@@ -44,8 +44,8 @@ const setup = (applyResult?: (graph: unknown) => StudioCommandApplication) => {
     graph: () => graph,
     revision: () => revision,
     assets: () => [],
-    stage: (next, ids) => {
-      staged.push({ graph: next, ids });
+    stage: (next, ids, envelopes) => {
+      staged.push({ graph: next, ids, envelopes });
       graph = next;
     },
     restore,
@@ -70,7 +70,14 @@ describe('studio engine commands (FL-92)', () => {
     ]);
     expect(result).toEqual({ status: 'accepted', idempotencyKey: 'k1', revision: 4 });
     expect(engine.apply).toHaveBeenCalledTimes(1);
-    expect(staged).toEqual([{ graph: expect.objectContaining({ step: 1 }), ids: ['track.add'] }]);
+    // The envelope travels with the save, so the server can check it and count the summary.
+    expect(staged).toEqual([
+      {
+        graph: expect.objectContaining({ step: 1 }),
+        ids: ['track.add'],
+        envelopes: [expect.objectContaining({ id: 'track.add', idempotencyKey: 'k1', revision: 4 })],
+      },
+    ]);
   });
 
   it('settles an engine refusal with its reason, so a retry does not apply twice', async () => {

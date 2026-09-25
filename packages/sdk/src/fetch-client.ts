@@ -8306,9 +8306,24 @@ export type StudioProjectHistoryResponseDto = {
     items: StudioProjectRevisionDto[];
     total: number;
 };
+export type StudioCommandEnvelopeDto = {
+    /** Published command id (studio/frameleaf-studio-commands.json) */
+    id: string;
+    idempotencyKey: string;
+    /** Epoch milliseconds */
+    issuedAt: number;
+    /** Command payload; graph-shaped values pass through unread */
+    payload: {
+        [key: string]: any;
+    };
+    /** The head revision the command was issued against */
+    revision: number;
+};
 export type StudioProjectSaveDto = {
     /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
     clientId: string;
+    /** The canonical commands the engine applied to produce this document (FL-92). Each is checked against the catalogue and the head, and the revision summary is counted from them. */
+    commands?: StudioCommandEnvelopeDto[];
     envelope: StudioProjectEnvelopeDto;
     /** The head this document was built on */
     expectedRevision: number;

@@ -105,8 +105,11 @@ export interface StudioEngineCommandOptions {
   revision: () => number;
   /** Library media the session may place. */
   assets: () => readonly StudioAssetRef[];
-  /** Stage a graph as the next draft, with the command ids for the revision summary. */
-  stage: (graph: unknown, commandIds: readonly string[]) => void;
+  /**
+   * Stage a graph as the next draft, with the command ids for the revision summary and the envelopes
+   * the server checks and counts (FL-92).
+   */
+  stage: (graph: unknown, commandIds: readonly string[], envelopes: readonly StudioCommandEnvelope[]) => void;
   /** Append a stored revision as the new head (FL-89 restore). */
   restore: (revision: number) => Promise<boolean>;
   /** The engine's command runtime; started on first use. */
@@ -134,7 +137,7 @@ export const createStudioEngineCommandHandlers = (
       throw rejectedBy(outcome.reason, outcome.detail);
     }
     options.history.record(graph, outcome.graph);
-    options.stage(outcome.graph, [envelope.id]);
+    options.stage(outcome.graph, [envelope.id], [envelope]);
     return options.revision();
   };
 
@@ -158,7 +161,7 @@ export const createStudioEngineCommandHandlers = (
       const current = options.graph();
       const target = direction === 'undo' ? options.history.undo(current) : options.history.redo(current);
       if (target !== null && target !== undefined) {
-        options.stage(target, [envelope.id]);
+        options.stage(target, [envelope.id], [envelope]);
         return options.revision();
       }
       if (direction === 'undo' && options.revision() > 1) {
