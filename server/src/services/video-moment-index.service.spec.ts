@@ -237,6 +237,7 @@ describe(VideoMomentIndexService.name, () => {
         ],
         expect.objectContaining({ identityHash: identityHash([]), configHash: captionHash }),
         expect.objectContaining({ captionIdentityHash: identityHash([]) }),
+        expect.any(Function),
       );
     });
 
@@ -257,7 +258,34 @@ describe(VideoMomentIndexService.name, () => {
         ],
         expect.anything(),
         expect.anything(),
+        expect.any(Function),
       );
+    });
+
+    it('publishes nothing when the names change while the frames are captioned (FL-57)', async () => {
+      const namedFace = (name: string) => ({
+        personGroupId: '00000000-0000-4000-8000-00000000000a',
+        person: { name, isHidden: false },
+        imageWidth: 100,
+        imageHeight: 100,
+        boundingBoxX1: 10,
+        boundingBoxY1: 10,
+        boundingBoxX2: 40,
+        boundingBoxY2: 40,
+      });
+      mocks.machineLearning.describeImage.mockResolvedValue({ description: 'Ada at the beach.' } as never);
+      mocks.person.getFaces
+        .mockResolvedValueOnce([namedFace('Ada')] as never)
+        .mockResolvedValueOnce([namedFace('Grace')] as never);
+      moments.publishCaptions = vi.fn(async (...args: unknown[]) => {
+        const namesStillCurrent = args[4] as () => Promise<boolean>;
+        return (await namesStillCurrent()) ? 3 : ('identity-changed' as const);
+      });
+
+      await expect(sut.runCaptionStage(assetId, { imageDescription })).resolves.toEqual({
+        state: EnrichmentItemState.Failed,
+        reasonKey: 'identity-changed',
+      });
     });
   });
 
