@@ -88,4 +88,20 @@ describe('CloudManager (FL-155)', () => {
     expect(manager.status?.state).toBe('linked');
     expect(manager.error).toBeNull();
   });
+
+  it('drops a slow answer that lands after Cancel, so pending and polling do not come back', async () => {
+    let answer: (value: CloudStatusResponseDto) => void = () => {};
+    sdkMock.getCloudStatus.mockReturnValue(new Promise((resolve) => (answer = resolve)) as never);
+    sdkMock.cancelCloudLink.mockResolvedValue(status());
+    const manager = new CloudManager();
+    const stop = manager.listen();
+
+    await manager.cancelLink();
+    expect(manager.status?.state).toBe('unlinked');
+    answer(pending());
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(manager.status?.state).toBe('unlinked');
+    expect(sdkMock.getCloudLink).not.toHaveBeenCalled();
+    stop();
+  });
 });
