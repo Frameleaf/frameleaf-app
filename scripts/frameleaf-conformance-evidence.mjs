@@ -1239,9 +1239,9 @@ const routes = {
     ],
   ],
   "/admin/queues": [
-    "partial",
+    "fixed",
     ["CC-42", "CC-43", "CC-44"],
-    "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts) and FL-59 (CC-42, the Frameleaf Enrichment tasks dialog with When and Acceleration); open: the RunPod manager and provider history (CC-43, CC-44, FL-43)",
+    "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts) and FL-59 (CC-42, the Frameleaf Enrichment tasks dialog with When and Acceleration); CC-43 and CC-44 are obsolete: the GPU provider is removed and Frameleaf Cloud processing replaces it (FL-159)",
     [`${P}/JobsManager.jsx`, `${P}/jobs-data.mjs`],
     [
       `${W}/routes/admin/queues/+page.ts`,
@@ -1865,9 +1865,9 @@ const routes = {
     ],
   ],
   "/utilities/corrupt-media": [
-    "match",
+    "fixed",
     ["UT-2"],
-    "Undo on the notice as the API allows",
+    "Undo on the notice through the reopen endpoint (FL-69)",
     [`${P}/UtilitiesManager.jsx`, `${P}/UtilityRecovery.jsx`],
     [
       `${W}/routes/(user)/utilities/corrupt-media/+page.ts`,
@@ -1913,9 +1913,9 @@ const routes = {
     [`${W}/routes/(user)/utilities/geolocation/photos/[photoId]/+page.ts`],
   ],
   "/utilities/icloud-sync": [
-    "match",
+    "fixed",
     ["UT-11"],
-    "Recent utility activity",
+    "Recent utility activity on every tool (FL-69)",
     [`${P}/UtilitiesManager.jsx`, `${P}/utilities-data.mjs`],
     [
       `${W}/routes/(user)/utilities/icloud-sync/+page.ts`,
@@ -1944,9 +1944,9 @@ const routes = {
     ],
   ],
   "/utilities/missing-media": [
-    "match",
+    "fixed",
     ["UT-2"],
-    "Undo on the notice as the API allows",
+    "Undo on the notice through the reopen endpoint (FL-69)",
     [`${P}/UtilitiesManager.jsx`, `${P}/UtilityRecovery.jsx`],
     [
       `${W}/routes/(user)/utilities/missing-media/+page.ts`,
