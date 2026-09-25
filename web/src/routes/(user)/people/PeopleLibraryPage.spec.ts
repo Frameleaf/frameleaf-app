@@ -4,6 +4,7 @@ import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { peopleListItemFactory } from '@test-data/factories/person-factory';
 import PeoplePage from './+page.svelte';
 import { PEOPLE_CAP, PEOPLE_PAGE_SIZE } from './people-page';
@@ -114,6 +115,7 @@ describe('People library merge suggestions', () => {
   });
 
   it('merges on "Yes, merge" through the same verdict', async () => {
+    const emit = vi.spyOn(eventManager, 'emit');
     sdkMock.setMergeVerdict.mockResolvedValue({
       personId: 'ada',
       suggestionId: 'eve',
@@ -129,5 +131,9 @@ describe('People library merge suggestions', () => {
       }),
     );
     expect(sdkMock.mergePeople).not.toHaveBeenCalled();
+    // open viewers, search chips and person pages follow the merge
+    await waitFor(() =>
+      expect(emit).toHaveBeenCalledWith('PersonFacesChange', { personIds: ['ada', 'eve'], removedPersonIds: ['eve'] }),
+    );
   });
 });

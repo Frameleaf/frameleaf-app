@@ -109,7 +109,8 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Fix incorrect match' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Moved a face' }));
 
-    expect(changes).toHaveBeenCalledWith({ personIds: ['ada'] });
+    // announced once, by the hero, for this person and the person the face moved to
+    expect(changes).toHaveBeenCalledExactlyOnceWith({ personIds: ['ada', 'grace'] });
     expect(view.onFacesChanged).toHaveBeenCalledOnce();
     stop();
   });
