@@ -5438,6 +5438,7 @@
   "frameleaf_people_discard_title": "Discard changes?",
   "frameleaf_people_everyone_hidden": "Everyone is hidden. Turn on Show hidden or use Show and hide people.",
   "frameleaf_people_favorited_status": "{name} added to favorites.",
+  "frameleaf_people_featured_current": "{name}, current featured photo",
   "frameleaf_people_featured_empty": "No photos are available for this person.",
   "frameleaf_people_featured_failed": "Photos could not be loaded.",
   "frameleaf_people_featured_hint": "The featured photo represents {name} across the app.",
