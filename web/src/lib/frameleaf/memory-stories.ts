@@ -4,6 +4,7 @@ import {
   type EventStoryDto,
   type MemoryExportResponseDto,
   type MemoryResponseDto,
+  type PetStoryDto,
   type YearInReviewDto,
 } from '@immich/sdk';
 
@@ -21,7 +22,7 @@ import {
  * re-interpreting them in the viewer's zone would move a trip by a day.
  */
 
-export type MemoryStoryKind = 'on_this_day' | 'event_story' | 'year_in_review';
+export type MemoryStoryKind = 'on_this_day' | 'event_story' | 'year_in_review' | 'pet_story';
 
 export const isEventStory = (memory: MemoryResponseDto): memory is MemoryResponseDto & { data: EventStoryDto } =>
   memory.type === MemoryType.EventStory && (memory.data as Partial<EventStoryDto>).kind === 'event_story';
@@ -29,9 +30,16 @@ export const isEventStory = (memory: MemoryResponseDto): memory is MemoryRespons
 export const isYearInReview = (memory: MemoryResponseDto): memory is MemoryResponseDto & { data: YearInReviewDto } =>
   memory.type === MemoryType.YearInReview && (memory.data as Partial<YearInReviewDto>).kind === 'year_in_review';
 
+/** FL-58: a month of photos with one of the owner's named pets; `name` is the pet's current name. */
+export const isPetStory = (memory: MemoryResponseDto): memory is MemoryResponseDto & { data: PetStoryDto } =>
+  memory.type === MemoryType.PetStory && (memory.data as Partial<PetStoryDto>).kind === 'pet_story';
+
 export const memoryStoryKind = (memory: MemoryResponseDto): MemoryStoryKind => {
   if (isEventStory(memory)) {
     return 'event_story';
+  }
+  if (isPetStory(memory)) {
+    return 'pet_story';
   }
   if (isYearInReview(memory)) {
     return 'year_in_review';

@@ -5521,6 +5521,8 @@ export type PetCreateDto = {
     species?: PetSpecies;
 };
 export type PetCandidateResponseDto = {
+    /** Checksum (base64) of the asset now; send it back as expectedChecksum */
+    assetChecksum: string;
     /** Asset the proposal is about */
     assetId: string;
     /** Region X1, in source pixels */

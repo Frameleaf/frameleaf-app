@@ -67,6 +67,8 @@ export interface PetReviewCandidate {
   score: number;
   petId: string;
   assetId: string;
+  /** The asset's current checksum, which a review answer names so it lands on this original (FL-58). */
+  assetChecksum: Buffer;
   detectionId: string;
   detectedSpecies: string | null;
   modelName: string;
@@ -485,6 +487,7 @@ export class PetRepository {
         'pet_candidate.petId as petId',
         'pet_detection.id as detectionId',
         'pet_detection.assetId as assetId',
+        'asset.checksum as assetChecksum',
         'pet_detection.species as detectedSpecies',
         'pet_detection.modelName as modelName',
         'pet_detection.modelRevision as modelRevision',
@@ -520,6 +523,7 @@ export class PetRepository {
         'pet_candidate.petId as petId',
         'pet_detection.id as detectionId',
         'pet_detection.assetId as assetId',
+        'asset.checksum as assetChecksum',
         'pet_detection.species as detectedSpecies',
         'pet_detection.modelName as modelName',
         'pet_detection.modelRevision as modelRevision',
