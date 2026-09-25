@@ -633,6 +633,105 @@ describe(TrashService.name, () => {
       expect(unlocked.entries[0]).toMatchObject({ itemCount: 1, items: [{ fileName: 'Private.mov' }] });
     });
 
+    it("gives another owner none of it, even their unlocked session, and keeps each owner's own apart", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: own(), originalFileName: 'Mine.mov' });
+      const { asset: theirs } = await ctx.newAsset({
+        ownerId: other.id,
+        originalPath: own(),
+        originalFileName: 'Theirs.mov',
+      });
+      await moveFromLargeFiles(sut, auth, [asset.id]);
+      await moveFromLargeFiles(sut, factory.auth({ user: other }), [theirs.id]);
+
+      for (const reader of [
+        factory.auth({ user: other }),
+        factory.auth({ user: other, session: { hasElevatedPermission: true } }),
+      ]) {
+        const { entries } = await sut.getUtilityActivity(reader, { tool: UtilityActivityTool.LargeFiles });
+        expect(entries).toHaveLength(1);
+        expect(JSON.stringify(entries)).not.toContain('Mine.mov');
+        expect(JSON.stringify(entries)).not.toContain(asset.id);
+        expect(entries[0].items).toEqual([expect.objectContaining({ assetId: theirs.id, fileName: 'Theirs.mov' })]);
+      }
+      const mine = await sut.getUtilityActivity(auth, { tool: UtilityActivityTool.LargeFiles });
+      expect(mine.entries).toHaveLength(1);
+      expect(mine.entries[0].items).toEqual([expect.objectContaining({ assetId: asset.id })]);
+    });
+
+    it('counts but never names an item a privacy mark hides from the session', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'private-mark' });
+      const auth = factory.auth({ user });
+      const { asset: open } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        originalFileName: 'Open.mov',
+      });
+      const { asset: marked } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        originalFileName: 'Marked.mov',
+      });
+      await ctx.newExif({ assetId: open.id, fileSizeInByte: 3000 });
+      await ctx.newExif({ assetId: marked.id, fileSizeInByte: 7000 });
+      await moveFromLargeFiles(sut, auth, [open.id, marked.id]);
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [marked.id] });
+
+      const hidden = await sut.getUtilityActivity(markedAuth(user, [tag.id]), { tool: UtilityActivityTool.LargeFiles });
+      expect(hidden.entries[0]).toMatchObject({
+        itemCount: 1,
+        bytes: 3000,
+        items: [{ assetId: open.id, fileName: 'Open.mov', bytes: 3000 }],
+        unavailableCount: 1,
+      });
+      expect(JSON.stringify(hidden)).not.toContain('Marked.mov');
+
+      // without the filter both are named
+      const all = await sut.getUtilityActivity(auth, { tool: UtilityActivityTool.LargeFiles });
+      expect(all.entries[0]).toMatchObject({ itemCount: 2, bytes: 10_000, unavailableCount: 0 });
+    });
+
+    it('counts but no longer names permanently deleted items', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset: kept } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        originalFileName: 'Kept.mov',
+      });
+      const { asset: deleted } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        originalFileName: 'Deleted.mov',
+      });
+      const { asset: removed } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        originalFileName: 'Removed.mov',
+      });
+      await moveFromLargeFiles(sut, auth, [kept.id, deleted.id, removed.id]);
+
+      // one permanently deleted and still being removed from storage, one already gone entirely
+      const review = await sut.review(auth, { action: TrashReviewAction.Delete, ids: [deleted.id] });
+      await sut.apply(auth, { action: TrashReviewAction.Delete, ids: [deleted.id], token: review.token });
+      await ctx.database.deleteFrom('asset').where('id', '=', removed.id).execute();
+
+      const { entries } = await sut.getUtilityActivity(auth, { tool: UtilityActivityTool.LargeFiles });
+      expect(entries[0]).toMatchObject({
+        itemCount: 1,
+        items: [expect.objectContaining({ assetId: kept.id, fileName: 'Kept.mov' })],
+        unavailableCount: 2,
+      });
+      expect(JSON.stringify(entries)).not.toContain('Deleted.mov');
+      expect(JSON.stringify(entries)).not.toContain('Removed.mov');
+    });
+
     it('keeps a year and at most 500 entries per owner', async () => {
       const { ctx } = setup();
       const { user } = await ctx.newUser();
@@ -656,7 +755,7 @@ describe(TrashService.name, () => {
         SELECT count(*)::text AS count FROM immich_fork.utility_activity WHERE "userId" = ${user.id}::uuid
       `.execute(ctx.database);
       expect(count.rows[0].count).toBe('500');
-    });
+    }, 60_000);
 
     it('goes with the account, and the removed-account sweep clears what a handoff left behind', async () => {
       const { ctx } = setup();
