@@ -47,6 +47,7 @@ export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'machineLearning.imageDescription.lastConfigChangeAt',
   'notifications.smtp.transport.passwordConfigured',
   'oauth.clientSecretConfigured',
+  'frameleafCloud.signIn.clientSecretConfigured',
 ]);
 
 /**
@@ -57,6 +58,7 @@ export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
 export const SECRET_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'notifications.smtp.transport.password',
   'oauth.clientSecret',
+  'frameleafCloud.signIn.clientSecret',
 ]);
 
 const SECRET_NAME = /(password|secret|token|apikey|api_key|credential)$/i;

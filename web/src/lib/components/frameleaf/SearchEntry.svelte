@@ -69,6 +69,7 @@
 
   const context = $derived({
     isAdmin,
+    frameleafCloud: featureFlagsManager.value.frameleafCloud,
     capabilities: {
       search: featureFlagsManager.value.search,
       map: featureFlagsManager.value.map,

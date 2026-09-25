@@ -113,7 +113,8 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'security',
     group: 'server',
-    sections: ['authentication'],
+    // FL-158: Sign in with Frameleaf sits beside the administrator's own provider.
+    sections: ['authentication', 'frameleaf-signin'],
     personal: ['password', 'user-pin-code-settings', 'oauth', 'suppressed-content', 'authorized-devices', 'api-keys'],
   },
   // The account's own email notifications sit with the server's email delivery, as in the template.
@@ -132,7 +133,15 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     sections: [],
     // Profile, appearance, downloads and library features, as in the template. Usage and supporter
     // status have no other home in the template yet.
-    personal: ['account', 'app-settings', 'download-settings', 'feature', 'user-usage-info', 'user-purchase-settings'],
+    personal: [
+      'account',
+      'frameleaf-account',
+      'app-settings',
+      'download-settings',
+      'feature',
+      'user-usage-info',
+      'user-purchase-settings',
+    ],
   },
   // FL-71: the old /admin/users pages; one account opens inside the section (`?user=<id>`).
   { id: 'users', group: 'server', sections: ['accounts'] },
@@ -435,6 +444,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   },
   security: {
     authentication: 'sign_in',
+    'frameleaf-signin': 'sign_in',
     password: 'sign_in',
     oauth: 'sign_in',
     'user-pin-code-settings': 'locked_content',
@@ -455,6 +465,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     account: 'account',
     'user-usage-info': 'account',
     'user-purchase-settings': 'account',
+    'frameleaf-account': 'account',
     'app-settings': 'library',
     feature: 'library',
     'download-settings': 'downloads',

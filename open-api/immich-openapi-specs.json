@@ -955,7 +955,7 @@
     },
     "/admin/cloud/sign-in": {
       "put": {
-        "description": "Remote access always requires Sign in with Frameleaf. This also offers it on the login page at home, once the server is linked.",
+        "description": "Remote access always requires Sign in with Frameleaf. This also offers it on the login page at home, once the server is linked, and sets its button text.",
         "operationId": "updateCloudSignIn",
         "parameters": [],
         "requestBody": {
@@ -44643,12 +44643,7 @@
             "type": "object"
           },
           "mode": {
-            "description": "Search mode used to answer the query",
-            "enum": [
-              "smart",
-              "metadata"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/SearchAskMode"
           },
           "normalizedQuery": {
             "description": "Normalized query text",
@@ -49766,14 +49761,17 @@
       },
       "CloudSignInUpdateDto": {
         "properties": {
+          "buttonText": {
+            "description": "The Sign in with Frameleaf button text",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
           "showOnLocalLogin": {
             "description": "Offer Sign in with Frameleaf on the login page at home",
             "type": "boolean"
           }
         },
-        "required": [
-          "showOnLocalLogin"
-        ],
         "type": "object"
       },
       "CloudStatusResponseDto": {
@@ -49893,6 +49891,10 @@
             ],
             "type": "object"
           },
+          "signInButtonText": {
+            "description": "The Sign in with Frameleaf button text",
+            "type": "string"
+          },
           "signInClientId": {
             "description": "The OpenID client ID for Sign in with Frameleaf",
             "nullable": true,
@@ -49935,6 +49937,7 @@
           "permissions",
           "relinkRequested",
           "revoked",
+          "signInButtonText",
           "signInClientId",
           "signInIssuer",
           "signInLinkedAccounts",
@@ -66929,6 +66932,14 @@
           "total"
         ],
         "type": "object"
+      },
+      "SearchAskMode": {
+        "description": "Search mode used to answer the query",
+        "enum": [
+          "smart",
+          "metadata"
+        ],
+        "type": "string"
       },
       "SearchAssetResponseDto": {
         "properties": {

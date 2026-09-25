@@ -200,6 +200,18 @@
   "frameleafCloud.cloudMl.restoration.enabled": {
     "type": "boolean"
   },
+  "frameleafCloud.signIn.buttonText": {
+    "type": "string"
+  },
+  "frameleafCloud.signIn.clientSecret": {
+    "type": "string"
+  },
+  "frameleafCloud.signIn.clientSecretConfigured": {
+    "type": "boolean"
+  },
+  "frameleafCloud.signIn.showOnLocalLogin": {
+    "type": "boolean"
+  },
   "image.colorspace": {
     "type": "string",
     "enum": [

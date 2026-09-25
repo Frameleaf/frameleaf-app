@@ -104,7 +104,7 @@ export class CloudAdminController {
     operationId: 'updateCloudSignIn',
     summary: 'Choose where Sign in with Frameleaf is offered',
     description:
-      'Remote access always requires Sign in with Frameleaf. This also offers it on the login page at home, once the server is linked.',
+      'Remote access always requires Sign in with Frameleaf. This also offers it on the login page at home, once the server is linked, and sets its button text.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   updateSignIn(@Auth() auth: AuthDto, @Body() dto: CloudSignInUpdateDto): Promise<CloudStatusResponseDto> {

@@ -13,6 +13,7 @@ import {
   startCloudLink,
   unlinkCloud,
   updateCloudPermissions,
+  updateCloudSignIn,
   type CloudPermissionsUpdateDto,
   type CloudStatusResponseDto,
   type LicenseProductsResponseDto,
@@ -108,6 +109,10 @@ export class CloudManager {
   checkIn = () => this.#run(() => checkInCloud());
   setPermissions = (dto: CloudPermissionsUpdateDto) =>
     this.#run(() => updateCloudPermissions({ cloudPermissionsUpdateDto: dto }));
+  /** FL-158: offer Sign in with Frameleaf on the login page at home too. */
+  setShowOnLocalLogin = (showOnLocalLogin: boolean) =>
+    this.#run(() => updateCloudSignIn({ cloudSignInUpdateDto: { showOnLocalLogin } }));
+  setButtonText = (buttonText: string) => this.#run(() => updateCloudSignIn({ cloudSignInUpdateDto: { buttonText } }));
 
   activateLicense = (key: string) => this.#runLicense(() => activateLicense({ licenseActivateDto: { key } }));
   installLicenseFile = (certificate: string) =>

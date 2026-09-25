@@ -94,6 +94,7 @@ export class FrameleafCloudService extends BaseService {
       ...this.mapStatus(cloudUrl, identity, link),
       signInLinkedAccounts: await this.frameleafAccountRepository.countLinks(),
       signInShowOnLocalLogin: !!config.frameleafCloud.signIn?.showOnLocalLogin,
+      signInButtonText: config.frameleafCloud.signIn?.buttonText ?? '',
     };
   }
 
@@ -101,7 +102,7 @@ export class FrameleafCloudService extends BaseService {
     cloudUrl: string | null,
     identity: FrameleafInstanceIdentity | null,
     link: FrameleafCloudLink | null,
-  ): Omit<CloudStatusResponseDto, 'signInLinkedAccounts' | 'signInShowOnLocalLogin'> {
+  ): Omit<CloudStatusResponseDto, 'signInLinkedAccounts' | 'signInShowOnLocalLogin' | 'signInButtonText'> {
     const linked = link?.status === 'linked';
     return {
       state: cloudUrl ? (link?.status ?? 'unlinked') : 'not-configured',
@@ -450,20 +451,25 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
-   * `PUT admin/cloud/sign-in` (FL-158): whether Sign in with Frameleaf is also offered at home. Remote
-   * access always requires it; this only adds the button to the local login page, once linked.
+   * `PUT admin/cloud/sign-in` (FL-158): whether Sign in with Frameleaf is also offered at home, and its
+   * button text. Remote access always requires it; this only adds the button to the local login
+   * page, once linked.
    */
   async updateSignIn(auth: AuthDto, dto: CloudSignInUpdateDto): Promise<CloudStatusResponseDto> {
     const cloudUrl = this.requireCloudUrl();
     const link = await this.readLink(cloudUrl);
-    if (link?.status !== 'linked') {
+    if (dto.showOnLocalLogin !== undefined && link?.status !== 'linked') {
       throw new BadRequestException('Link this server first.');
     }
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
-      config.frameleafCloud.signIn = { ...config.frameleafCloud.signIn, showOnLocalLogin: dto.showOnLocalLogin };
+      config.frameleafCloud.signIn = {
+        ...config.frameleafCloud.signIn,
+        ...(dto.showOnLocalLogin !== undefined && { showOnLocalLogin: dto.showOnLocalLogin }),
+        ...(dto.buttonText !== undefined && { buttonText: dto.buttonText }),
+      };
     });
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
-    this.logger.log(`Sign in with Frameleaf at home turned ${dto.showOnLocalLogin ? 'on' : 'off'} by ${auth.user.id}`);
+    this.logger.log(`Sign in with Frameleaf settings changed by ${auth.user.id}`);
     return this.getStatus();
   }
 

@@ -99,9 +99,16 @@ describe('settings areas', () => {
   });
 
   it('withholds the system settings areas from a non-administrator', () => {
-    const commands = buildSettingsCommands($t, context());
+    const commands = buildSettingsCommands($t, context({ frameleafCloud: true }));
     expect(commands).toHaveLength(USER_SETTINGS_AREAS.length);
     expect(commands.some((command) => command.id.startsWith('admin:'))).toBe(false);
+  });
+
+  it('offers "Frameleaf account" only when the server is configured for Frameleaf Cloud (FL-158)', () => {
+    const ids = (frameleafCloud: boolean) =>
+      buildSettingsCommands($t, context({ frameleafCloud })).map((command) => command.id);
+    expect(ids(false)).not.toContain('user:frameleaf-account');
+    expect(ids(true)).toContain('user:frameleaf-account');
   });
 });
 
