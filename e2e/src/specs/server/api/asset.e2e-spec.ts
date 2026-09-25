@@ -740,6 +740,26 @@ describe('/asset', () => {
   });
 
   describe('PUT /assets', () => {
+    // FL-36: a bulk metadata change is all or nothing: an item the user cannot change, or one that is
+    // gone, refuses the whole request, so a frozen selection never half-applies.
+    it('refuses a bulk change that includes an item the user cannot change', async () => {
+      const { status } = await request(app)
+        .put('/assets')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ ids: [user1Assets[0].id, user2Assets[0].id], isFavorite: true });
+      expect(status).toBe(400);
+      const untouched = await utils.getAssetInfo(user2.accessToken, user2Assets[0].id);
+      expect(untouched.isFavorite).toBe(false);
+    });
+
+    it('refuses a stale bulk selection', async () => {
+      const { status } = await request(app)
+        .put('/assets')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ ids: [user1Assets[0].id, '00000000-0000-4000-8000-000000000000'], rating: 3 });
+      expect(status).toBe(400);
+    });
+
     it('should update date time original relatively', async () => {
       const { status, body } = await request(app)
         .put(`/assets/`)
