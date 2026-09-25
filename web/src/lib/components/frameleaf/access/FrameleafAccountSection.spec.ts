@@ -69,7 +69,7 @@ describe('FrameleafAccountSection (FL-158)', () => {
       linkedAt: null,
       lastSignInAt: null,
     });
-    sdkMock.unlinkFrameleafAccount.mockResolvedValue();
+    sdkMock.unlinkFrameleafAccount.mockResolvedValue(undefined as never);
     render(FrameleafAccountSection);
 
     expect(await screen.findByText(/Linked to me@example.test since/)).toBeInTheDocument();
