@@ -10,7 +10,8 @@ class UserPreferencesManager {
   #showDetailPanel = new PersistedLocalStorage<boolean>('asset-viewer-state', false);
   #showAssetPath = new PersistedLocalStorage<boolean>('asset-viewer-show-path', false);
   #showAssetOwners = new PersistedLocalStorage<boolean>('album-show-asset-owners', false);
-  #defaultMemories: MemoriesPreferences = { showUpcoming: false, onlyFavorites: false };
+  // FL-62: Show upcoming is on by default, as in the template (discovery-data.mjs emptyMemoryOverrides).
+  #defaultMemories: MemoriesPreferences = { showUpcoming: true, onlyFavorites: false };
   #memories = new PersistedLocalStorage<MemoriesPreferences>(
     'memories-settings',
     { ...this.#defaultMemories },

@@ -71,4 +71,45 @@ test.describe('Explore', () => {
     await expect(recent.first()).toContainText('2026-08-02');
     await expect(recent.nth(1)).toHaveAccessibleName('Open harbour.png');
   });
+
+  test('Explore to a filtered result, the viewer and back keeps the place on the page (FL-50)', async ({
+    context,
+    page,
+  }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.setViewportSize({ width: 1280, height: 640 });
+    await page.goto('/explore');
+
+    const things = page.getByRole('region', { name: 'Things in your photos' });
+    await things.scrollIntoViewIfNeeded();
+    const scrolled = await page.evaluate(() => {
+      const scroller = document.querySelector('main') ?? document.scrollingElement;
+      return scroller?.scrollTop ?? 0;
+    });
+
+    await things.getByRole('link', { name: /beach/ }).click();
+    await page.waitForURL(/\/search\?query=.*tagIds/);
+    await page.locator('[data-asset-id]').first().click();
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    await expect(page.locator('[data-asset-id]')).toHaveCount(2);
+
+    await page.goBack();
+    await page.waitForURL(/\/explore/);
+    await expect(things).toBeVisible();
+    const restored = await page.evaluate(() => {
+      const scroller = document.querySelector('main') ?? document.scrollingElement;
+      return scroller?.scrollTop ?? 0;
+    });
+    expect(Math.abs(restored - scrolled)).toBeLessThan(80);
+  });
+
+  test('Best Photos without quality scores says so instead of ranking by stars (FL-50)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/best-photos');
+    await expect(page.getByText('No best photos have been scored yet.')).toBeVisible();
+    await expect(page.locator('[data-asset-id]')).toHaveCount(0);
+  });
 });
