@@ -130,6 +130,14 @@ describe(MlDestinationRepository.name, () => {
         { cloudJobId: `missing-${randomUUID()}`, costUsd: 9, credits: 9 },
       ]),
     ).resolves.toBe(2);
+    // A job reported twice is applied once, with its last report.
+    await expect(
+      sut.applySettlements([
+        { cloudJobId: jobB, costUsd: 9, credits: 9 },
+        { cloudJobId: jobB, costUsd: 1.75, credits: 5 },
+      ]),
+    ).resolves.toBe(1);
+    await expect(sut.applySettlements([{ cloudJobId: jobB, costUsd: 1.5, credits: null }])).resolves.toBe(1);
     // Already settled with the same figures: nothing is rewritten.
     await expect(sut.applySettlements([{ cloudJobId: jobA, costUsd: 0.42, credits: 42 }])).resolves.toBe(0);
 
