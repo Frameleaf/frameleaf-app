@@ -528,6 +528,12 @@ export enum SystemMetadataKey {
    * the original files, each recorded separately, and who recorded it.
    */
   BackupRestoreVerification = 'backup-restore-verification',
+  /**
+   * FL-176: Frameleaf first-run setup — whether it is complete, which flow it runs (a new server or
+   * the first Frameleaf launch on an existing library) and the saved per-step progress. Never a
+   * password.
+   */
+  FrameleafSetup = 'frameleaf-setup',
 }
 
 export enum UserMetadataKey {
