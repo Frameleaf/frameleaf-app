@@ -206,7 +206,7 @@ describe('Ask about your photos', () => {
 
   const answer = (ids: string[]) => ({
     query: 'favorite videos since 2020',
-    plan: { filters: {}, mode: Mode2.Smart, normalizedQuery: 'favorite videos since 2020' },
+    plan: { filters: {}, mode: Mode.Smart, normalizedQuery: 'favorite videos since 2020' },
     explanation: 'Favorite videos taken since 2020.',
     warnings: [],
     results: result(ids),
