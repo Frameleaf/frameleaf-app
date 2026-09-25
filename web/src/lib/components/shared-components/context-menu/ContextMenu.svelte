@@ -19,6 +19,11 @@
      * clear of chrome along the bottom edge (e.g. the viewer footer).
      */
     maxHeightInset?: number | undefined;
+    /**
+     * Keeps the menu's bottom edge at least this many pixels above the bottom of the window, whatever
+     * its height or where it opens (e.g. clear of a footer that paints over it).
+     */
+    bottomInset?: number | undefined;
     onClose?: (() => void) | undefined;
     children?: Snippet;
   }
@@ -35,6 +40,7 @@
     menuScrollView = $bindable(),
     menuElement = $bindable(),
     maxHeightInset = undefined,
+    bottomInset = undefined,
     onClose = undefined,
     children,
   }: Props = $props();
@@ -52,10 +58,12 @@
 
     const margin = 8;
     const heightCap = maxHeightInset === undefined ? Infinity : Math.max(0, windowInnerHeight - maxHeightInset);
+    // The lowest the menu may reach: the window's bottom, or `bottomInset` above it.
+    const bottomLimit = windowInnerHeight - (bottomInset ?? 0);
 
     const left = Math.max(margin, Math.min(windowInnerWidth - rect.width - margin, x - directionWidth));
-    const top = Math.max(margin, Math.min(windowInnerHeight - Math.min(menuElement.clientHeight, heightCap), y));
-    const maxHeight = Math.min(windowInnerHeight - top - margin, heightCap);
+    const top = Math.max(margin, Math.min(bottomLimit - Math.min(menuElement.clientHeight, heightCap), y));
+    const maxHeight = Math.max(0, Math.min(bottomLimit - top - margin, heightCap));
 
     const needScrollBar = menuElement.clientHeight > maxHeight;
 

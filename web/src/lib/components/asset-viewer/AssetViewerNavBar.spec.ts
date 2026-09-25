@@ -343,6 +343,41 @@ describe('AssetViewerNavBar component', () => {
     }
   });
 
+  // FL-35: on a phone More sits in the bottom toolbar just above the footer, so the menu opens low; its bottom
+  // edge must still end above the footer (60px plus the safe area), which paints over the header's level.
+  it('ends the More menu above the footer when it opens from the phone toolbar', async () => {
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+    const height = 844;
+    const spies = [
+      vi.spyOn(globalThis, 'innerWidth', 'get').mockReturnValue(390),
+      vi.spyOn(globalThis, 'innerHeight', 'get').mockReturnValue(height),
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(520),
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+        // The phone toolbar's More button, about 108px above the bottom of the window.
+        const y = this.getAttribute('aria-label') === 'frameleaf_viewer_more_actions' ? height - 108 : 0;
+        return DOMRect.fromRect({ x: 340, y, width: 44, height: 44 });
+      }),
+    ];
+    try {
+      const { getByLabelText, getByRole } = renderWithTooltips(AssetViewerNavBar, {
+        asset,
+        ...additionalProps,
+        canNavigateCollection: true,
+      });
+      await fireEvent.click(getByLabelText('frameleaf_viewer_more_actions'));
+
+      const scrollView = getByRole('menu', { hidden: true }).parentElement!;
+      const px = (value: string) => Number(value.replace(/px$/, ''));
+      const bottom = px(scrollView.style.top) + px(scrollView.style.maxHeight);
+      expect(bottom).toBeLessThanOrEqual(height - 60);
+    } finally {
+      for (const spy of spies) {
+        spy.mockRestore();
+      }
+    }
+  });
+
   // FL-35: the template's top row (MediaViewer.jsx:1023-1200), without the legacy Offline and zoom buttons (V-6).
   describe('toolbar', () => {
     it('follows the template order and leaves out the legacy Offline and zoom buttons', () => {
