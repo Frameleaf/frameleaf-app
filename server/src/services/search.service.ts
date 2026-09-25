@@ -193,7 +193,7 @@ export class SearchService extends BaseService {
    * hides their locations from the viewer.
    */
   async searchFacets(auth: AuthDto, dto: SearchFacetsDto): Promise<SearchFacetsResponseDto> {
-    const { facets: requested, facetLimit, ...body } = dto;
+    const { facets: requested, facetLimit, facetCovers, ...body } = dto;
     const facetOptions: SearchFacetOptions = {
       viewerId: auth.user.id,
       // each facet once, in the order asked
@@ -204,6 +204,7 @@ export class SearchService extends BaseService {
       ],
       suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
       suppressedTagIds: auth.hiddenContent?.tagIds ?? [],
+      covers: facetCovers ?? false,
     };
 
     // the total comes from the facet statement itself: one scan of the matched assets, not two
@@ -229,11 +230,13 @@ export class SearchService extends BaseService {
         fieldName,
         counts: rows
           .filter((row) => row.field === fieldName)
-          .map(({ value, label, count }) =>
-            fieldName === SearchFacetField.People || fieldName === SearchFacetField.Tags
+          .map(({ value, label, count, coverAssetId }) => ({
+            ...(fieldName === SearchFacetField.People || fieldName === SearchFacetField.Tags
               ? { value, label, count }
-              : { value, count },
-          ),
+              : { value, count }),
+            // only when asked for (Explore's cards): the newest match, inside the same scope as the count
+            ...(facetOptions.covers && { coverAssetId }),
+          })),
       })),
     };
   }

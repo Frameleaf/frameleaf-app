@@ -310,9 +310,17 @@ export interface SearchFacetOptions {
   /** a session that is not unlocked: these people and tags (with their descendants) are never named */
   suppressedPersonIds: string[];
   suppressedTagIds: string[];
+  /** also pick, per value, the newest matching asset by capture time (Explore's card covers) */
+  covers?: boolean;
 }
 
-export type SearchFacetRow = { field: SearchFacetField; value: string; label: string | null; count: number };
+export type SearchFacetRow = {
+  field: SearchFacetField;
+  value: string;
+  label: string | null;
+  count: number;
+  coverAssetId: string | null;
+};
 export type SearchFacetResult = { total: number; rows: SearchFacetRow[] };
 export type SearchHistogramRow = { date: string; count: number };
 
@@ -323,6 +331,7 @@ const facetExample: SearchFacetOptions = {
   locationHiddenOwnerIds: [DummyValue.UUID_1],
   suppressedPersonIds: [DummyValue.UUID_1],
   suppressedTagIds: [DummyValue.UUID_1],
+  covers: true,
 };
 const legacySearchExample = { takenAfter: DummyValue.DATE, userIds: [DummyValue.UUID], lockedOwnerId: DummyValue.UUID };
 const v3ScopeExample: AssetSearchScope = { userIds: [DummyValue.UUID], lockedOwnerId: DummyValue.UUID };
@@ -886,8 +895,13 @@ export class SearchRepository {
   private async facetsOf(matched: MatchedAssets, options: SearchFacetOptions): Promise<SearchFacetResult> {
     const wanted = new Set(options.facets);
     const viewer = asUuidLiteral(options.viewerId);
+    // Explore's covers: the newest match per value, from the same matched set as the count
+    const cover = options.covers
+      ? sql`(array_agg(m.id order by m."fileCreatedAt" desc, m.id desc))[1]::text`
+      : sql`null::text`;
     const exifFacet = (field: SearchFacetField, column: string, where: RawBuilder<unknown> = sql`true`) =>
-      sql`select ${field}::text as field, ${trimmed(column)} as value, null::text as label, count(*) as count
+      sql`select ${field}::text as field, ${trimmed(column)} as value, null::text as label, count(*) as count,
+          ${cover} as cover
         from matched m
         inner join asset_exif e on e."assetId" = m.id
         where ${trimmed(column)} is not null and ${where}
@@ -900,21 +914,23 @@ export class SearchRepository {
     const parts: Array<[SearchFacetField, RawBuilder<unknown>]> = [
       [
         SearchFacetField.Type,
-        sql`select ${SearchFacetField.Type}::text as field, m.type::text as value, null::text as label, count(*) as count
+        sql`select ${SearchFacetField.Type}::text as field, m.type::text as value, null::text as label, count(*) as count,
+            ${cover} as cover
           from matched m group by 2`,
       ],
       [
         SearchFacetField.IsFavorite,
         // favourites are personal: a partner's favourite is not the viewer's
         sql`select ${SearchFacetField.IsFavorite}::text as field,
-            (m."isFavorite" and m."ownerId" = ${viewer})::text as value, null::text as label, count(*) as count
+            (m."isFavorite" and m."ownerId" = ${viewer})::text as value, null::text as label, count(*) as count,
+            ${cover} as cover
           from matched m group by 2`,
       ],
       [
         SearchFacetField.Rating,
         sql`select ${SearchFacetField.Rating}::text as field,
             case when e.rating between 1 and 5 then e.rating::text else 'unrated' end as value,
-            null::text as label, count(*) as count
+            null::text as label, count(*) as count, ${cover} as cover
           from matched m left join asset_exif e on e."assetId" = m.id group by 2`,
       ],
       [SearchFacetField.City, exifFacet(SearchFacetField.City, 'e.city', locationShared)],
@@ -925,7 +941,7 @@ export class SearchRepository {
       [
         SearchFacetField.People,
         sql`select ${SearchFacetField.People}::text as field, f."personGroupId"::text as value,
-            max(nullif(p.name, '')) as label, count(distinct m.id) as count
+            max(nullif(p.name, '')) as label, count(distinct m.id) as count, ${cover} as cover
           from matched m
           inner join asset_face f on f."assetId" = m.id and f."deletedAt" is null and f."isVisible" is true
           inner join person p on p."personGroupId" = f."personGroupId" and p."ownerId" = ${viewer} and not p."isHidden"
@@ -940,7 +956,7 @@ export class SearchRepository {
         SearchFacetField.Tags,
         // a tag counts the assets tagged with it or with any tag under it, as the tag filter matches
         sql`select ${SearchFacetField.Tags}::text as field, t.id::text as value, max(t.value) as label,
-            count(distinct m.id) as count
+            count(distinct m.id) as count, ${cover} as cover
           from matched m
           inner join tag_asset ta on ta."assetId" = m.id
           inner join tag_closure tc on tc.id_descendant = ta."tagId"
@@ -952,7 +968,8 @@ export class SearchRepository {
 
     const selected = parts.filter(([field]) => wanted.has(field)).map(([, query]) => query);
     // the total comes from the same matched set in the same statement, so it never needs its own scan
-    const total = sql`select 'total'::text as field, null::text as value, null::text as label, count(*) as count
+    const total = sql`select 'total'::text as field, null::text as value, null::text as label, count(*) as count,
+      null::text as cover
       from matched`;
 
     const { rows } = await sql<{
@@ -960,20 +977,21 @@ export class SearchRepository {
       value: string;
       label: string | null;
       count: string;
+      cover: string | null;
     }>`
-      with matched as materialized (${matched.select(['asset.id', 'asset.ownerId', 'asset.type', 'asset.isFavorite'])}),
+      with matched as materialized (${matched.select(['asset.id', 'asset.ownerId', 'asset.type', 'asset.isFavorite', 'asset.fileCreatedAt'])}),
       facet_rows as (${sql.join([...selected, total], sql` union all `)}),
       ranked as (
         select *, row_number() over (partition by field order by count desc, value asc) as rank
         from facet_rows
       )
-      select field, value, label, count from ranked where rank <= ${options.limit} order by field, rank
+      select field, value, label, count, cover from ranked where rank <= ${options.limit} order by field, rank
     `.execute(this.db);
     return {
       total: Number(rows.find((row) => row.field === 'total')?.count ?? 0),
       rows: rows
         .filter((row): row is typeof row & { field: SearchFacetField } => row.field !== 'total')
-        .map((row) => ({ ...row, count: Number(row.count) })),
+        .map(({ cover, ...row }) => ({ ...row, count: Number(row.count), coverAssetId: cover })),
     };
   }
 
