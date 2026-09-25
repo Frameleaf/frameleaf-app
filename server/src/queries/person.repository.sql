@@ -13,14 +13,15 @@ where
 -- PersonRepository.unassignFaces
 update "asset_face"
 set
-  "personGroupId" = $1
+  "personGroupId" = $1,
+  "correctedAt" = $2
 from
   "asset"
   inner join "user" on "user"."id" = "asset"."ownerId"
 where
   "asset_face"."assetId" = "asset"."id"
-  and "asset_face"."sourceType" = $2
-  and "user"."clusterGroupId" = $3
+  and "asset_face"."sourceType" = $3
+  and "user"."clusterGroupId" = $4
 
 -- PersonRepository.delete
 delete from "person"
@@ -217,6 +218,7 @@ select
   "asset_face"."id",
   "asset_face"."personGroupId",
   "asset_face"."sourceType",
+  "asset_face"."correctedAt",
   (
     select
       to_json(obj)

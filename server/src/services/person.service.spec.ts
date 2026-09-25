@@ -641,6 +641,13 @@ describe(PersonService.name, () => {
       mocks.person.getByGroupId.mockResolvedValue(person);
       mocks.person.getRandomFace.mockResolvedValue(featureFace);
       mocks.person.update.mockResolvedValue({ ...person, faceAssetId: featureFace.id });
+      mocks.person.getFaceForCorrection.mockResolvedValue(getForAssetFace(featureFace));
+      mocks.asset.getForFaces.mockResolvedValue({
+        edits: [],
+        exifImageHeight: 500,
+        exifImageWidth: 400,
+        orientation: null,
+      });
 
       await expect(
         sut.createFace(auth, {
@@ -653,10 +660,11 @@ describe(PersonService.name, () => {
           width: 100,
           height: 110,
         }),
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual(expect.objectContaining({ id: featureFace.id, sourceType: SourceType.Manual }));
 
       expect(mocks.asset.getById).toHaveBeenCalledWith(asset.id, { edits: true, exifInfo: true });
       expect(mocks.person.createAssetFace).toHaveBeenCalledWith({
+        id: 'random-uuid',
         assetId: asset.id,
         personGroupId: person.personGroupId,
         imageHeight: 500,
@@ -690,6 +698,15 @@ describe(PersonService.name, () => {
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.getFaceForCorrection.mockResolvedValue(
+        getForAssetFace(AssetFaceFactory.create({ assetId: asset.id, sourceType: SourceType.Manual })),
+      );
+      mocks.asset.getForFaces.mockResolvedValue({
+        edits: [],
+        exifImageHeight: 500,
+        exifImageWidth: 400,
+        orientation: null,
+      });
 
       await expect(
         sut.createFace(auth, {
@@ -702,7 +719,7 @@ describe(PersonService.name, () => {
           width: 100,
           height: 110,
         }),
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual(expect.objectContaining({ sourceType: SourceType.Manual }));
 
       expect(mocks.person.createAssetFace).toHaveBeenCalledOnce();
       expect(mocks.person.getRandomFace).not.toHaveBeenCalled();
@@ -1724,6 +1741,9 @@ describe(PersonService.name, () => {
         imageHeight: 500,
         imageWidth: 400,
         sourceType: SourceType.MachineLearning,
+        revision: face.updateId,
+        correctedAt: null,
+        hiddenAt: null,
         person: mapPerson(person),
       });
     });

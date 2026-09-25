@@ -4,12 +4,16 @@
  * prototype's `design/frameleaf/template/src/face-tags.mjs:420-497`; the prototype's
  * localStorage face-state model (`parseFaceState`, `saveAssetFaces`, …) is design evidence
  * only and is not reproduced — faces are saved through the real `/faces` and `/people`
- * endpoints instead.
+ * endpoints instead. The prototype's stale-save refusal (`saveAssetFaces`, face-tags.mjs:253-273:
+ * `expectedRevision` and `sourceKey`) maps onto the server's face `revision` and face source
+ * revision (`GET /faces/source`), which refuse a stale save with 409.
  *
- * Boxes are fractions of the full image (0–1), so they are independent of how large the
- * preview is drawn and of which rendition (preview, thumbnail, original) was loaded.
+ * Boxes are fractions of the displayed image (0–1): the upright, edited preview the viewer
+ * shows. They are independent of how large the preview is drawn and of which rendition was
+ * loaded; the server maps them back through the asset's crop, rotation and mirroring to the
+ * original image, and maps stored faces forward the same way (`transformFaceBoundingBox`).
  */
-import type { AssetFaceResponseDto } from '@immich/sdk';
+import { SourceType, type AssetFaceResponseDto } from '@immich/sdk';
 
 export type FaceBox = { x: number; y: number; width: number; height: number };
 export type Size = { width: number; height: number };
@@ -17,12 +21,26 @@ export type Point = { x: number; y: number };
 export type ContentRect = { left: number; top: number; width: number; height: number };
 
 /**
- * One region in the tagger's draft. `detected` regions came from the server (face detection
- * or an earlier manual tag): the API has no endpoint to change an existing face's bounding
- * box, so their position is read-only and only their person or their presence can change.
- * `personId` is `''` while nobody is chosen.
+ * Where a face came from (FL-38): found by face detection, drawn by a person, or detected and
+ * then corrected by a person (moved, resized, reassigned or unassigned). The server records
+ * `sourceType` for the first two and `correctedAt` for the third.
  */
-export type DraftFace = { id: string; personId: string; box: FaceBox; detected: boolean };
+export type FaceProvenance = 'detected' | 'manual' | 'corrected';
+
+/**
+ * One region in the tagger's draft. `stored` regions came from the server (face detection or an
+ * earlier manual tag) and carry the `revision` they were read at: every change to them is saved
+ * as a revision-checked correction, so a change another editor made meanwhile is never
+ * overwritten. `personId` is `''` while nobody is chosen.
+ */
+export type DraftFace = {
+  id: string;
+  personId: string;
+  box: FaceBox;
+  stored: boolean;
+  provenance: FaceProvenance;
+  revision?: string;
+};
 /** A person created inside the tagger; it only reaches the server when a face using it is saved. */
 export type DraftPerson = { id: string; name: string };
 
@@ -154,6 +172,10 @@ export const keyboardFaceBox = (
 /** FaceTagger.jsx:19: a fraction shown as a percentage with one decimal. */
 export const toPercent = (value: number) => Math.round(value * 1000) / 10;
 
+/** face provenance from the server's `sourceType` and `correctedAt` (FL-38). */
+export const faceProvenance = (face: Pick<AssetFaceResponseDto, 'sourceType' | 'correctedAt'>): FaceProvenance =>
+  face.correctedAt ? 'corrected' : face.sourceType === SourceType.Manual ? 'manual' : 'detected';
+
 /** A server face as a draft region, its pixel box converted to fractions of its own image size. */
 export const draftFromFace = (face: AssetFaceResponseDto): DraftFace => {
   const width = face.imageWidth || 1;
@@ -163,7 +185,9 @@ export const draftFromFace = (face: AssetFaceResponseDto): DraftFace => {
   return {
     id: face.id,
     personId: face.person?.id ?? '',
-    detected: true,
+    stored: true,
+    provenance: faceProvenance(face),
+    revision: face.revision,
     box: {
       x: round(x),
       y: round(y),
@@ -172,6 +196,9 @@ export const draftFromFace = (face: AssetFaceResponseDto): DraftFace => {
     },
   };
 };
+
+/** Two boxes are the same region when every edge matches to the rounding the tagger keeps. */
+export const sameFaceBox = (a: FaceBox, b: FaceBox) => FIELDS.every((key) => Math.abs(a[key] - b[key]) < 1e-6);
 
 /** The integer pixel rectangle `createFace` expects, inside an image of `natural` size. */
 export const toPixelBox = (box: FaceBox, natural: Size) => {
@@ -207,11 +234,21 @@ export const checkPersonName = (
   return { name };
 };
 
+export type FaceTagUpdate = {
+  faceId: string;
+  /** The revision the face was read at; the server refuses the change when it moved on. */
+  revision?: string;
+  /** A new person, or `null` to unassign; absent when the person is unchanged. */
+  personId?: string | null;
+  /** A new position; absent when the box is unchanged. */
+  box?: FaceBox;
+};
+
 export type FaceTagPlan = {
-  /** Detected faces the user removed; deleted permanently, as "Remove face" does. */
-  deletes: string[];
-  /** Detected faces moved to another person. */
-  reassigns: { faceId: string; personId: string }[];
+  /** Stored faces the user removed; deleted permanently, as "Remove face" does. */
+  deletes: { faceId: string; revision?: string }[];
+  /** Stored faces the user reassigned, unassigned, moved or resized. */
+  updates: FaceTagUpdate[];
   /** New regions, with their fraction boxes. */
   creates: { faceId: string; personId: string; box: FaceBox }[];
   /** People created in the tagger that at least one saved face uses. */
@@ -220,30 +257,47 @@ export type FaceTagPlan = {
 
 /** Turns the edited draft into the smallest set of server calls that applies it. */
 export const planFaceTagSave = (baseline: DraftFace[], draft: DraftFace[], added: DraftPerson[]): FaceTagPlan => {
-  const kept = new Map(draft.filter((face) => face.detected).map((face) => [face.id, face]));
-  const deletes = baseline.filter((face) => !kept.has(face.id)).map((face) => face.id);
-  const reassigns = baseline.flatMap((face) => {
+  const kept = new Map(draft.filter((face) => face.stored).map((face) => [face.id, face]));
+  const deletes = baseline
+    .filter((face) => !kept.has(face.id))
+    .map((face) => ({ faceId: face.id, revision: face.revision }));
+  const updates = baseline.flatMap((face): FaceTagUpdate[] => {
     const next = kept.get(face.id);
-    return next && next.personId && next.personId !== face.personId
-      ? [{ faceId: face.id, personId: next.personId }]
-      : [];
+    if (!next) {
+      return [];
+    }
+    const personChanged = next.personId !== face.personId;
+    const boxChanged = !sameFaceBox(next.box, face.box);
+    if (!personChanged && !boxChanged) {
+      return [];
+    }
+    return [
+      {
+        faceId: face.id,
+        revision: face.revision,
+        ...(personChanged && { personId: next.personId || null }),
+        ...(boxChanged && { box: next.box }),
+      },
+    ];
   });
   const creates = draft
-    .filter((face) => !face.detected)
+    .filter((face) => !face.stored)
     .map((face) => ({ faceId: face.id, personId: face.personId, box: face.box }));
-  const used = new Set([...reassigns, ...creates].map((change) => change.personId));
-  return { deletes, reassigns, creates, newPeople: added.filter((person) => used.has(person.id)) };
+  const used = new Set([...updates.map((change) => change.personId), ...creates.map((change) => change.personId)]);
+  return { deletes, updates, creates, newPeople: added.filter((person) => used.has(person.id)) };
 };
 
 export const hasFaceTagChanges = (plan: FaceTagPlan) =>
-  plan.deletes.length + plan.reassigns.length + plan.creates.length > 0;
+  plan.deletes.length + plan.updates.length + plan.creates.length > 0;
 
 /**
  * FaceTagger.jsx:95-103: a save needs the image measured and a person on every new region.
- * A detected face that was never assigned may stay unassigned.
+ * A stored face may stay (or become) unassigned.
  */
 export const isDraftSavable = (draft: DraftFace[], knownPersonIds: Set<string>) =>
-  draft.every((face) => (face.personId ? knownPersonIds.has(face.personId) : face.detected));
+  draft.every((face) => (face.personId ? knownPersonIds.has(face.personId) : face.stored));
+
+export type FailedFaceChanges = { deletes: Set<string>; updates: Set<string>; creates: Set<string> };
 
 /**
  * After a save that only partly landed: the new baseline is what the server now holds, and
@@ -253,7 +307,7 @@ export const isDraftSavable = (draft: DraftFace[], knownPersonIds: Set<string>) 
 export const rebaseAfterPartialSave = (
   serverFaces: DraftFace[],
   draft: DraftFace[],
-  failed: { deletes: Set<string>; reassigns: Set<string>; creates: Set<string> },
+  failed: FailedFaceChanges,
   personIds: Map<string, string>,
 ): DraftFace[] => {
   const resolve = (id: string) => personIds.get(id) ?? id;
@@ -261,33 +315,41 @@ export const rebaseAfterPartialSave = (
   const rebased = serverFaces
     .filter((face) => !failed.deletes.has(face.id))
     .map((face) => {
-      const pending = failed.reassigns.has(face.id) ? wanted.get(face.id) : undefined;
-      return pending ? { ...face, personId: resolve(pending.personId) } : face;
+      const pending = failed.updates.has(face.id) ? wanted.get(face.id) : undefined;
+      return pending ? { ...face, personId: resolve(pending.personId), box: pending.box } : face;
     });
   const retry = draft
-    .filter((face) => !face.detected && failed.creates.has(face.id))
+    .filter((face) => !face.stored && failed.creates.has(face.id))
     .map((face) => ({ ...face, personId: resolve(face.personId) }));
   return [...rebased, ...retry];
 };
 
 /**
  * What the server should now hold when it cannot be re-read after a partial save: the old
- * baseline with the deletes and reassigns that succeeded applied. New faces that were created
- * are left out until the viewer re-reads them, since `createFace` does not return their ids.
+ * baseline with the deletes and updates that succeeded applied. New faces that were created
+ * are left out until the viewer re-reads them.
  */
 export const projectSavedFaces = (
   baseline: DraftFace[],
   plan: FaceTagPlan,
-  failed: { deletes: Set<string>; reassigns: Set<string> },
+  failed: Pick<FailedFaceChanges, 'deletes' | 'updates'>,
   personIds: Map<string, string>,
 ): DraftFace[] => {
-  const deleted = new Set(plan.deletes.filter((id) => !failed.deletes.has(id)));
-  const moved = new Map(
-    plan.reassigns
-      .filter((change) => !failed.reassigns.has(change.faceId))
-      .map((change) => [change.faceId, personIds.get(change.personId) ?? change.personId]),
+  const deleted = new Set(plan.deletes.map((change) => change.faceId).filter((id) => !failed.deletes.has(id)));
+  const updated = new Map(
+    plan.updates.filter((change) => !failed.updates.has(change.faceId)).map((change) => [change.faceId, change]),
   );
   return baseline
     .filter((face) => !deleted.has(face.id))
-    .map((face) => (moved.has(face.id) ? { ...face, personId: moved.get(face.id)! } : face));
+    .map((face) => {
+      const change = updated.get(face.id);
+      if (!change) {
+        return face;
+      }
+      let personId = face.personId;
+      if (change.personId !== undefined) {
+        personId = change.personId === null ? '' : (personIds.get(change.personId) ?? change.personId);
+      }
+      return { ...face, personId, box: change.box ?? face.box, provenance: 'corrected' as const };
+    });
 };

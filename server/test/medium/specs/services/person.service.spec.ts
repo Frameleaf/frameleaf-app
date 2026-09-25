@@ -8,6 +8,7 @@ import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -31,6 +32,7 @@ const setup = (db?: Kysely<DB>) => {
       AccessRepository,
       AssetJobRepository,
       ConfigRepository,
+      CryptoRepository,
       DatabaseRepository,
       PersonRepository,
       AssetRepository,
