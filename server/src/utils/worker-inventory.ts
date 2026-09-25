@@ -17,6 +17,9 @@ export const LIBRARY_ANALYSIS_QUEUES: Readonly<Record<MlWorkload, readonly Queue
   [MlWorkload.RestorationFaithful]: [],
   [MlWorkload.RestorationCreative]: [],
   [MlWorkload.StudioAi]: [],
+  [MlWorkload.Upscale]: [],
+  [MlWorkload.Interpolation]: [],
+  [MlWorkload.StudioRender]: [],
 };
 
 /** Every queue that carries library-analysis requests, once each. */

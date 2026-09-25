@@ -34,7 +34,7 @@ class OcrSettings(BaseModel):
 class ImageDescriptionSettings(BaseModel):
     # Single visual VLM model for the image-description-tagging task.
     # When set, the model is downloaded and warmed into VRAM at container
-    # boot — important for RunPod serverless cold starts, where the model
+    # boot — important for remote GPU workers with cold starts, where the model
     # download + load takes longer than the edge proxy's 30 s timeout.
     visual: str | None = None
 

@@ -169,44 +169,17 @@ const nsfwDetectionDefaults = {
   hideFromLibrary: false,
 };
 
-const runpodServerlessDefaults = {
-  // GPU **pool IDs** (not specific types). RunPod's serverless API
-  // accepts AMPERE_16, AMPERE_24, ADA_24, AMPERE_48, ADA_48_PRO,
-  // AMPERE_80, ADA_80_PRO, HOPPER_141, ADA_32_PRO, BLACKWELL_96,
-  // BLACKWELL_180.
-  //
-  // Defaults target Qwen2.5-VL-9B image description at fp16 (~24 GB
-  // weights + activations). 48 GB pools (A40/A6000, L40/L40S) leave
-  // headroom; 80 GB (A100, H100) is the fallback for availability.
-  // Smaller pools work for CLIP/face/OCR but Qwen 9B will OOM there.
-  // See https://docs.runpod.io/references/gpu-types#gpu-pools.
-  gpuTypeIds: ['AMPERE_48', 'ADA_48_PRO', 'AMPERE_80'],
-  workersMin: 0,
-  workersMax: 3,
-  idleTimeoutSeconds: 30,
-  executionTimeoutMs: 600_000,
-  // LB endpoints have no queue, so REQUEST_COUNT is the only meaningful
-  // scaler. RunPod silently accepts QUEUE_DELAY for LB but it's a no-op.
-  scalerType: 'REQUEST_COUNT' as const,
-  scalerValue: 4,
-};
-
-const runpodDefaults = {
-  enabled: false,
-  mode: 'disabled' as const,
-  apiKey: '',
-  hfToken: '',
-  imageName: 'ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda-runpod',
-  dataPrivacyAcknowledged: false,
-  defaultGpuTypeId: 'NVIDIA RTX A5000',
-  containerDiskGb: 50,
-  volumeGb: 20,
-  autoStopEnabled: true,
-  autoStopGraceMinutes: 15,
-  autoBackfillOnLaunch: false,
-  maxRuntimeHours: 24,
-  provisionTimeoutMinutes: 5,
-  serverless: runpodServerlessDefaults,
+/**
+ * FL-159: Frameleaf Cloud processing. Everything is off until an administrator turns it on and adds the
+ * destination; faces are refused by policy and cannot be turned on in this version.
+ */
+const frameleafCloudDefaults = {
+  cloudMl: {
+    enabled: false,
+    descriptions: { enabled: false, defaultModel: '', autoBatch: false, dailyBudgetUsd: 0 },
+    restoration: { enabled: false, defaultModel: '' },
+    faces: { enabled: false as const },
+  },
 };
 
 const smartAlbumRulesDefaults = {
@@ -458,90 +431,37 @@ export const NsfwDetectionConfigSchema = AdminConfigMachineLearningModelSchema.e
     .describe('Hide NSFW assets from library views unless the session has PIN-elevated access'),
 }).meta({ id: 'AdminConfigNsfwDetectionDto' });
 
-const AdminConfigRunPodServerlessSchema = z
+const AdminConfigFrameleafCloudSchema = z
   .object({
-    gpuTypeIds: z
-      .array(z.string())
-      .min(1)
-      .describe('Ranked GPU pool IDs the endpoint can use (cheapest first). At least one required.'),
-    workersMin: z.int().min(0).max(10).describe('Always-warm workers (0 = scale to zero)'),
-    workersMax: z.int().min(1).max(20).describe('Max concurrent workers'),
-    idleTimeoutSeconds: z.int().min(5).max(3600).describe('Seconds before an idle worker scales down'),
-    executionTimeoutMs: z.int().min(5000).max(3_600_000).describe('Max time per request (ms)'),
-    scalerType: z.enum(['QUEUE_DELAY', 'REQUEST_COUNT']).describe('Worker autoscaler strategy'),
-    scalerValue: z.int().min(1).max(60).describe('Scaler threshold (queue seconds or request count)'),
+    cloudMl: z
+      .object({
+        enabled: configBool.describe('Allow Frameleaf Cloud processing at all (the destination still needs consent)'),
+        descriptions: z
+          .object({
+            enabled: configBool.describe('Allow image descriptions on Frameleaf Cloud'),
+            defaultModel: z.string().max(200).describe('Catalogue model id used for descriptions; empty = none chosen'),
+            autoBatch: configBool.describe('Run background description batches automatically (needs a daily budget)'),
+            dailyBudgetUsd: z
+              .number()
+              .min(0)
+              .max(100_000)
+              .meta({ format: 'double' })
+              .describe('Daily spending limit for background batches, USD'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudDescriptionsDto' }),
+        restoration: z
+          .object({
+            enabled: configBool.describe('Allow restoration and upscaling on Frameleaf Cloud'),
+            defaultModel: z.string().max(200).describe('Catalogue model id preselected for restoration'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudRestorationDto' }),
+        faces: z
+          .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud in this version') })
+          .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
+      })
+      .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
   })
-  .meta({ id: 'AdminConfigRunPodServerlessDto' })
-  // Cross-field guard — reject configs where workersMin > workersMax instead
-  // of letting RunPod's endpoint create fail at provisioning time with a less
-  // obvious error.
-  .refine((data) => data.workersMax >= data.workersMin, {
-    message: 'workersMax must be greater than or equal to workersMin',
-    path: ['workersMax'],
-  });
-
-const AdminConfigRunPodSchema = z
-  .object({
-    enabled: configBool.describe('Enabled'),
-    // Optional in the wire DTO so older clients that don't know about the
-    // discriminator can still PUT the legacy shape. Server back-compat
-    // infers the effective mode from `enabled` when this is undefined or
-    // 'disabled' (see `effectiveMode` in runpod.service.ts).
-    mode: z
-      .enum(['disabled', 'pod', 'serverless'])
-      .default('disabled')
-      .describe(
-        'disabled = off, pod = manually launched dedicated GPU, serverless = auto-managed scale-to-zero endpoint. Optional for back-compat with legacy clients.',
-      ),
-    // apiKey is a billing credential. mapAdminConfig() redacts it to '' on
-    // every GET response, and updateAdminConfig() interprets an empty incoming
-    // value as "preserve the stored key" (rather than "wipe it"). Net effect:
-    // the secret is never returned by the API once set, and admin form
-    // round-trips don't accidentally erase it. To rotate, send a new
-    // non-empty value.
-    //
-    // We intentionally do NOT use `.meta({ writeOnly: true })`: although the
-    // OpenAPI semantics are correct, oazapfts removes write-only fields from
-    // the generated TypeScript type entirely, which breaks the admin form's
-    // ability to bind to the field as an input. The masking + preserve
-    // pattern above achieves the same security guarantee at the application
-    // layer.
-    apiKey: z.string().describe('RunPod API key (write-only; empty preserves the existing key)'),
-    apiKeyConfigured: z
-      .boolean()
-      .optional()
-      .describe('Read-only indicator that a key is currently stored. Set by the server; ignored on write.'),
-    // Same redact/preserve pattern as apiKey. Forwarded to the ML worker as
-    // HF_TOKEN so it can pull gated/large HuggingFace models (Qwen-VL etc.)
-    // without rate-limit hits. Optional — empty string disables forwarding.
-    hfToken: z
-      .string()
-      .default('')
-      .describe('HuggingFace token forwarded to worker as HF_TOKEN (write-only; empty preserves the existing token)'),
-    hfTokenConfigured: z
-      .boolean()
-      .optional()
-      .describe('Read-only indicator that an HF token is currently stored. Set by the server; ignored on write.'),
-    imageName: z.string().min(1).describe('Container image to launch'),
-    dataPrivacyAcknowledged: configBool.describe('User accepted that image previews leave the network'),
-    // Pod-mode settings
-    defaultGpuTypeId: z.string().min(1).describe('Preferred GPU type ID (Pod mode)'),
-    containerDiskGb: z.int().min(10).max(2000).describe('Container disk size (GB) (Pod mode)'),
-    volumeGb: z.int().min(0).max(2000).describe('Persistent volume size (GB) (Pod mode)'),
-    autoStopEnabled: configBool.describe('Auto-stop when idle (Pod mode)'),
-    autoStopGraceMinutes: z.int().min(1).max(1440).describe('Idle minutes before auto-stop (Pod mode)'),
-    autoBackfillOnLaunch: configBool.describe('Auto-run ML backfill on pod ready (Pod mode)'),
-    maxRuntimeHours: z.int().min(1).max(168).describe('Hard runtime ceiling (hours) (Pod mode)'),
-    provisionTimeoutMinutes: z
-      .int()
-      .min(1)
-      .max(60)
-      .default(5)
-      .describe('How long to wait for the pod to reach RUNNING + healthy /ping before giving up (Pod mode)'),
-    // Serverless-mode settings
-    serverless: AdminConfigRunPodServerlessSchema.default(runpodServerlessDefaults),
-  })
-  .meta({ id: 'AdminConfigRunPodDto' });
+  .meta({ id: 'AdminConfigFrameleafCloudDto' });
 
 // Admin-controlled but unbounded strings flow into background-job log lines
 // and the smart-album evaluator. Cap to 256 chars and reject control characters
@@ -653,7 +573,7 @@ const AdminConfigSmtpSchema = z
         port: z.int().min(0).max(65_535).describe('SMTP server port'),
         secure: configBool.describe('Whether to use secure connection (TLS/SSL)'),
         username: z.string().describe('SMTP username'),
-        // FL-67: write-only, like runpod.apiKey below. mapAdminConfig() returns '' and
+        // FL-67: write-only, like oauth.clientSecret. mapAdminConfig() returns '' and
         // updateAdminConfig() keeps the stored password when '' comes back. Replace or clear it
         // through /admin/config/credentials/smtp-password.
         password: z.string().describe('SMTP password (write-only; empty preserves the existing password)'),
@@ -782,7 +702,6 @@ const AdminConfigSchemaWithVisibility = z
         }).meta({ id: 'AdminConfigOcrDto' }),
         imageDescription: ImageDescriptionConfigSchema.default(imageDescriptionDefaults),
         nsfwDetection: NsfwDetectionConfigSchema.default(nsfwDetectionDefaults),
-        runpod: AdminConfigRunPodSchema.default(runpodDefaults),
       })
       .meta({ id: 'AdminConfigMachineLearningDto' }),
     map: z
@@ -974,6 +893,7 @@ const AdminConfigSchemaWithVisibility = z
       .object({ deleteDelay: z.int().min(1).describe('Delete delay').meta({ visibility: User }) })
       .meta({ id: 'AdminConfigUserDto' }),
     smartAlbums: AdminConfigSmartAlbumsSchema.default(smartAlbumsDefaults),
+    frameleafCloud: AdminConfigFrameleafCloudSchema.default(frameleafCloudDefaults),
   })
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
@@ -1122,16 +1042,6 @@ export function mapAdminConfig(config: SystemConfig): AdminConfigDto {
       clientSecret: '',
       clientSecretConfigured: config.oauth.clientSecret.length > 0,
     },
-    machineLearning: {
-      ...config.machineLearning,
-      runpod: {
-        ...config.machineLearning.runpod,
-        apiKey: '',
-        apiKeyConfigured: config.machineLearning.runpod.apiKey.length > 0,
-        hfToken: '',
-        hfTokenConfigured: config.machineLearning.runpod.hfToken.length > 0,
-      },
-    },
   };
 }
 
@@ -1266,7 +1176,6 @@ export const defaults = Object.freeze<SystemConfig>({
     },
     imageDescription: imageDescriptionDefaults,
     nsfwDetection: nsfwDetectionDefaults,
-    runpod: runpodDefaults,
   },
   map: {
     enabled: true,
@@ -1408,4 +1317,5 @@ export const defaults = Object.freeze<SystemConfig>({
     deleteDelay: 7,
   },
   smartAlbums: smartAlbumsDefaults,
+  frameleafCloud: frameleafCloudDefaults,
 });

@@ -88,6 +88,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000580-AddStudioExportVersions',
   '2100000000590-HardenMediaOperationRetryAndCheckpoints',
   '2100000000610-AddClassificationRule',
+  '2100000000620-FrameleafCloudMlDestination',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

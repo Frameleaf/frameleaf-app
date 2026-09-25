@@ -333,6 +333,291 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/cloud/ml": {
+      "get": {
+        "description": "Whether Frameleaf Cloud is configured and linked, the destination once added, the consent version it requires and the AI Wallet. Nothing is contacted unless the server is linked.",
+        "operationId": "getCloudMlStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get Frameleaf Cloud processing status",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/catalog": {
+      "get": {
+        "description": "The models Frameleaf Cloud offers now, with their prices, for choosing a model per workload.",
+        "operationId": "getCloudMlCatalog",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlCatalogResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Frameleaf Cloud models",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/consent": {
+      "get": {
+        "description": "Every consent recorded for the Frameleaf Cloud destination, newest first.",
+        "operationId": "getCloudMlConsentHistory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlConsentHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Frameleaf Cloud consent records",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/destination": {
+      "post": {
+        "description": "The only way the Frameleaf Cloud destination is created. It has no URL or token, is not routed automatically, and refuses all work until consent is recorded.",
+        "operationId": "createCloudMlDestination",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudMlDestinationCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlDestinationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add Frameleaf Cloud as a processing destination",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/usage": {
+      "post": {
+        "description": "Reads settled charges from Frameleaf Cloud and records them against the jobs that incurred them.",
+        "operationId": "reconcileCloudMlUsage",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply Frameleaf Cloud settlements",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/wallet": {
+      "get": {
+        "description": "The AI Wallet balance and holds, read now from Frameleaf Cloud (USD).",
+        "operationId": "getCloudMlWallet",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlWalletDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the AI Wallet",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/config": {
       "get": {
         "description": "Retrieve admin configuration.",
@@ -17323,7 +17608,7 @@
         "x-immich-state": "Alpha"
       },
       "post": {
-        "description": "Add a LAN worker or the RunPod destination. A RunPod destination is created without consent and cannot serve anything until consent is recorded.",
+        "description": "Add a LAN worker. Frameleaf Cloud is added from its own endpoint (POST admin/cloud/ml/destination).",
         "operationId": "createMlDestination",
         "parameters": [],
         "requestBody": {
@@ -23353,447 +23638,6 @@
           }
         ],
         "x-immich-state": "Alpha"
-      }
-    },
-    "/runpod/backfill": {
-      "post": {
-        "description": "Queues smart-search, face detection, duplicates, OCR, image description, and NSFW detection.",
-        "operationId": "backfill",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodBackfillResultDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Enqueue all ML backfill jobs",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/connect": {
-      "post": {
-        "description": "Verify that a RunPod API key works. Pass `apiKey` to test a candidate key without saving.",
-        "operationId": "testConnection",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RunPodConnectionTestDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodConnectionResultDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Test RunPod connection",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/endpoint": {
-      "delete": {
-        "description": "Deletes the serverless endpoint and template owned by this Immich instance. Soft-fails when resources are already gone on RunPod.",
-        "operationId": "teardownServerlessEndpoint",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Tear down the serverless endpoint",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/endpoint/setup": {
-      "post": {
-        "description": "Idempotently creates the RunPod template + serverless endpoint for this Immich instance. Reuses an existing endpoint tagged with our instance prefix when one is found.",
-        "operationId": "setupServerlessEndpoint",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Set up (or verify) the serverless endpoint",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/gpus": {
-      "get": {
-        "description": "Returns the GPU types currently offered by RunPod, with pricing.",
-        "operationId": "listGpus",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/RunPodGpuTypeDto"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "List RunPod GPU types",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.read"
-      }
-    },
-    "/runpod/pods": {
-      "post": {
-        "description": "Launch the ML container on RunPod and inject the proxy URL into the live ML config.",
-        "operationId": "provision",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RunPodProvisionDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Provision a RunPod pod",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/pods/current": {
-      "delete": {
-        "description": "Destroys the pod and its persistent volume. Next launch is a full cold-start.",
-        "operationId": "terminate",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Terminate the current RunPod pod",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      },
-      "get": {
-        "description": "Returns the current managed RunPod pod state (idle / provisioning / running / etc).",
-        "operationId": "getCurrent",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Get current RunPod state",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.read"
-      }
-    },
-    "/runpod/pods/current/start": {
-      "post": {
-        "description": "Start a previously stopped pod, reusing its model cache.",
-        "operationId": "start",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Resume the current RunPod pod",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
-      }
-    },
-    "/runpod/pods/current/stop": {
-      "post": {
-        "description": "Stops the pod but keeps the model-cache volume so a future start is fast.",
-        "operationId": "stop",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunPodStateDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Stop the current RunPod pod",
-        "tags": [
-          "RunPod (admin)"
-        ],
-        "x-immich-admin-only": true,
-        "x-immich-history": [
-          {
-            "version": "v2",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "systemConfig.update"
       }
     },
     "/search/ask": {
@@ -36690,6 +36534,10 @@
       "description": "A face is a detected human face within an asset, which can be associated with a person. Faces are normally detected via machine learning, but can also be created manually."
     },
     {
+      "name": "Frameleaf Cloud processing (admin)",
+      "description": "Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback."
+    },
+    {
       "name": "Integrity (admin)",
       "description": "Endpoints for viewing and managing integrity reports."
     },
@@ -36764,10 +36612,6 @@
     {
       "name": "Render workers",
       "description": "Render workers and their admitted media operations."
-    },
-    {
-      "name": "RunPod (admin)",
-      "description": "Provision the Immich machine-learning container on RunPod cloud GPUs. The integration manages a single pod, transparently routes ML jobs to it, and stops it when idle to control cost."
     },
     {
       "name": "Search",
@@ -37194,6 +37038,9 @@
           "ffmpeg": {
             "$ref": "#/components/schemas/AdminConfigFFmpegDto"
           },
+          "frameleafCloud": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudDto"
+          },
           "image": {
             "$ref": "#/components/schemas/AdminConfigImageDto"
           },
@@ -37582,6 +37429,105 @@
         },
         "required": [
           "concurrency"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudDescriptionsDto": {
+        "properties": {
+          "autoBatch": {
+            "description": "Run background description batches automatically (needs a daily budget)",
+            "type": "boolean"
+          },
+          "dailyBudgetUsd": {
+            "description": "Daily spending limit for background batches, USD",
+            "format": "double",
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "number"
+          },
+          "defaultModel": {
+            "description": "Catalogue model id used for descriptions; empty = none chosen",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Allow image descriptions on Frameleaf Cloud",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "autoBatch",
+          "dailyBudgetUsd",
+          "defaultModel",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudDto": {
+        "properties": {
+          "cloudMl": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudMlDto"
+          }
+        },
+        "required": [
+          "cloudMl"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudFacesDto": {
+        "properties": {
+          "enabled": {
+            "description": "Faces never run on Frameleaf Cloud in this version",
+            "enum": [
+              false
+            ],
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudMlDto": {
+        "properties": {
+          "descriptions": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudDescriptionsDto"
+          },
+          "enabled": {
+            "description": "Allow Frameleaf Cloud processing at all (the destination still needs consent)",
+            "type": "boolean"
+          },
+          "faces": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudFacesDto"
+          },
+          "restoration": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudRestorationDto"
+          }
+        },
+        "required": [
+          "descriptions",
+          "enabled",
+          "faces",
+          "restoration"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudRestorationDto": {
+        "properties": {
+          "defaultModel": {
+            "description": "Catalogue model id preselected for restoration",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Allow restoration and upscaling on Frameleaf Cloud",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "defaultModel",
+          "enabled"
         ],
         "type": "object"
       },
@@ -38332,9 +38278,6 @@
           "ocr": {
             "$ref": "#/components/schemas/AdminConfigOcrDto"
           },
-          "runpod": {
-            "$ref": "#/components/schemas/AdminConfigRunPodDto"
-          },
           "urls": {
             "description": "ML service URLs",
             "items": {
@@ -38734,184 +38677,6 @@
         "required": [
           "config",
           "expectedRevision"
-        ],
-        "type": "object"
-      },
-      "AdminConfigRunPodDto": {
-        "properties": {
-          "apiKey": {
-            "description": "RunPod API key (write-only; empty preserves the existing key)",
-            "type": "string"
-          },
-          "apiKeyConfigured": {
-            "description": "Read-only indicator that a key is currently stored. Set by the server; ignored on write.",
-            "type": "boolean"
-          },
-          "autoBackfillOnLaunch": {
-            "description": "Auto-run ML backfill on pod ready (Pod mode)",
-            "type": "boolean"
-          },
-          "autoStopEnabled": {
-            "description": "Auto-stop when idle (Pod mode)",
-            "type": "boolean"
-          },
-          "autoStopGraceMinutes": {
-            "description": "Idle minutes before auto-stop (Pod mode)",
-            "maximum": 1440,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "containerDiskGb": {
-            "description": "Container disk size (GB) (Pod mode)",
-            "maximum": 2000,
-            "minimum": 10,
-            "type": "integer"
-          },
-          "dataPrivacyAcknowledged": {
-            "description": "User accepted that image previews leave the network",
-            "type": "boolean"
-          },
-          "defaultGpuTypeId": {
-            "description": "Preferred GPU type ID (Pod mode)",
-            "minLength": 1,
-            "type": "string"
-          },
-          "enabled": {
-            "description": "Enabled",
-            "type": "boolean"
-          },
-          "hfToken": {
-            "default": "",
-            "description": "HuggingFace token forwarded to worker as HF_TOKEN (write-only; empty preserves the existing token)",
-            "type": "string"
-          },
-          "hfTokenConfigured": {
-            "description": "Read-only indicator that an HF token is currently stored. Set by the server; ignored on write.",
-            "type": "boolean"
-          },
-          "imageName": {
-            "description": "Container image to launch",
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxRuntimeHours": {
-            "description": "Hard runtime ceiling (hours) (Pod mode)",
-            "maximum": 168,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "mode": {
-            "default": "disabled",
-            "description": "disabled = off, pod = manually launched dedicated GPU, serverless = auto-managed scale-to-zero endpoint. Optional for back-compat with legacy clients.",
-            "enum": [
-              "disabled",
-              "pod",
-              "serverless"
-            ],
-            "type": "string"
-          },
-          "provisionTimeoutMinutes": {
-            "default": 5,
-            "description": "How long to wait for the pod to reach RUNNING + healthy /ping before giving up (Pod mode)",
-            "maximum": 60,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "serverless": {
-            "$ref": "#/components/schemas/AdminConfigRunPodServerlessDto",
-            "default": {
-              "executionTimeoutMs": 600000,
-              "gpuTypeIds": [
-                "AMPERE_48",
-                "ADA_48_PRO",
-                "AMPERE_80"
-              ],
-              "idleTimeoutSeconds": 30,
-              "scalerType": "REQUEST_COUNT",
-              "scalerValue": 4,
-              "workersMax": 3,
-              "workersMin": 0
-            }
-          },
-          "volumeGb": {
-            "description": "Persistent volume size (GB) (Pod mode)",
-            "maximum": 2000,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "apiKey",
-          "autoBackfillOnLaunch",
-          "autoStopEnabled",
-          "autoStopGraceMinutes",
-          "containerDiskGb",
-          "dataPrivacyAcknowledged",
-          "defaultGpuTypeId",
-          "enabled",
-          "imageName",
-          "maxRuntimeHours",
-          "volumeGb"
-        ],
-        "type": "object"
-      },
-      "AdminConfigRunPodServerlessDto": {
-        "properties": {
-          "executionTimeoutMs": {
-            "description": "Max time per request (ms)",
-            "maximum": 3600000,
-            "minimum": 5000,
-            "type": "integer"
-          },
-          "gpuTypeIds": {
-            "description": "Ranked GPU pool IDs the endpoint can use (cheapest first). At least one required.",
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "type": "array"
-          },
-          "idleTimeoutSeconds": {
-            "description": "Seconds before an idle worker scales down",
-            "maximum": 3600,
-            "minimum": 5,
-            "type": "integer"
-          },
-          "scalerType": {
-            "description": "Worker autoscaler strategy",
-            "enum": [
-              "QUEUE_DELAY",
-              "REQUEST_COUNT"
-            ],
-            "type": "string"
-          },
-          "scalerValue": {
-            "description": "Scaler threshold (queue seconds or request count)",
-            "maximum": 60,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "workersMax": {
-            "description": "Max concurrent workers",
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "workersMin": {
-            "description": "Always-warm workers (0 = scale to zero)",
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "executionTimeoutMs",
-          "gpuTypeIds",
-          "idleTimeoutSeconds",
-          "scalerType",
-          "scalerValue",
-          "workersMax",
-          "workersMin"
         ],
         "type": "object"
       },
@@ -46862,6 +46627,328 @@
         ],
         "type": "object"
       },
+      "CloudMlCatalogResponseDto": {
+        "properties": {
+          "models": {
+            "description": "Models Frameleaf Cloud offers now; retired models are left out",
+            "items": {
+              "$ref": "#/components/schemas/CloudMlModelDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "type": "object"
+      },
+      "CloudMlConnection": {
+        "description": "not-configured: FRAMELEAF_CLOUD_URL is unset; not-linked: the server is not linked to a Frameleaf account; ready: the regional gateway answered; unavailable: linked but the cloud did not answer",
+        "enum": [
+          "not-configured",
+          "not-linked",
+          "ready",
+          "unavailable"
+        ],
+        "type": "string"
+      },
+      "CloudMlConsentFeaturesDto": {
+        "properties": {
+          "identityNames": {
+            "type": "boolean"
+          },
+          "medicalSignals": {
+            "type": "boolean"
+          },
+          "ocrAddon": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "identityNames",
+          "medicalSignals",
+          "ocrAddon"
+        ],
+        "type": "object"
+      },
+      "CloudMlConsentHistoryResponseDto": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/CloudMlConsentRecordDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "records"
+        ],
+        "type": "object"
+      },
+      "CloudMlConsentRecordDto": {
+        "properties": {
+          "acceptedAt": {
+            "type": "string"
+          },
+          "acceptedBy": {
+            "type": "string"
+          },
+          "features": {
+            "$ref": "#/components/schemas/CloudMlConsentFeaturesDto"
+          },
+          "revokedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "acceptedAt",
+          "acceptedBy",
+          "features",
+          "revokedAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "CloudMlConsentStateDto": {
+        "properties": {
+          "acceptedVersion": {
+            "description": "The version an administrator accepted on this server",
+            "nullable": true,
+            "type": "string"
+          },
+          "documentUrl": {
+            "description": "The full consent text, when Frameleaf Cloud links one",
+            "nullable": true,
+            "type": "string"
+          },
+          "features": {
+            "$ref": "#/components/schemas/CloudMlConsentFeaturesDto",
+            "description": "The feature choices on record"
+          },
+          "outdated": {
+            "description": "Consent was given, but for an older version; processing is refused until renewed",
+            "type": "boolean"
+          },
+          "recordedVersion": {
+            "description": "The version Frameleaf Cloud has on record for this server",
+            "nullable": true,
+            "type": "string"
+          },
+          "requiredVersion": {
+            "description": "The consent version Frameleaf Cloud requires now",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What the consent covers, as Frameleaf Cloud words it",
+            "type": "string"
+          }
+        },
+        "required": [
+          "acceptedVersion",
+          "documentUrl",
+          "features",
+          "outdated",
+          "recordedVersion",
+          "requiredVersion",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "CloudMlDestinationCreateDto": {
+        "properties": {
+          "budgetLimitUsd": {
+            "format": "double",
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "name": {
+            "default": "Frameleaf Cloud",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workloads": {
+            "description": "The workloads Frameleaf Cloud may run; faces, search and text recognition are refused",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "workloads"
+        ],
+        "type": "object"
+      },
+      "CloudMlModelDto": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "priceUsd": {
+            "description": "Price per unit, USD",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "pricingUnit": {
+            "description": "What one price unit is (for example an image or a video minute)",
+            "nullable": true,
+            "type": "string"
+          },
+          "workload": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlWorkload"
+              }
+            ],
+            "description": "The workload this model serves, or null for one this server does not know",
+            "nullable": true
+          }
+        },
+        "required": [
+          "description",
+          "fingerprint",
+          "id",
+          "name",
+          "priceUsd",
+          "pricingUnit",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "CloudMlStatusResponseDto": {
+        "properties": {
+          "checkedAt": {
+            "type": "string"
+          },
+          "connection": {
+            "$ref": "#/components/schemas/CloudMlConnection"
+          },
+          "consent": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlConsentStateDto"
+              }
+            ],
+            "nullable": true
+          },
+          "destination": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlDestinationResponseDto"
+              }
+            ],
+            "description": "The Frameleaf Cloud destination, once added",
+            "nullable": true
+          },
+          "detail": {
+            "description": "Why the connection is not ready, in plain words",
+            "nullable": true,
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Frameleaf Cloud processing is turned on in settings",
+            "type": "boolean"
+          },
+          "entitled": {
+            "description": "Cloud processing entitlement, when the cloud answered",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "region": {
+            "description": "The Frameleaf account's data region",
+            "nullable": true,
+            "type": "string"
+          },
+          "wallet": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlWalletDto"
+              }
+            ],
+            "description": "The last AI Wallet read, or null",
+            "nullable": true
+          }
+        },
+        "required": [
+          "checkedAt",
+          "connection",
+          "consent",
+          "destination",
+          "detail",
+          "enabled",
+          "entitled",
+          "region",
+          "wallet"
+        ],
+        "type": "object"
+      },
+      "CloudMlWalletDto": {
+        "properties": {
+          "availableUsd": {
+            "description": "Balance minus holds, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "balanceUsd": {
+            "description": "AI Wallet balance, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "dailyCapUsd": {
+            "description": "Daily limit, USD, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "heldUsd": {
+            "description": "Held by running jobs, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "spentTodayUsd": {
+            "description": "Spent today, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "topUpUrl": {
+            "description": "Where to add credit; only when Frameleaf Cloud returned one",
+            "nullable": true,
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "When this balance was read",
+            "type": "string"
+          }
+        },
+        "required": [
+          "availableUsd",
+          "balanceUsd",
+          "dailyCapUsd",
+          "heldUsd",
+          "spentTodayUsd",
+          "topUpUrl",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "ClusterGroupRequestCreateDto": {
         "properties": {
           "userId": {
@@ -46924,9 +47011,7 @@
         "description": "A server secret that can be replaced or cleared but never read back",
         "enum": [
           "smtp-password",
-          "oauth-client-secret",
-          "runpod-api-key",
-          "huggingface-token"
+          "oauth-client-secret"
         ],
         "type": "string"
       },
@@ -52729,7 +52814,7 @@
         "enum": [
           "local",
           "lan",
-          "runpod"
+          "frameleaf-cloud"
         ],
         "type": "string"
       },
@@ -54806,7 +54891,13 @@
           "budget-exceeded",
           "endpoint-unresolved",
           "destination-unhealthy",
-          "role-conflict"
+          "role-conflict",
+          "cloud-unavailable",
+          "entitlement-missing",
+          "consent-version-outdated",
+          "wallet-insufficient",
+          "quota-exceeded",
+          "model-mismatch"
         ],
         "type": "string"
       },
@@ -54880,13 +54971,28 @@
       },
       "MlCapabilityDestinationDto": {
         "properties": {
+          "acceleration": {
+            "$ref": "#/components/schemas/MlWorkerAcceleration",
+            "description": "CPU or accelerator, from the last check; unknown without facts"
+          },
           "available": {
-            "description": "Enabled, healthy on the last probe, consented and reporting this workload",
+            "description": "Enabled, healthy on a check that is not stale, consented and reporting this workload",
             "type": "boolean"
+          },
+          "checkedAt": {
+            "description": "When the destination was last checked, or null",
+            "nullable": true,
+            "type": "string"
           },
           "consentGranted": {
             "description": "True when the destination needs no consent or consent is recorded",
             "type": "boolean"
+          },
+          "gpuMemoryBytes": {
+            "description": "Largest GPU memory the worker reported, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
           },
           "health": {
             "$ref": "#/components/schemas/MlDestinationHealth"
@@ -54899,17 +55005,103 @@
           "kind": {
             "$ref": "#/components/schemas/MlDestinationKind"
           },
+          "leavesNetwork": {
+            "description": "Work sent here leaves this network (Frameleaf Cloud)",
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
+          },
+          "region": {
+            "description": "Frameleaf Cloud data region, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "servedWorkloads": {
+            "description": "Workloads the last check verified, or null when it never answered",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "stale": {
+            "description": "The last check is too old to count as evidence; the destination is checked again first",
+            "type": "boolean"
           }
         },
         "required": [
+          "acceleration",
           "available",
+          "checkedAt",
           "consentGranted",
+          "gpuMemoryBytes",
           "health",
           "id",
           "kind",
-          "name"
+          "leavesNetwork",
+          "name",
+          "region",
+          "servedWorkloads",
+          "stale"
+        ],
+        "type": "object"
+      },
+      "MlDestinationCloudDto": {
+        "properties": {
+          "balanceUsd": {
+            "description": "AI Wallet balance, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "dailyCapUsd": {
+            "description": "Daily AI Wallet limit, USD, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "entitled": {
+            "description": "The Frameleaf account has the cloud processing entitlement",
+            "type": "boolean"
+          },
+          "heldUsd": {
+            "description": "AI Wallet amount held by running jobs, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlAdmissionRefusal"
+              }
+            ],
+            "description": "Why the last check refused, or null",
+            "nullable": true
+          },
+          "refusalDetail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "region": {
+            "description": "Frameleaf Cloud data region",
+            "nullable": true,
+            "type": "string"
+          },
+          "spentTodayUsd": {
+            "description": "AI Wallet spend today, USD",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "balanceUsd",
+          "dailyCapUsd",
+          "entitled",
+          "heldUsd",
+          "refusal",
+          "refusalDetail",
+          "region",
+          "spentTodayUsd"
         ],
         "type": "object"
       },
@@ -54928,12 +55120,24 @@
           "required": {
             "description": "Whether this destination sends media off the network and needs consent",
             "type": "boolean"
+          },
+          "requiredVersion": {
+            "description": "Frameleaf Cloud: the consent version the cloud requires now, from the last check, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "version": {
+            "description": "Frameleaf Cloud: the consent version accepted, or null",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
           "acknowledgedAt",
           "acknowledgedBy",
-          "required"
+          "required",
+          "requiredVersion",
+          "version"
         ],
         "type": "object"
       },
@@ -54945,6 +55149,33 @@
               true
             ],
             "type": "boolean"
+          },
+          "features": {
+            "description": "Frameleaf Cloud: per-feature choices; every feature is off unless chosen",
+            "properties": {
+              "identityNames": {
+                "default": false,
+                "description": "Allow people names in cloud description prompts",
+                "type": "boolean"
+              },
+              "medicalSignals": {
+                "default": false,
+                "description": "Allow medical signals in cloud descriptions",
+                "type": "boolean"
+              },
+              "ocrAddon": {
+                "default": false,
+                "description": "Allow the cloud text-recognition add-on",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "version": {
+            "description": "Frameleaf Cloud: the consent version being accepted; required for Frameleaf Cloud",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
@@ -54997,7 +55228,7 @@
       "MlDestinationCreateDto": {
         "properties": {
           "authToken": {
-            "description": "Bearer token for a LAN or RunPod video worker (write-only)",
+            "description": "Bearer token for a LAN worker (write-only)",
             "maxLength": 4096,
             "type": "string"
           },
@@ -55037,7 +55268,7 @@
             "type": "boolean"
           },
           "url": {
-            "description": "Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod",
+            "description": "Required for a LAN destination, optional for a local one; Frameleaf Cloud is added from its own endpoint",
             "format": "uri",
             "type": "string"
           },
@@ -55102,8 +55333,7 @@
         "enum": [
           "local",
           "lan",
-          "runpod",
-          "runpod-video"
+          "frameleaf-cloud"
         ],
         "type": "string"
       },
@@ -55112,6 +55342,15 @@
           "authTokenConfigured": {
             "description": "Whether a bearer token is stored for this destination",
             "type": "boolean"
+          },
+          "cloud": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlDestinationCloudDto"
+              }
+            ],
+            "description": "Frameleaf Cloud facts from the last check; null for other kinds",
+            "nullable": true
           },
           "consent": {
             "$ref": "#/components/schemas/MlDestinationConsentDto"
@@ -55150,7 +55389,7 @@
             "type": "string"
           },
           "url": {
-            "description": "Endpoint URL; null for a RunPod destination with no ready worker",
+            "description": "Endpoint URL; always null for Frameleaf Cloud",
             "nullable": true,
             "type": "string"
           },
@@ -55164,6 +55403,7 @@
         },
         "required": [
           "authTokenConfigured",
+          "cloud",
           "consent",
           "costControls",
           "createdAt",
@@ -55362,7 +55602,10 @@
           "enrichment",
           "restoration-faithful",
           "restoration-creative",
-          "studio-ai"
+          "studio-ai",
+          "upscale",
+          "interpolation",
+          "studio-render"
         ],
         "type": "string"
       },
@@ -55406,12 +55649,18 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "modelId": {
+            "description": "Frameleaf Cloud catalogue model for this workload, or null",
+            "nullable": true,
+            "type": "string"
+          },
           "workload": {
             "$ref": "#/components/schemas/MlWorkload"
           }
         },
         "required": [
           "destinationId",
+          "modelId",
           "workload"
         ],
         "type": "object"
@@ -55423,6 +55672,13 @@
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "modelId": {
+            "description": "Frameleaf Cloud only: the catalogue model this workload uses",
+            "maxLength": 200,
+            "minLength": 1,
+            "nullable": true,
             "type": "string"
           }
         },
@@ -56336,6 +56592,8 @@
           "server.storage",
           "server.statistics",
           "server.versionCheck",
+          "adminCloudMl.read",
+          "adminCloudMl.update",
           "serverLicense.read",
           "serverLicense.update",
           "serverLicense.delete",
@@ -59410,7 +59668,7 @@
           "server",
           "local",
           "lan",
-          "runpod"
+          "frameleaf-cloud"
         ],
         "type": "string"
       },
@@ -60666,6 +60924,31 @@
             "maxItems": 64,
             "type": "array"
           },
+          "colorPrecision": {
+            "description": "Colour precision the conformance check verified; absent means 8-bit SDR only (FL-42)",
+            "properties": {
+              "dolbyVision": {
+                "description": "The check verified Dolby Vision output",
+                "type": "boolean"
+              },
+              "hdr10": {
+                "description": "The check verified HDR10 (PQ, BT.2020) output",
+                "type": "boolean"
+              },
+              "maxBitDepth": {
+                "description": "Highest bit depth the check rendered and verified",
+                "maximum": 16,
+                "minimum": 8,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "maxBitDepth",
+              "hdr10",
+              "dolbyVision"
+            ],
+            "type": "object"
+          },
           "conformanceReportedAt": {
             "description": "When the conformance check ran",
             "format": "date-time",
@@ -61910,215 +62193,6 @@
         },
         "required": [
           "angle"
-        ],
-        "type": "object"
-      },
-      "RunPodBackfillResultDto": {
-        "properties": {
-          "enqueued": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "skipped": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "enqueued",
-          "skipped"
-        ],
-        "type": "object"
-      },
-      "RunPodConnectionResultDto": {
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "ok": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "type": "object"
-      },
-      "RunPodConnectionTestDto": {
-        "properties": {
-          "apiKey": {
-            "description": "API key to verify (overrides the stored key for the test)",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "RunPodGpuTypeDto": {
-        "properties": {
-          "communityCloud": {
-            "type": "boolean"
-          },
-          "displayName": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "memoryInGb": {
-            "format": "double",
-            "type": "number"
-          },
-          "pricePerHour": {
-            "format": "double",
-            "nullable": true,
-            "type": "number"
-          },
-          "secureCloud": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "displayName",
-          "id",
-          "memoryInGb"
-        ],
-        "type": "object"
-      },
-      "RunPodProvisionDto": {
-        "properties": {
-          "acknowledgeDataPrivacy": {
-            "description": "User confirms image previews will be sent to RunPod (must be true to launch)",
-            "enum": [
-              true
-            ],
-            "type": "boolean"
-          },
-          "gpuCount": {
-            "maximum": 8,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "gpuTypeId": {
-            "description": "RunPod GPU type ID, e.g. \"NVIDIA RTX A5000\"",
-            "minLength": 1,
-            "type": "string"
-          },
-          "imageName": {
-            "description": "Override the configured image",
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxRuntimeHours": {
-            "maximum": 168,
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "acknowledgeDataPrivacy",
-          "gpuTypeId"
-        ],
-        "type": "object"
-      },
-      "RunPodStateDto": {
-        "properties": {
-          "endpointId": {
-            "type": "string"
-          },
-          "endpointUrl": {
-            "type": "string"
-          },
-          "errorMessage": {
-            "type": "string"
-          },
-          "estimatedCostUsd": {
-            "format": "double",
-            "type": "number"
-          },
-          "gpuTypeId": {
-            "type": "string"
-          },
-          "idleTimeoutSeconds": {
-            "description": "Serverless idle timeout; may be null when not yet provisioned.",
-            "format": "double",
-            "nullable": true,
-            "type": "number"
-          },
-          "imageName": {
-            "type": "string"
-          },
-          "instanceTag": {
-            "type": "string"
-          },
-          "lastBusyAt": {
-            "type": "string"
-          },
-          "maxRuntimeHours": {
-            "format": "double",
-            "type": "number"
-          },
-          "mlUrl": {
-            "type": "string"
-          },
-          "podCreatedAt": {
-            "type": "string"
-          },
-          "podId": {
-            "type": "string"
-          },
-          "pricePerHour": {
-            "format": "double",
-            "type": "number"
-          },
-          "runningSince": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "idle",
-              "provisioning",
-              "starting",
-              "running",
-              "stopping",
-              "stopped",
-              "error",
-              "serverless-provisioning",
-              "serverless-ready"
-            ],
-            "type": "string"
-          },
-          "stoppedAt": {
-            "type": "string"
-          },
-          "templateId": {
-            "type": "string"
-          },
-          "unhealthySince": {
-            "type": "string"
-          },
-          "workerReady": {
-            "type": "boolean"
-          },
-          "workersMax": {
-            "description": "Serverless workersMax; may be null when not yet provisioned.",
-            "format": "double",
-            "nullable": true,
-            "type": "number"
-          },
-          "workersMin": {
-            "description": "Serverless workersMin; may be null when not yet provisioned.",
-            "format": "double",
-            "nullable": true,
-            "type": "number"
-          }
-        },
-        "required": [
-          "status"
         ],
         "type": "object"
       },
@@ -67861,6 +67935,13 @@
             "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
             "type": "boolean"
           },
+          "render": {
+            "description": "FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision)",
+            "items": {
+              "$ref": "#/components/schemas/StudioRenderEvidenceDto"
+            },
+            "type": "array"
+          },
           "renderWorker": {
             "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
             "type": "boolean"
@@ -67876,6 +67957,7 @@
         },
         "required": [
           "gpuWorker",
+          "render",
           "renderWorker",
           "restorationWorker",
           "transcriptionWorker"
@@ -69388,6 +69470,56 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "StudioRenderEvidenceDto": {
+        "properties": {
+          "codecs": {
+            "description": "Encoders and decoders qualified sessions verified",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "dolbyVision": {
+            "description": "A qualified session verified Dolby Vision output",
+            "type": "boolean"
+          },
+          "gpuMemoryBytes": {
+            "description": "Largest GPU memory a qualified session verified, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "hdr10": {
+            "description": "A qualified session verified HDR10 output",
+            "type": "boolean"
+          },
+          "maxBitDepth": {
+            "description": "Highest bit depth a qualified session verified (8 when none said more)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "sessions": {
+            "description": "Qualified live render sessions for this destination",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "codecs",
+          "destination",
+          "dolbyVision",
+          "gpuMemoryBytes",
+          "hdr10",
+          "maxBitDepth",
+          "sessions"
+        ],
         "type": "object"
       },
       "StudioTimeDto": {
@@ -71461,7 +71593,7 @@
             "type": "integer"
           },
           "title": {
-            "description": "The entry title, such as \"Updated RunPod API key\"; absent for a settings save",
+            "description": "The entry title, such as \"Updated email server password\"; absent for a settings save",
             "nullable": true,
             "type": "string"
           }

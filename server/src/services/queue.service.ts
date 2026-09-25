@@ -64,7 +64,7 @@ const workerKindOf = (kind: MlDestinationKind): QueueJobWorkerKind => {
       return QueueJobWorkerKind.Lan;
     }
     default: {
-      return QueueJobWorkerKind.RunPod;
+      return QueueJobWorkerKind.FrameleafCloud;
     }
   }
 };

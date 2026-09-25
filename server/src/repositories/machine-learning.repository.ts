@@ -14,6 +14,7 @@ import {
   RESTORATION_RESULT_HEADER,
   RestorationCapabilityReport,
   RestorationCapabilityReportSchema,
+  RestorationModelState,
   RestorationWorkerErrorCode,
   RestorationWorkerErrorSchema,
   RestorationWorkerRequest,
@@ -30,6 +31,7 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 // Restoration's selection registry and inference types live with the rest of restoration's
 // rules; that module only needs this one's types, so the import cycle is inert at load time.
 import {
@@ -244,8 +246,31 @@ const isFlorenceImageDescriptionModel = (modelName: string) => {
   return cleanModelName.startsWith('florence-2-');
 };
 
-/** A resolved place to send one request: the URL and, for authenticated workers, the bearer. */
-export type MlEndpoint = { url: string; authToken?: string };
+/**
+ * A resolved place to send one request: the URL and, for authenticated workers, the bearer. The
+ * Frameleaf Cloud destination resolves to `FRAMELEAF_CLOUD_ENDPOINT` (`cloud: true`): it has no URL
+ * of its own, so a check of it is delegated to the cloud processing service (FL-159).
+ */
+export type MlEndpoint = { url: string; authToken?: string; cloud?: true };
+
+/** The sentinel the Frameleaf Cloud destination resolves to; never fetched as a URL. */
+export const FRAMELEAF_CLOUD_ENDPOINT: MlEndpoint = Object.freeze({ url: 'frameleaf-cloud:gateway', cloud: true });
+
+/** Checks Frameleaf Cloud for the destination (registered by `CloudMlService`). */
+export type CloudMlProber = (options: { maxAgeMs: number }) => Promise<MlEndpointProbe>;
+
+/**
+ * FL-159: Frameleaf Cloud runs work as cloud jobs (estimate, confirm, upload, result), never through
+ * the `/predict` or restoration protocols of local and LAN workers. Until cloud jobs are submitted
+ * (CLD-202, CLD-203) a request bound to it fails in place with this error: it is never sent to
+ * another destination.
+ */
+export class CloudJobsUnavailableError extends Error {
+  constructor(what: string) {
+    super(`Frameleaf Cloud runs ${what} as a cloud job, which this server does not submit yet; nothing was sent`);
+    this.name = 'CloudJobsUnavailableError';
+  }
+}
 
 /** What one request cost, recorded per destination for FL-115's accounting. */
 export type MlUsage = {
@@ -282,6 +307,8 @@ export type MlEndpointProbe = {
   latencyMs: number;
   probedAt: Date;
   error: string | null;
+  /** FL-159: what a Frameleaf Cloud check learned; absent for local and LAN workers. */
+  cloud?: CloudProbeFacts | null;
 };
 
 type CapabilitiesResponse = { workloads?: unknown };
@@ -291,6 +318,11 @@ const diagnosticHardwareSchema = MachineLearningHardwareResponseDto.schema.exten
   openvinoDeviceIds: z.array(z.string().max(100)).max(32),
   cudaDeviceCount: z.int().min(0).max(1024),
 });
+
+const RESTORATION_WORKLOAD_SET: ReadonlySet<MlWorkload> = new Set([
+  MlWorkload.RestorationFaithful,
+  MlWorkload.RestorationCreative,
+]);
 
 const isMlWorkload = (value: unknown): value is MlWorkload =>
   typeof value === 'string' && (Object.values(MlWorkload) as string[]).includes(value);
@@ -325,13 +357,8 @@ export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
 @Injectable()
 export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
-  /**
-   * The endpoint the RunPod state machine currently advertises. It is published here so a
-   * selection that names a RunPod destination can resolve it; nothing in this class reads
-   * it on its own initiative. Held on the instance, not on `_config`, so a config rebuild
-   * does not wipe it.
-   */
-  private runPodEndpoint: MlEndpoint | null = null;
+  /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
+  private cloudProber: CloudMlProber | null = null;
   private probeCache = new Map<string, { authToken?: string; probe: MlEndpointProbe }>();
 
   private get config(): MachineLearningConfig {
@@ -356,24 +383,9 @@ export class MachineLearningRepository implements RestorationInference {
     return [...this.config.urls];
   }
 
-  /** Called by the RunPod service when a pod or serverless endpoint becomes ready. */
-  setRunPodEndpoint(url: string, authToken?: string) {
-    this.runPodEndpoint = { url, authToken };
-    this.probeCache.delete(url);
-    this.logger.log(`RunPod endpoint published for explicit selection (auth=${authToken ? 'yes' : 'no'}): ${url}`);
-  }
-
-  clearRunPodEndpoint() {
-    if (this.runPodEndpoint) {
-      this.probeCache.delete(this.runPodEndpoint.url);
-      this.logger.log(`RunPod endpoint withdrawn: ${this.runPodEndpoint.url}`);
-    }
-    this.runPodEndpoint = null;
-  }
-
-  /** The published RunPod endpoint, or null when no pod or serverless worker is ready. */
-  getRunPodEndpoint(): MlEndpoint | null {
-    return this.runPodEndpoint;
+  /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */
+  setCloudProber(prober: CloudMlProber | null) {
+    this.cloudProber = prober;
   }
 
   private authHeaders(endpoint: MlEndpoint): Record<string, string> {
@@ -390,6 +402,21 @@ export class MachineLearningRepository implements RestorationInference {
    * reused so a burst of jobs does not turn into a burst of probes.
    */
   async probe(endpoint: MlEndpoint, { maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<MlEndpointProbe> {
+    if (endpoint.cloud) {
+      if (!this.cloudProber) {
+        return {
+          reachable: false,
+          workloads: [],
+          hardware: null,
+          latencyMs: 0,
+          probedAt: new Date(),
+          error: 'Frameleaf Cloud processing is not available on this server',
+          cloud: null,
+        };
+      }
+      return this.cloudProber({ maxAgeMs });
+    }
+
     const cached = this.probeCache.get(endpoint.url);
     if (
       cached &&
@@ -400,18 +427,11 @@ export class MachineLearningRepository implements RestorationInference {
       return cached.probe;
     }
 
-    // Only a probe of the RunPod endpoint can go stale mid-flight: its URL and token are published
-    // by the RunPod manager, while every other destination's come from its own row. Compared by
-    // value, because an unchanged endpoint is republished (a new object) on every readiness tick.
-    const probedRunPod = sameEndpoint(this.runPodEndpoint, endpoint);
     const timeout = Math.min(5000, Math.max(250, this.timeout()));
     const started = Date.now();
     const probedAt = new Date(started);
     const finish = (probe: Omit<MlEndpointProbe, 'latencyMs' | 'probedAt'>): MlEndpointProbe => {
       const result = { ...probe, latencyMs: Date.now() - started, probedAt };
-      if (probedRunPod && !sameEndpoint(this.runPodEndpoint, endpoint)) {
-        return { ...result, reachable: false, workloads: [], hardware: null, error: 'Endpoint configuration changed' };
-      }
       this.probeCache.set(endpoint.url, { authToken: endpoint.authToken, probe: result });
       return result;
     };
@@ -473,7 +493,33 @@ export class MachineLearningRepository implements RestorationInference {
       // Hardware is informational; a worker without the route is still admissible.
     }
 
+    // FL-42: a worker's own `/capabilities` list is a diagnostic claim, not admission proof. A
+    // restoration workload counts only when the worker's model report backs it with a model that is
+    // available, has verified weights (a fingerprint) and a qualification record. Otherwise the claim
+    // is dropped and admission refuses the workload as not served.
+    if (workloads.some((workload) => RESTORATION_WORKLOAD_SET.has(workload))) {
+      const verified = await this.verifiedRestorationWorkloads(endpoint);
+      workloads = workloads.filter((workload) => !RESTORATION_WORKLOAD_SET.has(workload) || verified.has(workload));
+    }
+
     return finish({ reachable: true, workloads, hardware, error: null });
+  }
+
+  /** Restoration workloads backed by an available, weight-verified and qualified model (FL-42). */
+  private async verifiedRestorationWorkloads(endpoint: MlEndpoint): Promise<Set<MlWorkload>> {
+    try {
+      const report = await this.getRestorationModels(endpoint);
+      return new Set(
+        report.models
+          .filter(
+            (model) =>
+              model.state === RestorationModelState.Available && !!model.fingerprint && !!model.qualificationId,
+          )
+          .map((model) => workloadForMode(model.mode)),
+      );
+    } catch {
+      return new Set();
+    }
   }
 
   private async readDiagnosticJson(response: Response): Promise<unknown> {
@@ -522,6 +568,9 @@ export class MachineLearningRepository implements RestorationInference {
    * silently change where it goes.
    */
   private async predict<T>(selection: MlSelection, payload: ModelPayload, config: MachineLearningRequest): Promise<T> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
     const formData = await this.getFormData(payload, config);
     const bytesSent = await this.measure(payload);
     const started = Date.now();
@@ -651,17 +700,16 @@ export class MachineLearningRepository implements RestorationInference {
       },
     });
 
-    // The fallback model is retried on the same destination only, and never on RunPod:
-    // the admin picked one primary model for cloud work, and Florence's modeling code is
-    // not loadable on the cuda-runpod image anyway. Local and LAN workers may be running
-    // an older image where Florence is the only small-footprint option.
+    // The fallback model is retried on the same destination only, and never on a cloud
+    // destination: the admin picked one primary model for cloud work. Local and LAN workers may
+    // be running an older image where Florence is the only small-footprint option.
     const florenceUnavailable =
       acceleration !== MachineLearningHardwareAcceleration.Cuda &&
       !!fallbackModelName &&
       isFlorenceImageDescriptionModel(fallbackModelName);
     const candidateModels: string[] = [modelName];
     if (
-      selection.kind !== MlDestinationKind.RunPod &&
+      selection.kind !== MlDestinationKind.FrameleafCloud &&
       fallbackModelName &&
       fallbackModelName !== modelName &&
       !florenceUnavailable
@@ -710,6 +758,9 @@ export class MachineLearningRepository implements RestorationInference {
    * media is sent. Workload names the server does not know are dropped.
    */
   async getRestorationModels(endpoint: MlEndpoint): Promise<RestorationCapabilityReport> {
+    if (endpoint.cloud) {
+      throw new Error('Frameleaf Cloud models come from its catalogue, not a restoration worker');
+    }
     const response = await fetch(new URL('restoration/models', endpoint.url), {
       headers: this.authHeaders(endpoint),
       signal: AbortSignal.timeout(this.timeout()),
@@ -749,6 +800,9 @@ export class MachineLearningRepository implements RestorationInference {
     const expected = workloadForMode(options.mode);
     if (selection.workload !== expected) {
       throw new Error(`A ${options.mode} restoration needs a ${expected} selection, not ${selection.workload}`);
+    }
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
     }
     if (CLOUD_ML_DESTINATION_KINDS.has(selection.kind) && !admission.cloudUploadConfirmed) {
       throw new Error(`Restoration on ${selection.kind} needs the person's confirmation that media leaves the network`);
@@ -949,6 +1003,9 @@ export class MachineLearningRepository implements RestorationInference {
 
   /** Hardware of one explicit endpoint; the defaults when it does not answer. */
   async getHardware(endpoint: MlEndpoint): Promise<MachineLearningHardwareResponse> {
+    if (endpoint.cloud) {
+      return defaultMachineLearningHardware;
+    }
     try {
       const response = await fetch(new URL('hardware', endpoint.url), {
         headers: this.authHeaders(endpoint),

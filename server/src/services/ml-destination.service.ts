@@ -22,6 +22,7 @@ import {
   DatabaseLock,
   ImmichWorker,
   LIBRARY_ML_WORKLOADS,
+  MediaOperationDestination,
   MlDestinationHealth,
   MlDestinationKind,
   MlWorkerRole,
@@ -32,18 +33,24 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
+  accelerationOf,
   hardwareFromProbe,
   hasRequiredConsent,
   healthFromProbe,
   isCloudDestination,
+  mayMixRoles,
   mlWorkerRoleOf,
   resolveEndpoint,
   restorationRoleConflict,
   sameEndpointUrl,
   summarizeProbe,
+  unresolvedEndpointSummary,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
-import { isQualifiedRenderSession } from 'src/utils/render-admission.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
+import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
+import { SDR_ONLY, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 
 /**
  * The check summary a local destination carries while it is off because its URL left the
@@ -51,6 +58,13 @@ import { isQualifiedRenderSession } from 'src/utils/render-admission.js';
  * URL returns.
  */
 export const ML_URL_REMOVED_SUMMARY = 'Removed from the machine-learning URL list';
+
+/**
+ * FL-42: how long a destination's last check counts as evidence in the capability snapshot. The
+ * periodic check runs every availability interval (30 s by default); anything older is stale and
+ * never makes a workload available (admission itself always checks live).
+ */
+export const ML_CAPABILITY_FRESHNESS_MS = 15 * 60 * 1000;
 
 /** Window over which measured throughput is averaged for estimates. */
 export const ML_ESTIMATE_WINDOW_DAYS = 30;
@@ -63,8 +77,8 @@ const windowStart = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 
  *
  * Bootstrap creates a local destination for each configured ML URL and routes the library
  * workloads to the first one when they have no route; that is the only implicit creation,
- * and it is local. RunPod destinations are created by an administrator, need a separate
- * recorded consent, and are never routed automatically.
+ * and it is local. The Frameleaf Cloud destination is created only by an administrator (FL-159),
+ * needs a separate versioned consent, and is never routed automatically.
  */
 @Injectable()
 export class MlDestinationService extends BaseService {
@@ -116,7 +130,7 @@ export class MlDestinationService extends BaseService {
 
   /**
    * Make sure every configured ML URL has a local destination and every library workload
-   * has a route. Nothing here touches LAN or RunPod rows.
+   * has a route. Nothing here touches LAN or Frameleaf Cloud rows.
    *
    * FL-72: a local destination whose URL has left the list is turned off, so work routed to it
    * is refused (its routes stay; nothing moves to another endpoint) until an administrator
@@ -198,20 +212,12 @@ export class MlDestinationService extends BaseService {
   }
 
   async create(dto: MlDestinationCreateDto): Promise<MlDestinationResponseDto> {
-    if (dto.kind === MlDestinationKind.RunPod) {
-      if (dto.url || dto.authToken) {
-        throw new BadRequestException('A RunPod destination takes its URL and credentials from the RunPod service');
-      }
-      const existing = (await this.mlDestinationRepository.getAll()).some(
-        (row) => row.kind === MlDestinationKind.RunPod,
-      );
-      if (existing) {
-        throw new BadRequestException('There is already a RunPod destination; edit it instead');
-      }
+    if (dto.kind === MlDestinationKind.FrameleafCloud) {
+      // FL-159: the Frameleaf Cloud destination is created only by POST admin/cloud/ml/destination,
+      // never here, by configuration or by a seed.
+      throw new BadRequestException('Add Frameleaf Cloud from its own settings section');
     } else if (dto.kind === MlDestinationKind.Lan && !dto.url) {
       throw new BadRequestException('A LAN destination needs a URL');
-    } else if (dto.kind === MlDestinationKind.RunPodVideo && !dto.url) {
-      throw new BadRequestException('A RunPod video worker needs the URL of the persistent worker');
     }
     const workloads = this.uniqueWorkloads(dto.workloads);
     this.assertWorkloadPolicy(dto.kind, workloads, dto.sharesLibraryHardware ?? false);
@@ -233,14 +239,11 @@ export class MlDestinationService extends BaseService {
 
   async update(id: string, dto: MlDestinationUpdateDto): Promise<MlDestinationResponseDto> {
     const current = await this.require(id);
-    if (current.kind === MlDestinationKind.RunPod && (dto.url || dto.authToken)) {
-      throw new BadRequestException('A RunPod destination takes its URL and credentials from the RunPod service');
+    if (current.kind === MlDestinationKind.FrameleafCloud && (dto.url || dto.authToken)) {
+      throw new BadRequestException('Frameleaf Cloud takes no URL or credential; it uses the link to this server');
     }
     if (current.kind === MlDestinationKind.Lan && dto.url === null) {
       throw new BadRequestException('A LAN destination needs a URL');
-    }
-    if (current.kind === MlDestinationKind.RunPodVideo && dto.url === null) {
-      throw new BadRequestException('A RunPod video worker needs the URL of the persistent worker');
     }
     const nextWorkloads = dto.workloads === undefined ? current.workloads : this.uniqueWorkloads(dto.workloads);
     // Checked only when the allowed work changes, so a row saved before FL-72 that mixes roles
@@ -287,6 +290,9 @@ export class MlDestinationService extends BaseService {
     if (!isCloudDestination(current.kind)) {
       throw new BadRequestException(`${current.name} keeps media on this network and needs no consent`);
     }
+    if (current.kind === MlDestinationKind.FrameleafCloud) {
+      return this.toDto(await this.grantCloudConsent(auth, current, dto));
+    }
     const row = await this.mlDestinationRepository.update(id, {
       consentAcknowledgedAt: new Date(),
       consentAcknowledgedBy: auth.user.id,
@@ -294,13 +300,77 @@ export class MlDestinationService extends BaseService {
     return this.toDto(row);
   }
 
+  /**
+   * FL-159: Frameleaf Cloud consent is versioned. The administrator accepts exactly the version the
+   * cloud requires now, with every feature choice explicit (all off by default). It is recorded with
+   * Frameleaf Cloud (`POST /v2/consent`) and in `immich_fork.frameleaf_consent`; only then does the
+   * destination carry it. If the cloud cannot be reached, nothing is recorded.
+   */
+  private async grantCloudConsent(auth: AuthDto, current: MlDestinationRow, dto: MlDestinationConsentRequestDto) {
+    if (!dto.version) {
+      throw new BadRequestException('Frameleaf Cloud consent names the version being accepted');
+    }
+    const features = {
+      identityNames: dto.features?.identityNames ?? false,
+      medicalSignals: dto.features?.medicalSignals ?? false,
+      ocrAddon: dto.features?.ocrAddon ?? false,
+    };
+    const resolution = await resolveCloudGateway(this.cloudGatewayDeps());
+    if (resolution.state !== CloudConnectionState.Ready) {
+      throw new BadRequestException(resolution.detail);
+    }
+    let recordedVersion: string;
+    try {
+      const required = await this.frameleafCloudMlRepository.getConsent(resolution.gateway);
+      if (required.requiredVersion !== dto.version) {
+        throw new BadRequestException(
+          `Frameleaf Cloud now asks for consent version ${required.requiredVersion}; review it and accept again`,
+        );
+      }
+      recordedVersion = (
+        await this.frameleafCloudMlRepository.recordConsent(resolution.gateway, { version: dto.version, features })
+      ).recordedVersion;
+    } catch (error) {
+      if (error instanceof FrameleafCloudError) {
+        throw new BadRequestException(`Frameleaf Cloud did not record the consent: ${error.message}`);
+      }
+      throw error;
+    }
+    await this.frameleafConsentRepository.record({
+      destinationId: current.id,
+      version: dto.version,
+      features,
+      acceptedBy: auth.user.id,
+      cloudRecordedVersion: recordedVersion,
+    });
+    return this.mlDestinationRepository.update(current.id, {
+      consentAcknowledgedAt: new Date(),
+      consentAcknowledgedBy: auth.user.id,
+      consentVersion: dto.version,
+    });
+  }
+
   async revokeConsent(id: string): Promise<MlDestinationResponseDto> {
-    await this.require(id);
+    const current = await this.require(id);
+    if (current.kind === MlDestinationKind.FrameleafCloud) {
+      await this.frameleafConsentRepository.revoke(id);
+    }
     const row = await this.mlDestinationRepository.update(id, {
       consentAcknowledgedAt: null,
       consentAcknowledgedBy: null,
+      consentVersion: null,
     });
     return this.toDto(row);
+  }
+
+  private cloudGatewayDeps(): CloudGatewayDeps {
+    return {
+      configRepository: this.configRepository,
+      databaseRepository: this.databaseRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+      instanceIdentityRepository: this.instanceIdentityRepository,
+      frameleafCloudRepository: this.frameleafCloudRepository,
+    };
   }
 
   /** Probe one destination now and persist the result. */
@@ -310,11 +380,10 @@ export class MlDestinationService extends BaseService {
   }
 
   private async probeRow(row: MlDestinationRow): Promise<MlDestinationHealthStateDto> {
-    const endpoint = resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint());
+    const endpoint = resolveEndpoint(row);
     const probedAt = new Date();
     if (!endpoint) {
-      const summary =
-        row.kind === MlDestinationKind.RunPod ? 'No running pod or ready serverless worker' : 'No URL configured';
+      const summary = unresolvedEndpointSummary(row.kind);
       await this.mlDestinationRepository.recordProbe(row.id, {
         health: MlDestinationHealth.Unhealthy,
         summary,
@@ -336,9 +405,14 @@ export class MlDestinationService extends BaseService {
     const summary = summarizeProbe(probe);
     const servedWorkloads = probe.reachable ? probe.workloads : null;
     // A restoration worker names its GPUs and their memory; the /predict container does not.
-    // Only metadata travels, so a cloud destination needs no consent for this (FL-114).
+    // Only metadata travels, so a cloud destination needs no consent for this (FL-114). Frameleaf
+    // Cloud reports its models through its catalogue instead.
     let gpus: Array<{ name: string; memoryTotalBytes: number }> = [];
-    if (probe.reachable && probe.workloads.some((workload) => RESTORATION_ML_WORKLOADS.includes(workload))) {
+    if (
+      !endpoint.cloud &&
+      probe.reachable &&
+      probe.workloads.some((workload) => RESTORATION_ML_WORKLOADS.includes(workload))
+    ) {
       try {
         const report = await this.machineLearningRepository.getRestorationModels(endpoint);
         gpus = report.gpus.map((gpu) => ({ name: gpu.name, memoryTotalBytes: gpu.memoryTotalBytes }));
@@ -353,6 +427,7 @@ export class MlDestinationService extends BaseService {
       probedAt: probe.probedAt,
       hardware: hardwareFromProbe(probe, gpus),
       latencyMs: probe.reachable ? probe.latencyMs : null,
+      ...(probe.cloud !== undefined && { cloud: probe.cloud }),
     });
     return { status: health, probedAt: probe.probedAt.toISOString(), summary, servedWorkloads };
   }
@@ -385,11 +460,12 @@ export class MlDestinationService extends BaseService {
       checkedAt: null,
     });
 
-    const endpoint = resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint());
+    const endpoint = resolveEndpoint(row);
     if (!endpoint) {
-      return unreachable(
-        row.kind === MlDestinationKind.RunPod ? 'No running pod or ready serverless worker' : 'No URL configured',
-      );
+      return unreachable(unresolvedEndpointSummary(row.kind));
+    }
+    if (endpoint.cloud) {
+      return unreachable('Frameleaf Cloud models are listed in its catalogue under Frameleaf Cloud processing');
     }
 
     try {
@@ -411,11 +487,12 @@ export class MlDestinationService extends BaseService {
 
   async getRoutes(): Promise<MlWorkloadRoutesResponseDto> {
     const routes = await this.mlDestinationRepository.getRoutes();
-    const byWorkload = new Map(routes.map((route) => [route.workload, route.destinationId]));
+    const byWorkload = new Map(routes.map((route) => [route.workload, route]));
     return {
       routes: Object.values(MlWorkload).map((workload) => ({
         workload,
-        destinationId: byWorkload.get(workload) ?? null,
+        destinationId: byWorkload.get(workload)?.destinationId ?? null,
+        modelId: byWorkload.get(workload)?.modelId ?? null,
       })),
     };
   }
@@ -446,7 +523,18 @@ export class MlDestinationService extends BaseService {
     if (conflict) {
       throw new BadRequestException(conflict);
     }
-    await this.mlDestinationRepository.setRoute(workload, destination.id);
+    // FL-159: a catalogue model is chosen per workload for Frameleaf Cloud only, and must be one the
+    // cloud's catalogue listed at the last check.
+    const modelId = dto.modelId ?? null;
+    if (modelId !== null) {
+      if (destination.kind !== MlDestinationKind.FrameleafCloud) {
+        throw new BadRequestException('Only Frameleaf Cloud work names a catalogue model');
+      }
+      if (!(destination.lastProbeCloud?.modelIds ?? []).includes(modelId)) {
+        throw new BadRequestException(`The model ${modelId} is not in the Frameleaf Cloud catalogue`);
+      }
+    }
+    await this.mlDestinationRepository.setRoute(workload, destination.id, modelId);
     return this.getRoutes();
   }
 
@@ -494,7 +582,7 @@ export class MlDestinationService extends BaseService {
       this.renderWorkerRepository.listLiveSessions(),
     ]);
     const now = new Date();
-    const qualifiedRenderer = sessions.some(({ worker, session }) =>
+    const qualified = sessions.filter(({ worker, session }) =>
       isQualifiedRenderSession({
         worker: {
           revoked: worker.status !== RenderWorkerStatus.Active,
@@ -511,24 +599,46 @@ export class MlDestinationService extends BaseService {
         now,
       }),
     );
+    const qualifiedRenderer = qualified.length > 0;
     const routed = new Map(routes.map((route) => [route.workload, route.destinationId]));
 
     const workloads: MlWorkloadCapabilityDto[] = Object.values(MlWorkload).map((workload) => {
       const destinations = rows.map((row) => {
         const consentGranted = hasRequiredConsent(row);
-        // FL-72: restoration is never available on the library-analysis pod or on a worker that
-        // is also allowed library analysis, matching what admission would answer.
+        // FL-72: restoration is never available on a local or LAN worker that is also allowed
+        // library analysis, matching what admission would answer.
         const roleConflict =
           RESTORATION_ML_WORKLOADS.includes(workload) &&
-          (row.kind === MlDestinationKind.RunPod || mlWorkerRoleOf(row.workloads) === MlWorkerRole.Mixed);
+          !mayMixRoles(row.kind) &&
+          mlWorkerRoleOf(row.workloads) === MlWorkerRole.Mixed;
+        // FL-42: a check older than the freshness window is not evidence; the destination is
+        // checked again (admission always probes live) before it counts as available.
+        const checkedAt = row.lastProbeAt ? new Date(row.lastProbeAt) : null;
+        const stale = !checkedAt || now.getTime() - checkedAt.getTime() > ML_CAPABILITY_FRESHNESS_MS;
         const available =
           row.enabled &&
           consentGranted &&
           !roleConflict &&
+          !stale &&
           row.workloads.includes(workload) &&
           row.lastProbeHealth === MlDestinationHealth.Healthy &&
           (row.lastProbeWorkloads ?? []).includes(workload);
-        return { id: row.id, kind: row.kind, name: row.name, health: row.lastProbeHealth, consentGranted, available };
+        const gpus = row.lastProbeHardware?.gpus ?? [];
+        return {
+          id: row.id,
+          kind: row.kind,
+          name: row.name,
+          health: row.lastProbeHealth,
+          consentGranted,
+          available,
+          leavesNetwork: isCloudDestination(row.kind),
+          region: row.region,
+          checkedAt: checkedAt ? checkedAt.toISOString() : null,
+          stale,
+          acceleration: accelerationOf(row.lastProbeHardware),
+          gpuMemoryBytes: gpus.length > 0 ? Math.max(...gpus.map((gpu) => gpu.memoryTotalBytes)) : null,
+          servedWorkloads: row.lastProbeWorkloads,
+        };
       });
       return {
         workload,
@@ -541,6 +651,30 @@ export class MlDestinationService extends BaseService {
     const available = (workload: MlWorkload) =>
       workloads.find((entry) => entry.workload === workload)?.available ?? false;
 
+    // FL-42: what qualified sessions verified, per destination, so the Studio host can offer only
+    // exports some worker can actually produce.
+    const byDestination = new Map<MediaOperationDestination, typeof qualified>();
+    for (const entry of qualified) {
+      const list = byDestination.get(entry.worker.destination) ?? [];
+      list.push(entry);
+      byDestination.set(entry.worker.destination, list);
+    }
+    const render = [...byDestination.entries()].map(([destination, entries]) => {
+      const memories = entries
+        .map(({ session }) => (session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes)))
+        .filter((value): value is number => value !== null);
+      const precisions = entries.map(({ session }) => session.colorPrecision ?? SDR_ONLY);
+      return {
+        destination,
+        gpuMemoryBytes: memories.length > 0 ? Math.max(...memories) : null,
+        codecs: [...new Set(entries.flatMap(({ session }) => session.codecs ?? []))].toSorted(),
+        maxBitDepth: Math.max(...precisions.map((precision) => precision.maxBitDepth)),
+        hdr10: precisions.some((precision) => precision.hdr10),
+        dolbyVision: precisions.some((precision) => precision.dolbyVision),
+        sessions: entries.length,
+      };
+    });
+
     return {
       workloads,
       studio: {
@@ -548,6 +682,7 @@ export class MlDestinationService extends BaseService {
         renderWorker: qualifiedRenderer,
         restorationWorker: available(MlWorkload.RestorationFaithful) || available(MlWorkload.RestorationCreative),
         transcriptionWorker: available(MlWorkload.StudioAi),
+        render,
       },
       probedAt: new Date().toISOString(),
     };
@@ -566,9 +701,9 @@ export class MlDestinationService extends BaseService {
   }
 
   /**
-   * FL-72: library analysis and restoration never share a worker, the managed RunPod pod is a
-   * library-analysis worker and a RunPod video worker runs restoration only. The shared-hardware
-   * flag only means something on a restoration worker.
+   * FL-72: library analysis and restoration never share a local or LAN worker; Frameleaf Cloud runs
+   * only the workloads it offers (FL-159). The shared-hardware flag only means something on a local
+   * or LAN restoration worker.
    */
   private assertWorkloadPolicy(kind: MlDestinationKind, workloads: MlWorkload[], sharesLibraryHardware: boolean) {
     const problem = workloadPolicyProblem(kind, workloads);
@@ -586,12 +721,7 @@ export class MlDestinationService extends BaseService {
   }
 
   private healthOf(row: MlDestinationRow): MlDestinationHealthStateDto {
-    return {
-      status: row.lastProbeHealth,
-      probedAt: row.lastProbeAt ? new Date(row.lastProbeAt).toISOString() : null,
-      summary: row.lastProbeSummary,
-      servedWorkloads: row.lastProbeWorkloads,
-    };
+    return mlDestinationHealthOf(row);
   }
 
   private async toDto(row: MlDestinationRow): Promise<MlDestinationResponseDto> {
@@ -599,33 +729,6 @@ export class MlDestinationService extends BaseService {
       row.budgetLimitUsd === null
         ? 0
         : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS));
-    const endpoint = resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint());
-    return {
-      id: row.id,
-      kind: row.kind,
-      name: row.name,
-      url: endpoint?.url ?? null,
-      authTokenConfigured:
-        row.kind === MlDestinationKind.RunPod ? Boolean(endpoint?.authToken) : row.authToken !== null,
-      enabled: row.enabled,
-      workloads: row.workloads,
-      role: mlWorkerRoleOf(row.workloads),
-      sharesLibraryHardware: row.sharesLibraryHardware,
-      consent: {
-        required: isCloudDestination(row.kind),
-        acknowledgedAt: row.consentAcknowledgedAt ? new Date(row.consentAcknowledgedAt).toISOString() : null,
-        acknowledgedBy: row.consentAcknowledgedBy,
-      },
-      costControls: {
-        budgetLimitUsd: row.budgetLimitUsd,
-        maxRuntimeMinutes: row.maxRuntimeMinutes,
-        maxUploadBytes: row.maxUploadBytes === null ? null : Number(row.maxUploadBytes),
-        spentUsd,
-        budgetWindowDays: ML_BUDGET_WINDOW_DAYS,
-      },
-      health: this.healthOf(row),
-      createdAt: new Date(row.createdAt).toISOString(),
-      updatedAt: new Date(row.updatedAt).toISOString(),
-    };
+    return mapMlDestination(row, spentUsd);
   }
 }

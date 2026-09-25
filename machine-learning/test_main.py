@@ -2234,7 +2234,7 @@ def test_bearer_auth_open_when_no_token() -> None:
     # request, including inference paths. This matches upstream Immich (the ML
     # service ships without auth) and is the default for local / same-LAN
     # deployments. A token is only expected when something sets
-    # IMMICH_ML_AUTH_TOKEN, e.g. RunPod Pod mode.
+    # IMMICH_ML_AUTH_TOKEN, e.g. a LAN worker behind a proxy.
     from starlette.applications import Starlette
     from starlette.responses import PlainTextResponse as _PR
     from starlette.routing import Route

@@ -61,7 +61,7 @@ When description and tag generation is enabled, Immich sends the asset preview i
 - Tags are plain searchable tags, deduplicated against existing tags.
 - Sidecar write jobs are queued after visible description or tag changes.
 
-The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. In this branch, that model is mapped internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and an explanation of how the fallback behavior differs between local and RunPod URLs.
+The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. In this branch, that model is mapped internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and an explanation of how the fallback behavior differs between local workers and Frameleaf Cloud.
 
 ## NSFW Detection
 
@@ -137,9 +137,9 @@ The dropdown also exposes a **fallback model** field. Florence-2 is the typical 
 The fallback logic is **split by destination**:
 
 - **Local URLs**: if the primary model fails (HTTP 5xx), Immich retries the same request with the fallback model name. Local Florence-2 then takes the call.
-- **RunPod managed URL**: the fallback is **never** attempted. The admin's model choice is the contract; silently switching to Florence on RunPod would be both surprising and broken (Florence's `trust_remote_code` modeling code is incompatible with the transformers 5.x pin on the cuda-runpod image).
+- **Frameleaf Cloud**: the fallback is **never** attempted. The model chosen for cloud work is the contract; silently switching to another model in the cloud would be surprising.
 
-If you only use RunPod (no local URLs configured), the fallback never runs — leaving it set is harmless.
+If descriptions run only on Frameleaf Cloud, the fallback never runs; leaving it set is harmless.
 
 For Intel iGPU deployments, use the OpenVINO machine-learning image/extra and keep the description device at `AUTO` unless you need to pin it. `AUTO` lets OpenVINO choose the best available device and fall back when the GPU is unavailable.
 

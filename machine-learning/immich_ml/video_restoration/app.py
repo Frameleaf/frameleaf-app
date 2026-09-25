@@ -13,7 +13,7 @@ model probes like any other endpoint:
 * ``POST /restoration/restore`` — one inference; see ``schemas.py`` for the contract.
 
 Bearer authentication uses the same ``IMMICH_ML_AUTH_TOKEN`` variable as the predict
-container so a LAN or RunPod destination's stored token works unchanged.
+container so a LAN destination's stored token works unchanged.
 """
 
 import base64

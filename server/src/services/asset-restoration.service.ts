@@ -195,7 +195,7 @@ export class AssetRestorationService {
       let verdict = evaluateAdmission({
         destination: row,
         workload,
-        endpoint: resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint()),
+        endpoint: resolveEndpoint(row),
         probe: this.probeFromRow(row),
         spentUsd:
           row.budgetLimitUsd === null

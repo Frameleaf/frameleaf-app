@@ -129,6 +129,36 @@ const operation = (overrides: Partial<MediaOperation> = {}): MediaOperation =>
     ...overrides,
   }) as unknown as MediaOperation;
 
+/** A live render session for a LAN worker that verified 1080p H.264 in SDR (FL-42). */
+const liveSession = (
+  overrides: Partial<{
+    destination: MediaOperationDestination;
+    gpuMemoryBytes: string | null;
+    codecs: string[] | null;
+    colorPrecision: { maxBitDepth: number; hdr10: boolean; dolbyVision: boolean } | null;
+    conformanceReportedAt: Date;
+  }> = {},
+) => ({
+  worker: {
+    id: 'worker-1',
+    status: 'active',
+    destination: overrides.destination ?? MediaOperationDestination.Lan,
+    engineDigest: 'engine-1',
+    conformanceMaxAgeMs: 24 * 60 * 60 * 1000,
+  },
+  session: {
+    id: 'session-1',
+    scopes: [MediaOperationKind.StudioExport],
+    gpuMemoryBytes: overrides.gpuMemoryBytes === undefined ? String(12 * 1024 ** 3) : overrides.gpuMemoryBytes,
+    engineDigest: 'engine-1',
+    conformanceReportedAt: overrides.conformanceReportedAt ?? new Date(),
+    codecs: overrides.codecs === undefined ? ['h264_nvenc', 'hevc_nvenc'] : overrides.codecs,
+    colorPrecision: overrides.colorPrecision ?? null,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    revokedAt: null,
+  },
+});
+
 describe(StudioExportService.name, () => {
   let sut: StudioExportService;
   let repository: Record<string, ReturnType<typeof vi.fn>>;
@@ -143,6 +173,7 @@ describe(StudioExportService.name, () => {
   };
   let crypto: Record<string, ReturnType<typeof vi.fn>>;
   let jobs: Record<string, ReturnType<typeof vi.fn>>;
+  let renderWorkers: { listLiveSessions: ReturnType<typeof vi.fn> };
   let staged: string;
 
   beforeAll(() => StorageCore.setMediaLocation('/data'));
@@ -223,6 +254,7 @@ describe(StudioExportService.name, () => {
     };
     crypto = { hashFile: vi.fn().mockResolvedValue(Buffer.from('ab'.repeat(32), 'hex')) };
     jobs = { queue: vi.fn().mockResolvedValue(undefined) };
+    renderWorkers = { listLiveSessions: vi.fn().mockResolvedValue([liveSession()]) };
 
     sut = new StudioExportService(
       { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
@@ -238,6 +270,7 @@ describe(StudioExportService.name, () => {
       jobs as never,
       {} as never,
       {} as never,
+      renderWorkers as never,
     );
   });
 
@@ -255,6 +288,44 @@ describe(StudioExportService.name, () => {
       color: 'preserve',
       resolution: '1080p',
     } as never;
+
+    it.each([
+      [[], {}, 'no-qualified-worker'],
+      [[liveSession({ gpuMemoryBytes: String(2 * 1024 ** 3) })], {}, 'insufficient-memory'],
+      [[liveSession({ codecs: ['h264_nvenc'] })], { format: 'prores-422-hq' }, 'codec-unavailable'],
+      [[liveSession()], { format: 'mp4-hevc-main10', color: 'hdr10' }, 'incompatible-color'],
+      [[liveSession({ destination: MediaOperationDestination.Local })], {}, 'no-qualified-worker'],
+      [[liveSession({ conformanceReportedAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })], {}, 'no-qualified-worker'],
+    ])(
+      'refuses an export no qualified render session verified, with an actionable reason (FL-42) %#',
+      async (sessions, settings, reason) => {
+        studio.authorizeRevision.mockResolvedValue(authorized());
+        renderWorkers.listLiveSessions.mockResolvedValue(sessions);
+
+        const error = await sut
+          .create(auth(), PROJECT, { ...(dto as object), ...settings } as never)
+          .catch((error_: unknown) => error_);
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).getResponse()).toMatchObject({ code: 'studio_export_unsupported', reason });
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+      },
+    );
+
+    it('queues an HDR10 export only on a session that verified 10-bit HDR10 and a HEVC encoder (FL-42)', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      renderWorkers.listLiveSessions.mockResolvedValue([
+        liveSession({
+          codecs: ['hevc_nvenc', 'h264_nvenc'],
+          colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false },
+        }),
+      ]);
+      repository.createWithRender.mockRejectedValue(new Error('created'));
+
+      await expect(
+        sut.create(auth(), PROJECT, { ...(dto as object), format: 'mp4-hevc-main10', color: 'hdr10' } as never),
+      ).rejects.toThrow('created');
+    });
 
     it('refuses anybody but the owner', async () => {
       studio.authorizeRevision.mockResolvedValue(authorized({ access: 'reviewer' }));

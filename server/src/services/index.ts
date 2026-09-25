@@ -1,3 +1,4 @@
+import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
@@ -67,7 +68,6 @@ import { QueueService } from 'src/services/queue.service.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { RunningJobService } from 'src/services/running-job.service.js';
-import { RunPodService } from 'src/services/runpod.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
@@ -103,6 +103,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  CloudMlService,
   ICloudMetadataService,
   ICloudRelationsService,
   ICloudAlbumService,
@@ -171,7 +172,6 @@ export const services = [
   PreservationService,
   PreservationWorkerService,
   QueueService,
-  RunPodService,
   RestorationWorkerService,
   RunningJobService,
   SearchService,

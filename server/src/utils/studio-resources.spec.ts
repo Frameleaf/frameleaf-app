@@ -122,7 +122,7 @@ describe('studio resource registry', () => {
         continue;
       }
 
-      expect(definition.egress[StudioDestination.RunPod]).toBe(StudioEgress.ExplicitConsent);
+      expect(definition.egress[StudioDestination.FrameleafCloud]).toBe(StudioEgress.ExplicitConsent);
       expect(definition.egress[StudioDestination.Local]).toBe(StudioEgress.Allowed);
       expect(definition.egress[StudioDestination.Lan]).toBe(StudioEgress.Allowed);
     }

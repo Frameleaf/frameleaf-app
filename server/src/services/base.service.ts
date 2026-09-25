@@ -51,8 +51,11 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
+import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
-import { RunPodRepository } from 'src/repositories/runpod.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -123,7 +126,10 @@ export const BASE_SERVICE_DEPENDENCIES = [
   PluginRepository,
   ProcessRepository,
   RenderWorkerRepository,
-  RunPodRepository,
+  FrameleafCloudRepository,
+  FrameleafCloudMlRepository,
+  FrameleafConsentRepository,
+  InstanceIdentityRepository,
   SearchRepository,
   ServerInfoRepository,
   SmartAlbumRepository,
@@ -192,7 +198,10 @@ export class BaseService {
     protected pluginRepository: PluginRepository,
     protected processRepository: ProcessRepository,
     protected renderWorkerRepository: RenderWorkerRepository,
-    protected runPodRepository: RunPodRepository,
+    protected frameleafCloudRepository: FrameleafCloudRepository,
+    protected frameleafCloudMlRepository: FrameleafCloudMlRepository,
+    protected frameleafConsentRepository: FrameleafConsentRepository,
+    protected instanceIdentityRepository: InstanceIdentityRepository,
     protected searchRepository: SearchRepository,
     protected serverInfoRepository: ServerInfoRepository,
     protected smartAlbumRepository: SmartAlbumRepository,
@@ -270,7 +279,10 @@ export class BaseService {
       ctx.pluginRepository,
       ctx.processRepository,
       ctx.renderWorkerRepository,
-      ctx.runPodRepository,
+      ctx.frameleafCloudRepository,
+      ctx.frameleafCloudMlRepository,
+      ctx.frameleafConsentRepository,
+      ctx.instanceIdentityRepository,
       ctx.searchRepository,
       ctx.serverInfoRepository,
       ctx.smartAlbumRepository,

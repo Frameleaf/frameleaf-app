@@ -24,6 +24,7 @@ import {
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  RenderWorkerStatus,
   StudioExportRemoteReason,
   StudioExportScope,
   StudioExportVersionState,
@@ -32,6 +33,8 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
+import { evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -176,6 +179,7 @@ export class StudioExportService {
     private jobs: JobRepository,
     private configRepository: ConfigRepository,
     private systemMetadata: SystemMetadataRepository,
+    private renderWorkers: RenderWorkerRepository,
   ) {
     this.logger.setContext(StudioExportService.name);
   }
@@ -236,6 +240,7 @@ export class StudioExportService {
     }
 
     const settings = { format: dto.format, color: dto.color, resolution: dto.resolution };
+    await this.requireRenderableOutput(dto.destination, settings);
     const { operation, version } = await this.repository.createWithRender(
       {
         ownerId: auth.user.id,
@@ -279,6 +284,55 @@ export class StudioExportService {
 
     this.logger.log(`Studio export ${version.id} queued as render ${operation.id} for project ${projectId}`);
     return { version: this.map(version, auth), operation: mapOperation(operation) };
+  }
+
+  /**
+   * FL-42: an export is queued only when a live, qualified render session for the chosen destination
+   * verified what it needs: GPU memory for the resolution, an encoder for the format and the colour
+   * precision. Otherwise it is refused up front with a reason the person can act on (choose a
+   * smaller resolution, another format or SDR, or bring a qualified worker online) instead of
+   * waiting in the queue for a worker that can never take it.
+   */
+  private async requireRenderableOutput(
+    destination: MediaOperationDestination,
+    settings: { format: string; color: string; resolution: string },
+  ) {
+    const now = new Date();
+    const sessions = await this.renderWorkers.listLiveSessions();
+    const candidates = sessions
+      .filter(
+        ({ worker, session }) =>
+          worker.destination === destination &&
+          session.scopes.includes(MediaOperationKind.StudioExport) &&
+          isQualifiedRenderSession({
+            worker: {
+              revoked: worker.status !== RenderWorkerStatus.Active,
+              engineDigest: worker.engineDigest,
+              conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
+            },
+            session: {
+              revoked: session.revokedAt !== null,
+              expiresAt: new Date(session.expiresAt),
+              engineDigest: session.engineDigest,
+              conformanceReportedAt: new Date(session.conformanceReportedAt),
+              scopes: session.scopes,
+            },
+            now,
+          }),
+      )
+      .map(({ session }) => ({
+        gpuMemoryBytes: session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes),
+        codecs: session.codecs ?? [],
+        colorPrecision: session.colorPrecision,
+      }));
+    const verdict = evaluateRenderOutput(candidates, settings);
+    if (!verdict.supported) {
+      throw new ConflictException({
+        message: `No qualified render worker can produce this export (${verdict.refusal})`,
+        code: 'studio_export_unsupported',
+        reason: verdict.refusal,
+      });
+    }
   }
 
   /** The project's exports, newest first. Owner only; a Locked result needs an unlocked session. */
