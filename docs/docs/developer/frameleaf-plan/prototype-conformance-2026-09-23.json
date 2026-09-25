@@ -19,10 +19,10 @@
     "webActions": 153,
     "routes": 83,
     "byStatus": {
-      "match": 62,
-      "partial": 55,
+      "match": 61,
+      "partial": 27,
       "missing": 1,
-      "fixed": 96,
+      "fixed": 125,
       "in-flight": 8,
       "studio-parked": 3,
       "retained-live-route": 8,
@@ -355,9 +355,9 @@
       "title": "Accept detection result; mark safe/sensitive from evidence panel",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-2", "V-10"],
-      "followUp": "Enrichment card for owners (fix-viewer); extra enrichment controls are a product decision"
+      "followUp": "Enrichment card for owners (fix-viewer); its Accept and Clear tags stay as preserved source actions, recorded deviations (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:info-people:add-a-person-draw-bounding-box-search-existing-person-confirm",
@@ -372,19 +372,22 @@
       "requirementId": "action:info-people:add-edit-location",
       "title": "Add/edit location",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/DetailPanelLocation.svelte"],
-      "status": "partial",
+      "production": [
+        "web/src/lib/components/asset-viewer/DetailPanelLocation.svelte",
+        "web/src/lib/components/frameleaf/ViewerLocationDialog.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["V-24"],
-      "followUp": "City / State or region / Country fields; Frameleaf dialog"
+      "followUp": "Edit location dialog with City / State or region / Country, coordinates and a MapLibre pin; typed place names are kept over geocoding (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:info-people:add-remove-tags",
       "title": "Add/remove tags",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/DetailPanelTags.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-25"],
-      "followUp": "Inline tag combobox with create and empty state"
+      "followUp": "Inline Add a tag combobox with Create and No tags yet.; T opens it (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:info-people:camera-lens-location-search-shortcuts",
@@ -444,10 +447,13 @@
       "requirementId": "action:info-people:edit-capture-date-time-timezone",
       "title": "Edit capture date/time/timezone",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/DetailPanelDate.svelte"],
-      "status": "partial",
+      "production": [
+        "web/src/lib/components/asset-viewer/DetailPanelDate.svelte",
+        "web/src/lib/components/frameleaf/ViewerDateDialog.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["V-23"],
-      "followUp": "Frameleaf date/time dialog"
+      "followUp": "Edit date and time dialog: date, time, Keep the current time zone, preview (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:info-people:edit-reassign-existing-detected-face",
@@ -535,9 +541,9 @@
       "title": "Set/clear rating",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/DetailPanelStarRating.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-3", "V-20"],
-      "followUp": "Rating popover in the top row; explicit Clear"
+      "followUp": "Rating popover in the top row; explicit Clear in the panel (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:info-people:show-appears-in-albums-navigate-to-album-membership",
@@ -583,18 +589,18 @@
       "title": "Show offline/file availability and ownership context",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/frameleaf/ViewerOfflineBanner.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-27"],
-      "followUp": "Owner line for every non-owned asset (the legacy offline block is gone, V-6 fixed in FL-35)"
+      "followUp": "Owner line for every non-owned asset; the offline banner (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:info-people:show-shared-by-owner-metadata",
       "title": "Show shared-by/owner metadata",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/DetailPanel.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-27"],
-      "followUp": "Owner line whenever the asset is not the viewer's"
+      "followUp": "Owned by / Shared by line whenever the asset is not the viewer's (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:quick-edit:ai-preview-full-job-faithful-creative-local-lan-versus-runpod",
@@ -1462,9 +1468,9 @@
       "title": "Add to stack",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-11"],
-      "followUp": "Label \"Add to stack\""
+      "followUp": "Label \"Add to stack\" (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:album-activity-comments-likes-activity-panel",
@@ -1498,9 +1504,9 @@
       "title": "Copy image to clipboard",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-5"],
-      "followUp": "Label \"Copy image\""
+      "followUp": "Label \"Copy image\" (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:download-current-edited-media",
@@ -1533,9 +1539,9 @@
       "title": "Favorite / unfavorite",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-5"],
-      "followUp": "Labels \"Add to favorites\" / \"Remove from favorites\""
+      "followUp": "Labels \"Add to favorites\" / \"Remove from favorites\" (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:image-video-panorama-and-photo-sphere-viewers",
@@ -1551,7 +1557,7 @@
       "title": "Keep this stack asset and delete the others",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/frameleaf/ViewerStackStrip.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-11"],
       "followUp": "Label \"Keep this, remove the rest\""
     },
@@ -1560,25 +1566,25 @@
       "title": "Keyboard navigation and focus restoration",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/PhotoViewer.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-14", "V-15"],
-      "followUp": "Zoom keys (fix-viewer), Space/S/T/Backspace"
+      "followUp": "Zoom keys (fix-viewer); Space, S, T, Backspace and no a/d (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:live-motion-photo-play-and-stop",
       "title": "Live/Motion Photo play and stop",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/ViewerLiveBadge.svelte"],
+      "status": "fixed",
       "gaps": ["V-16"],
-      "followUp": "On-image Live badge with hover-to-play"
+      "followUp": "On-image Live badge with hover-to-play (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:make-stack-primary",
       "title": "Make stack primary",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/frameleaf/ViewerStackStrip.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-11"],
       "followUp": "Label \"Set as stack primary\""
     },
@@ -1605,7 +1611,7 @@
       "title": "Move to trash",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/actions/DeleteAction.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-5", "V-15"],
       "followUp": "Label \"Move to trash (Delete)\"; Backspace"
     },
@@ -1623,9 +1629,9 @@
       "title": "Open editor",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-5"],
-      "followUp": "Label \"Edit (E)\""
+      "followUp": "Label \"Edit\" (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:open-full-viewer-close-back-escape-previous-next",
@@ -1635,9 +1641,9 @@
         "web/src/lib/components/frameleaf/ViewerTitle.svelte",
         "web/src/lib/components/frameleaf/ViewerFooter.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-5"],
-      "followUp": "Close label (\"n of N\" is in the footer, V-12 fixed in FL-35)"
+      "followUp": "\"Close viewer\" titled \"Close viewer (Escape)\"; \"n of N\" is in the footer (V-12) (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:open-info",
@@ -1653,7 +1659,7 @@
       "title": "Permanently delete in the appropriate viewer context",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/actions/DeleteAction.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-1", "V-4"],
       "followUp": "Non-suppressible confirm with prototype copy (fix-viewer); Delete permanently in the Trash group"
     },
@@ -1710,16 +1716,16 @@
       "title": "Restore a trashed asset from viewer",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-4"],
-      "followUp": "Restore in the trash toolbar"
+      "followUp": "Restore in the trash toolbar and the Trash group (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:set-account-profile-picture",
       "title": "Set account profile picture",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-11"],
       "followUp": "Label \"Profile picture\""
     },
@@ -1727,19 +1733,19 @@
       "requirementId": "action:viewer:set-album-cover",
       "title": "Set album cover",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/ViewerChooserDialog.svelte"],
+      "status": "fixed",
       "gaps": ["V-9", "V-11"],
-      "followUp": "Album chooser without page context; label"
+      "followUp": "Album cover, with the album chooser outside the album (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:set-persons-featured-photo",
       "title": "Set person's featured photo",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/ViewerChooserDialog.svelte"],
+      "status": "fixed",
       "gaps": ["V-9", "V-11"],
-      "followUp": "Person chooser without page context; label"
+      "followUp": "Featured photo for person, with the person chooser (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:share-with-recipients-create-or-manage-a-public-link",
@@ -1803,16 +1809,16 @@
       "title": "Slideshow play/pause, previous/next, repeat, shuffle",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/SlideshowBar.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-7", "V-15", "V-18"],
-      "followUp": "Pause item in the menu, Space/S toggle, inline playback"
+      "followUp": "Play/Pause slideshow and Slideshow settings in the menu, Space/S, inline playback (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:star-rating-clear-rating",
       "title": "Star rating / clear rating",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/actions/RatingAction.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-3"],
       "followUp": "Rating popover in the top row"
     },
@@ -1821,27 +1827,27 @@
       "title": "Toggle original video versus encoded playback",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/frameleaf/ViewerFooter.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-11"],
-      "followUp": "Menu label drift (the footer segment \"Play original / Play encoded\" is in, V-13 fixed in FL-35)"
+      "followUp": "The footer segment \"Play original / Play encoded\" (V-13); the menu entry is gone, as in the template (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:transcode-this-video",
       "title": "Transcode this video",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-7"],
-      "followUp": "Transcode entry in the Jobs group"
+      "followUp": "Transcode video and Refresh encoded video in the Jobs group (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:unstack-remove-one-item-from-a-stack",
       "title": "Unstack; remove one item from a stack",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/frameleaf/ViewerStackStrip.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-10", "V-11"],
-      "followUp": "Drop stack-remove-this; label \"Unstack\""
+      "followUp": "Label \"Unstack\"; \"Remove from stack\" stays as the FL-36 remove-member action (recorded deviation, codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:view-in-timeline",
@@ -1857,9 +1863,9 @@
       "title": "View similar photos",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-11"],
-      "followUp": "Label \"Find similar\""
+      "followUp": "Label \"Find similar\" (codex/FL-35-complete-viewer)"
     },
     {
       "requirementId": "action:viewer:zoom-in-out-fit-image-pan",
@@ -2703,9 +2709,9 @@
         "web/src/lib/components/frameleaf/LargeFilesUtility.svelte",
         "web/src/lib/components/frameleaf/LargeFilesReview.svelte"
       ],
-      "status": "match",
+      "status": "fixed",
       "gaps": ["UT-11", "UT-15", "UT-16"],
-      "followUp": "Recent utility activity; nits"
+      "followUp": "Recent utility activity, row type and resolution, title (fixed on codex/FL-35-complete-viewer, FL-47)"
     },
     {
       "route": "/utilities/live-photos",

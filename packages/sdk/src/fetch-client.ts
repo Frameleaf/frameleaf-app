@@ -2456,6 +2456,8 @@ export type ExifResponseDto = {
     fileSizeInByte?: number | null;
     /** Focal length in mm */
     focalLength?: number | null;
+    /** Video frame rate (frames per second) */
+    fps?: number | null;
     /** ISO sensitivity */
     iso?: number | null;
     /** GPS latitude */
@@ -2583,6 +2585,10 @@ export type AssetResponseDto = {
     width: number | null;
 };
 export type UpdateAssetDto = {
+    /** City name; kept over reverse geocoding until the item is moved again */
+    city?: string | null;
+    /** Country name; kept over reverse geocoding until the item is moved again */
+    country?: string | null;
     /** Original date and time */
     dateTimeOriginal?: string;
     /** Asset description */
@@ -2597,6 +2603,8 @@ export type UpdateAssetDto = {
     longitude?: number | null;
     /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
     rating?: number | null;
+    /** State or region name; kept over reverse geocoding until the item is moved again */
+    state?: string | null;
     visibility?: AssetVisibility;
 };
 export type AssetDevelopCrop = {

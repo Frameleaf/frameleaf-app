@@ -1,5 +1,7 @@
 import { AssetTypeEnum, type TrashItemResponseDto, type TrashReviewResponseDto } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
+import { filmstripPlaceholder } from '$lib/frameleaf/viewer-filmstrip';
+import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 
 /**
  * The Trash page and the large-file review (FL-47), ported from the design template's
@@ -128,3 +130,16 @@ export const errorStatus = (error: unknown): number | undefined => {
 
 /** A 409 from apply: the set changed after the review, so the page asks for a fresh one. */
 export const isStaleReview = (error: unknown) => errorStatus(error) === 409;
+
+/** A trash row as a filmstrip thumbnail for the trash viewer (audit V-17). */
+export const trashFilmstripAsset = (item: TrashItemResponseDto, ownerId: string): TimelineAsset =>
+  filmstripPlaceholder({
+    id: item.id,
+    ownerId,
+    isVideo: item.type === AssetTypeEnum.Video,
+    isLocked: item.isLocked,
+    isTrashed: true,
+    originalFileName: item.originalFileName,
+    fileSizeInByte: item.fileSizeInByte,
+    at: item.trashedAt,
+  });

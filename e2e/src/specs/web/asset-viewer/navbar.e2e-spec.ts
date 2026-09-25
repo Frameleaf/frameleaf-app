@@ -1,6 +1,13 @@
-import { AssetMediaResponseDto, LoginResponseDto, SharedLinkType } from '@immich/sdk';
+import {
+  AssetMediaResponseDto,
+  deleteAssets,
+  getAssetInfo,
+  LoginResponseDto,
+  SharedLinkType,
+  updateMyPreferences,
+} from '@immich/sdk';
 import { expect, test } from '@playwright/test';
-import { utils } from 'src/utils.js';
+import { asBearerAuth, utils } from 'src/utils.js';
 
 test.describe('Asset Viewer Navbar', () => {
   let admin: LoginResponseDto;
@@ -37,7 +44,7 @@ test.describe('Asset Viewer Navbar', () => {
       // FL-35: zoom moved to the footer, as in the template (MediaViewer.jsx:1765-1790). A link that hides
       // metadata never allows downloads (the server turns allowDownload off with it), so there is no
       // Download and no "Send a copy…" (FL-54 needs downloads and metadata).
-      const expected = ['Copy Image'];
+      const expected = ['Copy image'];
       const buttons = await page.getByTestId('asset-viewer-navbar-actions').getByRole('button').all();
       expect(buttons).toHaveLength(expected.length);
 
@@ -58,7 +65,7 @@ test.describe('Asset Viewer Navbar', () => {
 
       // The owner may share, but the item the link serves is stripped of its owner, so the owner sees the
       // link's own rules: no Download on a link without metadata.
-      const expected = ['Share', 'Copy Image'];
+      const expected = ['Share', 'Copy image'];
       const buttons = await page.getByTestId('asset-viewer-navbar-actions').getByRole('button').all();
       expect(buttons).toHaveLength(expected.length);
 
@@ -111,6 +118,68 @@ test.describe('Asset Viewer Navbar', () => {
     await expect(footer.getByRole('button', { name: /% of fit$/ })).toBeVisible();
     await footer.getByRole('button', { name: /% of fit$/ }).click();
     await expect(footer.getByRole('button', { name: 'Fit', exact: true })).toBeVisible();
+  });
+
+  // FL-35 / FL-36: the September 24 viewer conformance (V-3, V-4, V-7) and removals elsewhere.
+  test.describe('September 24 conformance', () => {
+    test('rates from the top row', async ({ context, page }) => {
+      await updateMyPreferences(
+        { userPreferencesUpdateDto: { ratings: { enabled: true } } },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto(`/photos/${asset.id}`);
+      await page.getByTestId('viewer-rating-button').click();
+      await page.getByRole('group', { name: 'Rate this item' }).getByRole('button', { name: 'Rate 4 stars' }).click();
+      await expect
+        .poll(
+          async () =>
+            (await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) })).exifInfo?.rating,
+        )
+        .toBe(4);
+      await expect(page.getByTestId('viewer-rating-button')).toHaveAccessibleName('Rating · 4 stars');
+    });
+
+    test('offers Restore and Delete permanently for a trashed item', async ({ context, page }) => {
+      await deleteAssets({ assetBulkDeleteDto: { ids: [asset.id] } }, { headers: asBearerAuth(admin.accessToken) });
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto(`/user-settings?area=trash&section=contents&assetId=${asset.id}`);
+      const toolbar = page.getByTestId('asset-viewer-navbar-actions');
+      await expect(toolbar.getByRole('button', { name: 'Delete permanently', exact: true })).toBeVisible();
+      await expect(toolbar.getByRole('button', { name: 'Move to trash', exact: true })).toHaveCount(0);
+
+      await toolbar.getByRole('button', { name: 'Restore', exact: true }).click();
+      await expect
+        .poll(
+          async () => (await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) })).isTrashed,
+        )
+        .toBe(false);
+    });
+
+    test('opens the slideshow settings from the More menu', async ({ context, page }) => {
+      await utils.createAsset(admin.accessToken);
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto(`/photos/${asset.id}`);
+      await page.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Slideshow settings' }).click();
+      await expect(page.getByTestId('slideshow-settings')).toBeVisible();
+    });
+
+    test('moves on when the open item is moved to the trash elsewhere during a slideshow', async ({
+      context,
+      page,
+    }) => {
+      const other = await utils.createAsset(admin.accessToken);
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto(`/photos/${other.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+      await page.getByTestId('viewer-footer').getByRole('button', { name: 'Play slideshow' }).click();
+      await page.getByTestId('viewer-footer').getByRole('button', { name: 'Pause slideshow' }).click();
+      const open = await page.locator('#immich-asset-viewer').getAttribute('data-asset-id');
+
+      await deleteAssets({ assetBulkDeleteDto: { ids: [open!] } }, { headers: asBearerAuth(admin.accessToken) });
+      await expect(page.locator('#immich-asset-viewer')).not.toHaveAttribute('data-asset-id', open!);
+    });
   });
 
   test.describe('actions', () => {

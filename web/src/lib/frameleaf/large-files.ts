@@ -1,4 +1,4 @@
-import type { AssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
 
 /**
  * The large-file review (FL-47), ported from the large-files part of the design template's
@@ -90,3 +90,50 @@ export const largeFileExport = (
     bytes: largeFileSize(asset),
   })),
 });
+
+/** What the row's second line says about an original (UT-15; `UtilitiesManager.jsx:258-262`, `utilities-data.mjs:266-281`). */
+export type LargeFileFormat = {
+  /** The file type, from the file name: `MOV`, `TIF`, `HEIC`. */
+  type?: string;
+  /** A video's resolution the way people name it: `8K`, `4K`, `1080p`. */
+  videoResolution?: string;
+  /** A photo's resolution in whole megapixels. */
+  megapixels?: number;
+};
+
+/** A video's resolution by its short edge, so portrait and landscape videos read the same. */
+const videoResolution = (width: number, height: number) => {
+  const long = Math.max(width, height);
+  const short = Math.min(width, height);
+  if (long >= 7680) {
+    return '8K';
+  }
+  if (long >= 3840) {
+    return '4K';
+  }
+  return `${short}p`;
+};
+
+/**
+ * The type and resolution of an original, as the template's `format` line ("HEVC · 4K · HDR",
+ * "TIFF · 16-bit") shows it for what the server knows: the file type and the pixel size. Anything
+ * unknown is left out; an empty result falls back to the row's other detail.
+ */
+export const largeFileFormat = (
+  asset: Pick<AssetResponseDto, 'originalFileName' | 'originalMimeType' | 'type' | 'exifInfo'>,
+): LargeFileFormat => {
+  const extension = /\.([\da-z]{1,8})$/i.exec(asset.originalFileName)?.[1];
+  const subtype = asset.originalMimeType?.split('/', 2)[1];
+  const type = (extension ?? subtype)?.toUpperCase();
+
+  const width = asset.exifInfo?.exifImageWidth ?? 0;
+  const height = asset.exifInfo?.exifImageHeight ?? 0;
+  if (width <= 0 || height <= 0) {
+    return { type };
+  }
+  if (asset.type === AssetTypeEnum.Video) {
+    return { type, videoResolution: videoResolution(width, height) };
+  }
+  const megapixels = Math.round((width * height) / 1_000_000);
+  return megapixels > 0 ? { type, megapixels } : { type };
+};

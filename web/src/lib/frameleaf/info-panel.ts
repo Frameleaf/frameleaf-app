@@ -229,3 +229,57 @@ export function infoDetailRows(asset: AssetResponseDto, { isOwner }: { isOwner: 
 
   return rows.filter((row): row is InfoDetailRow => row !== null);
 }
+
+/* ---------------------------------------------------------------- tags */
+
+export interface TagSuggestion {
+  /** The tag's id, or for `create` the trimmed text to create a tag from. */
+  id: string;
+  /** The tag's full path, or the text a new tag would take. */
+  label: string;
+  create: boolean;
+}
+
+/**
+ * The "Add a tag" suggestions (`TagsSection`, MediaViewer.jsx:3190-3233): up to eight of the account's
+ * tags the item does not have yet that contain the typed text, then "Create …" when the text names no
+ * tag at all. Tags are matched on their full path (`value`), as the tag browser names them.
+ */
+export function tagSuggestions(
+  tags: readonly { id: string; value: string }[],
+  currentIds: readonly string[],
+  query: string,
+  limit = 8,
+): TagSuggestion[] {
+  const text = query.trim();
+  const term = text.toLocaleLowerCase();
+  const current = new Set(currentIds);
+  const options: TagSuggestion[] = tags
+    .filter((tag) => !current.has(tag.id))
+    .filter((tag) => !term || tag.value.toLocaleLowerCase().includes(term))
+    .slice(0, limit)
+    .map((tag) => ({ id: tag.id, label: tag.value, create: false }));
+  const exists = tags.some((tag) => tag.value.toLocaleLowerCase() === term);
+  if (term && !exists) {
+    options.push({ id: text, label: text, create: true });
+  }
+  return options;
+}
+
+/* ---------------------------------------------------------------- owner */
+
+/**
+ * The owner line under the albums (`ownerLine`, media-viewer.mjs:538-552): "Shared by …" for an item
+ * seen through a shared album, "Owned by …" for someone else's item, and nothing for one's own.
+ */
+export function ownerLine(
+  asset: Pick<AssetResponseDto, 'ownerId' | 'owner'>,
+  currentUserId: string | undefined,
+  { sharedAlbum = false }: { sharedAlbum?: boolean } = {},
+): { kind: 'shared' | 'owned'; name: string } | null {
+  const name = asset.owner?.name;
+  if (!name || !currentUserId || asset.ownerId === currentUserId) {
+    return null;
+  }
+  return { kind: sharedAlbum ? 'shared' : 'owned', name };
+}

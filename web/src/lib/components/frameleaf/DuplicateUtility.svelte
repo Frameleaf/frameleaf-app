@@ -17,6 +17,7 @@
   import { getNextAsset, getPreviousAsset } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
+  import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -101,6 +102,7 @@
     <Portal target="body">
       <AssetViewer
         cursor={assetCursor}
+        filmstripAssets={viewing.map((asset) => toTimelineAsset(asset))}
         showNavigation={viewing.length > 1}
         {onRandom}
         onClose={() => {

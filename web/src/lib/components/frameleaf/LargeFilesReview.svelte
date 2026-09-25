@@ -17,6 +17,7 @@
     filterLargeFiles,
     LARGE_FILES_ALL_ACCOUNTS,
     largeFileExport,
+    largeFileFormat,
     largeFileOwners,
     largeFileSize,
     largeFileStatus,
@@ -39,6 +40,7 @@
     type TrashReviewResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
+  import { DateTime } from 'luxon';
   import { mdiCheckCircleOutline, mdiClose, mdiDownload, mdiUndo } from '@mdi/js';
   import { onMount } from 'svelte';
   import type { SvelteSet } from 'svelte/reactivity';
@@ -67,6 +69,18 @@
   let error = $state('');
   let undoIds = $state<string[] | null>(null);
   let busy = $state(false);
+
+  /**
+   * UT-11: "Recent utility activity" (`UtilitiesManager.jsx:946-956`), newest first. The template
+   * keeps it with the utility's saved state; here it is what this page did in this visit, because
+   * the moves themselves are the trash's record.
+   */
+  type Activity = { id: number; action: 'trash' | 'restore'; count: number; at: string };
+  let activity = $state<Activity[]>([]);
+  let activityId = 0;
+  const record = (action: Activity['action'], count: number) => {
+    activity = [{ id: ++activityId, action, count, at: new Date().toISOString() }, ...activity].slice(0, 30);
+  };
 
   let review = $state<Review | null>(null);
   let reviewOpen = $state(false);
@@ -113,9 +127,23 @@
     selected = selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id];
   };
 
-  /** The format when the server knows it; a partner's path is never shown. */
-  const detail = (asset: AssetResponseDto) =>
-    asset.originalMimeType ?? (asset.ownerId === userId ? asset.originalPath : '');
+  /**
+   * UT-15: the row's second line is the original's type and resolution, as the template's `format`
+   * (`UtilitiesManager.jsx:258-262`); without either, the owner's path, then the size. A partner's
+   * path is never shown.
+   */
+  const detail = (asset: AssetResponseDto) => {
+    const { type, videoResolution, megapixels } = largeFileFormat(asset);
+    const parts = [
+      type,
+      videoResolution,
+      megapixels ? $t('frameleaf_large_files_megapixels', { values: { count: megapixels } }) : undefined,
+    ].filter(Boolean);
+    if (parts.length > 0) {
+      return parts.join(' · ');
+    }
+    return asset.ownerId === userId ? asset.originalPath : formatBytes(largeFileSize(asset));
+  };
 
   const failureMessage = (cause: unknown) =>
     isStaleReview(cause) ? $t('frameleaf_large_files_error_changed') : $t('frameleaf_large_files_error_unavailable');
@@ -157,6 +185,7 @@
       }
       selected = selected.filter((id) => !ids.includes(id));
       undoIds = ids;
+      record('trash', count);
       notice = $t('frameleaf_large_files_moved', { values: { count } });
       error = '';
       reviewOpen = false;
@@ -179,7 +208,10 @@
     busy = true;
     try {
       const reviewed = await reviewTrash({ trashReviewDto: { action: TrashReviewAction.Restore, ids } });
-      await applyTrashReview({ trashApplyDto: { action: TrashReviewAction.Restore, ids, token: reviewed.token } });
+      const { count } = await applyTrashReview({
+        trashApplyDto: { action: TrashReviewAction.Restore, ids, token: reviewed.token },
+      });
+      record('restore', count);
       for (const id of ids) {
         trashed.delete(id);
       }
@@ -415,6 +447,24 @@
       </div>
     {/if}
   </div>
+
+  {#if activity.length > 0}
+    <details class="lf-history">
+      <summary>{$t('library_care_recent_activity')}</summary>
+      {#each activity.slice(0, 8) as item (item.id)}
+        <p>
+          <span>
+            {item.action === 'trash'
+              ? $t('frameleaf_large_files_activity_trash')
+              : $t('frameleaf_large_files_activity_restore')} · {$t('library_care_activity_items', {
+              values: { count: item.count },
+            })}
+          </span>
+          <time datetime={item.at}>{DateTime.fromISO(item.at).toLocaleString(DateTime.DATETIME_MED)}</time>
+        </p>
+      {/each}
+    </details>
+  {/if}
 </div>
 
 <Dialog title={inspect?.originalFileName ?? ''} closeLabel={$t('close')} bind:open={inspectOpen}>
@@ -476,6 +526,26 @@
 </Dialog>
 
 <style>
+  /* UtilitiesManager.jsx:946-956, utilities-manager.css .um-history */
+  .lf-history {
+    margin-top: 24px;
+    border-top: 1px solid var(--fl-border);
+    padding: 18px 0;
+  }
+  .lf-history summary {
+    cursor: pointer;
+  }
+  .lf-history p {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 8px 0 0;
+  }
+  .lf-history time {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
+  }
   .large-files {
     min-width: 0;
     color: var(--fl-text);

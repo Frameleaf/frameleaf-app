@@ -20,6 +20,15 @@ Every change is reviewed first and applied exactly as reviewed:
 - If anything changed between the review and the confirmation (an item restored or deleted in another tab, a new item trashed, an item locked or unlocked, your session locked), nothing is changed and you are asked to review again.
 - In **Large files**, **Move selected to trash** reviews the chosen items the same way, and **Undo** restores exactly the items that moved. It is unavailable while the trash is turned off, because a deletion would then be permanent.
 
+## Other tabs and devices
+
+What you trash, restore or delete in one tab or on another device shows up everywhere else without a reload:
+
+- An item moved to the trash appears in the trash of your other open tabs, and leaves their timelines.
+- A restored item comes back into your other open timelines. A very large restore reloads the timeline instead.
+- When the item open in a viewer (the trash, Large files or the timeline) is trashed, restored or deleted elsewhere, the viewer shows the next item, or closes when there is none.
+- **Large files** lists what you moved to the trash and undid during this visit under **Recent utility activity**.
+
 ## Freed space
 
 File sizes are the size of each original. They are not a promise of freed disk space:
