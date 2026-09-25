@@ -198,6 +198,11 @@ export class MediaOperationRepository {
 
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    return withPublicForkWrites(this.db, query, MEDIA_OPERATION_HANDOFF_REFUSAL);
+  }
+
   /**
    * Be told about rows whose status, stage or progress changed through this repository (FL-43).
    * The owner's open Activity pages are nudged to ask again; nothing about the job travels with it.
