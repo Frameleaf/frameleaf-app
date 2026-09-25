@@ -10,7 +10,9 @@
   import { Route } from '$lib/route';
   import { handlePromiseError } from '$lib/utils';
   import { navigate } from '$lib/utils/navigation';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { mdiMapMarkerOffOutline } from '@mdi/js';
+  import { t } from 'svelte-i18n';
   import { onDestroy } from 'svelte';
   import type { PageData } from './$types';
 
@@ -28,10 +30,6 @@
   onDestroy(() => {
     assetViewerManager.showAssetViewer(false);
   });
-
-  if (!featureFlagsManager.value.map) {
-    handlePromiseError(goto(Route.photos()));
-  }
 
   const openAsset = (assetId: string) => handlePromiseError(assetViewerManager.setAssetId(assetId));
 
@@ -70,4 +68,46 @@
       {/await}
     {/if}
   </Portal>
+{:else}
+  <!-- FL-51: an administrator turned the map off; say so instead of silently leaving for the Library
+       (the prototype's empty-state card, MapView.jsx:839-845). -->
+  <UserPageLayout>
+    <Theme theme={appTheme}>
+      <div class="map-off" role="status">
+        <Icon icon={mdiMapMarkerOffOutline} size="30" />
+        <strong>{$t('frameleaf_map_disabled_title')}</strong>
+        <p>{$t('frameleaf_map_disabled_help')}</p>
+        <a class="map-off-link" href={Route.places()}>{$t('frameleaf_map_disabled_places')}</a>
+      </div>
+    </Theme>
+  </UserPageLayout>
 {/if}
+
+<style>
+  .map-off {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: min(360px, calc(100% - 32px));
+    margin: 18vh auto 0;
+    padding: 24px;
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-1);
+    text-align: center;
+    color: var(--fl-muted);
+  }
+  .map-off strong {
+    color: var(--fl-text);
+  }
+  .map-off p {
+    margin: 0;
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+  .map-off-link {
+    color: var(--fl-accent);
+    font-weight: 560;
+  }
+</style>

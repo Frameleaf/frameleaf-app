@@ -59,4 +59,61 @@ test.describe('Map', () => {
     await page.getByRole('button', { name: 'Clear map area' }).click();
     await page.waitForURL(/\/photos$/);
   });
+
+  test('names each item, counts photos and videos and shows the settings counts (FL-51)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/map');
+    await expect(page.getByText('1 item in view')).toBeVisible();
+
+    // MapView.jsx legend: photo and video counts for what is in view
+    await expect(page.getByRole('group', { name: 'Legend' })).toContainText('1 photo · 0 videos');
+
+    const tools = page.getByRole('toolbar', { name: 'Map tools' });
+    await tools.getByRole('button', { name: 'Map settings' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Map settings' });
+    await expect(sheet.getByText('No location')).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    // "In view" rows carry the file name and the recorded day, and centre on the item by name
+    await tools.getByRole('button', { name: 'Show list' }).click();
+    const list = page.getByRole('complementary', { name: 'Items in view' });
+    await expect(list.getByText('thompson-springs.jpg')).toBeVisible();
+    await expect(list.getByRole('button', { name: 'Centre map on thompson-springs.jpg' })).toBeVisible();
+  });
+
+  test('Places groups by country and state with counts and opens the place search (FL-51)', async ({
+    context,
+    page,
+  }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/places');
+
+    await expect(page.getByRole('heading', { name: 'Places', level: 1 })).toBeVisible();
+    await expect(page.getByText(/1 place · 1 item with a location/)).toBeVisible();
+    const card = page.getByRole('link', { name: /, 1 item$/ }).first();
+    await expect(card).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Show .+ on the map$/ }).first()).toHaveAttribute('href', /\/map#/);
+
+    await page.getByRole('searchbox', { name: 'Find a place' }).fill('nowhere');
+    await expect(page.getByText('No places match “nowhere”')).toBeVisible();
+    await page.getByRole('searchbox', { name: 'Find a place' }).fill('');
+
+    await card.click();
+    await page.waitForURL(/\/search\?query=/);
+    await expect(page.locator(`[data-asset-id="${located.id}"]`)).toBeVisible();
+  });
+
+  test('the geolocation utility removes a location after review (FL-51)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/user-settings?area=utilities&section=geolocation');
+
+    await page.getByRole('checkbox', { name: 'thompson-springs.jpg' }).check();
+    await page.getByRole('button', { name: 'Remove location from 1 selected' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Remove location' });
+    await dialog.getByRole('button', { name: /Apply/ }).click();
+    await expect(dialog).toHaveCount(0);
+
+    await page.goto('/map');
+    await expect(page.getByText('No located items match these settings')).toBeVisible();
+  });
 });

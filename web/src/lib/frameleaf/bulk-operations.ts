@@ -129,6 +129,8 @@ export type BulkPayload = {
   description?: string;
   latitude?: number;
   longitude?: number;
+  /** FL-51: remove the location instead of setting one (the geolocation utility's "Remove location"). */
+  clearLocation?: boolean;
   primaryId?: string;
   stackIds?: string[];
   photoId?: string;
@@ -691,6 +693,13 @@ export const runBulkAction = async (
       );
     }
     case 'change-location': {
+      if (payload?.clearLocation) {
+        return finish(
+          await runInChunks(runner, (batch) =>
+            gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, latitude: null, longitude: null } }),
+          ),
+        );
+      }
       const latitude = Number(requirePayload(payload, 'latitude'));
       const longitude = Number(requirePayload(payload, 'longitude'));
       return finish(
@@ -1084,7 +1093,11 @@ export const durableBulkAction = (action: BulkActionId): MediaOperationBulkActio
 
 /** Whether an explicit selection of this size goes to the server as a durable job. */
 export const shouldRunDurably = (action: BulkActionId, count: number, payload?: BulkPayload): boolean =>
-  !!durableBulkAction(action) && count > DURABLE_BULK_THRESHOLD && !payload?.offsetMinutesById;
+  !!durableBulkAction(action) &&
+  count > DURABLE_BULK_THRESHOLD &&
+  !payload?.offsetMinutesById &&
+  // the durable change-location job only sets coordinates; removing them runs from here in chunks
+  !payload?.clearLocation;
 
 /** `yyyy-MM-ddTHH:mm` or with seconds → with seconds. */
 const wallTimeWithSeconds = (wall: string) => (/T\d{2}:\d{2}$/.test(wall) ? `${wall}:00` : wall);

@@ -319,8 +319,14 @@ describe(AssetController.name, () => {
 
     it('should reject invalid gps coordinates', async () => {
       for (const [test, errors] of [
-        [{ latitude: 12 }, [{ path: [], message: 'Latitude and longitude must be provided together' }]],
-        [{ longitude: 12 }, [{ path: [], message: 'Latitude and longitude must be provided together' }]],
+        [
+          { latitude: 12 },
+          [{ path: [], message: 'Latitude and longitude must be provided together, both as numbers or both as null' }],
+        ],
+        [
+          { longitude: 12 },
+          [{ path: [], message: 'Latitude and longitude must be provided together, both as numbers or both as null' }],
+        ],
         [
           { latitude: 12, longitude: 'abc' },
           [{ path: ['longitude'], message: 'Invalid input: expected number, received string' }],
@@ -331,11 +337,11 @@ describe(AssetController.name, () => {
         ],
         [
           { latitude: null, longitude: 12 },
-          [{ path: ['latitude'], message: 'Invalid input: expected number, received null' }],
+          [{ path: [], message: 'Latitude and longitude must be provided together, both as numbers or both as null' }],
         ],
         [
           { latitude: 12, longitude: null },
-          [{ path: ['longitude'], message: 'Invalid input: expected number, received null' }],
+          [{ path: [], message: 'Latitude and longitude must be provided together, both as numbers or both as null' }],
         ],
         [{ latitude: 91, longitude: 12 }, [{ path: ['latitude'], message: 'Too big: expected number to be <=90' }]],
         [{ latitude: -91, longitude: 12 }, [{ path: ['latitude'], message: 'Too small: expected number to be >=-90' }]],
@@ -349,6 +355,12 @@ describe(AssetController.name, () => {
         expect(status).toBe(400);
         expect(body).toEqual(factory.responses.validationError(errors));
       }
+    });
+
+    it('accepts null coordinates to remove the location (FL-51)', async () => {
+      const id = factory.uuid();
+      await request(ctx.getHttpServer()).put(`/assets/${id}`).send({ latitude: null, longitude: null });
+      expect(service.update).toHaveBeenCalledWith(undefined, id, { latitude: null, longitude: null });
     });
 
     it('should reject invalid rating', async () => {

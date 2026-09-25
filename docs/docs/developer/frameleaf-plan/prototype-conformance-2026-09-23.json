@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 62,
-      "partial": 63,
+      "partial": 55,
       "missing": 1,
-      "fixed": 88,
+      "fixed": 96,
       "in-flight": 8,
       "studio-parked": 3,
       "retained-live-route": 8,
@@ -729,7 +729,7 @@
       "production": ["web/src/lib/components/frameleaf/editor/QuickEditor.svelte"],
       "status": "partial",
       "gaps": ["E-1", "MPY-10"],
-      "followUp": "Open in Studio from the editor (fix-editor-albums); Studio handoff is studio-parked"
+      "followUp": "Open in Studio from the editor (fix-editor-albums); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62)"
     },
     {
       "requirementId": "action:quick-edit:persistent-render-status-cancel-retry-reload-revision-supersession",
@@ -1079,9 +1079,9 @@
       "title": "Map search results, clustering, bounded/truncated result disclosure",
       "prototype": ["design/frameleaf/template/src/MapView.jsx"],
       "production": ["web/src/lib/components/shared-components/map/Map.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["MV-2", "MV-4", "MV-5", "MV-6"],
-      "followUp": "Cluster zoom, In-view chip, empty state, list rows"
+      "followUp": "Cluster zoom, In-view chip, empty state, list rows (fixed, FL-51 on codex/FL-50-complete-discovery)"
     },
     {
       "requirementId": "action:search-discovery:moment-search-frame-caption-transcript-timestamp-matches-and-jump-playback",
@@ -1758,9 +1758,9 @@
       "title": "Shared-link download with link restrictions",
       "prototype": ["design/frameleaf/template/src/PublicViewer.jsx"],
       "production": ["web/src/lib/components/pages/SharedLinkPage.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["AL-37"],
-      "followUp": "Labelled Download in the public viewer; decouple the slideshow gate"
+      "followUp": "Labelled Download in the public viewer; slideshow no longer gated on downloads (fixed, FL-56)"
     },
     {
       "requirementId": "action:viewer:slideshow-ascending-descending-order",
@@ -2214,7 +2214,7 @@
       "production": ["web/src/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
       "status": "fixed",
       "gaps": ["T-6"],
-      "followUp": "Tiles show each item's own rating from the buckets and details, the score orders the page as in App.jsx (T-6); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map"
+      "followUp": "Tiles show each item's own rating and Best Photos keeps the server quality order (T-6 fixed, FL-50); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map"
     },
     {
       "route": "/buy",
@@ -2296,9 +2296,9 @@
       "route": "/map/[[photos=photos]]/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/MapView.jsx", "design/frameleaf/template/src/discovery-data.mjs"],
       "production": ["web/src/routes/(user)/map/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
-      "gaps": ["MV-1", "MV-2", "MV-3", "MV-4", "MV-5", "MV-6", "MV-7"],
-      "followUp": "Map settings sheet, cluster zoom, chips, empty state, list rows"
+      "status": "fixed",
+      "gaps": ["MV-1", "MV-2", "MV-3", "MV-4", "MV-5", "MV-6", "MV-7", "MV-8"],
+      "followUp": "Map settings sheet with counts, cluster zoom, chips, empty, offline and disabled states, list rows and hover card (fixed, FL-51)"
     },
     {
       "route": "/memories",
@@ -2307,9 +2307,9 @@
         "web/src/routes/(user)/memories/+page.svelte",
         "web/src/lib/components/frameleaf/MemoriesPanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["MI-1", "MI-2", "MI-3", "MI-4", "MI-5", "MI-6", "MI-7"],
-      "followUp": "Memories sections, remove confirm (fix-discovery), settings; card overline and preview fixed (MI-5)"
+      "followUp": "Today/Upcoming/Earlier from the local date, badges, quiet card, Hide memory with Hidden memories, show-less, Memory settings (fixed, FL-62)"
     },
     {
       "route": "/memories/[id]/[[photos=photos]]/[[assetId=id]]",
@@ -2318,9 +2318,9 @@
         "web/src/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/MemoryPlayerPanel.svelte"
       ],
-      "status": "partial",
-      "gaps": ["MPY-1", "MPY-2", "MPY-3", "MPY-4", "MPY-5", "MPY-6", "MPY-7", "MPY-8", "MPY-9"],
-      "followUp": "Player P0s (fix-discovery), shortcuts, soundtrack; title and end cards fixed (MPY-4)"
+      "status": "fixed",
+      "gaps": ["MPY-1", "MPY-2", "MPY-3", "MPY-4", "MPY-5", "MPY-6", "MPY-7", "MPY-8", "MPY-9", "MPY-10"],
+      "followUp": "Header and segment labels, Show all items (G), Space/M/G/Home/End, soundtrack, Open item, people, rename/reorder/favorite, Make a movie opens Studio (fixed, FL-62)"
     },
     {
       "route": "/memory/[[photos=photos]]/[[assetId=id]]",
@@ -2408,9 +2408,9 @@
       "route": "/places",
       "prototype": ["design/frameleaf/template/src/Places.jsx", "design/frameleaf/template/src/discovery-data.mjs"],
       "production": ["web/src/routes/(user)/places/+page.svelte"],
-      "status": "partial",
-      "gaps": ["PL-1", "PL-2", "PL-3", "PL-4", "PL-5", "PL-6", "PL-7"],
-      "followUp": "Frameleaf Places panel (PL-1/PL-6/PL-7 by fix-discovery)"
+      "status": "fixed",
+      "gaps": ["PL-1", "PL-2", "PL-3", "PL-4", "PL-5", "PL-6", "PL-7", "PL-8"],
+      "followUp": "Frameleaf Places panel: summary, counts, grouping, state map, search and empty states (fixed, FL-51)"
     },
     {
       "route": "/recently-added/[[assetId=id]]",
@@ -2435,9 +2435,9 @@
         "web/src/routes/(user)/s/[slug]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/pages/SharedLinkPage.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
-      "followUp": "Public viewer states and title line"
+      "followUp": "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)"
     },
     {
       "route": "/search/[[photos=photos]]/[[assetId=id]]",
@@ -2462,9 +2462,9 @@
         "web/src/routes/(user)/share/[key]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/pages/SharedLinkPage.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
-      "followUp": "Public viewer states and title line"
+      "followUp": "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)"
     },
     {
       "route": "/shared-links",

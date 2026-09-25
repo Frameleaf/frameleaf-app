@@ -499,7 +499,7 @@ const actions = {
   "open-full-workspace-retaining-draft-and-playhead": [
     "partial",
     ["E-1", "MPY-10"],
-    "Open in Studio from the editor (fix-editor-albums); Studio handoff is studio-parked",
+    "Open in Studio from the editor (fix-editor-albums); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62)",
   ],
   "persistent-render-status-cancel-retry-reload-revision-supersession": [
     "match",
@@ -680,9 +680,9 @@ const actions = {
   "image-video-type": ["match", []],
   "interpret-natural-language-into-editable-constraints": ["match", []],
   "map-search-results-clustering-bounded-truncated-result-disclosure": [
-    "partial",
+    "fixed",
     ["MV-2", "MV-4", "MV-5", "MV-6"],
-    "Cluster zoom, In-view chip, empty state, list rows",
+    "Cluster zoom, In-view chip, empty state, list rows (fixed, FL-51 on codex/FL-50-complete-discovery)",
     {
       prototype: [`${P}/MapView.jsx`],
       production: [`${W}/lib/components/shared-components/map/Map.svelte`],
@@ -1021,9 +1021,9 @@ const actions = {
     },
   ],
   "shared-link-download-with-link-restrictions": [
-    "partial",
+    "fixed",
     ["AL-37"],
-    "Labelled Download in the public viewer; decouple the slideshow gate",
+    "Labelled Download in the public viewer; slideshow no longer gated on downloads (fixed, FL-56)",
     {
       prototype: [`${P}/PublicViewer.jsx`],
       production: [`${W}/lib/components/pages/SharedLinkPage.svelte`],
@@ -1430,7 +1430,7 @@ const routes = {
   "/best-photos/[[photos=photos]]/[[assetId=id]]": [
     "fixed",
     ["T-6"],
-    "Tiles show each item's own rating from the buckets and details, the score orders the page as in App.jsx (T-6); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map",
+    "Tiles show each item's own rating and Best Photos keeps the server quality order (T-6 fixed, FL-50); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map",
     [`${P}/App.jsx`, `${P}/AssetTile.jsx`],
     [
       `${W}/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1503,16 +1503,16 @@ const routes = {
     [`${W}/routes/maintenance/+page.svelte`],
   ],
   "/map/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
-    ["MV-1", "MV-2", "MV-3", "MV-4", "MV-5", "MV-6", "MV-7"],
-    "Map settings sheet, cluster zoom, chips, empty state, list rows",
+    "fixed",
+    ["MV-1", "MV-2", "MV-3", "MV-4", "MV-5", "MV-6", "MV-7", "MV-8"],
+    "Map settings sheet with counts, cluster zoom, chips, empty, offline and disabled states, list rows and hover card (fixed, FL-51)",
     [`${P}/MapView.jsx`, `${P}/discovery-data.mjs`],
     [`${W}/routes/(user)/map/[[photos=photos]]/[[assetId=id]]/+page.svelte`],
   ],
   "/memories": [
-    "partial",
+    "fixed",
     ["MI-1", "MI-2", "MI-3", "MI-4", "MI-5", "MI-6", "MI-7"],
-    "Memories sections, remove confirm (fix-discovery), settings; card overline and preview fixed (MI-5)",
+    "Today/Upcoming/Earlier from the local date, badges, quiet card, Hide memory with Hidden memories, show-less, Memory settings (fixed, FL-62)",
     [`${P}/Memories.jsx`, `${P}/discovery-data.mjs`],
     [
       `${W}/routes/(user)/memories/+page.svelte`,
@@ -1520,7 +1520,7 @@ const routes = {
     ],
   ],
   "/memories/[id]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     [
       "MPY-1",
       "MPY-2",
@@ -1531,8 +1531,9 @@ const routes = {
       "MPY-7",
       "MPY-8",
       "MPY-9",
+      "MPY-10",
     ],
-    "Player P0s (fix-discovery), shortcuts, soundtrack; title and end cards fixed (MPY-4)",
+    "Header and segment labels, Show all items (G), Space/M/G/Home/End, soundtrack, Open item, people, rename/reorder/favorite, Make a movie opens Studio (fixed, FL-62)",
     [`${P}/MemoryPlayer.jsx`],
     [
       `${W}/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1639,9 +1640,9 @@ const routes = {
     ],
   ],
   "/places": [
-    "partial",
-    ["PL-1", "PL-2", "PL-3", "PL-4", "PL-5", "PL-6", "PL-7"],
-    "Frameleaf Places panel (PL-1/PL-6/PL-7 by fix-discovery)",
+    "fixed",
+    ["PL-1", "PL-2", "PL-3", "PL-4", "PL-5", "PL-6", "PL-7", "PL-8"],
+    "Frameleaf Places panel: summary, counts, grouping, state map, search and empty states (fixed, FL-51)",
     [`${P}/Places.jsx`, `${P}/discovery-data.mjs`],
     [`${W}/routes/(user)/places/+page.svelte`],
   ],
@@ -1662,9 +1663,9 @@ const routes = {
     ],
   ],
   "/s/[slug]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
-    "Public viewer states and title line",
+    "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)",
     [`${P}/PublicViewer.jsx`],
     [
       `${W}/routes/(user)/s/[slug]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1687,9 +1688,9 @@ const routes = {
     ],
   ],
   "/share/[key]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
-    "Public viewer states and title line",
+    "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)",
     [`${P}/PublicViewer.jsx`],
     [
       `${W}/routes/(user)/share/[key]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,

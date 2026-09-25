@@ -448,9 +448,9 @@ export class UserService extends BaseService {
     const swept = await this.userRepository.sweepRemovedAccountForkRows();
     if (swept === undefined) {
       this.logger.warn('Removed-account fork rows not swept: the fork schema is not writable (database handoff)');
-    } else if (swept.preferenceHistory + swept.recipientGroups > 0) {
+    } else if (swept.preferenceHistory + swept.recipientGroups + swept.memoryShowLess + swept.memoryCurations > 0) {
       this.logger.log(
-        `Swept fork rows of removed accounts: ${swept.preferenceHistory} preference history entries, ${swept.recipientGroups} recipient groups`,
+        `Swept fork rows of removed accounts: ${swept.preferenceHistory} preference history entries, ${swept.recipientGroups} recipient groups, ${swept.memoryShowLess} memory show-less rules, ${swept.memoryCurations} memory curations`,
       );
     }
     return JobStatus.Success;
