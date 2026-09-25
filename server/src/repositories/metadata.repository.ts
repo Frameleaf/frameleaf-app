@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { BinaryField, DefaultReadTaskOptions, ExifTool, ExifToolTask, ReadTaskOptions, Tags } from 'exiftool-vendored';
 import geotz from 'geo-tz';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { lstat, mkdir, readdir, realpath, rm, stat, utimes } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { LOCATION_DELETE_ARGS, LOCATION_TAG_SELECTORS, SAMSUNG_TRAILER_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 interface ExifDuration {
@@ -84,44 +85,52 @@ export interface ImmichTags extends Omit<Tags, TagsWithWrongTypes> {
   DeviceModelName?: string;
 }
 
-/**
- * FL-54: every tag that places a file. exiftool's family-2 `Location` group holds coordinates and place
- * names (EXIF GPS IFD, XMP `exif:GPS*`, IPTC and XMP place names, QuickTime `UserData`/`Keys`
- * GPSCoordinates); the whole `GPS` group and any tag named `GPS*` or `Location*` (e.g. Apple's
- * `Keys:LocationAccuracyHorizontal`, GPS time stamps, `XMP-iptcExt:LocationShown`) go with it.
- * `-ee` also reads timed GPS tracks and embedded images (MPF, motion-photo trailers) that no write can
- * reach, so a copy that still reports any of them is refused rather than served.
- */
-const LOCATION_TAGS = ['-location:all', '-gps:all', '-gps*', '-location*'];
 const LOCATION_READ_ARGS = [
   '-api',
   'largefilesupport=1',
   '-a',
-  '-G1',
+  // family 4 numbers duplicates (`ExifTool:Copy1:Warning`) so no warning is lost to a repeated JSON key
+  '-G1:4',
   '-ee',
-  ...LOCATION_TAGS,
+  ...LOCATION_TAG_SELECTORS,
   '-ExifTool:Error',
   '-ExifTool:Warning',
 ];
 const LOCATION_READ_IGNORED_KEYS = new Set(['SourceFile', 'errors', 'warnings']);
-/**
- * A source with a read warning (e.g. a JPEG format error) is never trusted as location-free, since
- * exiftool may have stopped before its location; the copy may keep a benign warning, but not an error.
- */
-const LOCATION_COPY_ACCEPTED_KEYS = new Set(['ExifTool:Warning']);
 /** how long an unused location-free copy is kept, so a player's range requests reuse one copy */
 const LOCATION_FREE_TTL_MS = 10 * 60 * 1000;
-/** copies left behind by a crashed process are swept once they are this old */
-const LOCATION_FREE_STALE_MS = 24 * 60 * 60 * 1000;
+/** a lease held this long is treated as lost; an untouched copy this old is swept from disk */
+const LOCATION_FREE_STALE_MS = 6 * 60 * 60 * 1000;
+const LOCATION_FREE_SWEEP_MS = 60 * 60 * 1000;
+/**
+ * Removing a location rewrites the whole file, so a large video needs far longer than a metadata read;
+ * these tasks get their own small exiftool pool with a long timeout. A strip that still times out is
+ * refused (fail closed), never served.
+ */
+const LOCATION_TASK_TIMEOUT_MS = 30 * 60 * 1000;
+const LOCATION_TASK_MAX_PROCS = 2;
+
+export type LocationInspection = {
+  /** location tags found, `group:name` */
+  locationTags: string[];
+  /** read errors and non-minor warnings: exiftool may have stopped before reaching a location */
+  problems: string[];
+  /** the file carries a Samsung trailer, which can only be removed as a whole */
+  samsungTrailer: boolean;
+};
+
+const isLocationFree = ({ locationTags, problems }: LocationInspection) =>
+  locationTags.length === 0 && problems.length === 0;
 
 class RemoveLocationTask extends ExifToolTask<void> {
-  static for(source: string, destination: string) {
+  static for(source: string, destination: string, { removeSamsungTrailer }: { removeSamsungTrailer: boolean }) {
     return new RemoveLocationTask([
       '-charset',
       'filename=utf8',
       '-api',
       'largefilesupport=1',
-      ...LOCATION_TAGS.map((tag) => `${tag}=`),
+      ...LOCATION_DELETE_ARGS,
+      ...(removeSamsungTrailer ? SAMSUNG_TRAILER_DELETE_ARGS : []),
       '-o',
       resolve(destination),
       resolve(source),
@@ -134,7 +143,8 @@ class RemoveLocationTask extends ExifToolTask<void> {
       throw error;
     }
 
-    if (!/\b1 image files? created\b/i.test(data)) {
+    // "copied" means nothing needed changing; the re-read decides whether the copy may be served
+    if (!/\b1 image files? (created|copied)\b/i.test(data)) {
       throw new Error(`exiftool did not write a location-free copy: ${data.trim() || String(error)}`);
     }
   }
@@ -148,8 +158,11 @@ export type LocationFreeLease = {
 };
 
 type LocationFreeEntry = {
-  ready: Promise<string>;
+  ready: Promise<{ path: string; isCopy: boolean }>;
   refs: number;
+  lastUsed: number;
+  /** set once `ready` has resolved */
+  result?: { path: string; isCopy: boolean };
   timer?: NodeJS.Timeout;
 };
 
@@ -190,15 +203,24 @@ export class MetadataRepository {
     this.exiftool.batchCluster.setMaxProcs(concurrency);
   }
 
+  /** FL-54: a separate pool, so a long strip neither times out at 2 minutes nor blocks metadata reads */
+  private locationTool = new ExifTool({
+    maxProcs: LOCATION_TASK_MAX_PROCS,
+    taskTimeoutMillis: LOCATION_TASK_TIMEOUT_MS,
+    // batch-cluster requires a process to be allowed to live at least as long as one task
+    maxProcAgeMillis: 2 * LOCATION_TASK_TIMEOUT_MS,
+    geolocation: false,
+  });
   private locationFree = new Map<string, LocationFreeEntry>();
-  private locationFreeDir = join(tmpdir(), 'immich-location-free');
-  private locationFreeSwept = false;
+  private locationFreeSweep?: NodeJS.Timeout;
 
   async teardown() {
+    clearInterval(this.locationFreeSweep);
+    this.locationFreeSweep = undefined;
     for (const [key, entry] of this.locationFree) {
       await this.evictLocationFree(key, entry);
     }
-    await this.exiftool.end();
+    await Promise.all([this.exiftool.end(), this.locationTool.end()]);
   }
 
   readTags(path: string): Promise<ImmichTags> {
@@ -227,24 +249,59 @@ export class MetadataRepository {
   }
 
   /**
-   * Names of the location tags exiftool finds in `path`, plus `ExifTool:Error`/`ExifTool:Warning` when it
-   * could not read the whole file. Empty means location-free. Throws when the file cannot be read at all.
+   * FL-54: what exiftool finds in `path` that could place it. Throws when the file cannot be read at all.
+   * A `[minor]` warning is exiftool noting something it skipped and carrying on; any other warning or an
+   * error means it may have stopped early, so the file is not vouched for.
    */
-  async readLocationTags(path: string): Promise<string[]> {
-    const tags = await this.exiftool.readRaw(path, { readArgs: LOCATION_READ_ARGS, useMWG: false });
-    return Object.keys(tags).filter((key) => !LOCATION_READ_IGNORED_KEYS.has(key));
+  async inspectLocation(path: string): Promise<LocationInspection> {
+    const tags = await this.locationTool.readRaw(path, { readArgs: LOCATION_READ_ARGS, useMWG: false });
+    const inspection: LocationInspection = { locationTags: [], problems: [], samsungTrailer: false };
+
+    for (const [key, value] of Object.entries(tags)) {
+      if (LOCATION_READ_IGNORED_KEYS.has(key)) {
+        continue;
+      }
+
+      const group = key.split(':', 1)[0];
+      if (group === 'ExifTool') {
+        const minor = key.endsWith(':Warning') && /^\[minor\]/i.test(String(value));
+        if (!minor) {
+          inspection.problems.push(`${key}: ${String(value)}`);
+        }
+        continue;
+      }
+
+      if (group === 'Samsung') {
+        inspection.samsungTrailer = true;
+      }
+      inspection.locationTags.push(key);
+    }
+
+    for (const error of (tags as { errors?: unknown[] }).errors ?? []) {
+      inspection.problems.push(String(error));
+    }
+
+    return inspection;
   }
 
   /** Writes a copy of `source` to `destination` without any location tag; `source` is never modified. */
-  async writeLocationFreeCopy(source: string, destination: string): Promise<void> {
-    await this.exiftool.enqueueTask(() => RemoveLocationTask.for(source, destination), false);
+  async writeLocationFreeCopy(
+    source: string,
+    destination: string,
+    { removeSamsungTrailer = false }: { removeSamsungTrailer?: boolean } = {},
+  ): Promise<void> {
+    await this.locationTool.enqueueTask(
+      () => RemoveLocationTask.for(source, destination, { removeSamsungTrailer }),
+      false,
+    );
   }
 
   /**
-   * FL-54: hands out a file with the same bytes as `source` minus its embedded location. A source that
-   * carries no location is returned as is; otherwise a verified copy is made once and shared by every
-   * caller until it has been idle for `LOCATION_FREE_TTL_MS`. Rejects (fails closed) when exiftool cannot
-   * read the file, cannot write the copy, or the copy still reports a location.
+   * FL-54: hands out a file with the same bytes as `source` minus its embedded location. A source exiftool
+   * reads in full and finds no location in is returned as is; otherwise a verified copy is made once and
+   * shared by every caller until it has been idle for `LOCATION_FREE_TTL_MS`. Rejects (fails closed) when
+   * exiftool cannot read the file, cannot write the copy, or cannot vouch for the copy. The re-read uses
+   * this same exiftool build, an accepted limitation recorded in the conformance audit.
    */
   async acquireLocationFreeOriginal(source: string): Promise<LocationFreeLease> {
     const { mtimeMs, size } = await stat(source);
@@ -252,18 +309,23 @@ export class MetadataRepository {
 
     let entry = this.locationFree.get(key);
     if (!entry) {
-      const created: LocationFreeEntry = { ready: this.createLocationFreeCopy(source), refs: 0 };
-      created.ready.catch(() => {
-        if (this.locationFree.get(key) === created) {
-          this.locationFree.delete(key);
-        }
-      });
+      const created: LocationFreeEntry = { ready: this.createLocationFreeCopy(source), refs: 0, lastUsed: Date.now() };
+      created.ready
+        .then((result) => {
+          created.result = result;
+        })
+        .catch(() => {
+          if (this.locationFree.get(key) === created) {
+            this.locationFree.delete(key);
+          }
+        });
       this.locationFree.set(key, created);
       entry = created;
     }
 
     const current = entry;
     current.refs++;
+    current.lastUsed = Date.now();
     clearTimeout(current.timer);
 
     let released = false;
@@ -280,30 +342,36 @@ export class MetadataRepository {
     };
 
     try {
-      return { path: await current.ready, release };
+      const { path, isCopy } = await current.ready;
+      if (isCopy) {
+        // keep a copy in use looking fresh to the stale sweep
+        const now = new Date();
+        await utimes(path, now, now).catch(() => {});
+      }
+      return { path, release };
     } catch (error) {
       release();
       throw error;
     }
   }
 
-  private async createLocationFreeCopy(source: string): Promise<string> {
-    const found = await this.readLocationTags(source);
-    if (found.length === 0) {
-      return source;
+  private async createLocationFreeCopy(source: string): Promise<{ path: string; isCopy: boolean }> {
+    const found = await this.inspectLocation(source);
+    if (isLocationFree(found)) {
+      return { path: source, isCopy: false };
     }
 
-    await this.prepareLocationFreeDir();
-    const destination = join(this.locationFreeDir, `${randomUUID()}${extname(source)}`);
+    const directory = await this.prepareLocationFreeDir();
+    const destination = join(directory, `${randomUUID()}${extname(source)}`);
     try {
-      await this.writeLocationFreeCopy(source, destination);
-      const remaining = (await this.readLocationTags(destination)).filter(
-        (tag) => !LOCATION_COPY_ACCEPTED_KEYS.has(tag),
-      );
-      if (remaining.length > 0) {
-        throw new Error(`Location tags remain after removal: ${remaining.join(', ')}`);
+      await this.writeLocationFreeCopy(source, destination, { removeSamsungTrailer: found.samsungTrailer });
+      const remaining = await this.inspectLocation(destination);
+      if (!isLocationFree(remaining)) {
+        throw new Error(
+          `Location tags or unreadable data remain after removal: ${[...remaining.locationTags, ...remaining.problems].join(', ')}`,
+        );
       }
-      return destination;
+      return { path: destination, isCopy: true };
     } catch (error) {
       await rm(destination, { force: true });
       this.logger.warn(`Unable to remove the location from ${source}: ${error}`);
@@ -311,18 +379,59 @@ export class MetadataRepository {
     }
   }
 
-  private async prepareLocationFreeDir() {
-    await mkdir(this.locationFreeDir, { recursive: true, mode: 0o700 });
-    if (this.locationFreeSwept) {
-      return;
-    }
-    this.locationFreeSwept = true;
+  /**
+   * `<media>/tmp/location-free`, created 0700 and checked on every use: a real directory (not a link),
+   * owned by this process's user, mode 0700, and resolving inside the media location. Anything else is
+   * refused, so copies never land somewhere another user can read or redirect.
+   */
+  private async prepareLocationFreeDir(): Promise<string> {
+    const mediaLocation = StorageCore.getMediaLocation();
+    const directory = join(mediaLocation, 'tmp', 'location-free');
+    await mkdir(directory, { recursive: true, mode: 0o700 });
 
+    const info = await lstat(directory);
+    const uid = process.getuid?.();
+    const expected = join(await realpath(mediaLocation), 'tmp', 'location-free');
+    if (
+      !info.isDirectory() ||
+      (uid !== undefined && info.uid !== uid) ||
+      (info.mode & 0o777) !== 0o700 ||
+      (await realpath(directory)) !== expected
+    ) {
+      throw new Error(`Refusing to use ${directory} for location-free copies: not a private directory`);
+    }
+
+    if (!this.locationFreeSweep) {
+      this.locationFreeSweep = setInterval(() => void this.sweepLocationFree(directory), LOCATION_FREE_SWEEP_MS);
+      this.locationFreeSweep.unref?.();
+      await this.sweepLocationFree(directory);
+    }
+
+    return directory;
+  }
+
+  /**
+   * Runs hourly: drops leases nobody released for `LOCATION_FREE_STALE_MS` (a lost response) and removes
+   * copies no entry of this process uses that have not been touched for as long (another process's leftovers
+   * or a crash).
+   */
+  async sweepLocationFree(directory: string) {
     const now = Date.now();
-    for (const name of await readdir(this.locationFreeDir).catch(() => [] as string[])) {
-      const path = join(this.locationFreeDir, name);
-      const info = await stat(path).catch(() => null);
-      if (info && now - info.mtimeMs > LOCATION_FREE_STALE_MS) {
+    const active = new Set<string>();
+    for (const [key, entry] of this.locationFree) {
+      if (now - entry.lastUsed > LOCATION_FREE_STALE_MS) {
+        await this.evictLocationFree(key, entry);
+        continue;
+      }
+      if (entry.result?.isCopy) {
+        active.add(entry.result.path);
+      }
+    }
+
+    for (const name of await readdir(directory).catch(() => [] as string[])) {
+      const path = join(directory, name);
+      const info = await lstat(path).catch(() => null);
+      if (info && !active.has(path) && now - info.mtimeMs > LOCATION_FREE_STALE_MS) {
         await rm(path, { force: true });
       }
     }
@@ -334,9 +443,9 @@ export class MetadataRepository {
       this.locationFree.delete(key);
     }
 
-    const path = await entry.ready.catch(() => null);
-    if (path && path.startsWith(this.locationFreeDir)) {
-      await rm(path, { force: true });
+    const ready = await entry.ready.catch(() => null);
+    if (ready?.isCopy) {
+      await rm(ready.path, { force: true });
     }
   }
 }

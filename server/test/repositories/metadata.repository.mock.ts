@@ -9,7 +9,8 @@ export const newMetadataRepositoryMock = (): Mocked<RepositoryInterface<Metadata
     readTags: vitest.fn(),
     writeTags: vitest.fn(),
     extractBinaryTag: vitest.fn(),
-    readLocationTags: vitest.fn(),
+    inspectLocation: vitest.fn(),
+    sweepLocationFree: vitest.fn(),
     writeLocationFreeCopy: vitest.fn(),
     acquireLocationFreeOriginal: vitest.fn(),
   };

@@ -1,10 +1,21 @@
 import { ExifTool } from 'exiftool-vendored';
 import { Kysely } from 'kysely';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import sharp from 'sharp';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -42,7 +53,8 @@ const readGps = async (path: string) => {
   return Object.keys(tags).filter((key) => {
     const name = key.split(':').at(-1) ?? key;
     return (
-      !NOT_LOCATION.has(name) && /^gps|^location|city$|country|province|sub-?location|^state$|coordinates/i.test(name)
+      !NOT_LOCATION.has(name) &&
+      /^gps|^location|city$|country|province|sub-?location|^state$|coordinates|^mccdata$/i.test(name)
     );
   });
 };
@@ -73,8 +85,13 @@ const newGpsJpeg = async () => {
   return path;
 };
 
+let mediaLocation: string;
+
 beforeAll(async () => {
   database = await getKyselyDB();
+  // copies live in a server-owned directory under the media location (review P1)
+  mediaLocation = mkdtempSync(join(tmpdir(), 'location-free-media-'));
+  StorageCore.setMediaLocation(mediaLocation);
 });
 
 afterAll(async () => {
@@ -95,7 +112,8 @@ describe('MetadataRepository.acquireLocationFreeOriginal', () => {
 
     expect(lease.path).not.toBe(source);
     expect(await readGps(lease.path)).toEqual([]);
-    expect(await sut.readLocationTags(lease.path)).toEqual([]);
+    expect(await sut.inspectLocation(lease.path)).toEqual({ locationTags: [], problems: [], samsungTrailer: false });
+    expect(lease.path.startsWith(join(mediaLocation, 'tmp', 'location-free'))).toBe(true);
     // the rest of the metadata and the image itself survive
     const copy = await reader.readRaw(lease.path, { readArgs: ['-G1'], useMWG: false });
     expect(copy).toMatchObject({ 'IFD0:Make': 'Canon', 'IFD0:Model': 'EOS 70D' });
@@ -157,10 +175,85 @@ describe('MetadataRepository.acquireLocationFreeOriginal', () => {
       .spyOn(sut, 'writeLocationFreeCopy')
       .mockImplementation((from, to) => Promise.resolve(copyFileSync(from, to)));
 
-    await expect(sut.acquireLocationFreeOriginal(source)).rejects.toThrow(/Location tags remain/);
+    await expect(sut.acquireLocationFreeOriginal(source)).rejects.toThrow(/remain after removal/);
     expect(write).toHaveBeenCalledTimes(1);
     const [, destination] = write.mock.calls[0];
     expect(existsSync(destination)).toBe(false);
+    await sut.teardown();
+  });
+
+  it('refuses a copy directory another user could read (review P1)', async () => {
+    const { sut } = setup();
+    const source = await newGpsJpeg();
+    const directory = join(mediaLocation, 'tmp', 'location-free');
+    mkdirSync(directory, { recursive: true });
+    chmodSync(directory, 0o755);
+
+    try {
+      await expect(sut.acquireLocationFreeOriginal(source)).rejects.toThrow(/not a private directory/);
+    } finally {
+      chmodSync(directory, 0o700);
+      await sut.teardown();
+    }
+  });
+
+  it('sweeps copies nobody uses once they are stale (review B2)', async () => {
+    const { sut } = setup();
+    const source = await newGpsJpeg();
+    const lease = await sut.acquireLocationFreeOriginal(source);
+    const directory = join(mediaLocation, 'tmp', 'location-free');
+    const leftover = join(directory, 'crashed-process-copy.jpg');
+    writeFileSync(leftover, 'x');
+    const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+    utimesSync(leftover, old, old);
+    utimesSync(lease.path, old, old);
+
+    await sut.sweepLocationFree(directory);
+
+    expect(existsSync(leftover)).toBe(false);
+    // a copy this process still tracks is kept, however old its file looks
+    expect(existsSync(lease.path)).toBe(true);
+    lease.release();
+    await sut.teardown();
+    expect(readdirSync(directory)).not.toContain(leftover);
+  });
+
+  it('drops a Samsung trailer, motion clip and network country code included (review D1)', async () => {
+    const source = resolve(testAssetsDir, 'formats/motionphoto/samsung-one-ui-6.jpg');
+    if (!existsSync(source)) {
+      return;
+    }
+    const { sut } = setup();
+    expect(await readGps(source)).toContain('Samsung:MCCData');
+
+    const lease = await sut.acquireLocationFreeOriginal(source);
+
+    expect(await readGps(lease.path)).toEqual([]);
+    const copy = await reader.readRaw(lease.path, {
+      readArgs: ['-G1', '-Samsung:all', '-MotionPhoto*'],
+      useMWG: false,
+    });
+    expect(Object.keys(copy).filter((key) => key.startsWith('Samsung:'))).toEqual([]);
+    await expect(sharp(lease.path).metadata()).resolves.toMatchObject({ format: 'jpeg' });
+
+    // the copy keeps only a [minor] warning (its motion-photo pointer), so it is served as is, not copied
+    // again (review R3)
+    const again = await sut.acquireLocationFreeOriginal(lease.path);
+    expect(again.path).toBe(lease.path);
+    again.release();
+    lease.release();
+    await sut.teardown();
+  });
+
+  it('refuses a Samsung HEIC, whose network country code exiftool cannot remove (review D1)', async () => {
+    const source = resolve(testAssetsDir, 'formats/motionphoto/samsung-one-ui-6.heic');
+    if (!existsSync(source)) {
+      return;
+    }
+    const { sut } = setup();
+    expect(await readGps(source)).toContain('Samsung:MCCData');
+
+    await expect(sut.acquireLocationFreeOriginal(source)).rejects.toThrow(/remain after removal/);
     await sut.teardown();
   });
 
@@ -170,6 +263,7 @@ describe('MetadataRepository.acquireLocationFreeOriginal', () => {
     'formats/raw/Canon/EOS_70D.CR2',
     'formats/raw/Ricoh/GR3/Ricoh_GR3-450.DNG',
     'formats/motionphoto/pixel-8a.jpg',
+    'formats/motionphoto/samsung-one-ui-6.jpg',
     'videos/waterfall.mp4',
     'videos/train.mov',
   ];
