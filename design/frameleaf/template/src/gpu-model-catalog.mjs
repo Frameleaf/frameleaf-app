@@ -450,7 +450,8 @@ export const modelLadders = Object.freeze({
   get interpolation() {
     return interpolationLadder;
   },
-  // Studio export is encoding, not ML; not in the model research (estimates).
+  // Studio export is encoding, not ML, and always runs at home: this server or
+  // a computer on the home network. Not in the model research (estimates).
   render: Object.freeze([
     position("render", {
       id: "render-software@1",
@@ -462,7 +463,8 @@ export const modelLadders = Object.freeze({
       note: "H.264 and H.265 on the processor.",
       cpuFeasible: true,
       vramGb: {},
-      speed: speeds("SOOOOOOS"),
+      // Processor only: never shown as a GPU model.
+      speed: speeds("ONNNNNNO"),
     }),
     position("render", {
       id: "render-hardware@1",
@@ -474,26 +476,6 @@ export const modelLadders = Object.freeze({
       note: "H.264 and H.265 on the GPU's video engine.",
       vramGb: { fp16: 1 },
       speed: speeds("NFFFFFFN"),
-    }),
-    position("render", {
-      id: "render-standard@1",
-      name: "Render · Standard",
-      short: "Standard",
-      params: null,
-      sizeClass: "small",
-      licence: "LGPL (encoder library)",
-      note: "H.264 and H.265 up to 4K.",
-      cloud: cloud("gpu24", "small-24", 20),
-    }),
-    position("render", {
-      id: "render-master@1",
-      name: "Render · Master",
-      short: "Master",
-      params: null,
-      sizeClass: "medium",
-      licence: "LGPL (encoder library)",
-      note: "HDR10 and ProRes masters.",
-      cloud: cloud("gpu48pro", "small-48", 45),
     }),
   ]),
 });

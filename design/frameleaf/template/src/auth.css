@@ -159,6 +159,7 @@
 }
 .auth-check {
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   color: var(--fl-muted);
