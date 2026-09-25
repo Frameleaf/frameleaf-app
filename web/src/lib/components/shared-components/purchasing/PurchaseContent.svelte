@@ -35,6 +35,8 @@
   };
 </script>
 
+<!-- Copy follows design/frameleaf/template/src/AuthScreens.jsx:1460-1467 and 1581 (`Buy`), with the
+     FL-146 owner decision (2026-09-25) on what supporting Frameleaf gives. -->
 <section>
   {#if showTitle}
     <Heading color="primary" tag="h1" class="text-4xl font-bold tracking-wider">

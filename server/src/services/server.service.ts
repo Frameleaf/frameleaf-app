@@ -53,7 +53,9 @@ export class ServerService extends BaseService {
 
     return {
       version,
-      versionUrl: `https://github.com/immich-app/immich/releases/tag/${version}`,
+      // Releases are tagged frameleaf-v<version>-<n> (.github/frameleaf-release.cjs) and carry GitHub's generated notes;
+      // the server only knows <version>, so link the release search for it.
+      versionUrl: `https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-${version}&expanded=true`,
       licensed: !!licensed,
       ...buildMetadata,
       ...buildVersions,

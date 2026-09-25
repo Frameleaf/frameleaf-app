@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { ImmichProduct } from '$lib/constants';
-  import { getLicenseLink as getProductLink } from '$lib/utils/license-utils';
-  import { Button, Icon } from '@immich/ui';
+  import { Icon } from '@immich/ui';
   import { mdiAccount, mdiCheckCircleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 </script>
@@ -20,7 +18,7 @@
     <p>{$t('purchase_per_user')}</p>
   </div>
 
-  <div class="flex h-50 flex-col justify-between dark:text-immich-gray">
+  <div class="flex flex-col dark:text-immich-gray">
     <div class="mt-6 flex flex-col gap-1">
       <div class="grid grid-cols-[36px_auto]">
         <Icon icon={mdiCheckCircleOutline} size="24" class="self-center text-green-500" />
@@ -37,7 +35,6 @@
         <p class="self-center">{$t('purchase_individual_description_2')}</p>
       </div>
     </div>
-
-    <Button shape="round" href={getProductLink(ImmichProduct.Client)} fullWidth>{$t('purchase_button_select')}</Button>
+    <!-- ponytail: no Frameleaf store yet; the Purchase link returns with FL-157 from the deployment-configured FRAMELEAF_CLOUD_URL. -->
   </div>
 </div>

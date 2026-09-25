@@ -1437,8 +1437,8 @@ const routes = {
   ],
   "/buy": [
     "partial",
-    ["BU-1", "B-1", "B-2", "B-3", "B-4", "B-5", "B-6", "B-7"],
-    "Frameleaf supporter page; store destination is an owner question",
+    ["BU-1", "S-31", "B-1", "B-2", "B-3", "B-4", "B-5", "B-6", "B-7", "B-9"],
+    "Frameleaf supporter page; Support Frameleaf wording and store-link removal done (FL-157 wording pass); full prototype screen port and store from FRAMELEAF_CLOUD_URL stay with FL-157",
     [`${P}/AuthScreens.jsx`, `${P}/system-data.mjs`],
     [`${W}/routes/(user)/buy/+page.svelte`],
   ],

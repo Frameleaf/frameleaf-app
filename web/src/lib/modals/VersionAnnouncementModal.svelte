@@ -10,6 +10,12 @@
   };
 
   const { serverVersion, releaseVersion, onClose }: Props = $props();
+
+  // releaseVersion comes from semverToName and already carries the leading "v" (e.g. v2.1.0).
+  // Release notes are the GitHub release notes that .github/frameleaf-release.cjs generates.
+  const releaseNotesUrl = $derived(
+    `https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-${releaseVersion}&expanded=true`,
+  );
 </script>
 
 <BasicModal
@@ -24,7 +30,7 @@
     {#snippet children({ tag, message })}
       {#if tag === 'link'}
         <span class="font-medium underline">
-          <a href="https://github.com/immich-app/immich/releases/latest" target="_blank" rel="noopener noreferrer">
+          <a href={releaseNotesUrl} target="_blank" rel="noopener noreferrer">
             {message}
           </a>
         </span>
