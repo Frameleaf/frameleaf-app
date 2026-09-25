@@ -13,9 +13,6 @@ function createUploadStore() {
   const { subscribe } = uploadAssets;
 
   const isUploading = derived(uploadAssets, (items) => items.length > 0);
-  const isDismissible = derived(uploadAssets, (items) =>
-    items.some((item) => item.state === UploadState.ERROR || item.state === UploadState.DUPLICATED),
-  );
   const remainingUploads = derived(
     uploadAssets,
     (values) => values.filter((a) => a.state === UploadState.PENDING || a.state === UploadState.STARTED).length,
@@ -115,10 +112,18 @@ function createUploadStore() {
     });
   };
 
+  /**
+   * "Dismiss errors" (FL-45 U-1, UploadPanel.jsx `dismissUploadErrors`): drops the failed uploads
+   * only; duplicates stay listed until "Clear finished" or Done.
+   */
   const dismissErrors = () =>
-    uploadAssets.update((value) =>
-      value.filter((e) => e.state !== UploadState.ERROR && e.state !== UploadState.DUPLICATED),
-    );
+    uploadAssets.update((value) => {
+      const errors = value.filter((item) => item.state === UploadState.ERROR).length;
+      if (errors > 0) {
+        stats.update((current) => ({ ...current, errors: current.errors - errors }));
+      }
+      return value.filter((item) => item.state !== UploadState.ERROR);
+    });
 
   /**
    * "Clear finished" (FL-45, UploadPanel.jsx `clearFinishedUploads`): drops the uploads that are
@@ -164,7 +169,6 @@ function createUploadStore() {
   return {
     stats,
     remainingUploads,
-    isDismissible,
     isUploading,
     track,
     dismissErrors,
