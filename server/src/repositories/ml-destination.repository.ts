@@ -211,6 +211,23 @@ export class MlDestinationRepository {
   }
 
   /**
+   * FL-159: the destination's settled Frameleaf Cloud charges, newest first. Only requests the cloud
+   * has settled (a cost on a row with a cloud job id) are listed; nothing about the media is read.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, 50] })
+  getSettlements(destinationId: string, limit: number) {
+    return this.db
+      .selectFrom('ml_workload_accounting')
+      .select(['cloudJobId', 'workload', 'jobName', 'outcome', 'costUsd', 'credits', 'startedAt', 'finishedAt'])
+      .where('destinationId', '=', destinationId)
+      .where('cloudJobId', 'is not', null)
+      .where('costUsd', 'is not', null)
+      .orderBy('finishedAt', 'desc')
+      .limit(limit)
+      .execute();
+  }
+
+  /**
    * Successful requests since `since` for one destination, optionally one workload. Bytes
    * and duration are summed so callers can derive a measured throughput, and cost is summed
    * for budget checks.

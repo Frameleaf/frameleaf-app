@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
+  CloudMlSettlementsResponseDto,
   CloudMlDestinationCreateDto,
   CloudMlStatusResponseDto,
   CloudMlWalletDto,
@@ -37,6 +38,9 @@ import {
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import { ML_BUDGET_WINDOW_DAYS, workloadPolicyProblem } from 'src/utils/ml-destination.js';
 import { mapMlDestination } from 'src/utils/ml-destination-dto.js';
+
+/** How many settled charges the processing section lists. */
+const CLOUD_ML_SETTLEMENT_LIMIT = 50;
 
 /** How far back a usage reconcile looks for settlements. */
 export const CLOUD_ML_USAGE_WINDOW_DAYS = 30;
@@ -127,7 +131,9 @@ export class CloudMlService extends BaseService {
       status.wallet = this.toWalletDto(await this.refreshWallet(resolution.gateway));
       if (destination) {
         // Settled costs land on the accounting rows so spend and budgets reflect what was charged.
-        await this.reconcileUsage().catch((error) => this.logger.warn(`Frameleaf Cloud usage reconcile failed: ${error}`));
+        await this.reconcileUsage().catch((error) =>
+          this.logger.warn(`Frameleaf Cloud usage reconcile failed: ${error}`),
+        );
       }
     } catch (error) {
       if (!(error instanceof FrameleafCloudError)) {
@@ -150,7 +156,10 @@ export class CloudMlService extends BaseService {
       throw new BadRequestException('Frameleaf Cloud is already added; change it instead');
     }
     const resolution = await resolveCloudGateway(this.gatewayDeps());
-    if (resolution.state === CloudConnectionState.NotConfigured || resolution.state === CloudConnectionState.NotLinked) {
+    if (
+      resolution.state === CloudConnectionState.NotConfigured ||
+      resolution.state === CloudConnectionState.NotLinked
+    ) {
       throw new BadRequestException(resolution.detail);
     }
     const row = await this.mlDestinationRepository.create({
@@ -213,6 +222,26 @@ export class CloudMlService extends BaseService {
     };
   }
 
+  /** The settled charges recorded for the Frameleaf Cloud destination, newest first (FL-159). */
+  async getSettlements(): Promise<CloudMlSettlementsResponseDto> {
+    const destination = await this.findDestination();
+    if (!destination) {
+      return { items: [] };
+    }
+    const rows = await this.mlDestinationRepository.getSettlements(destination.id, CLOUD_ML_SETTLEMENT_LIMIT);
+    return {
+      items: rows.map((row) => ({
+        cloudJobId: row.cloudJobId!,
+        workload: row.workload,
+        jobName: row.jobName,
+        succeeded: row.outcome === 'success',
+        costUsd: Number(row.costUsd),
+        credits: row.credits === null ? null : Number(row.credits),
+        finishedAt: new Date(row.finishedAt).toISOString(),
+      })),
+    };
+  }
+
   /**
    * Apply Frameleaf Cloud settlements (`GET /v2/usage`) to the accounting rows of their jobs, so
    * `ml_workload_accounting.costUsd`, `credits` and the destination's spend reflect what was charged.
@@ -260,7 +289,10 @@ export class CloudMlService extends BaseService {
     }
     const resolution: CloudGatewayResolution = await resolveCloudGateway(this.gatewayDeps());
     if (resolution.state !== CloudConnectionState.Ready) {
-      return unreachable(refusedFacts(resolution.refusal, resolution.detail, resolution.link?.dataRegion ?? null), resolution.detail);
+      return unreachable(
+        refusedFacts(resolution.refusal, resolution.detail, resolution.link?.dataRegion ?? null),
+        resolution.detail,
+      );
     }
     const { gateway, region } = resolution;
 
@@ -315,7 +347,9 @@ export class CloudMlService extends BaseService {
     }
   }
 
-  private toHardware(hardware: { providers: string[]; cudaDeviceCount: number } | null): MachineLearningHardwareResponse {
+  private toHardware(
+    hardware: { providers: string[]; cudaDeviceCount: number } | null,
+  ): MachineLearningHardwareResponse {
     // The gateway's report is synthetic (one accelerator per job), so the inventory reads it as GPU-backed.
     return {
       providers: hardware?.providers.length ? hardware.providers : ['CUDAExecutionProvider'],
@@ -379,7 +413,9 @@ export class CloudMlService extends BaseService {
       );
     }
     if ((notice.revokedRenderWorkers ?? 0) > 0) {
-      parts.push(`${notice.revokedRenderWorkers} render worker${notice.revokedRenderWorkers === 1 ? ' was' : 's were'} signed out.`);
+      parts.push(
+        `${notice.revokedRenderWorkers} render worker${notice.revokedRenderWorkers === 1 ? ' was' : 's were'} signed out.`,
+      );
     }
     try {
       const admins = (await this.userRepository.getList()).filter((user) => user.isAdmin && !user.deletedAt);

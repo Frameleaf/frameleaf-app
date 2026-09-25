@@ -352,6 +352,45 @@ describe(CloudMlService.name, () => {
     });
   });
 
+  describe('getSettlements', () => {
+    it('lists nothing before the destination is added', async () => {
+      await expect(sut.getSettlements()).resolves.toEqual({ items: [] });
+      expect(mocks.mlDestination.getSettlements).not.toHaveBeenCalled();
+    });
+
+    it("lists the destination's settled charges without contacting the cloud", async () => {
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.frameleafCloud]);
+      mocks.mlDestination.getSettlements.mockResolvedValue([
+        {
+          cloudJobId: 'job-1',
+          workload: MlWorkload.Enrichment,
+          jobName: 'ImageDescription',
+          outcome: 'success',
+          costUsd: 0.42,
+          credits: 42,
+          startedAt: new Date('2026-09-25T09:59:00Z'),
+          finishedAt: new Date('2026-09-25T10:00:00Z'),
+        },
+      ] as never);
+
+      await expect(sut.getSettlements()).resolves.toEqual({
+        items: [
+          {
+            cloudJobId: 'job-1',
+            workload: MlWorkload.Enrichment,
+            jobName: 'ImageDescription',
+            succeeded: true,
+            costUsd: 0.42,
+            credits: 42,
+            finishedAt: '2026-09-25T10:00:00.000Z',
+          },
+        ],
+      });
+      expect(mocks.mlDestination.getSettlements).toHaveBeenCalledWith(mlDestinationStub.frameleafCloud.id, 50);
+      expect(mocks.frameleafCloudMl.getUsage).not.toHaveBeenCalled();
+    });
+  });
+
   describe('bootstrap', () => {
     it('registers the cloud check and tells every administrator once about removed destinations', async () => {
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Api);
