@@ -41,7 +41,11 @@ import {
 import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
-import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import {
+  type HiddenContentQueryOptions,
+  getHiddenContentQueryOptions,
+  isSuppressedWhileLocked,
+} from 'src/utils/hidden-content.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import {
   birthdayAge,
@@ -523,7 +527,7 @@ export class MemoryService extends BaseService {
   async createExport(auth: AuthDto, id: string, dto: MemoryExportCreateDto): Promise<MemoryExportResponseDto> {
     await this.requireAccess({ auth, permission: Permission.MemoryRead, ids: [id] });
 
-    const memory = await this.findOrFail(id, this.nsfwOptions(auth));
+    const memory = await this.findOrFail(id, await this.readOptions(auth));
     const assets = 'assets' in memory ? memory.assets : [];
     if (assets.length === 0) {
       throw new BadRequestException('Memory has no assets to export');
@@ -857,7 +861,8 @@ export class MemoryService extends BaseService {
       excludePetIds: pets,
     };
     if (dto.id) {
-      return {};
+      // one memory by id, whatever its state, but never with the photos the owner asked to see less of
+      return { excludePersonIds: people, excludePetIds: pets };
     }
     if (dto.isHidden) {
       return hiddenIds.length > 0 ? { ...filter, onlyIds: hiddenIds } : null;
@@ -867,7 +872,7 @@ export class MemoryService extends BaseService {
 
   async get(auth: AuthDto, id: string): Promise<MemoryResponseDto> {
     await this.requireAccess({ auth, permission: Permission.MemoryRead, ids: [id] });
-    const memory = await this.findOrFail(id, this.nsfwOptions(auth));
+    const memory = await this.findOrFail(id, await this.readOptions(auth));
     const curations = await this.memoryRepository.getCurations(auth.user.id, [id]);
     return mapMemory(memory, auth, curations.get(id));
   }
@@ -880,15 +885,19 @@ export class MemoryService extends BaseService {
       this.memoryRepository.getOwnSubjectNames(auth.user.id, 'person', idsOf(MemoryShowLessKind.Person)),
       this.memoryRepository.getOwnSubjectNames(auth.user.id, 'pet', idsOf(MemoryShowLessKind.Pet)),
     ]);
+    // A person or pet suppressed in a locked session answers as if it did not exist: no name.
+    const nameOf = (kind: string, value: string) => {
+      if (kind === MemoryShowLessKind.Person) {
+        return isSuppressedWhileLocked(auth, 'person', value) ? undefined : people.get(value);
+      }
+      if (kind === MemoryShowLessKind.Pet) {
+        return isSuppressedWhileLocked(auth, 'pet', value) ? undefined : pets.get(value);
+      }
+    };
     return rules.map(({ kind, value, createdAt }) => ({
       kind: kind as MemoryShowLessKind,
       value,
-      name:
-        (kind === MemoryShowLessKind.Person
-          ? people.get(value)
-          : kind === MemoryShowLessKind.Pet
-            ? pets.get(value)
-            : undefined) ?? null,
+      name: nameOf(kind, value) ?? null,
       createdAt,
     }));
   }
@@ -927,7 +936,9 @@ export class MemoryService extends BaseService {
       case MemoryShowLessKind.Person:
       case MemoryShowLessKind.Pet: {
         const subject = kind === MemoryShowLessKind.Person ? 'person' : 'pet';
-        const names = await this.memoryRepository.getOwnSubjectNames(auth.user.id, subject, [value]);
+        const names = isSuppressedWhileLocked(auth, subject, value)
+          ? new Map<string, string>()
+          : await this.memoryRepository.getOwnSubjectNames(auth.user.id, subject, [value]);
         if (!names.has(value)) {
           throw new BadRequestException(subject === 'person' ? 'Not one of your people' : 'Not one of your pets');
         }
@@ -988,7 +999,7 @@ export class MemoryService extends BaseService {
       },
       isUndefined,
     );
-    const options = this.nsfwOptions(auth);
+    const options = await this.readOptions(auth);
     const memory =
       Object.keys(update).length > 0
         ? options
@@ -1041,7 +1052,23 @@ export class MemoryService extends BaseService {
     return results;
   }
 
-  private findOrFail(id: string, options?: HiddenContentQueryOptions) {
+  /**
+   * FL-62: what a read of one memory may show this viewer: the hidden-content filter and, whatever the
+   * memory's own state, never the photos of a person or pet the owner asked to see less of.
+   */
+  private async readOptions(auth: AuthDto): Promise<(HiddenContentQueryOptions & MemoryCurationFilter) | undefined> {
+    const rules = await this.memoryRepository.getShowLess(auth.user.id);
+    const valuesOf = (kind: MemoryShowLessKind) => rules.filter((rule) => rule.kind === kind).map(({ value }) => value);
+    const people = valuesOf(MemoryShowLessKind.Person);
+    const pets = valuesOf(MemoryShowLessKind.Pet);
+    const nsfw = this.nsfwOptions(auth);
+    if (!nsfw && people.length === 0 && pets.length === 0) {
+      return undefined;
+    }
+    return { ...nsfw, excludePersonIds: people, excludePetIds: pets };
+  }
+
+  private findOrFail(id: string, options?: HiddenContentQueryOptions & MemoryCurationFilter) {
     return findOrFail(
       () => (options ? this.memoryRepository.get(id, options) : this.memoryRepository.get(id)),
       'Memory',

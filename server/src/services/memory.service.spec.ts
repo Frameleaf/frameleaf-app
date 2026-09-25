@@ -116,7 +116,11 @@ describe(MemoryService.name, () => {
         id: memory.id,
       });
 
-      expect(mocks.memory.get).toHaveBeenCalledWith(memory.id, { excludeNsfw: true });
+      expect(mocks.memory.get).toHaveBeenCalledWith(memory.id, {
+        excludeNsfw: true,
+        excludePersonIds: [],
+        excludePetIds: [],
+      });
       expect(mocks.access.memory.checkOwnerAccess).toHaveBeenCalledWith(memory.ownerId, new Set([memory.id]), true);
     });
   });
@@ -220,6 +224,8 @@ describe(MemoryService.name, () => {
 
       expect(mocks.memory.update).toHaveBeenCalledWith(memory.id, expect.objectContaining({ isSaved: true }), {
         excludeNsfw: true,
+        excludePersonIds: [],
+        excludePetIds: [],
       });
     });
   });
@@ -682,7 +688,11 @@ describe(MemoryService.name, () => {
 
       await sut.search(factory.auth({ user: { id: userId } }), { id: memoryId });
 
-      expect(mocks.memory.search).toHaveBeenCalledWith(userId, { id: memoryId }, {});
+      expect(mocks.memory.search).toHaveBeenCalledWith(
+        userId,
+        { id: memoryId },
+        { excludePersonIds: [], excludePetIds: [] },
+      );
     });
 
     it("returns the owner's order, title and hidden state", async () => {
@@ -773,6 +783,67 @@ describe(MemoryService.name, () => {
         sut.addShowLess(factory.auth({ user: { id: userId } }), { kind: MemoryShowLessKind.Person, value: personId }),
       ).resolves.toEqual([{ kind: MemoryShowLessKind.Person, value: personId, name: 'Ada', createdAt }]);
       expect(mocks.memory.addShowLess).toHaveBeenCalledWith(userId, MemoryShowLessKind.Person, personId);
+    });
+    describe('in a locked session', () => {
+      const [userId, personId, petId] = newUuids();
+      const locked = () => ({
+        ...factory.auth({ user: { id: userId } }),
+        hideNsfwAssets: true,
+        hiddenContent: {
+          userId,
+          includeNsfw: false,
+          tagIds: [],
+          personIds: [personId],
+          petIds: [petId],
+          scope: 'owned' as const,
+        },
+      });
+
+      it('answers for a suppressed person or pet as if it did not exist', async () => {
+        mocks.memory.getOwnSubjectNames.mockResolvedValue(new Map([[personId, 'Ada']]));
+
+        await expect(sut.addShowLess(locked(), { kind: MemoryShowLessKind.Person, value: personId })).rejects.toThrow(
+          'Not one of your people',
+        );
+        await expect(sut.addShowLess(locked(), { kind: MemoryShowLessKind.Pet, value: petId })).rejects.toThrow(
+          'Not one of your pets',
+        );
+        expect(mocks.memory.addShowLess).not.toHaveBeenCalled();
+      });
+
+      it('never names a suppressed person or pet in the rules', async () => {
+        const createdAt = new Date();
+        mocks.memory.getOwnSubjectNames.mockImplementation((_owner, subject) =>
+          Promise.resolve(subject === 'person' ? new Map([[personId, 'Ada']]) : new Map([[petId, 'Biscuit']])),
+        );
+        mocks.memory.getShowLess.mockResolvedValue([
+          { kind: MemoryShowLessKind.Person, value: personId, createdAt },
+          { kind: MemoryShowLessKind.Pet, value: petId, createdAt },
+        ]);
+
+        const rules = await sut.getShowLess(locked());
+
+        expect(rules.map(({ name }) => name)).toEqual([null, null]);
+      });
+    });
+
+    it('reads a single memory without the photos of people and pets shown less', async () => {
+      const [userId, personId, petId] = newUuids();
+      const memory = MemoryFactory.create({ ownerId: userId });
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.memory.setCuration.mockResolvedValue();
+      mocks.memory.getShowLess.mockResolvedValue([
+        { kind: MemoryShowLessKind.Person, value: personId, createdAt: new Date() },
+        { kind: MemoryShowLessKind.Pet, value: petId, createdAt: new Date() },
+      ]);
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
+
+      await sut.update(factory.auth({ user: { id: userId } }), memory.id, { isHidden: false });
+
+      expect(mocks.memory.get).toHaveBeenCalledWith(memory.id, {
+        excludePersonIds: [personId],
+        excludePetIds: [petId],
+      });
     });
   });
 

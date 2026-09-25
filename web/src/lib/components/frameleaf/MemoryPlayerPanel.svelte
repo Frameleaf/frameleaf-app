@@ -837,7 +837,15 @@
    * fires from a text field, a dialog, or while the viewer is open over the memory.
    */
   const onKeydown = (event: KeyboardEvent) => {
-    if (assetViewerManager.isViewing || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
+    // A held key toggles once, not on every auto-repeat.
+    if (
+      event.repeat ||
+      assetViewerManager.isViewing ||
+      event.defaultPrevented ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey
+    ) {
       return;
     }
     const target = event.target instanceof HTMLElement ? event.target : null;

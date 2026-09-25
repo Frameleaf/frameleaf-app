@@ -112,6 +112,15 @@ describe('MemoryPlayerPanel (FL-62)', () => {
     expect(screen.queryByRole('region', { name: 'All items in this memory' })).not.toBeInTheDocument();
   });
 
+  it('ignores a held key auto-repeating', async () => {
+    render(MemoryPlayerPanel);
+
+    await fireEvent.keyDown(document.body, { key: 'g' });
+    await fireEvent.keyDown(document.body, { key: 'g', repeat: true });
+
+    expect(screen.getByRole('region', { name: 'All items in this memory' })).toBeInTheDocument();
+  });
+
   it('shows the named, visible people of the current item (MPY-8)', async () => {
     render(MemoryPlayerPanel);
 
