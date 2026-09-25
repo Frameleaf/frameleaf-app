@@ -9,7 +9,7 @@ import { join, parse } from 'node:path';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { Asset, AssetFile } from 'src/database.js';
+import { Asset, AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AssetFileType,
@@ -528,15 +528,15 @@ export class MetadataService extends BaseService {
       await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
     }
 
+    // FL-36 (V-24): the sidecar has no place names, so a typed city, state or country stays locked.
     // FL-51: a removed location stays locked, so the next metadata read does not bring the original
     // file's coordinates back
     const locationRemoved =
       lockedProperties.includes('latitude') && asset.exifInfo.latitude === null && asset.exifInfo.longitude === null;
+    const keptLocked = new Set<string>([...placeProperties, ...(locationRemoved ? ['latitude', 'longitude'] : [])]);
     await this.assetRepository.unlockProperties(
       asset.id,
-      locationRemoved
-        ? lockedProperties.filter((property) => property !== 'latitude' && property !== 'longitude')
-        : lockedProperties,
+      lockedProperties.filter((property) => !keptLocked.has(property)),
     );
 
     return JobStatus.Success;

@@ -10,6 +10,7 @@ import {
   groupMemories,
   isEventStory,
   isExportActive,
+  isPetStory,
   isYearInReview,
   latestExport,
   memoryEvidenceMs,
@@ -318,5 +319,43 @@ describe('memory stories', () => {
       expect(memoryEvidenceMs({ coverTimestampMs: null, frames: [] })).toBeNull();
       expect(memoryEvidenceMs(null)).toBeNull();
     });
+  });
+});
+
+describe('pet stories (FL-58)', () => {
+  const petStory = {
+    id: 'm1',
+    type: MemoryType.PetStory,
+    data: {
+      kind: 'pet_story',
+      year: 2026,
+      month: '2026-08',
+      petId: 'p1',
+      name: 'Biscuit',
+      species: 'cat',
+      assetCount: 6,
+    },
+  } as unknown as MemoryResponseDto;
+
+  it('recognises a pet story by its type and kind', () => {
+    expect(isPetStory(petStory)).toBe(true);
+    expect(memoryStoryKind(petStory)).toBe('pet_story');
+    expect(isPetStory({ ...petStory, type: MemoryType.OnThisDay } as MemoryResponseDto)).toBe(false);
+  });
+
+  // with FL-62's headlines and "show less"
+  it('reads as the pet and month, and offers to see less of the pet', () => {
+    addMessages('dev', en);
+    const t = get(translations) as (key: string, options?: { values?: Record<string, unknown> }) => string;
+    const story = { ...petStory, assets: [{}, {}] } as unknown as MemoryResponseDto;
+
+    expect(memoryHeadline(story, { t, locale: 'en' })).toEqual({
+      title: 'Moments with Biscuit',
+      subtitle: 'August 2026 · 2 items',
+    });
+    expect(showLessOptions(story, { t, locale: 'en' }).map(({ rule }) => rule)).toEqual([
+      { kind: MemoryShowLessKind.Pet, value: 'p1' },
+      { kind: MemoryShowLessKind.Type, value: MemoryType.PetStory },
+    ]);
   });
 });

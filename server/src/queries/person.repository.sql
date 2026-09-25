@@ -20,6 +20,7 @@ from
 where
   "asset_face"."assetId" = "asset"."id"
   and "asset_face"."sourceType" = $2
+  and "asset_face"."correctedAt" is null
   and "user"."clusterGroupId" = $3
 
 -- PersonRepository.delete
@@ -215,8 +216,10 @@ where
 -- PersonRepository.getFaceForFacialRecognitionJob
 select
   "asset_face"."id",
+  "asset_face"."assetId",
   "asset_face"."personGroupId",
   "asset_face"."sourceType",
+  "asset_face"."correctedAt",
   (
     select
       to_json(obj)
@@ -370,7 +373,15 @@ where
 
 -- PersonRepository.getStatistics
 select
-  count(distinct ("asset"."id")) as "count"
+  count(distinct ("asset"."id")) as "count",
+  count(distinct ("asset"."id")) filter (
+    where
+      "asset"."type" = 'IMAGE'
+  ) as "photos",
+  count(distinct ("asset"."id")) filter (
+    where
+      "asset"."type" = 'VIDEO'
+  ) as "videos"
 from
   "asset_face"
   left join "asset" on "asset"."id" = "asset_face"."assetId"
@@ -614,6 +625,9 @@ with
       "face_search" ("faceId", "embedding")
     values
       ($1, $2)
+    on conflict ("faceId") do update
+    set
+      "embedding" = "excluded"."embedding"
   )
 select
 from
@@ -827,35 +841,105 @@ where
         or verdict."createdAt" > now() - interval '30 days'
       )
   )
+  and not exists (
+    select
+      1
+    from
+      immich_fork.person_merge_verdict verdict
+    where
+      verdict."ownerId" = $6::uuid
+      and verdict.verdict = 'ignore'
+      and verdict."personId" in (
+        "candidates"."personId",
+        "candidates"."suggestionId"
+      )
+  )
 order by
   "candidates"."distance" asc
 limit
-  $6
+  $7
 
--- PersonRepository.getCorrections
-select
-  "asset_face"."id",
+-- PersonRepository.getReferenceFaces
+select distinct
+  on ("person"."personGroupId") "person"."personGroupId",
+  "asset_face"."id" as "faceId",
   "asset_face"."assetId",
-  "asset_face"."correctedAt"
+  "asset_face"."imageWidth",
+  "asset_face"."imageHeight",
+  "asset_face"."boundingBoxX1",
+  "asset_face"."boundingBoxY1",
+  "asset_face"."boundingBoxX2",
+  "asset_face"."boundingBoxY2"
+from
+  "person"
+  inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
+  inner join "asset" on "asset"."id" = "asset_face"."assetId"
+where
+  "person"."ownerId" = $1
+  and "person"."personGroupId" = any ($2::uuid[])
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+  and "asset"."ownerId" = $3
+  and "asset"."deletedAt" is null
+  and "asset"."visibility" in ('timeline', 'archive')
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+order by
+  "person"."personGroupId",
+  asset_face.id = person."faceAssetId" desc,
+  "asset"."fileCreatedAt" desc
+
+-- PersonRepository.getVisibleEvidenceAssetIds
+select
+  "asset"."id"
 from
   "asset"
-  inner join "asset_face" on "asset_face"."assetId" = "asset"."id"
 where
-  (
-    not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
-    or "asset"."ownerId" = $1::uuid
+  "asset"."id" = any ($1::uuid[])
+  and "asset"."ownerId" = $2
+  and "asset"."deletedAt" is null
+  and "asset"."visibility" in ('timeline', 'archive')
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
   )
-  and "asset_face"."personGroupId" = $2
-  and "asset_face"."deletedAt" is null
-  and "asset_face"."correctedAt" is not null
+
+-- PersonRepository.getAssetIdsForPeople
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."ownerId" = $1
+  and "asset"."deletedAt" is null
+  and exists (
+    select
+      "asset_face"."id"
+    from
+      "asset_face"
+    where
+      "asset_face"."assetId" = "asset"."id"
+      and "asset_face"."personGroupId" = any ($2::uuid[])
+  )
 order by
-  "asset_face"."correctedAt" desc
+  "asset"."id"
 limit
   $3
+
+-- PersonRepository.getAllFacesOfAsset
+select
+  "asset_face".*
+from
+  "asset_face"
+where
+  "asset_face"."assetId" = $1

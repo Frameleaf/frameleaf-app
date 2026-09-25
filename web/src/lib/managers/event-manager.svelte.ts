@@ -56,6 +56,12 @@ export type Events = {
   PersonUpdate: [PersonResponseDto];
   PersonThumbnailReady: [{ id: string }];
   PersonAssetDelete: [{ id: string; assetId: string }];
+  /**
+   * FL-37: faces moved between people (a merge, Fix incorrect match, a face reassigned or removed).
+   * `personIds` names the people known to have changed; `removedPersonIds` those that no longer
+   * exist (merged away). Listeners re-read the faces and names they show rather than patching them.
+   */
+  PersonFacesChange: [{ personIds: string[]; removedPersonIds?: string[] }];
 
   BackupDeleteStatus: [{ filename: string; isDeleting: boolean }];
   BackupDeleted: [{ filename: string }];

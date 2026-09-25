@@ -416,6 +416,27 @@ describe('/tags', () => {
       expect(body).toEqual(errorDto.notFound('Tag not found'));
     });
 
+    // FL-36: a bulk tag reports each item of a mixed or stale selection instead of failing the batch.
+    it('reports each item of a mixed selection', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagMixed' });
+      const [ownAsset, otherAsset] = await Promise.all([
+        utils.createAsset(user.accessToken),
+        utils.createAsset(admin.accessToken),
+      ]);
+      const staleId = '00000000-0000-4000-8000-000000000000';
+      const { status, body } = await request(app)
+        .put(`/tags/${tagA.id}/assets`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ ids: [ownAsset.id, otherAsset.id, staleId] });
+
+      expect(status).toBe(200);
+      expect(body).toEqual([
+        expect.objectContaining({ id: ownAsset.id, success: true }),
+        expect.objectContaining({ id: otherAsset.id, success: false, error: 'no_permission' }),
+        expect.objectContaining({ id: staleId, success: false, error: 'no_permission' }),
+      ]);
+    });
+
     it('should add duplicate assets only once', async () => {
       const tagA = await create(user.accessToken, { name: 'TagA' });
       const { status, body } = await request(app)

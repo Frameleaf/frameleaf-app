@@ -13,12 +13,7 @@
   let { onNextAsset }: Props = $props();
 </script>
 
-<svelte:document
-  use:shortcuts={[
-    { shortcut: { key: 'ArrowRight' }, onShortcut: onNextAsset },
-    { shortcut: { key: 'd' }, onShortcut: onNextAsset },
-  ]}
-/>
+<svelte:document use:shortcuts={[{ shortcut: { key: 'ArrowRight' }, onShortcut: onNextAsset }]} />
 
 <NavigationArea onClick={onNextAsset} label={$t('view_next_asset')}>
   <Icon icon={languageManager.rtl ? mdiChevronLeft : mdiChevronRight} size="36" aria-hidden />

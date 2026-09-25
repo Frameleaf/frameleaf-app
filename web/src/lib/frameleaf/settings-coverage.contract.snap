@@ -335,6 +335,11 @@
     "minimum": 1,
     "maximum": 9007199254740991
   },
+  "job.petRecognition.concurrency": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 9007199254740991
+  },
   "job.search.concurrency": {
     "type": "integer",
     "minimum": 1,

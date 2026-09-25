@@ -362,6 +362,8 @@ export class MediaService extends BaseService {
           format,
         },
         config,
+        // FL-59: a cover the owner chose from the video's moments is where its thumbnail is cut.
+        { coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined },
       );
     } else if (asset.type === AssetType.Image) {
       this.logger.verbose(`Thumbnail generation for image ${id} ${asset.originalPath}`);
@@ -782,6 +784,19 @@ export class MediaService extends BaseService {
     ];
   }
 
+  /**
+   * FL-59: the owner's chosen cover time, kept clear of the clip's final stretch like the automatic
+   * candidates are; undefined when the clip is too short to seek in.
+   */
+  private getVideoCoverStartTime(videoStream: VideoStreamInfo, format: VideoFormat, seconds: number) {
+    const duration = this.getVideoThumbnailDurationSeconds(videoStream, format);
+    if (!Number.isFinite(duration) || duration <= 1 || !Number.isFinite(seconds) || seconds < 0) {
+      return;
+    }
+    const tail = Math.min(Math.max(duration * 0.1, 0.5), 5);
+    return Number(Math.min(seconds, Math.max(duration - tail, 0)).toFixed(3));
+  }
+
   private getVideoThumbnailCandidatePath(output: string, index: number) {
     const { dir, ext, name } = path.parse(output);
     return path.join(dir, `${name}_candidate_${index}${ext}`);
@@ -837,6 +852,8 @@ export class MediaService extends BaseService {
       pathSuffix?: string;
       /** FL-39: receives every path this call may create, for cleanup if the version is not published. */
       candidates?: string[];
+      /** FL-59: the owner's chosen cover, in seconds; the automatic pick is skipped. */
+      coverSeconds?: number;
     } = {},
   ) {
     const sourcePath = options.sourcePath ?? asset.originalPath;
@@ -875,19 +892,20 @@ export class MediaService extends BaseService {
 
     const previewConfig = { ...ffmpeg, targetResolution: image.preview.size.toString() };
     const thumbConfig = { ...ffmpeg, targetResolution: image.thumbnail.size.toString() };
-    const startTime = await this.pickVideoThumbnailStartTime(
-      sourcePath,
-      previewFile.path,
-      videoStream,
-      format,
-      (timestamp) =>
+    const cover =
+      options.coverSeconds === undefined
+        ? undefined
+        : this.getVideoCoverStartTime(videoStream, format, options.coverSeconds);
+    const startTime =
+      cover ??
+      (await this.pickVideoThumbnailStartTime(sourcePath, previewFile.path, videoStream, format, (timestamp) =>
         ThumbnailConfig.create(previewConfig, timestamp).getCommand(
           TranscodeTarget.Video,
           videoStream,
           undefined,
           format,
         ),
-    );
+      ));
     const previewOptions = ThumbnailConfig.create(previewConfig, startTime).getCommand(
       TranscodeTarget.Video,
       videoStream,

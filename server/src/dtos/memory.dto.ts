@@ -76,6 +76,22 @@ const YearInReviewSchema = z
   .meta({ id: 'YearInReviewDto' });
 
 /**
+ * A month with one of the owner's named pets (FL-58): built from the photos the owner confirmed the
+ * pet in. `name` is the pet's current name when the memory is read.
+ */
+const PetStorySchema = z
+  .object({
+    kind: z.literal('pet_story').describe('Discriminator for a pet story'),
+    year: z.int().min(1000).max(9999).describe('Year of the month'),
+    month: z.string().describe("The owner's local month, 'yyyy-MM'"),
+    petId: z.uuidv4().describe('The pet the story is about'),
+    name: z.string().describe('The pet name'),
+    species: z.string().describe('The pet species'),
+    assetCount: z.int().min(0).describe('Confirmed photos of the pet that month, before the diversity pass'),
+  })
+  .meta({ id: 'PetStoryDto' });
+
+/**
  * A named person's or pet's birthday (FL-62). `date` is the calendar day in this year the birthday falls on
  * (29 February becomes 28 February outside leap years); clients compare it with their own local
  * date, so the memory is "today" in every time zone on the person's actual birthday.
@@ -110,7 +126,7 @@ const PersonRecapSchema = z
  * `OnThisDayDto`.
  */
 const MemoryDataSchema = z
-  .union([EventStorySchema, YearInReviewSchema, BirthdaySchema, PersonRecapSchema, OnThisDaySchema])
+  .union([EventStorySchema, YearInReviewSchema, PetStorySchema, BirthdaySchema, PersonRecapSchema, OnThisDaySchema])
   .describe('Memory data')
   .meta({ id: 'MemoryData' });
 

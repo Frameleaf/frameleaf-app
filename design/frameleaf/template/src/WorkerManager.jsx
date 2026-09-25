@@ -28,11 +28,11 @@ export function WorkerManager({
       const updated = updateWorkerUrls(values, next);
       if (onSettingChange("advancedMlUrls", updated) === false)
         throw new Error(
-          "The endpoint change could not be added to your draft.",
+          "This change couldn't be added. Try again.",
         );
       setForm(null);
       setError("");
-      setNotice("Endpoint list updated in your draft. Review changes to save.");
+      setNotice("Updated. Review changes to save.");
     } catch (error) {
       setError(error.message);
     }
@@ -49,10 +49,10 @@ export function WorkerManager({
     <div className="worker-manager">
       <div className="worker-heading">
         <div>
-          <h2>Machine-learning endpoints</h2>
+          <h2>Computers for AI features</h2>
           <p>
-            Local machines, home servers, and remote workers use the same
-            endpoint list.
+            This server and other computers at home that run search, faces and
+            captions. The first one that answers is used.
           </p>
         </div>
         <Button
@@ -60,19 +60,26 @@ export function WorkerManager({
           disabled={!enabled}
           onClick={() => open({ kind: "add", url: "" })}
         >
-          Add endpoint
+          Add a computer
         </Button>
       </div>
       {!enabled && (
         <p className="cc-callout">
-          Machine learning is disabled. Enable it in the ML connection settings
-          before changing endpoints.
+          AI features are turned off. Turn them on in AI helper computers
+          before changing this list.
         </p>
       )}
       <p className="cc-subtle">
-        A configured address does not prove model support or GPU availability.
-        Video restoration chooses a compatible local endpoint when available;
-        moving a job to the cloud requires an explicit choice.
+        An address that answers may still lack the models or GPU memory a job
+        needs. Work never moves to the cloud unless you choose it.
+        {onNavigate && (
+          <>
+            {" "}
+            <button type="button" className="fc-link" onClick={() => onNavigate("processing", "hardware")}>
+              Check this server's GPU
+            </button>
+          </>
+        )}
       </p>
       {error && !form && (
         <p role="alert" className="worker-error">
@@ -88,7 +95,7 @@ export function WorkerManager({
             <div className="worker-endpoint">
               <Icon name="mdiServerOutline" size={22} />
               <div>
-                <h3>ML endpoint {index + 1}</h3>
+                <h3>Computer {index + 1}</h3>
                 <code>{url}</code>
               </div>
               <span>Not checked</span>
@@ -96,10 +103,10 @@ export function WorkerManager({
             <dl>
               <div>
                 <dt>Type</dt>
-                <dd>ML inference</dd>
+                <dd>AI features</dd>
               </div>
               <div>
-                <dt>Capabilities</dt>
+                <dt>Can run</dt>
                 <dd>Not reported</dd>
               </div>
               <div>
@@ -108,7 +115,7 @@ export function WorkerManager({
               </div>
               <div>
                 <dt>Credentials</dt>
-                <dd>No credentials in the URL</dd>
+                <dd>None in the address</dd>
               </div>
             </dl>
             <div className="worker-actions">
@@ -116,14 +123,14 @@ export function WorkerManager({
                 disabled={!enabled}
                 onClick={() => open({ kind: "edit", original: url, url })}
               >
-                Edit endpoint
+                Edit address
               </Button>
               <Button onClick={() => preview(url, "ml")}>
-                Preview capability check
+                Check what it can run
               </Button>
               <Button
                 disabled={!enabled || index === 0}
-                aria-label={`Move ML endpoint ${index + 1} earlier`}
+                aria-label={`Move computer ${index + 1} earlier`}
                 onClick={() =>
                   change({ kind: "move", original: url, direction: -1 })
                 }
@@ -132,7 +139,7 @@ export function WorkerManager({
               </Button>
               <Button
                 disabled={!enabled || index === urls.length - 1}
-                aria-label={`Move ML endpoint ${index + 1} later`}
+                aria-label={`Move computer ${index + 1} later`}
                 onClick={() =>
                   change({ kind: "move", original: url, direction: 1 })
                 }
@@ -151,14 +158,14 @@ export function WorkerManager({
       </div>
       {!urls.length && (
         <p role="alert">
-          Add at least one endpoint to configure machine learning.
+          Add at least one computer to use AI features.
         </p>
       )}
       <section className="worker-video">
-        <h2>Persistent video worker</h2>
+        <h2>Computer for long videos</h2>
         <p>
-          Long-running video restoration uses a separately managed destination
-          with its own credentials and runtime limit.
+          Long video jobs can go to a computer at home that stays on and
+          resumes them if interrupted.
         </p>
         <dl>
           <div>
@@ -166,25 +173,25 @@ export function WorkerManager({
             <dd>{values.advancedVideoProfileName || "Not configured"}</dd>
           </div>
           <div>
-            <dt>Endpoint</dt>
+            <dt>Address</dt>
             <dd>
               <code>{values.advancedVideoProfileUrl || "Not configured"}</code>
             </dd>
           </div>
           <div>
             <dt>Type</dt>
-            <dd>Persistent video</dd>
+            <dd>Long videos</dd>
           </div>
           <div>
-            <dt>Credential status</dt>
-            <dd>Managed in the video workload profile</dd>
+            <dt>Password</dt>
+            <dd>Set in Computer for long videos</dd>
           </div>
         </dl>
         <div className="worker-actions">
           <Button
             onClick={() => onNavigate("processing", "advanced-video-profile")}
           >
-            Open video workload profile
+            Set up the long-video computer
           </Button>
           <Button
             disabled={!values.advancedVideoProfileUrl}
@@ -192,12 +199,13 @@ export function WorkerManager({
               preview(values.advancedVideoProfileUrl, "persistent-video")
             }
           >
-            Preview capability check
+            Check what it can run
           </Button>
           <Button
-            onClick={() => onNavigate("processing", "advanced-runpod-ordinary")}
+            icon="mdiCloudOutline"
+            onClick={() => onNavigate("cloud", "cloud-processing")}
           >
-            Manage library analysis workers
+            Frameleaf Cloud processing
           </Button>
         </div>
       </section>
@@ -205,10 +213,10 @@ export function WorkerManager({
         <Dialog
           title={
             form.kind === "remove"
-              ? "Remove ML endpoint"
+              ? "Remove computer"
               : form.kind === "edit"
-                ? "Edit ML endpoint"
-                : "Add ML endpoint"
+                ? "Edit computer"
+                : "Add a computer"
           }
           close={() => {
             setForm(null);
@@ -226,25 +234,25 @@ export function WorkerManager({
               </Button>
               <Button primary onClick={() => change(form)}>
                 {form.kind === "remove"
-                  ? "Remove from draft"
-                  : "Apply to draft"}
+                  ? "Remove"
+                  : "Add to changes"}
               </Button>
             </>
           }
         >
           {form.kind === "remove" ? (
             <>
-              <p>Remove this endpoint from new machine-learning requests?</p>
+              <p>Stop sending new AI work to this computer?</p>
               <code>{form.url}</code>
               <p>
-                Existing video jobs retain their selected destination. Removing
-                an address does not stop or delete a remote worker.
+                Jobs already sent there stay there. This doesn't turn the
+                computer off.
               </p>
             </>
           ) : (
             <>
               <label className="worker-form-label">
-                Endpoint URL
+                Address
                 <input
                   autoFocus
                   type="url"
@@ -257,9 +265,9 @@ export function WorkerManager({
                 />
               </label>
               <p className="cc-subtle">
-                Use the worker base URL. Credentials, query parameters and
-                fragments are excluded. Persistent video destinations are
-                configured in their separate profile.
+                The computer's address, such as http://machine-learning:3003.
+                Leave out passwords; the long-video computer is set up
+                separately.
               </p>
             </>
           )}
@@ -272,22 +280,22 @@ export function WorkerManager({
       )}
       {report && (
         <Dialog
-          title="Capability check preview"
+          title="What this computer can run"
           close={() => setReport(null)}
           actions={<Button onClick={() => setReport(null)}>Done</Button>}
         >
           <p>{report.result}</p>
           <dl>
             <div>
-              <dt>Destination</dt>
+              <dt>Address</dt>
               <dd>
                 <code>{report.endpoint}</code>
               </dd>
             </div>
             <div>
-              <dt>Workload type</dt>
+              <dt>Used for</dt>
               <dd>
-                {report.kind === "ml" ? "ML inference" : "Persistent video"}
+                {report.kind === "ml" ? "AI features" : "Long videos"}
               </dd>
             </div>
             <div>
@@ -296,8 +304,8 @@ export function WorkerManager({
             </div>
           </dl>
           <p>
-            Model support, available GPU memory and endpoint health must be read
-            from the worker before it can be qualified for a job.
+            Frameleaf still needs to ask the computer which models and how much
+            GPU memory it has before sending it work.
           </p>
         </Dialog>
       )}

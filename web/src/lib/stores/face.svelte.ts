@@ -1,4 +1,4 @@
-import type { AssetFaceResponseDto, PersonResponseDto } from '@immich/sdk';
+import { getFaces, type AssetFaceResponseDto, type PersonResponseDto } from '@immich/sdk';
 import { SvelteMap } from 'svelte/reactivity';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import type { Faces } from '$lib/managers/asset-viewer-manager.svelte';
@@ -6,6 +6,9 @@ import { CancellableTask } from '$lib/utils/cancellable-task';
 
 class FaceManager {
   #data = $state<AssetFaceResponseDto[]>([]);
+  /** FL-38: faces the asset's owner hid; listed only for the owner, behind "Show hidden". */
+  #hiddenFaces = $state<AssetFaceResponseDto[]>([]);
+  #hiddenFor: string | null = null;
   #faceLoader = new CancellableTask();
   #cleared = false;
 
@@ -54,6 +57,25 @@ class FaceManager {
     return this.#data;
   }
 
+  get hiddenFaces() {
+    return this.#hiddenFaces;
+  }
+
+  /** Owner only: the server refuses `withHidden` to anyone else. */
+  async loadHiddenFaces(assetId: string) {
+    this.#hiddenFor = assetId;
+    try {
+      const faces = await getFaces({ id: assetId, withHidden: true });
+      if (this.#hiddenFor === assetId) {
+        this.#hiddenFaces = faces.filter((face) => !!face.hiddenAt);
+      }
+    } catch {
+      if (this.#hiddenFor === assetId) {
+        this.#hiddenFaces = [];
+      }
+    }
+  }
+
   async getAssetFaces(id: string) {
     if (this.#cleared) {
       await this.#faceLoader.reset();
@@ -68,6 +90,8 @@ class FaceManager {
     this.#cleared = true;
     assetCacheManager.clearFaceCache();
     this.#data = [];
+    this.#hiddenFaces = [];
+    this.#hiddenFor = null;
   }
 }
 

@@ -6,6 +6,7 @@ import type { Component, ComponentProps } from 'svelte';
 import { get } from 'svelte/store';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import TestWrapper from '$lib/components/TestWrapper.svelte';
+import ViewerFooter from '$lib/components/frameleaf/ViewerFooter.svelte';
 import { clearMediaSession } from '$lib/frameleaf/media-session';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -18,7 +19,6 @@ import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
-import AssetViewerNavBar from './AssetViewerNavBar.svelte';
 import VideoNativeViewer from './VideoNativeViewer.svelte';
 
 type ViewerProps = ComponentProps<typeof VideoNativeViewer>;
@@ -177,16 +177,20 @@ describe('VideoNativeViewer component', () => {
       expect(viewer.container.querySelector('hls-video')).toHaveAttribute('src', getAssetHlsUrl(props.asset.id)),
     );
     const api = hlsMocks.instances[0];
-    const navbar = renderWithTooltips(AssetViewerNavBar, {
+    // The source choice is the footer's Play original / Play encoded segment (V-13, MediaViewer.jsx:1765-1790).
+    const footer = renderWithTooltips(ViewerFooter, {
       asset: props.asset,
-      preAction: () => {},
-      onAction: () => {},
+      canNavigateCollection: false,
+      canShowFilmstrip: false,
+      hasStack: false,
+      zoomable: false,
       isPlayingOriginalVideo: false,
       setPlayOriginalVideo: (value: boolean) =>
         viewer.rerender({ componentProps: { ...props, playOriginalVideo: value } }),
+      fullscreen: false,
+      onToggleFullscreen: () => {},
     });
-    await fireEvent.click(navbar.getByLabelText('frameleaf_viewer_more_actions'));
-    await fireEvent.click(await navbar.findByText('play_original_video'));
+    await fireEvent.click(footer.getByText('frameleaf_viewer_play_original'));
     await waitFor(() =>
       expect(viewer.container.querySelector('video')).toHaveAttribute(
         'src',

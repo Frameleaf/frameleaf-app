@@ -15,6 +15,7 @@ import {
   validateImportPaths,
   providerAccountManagementLink,
 } from "./account-library-data.mjs";
+import { FrameleafAccountLink } from "./FrameleafCloud";
 import "./accounts-libraries.css";
 
 const count = (value) => value.toLocaleString("en-CA");
@@ -1965,6 +1966,7 @@ export function PersonalAccess({
                 security: "Account access",
                 devices: "Devices & API access",
                 supporter: "Supporter status",
+                frameleaf: "Frameleaf account",
               }[selected] || "Your account"
             }
           </h1>
@@ -2154,6 +2156,11 @@ export function PersonalAccess({
           )}
         </section>
       )}
+      {show("frameleaf") && (
+        <section>
+          <FrameleafAccountLink userId={actor.id} email={actor.email} />
+        </section>
+      )}
       {show("devices") && (
         <section>
           <h2>Signed-in devices</h2>
@@ -2275,6 +2282,7 @@ export function PersonalAccess({
         "devices",
         "supporter",
         "profile",
+        "frameleaf",
       ].includes(selected) && (
         <p className="resource-empty">
           Select a security category to review its settings.

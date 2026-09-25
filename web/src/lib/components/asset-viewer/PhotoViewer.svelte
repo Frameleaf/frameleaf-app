@@ -1,5 +1,6 @@
 <script lang="ts">
   import { shortcuts } from '$lib/actions/shortcut';
+  import { isControlTarget } from '$lib/frameleaf/viewer-keys';
   import { zoomImageAction } from '$lib/actions/zoom-image';
   import AdaptiveImage from '$lib/components/AdaptiveImage.svelte';
   import OcrBoundingBox from '$lib/components/asset-viewer/OcrBoundingBox.svelte';
@@ -229,6 +230,17 @@
     { shortcut: { key: '+', shift: true }, onShortcut: onZoomIn, preventDefault: true },
     { shortcut: { key: '-' }, onShortcut: onZoomOut, preventDefault: true },
     { shortcut: { key: 's' }, onShortcut: onPlaySlideshow, preventDefault: true },
+    // V-15: Space plays the slideshow too, unless it is pressing a focused control (MediaViewer.jsx:781-784).
+    {
+      shortcut: { key: ' ' },
+      onShortcut: (event) => {
+        if (isControlTarget(event.target)) {
+          return;
+        }
+        event.preventDefault();
+        onPlaySlideshow();
+      },
+    },
     { shortcut: { key: 'c', ctrl: true }, onShortcut: onCopyShortcut, preventDefault: false },
     { shortcut: { key: 'c', meta: true }, onShortcut: onCopyShortcut, preventDefault: false },
   ]}

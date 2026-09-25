@@ -245,8 +245,8 @@ test("downloads prepare, become ready and can be cancelled", () => {
 
 // onboarding
 
-test("onboarding has nine ordered steps and persists validated progress", () => {
-  assert.equal(onboardingSteps.length, 9);
+test("onboarding has eleven ordered steps and persists validated progress", () => {
+  assert.equal(onboardingSteps.length, 11);
   assert.equal(onboardingSteps[0].id, "hello");
   assert.equal(onboardingSteps.at(-1).id, "done");
   assert.equal(onboardingStepIndex("theme"), 2);
@@ -272,7 +272,7 @@ test("onboarding has nine ordered steps and persists validated progress", () => 
       },
     }),
   );
-  assert.equal(hostile.step, 8);
+  assert.equal(hostile.step, 10);
   assert.equal(hostile.completed, false);
   assert.equal(hostile.choices.language, "en");
   assert.equal(hostile.choices.theme, "system");
@@ -280,6 +280,22 @@ test("onboarding has nine ordered steps and persists validated progress", () => 
   assert.equal(hostile.choices.storageTemplate.pattern, state.choices.storageTemplate.pattern);
   assert.equal(parseOnboarding("[]"), null);
   assert.deepEqual(loadOnboarding(memoryStorage()), createOnboarding());
+});
+
+test("the Frameleaf account and plan steps are optional, follow storage and default to self-hosted", () => {
+  const ids = onboardingSteps.map((step) => step.id);
+  assert.deepEqual(ids.slice(5, 8), ["storage-template", "frameleaf-account", "plan"]);
+  assert.equal(onboardingSteps[6].optional, true);
+  assert.equal(onboardingSteps[7].optional, true);
+  assert.deepEqual(createOnboarding().choices.cloud, { account: "skip", plan: "self-hosted" });
+  const linked = parseOnboarding(
+    JSON.stringify({ version: 1, step: 7, choices: { cloud: { account: "linked", plan: "cloud-annual" } } }),
+  );
+  assert.deepEqual(linked.choices.cloud, { account: "linked", plan: "cloud-annual" });
+  const hostile = parseOnboarding(
+    JSON.stringify({ version: 1, step: 7, choices: { cloud: { account: "admin", plan: "free-forever" } } }),
+  );
+  assert.deepEqual(hostile.choices.cloud, { account: "skip", plan: "self-hosted" });
 });
 
 test("storage template preview expands known tokens and flags unknown ones", () => {

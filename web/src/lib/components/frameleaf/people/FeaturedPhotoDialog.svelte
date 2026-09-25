@@ -2,7 +2,8 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import { isUnnamedPerson } from '$lib/frameleaf/people';
+  import FaceCrop from '$lib/components/frameleaf/people/FaceCrop.svelte';
+  import { isUnnamedPerson, normalizedFaceBox, type FaceBox } from '$lib/frameleaf/people';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -10,6 +11,7 @@
     AssetMediaSize,
     AssetTypeEnum,
     AssetVisibility,
+    getFaces,
     searchAssets,
     updatePerson,
     type AssetResponseDto,
@@ -17,15 +19,21 @@
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiCheck, mdiPlay } from '@mdi/js';
+  import { untrack } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
 
   /**
    * "Select featured photo" (FL-37, PD-6), ported from `FeaturedPhotoDialog` in
    * design/frameleaf/template/src/People.jsx:587-640. It replaces the person page's select
    * mode: the person's photos in a grid, and choosing one writes `featureFaceAssetId` through
-   * `updatePerson`. The photos come from the existing metadata search filtered to this person
-   * and to the timeline; a Locked photo is never offered, so it can never become the face
-   * that represents someone across the app.
+   * `updatePerson`.
+   *
+   * The photos are every Timeline or Archive photo showing this person (the structured metadata
+   * search, trashed ones left out). A Locked photo is never offered, so it can never become the
+   * face that represents someone across the app. As in the prototype, a tile is cropped to the
+   * person's face when the photo has a detected or tagged face box for them (`getFaces`, read
+   * after the page of photos so the grid shows at once); otherwise it shows the whole photo.
    */
   interface Props {
     person: PersonResponseDto;
@@ -35,46 +43,87 @@
 
   let { person, open = $bindable(false), onSelected }: Props = $props();
 
-  const PAGE_SIZE = 120;
+  const PAGE_SIZE = 60;
+  /** Face reads in flight at once, so a page of photos does not open sixty requests together. */
+  const FACE_READS = 6;
 
   let assets: AssetResponseDto[] = $state([]);
-  let nextPage: string | null = $state(null);
+  let nextCursor: string | null = $state(null);
   let loading = $state(false);
   let failed = $state(false);
   let chosen: string | null = $state(null);
   let busy = $state(false);
+  /** The person's face box on each listed photo; `null` when it has none to crop to. */
+  const faceBoxes = new SvelteMap<string, FaceBox | null>();
+  let generation = 0;
   const name = $derived(isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
 
-  const load = async (page?: string) => {
+  const loadFaces = async (items: AssetResponseDto[], run: number) => {
+    const queue = items.filter((asset) => asset.type === AssetTypeEnum.Image);
+    const worker = async () => {
+      for (let asset = queue.shift(); asset && run === generation; asset = queue.shift()) {
+        try {
+          const faces = await getFaces({ id: asset.id });
+          const face = faces.find((candidate) => candidate.person?.id === person.id);
+          if (run === generation) {
+            faceBoxes.set(asset.id, face ? normalizedFaceBox(face) : null);
+          }
+        } catch {
+          // the whole photo is shown instead
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: FACE_READS }, worker));
+  };
+
+  const load = async (cursor?: string) => {
+    const run = generation;
     loading = true;
     failed = false;
     try {
       const { assets: result } = await searchAssets({
         metadataSearchDto: {
-          personIds: [person.id],
-          visibility: AssetVisibility.Timeline,
+          filter: {
+            personIds: { any: [person.id] },
+            visibility: { in: [AssetVisibility.Timeline, AssetVisibility.Archive] },
+            trashedAt: { eq: null },
+          },
           size: PAGE_SIZE,
-          page: page ? Number(page) : undefined,
+          cursor,
         },
       });
-      const items = result.items.filter((asset) => asset.visibility !== AssetVisibility.Locked);
-      assets = page ? [...assets, ...items] : items;
-      nextPage = result.nextPage;
+      if (run !== generation) {
+        return;
+      }
+      const items = result.items.filter((asset) => asset.visibility !== AssetVisibility.Locked && !asset.isTrashed);
+      assets = cursor ? [...assets, ...items] : items;
+      nextCursor = result.nextCursor;
+      void loadFaces(items, run);
     } catch {
-      failed = true;
+      if (run === generation) {
+        failed = true;
+      }
     } finally {
-      loading = false;
+      if (run === generation) {
+        loading = false;
+      }
     }
   };
 
   $effect(() => {
     if (!open) {
+      generation++;
       return;
     }
 
-    assets = [];
-    chosen = null;
-    void load();
+    untrack(() => {
+      generation++;
+      assets = [];
+      nextCursor = null;
+      chosen = null;
+      faceBoxes.clear();
+      void load();
+    });
   });
 
   const select = async (asset: AssetResponseDto) => {
@@ -107,6 +156,7 @@
   {:else}
     <div class="grid" role="radiogroup" aria-label={$t('photos')}>
       {#each assets as asset, index (asset.id)}
+        {@const box = faceBoxes.get(asset.id)}
         <button
           type="button"
           role="radio"
@@ -118,7 +168,11 @@
           data-initial-focus={index === 0 ? '' : undefined}
           onclick={() => void select(asset)}
         >
-          <img src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
+          {#if box}
+            <FaceCrop src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview })} {box} size={96} />
+          {:else}
+            <img src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
+          {/if}
           {#if asset.type === AssetTypeEnum.Video}
             <span class="video" aria-hidden="true"><Icon icon={mdiPlay} size="14" /></span>
           {/if}
@@ -130,9 +184,9 @@
     </div>
     {#if loading}
       <Status message={$t('loading')} busy />
-    {:else if nextPage}
+    {:else if nextCursor}
       <div class="more">
-        <Button onclick={() => void load(nextPage!)}>{$t('frameleaf_people_show_more')}</Button>
+        <Button onclick={() => void load(nextCursor!)}>{$t('frameleaf_people_show_more')}</Button>
       </div>
     {/if}
   {/if}

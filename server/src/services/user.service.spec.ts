@@ -397,6 +397,7 @@ describe(UserService.name, () => {
         recipientGroups: 1,
         memoryShowLess: 3,
         memoryCurations: 4,
+        peopleAndPets: 3,
         workspaceLayouts: 1,
       });
 

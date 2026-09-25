@@ -18,12 +18,10 @@ import Host from './TimelineDeletion.test-host.svelte';
 
 const { deleteRequest, confirmRequest } = vi.hoisted(() => ({
   deleteRequest: vi.fn<() => Promise<void>>(),
-  confirmRequest: vi.fn<() => Promise<boolean>>(),
+  confirmRequest: vi.fn<(options: unknown) => Promise<boolean>>(),
 }));
-vi.mock('@immich/ui', async () => {
-  const ui = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
-  return { ...ui, modalManager: { ...ui.modalManager, show: confirmRequest } };
-});
+// A permanent delete is confirmed with the Frameleaf dialog (`confirmAndDeletePermanently`).
+vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: confirmRequest }));
 vi.mock('@immich/sdk', async () => ({
   ...(await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk')),
   deleteAssets: deleteRequest,
@@ -93,7 +91,9 @@ it.each([true, false])(
     const stop = eventManager.on({ AssetsDelete: deleted });
     const view = renderWithTooltips(Host, { timelineManager: manager as unknown as TimelineManager });
     await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: b.id })));
-    const button = await view.findByRole('button', { name: force ? 'permanently_delete' : 'delete' });
+    const button = await view.findByRole('button', {
+      name: force ? 'frameleaf_viewer_delete_permanently' : 'frameleaf_viewer_move_to_trash',
+    });
     let resolveRoute!: (asset: AssetResponseDto) => void;
     const response = new Promise<AssetResponseDto>((resolve) => {
       resolveRoute = resolve;
@@ -141,7 +141,7 @@ it('does not use B cursor when confirmation for A completes after navigation', a
   const deleted = vi.fn();
   const stop = eventManager.on({ AssetsDelete: deleted });
   const view = renderWithTooltips(Host, { timelineManager: manager as unknown as TimelineManager });
-  await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
+  await fireEvent.click(await view.findByRole('button', { name: 'frameleaf_viewer_delete_permanently' }));
   await waitFor(() => expect(confirmRequest).toHaveBeenCalledOnce());
   assetViewerManager.setAsset(b);
   await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: c.id })));
@@ -177,11 +177,58 @@ it('ignores a late neighbor lookup for an asset that is no longer open', async (
   await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: c.id })));
   releaseOld(b);
   await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: b.id })));
-  await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
+  await fireEvent.click(await view.findByRole('button', { name: 'frameleaf_viewer_delete_permanently' }));
   await waitFor(() => expect(deleteRequest).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: [b.id], force: true } }));
+  // always confirmed, even with the delete prompt turned off, and as a danger action
   expect(confirmRequest).toHaveBeenCalledWith(
-    expect.anything(),
-    expect.objectContaining({ size: 1, suppressible: false }),
+    expect.objectContaining({ confirmText: 'frameleaf_viewer_delete_permanently', danger: true }),
   );
   expect(assetViewerManager.asset?.id).toBe(c.id);
 });
+
+it.each([true, false])(
+  'keeps the next item when the delete event for a moved-past item arrives before that item loads (permanent=%s)',
+  async (force) => {
+    const { a, b, manager } = setup(force);
+    showDeleteModal.set(false);
+    const deleted = vi.fn();
+    const stop = eventManager.on({ AssetsDelete: deleted });
+    const view = renderWithTooltips(Host, { timelineManager: manager as unknown as TimelineManager });
+    await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: b.id })));
+    const button = await view.findByRole('button', {
+      name: force ? 'frameleaf_viewer_delete_permanently' : 'frameleaf_viewer_move_to_trash',
+    });
+    // The route change finishes at once, but the next item loads later, as a page's own lookup does:
+    // the viewer still shows A when A's delete events arrive.
+    let showNext!: () => void;
+    const shown = new Promise<void>((resolve) => {
+      showNext = resolve;
+    });
+    vi.mocked(navigate).mockImplementation(({ assetId }) => {
+      void shown.then(async () => {
+        const asset = await getAssetInfoFromParam({ assetId: assetId ?? undefined });
+        if (asset) {
+          assetViewerManager.setAsset(asset);
+        }
+      });
+      return Promise.resolve();
+    });
+
+    await fireEvent.click(button);
+    await waitFor(() => expect(deleted).toHaveBeenCalledWith([a.id]));
+    expect(assetViewerManager.asset?.id).toBe(a.id);
+    // the server's event for the same item
+    eventManager.emit('AssetsDelete', [a.id]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // the viewer did not act on A's removal a second time: one move to B, no close
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ assetId: b.id }));
+    expect(assetViewerManager.isViewing).toBe(true);
+
+    showNext();
+    await waitFor(() => expect(assetViewerManager.asset?.id).toBe(b.id));
+    expect(assetViewerManager.isViewing).toBe(true);
+    stop();
+  },
+);
