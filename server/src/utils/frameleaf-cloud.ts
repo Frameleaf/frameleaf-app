@@ -253,11 +253,13 @@ export type CloudProbeFacts = {
 };
 
 /**
- * Models that run on this server only (FL-146 owner decision, 2026-09-25): the nllb-clip search
- * models (base and large, every variant; CC-BY-NC-4.0) and MusicGen-small. They are never taken
- * from a Frameleaf Cloud catalogue, never routed there, and admission refuses a cloud job for them.
+ * Models that run on this server only (FL-146 owner decisions, 2026-09-25): the nllb-clip search
+ * models (base and large, every variant; CC-BY-NC-4.0), MusicGen-small (CC-BY-NC-4.0) and
+ * Qwen2.5-VL-3B-Instruct (Qwen Research License, including its OpenVINO conversion). They are never
+ * taken from a Frameleaf Cloud catalogue, never routed or configured there, and admission refuses a
+ * cloud job for them. They stay available on this server and home-network workers.
  */
-const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small/i;
+const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small|qwen2\.5-vl-3b/i;
 export const isLocalOnlyModel = (id: string | null | undefined): boolean => !!id && LOCAL_ONLY_MODEL.test(id);
 
 export const isEntitled = (entitlement: CloudCapabilities['entitlement']): boolean =>

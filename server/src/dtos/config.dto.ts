@@ -37,6 +37,7 @@ import {
   VideoContainer,
   VideoContainerSchema,
 } from 'src/enum.js';
+import { isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 
 const { Admin, User, Public } = ConfigVisibility;
 
@@ -505,6 +506,19 @@ const AdminConfigFrameleafCloudSchema = z
         faces: z
           .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud') })
           .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
+      })
+      // FL-146: a local-only model (Qwen2.5-VL-3B, nllb-clip, MusicGen-small) is never the choice for
+      // work allowed on Frameleaf Cloud.
+      .superRefine((cloudMl, context) => {
+        for (const workload of CLOUD_ROUTED_WORKLOADS) {
+          if (cloudMl.routing[workload] !== 'local' && isLocalOnlyModel(cloudMl.models[workload])) {
+            context.addIssue({
+              code: 'custom',
+              path: ['models', workload],
+              message: `${cloudMl.models[workload]} runs on this server only; choose another model or set this work to Local only`,
+            });
+          }
+        }
       })
       .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
   })

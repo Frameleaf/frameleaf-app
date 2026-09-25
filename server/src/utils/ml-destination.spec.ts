@@ -245,8 +245,14 @@ describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
     expect(refusal({ ...cloud, modelId: 'restore-faithful' })).toBeNull();
   });
 
-  it('refuses a cloud job for the local-only nllb-clip and MusicGen-small models, even if listed (FL-146)', () => {
-    for (const modelId of ['nllb-clip-base-siglip__mrl', 'nllb-clip-large-siglip__v1', 'Xenova/musicgen-small']) {
+  it('refuses a cloud job for the local-only nllb-clip, MusicGen-small and Qwen2.5-VL-3B models, even if listed (FL-146)', () => {
+    for (const modelId of [
+      'nllb-clip-base-siglip__mrl',
+      'nllb-clip-large-siglip__v1',
+      'Xenova/musicgen-small',
+      'Qwen/Qwen2.5-VL-3B-Instruct',
+      'llmware/qwen2.5-vl-3b-ov',
+    ]) {
       expect(refusal({ ...withFacts({ modelIds: ['restore-faithful', modelId] }), modelId })).toBe(
         MlAdmissionRefusal.ModelMismatch,
       );

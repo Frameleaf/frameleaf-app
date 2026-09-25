@@ -39,6 +39,7 @@
     workloadRoute,
   } from '$lib/frameleaf/cloud-ml';
   import {
+    CLOUD_DEFAULT_MODELS,
     cloudPositions,
     gpuClasses,
     gpuClassLabelKey,
@@ -154,7 +155,7 @@
 
   // Estimate a job: any cloud model, any quantity.
   const estimateModels = cloudPositions();
-  let trialModel = $state('qwen3.5-9b@1');
+  let trialModel = $state(CLOUD_DEFAULT_MODELS.descriptions ?? estimateModels[0].id);
   let trialQuantity = $state('500');
   const trialItem = $derived(positionById(trialModel));
   const estimate = $derived<CostEstimate | null>(estimateCloudJob(trialModel, Number(trialQuantity)));
