@@ -1,88 +1,189 @@
 <script lang="ts">
   /**
-   * Frameleaf Tags browser (FL-46).
+   * Frameleaf Tags browser (FL-46): a port of the prototype's `Tags` screen
+   * (`design/frameleaf/template/src/Tags.jsx`, `discovery.css`), built on the real tag API instead
+   * of the prototype's localStorage simulation:
    *
-   * Ported from the approved prototype (`design/frameleaf/template/src/Tags.jsx`), but built
-   * against the real tag API instead of the prototype's slash-path/localStorage simulation:
-   * nesting, colour and rename all call the existing `createTag` / `updateTag` / `deleteTag`
-   * endpoints (`@immich/sdk`), and the tree comes from `$lib/frameleaf/tag-tree`. There is no
-   * endpoint to re-parent an existing tag, so unlike the prototype this panel has no "move to
-   * top level" action; nesting only happens when a tag is created.
+   * - create (`POST /tags`, with a parent and a colour), rename, recolour and "Move to top level"
+   *   (`PUT /tags/:id` with `name`, `color` or `parentId: null`), delete (`DELETE /tags/:id`);
+   * - counts from `GET /tags/statistics` (`$lib/frameleaf/tag-tree`): only Timeline items, so
+   *   nothing archived, Locked or hidden, and a tag suppressed while locked is not listed at all;
+   * - the chosen tag is the page address (`?path=`), so a deep link opens it and browser Back
+   *   returns to the previous one; the keyboard tree is `DiscoveryTree`.
    *
-   * The tree, breadcrumb and per-node navigation reuse the existing, already-accessible
-   * `Tree` / `TreeItems` / `Breadcrumbs` components from `shared-components/tree` (the same
-   * ones the legacy tags page uses) rather than a new hand-rolled tree widget.
-   *
-   * The asset grid is deliberately not rendered inline here: "View in library" hands the
-   * selection to the shared library session (`$lib/frameleaf/library-session`) and opens the
-   * library at that filter, so the browser and the library share one selection/bulk-action
-   * surface instead of each page owning its own.
+   * "Show all" opens the library at the tag (its subtags included, as the tag filter matches them),
+   * where the library's selection and bulk actions apply; tagging items stays in the viewer and the
+   * selection bar.
    */
+  import '$lib/frameleaf/discovery.css';
   import { goto, invalidateAll } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import DiscoveryTree from '$lib/components/frameleaf/DiscoveryTree.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
-  import Pane from '$lib/components/frameleaf/Pane.svelte';
-  import Picker from '$lib/components/frameleaf/Picker.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import type { ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
-  import Breadcrumbs from '$lib/components/shared-components/tree/Breadcrumbs.svelte';
-  import TreeItemThumbnails from '$lib/components/shared-components/tree/TreeItemThumbnails.svelte';
-  import TreeItems from '$lib/components/shared-components/tree/TreeItems.svelte';
   import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
+  import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { viewInLibraryHref } from '$lib/frameleaf/library-query-options';
-  import { TAG_COLOR_SWATCHES, buildTagTree, flattenTagTree } from '$lib/frameleaf/tag-tree';
+  import {
+    DEFAULT_TAG_COLOR,
+    TAG_COLORS,
+    buildTagTree,
+    cleanTagName,
+    expandableTagIds,
+    flattenTagTree,
+    mostUsedTags,
+    tagAncestorIds,
+    tagAtPath,
+    tagBreadcrumbs,
+    tagColorHex,
+    tagColorId,
+    tagDotColor,
+    tagIdsRevealingMatches,
+    tagMatches,
+    tagNameTaken,
+    type FrameleafTagNode,
+    type TagColorId,
+  } from '$lib/frameleaf/tag-tree';
   import { Route } from '$lib/route';
   import { getAssetUrls } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
-  import { joinPaths, TreeNode } from '$lib/utils/tree-utils';
+  import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import {
+    AssetVisibility,
     createTag,
     deleteTag,
     searchAssets,
     updateTag,
     type AssetResponseDto,
     type TagResponseDto,
+    type TagStatisticsResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
+    mdiArrowCollapseAll,
+    mdiArrowExpandAll,
+    mdiArrowUp,
+    mdiChevronDown,
+    mdiChevronRight,
     mdiDeleteOutline,
+    mdiDotsHorizontal,
     mdiImageMultipleOutline,
+    mdiImageOutline,
+    mdiMagnify,
+    mdiPaletteOutline,
     mdiPencilOutline,
-    mdiPlus,
-    mdiTag,
-    mdiTagMultiple,
     mdiTagOutline,
+    mdiTagPlusOutline,
   } from '@mdi/js';
+  import { SvelteSet } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
 
   interface Props {
     tags: TagResponseDto[];
-    /** The tag's full value ("Trips/Rockies 2026"), or "" when nothing is selected. */
+    statistics: TagStatisticsResponseDto[];
+    /** The chosen tag's full value ("Trips/Rockies 2026"), or "" for the overview. */
     path: string;
+    /** The chosen tag's preview items, handed to the page so its viewer can open them. */
+    covers?: AssetResponseDto[];
   }
 
-  let { tags, path }: Props = $props();
+  let { tags, statistics, path, covers = $bindable([]) }: Props = $props();
 
-  const navTree = $derived(TreeNode.fromTags(tags));
-  const navNode = $derived(navTree.traverse(path));
-  const tagTree = $derived(buildTagTree(tags));
-  const selected = $derived(navNode.id ? (tags.find((tag) => tag.id === navNode.id) ?? null) : null);
-  const selectedNode = $derived(navNode.id ? (tagTree.byId.get(navNode.id) ?? null) : null);
+  const COVER_COUNT = 6;
 
-  const getLink = (value: string) => Route.tags({ path: value });
-  const handleNavigation = (name: string) => goto(getLink(joinPaths(path, name)));
+  const tree = $derived(buildTagTree(tags, statistics));
+  const node = $derived(tagAtPath(tree, path));
+  const allNodes = $derived(flattenTagTree(tree));
+
+  // Branches the reader opened; the chosen tag's ancestors open with it (a deep link shows its row).
+  const expanded = new SvelteSet<string>();
+  let focusedId = $state<string | null>(null);
+  let search = $state('');
+  let status = $state('');
+  const query = $derived(search.trim().toLowerCase());
+
+  $effect(() => {
+    if (node) {
+      for (const id of tagAncestorIds(node)) {
+        expanded.add(id);
+      }
+    }
+  });
+  // Prototype: searching opens every ancestor of a match so it can be seen.
+  $effect(() => {
+    for (const id of tagIdsRevealingMatches(tree, query)) {
+      expanded.add(id);
+    }
+  });
+
+  const expandable = $derived(expandableTagIds(tree));
+  const allExpanded = $derived(expandable.every((id) => expanded.has(id)));
+  const toggleAll = () => {
+    if (allExpanded) {
+      expanded.clear();
+    } else {
+      for (const id of expandable) {
+        expanded.add(id);
+      }
+    }
+  };
+  const toggle = (item: FrameleafTagNode) => {
+    if (expanded.has(item.id)) {
+      expanded.delete(item.id);
+    } else {
+      expanded.add(item.id);
+    }
+  };
+
+  const choose = (item: FrameleafTagNode | null) =>
+    goto(Route.tags(item ? { path: item.value } : undefined), { keepFocus: true, noScroll: true });
+
+  const topTags = $derived(mostUsedTags(tree));
+  const itemCount = (count: number) => $t('frameleaf_tags_item_count', { values: { count } });
+  const colorLabel = (id: TagColorId) =>
+    ({
+      grey: $t('frameleaf_tags_color_grey'),
+      green: $t('frameleaf_tags_color_green'),
+      teal: $t('frameleaf_tags_color_teal'),
+      blue: $t('frameleaf_tags_color_blue'),
+      purple: $t('frameleaf_tags_color_purple'),
+      pink: $t('frameleaf_tags_color_pink'),
+      amber: $t('frameleaf_tags_color_amber'),
+      red: $t('frameleaf_tags_color_red'),
+    })[id];
+  const nodeColorId = $derived(node ? tagColorId(node.color) : null);
+
+  // The chosen tag's preview: its newest Timeline items, subtags included, like its count.
+  $effect(() => {
+    const id = node?.id;
+    if (!id) {
+      covers = [];
+      return;
+    }
+    let cancelled = false;
+    searchAssets({ metadataSearchDto: { tagIds: [id], visibility: AssetVisibility.Timeline, size: COVER_COUNT } })
+      .then((response) => {
+        if (!cancelled) {
+          covers = response.assets.items;
+        }
+      })
+      .catch((error) => handleError(error, $t('errors.frameleaf_tags_unable_to_load')));
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const showAll = (item: FrameleafTagNode) =>
+    // The Photos page when the buckets apply the whole condition, else the search results (M3).
+    goto(viewInLibraryHref({ ...emptyDiscoveryQuery(), filter: { tagIds: { any: [item.id] } } }, location.origin));
 
   type DialogState =
     | { type: 'create'; parentId: string | null }
-    | { type: 'rename'; tag: TagResponseDto }
-    | { type: 'delete'; tag: TagResponseDto; childCount: number };
+    | { type: 'rename'; node: FrameleafTagNode }
+    | { type: 'delete'; node: FrameleafTagNode };
 
   let dialog = $state<DialogState | null>(null);
-  // Bound to Dialog's own open/close (× button, Escape, backdrop click); each open* helper
-  // below sets both this and `dialog` together, and this effect drops `dialog` in the other
-  // direction so the form fields reset the next time a dialog opens.
   let dialogOpen = $state(false);
   $effect(() => {
     if (!dialogOpen) {
@@ -91,464 +192,419 @@
   });
   let saving = $state(false);
   let formError = $state('');
-  let status = $state('');
+  let formName = $state('');
+  let formParent = $state('');
+  let formColor = $state<TagColorId>(DEFAULT_TAG_COLOR);
+  let formElement = $state<HTMLFormElement>();
 
-  let createName = $state('');
-  let createParent = $state<ComboBoxOption | undefined>(undefined);
-  let createColor = $state<string | null>(null);
-  let renameName = $state('');
-
-  let coverAssets = $state<AssetResponseDto[]>([]);
-  let coverTotal = $state(0);
-
-  const parentOptions = $derived<ComboBoxOption[]>(
-    flattenTagTree(tagTree)
-      .map((node) => ({ value: node.id, label: node.path.join(' / ') }))
+  const parentOptions = $derived(
+    allNodes
+      .map((item) => ({ id: item.id, label: item.path.join(' / ') }))
       .sort((a, b) => a.label.localeCompare(b.label)),
   );
 
-  $effect(() => {
-    const id = selected?.id;
-    if (!id) {
-      coverAssets = [];
-      coverTotal = 0;
-      return;
-    }
-    let cancelled = false;
-    searchAssets({ metadataSearchDto: { filter: { tagIds: { any: [id] } }, size: 8 } })
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-        coverAssets = response.assets.items;
-        coverTotal = response.assets.total;
-      })
-      .catch((error) => handleError(error, $t('errors.frameleaf_tags_unable_to_load')));
-    return () => {
-      cancelled = true;
-    };
-  });
-
-  const viewInLibrary = () => {
-    if (!selected) {
-      return;
-    }
-    // The Photos page when the buckets apply the whole condition, else the search results (M3).
-    void goto(
-      viewInLibraryHref({ ...emptyDiscoveryQuery(), filter: { tagIds: { any: [selected.id] } } }, location.origin),
-    );
-  };
-
-  const openCreate = (parentId: string | null) => {
-    createName = '';
-    createColor = null;
-    createParent = parentId ? parentOptions.find((option) => option.value === parentId) : undefined;
+  const open = (next: DialogState) => {
     formError = '';
-    dialog = { type: 'create', parentId };
+    formName = next.type === 'rename' ? next.node.name : '';
+    formParent = next.type === 'create' ? (next.parentId ?? '') : '';
+    formColor = DEFAULT_TAG_COLOR;
+    dialog = next;
     dialogOpen = true;
   };
-  const openRename = () => {
-    if (!selected) {
-      return;
-    }
-    renameName = selected.name;
-    formError = '';
-    dialog = { type: 'rename', tag: selected };
-    dialogOpen = true;
-  };
-  const openDelete = () => {
-    if (!selected) {
-      return;
-    }
-    dialog = { type: 'delete', tag: selected, childCount: selectedNode?.children.length ?? 0 };
-    dialogOpen = true;
-  };
-  const closeDialog = () => {
-    dialog = null;
+  const close = () => {
     dialogOpen = false;
-    formError = '';
+    dialog = null;
   };
 
-  const setColor = async (tag: TagResponseDto, hex: string) => {
-    try {
-      await updateTag({ id: tag.id, tagUpdateDto: { color: hex } });
-      await invalidateAll();
-      status = $t('frameleaf_tags_color_changed', { values: { color: hex } });
-    } catch (error) {
-      handleError(error, $t('errors.frameleaf_tags_unable_to_save'));
-    }
+  const failed = (error: unknown, fallback: string) => {
+    formError = getServerErrorMessage(error) ?? fallback;
   };
 
   const submitCreate = async () => {
-    const name = createName.trim();
+    const name = cleanTagName(formName);
     if (!name) {
-      formError = $t('frameleaf_tags_name_required');
+      formError = $t('frameleaf_tags_name_invalid');
       return;
     }
+    const parentId = formParent || null;
+    if (tagNameTaken(tree, parentId, name)) {
+      formError = $t('frameleaf_tags_name_taken', { values: { name } });
+      return;
+    }
+    saving = true;
     try {
-      saving = true;
-      const created = await createTag({
-        tagCreateDto: { name, parentId: createParent?.value, color: createColor ?? undefined },
-      });
-      await invalidateAll();
-      closeDialog();
-      status = $t('frameleaf_tags_tag_created', { values: { name: created.name } });
-      await goto(getLink(created.value));
-    } catch (error) {
-      handleError(error, $t('errors.frameleaf_tags_unable_to_save'));
-    } finally {
-      saving = false;
-    }
-  };
-
-  const submitRename = async () => {
-    if (dialog?.type !== 'rename') {
-      return;
-    }
-    const name = renameName.trim();
-    if (!name) {
-      formError = $t('frameleaf_tags_name_required');
-      return;
-    }
-    try {
-      saving = true;
-      const updated = await updateTag({ id: dialog.tag.id, tagUpdateDto: { name } });
-      await invalidateAll();
-      closeDialog();
-      status = $t('frameleaf_tags_renamed', { values: { name: updated.name } });
-      await goto(getLink(updated.value));
-    } catch (error) {
-      handleError(error, $t('errors.frameleaf_tags_unable_to_save'));
-    } finally {
-      saving = false;
-    }
-  };
-
-  const submitDelete = async () => {
-    if (dialog?.type !== 'delete') {
-      return;
-    }
-    const removed = dialog.tag;
-    const parentValue = navNode.parent ? navNode.parent.path : '';
-    try {
-      saving = true;
-      await deleteTag({ id: removed.id });
-      await invalidateAll();
-      closeDialog();
-      status = $t('frameleaf_tags_tag_deleted');
-      if (selected?.id === removed.id) {
-        await goto(getLink(parentValue));
+      const created = await createTag({ tagCreateDto: { name, parentId, color: tagColorHex(formColor) } });
+      if (parentId) {
+        expanded.add(parentId);
       }
+      await invalidateAll();
+      close();
+      focusedId = created.id;
+      status = $t('frameleaf_tags_tag_created', { values: { name: created.name } });
+      await goto(Route.tags({ path: created.value }), { noScroll: true });
     } catch (error) {
-      handleError(error, $t('errors.frameleaf_tags_unable_to_delete'));
+      failed(error, $t('errors.frameleaf_tags_unable_to_save'));
     } finally {
       saving = false;
     }
   };
+
+  const submitRename = async (target: FrameleafTagNode) => {
+    const name = cleanTagName(formName);
+    if (!name) {
+      formError = $t('frameleaf_tags_name_invalid');
+      return;
+    }
+    if (tagNameTaken(tree, target.parent?.id ?? null, name, target.id)) {
+      formError = $t('frameleaf_tags_name_taken', { values: { name } });
+      return;
+    }
+    saving = true;
+    try {
+      const updated = await updateTag({ id: target.id, tagUpdateDto: { name } });
+      await invalidateAll();
+      close();
+      status = $t('frameleaf_tags_renamed', { values: { name: updated.name } });
+      await goto(Route.tags({ path: updated.value }), { keepFocus: true, noScroll: true });
+    } catch (error) {
+      failed(error, $t('errors.frameleaf_tags_unable_to_save'));
+    } finally {
+      saving = false;
+    }
+  };
+
+  const submitDelete = async (target: FrameleafTagNode) => {
+    saving = true;
+    try {
+      await deleteTag({ id: target.id });
+      close();
+      status = $t('frameleaf_tags_tag_deleted');
+      // Prototype: the deleted tag's detail gives way to the overview.
+      await goto(Route.tags(), { noScroll: true });
+      await invalidateAll();
+    } catch (error) {
+      failed(error, $t('errors.frameleaf_tags_unable_to_delete'));
+    } finally {
+      saving = false;
+    }
+  };
+
+  const setColor = async (target: FrameleafTagNode, color: TagColorId) => {
+    try {
+      await updateTag({ id: target.id, tagUpdateDto: { color: tagColorHex(color) } });
+      await invalidateAll();
+      status = $t('frameleaf_tags_color_changed', { values: { color: colorLabel(color) } });
+    } catch (error) {
+      handleError(error, $t('errors.frameleaf_tags_unable_to_save'));
+    }
+  };
+
+  const moveToTop = async (target: FrameleafTagNode) => {
+    try {
+      const moved = await updateTag({ id: target.id, tagUpdateDto: { parentId: null } });
+      await invalidateAll();
+      status = $t('frameleaf_tags_moved');
+      await goto(Route.tags({ path: moved.value }), { keepFocus: true, noScroll: true });
+    } catch (error) {
+      handleError(error, $t('errors.frameleaf_tags_unable_to_save'));
+    }
+  };
+
+  const submit = (event: SubmitEvent) => {
+    event.preventDefault();
+    if (!dialog || saving) {
+      return;
+    }
+    if (dialog.type === 'create') {
+      void submitCreate();
+    } else if (dialog.type === 'rename') {
+      void submitRename(dialog.node);
+    } else {
+      void submitDelete(dialog.node);
+    }
+  };
+
+  const dialogTitle = $derived(
+    dialog?.type === 'create'
+      ? dialog.parentId
+        ? $t('frameleaf_tags_new_subtag')
+        : $t('frameleaf_tags_new')
+      : dialog?.type === 'rename'
+        ? $t('frameleaf_tags_rename_title')
+        : $t('delete_tag'),
+  );
 </script>
 
-<div class="tag-browser">
-  <header class="tag-browser-header">
+{#snippet dot(color: string | null, large = false)}
+  <span class="dv-tag-dot" class:large style:--dv-swatch={tagDotColor(color)} aria-hidden="true"></span>
+{/snippet}
+
+<!-- Prototype `<main className="discovery dv-tags">`; the page layout already provides the main landmark. -->
+<section class="fl-discovery dv-tags" aria-label={$t('tags')}>
+  <header class="dv-header">
     <div>
       <h1>{$t('tags')}</h1>
       <p>{$t('frameleaf_tags_subtitle', { values: { count: tags.length } })}</p>
     </div>
-    <Button variant="primary" onclick={() => openCreate(null)}>
-      <Icon icon={mdiPlus} size="16" aria-hidden="true" />
-      {$t('frameleaf_tags_new')}
-    </Button>
+    <div class="dv-header-actions">
+      <label class="dv-search">
+        <Icon icon={mdiMagnify} size="16" aria-hidden="true" />
+        <input
+          type="search"
+          placeholder={$t('frameleaf_tags_find')}
+          aria-label={$t('frameleaf_tags_find')}
+          bind:value={search}
+        />
+      </label>
+      <Button onclick={toggleAll}>
+        <Icon icon={allExpanded ? mdiArrowCollapseAll : mdiArrowExpandAll} size="16" aria-hidden="true" />
+        {allExpanded ? $t('frameleaf_tags_collapse_all') : $t('frameleaf_tags_expand_all')}
+      </Button>
+      <Button variant="primary" onclick={() => open({ type: 'create', parentId: null })}>
+        <Icon icon={mdiTagPlusOutline} size="16" aria-hidden="true" />
+        {$t('frameleaf_tags_new')}
+      </Button>
+    </div>
   </header>
 
   <Status message={status} />
 
-  <div class="tag-browser-split">
-    <Pane label={$t('frameleaf_tags_tree_label')}>
-      {#if navTree.children.length > 0}
-        <TreeItems tree={navTree} icons={{ default: mdiTagOutline, active: mdiTag }} active={navNode.path} {getLink} />
+  <div class="dv-split">
+    <nav class="dv-pane dv-tree-pane" aria-label={$t('frameleaf_tags_tree_label')}>
+      {#if tree.roots.length > 0}
+        <DiscoveryTree
+          roots={tree.roots}
+          label={$t('tags')}
+          {expanded}
+          selectedId={node?.id ?? null}
+          bind:focusedId
+          count={(item) => item.total}
+          isMatch={(item) => tagMatches(item, query)}
+          expandLabel={(item) => $t('frameleaf_tags_expand_node', { values: { name: item.name } })}
+          collapseLabel={(item) => $t('frameleaf_tags_collapse_node', { values: { name: item.name } })}
+          onChoose={(item) => void choose(item)}
+          onToggle={toggle}
+        >
+          {#snippet lead(item)}
+            {@render dot(item.color)}
+          {/snippet}
+        </DiscoveryTree>
       {:else}
-        <p class="tag-browser-empty">
-          <Icon icon={mdiTagOutline} size="28" aria-hidden="true" />
+        <div class="dv-empty" role="status">
+          <span class="dv-empty-icon"><Icon icon={mdiTagOutline} size="30" aria-hidden="true" /></span>
           <strong>{$t('frameleaf_tags_empty_title')}</strong>
-          <span>{$t('frameleaf_tags_empty_description')}</span>
-        </p>
+          <p>{$t('frameleaf_tags_empty_description')}</p>
+        </div>
       {/if}
-    </Pane>
+    </nav>
 
-    <Pane
-      label={selected
-        ? $t('frameleaf_tags_preview_of', { values: { tag: selected.name } })
-        : $t('frameleaf_tags_choose_title')}
+    <section
+      class="dv-pane dv-detail"
+      aria-live="polite"
+      aria-label={node
+        ? $t('frameleaf_tags_detail_label', { values: { name: node.name } })
+        : $t('frameleaf_tags_overview')}
     >
-      {#if selected}
-        <Breadcrumbs node={navNode} icon={mdiTagMultiple} title={$t('tags')} {getLink} />
-        <div class="tag-browser-detail-title">
-          <span class="tag-dot" style={`--dot-color:${selected.color ?? 'var(--fl-muted)'}`} aria-hidden="true"></span>
+      {#if node}
+        {@const crumbs = tagBreadcrumbs(node)}
+        <nav class="dv-breadcrumb" aria-label={$t('frameleaf_tags_breadcrumb_label')}>
+          <button type="button" onclick={() => void choose(null)}>{$t('tags')}</button>
+          {#each crumbs as crumb, index (crumb.id)}
+            <Icon icon={mdiChevronRight} size="14" aria-hidden="true" />
+            {#if index === crumbs.length - 1}
+              <span aria-current="page">{crumb.name}</span>
+            {:else}
+              <button type="button" onclick={() => void choose(crumb)}>{crumb.name}</button>
+            {/if}
+          {/each}
+        </nav>
+
+        <div class="dv-detail-title">
+          {@render dot(node.color, true)}
           <div>
-            <h2>{selected.name}</h2>
+            <h2>{node.name}</h2>
+            <p>
+              {itemCount(node.count)}{node.total === node.count
+                ? ''
+                : ` · ${$t('frameleaf_tags_including_subtags', { values: { count: node.total } })}`}
+            </p>
           </div>
-          <div class="tag-browser-detail-actions">
-            <Button onclick={openRename}>
+          <div class="dv-detail-actions">
+            <Button onclick={() => open({ type: 'rename', node: node! })}>
               <Icon icon={mdiPencilOutline} size="16" aria-hidden="true" />
               {$t('frameleaf_tags_rename')}
             </Button>
-            <Menu label={$t('frameleaf_tags_color')}>
+            <Menu label={$t('frameleaf_tags_change_color')}>
               {#snippet trigger()}
-                <span class="tag-dot" style={`--dot-color:${selected.color ?? 'var(--fl-muted)'}`} aria-hidden="true"
-                ></span>
-                {$t('frameleaf_tags_color')}
+                <span class="dv-menu-trigger">
+                  <Icon icon={mdiPaletteOutline} size="16" aria-hidden="true" />
+                  {@render dot(node!.color)}
+                  <span class="dv-menu-trigger-label">{$t('frameleaf_tags_color')}</span>
+                  <Icon icon={mdiChevronDown} size="16" aria-hidden="true" />
+                </span>
               {/snippet}
-              {#each TAG_COLOR_SWATCHES as swatch (swatch.id)}
-                <MenuItem checked={selected.color === swatch.hex} onSelect={() => setColor(selected!, swatch.hex)}>
-                  <span class="tag-dot" style={`--dot-color:${swatch.hex}`} aria-hidden="true"></span>
-                  {swatch.id}
+              {#each TAG_COLORS as option (option.id)}
+                <MenuItem checked={nodeColorId === option.id} onSelect={() => void setColor(node!, option.id)}>
+                  <span class="dv-menu-item">
+                    {@render dot(option.hex)}
+                    {colorLabel(option.id)}
+                  </span>
                 </MenuItem>
               {/each}
             </Menu>
-            <Button onclick={() => openCreate(selected!.id)}>
-              <Icon icon={mdiPlus} size="16" aria-hidden="true" />
-              {$t('frameleaf_tags_new_subtag')}
-            </Button>
-            <Button onclick={openDelete}>
-              <Icon icon={mdiDeleteOutline} size="16" aria-hidden="true" />
-              {$t('delete_tag')}
-            </Button>
+            <Menu label={$t('frameleaf_tags_more_actions')} align="end">
+              {#snippet trigger()}
+                <Icon icon={mdiDotsHorizontal} size="18" aria-hidden="true" />
+              {/snippet}
+              <MenuItem onSelect={() => open({ type: 'create', parentId: node!.id })}>
+                <span class="dv-menu-item">
+                  <Icon icon={mdiTagPlusOutline} size="16" aria-hidden="true" />
+                  {$t('frameleaf_tags_new_subtag')}
+                </span>
+              </MenuItem>
+              <MenuItem disabled={!node.parent} onSelect={() => void moveToTop(node!)}>
+                <span class="dv-menu-item">
+                  <Icon icon={mdiArrowUp} size="16" aria-hidden="true" />
+                  {$t('frameleaf_tags_move_top_level')}
+                </span>
+              </MenuItem>
+              <div class="dv-menu-separator" role="separator"></div>
+              <MenuItem onSelect={() => open({ type: 'delete', node: node! })}>
+                <span class="dv-menu-danger">
+                  <Icon icon={mdiDeleteOutline} size="16" aria-hidden="true" />
+                  {$t('delete_tag')}
+                </span>
+              </MenuItem>
+            </Menu>
           </div>
         </div>
 
-        {#if coverAssets.length > 0}
-          <div
-            class="tag-browser-strip"
-            aria-label={$t('frameleaf_tags_preview_of', { values: { tag: selected.name } })}
-          >
-            {#each coverAssets as asset (asset.id)}
+        {#if covers.length > 0}
+          <div class="dv-strip" aria-label={$t('frameleaf_tags_preview_of', { values: { tag: node.name } })}>
+            {#each covers as asset (asset.id)}
               <img src={getAssetUrls(asset).thumbnail} alt="" loading="lazy" />
             {/each}
           </div>
         {:else}
-          <p class="tag-browser-strip-empty">{$t('frameleaf_tags_no_items')}</p>
+          <div class="dv-strip-empty">
+            <Icon icon={mdiImageOutline} size="22" aria-hidden="true" />
+            <span>{$t('frameleaf_tags_no_items')}</span>
+          </div>
         {/if}
 
-        <div class="tag-browser-cta">
-          <Button variant="primary" disabled={coverTotal === 0} onclick={viewInLibrary}>
+        <div class="dv-detail-cta">
+          <Button variant="primary" disabled={!node.total} onclick={() => void showAll(node!)}>
             <Icon icon={mdiImageMultipleOutline} size="16" aria-hidden="true" />
-            {$t('frameleaf_tags_show_all', { values: { count: coverTotal } })}
+            {$t('frameleaf_tags_show_all', { values: { count: node.total } })}
           </Button>
         </div>
 
-        {#if selectedNode && selectedNode.children.length > 0}
-          <h3 class="tag-browser-subheading">{$t('frameleaf_tags_subtags')}</h3>
-          <TreeItemThumbnails items={navNode.children} icon={mdiTag} onClick={handleNavigation} />
+        {#if node.children.length > 0}
+          <div class="dv-subtags">
+            <h3>{$t('frameleaf_tags_subtags')}</h3>
+            <div class="dv-chip-row">
+              {#each node.children as child (child.id)}
+                <button type="button" class="dv-chip" onclick={() => void choose(child)}>
+                  {@render dot(child.color)}
+                  {child.name}
+                  <small>{child.total}</small>
+                </button>
+              {/each}
+            </div>
+          </div>
         {/if}
       {:else}
-        <div class="tag-browser-overview">
+        <div class="dv-overview">
           <h2>{$t('frameleaf_tags_choose_title')}</h2>
           <p>{$t('frameleaf_tags_choose_description')}</p>
+          {#if topTags.length > 0}
+            <h3>{$t('frameleaf_tags_most_used')}</h3>
+            <div class="dv-chip-row">
+              {#each topTags as item (item.id)}
+                <button type="button" class="dv-chip" onclick={() => void choose(item)}>
+                  {@render dot(item.color)}
+                  {item.path.join(' / ')}
+                  <small>{item.total}</small>
+                </button>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
-    </Pane>
+    </section>
   </div>
-</div>
 
-{#if dialog}
-  <Dialog
-    title={dialog.type === 'create'
-      ? $t('frameleaf_tags_new')
-      : dialog.type === 'rename'
-        ? $t('frameleaf_tags_rename')
-        : $t('delete_tag')}
-    closeLabel={$t('close')}
-    bind:open={dialogOpen}
-  >
-    {#if dialog.type === 'create'}
-      <form
-        onsubmit={(event) => {
-          event.preventDefault();
-          void submitCreate();
-        }}
-      >
-        <label>
-          {$t('name')}
-          <input type="text" bind:value={createName} maxlength="60" required />
-        </label>
-        <Picker label={$t('frameleaf_tags_parent')} options={parentOptions} bind:selectedOption={createParent} />
-        <fieldset role="radiogroup" aria-label={$t('frameleaf_tags_color')}>
-          <legend>{$t('frameleaf_tags_color')}</legend>
-          {#each TAG_COLOR_SWATCHES as swatch (swatch.id)}
-            <button
-              type="button"
-              role="radio"
-              aria-checked={createColor === swatch.hex}
-              aria-label={swatch.id}
-              style={`--dot-color:${swatch.hex}`}
-              class="tag-swatch"
-              onclick={() => (createColor = swatch.hex)}
-            ></button>
-          {/each}
-        </fieldset>
-        {#if formError}<p role="alert">{formError}</p>{/if}
-        <div class="tag-browser-dialog-actions">
-          <Button onclick={closeDialog}>{$t('cancel')}</Button>
-          <Button variant="primary" type="submit" disabled={saving}>{$t('create')}</Button>
-        </div>
+  {#if dialog}
+    <Dialog title={dialogTitle} closeLabel={$t('close')} bind:open={dialogOpen}>
+      <form class="dv-form" onsubmit={submit} bind:this={formElement}>
+        {#if dialog.type === 'delete'}
+          {@const target = dialog.node}
+          <p>
+            <FormatMessage
+              key={target.children.length > 0
+                ? 'frameleaf_tags_delete_confirm_with_children'
+                : 'frameleaf_tags_delete_confirm'}
+              values={{ tag: target.path.join(' / '), count: target.children.length }}
+            >
+              {#snippet children({ message })}<strong>{message}</strong>{/snippet}
+            </FormatMessage>
+            {target.total
+              ? $t('frameleaf_tags_delete_items', { values: { count: target.total } })
+              : $t('frameleaf_tags_delete_no_items')}
+          </p>
+        {:else}
+          <label>
+            {$t('name')}
+            <input
+              data-initial-focus
+              bind:value={formName}
+              maxlength="60"
+              aria-invalid={formError ? true : undefined}
+            />
+          </label>
+        {/if}
+        {#if dialog.type === 'create'}
+          <label>
+            {$t('frameleaf_tags_parent')}
+            <select bind:value={formParent}>
+              <option value="">{$t('frameleaf_tags_parent_none')}</option>
+              {#each parentOptions as option (option.id)}
+                <option value={option.id}>{option.label}</option>
+              {/each}
+            </select>
+          </label>
+          <fieldset class="dv-swatches">
+            <legend>{$t('frameleaf_tags_color')}</legend>
+            {#each TAG_COLORS as option (option.id)}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={formColor === option.id}
+                aria-label={colorLabel(option.id)}
+                title={colorLabel(option.id)}
+                class="dv-swatch"
+                class:on={formColor === option.id}
+                style:--dv-swatch={option.hex}
+                onclick={() => (formColor = option.id)}
+              ></button>
+            {/each}
+          </fieldset>
+        {/if}
+        {#if formError}
+          <p class="dv-error" role="alert">{formError}</p>
+        {/if}
       </form>
-    {:else if dialog.type === 'rename'}
-      <form
-        onsubmit={(event) => {
-          event.preventDefault();
-          void submitRename();
-        }}
-      >
-        <label>
-          {$t('name')}
-          <input type="text" bind:value={renameName} maxlength="60" required />
-        </label>
-        {#if formError}<p role="alert">{formError}</p>{/if}
-        <div class="tag-browser-dialog-actions">
-          <Button onclick={closeDialog}>{$t('cancel')}</Button>
-          <Button variant="primary" type="submit" disabled={saving}>{$t('save')}</Button>
-        </div>
-      </form>
-    {:else}
-      <p>
-        {dialog.childCount > 0
-          ? $t('frameleaf_tags_delete_confirm_with_children', {
-              values: { tag: dialog.tag.name, count: dialog.childCount },
-            })
-          : $t('frameleaf_tags_delete_confirm', { values: { tag: dialog.tag.name } })}
-      </p>
-      <div class="tag-browser-dialog-actions">
-        <Button onclick={closeDialog}>{$t('cancel')}</Button>
-        <Button variant="primary" disabled={saving} onclick={() => void submitDelete()}>{$t('delete')}</Button>
-      </div>
-    {/if}
-  </Dialog>
-{/if}
-
-<style>
-  .tag-browser {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    color: var(--fl-text);
-  }
-  .tag-browser-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-  .tag-browser-header h1 {
-    font-size: 1.25rem;
-  }
-  .tag-browser-header p {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .tag-browser-split {
-    display: grid;
-    grid-template-columns: minmax(14rem, 20rem) 1fr;
-    gap: 0.75rem;
-    align-items: start;
-  }
-  @media (max-width: 62rem) {
-    .tag-browser-split {
-      grid-template-columns: 1fr;
-    }
-  }
-  .tag-browser-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 2rem 1rem;
-    color: var(--fl-muted);
-    text-align: center;
-  }
-  .tag-browser-detail-title {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-block: 0.75rem;
-  }
-  .tag-browser-detail-title h2 {
-    font-size: 1.0625rem;
-  }
-  .tag-browser-detail-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-    margin-inline-start: auto;
-  }
-  .tag-dot {
-    display: inline-block;
-    width: 0.75rem;
-    height: 0.75rem;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background: var(--dot-color, var(--fl-muted));
-  }
-  .tag-browser-strip {
-    display: flex;
-    gap: 0.375rem;
-    overflow-x: auto;
-  }
-  .tag-browser-strip img {
-    width: 4.5rem;
-    height: 4.5rem;
-    object-fit: cover;
-    border-radius: var(--fl-radius);
-  }
-  .tag-browser-strip-empty {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .tag-browser-cta {
-    margin-block-start: 0.75rem;
-  }
-  .tag-browser-subheading {
-    margin-block-start: 1rem;
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  .tag-browser-overview {
-    color: var(--fl-muted);
-  }
-  .tag-browser-dialog-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-block-start: 1rem;
-  }
-  form label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-block-end: 0.75rem;
-  }
-  form input[type='text'] {
-    padding: 0.4375rem 0.6875rem;
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-  }
-  fieldset {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-    padding: 0;
-    margin: 0 0 0.75rem;
-    border: 0;
-  }
-  .tag-swatch {
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 50%;
-    background: var(--dot-color);
-    border: 2px solid transparent;
-  }
-  .tag-swatch[aria-checked='true'] {
-    border-color: var(--fl-text);
-  }
-</style>
+      {#snippet actions()}
+        <Button onclick={close}>{$t('cancel')}</Button>
+        <!-- The footer sits outside the form (Dialog pins it), so it submits the form explicitly. -->
+        <Button
+          variant={dialog?.type === 'delete' ? 'danger' : 'primary'}
+          disabled={saving}
+          onclick={() => formElement?.requestSubmit()}
+        >
+          {dialog?.type === 'create' ? $t('create') : dialog?.type === 'rename' ? $t('save') : $t('delete')}
+        </Button>
+      {/snippet}
+    </Dialog>
+  {/if}
+</section>
