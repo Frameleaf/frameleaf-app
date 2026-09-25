@@ -57,7 +57,7 @@ describe('AssetViewerNavBar component', () => {
 
     const asset = assetFactory.build({ isTrashed: false });
     const { getByLabelText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
-    expect(getByLabelText('frameleaf_viewer_close')).toBeInTheDocument();
+    expect(getByLabelText('frameleaf_viewer_close_label')).toBeInTheDocument();
   });
 
   describe('if the current user owns the asset', () => {
@@ -71,7 +71,7 @@ describe('AssetViewerNavBar component', () => {
       authManager.setPreferences(preferences);
 
       const { getByLabelText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
-      expect(getByLabelText('delete')).toBeInTheDocument();
+      expect(getByLabelText('frameleaf_viewer_move_to_trash')).toBeInTheDocument();
     });
 
     // FL-34: sensitivity is the one lock, offered as a single Mark Sensitive entry (the prototype's
@@ -127,7 +127,7 @@ describe('AssetViewerNavBar component', () => {
       authManager.setPreferences(preferences);
 
       const { getByLabelText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
-      await fireEvent.click(getByLabelText('editor'));
+      await fireEvent.click(getByLabelText('frameleaf_viewer_edit'));
 
       expect(assetViewerManager.isShowEditor).toBe(true);
     });
@@ -158,8 +158,8 @@ describe('AssetViewerNavBar component', () => {
       expect(getByText('frameleaf_viewer_group_set_as')).toBeInTheDocument();
 
       // Not opened from an album or a person page, so neither target is offered.
-      expect(queryByRole('menuitem', { name: 'set_as_album_cover' })).not.toBeInTheDocument();
-      expect(queryByRole('menuitem', { name: 'set_as_featured_photo' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_album_cover' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_person_featured' })).not.toBeInTheDocument();
       expect(queryByText('frameleaf_viewer_group_trash')).not.toBeInTheDocument();
     });
 
@@ -192,14 +192,15 @@ describe('AssetViewerNavBar component', () => {
 
       const video = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Video });
       const rendered = renderWithTooltips(AssetViewerNavBar, { asset: video, ...additionalProps });
-      expect(rendered.getByRole('menuitem', { name: 'refresh_encoded_videos' })).toBeInTheDocument();
+      expect(rendered.getByRole('menuitem', { name: 'frameleaf_viewer_menu_refresh_encoded' })).toBeInTheDocument();
+      expect(rendered.getByRole('menuitem', { name: 'frameleaf_viewer_menu_transcode' })).toBeInTheDocument();
       expect(rendered.queryByRole('menuitem', { name: 'refresh_faces' })).not.toBeInTheDocument();
       rendered.unmount();
 
       const still = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
       const { getByRole, queryByRole } = renderWithTooltips(AssetViewerNavBar, { asset: still, ...additionalProps });
       expect(getByRole('menuitem', { name: 'refresh_faces' })).toBeInTheDocument();
-      expect(queryByRole('menuitem', { name: 'refresh_encoded_videos' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_refresh_encoded' })).not.toBeInTheDocument();
     });
 
     it('shows the EXIF line under the file name', () => {
@@ -406,9 +407,12 @@ describe('AssetViewerNavBar component', () => {
       expect(names).not.toContain('asset_offline');
       // Download lives in the More menu's Download group; only a shared link, which has no menu, keeps it here.
       expect(names).not.toContain('download');
-      const order = ['share', 'frameleaf_viewer_information', 'delete', 'frameleaf_viewer_more_actions'].map((name) =>
-        names.indexOf(name),
-      );
+      const order = [
+        'share',
+        'frameleaf_viewer_information_heading',
+        'frameleaf_viewer_move_to_trash',
+        'frameleaf_viewer_more_actions',
+      ].map((name) => names.indexOf(name));
       expect(order.every((index) => index >= 0)).toBe(true);
       expect(order).toEqual([...order].sort((a, b) => a - b));
     });
@@ -433,6 +437,118 @@ describe('AssetViewerNavBar component', () => {
       vi.unstubAllGlobals();
       vi.stubGlobal('ResizeObserver', getResizeObserverMock());
       setSharedLink(undefined);
+    });
+  });
+  describe('September 24 conformance (V-3, V-4, V-7, V-10, V-11, V-16)', () => {
+    const signIn = (ownerId: string) => {
+      authManager.setUser(userAdminFactory.build({ id: ownerId }));
+      authManager.setPreferences(
+        preferencesFactory.build({ cast: { gCastEnabled: false }, ratings: { enabled: true } }),
+      );
+    };
+
+    const toolbarNames = (toolbar: HTMLElement) =>
+      [...toolbar.querySelectorAll('button')].map(
+        (button) => button.getAttribute('aria-label') ?? button.textContent?.trim(),
+      );
+
+    it('shows Restore and Delete permanently in the trash and hides Favorite, Rating and Cast (V-4)', () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({
+        ownerId,
+        isTrashed: true,
+        isFavorite: false,
+        type: AssetTypeEnum.Image,
+        visibility: AssetVisibility.Timeline,
+      });
+
+      const { getByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      const names = toolbarNames(getByRole('toolbar', { name: 'frameleaf_viewer_actions' }));
+
+      expect(names).toContain('restore');
+      expect(names).toContain('frameleaf_viewer_delete_permanently');
+      expect(names).not.toContain('frameleaf_viewer_move_to_trash');
+      expect(names).not.toContain('frameleaf_viewer_add_to_favorites');
+      expect(names.some((name) => name?.startsWith('frameleaf_viewer_rating_label'))).toBe(false);
+      expect(getByRole('menuitem', { name: 'frameleaf_viewer_delete_permanently' })).toBeInTheDocument();
+      expect(getByRole('menuitem', { name: 'restore' })).toBeInTheDocument();
+    });
+
+    it('puts the Rating tool in the top row for the owner (V-3)', () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
+
+      const { getByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(getByTestId('viewer-rating-button')).toHaveAttribute('aria-haspopup', 'true');
+    });
+
+    it('plays a Live Photo from the on-photo badge, not the toolbar (V-16)', () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({
+        ownerId,
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        livePhotoVideoId: 'motion-id',
+      });
+
+      const { queryByLabelText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(queryByLabelText('play_motion_photo')).not.toBeInTheDocument();
+    });
+
+    it('uses the template labels and offers the slideshow settings in the Viewer group (V-7, V-11)', () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({
+        ownerId,
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        visibility: AssetVisibility.Timeline,
+      });
+      const stack = {
+        id: 'stack-id',
+        primaryAssetId: 'other-id',
+        assets: [assetFactory.build({ id: 'other-id', ownerId }), asset],
+      };
+
+      const { getByRole, queryByRole } = renderWithTooltips(AssetViewerNavBar, {
+        asset,
+        stack,
+        canNavigateCollection: true,
+        ...additionalProps,
+      });
+
+      expect(getByRole('menuitem', { name: 'frameleaf_viewer_menu_keep_this' })).toBeInTheDocument();
+      expect(getByRole('menuitem', { name: 'frameleaf_viewer_menu_set_stack_primary' })).toBeInTheDocument();
+      expect(getByRole('menuitem', { name: 'frameleaf_viewer_menu_unstack' })).toBeInTheDocument();
+      expect(getByRole('menuitem', { name: 'frameleaf_viewer_slideshow_settings' })).toBeInTheDocument();
+      // V-10: tagging and the video source leave the menu for the information panel and the footer.
+      expect(queryByRole('menuitem', { name: 'add_tag' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'play_original_video' })).not.toBeInTheDocument();
+      // An item that is already stacked is not offered Add to stack.
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_add_to_stack' })).not.toBeInTheDocument();
+    });
+
+    it('opens the slideshow settings from the menu', async () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({
+        ownerId,
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        visibility: AssetVisibility.Timeline,
+      });
+
+      const { getByRole } = renderWithTooltips(AssetViewerNavBar, {
+        asset,
+        canNavigateCollection: true,
+        ...additionalProps,
+      });
+      await fireEvent.click(getByRole('menuitem', { name: 'frameleaf_viewer_slideshow_settings' }));
+      expect(get(slideshowStore.settingsOpen)).toBe(true);
+      await slideshowStore.closeSettings({ restoreFocus: false });
     });
   });
 });

@@ -1,7 +1,9 @@
 import {
   BURST_SECONDS,
   EVENT_GAP_HOURS,
+  MAX_PET_STORY_ASSETS,
   MIN_EVENT_ASSETS,
+  MIN_PET_STORY_ASSETS,
   type StoryCandidate,
   birthdayAge,
   birthdayOn,
@@ -10,6 +12,7 @@ import {
   diversifyByMonth,
   dominantPlace,
   groupEventStories,
+  groupPetStories,
   placeLabel,
   suppressBursts,
 } from 'src/utils/memory-story.js';
@@ -207,6 +210,53 @@ describe('memory story grouping', () => {
       expect(placeLabel(null)).toBeUndefined();
       expect(placeLabel({ city: null, state: null, country: null })).toBeUndefined();
     });
+  });
+});
+
+describe('groupPetStories (FL-58)', () => {
+  const row = (petId: string, name: string, date: string, assetId = `${petId}-${date}`) => ({
+    petId,
+    name,
+    species: 'cat',
+    assetId,
+    localDateTime: new Date(`${date}T12:00:00.000Z`),
+  });
+
+  it('makes one story per named pet and local month with enough photos', () => {
+    const rows = [
+      ...['01', '02', '03', '04', '05'].map((day) => row('biscuit', 'Biscuit', `2026-08-${day}`)),
+      ...['01', '02', '03', '04'].map((day) => row('rex', 'Rex', `2026-08-${day}`)),
+      ...['01', '02', '03', '04', '05'].map((day) => row('nameless', '  ', `2026-08-${day}`)),
+    ];
+
+    const stories = groupPetStories(rows);
+
+    expect(stories).toHaveLength(1);
+    expect(stories[0]).toMatchObject({ petId: 'biscuit', name: 'Biscuit', month: '2026-08', assetCount: 5 });
+  });
+
+  it('splits months on the owner’s local calendar and counts a photo once', () => {
+    const rows = [
+      ...['01', '02', '03', '04', '05'].map((day) => row('biscuit', 'Biscuit', `2026-07-${day}`)),
+      row('biscuit', 'Biscuit', '2026-07-05', 'biscuit-2026-07-05'),
+      row('biscuit', 'Biscuit', '2026-08-01'),
+    ];
+
+    const stories = groupPetStories(rows);
+
+    expect(stories.map(({ month, assetCount }) => [month, assetCount])).toEqual([['2026-07', 5]]);
+    expect(MIN_PET_STORY_ASSETS).toBe(5);
+  });
+
+  it('keeps at most the story limit, spread across days', () => {
+    const rows = Array.from({ length: 80 }, (_, index) =>
+      row('biscuit', 'Biscuit', `2026-08-${String((index % 20) + 1).padStart(2, '0')}`, `a-${index}`),
+    );
+
+    const [story] = groupPetStories(rows);
+
+    expect(story.assetIds).toHaveLength(MAX_PET_STORY_ASSETS);
+    expect(story.assetCount).toBe(80);
   });
 });
 

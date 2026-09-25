@@ -3,6 +3,16 @@ import { mdiMagnet } from "@mdi/js";
 import { Button, Dialog } from "./App";
 import { Icon, IconPath } from "./Icon";
 import { PersonAvatar } from "./People";
+import { CloudJobDialog, useCloudState } from "./CloudJobDialog";
+import { detectedWorker, lanWorker, workerGpu } from "./frameleaf-cloud-data.mjs";
+import { estimateJob, estimateRange, jobQuantity, modelsFor } from "./cloud-jobs.mjs";
+import { ModelSlider, resolveModelChoice, sliderContext } from "./ModelSlider";
+import {
+  INTERPOLATION_TRADEOFF,
+  formatDuration as formatWorkTime,
+  interpolationEstimate,
+  interpolationWork,
+} from "./gpu-model-catalog.mjs";
 import { media as libraryMedia, people as libraryPeople } from "./media";
 import {
   DEFAULT_FPS,
@@ -64,6 +74,7 @@ import {
   snapPoints,
   snapTime,
   speeds,
+  retimeMethods,
   splitClipAt,
   studioStorageKey,
   timelineLength,
@@ -565,6 +576,76 @@ function TimelineClip({
 }
 
 /* ------------------------------------------------------------------ */
+/* Smooth motion (frame interpolation)                                  */
+/* ------------------------------------------------------------------ */
+
+/** The Smooth motion model for a job, following the model slider and routing. */
+function useInterpolationChoice(savedId) {
+  const cloud = useCloudState();
+  return { cloud, resolved: resolveModelChoice(cloud, "interpolation", savedId ?? cloud.processing.defaultModels?.interpolation) };
+}
+
+/**
+ * How missing frames are made: duplicated, blended, or created by AI
+ * interpolation (with the Smooth motion model slider, time or cost, and size).
+ */
+function FrameMethod({ legend, method, setMethod, modelId, setModel, durationSeconds, sourceFps, targetFps }) {
+  const { cloud, resolved } = useInterpolationChoice(modelId);
+  const work = interpolationWork({ durationSeconds, sourceFps, targetFps });
+  const estimate = resolved
+    ? interpolationEstimate(resolved.item, work, {
+        ...sliderContext(cloud, "interpolation"),
+        band: resolved.runsOn === "cloud" ? "cloud" : undefined,
+      })
+    : null;
+  const chosen = retimeMethods.find((item) => item.id === method) ?? retimeMethods[1];
+  return (
+    <div className="fls-frame-method">
+      <div className="fls-segmented" role="radiogroup" aria-label={legend}>
+        {retimeMethods.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="radio"
+            aria-checked={method === item.id}
+            className={method === item.id ? "is-on" : ""}
+            onClick={() => setMethod(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <p className="muted fls-note">{chosen.help}</p>
+      {method === "ai" && (
+        <>
+          <ModelSlider
+            state={cloud}
+            workload="interpolation"
+            value={resolved?.item.id}
+            label="Smooth motion model"
+            hideLegend
+            onChange={(id) => setModel(id)}
+          />
+          {estimate && (
+            <dl className="fls-facts">
+              <dt>{estimate.runsOn === "cloud" ? "Cloud cost" : "Time"}</dt>
+              <dd>
+                {estimate.runsOn === "cloud"
+                  ? `about ${estimateRange(estimate.cost)} · confirmed before anything is sent`
+                  : `about ${formatWorkTime(estimate.seconds)} on ${estimate.runsOn === "gpu" ? "your GPU" : "the processor"}`}
+              </dd>
+              <dt>Size</dt>
+              <dd>about {estimate.sizeFactor}× the frames</dd>
+            </dl>
+          )}
+          <p className="muted fls-note">{INTERPOLATION_TRADEOFF}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Inspector panels                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -668,6 +749,22 @@ function EditInspector({
               ))}
             </select>
           </label>
+        )}
+        {bounded && clip.kind === "video" && clip.speed < 1 && (
+          <div className="fls-field" role="group" aria-label="Slow-motion frames">
+            <span>Slow-motion frames</span>
+            <FrameMethod
+              legend="Slow-motion frames"
+              method={clip.retime}
+              setMethod={(retime) => apply((project) => updateClip(project, clip.id, { retime }))}
+              modelId={clip.retimeModel}
+              setModel={(retimeModel) => apply((project) => updateClip(project, clip.id, { retimeModel }))}
+              durationSeconds={clip.duration * clip.speed}
+              sourceFps={30}
+              targetFps={30 / clip.speed}
+            />
+            <small className="muted fls-note">New frames are made when you export or render this sequence.</small>
+          </div>
         )}
         {!["audio", "voice"].includes(clip.kind) && (
           <Button icon="mdiTransition" onClick={() => onOpenTransition(clip.id)}>
@@ -1570,7 +1667,74 @@ function RestoreCompare({ frame, split, setSplit, loupe, mode }) {
   );
 }
 
-function RestorePanel({ restore, setRestore, destination, setDestination, estimate, durationSeconds, onPreview, onFull, onRefreshFrame, advanced }) {
+/** The Frameleaf Cloud range for the chosen model; the job dialog confirms the real choice. */
+function cloudRange(workload, durationSeconds, modelId) {
+  const model = modelsFor(workload).find((item) => item.id === modelId) ?? modelsFor(workload)[0];
+  const { quantity } = jobQuantity(workload, { durationSeconds });
+  return model ? `about ${estimateRange(estimateJob(model.id, quantity))}` : "—";
+}
+const cloudCostText = (estimate, destination, workload, durationSeconds, modelId) =>
+  destination === "cloud"
+    ? cloudRange(workload, durationSeconds, modelId)
+    : estimate.cloudCost.amount
+      ? `${formatMoney(estimate.cloudCost.amount)} ± ${formatMoney(estimate.cloudCost.uncertainty)}`
+      : "None";
+
+/**
+ * Where a Studio job runs, following Settings → Compute & jobs → Where each job
+ * runs. Pick the local worker, then slide to a model: white and green models
+ * run on that worker, blue ones on Frameleaf Cloud (with the cost confirmed
+ * before anything is sent). A job never switches destination on its own.
+ */
+function DestinationSelect({ workload, destination, setDestination, choice, setChoice }) {
+  const cloud = useCloudState();
+  const workers = [detectedWorker(cloud), lanWorker];
+  const workerId = choice?.worker ?? (destination === "lan" ? "lan" : "local");
+  const worker = workers.find((item) => item.id === workerId) ?? workers[0];
+  const resolved = resolveModelChoice(cloud, workload, choice?.model ?? cloud.processing.defaultModels?.[workload], {
+    worker,
+  });
+  const target = resolved ? (resolved.runsOn === "cloud" ? "cloud" : worker.id) : null;
+  useEffect(() => {
+    if (target && target !== destination) setDestination(target);
+  }, [target, destination]); // eslint-disable-line react-hooks/exhaustive-deps
+  const describe = (item) => {
+    const gpu = workerGpu(item, workload);
+    return `${item.id === "local" ? `${item.name} · this server` : item.name} — ${gpu ? `${gpu.name}, ${gpu.vramGb} GB` : "processor only"}`;
+  };
+  return (
+    <div className="fls-destination">
+      <select
+        value={worker.id}
+        aria-label="Local worker"
+        onChange={(event) => setChoice?.({ model: choice?.model, worker: event.target.value })}
+      >
+        {workers.map((item) => (
+          <option key={item.id} value={item.id}>
+            {describe(item)}
+          </option>
+        ))}
+      </select>
+      <ModelSlider
+        state={cloud}
+        workload={workload}
+        worker={worker}
+        value={resolved?.item.id}
+        hideLegend
+        label="Model"
+        gpuLabel={`the ${worker.id === "local" ? "server's" : "LAN worker's"} GPU`}
+        onChange={(id) => setChoice?.({ model: id, worker: worker.id })}
+      />
+      {!resolved && (
+        <small className="muted fls-note">
+          Nothing can run this job yet. Change where this work runs in Settings → Compute & jobs.
+        </small>
+      )}
+    </div>
+  );
+}
+
+function RestorePanel({ restore, setRestore, destination, setDestination, choice, setChoice, estimate, durationSeconds, onPreview, onFull, onRefreshFrame, advanced }) {
   const chosen = destinations.find((item) => item.id === destination) || destinations[0];
   return (
     <div className="fls-panel">
@@ -1597,20 +1761,14 @@ function RestorePanel({ restore, setRestore, destination, setDestination, estima
       </section>
       <section className="fls-section">
         <h4>Destination</h4>
-        <label className="fls-field">
+        <div className="fls-field" role="group" aria-label="Process on">
           <span>Process on</span>
-          <select value={destination} onChange={(event) => setDestination(event.target.value)}>
-            {destinations.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          <DestinationSelect workload="restoration" destination={destination} setDestination={setDestination} choice={choice} setChoice={setChoice} />
+        </div>
         <p className={`fls-note ${chosen.leaves ? "fls-warning" : "muted"}`}>
           {chosen.leaves ? (
             <>
-              <Icon name="mdiCloudOutline" size={14} /> Media leaves your network for this job.
+              <Icon name="mdiCloudOutline" size={14} /> Previews leave this server for Frameleaf Cloud. You confirm the model and cost before anything is sent.
             </>
           ) : (
             "Media stays on your network."
@@ -1625,7 +1783,7 @@ function RestorePanel({ restore, setRestore, destination, setDestination, estima
           <dt>Output</dt>
           <dd>{formatBytes(estimate.sizeBytes)}</dd>
           <dt>Cloud cost</dt>
-          <dd>{estimate.cloudCost.amount ? `${formatMoney(estimate.cloudCost.amount)} ± ${formatMoney(estimate.cloudCost.uncertainty)}` : "None"}</dd>
+          <dd>{cloudCostText(estimate, destination, "restoration", durationSeconds, choice?.model)}</dd>
         </dl>
         <p className="muted fls-note">For {formatSeconds(durationSeconds)} of video in this sequence.</p>
       </section>
@@ -1658,7 +1816,13 @@ function RestorePanel({ restore, setRestore, destination, setDestination, estima
 /* Dialogs                                                              */
 /* ------------------------------------------------------------------ */
 
-function ExportDialog({ sequence, length, destination, setDestination, onExport, close }) {
+function ExportDialog({ sequence, length, destination, setDestination, choice, setChoice, onExport, close }) {
+  const [frameRate, setFrameRate] = useState(sequence.fps);
+  const [conversion, setConversion] = useState("blend");
+  const [interpolationModel, setInterpolationModel] = useState(null);
+  const { resolved: interpolation } = useInterpolationChoice(interpolationModel);
+  const rates = [...new Set([sequence.fps, 50, 60])].filter((rate) => rate >= sequence.fps).sort((a, b) => a - b);
+  const converting = frameRate > sequence.fps;
   const [format, setFormat] = useState(exportFormats[0]);
   const [color, setColor] = useState(exportColors[0]);
   const [resolution, setResolution] = useState("2160p");
@@ -1671,7 +1835,18 @@ function ExportDialog({ sequence, length, destination, setDestination, onExport,
       actions={
         <>
           <Button onClick={close}>Cancel</Button>
-          <Button primary icon="mdiExportVariant" data-initial-focus onClick={() => onExport({ format, color, resolution, estimate })}>
+          <Button primary icon="mdiExportVariant" data-initial-focus onClick={() =>
+              onExport({
+                format,
+                color,
+                resolution,
+                estimate,
+                frameRate,
+                conversion: converting ? conversion : null,
+                interpolation: converting && conversion === "ai" ? interpolation : null,
+              })
+            }
+          >
             Export
           </Button>
         </>
@@ -1705,15 +1880,34 @@ function ExportDialog({ sequence, length, destination, setDestination, onExport,
           </select>
         </label>
         <label className="fls-field">
-          <span>Render on</span>
-          <select value={destination} onChange={(event) => setDestination(event.target.value)}>
-            {destinations.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
+          <span>Frame rate</span>
+          <select value={frameRate} onChange={(event) => setFrameRate(Number(event.target.value))}>
+            {rates.map((rate) => (
+              <option key={rate} value={rate}>
+                {rate} fps{rate === sequence.fps ? " (sequence)" : ""}
               </option>
             ))}
           </select>
         </label>
+        {converting && (
+          <div className="fls-field fls-field--wide" role="group" aria-label="Frame-rate conversion">
+            <span>Frame-rate conversion</span>
+            <FrameMethod
+              legend="Frame-rate conversion"
+              method={conversion}
+              setMethod={setConversion}
+              modelId={interpolationModel}
+              setModel={setInterpolationModel}
+              durationSeconds={length}
+              sourceFps={sequence.fps}
+              targetFps={frameRate}
+            />
+          </div>
+        )}
+        <div className="fls-field" role="group" aria-label="Render on">
+          <span>Render on</span>
+          <DestinationSelect workload="render" destination={destination} setDestination={setDestination} choice={choice} setChoice={setChoice} />
+        </div>
       </div>
       {color === "Dolby Vision" && (
         <p className="fls-note fls-warning">
@@ -1728,10 +1922,12 @@ function ExportDialog({ sequence, length, destination, setDestination, onExport,
         <dt>Size</dt>
         <dd>{formatBytes(estimate.sizeBytes)}</dd>
         <dt>Cloud cost</dt>
-        <dd>{estimate.cloudCost.amount ? `${formatMoney(estimate.cloudCost.amount)} ± ${formatMoney(estimate.cloudCost.uncertainty)}` : "None"}</dd>
+        <dd>{cloudCostText(estimate, destination, "render", length, choice?.model)}</dd>
       </dl>
       <p className={`fls-note ${chosen.leaves ? "fls-warning" : "muted"}`}>
-        {chosen.leaves ? "Media leaves your network for this export." : "Rendered on your network. Progress appears in Activity."}
+        {chosen.leaves
+          ? "The sequence leaves this server for Frameleaf Cloud. Next you choose the model and confirm the cost."
+          : "Rendered on your network. Progress appears in Activity."}
       </p>
     </Dialog>
   );
@@ -1871,7 +2067,15 @@ export function Studio({
   notify: notifyProp,
   people = libraryPeople,
   onOpenActivity,
+  finishJob,
+  onOpenCloudSettings,
+  onAddCredit,
 }) {
+  const [cloudRequest, setCloudRequest] = useState(null);
+  // Per-workload model and local worker chosen on the Studio model sliders.
+  const [jobChoice, setJobChoice] = useState({});
+  // A job waiting for the confirmed Smooth motion job before it is queued.
+  const nextJob = useRef(null);
   const assetMap = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
   const notifyRef = useLatest(notifyProp);
   // Stable identity so panels can list it as an effect dependency safely.
@@ -2259,10 +2463,15 @@ export function Studio({
   }, [playing, stopRecording, recordingRef]);
   const recordLevel = recording && playing ? waveform(recording.seed, 300)[Math.floor((playhead - recording.start) * 20) % 300] : 0;
 
-  const queueJob = (kind, payload, message) => {
-    enqueue?.(kind, { project, ...payload });
+  const queueJob = (kind, payload, message, cloud) => {
+    if (payload?.settings?.destination === "cloud" && !cloud) {
+      setCloudRequest({ kind, payload, message });
+      return null;
+    }
+    const id = enqueue?.(kind, { project, ...payload, ...(cloud ? { cloud } : {}) });
     setQueued(kind);
-    notify(message);
+    notify(cloud ? `${kind} of ${project.name} sent to Frameleaf Cloud. Follow it in Activity.` : message);
+    return id;
   };
   const restoreDuration = videoTrack.clips.filter((clip) => clip.kind === "video").reduce((total, clip) => total + clip.duration, 0);
   const restoreEstimate = estimateRender({
@@ -2559,6 +2768,8 @@ export function Studio({
         setRestore={setRestore}
         destination={destination}
         setDestination={setDestination || (() => {})}
+        choice={jobChoice.restoration}
+        setChoice={(value) => setJobChoice((current) => ({ ...current, restoration: value }))}
         estimate={restoreEstimate}
         durationSeconds={restoreDuration}
         advanced={advanced}
@@ -2923,16 +3134,98 @@ export function Studio({
         </div>
       )}
 
+      {cloudRequest && (
+        <CloudJobDialog
+          key={cloudRequest.kind}
+          title={
+            cloudRequest.workload === "interpolation"
+              ? "Smooth motion on Frameleaf Cloud"
+              : cloudRequest.kind === "Export"
+                ? "Render on Frameleaf Cloud"
+                : "Restore on Frameleaf Cloud"
+          }
+          workload={cloudRequest.workload ?? (cloudRequest.kind === "Export" ? "render" : "restoration")}
+          {...(() => {
+            if (cloudRequest.quantity) return { quantity: cloudRequest.quantity, quantityLabel: cloudRequest.quantityLabel };
+            const seconds = cloudRequest.payload.preview ? 5 : cloudRequest.kind === "Export" ? length : restoreDuration;
+            const { quantity, label } = jobQuantity("restoration", { durationSeconds: seconds });
+            return { quantity, quantityLabel: label };
+          })()}
+          preview={cloudRequest.payload.preview}
+          summary={project.name}
+          modelId={cloudRequest.modelId ?? jobChoice[cloudRequest.kind === "Export" ? "render" : "restoration"]?.model}
+          worker={
+            !cloudRequest.workload && jobChoice[cloudRequest.kind === "Export" ? "render" : "restoration"]?.worker === "lan"
+              ? lanWorker
+              : undefined
+          }
+          onSubmit={(meta) => {
+            if (cloudRequest.next) nextJob.current = cloudRequest.next;
+            return queueJob(cloudRequest.kind, cloudRequest.payload, cloudRequest.message, meta);
+          }}
+          onRunLocal={
+            cloudRequest.workload === "interpolation"
+              ? (model) => {
+                  queueJob(cloudRequest.kind, { ...cloudRequest.payload, settings: { ...cloudRequest.payload.settings, model } }, cloudRequest.message);
+                  if (cloudRequest.next) nextJob.current = cloudRequest.next;
+                }
+              : undefined
+          }
+          onFinish={finishJob}
+          onOpenSettings={(section) => {
+            setCloudRequest(null);
+            onOpenCloudSettings?.(section);
+          }}
+          onAddCredit={
+            onAddCredit &&
+            (() => {
+              setCloudRequest(null);
+              onAddCredit();
+            })
+          }
+          close={() => {
+            const next = nextJob.current;
+            nextJob.current = null;
+            setCloudRequest(null);
+            if (next) queueJob(next.kind, next.payload, next.message);
+          }}
+        />
+      )}
       {dialog === "export" && (
         <ExportDialog
           sequence={sequence}
           length={length}
           destination={destination}
           setDestination={setDestination || (() => {})}
+          choice={jobChoice.render}
+          setChoice={(value) => setJobChoice((current) => ({ ...current, render: value }))}
           close={() => setDialog(null)}
-          onExport={({ format, color, resolution, estimate }) => {
-            queueJob("Export", { estimate, preview: false, settings: { format, color, resolution, destination } }, `Export of ${project.name} queued.`);
+          onExport={({ format, color, resolution, estimate, frameRate, conversion, interpolation }) => {
+            const settings = {
+              format,
+              color,
+              resolution,
+              destination,
+              frameRate,
+              ...(conversion ? { frameConversion: conversion } : {}),
+              ...(interpolation ? { interpolationModel: interpolation.item.id } : {}),
+            };
+            const exportJob = { kind: "Export", payload: { estimate, preview: false, settings }, message: `Export of ${project.name} queued.` };
             setDialog(null);
+            if (interpolation?.runsOn === "cloud") {
+              // AI interpolation on Frameleaf Cloud is its own confirmed job; the export follows it.
+              const work = interpolationWork({ durationSeconds: length, sourceFps: sequence.fps, targetFps: frameRate });
+              setCloudRequest({
+                kind: "Smooth motion",
+                workload: "interpolation",
+                quantity: work.units,
+                quantityLabel: `${formatWorkTime(length)} · ${sequence.fps} → ${frameRate} fps`,
+                modelId: interpolation.item.id,
+                payload: { settings: { targetFps: frameRate, sourceFps: sequence.fps, model: interpolation.item.id } },
+                message: `Smooth motion for ${project.name} queued.`,
+                next: exportJob,
+              });
+            } else queueJob(exportJob.kind, exportJob.payload, exportJob.message);
           }}
         />
       )}

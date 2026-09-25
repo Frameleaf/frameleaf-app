@@ -59,7 +59,6 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
-import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
 import { Route } from '$lib/route';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
@@ -223,11 +222,18 @@ export const getAssetActions = (
     shortcuts: { key: 'i' },
   };
 
+  // V-15 / V-25: T opens the information panel on its "Add a tag" box (MediaViewer.jsx:803-807).
   const Tag: ActionItem = {
     title: $t('add_tag'),
     icon: mdiTagPlusOutline,
-    $if: () => authManager.authenticated && authManager.preferences.tags.enabled,
-    onAction: () => modalManager.show(AssetTagModal, { assetIds: [asset.id] }),
+    $if: () => isOwner && !asset.isTrashed && authManager.preferences.tags.enabled,
+    onAction: () => {
+      // T pauses a running slideshow first, as the template's `play(false)` does (MediaViewer.jsx:803-807).
+      if (get(slideshowStore.slideshowState) === SlideshowState.PlaySlideshow) {
+        slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
+      }
+      assetViewerManager.focusDetailField('tags');
+    },
     shortcuts: { key: 't' },
   };
 

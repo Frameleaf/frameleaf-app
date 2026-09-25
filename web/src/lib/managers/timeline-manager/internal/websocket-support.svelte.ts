@@ -1,9 +1,14 @@
+import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
 import { throttle } from 'lodash-es';
 import type { Unsubscriber } from 'svelte/store';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import type { PendingChange, TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { websocketEvents } from '$lib/stores/websocket';
 import { toTimelineAsset } from '$lib/utils/timeline-util';
+
+/** A restore of more items than this reloads the timeline instead of fetching each one (FL-47). */
+export const RESTORE_FETCH_LIMIT = 25;
 
 export class WebsocketSupport {
   #pendingChanges: PendingChange[] = [];
@@ -38,7 +43,33 @@ export class WebsocketSupport {
         this.#addPendingChanges({ type: 'update', values: [toTimelineAsset(asset)] }),
       ),
       websocketEvents.on('on_asset_delete', (id: string) => this.#addPendingChanges({ type: 'delete', values: [id] })),
+      websocketEvents.on('on_asset_restore', (ids) => void this.#restore(ids)),
     );
+  }
+
+  /**
+   * FL-47: items restored from the trash elsewhere (another tab or device) come back into this
+   * timeline. Each is read again, so what this session may not see (Locked media without an unlocked
+   * session) is never fetched into view; the timeline's own filters decide where it belongs. A large
+   * restore reloads the timeline instead.
+   */
+  async #restore(ids: string[]) {
+    if (ids.length === 0) {
+      return;
+    }
+    if (ids.length > RESTORE_FETCH_LIMIT) {
+      await this.#timelineManager.refresh();
+      return;
+    }
+    const assets = await Promise.all(
+      ids.map((id) => getAssetInfo({ ...authManager.params, id }).catch(() => undefined)),
+    );
+    const values = assets
+      .filter((asset): asset is AssetResponseDto => asset !== undefined && !asset.isTrashed)
+      .map((asset) => toTimelineAsset(asset));
+    if (values.length > 0) {
+      this.#addPendingChanges({ type: 'add', values });
+    }
   }
 
   disconnectWebsocketEvents() {

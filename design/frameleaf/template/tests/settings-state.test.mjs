@@ -17,7 +17,7 @@ const fields = [
   {
     id: "destination",
     type: "select",
-    options: [{ value: "local", label: "Home" }, "runpod"],
+    options: [{ value: "local", label: "Home" }, "cloud"],
   },
   { id: "metrics", type: "toggle", value: false, locked: true },
 ];
@@ -86,7 +86,7 @@ test("saved settings restore only validated known fields and normalize numeric f
       name: "Family",
       workers: " 4 ",
       enabled: false,
-      destination: "runpod",
+      destination: "cloud",
       unknown: "drop",
       email: "invalid",
       issuer: "javascript:alert(1)",
@@ -98,7 +98,7 @@ test("saved settings restore only validated known fields and normalize numeric f
     name: "Family",
     workers: 4,
     enabled: false,
-    destination: "runpod",
+    destination: "cloud",
   });
   assert.deepEqual(recovered.draft, recovered.settings);
   for (const settings of [
@@ -359,14 +359,14 @@ test("app preference changes refresh clean fields without applying other pending
   const previous = Object.freeze(appProps());
   const next = Object.freeze({
     theme: "light",
-    destination: "runpod",
+    destination: "cloud",
     defaultLayout: "browse",
   });
   const result = reconcileAppPreferences(settings, draft, next, previous);
   assert.deepEqual(result.settings, {
     ...settings,
     themePreference: "Light",
-    destination: "runpod",
+    destination: "cloud",
     defaultLayout: "Browse",
   });
   assert.deepEqual(result.draft, { ...result.settings, workers: "-" });
@@ -376,7 +376,7 @@ test("app preference changes refresh clean fields without applying other pending
 
 test("a global theme change preserves a pending destination and layout", () => {
   const settings = appSettings();
-  const draft = { ...settings, destination: "runpod", defaultLayout: "Browse" };
+  const draft = { ...settings, destination: "cloud", defaultLayout: "Browse" };
   const result = reconcileAppPreferences(
     settings,
     draft,
@@ -409,12 +409,12 @@ test("initial reconciliation aligns all supplied props and retains a recovered p
   const draft = { ...settings, themePreference: "Light" };
   const result = reconcileAppPreferences(settings, draft, {
     theme: "dark",
-    destination: "runpod",
+    destination: "cloud",
     defaultLayout: "browse",
   });
   assert.deepEqual(result.settings, {
     ...settings,
-    destination: "runpod",
+    destination: "cloud",
     defaultLayout: "Browse",
   });
   assert.deepEqual(result.draft, {

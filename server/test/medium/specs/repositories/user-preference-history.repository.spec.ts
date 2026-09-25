@@ -192,3 +192,34 @@ it('sweeps fork rows of accounts that no longer exist, only while the fork schem
   `.execute(db);
   expect(groups.rows).toEqual([{ id: keptGroup.rows[0].id, userIds: [kept.id] }]);
 });
+
+// FL-57/FL-58: a removed account's face correction history, merge-suggestion answers and pet
+// recognition run are swept with its other fork rows; a kept account's stay.
+it('sweeps the people and pets fork rows of removed accounts', async () => {
+  const sut = new UserRepository(db);
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user: kept } = await ctx.newUser();
+  const removed = randomUUID();
+  const [low, high] = [randomUUID(), randomUUID()].toSorted();
+  for (const ownerId of [kept.id, removed]) {
+    await sql`
+      INSERT INTO immich_fork.face_correction ("ownerId", "actorId", action) VALUES (${ownerId}::uuid, ${ownerId}::uuid, 'merge')
+    `.execute(db);
+    await sql`
+      INSERT INTO immich_fork.person_merge_verdict ("ownerId", "personId", "suggestionId", verdict)
+      VALUES (${ownerId}::uuid, ${low}::uuid, ${high}::uuid, 'different')
+    `.execute(db);
+    await sql`INSERT INTO immich_fork.pet_recognition_run ("ownerId") VALUES (${ownerId}::uuid)`.execute(db);
+  }
+
+  const swept = await sut.sweepRemovedAccountForkRows();
+  expect(swept?.peopleAndPets).toBe(3);
+
+  for (const table of ['face_correction', 'person_merge_verdict', 'pet_recognition_run']) {
+    const { rows } = await sql<{ ownerId: string }>`
+      SELECT "ownerId"::text AS "ownerId" FROM ${sql.table(`immich_fork.${table}`)}
+      WHERE "ownerId" IN (${kept.id}::uuid, ${removed}::uuid)
+    `.execute(db);
+    expect(rows, table).toEqual([{ ownerId: kept.id }]);
+  }
+});

@@ -9,11 +9,13 @@
   import type { OnAction } from './action';
 
   interface Props {
+    /** The menu's wording; the viewer's More menu passes the template's label (FL-35, V-11). */
+    text?: string;
     stack: StackResponseDto;
     onAction: OnAction;
   }
 
-  let { stack, onAction }: Props = $props();
+  let { stack, onAction, text }: Props = $props();
 
   const handleUnstack = async () => {
     const unstackedAssets = await deleteStack([stack.id]);
@@ -23,4 +25,4 @@
   };
 </script>
 
-<MenuOption icon={mdiImageOffOutline} onClick={handleUnstack} text={$t('unstack')} />
+<MenuOption icon={mdiImageOffOutline} onClick={handleUnstack} text={text ?? $t('unstack')} />

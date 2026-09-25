@@ -1,0 +1,183 @@
+/* Frameleaf Cloud job confirmation and cost facts. Prefix fcj-. */
+
+.fcj {
+  display: grid;
+  gap: 14px;
+  min-width: min(520px, 100%);
+}
+.fcj-summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small, 12px);
+}
+.fcj-summary svg {
+  color: var(--fl-accent);
+  flex: none;
+}
+.fcj-models {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.fcj-models legend {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.fcj-model {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.fcj-model:has(input:checked) {
+  border-color: var(--fl-accent);
+  background: var(--fl-accent-soft);
+}
+.fcj-model:has(input:focus-visible) {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 2px;
+}
+.fcj-model input {
+  margin-top: 3px;
+  accent-color: var(--fl-accent);
+}
+.fcj-model-text,
+.fcj-price {
+  display: grid;
+  gap: 2px;
+}
+.fcj-model small,
+.fcj-facts small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro, 11px);
+}
+.fcj-price {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.fcj-retires {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--fl-warning) !important;
+}
+.fcj-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  font-size: var(--fl-font-small, 12px);
+}
+.fcj-facts dt {
+  color: var(--fl-muted);
+}
+.fcj-facts dd {
+  margin: 0;
+  display: grid;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.fcj-short {
+  color: var(--fl-danger);
+  font-weight: 600;
+}
+.fcj-refusal {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--fl-radius-control);
+  background: color-mix(in srgb, var(--fl-danger), transparent 88%);
+  font-size: var(--fl-font-small, 12px);
+}
+.fcj-refusal svg {
+  color: var(--fl-danger);
+  flex: none;
+  margin-top: 1px;
+}
+.fcj-consent {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--fl-radius-control);
+  border: 1px solid var(--fl-border);
+  cursor: pointer;
+}
+.fcj-consent input {
+  margin-top: 3px;
+  accent-color: var(--fl-accent);
+}
+.fcj-consent span {
+  display: grid;
+  gap: 2px;
+}
+.fcj-consent small {
+  color: var(--fl-muted);
+}
+.fcj-note {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro, 11px);
+}
+.fcj-run {
+  display: grid;
+  gap: 12px;
+}
+.fcj-run-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fcj-run-head span {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small, 12px);
+}
+.fcj-progress {
+  height: 6px;
+  border-radius: var(--fl-radius-pill, 999px);
+  background: var(--fl-raised);
+  overflow: hidden;
+}
+.fcj-progress span {
+  display: block;
+  height: 100%;
+  background: var(--fl-accent);
+  transition: width 200ms linear;
+}
+.fcj-progress.is-indeterminate span {
+  width: 35%;
+  animation: fla-slide 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fcj-progress span {
+    transition: none;
+  }
+  .fcj-progress.is-indeterminate span {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}
+@media (max-width: 520px) {
+  .fcj-model {
+    grid-template-columns: auto 1fr;
+  }
+  .fcj-price {
+    grid-column: 2;
+    text-align: left;
+  }
+}

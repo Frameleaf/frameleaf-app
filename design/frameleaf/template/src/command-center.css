@@ -526,6 +526,10 @@
   margin-top: 5px;
   display: block;
 }
+.cc-services button.cc-glance-attention > svg:first-child,
+.cc-services button.cc-glance-attention small {
+  color: var(--cc-amber);
+}
 .cc-bottom-note {
   display: flex;
   gap: 8px;

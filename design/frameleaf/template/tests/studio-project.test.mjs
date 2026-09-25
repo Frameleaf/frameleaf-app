@@ -205,6 +205,17 @@ test("speed changes rescale duration, ripple later clips and keep source range",
   assert.equal(setSpeed(p, photo.id, 2), p, "photos have no speed");
 });
 
+test("slow-motion clips keep how missing frames are made, defaulting to blended frames", () => {
+  const p = project();
+  const [first] = clips(p);
+  const slow = setSpeed(p, first.id, 0.5);
+  assert.equal(clips(slow)[0].retime, "blend");
+  const ai = updateClip(slow, first.id, { retime: "ai", retimeModel: "rife-4.25@1" });
+  assert.equal(clips(ai)[0].retime, "ai");
+  assert.equal(clips(ai)[0].retimeModel, "rife-4.25@1");
+  assert.equal(clips(updateClip(ai, first.id, { retime: "magic" }))[0].retime, "blend", "unknown methods fall back");
+});
+
 test("transitions are clamped to the neighbouring clips and Ken Burns rects stay in frame", () => {
   const p = project();
   const [, second] = clips(p);
@@ -387,7 +398,7 @@ test("render estimates are monotonic and only cloud runs cost money", () => {
   assert.ok(creative.seconds > uhd.seconds);
   const upscaled = estimateRender({ durationSeconds: 60, resolution: "2160p", upscale: 4 });
   assert.ok(upscaled.seconds > uhd.seconds);
-  const cloud = estimateRender({ durationSeconds: 60, resolution: "2160p", destination: "runpod" });
+  const cloud = estimateRender({ durationSeconds: 60, resolution: "2160p", destination: "cloud" });
   assert.ok(cloud.cloudCost.amount > 0);
   assert.ok(cloud.cloudCost.uncertainty > 0 && cloud.cloudCost.uncertainty < cloud.cloudCost.amount);
   assert.equal(cloud.cloudCost.currency, "USD");

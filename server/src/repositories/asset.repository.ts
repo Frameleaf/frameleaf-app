@@ -427,16 +427,27 @@ export class AssetRepository {
 
   @GenerateSql({ params: [[DummyValue.UUID], { model: DummyValue.STRING }] })
   @Chunked()
-  async updateAllExif(ids: string[], options: Updateable<AssetExifTable>): Promise<void> {
+  async updateAllExif(
+    ids: string[],
+    options: Updateable<AssetExifTable>,
+    unlock: readonly LockableProperty[] = [],
+  ): Promise<void> {
     if (ids.length === 0) {
       return;
     }
 
+    const locked = Object.keys(options) as LockableProperty[];
     await this.db
       .updateTable('asset_exif')
       .set((eb) => ({
         ...options,
-        lockedProperties: distinctLocked(eb, Object.keys(options) as LockableProperty[]),
+        // `unlock` releases locks the change makes stale (a typed place name at new coordinates)
+        lockedProperties:
+          unlock.length === 0
+            ? distinctLocked(eb, locked)
+            : sql<
+                LockableProperty[] | null
+              >`nullif(array(select distinct property from unnest(${eb.ref('asset_exif.lockedProperties')} || ${locked}) property where not property = any(${[...unlock]})), '{}')`,
       }))
       .where('assetId', 'in', ids)
       .execute();

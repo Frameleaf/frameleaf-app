@@ -1,4 +1,11 @@
-import { VIEWER_ACTIONS, viewerMenuGroups, viewerMenuHas, type ViewerMenuContext } from '$lib/frameleaf/viewer-menu';
+import {
+  VIEWER_ACTIONS,
+  viewerMenuChooser,
+  viewerMenuGroups,
+  viewerMenuHas,
+  viewerMenuLabelKey,
+  type ViewerMenuContext,
+} from '$lib/frameleaf/viewer-menu';
 
 const baseContext = (overrides: Partial<ViewerMenuContext> = {}): ViewerMenuContext => ({
   isVideo: false,
@@ -8,8 +15,6 @@ const baseContext = (overrides: Partial<ViewerMenuContext> = {}): ViewerMenuCont
   isLocked: false,
   isArchived: false,
   isEdited: false,
-  isPanorama: false,
-  isLivePhoto: false,
   isSharedLink: false,
   canDownload: true,
   canSendCopy: false,
@@ -19,15 +24,18 @@ const baseContext = (overrides: Partial<ViewerMenuContext> = {}): ViewerMenuCont
   isStackPrimary: false,
   hasAlbumContext: false,
   canEditAlbum: false,
-  hasPersonContext: false,
+  canSetAlbumCover: false,
+  albumCoverChoices: 0,
+  peopleChoices: 0,
   hasOriginalPath: true,
   hasCoordinates: false,
   hasCastDestination: false,
   smartSearchEnabled: true,
   foldersEnabled: true,
-  tagsEnabled: true,
   canNavigateCollection: true,
   canShowFilmstrip: true,
+  filmstripShown: false,
+  slideshowPlaying: false,
   ...overrides,
 });
 
@@ -35,7 +43,9 @@ const idsOf = (context: ViewerMenuContext) => viewerMenuGroups(context).flatMap(
 
 describe('viewerMenuGroups', () => {
   it('keeps the design order of the groups it renders', () => {
-    const groups = viewerMenuGroups(baseContext({ hasStack: true, stackSize: 3, hasAlbumContext: true }));
+    const groups = viewerMenuGroups(
+      baseContext({ hasStack: true, stackSize: 3, hasAlbumContext: true, canSetAlbumCover: true }),
+    );
     expect(groups.map((group) => group.id)).toEqual([
       'download',
       'organize',
@@ -100,9 +110,10 @@ describe('viewerMenuGroups', () => {
       expect(viewerMenuGroups(trashed).map((group) => group.id)).toEqual(['download', 'trash', 'viewer']);
     });
 
-    it('offers restore and never the organizing actions', () => {
+    it('offers restore and delete permanently and never the organizing actions (V-4)', () => {
       const ids = idsOf(trashed);
       expect(ids).toContain('restore');
+      expect(ids).toContain('delete-permanently');
       expect(ids).not.toContain('add-to-album');
       expect(ids).not.toContain('archive');
       expect(ids).not.toContain('refresh-metadata');
@@ -110,6 +121,11 @@ describe('viewerMenuGroups', () => {
 
     it('does not offer restore for a locked asset', () => {
       expect(idsOf(baseContext({ isTrashed: true, isLocked: true }))).not.toContain('restore');
+    });
+
+    it("keeps someone else's trashed item out of the Trash group", () => {
+      const groups = viewerMenuGroups(baseContext({ isTrashed: true, isOwner: false }));
+      expect(groups.find((group) => group.id === 'trash')).toBeUndefined();
     });
   });
 
@@ -139,8 +155,8 @@ describe('viewerMenuGroups', () => {
       expect(ids).not.toContain('archive');
     });
 
-    it('hides tagging when the tags preference is off', () => {
-      expect(idsOf(baseContext({ tagsEnabled: false }))).not.toContain('add-tag');
+    it('leaves tagging to the information panel, as the template does (V-10)', () => {
+      expect(VIEWER_ACTIONS).not.toContain('add-tag' as never);
     });
 
     it('only offers remove from album inside an album the user may edit', () => {
@@ -154,6 +170,10 @@ describe('viewerMenuGroups', () => {
     it('offers only Add to stack when the asset is not stacked', () => {
       const groups = viewerMenuGroups(baseContext({ hasStack: false }));
       expect(groups.find((group) => group.id === 'stack')?.items).toEqual(['add-to-stack']);
+    });
+
+    it('offers Add to stack only to an item that is not stacked (media-viewer.mjs:752-757)', () => {
+      expect(idsOf(baseContext({ hasStack: true, stackSize: 2 }))).not.toContain('add-to-stack');
     });
 
     it('offers keep-this and set-primary for a non-primary member', () => {
@@ -188,31 +208,34 @@ describe('viewerMenuGroups', () => {
           isVideo: true,
           isImage: false,
           hasAlbumContext: true,
-          canEditAlbum: true,
-          hasPersonContext: true,
+          canSetAlbumCover: true,
+          peopleChoices: 2,
         }),
       );
       expect(groups.find((group) => group.id === 'set-as')).toBeUndefined();
     });
 
-    it('offers the album cover only inside an editable album', () => {
-      expect(idsOf(baseContext({ hasAlbumContext: true, canEditAlbum: true }))).toContain('set-album-cover');
-      expect(idsOf(baseContext({ hasAlbumContext: true, canEditAlbum: false }))).not.toContain('set-album-cover');
+    it('offers the album cover inside an album whose cover the user may set, or over the albums that hold it', () => {
+      expect(idsOf(baseContext({ hasAlbumContext: true, canSetAlbumCover: true }))).toContain('set-album-cover');
+      expect(idsOf(baseContext({ hasAlbumContext: true, canSetAlbumCover: false }))).not.toContain('set-album-cover');
+      expect(idsOf(baseContext({ albumCoverChoices: 0 }))).not.toContain('set-album-cover');
+      expect(idsOf(baseContext({ albumCoverChoices: 2 }))).toContain('set-album-cover');
     });
 
     it('never offers a locked asset as the album cover (FL-53)', () => {
-      expect(idsOf(baseContext({ hasAlbumContext: true, canEditAlbum: true, isLocked: true }))).not.toContain(
-        'set-album-cover',
-      );
+      expect(
+        idsOf(baseContext({ hasAlbumContext: true, canSetAlbumCover: true, albumCoverChoices: 1, isLocked: true })),
+      ).not.toContain('set-album-cover');
     });
 
-    it('offers the featured photo only from a person page', () => {
-      expect(idsOf(baseContext({ hasPersonContext: true }))).toContain('set-person-featured');
-      expect(idsOf(baseContext({ hasPersonContext: false }))).not.toContain('set-person-featured');
+    it('offers the featured photo when named people are tagged in it', () => {
+      expect(idsOf(baseContext({ peopleChoices: 1 }))).toContain('set-person-featured');
+      expect(idsOf(baseContext({ peopleChoices: 0 }))).not.toContain('set-person-featured');
+      expect(idsOf(baseContext({ peopleChoices: 1, isOwner: false }))).not.toContain('set-person-featured');
     });
 
     it('never offers a locked asset as the featured photo (FL-53)', () => {
-      expect(idsOf(baseContext({ hasPersonContext: true, isLocked: true }))).not.toContain('set-person-featured');
+      expect(idsOf(baseContext({ peopleChoices: 1, isLocked: true }))).not.toContain('set-person-featured');
     });
 
     it('never offers a locked asset as the profile picture', () => {
@@ -250,6 +273,8 @@ describe('viewerMenuGroups', () => {
 
       const video = idsOf(baseContext({ isVideo: true, isImage: false }));
       expect(video).toContain('refresh-encoded');
+      expect(video).toContain('transcode');
+      expect(still).not.toContain('transcode');
       expect(video).not.toContain('refresh-faces');
     });
 
@@ -260,27 +285,35 @@ describe('viewerMenuGroups', () => {
   });
 
   describe('viewer group', () => {
-    it('offers the video source switch only for video', () => {
-      expect(idsOf(baseContext({ isVideo: true, isImage: false }))).toContain('play-original-video');
-      expect(idsOf(baseContext())).not.toContain('play-original-video');
+    it('leaves the video source and panorama view to the footer, as the template does (V-10)', () => {
+      expect(VIEWER_ACTIONS).not.toContain('play-original-video' as never);
+      expect(VIEWER_ACTIONS).not.toContain('panorama-look-around' as never);
     });
 
-    it('offers panorama look-around only for a panorama still', () => {
-      expect(idsOf(baseContext({ isPanorama: true }))).toContain('panorama-look-around');
-      expect(idsOf(baseContext({ isPanorama: true, isVideo: true, isImage: false }))).not.toContain(
-        'panorama-look-around',
-      );
+    it('offers the slideshow and its settings (V-7)', () => {
+      const ids = idsOf(baseContext());
+      expect(ids).toContain('play-slideshow');
+      expect(ids).toContain('slideshow-settings');
+      expect(viewerMenuGroups(baseContext()).at(-1)?.items).toEqual([
+        'tag-people',
+        'toggle-filmstrip',
+        'play-slideshow',
+        'slideshow-settings',
+      ]);
     });
 
     it('hides cast until a destination is available', () => {
       expect(idsOf(baseContext())).not.toContain('cast');
       expect(idsOf(baseContext({ hasCastDestination: true }))).toContain('cast');
+      // the trash's top row has no Cast either
+      expect(idsOf(baseContext({ hasCastDestination: true, isTrashed: true }))).not.toContain('cast');
     });
 
     it('hides the filmstrip and the slideshow for a single item', () => {
       const ids = idsOf(baseContext({ canNavigateCollection: false }));
       expect(ids).not.toContain('toggle-filmstrip');
       expect(ids).not.toContain('play-slideshow');
+      expect(ids).not.toContain('slideshow-settings');
     });
 
     it('hides the filmstrip when the caller has no list to show', () => {
@@ -299,5 +332,45 @@ describe('viewerMenuHas', () => {
     expect(viewerMenuHas(groups, 'download')).toBe(true);
     expect(viewerMenuHas(groups, 'stack-keep-this')).toBe(true);
     expect(viewerMenuHas(groups, 'restore')).toBe(false);
+  });
+});
+
+describe('viewerMenuChooser', () => {
+  it('sets the cover of the album the viewer was opened in directly, and chooses otherwise (V-9)', () => {
+    expect(viewerMenuChooser('set-album-cover', baseContext({ hasAlbumContext: true, canSetAlbumCover: true }))).toBe(
+      null,
+    );
+    expect(viewerMenuChooser('set-album-cover', baseContext({ albumCoverChoices: 2 }))).toBe('album');
+    expect(viewerMenuChooser('set-person-featured', baseContext({ peopleChoices: 1 }))).toBe('person');
+    expect(viewerMenuChooser('download', baseContext())).toBe(null);
+  });
+});
+
+describe('viewerMenuLabelKey', () => {
+  it("uses the template's labels (V-11)", () => {
+    const context = baseContext();
+    expect(viewerMenuLabelKey('stack-keep-this', context)).toBe('frameleaf_viewer_menu_keep_this');
+    expect(viewerMenuLabelKey('stack-set-primary', context)).toBe('frameleaf_viewer_menu_set_stack_primary');
+    expect(viewerMenuLabelKey('find-similar', context)).toBe('frameleaf_viewer_menu_find_similar');
+    expect(viewerMenuLabelKey('refresh-encoded', context)).toBe('frameleaf_viewer_menu_refresh_encoded');
+    expect(viewerMenuLabelKey('delete-permanently', context)).toBe('frameleaf_viewer_delete_permanently');
+  });
+
+  it('follows the current state for the toggles', () => {
+    expect(viewerMenuLabelKey('play-slideshow', baseContext({ slideshowPlaying: true }))).toBe(
+      'frameleaf_viewer_pause_slideshow',
+    );
+    expect(viewerMenuLabelKey('toggle-filmstrip', baseContext({ filmstripShown: true }))).toBe(
+      'frameleaf_viewer_hide_filmstrip',
+    );
+    expect(viewerMenuLabelKey('set-visibility-locked', baseContext({ isLocked: true }))).toBe(
+      'frameleaf_bulk_unmark_sensitive',
+    );
+  });
+
+  it('has a label for every action', () => {
+    for (const id of VIEWER_ACTIONS) {
+      expect(viewerMenuLabelKey(id, baseContext())).toMatch(/^[a-z_]+$/);
+    }
   });
 });

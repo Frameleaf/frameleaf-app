@@ -54,6 +54,7 @@ import {
   diversifyByMonth,
   diversifyByYear,
   groupEventStories,
+  groupPetStories,
   placeLabel,
   suppressBursts,
 } from 'src/utils/memory-story.js';
@@ -169,6 +170,7 @@ export class MemoryService extends BaseService {
 
       await this.createEventStories(users);
       await this.createYearInReviews(users);
+      await this.createPetStories(users);
       await this.createPersonRecaps(users);
     });
   }
@@ -318,6 +320,100 @@ export class MemoryService extends BaseService {
       },
       new Set(candidates.map(({ id }) => id)),
     );
+  }
+
+  /**
+   * Pet stories (FL-58): "Moments with {name}" for each named pet the owner confirmed in enough
+   * photos of one local month. The last full month and the current one are looked at, so a story
+   * appears within a day of the month collecting enough photos; each pet and month gets one story,
+   * never again once deleted.
+   */
+  private async createPetStories(users: { id: string }[]) {
+    const now = DateTime.utc();
+    const from = now.minus({ months: 1 }).startOf('month');
+    const until = now.endOf('day');
+
+    for (const { id: ownerId } of users) {
+      try {
+        await this.createPetStoriesForOwner(ownerId, from, until);
+      } catch (error) {
+        this.logger.error(`Failed to create pet stories for ${ownerId}: ${error}`);
+      }
+    }
+  }
+
+  private async createPetStoriesForOwner(ownerId: string, from: DateTime, until: DateTime) {
+    // FL-62: none for a pet (or for pet stories at all) the owner asked to see less of
+    const rules = await this.memoryRepository.getShowLess(ownerId);
+    if (rules.some(({ kind, value }) => kind === MemoryShowLessKind.Type && value === MemoryType.PetStory)) {
+      return;
+    }
+    const lessOf = new Set(rules.filter(({ kind }) => kind === MemoryShowLessKind.Pet).map(({ value }) => value));
+    const candidates = await this.memoryRepository.getPetStoryCandidates(ownerId, from.toJSDate(), until.toJSDate());
+    const stories = groupPetStories(candidates).filter(({ petId }) => !lessOf.has(petId));
+    if (stories.length === 0) {
+      return;
+    }
+
+    const taken = await this.memoryRepository.getPetStoryKeys(ownerId, from.toJSDate(), until.toJSDate());
+    for (const story of stories) {
+      const key = `${story.petId}:${story.month}`;
+      if (taken.has(key)) {
+        continue;
+      }
+      const memoryAt = DateTime.fromFormat(story.month, 'yyyy-MM', { zone: 'utc' }).startOf('month');
+      await this.memoryRepository.create(
+        {
+          ownerId,
+          type: MemoryType.PetStory,
+          data: {
+            kind: 'pet_story',
+            year: memoryAt.year,
+            month: story.month,
+            petId: story.petId,
+            name: story.name,
+            species: story.species,
+            assetCount: story.assetCount,
+          },
+          memoryAt: memoryAt.toISO()!,
+          showAt: DateTime.utc().startOf('day').toISO()!,
+        },
+        new Set(story.assetIds),
+      );
+      taken.add(key);
+    }
+  }
+
+  /**
+   * A pet story reads as its pet is now (FL-58): renamed pets show the new name, and a story about
+   * a pet that was deleted, hidden, or is suppressed in a session that is not unlocked is left out,
+   * as the pet itself is.
+   */
+  private async withCurrentPets(auth: AuthDto, memories: Memory[]): Promise<Memory[]> {
+    const petIdOf = (memory: Memory) =>
+      memory.type === MemoryType.PetStory
+        ? ((memory.data as { petId?: unknown }).petId as string | undefined)
+        : undefined;
+    const petIds = [
+      ...new Set(memories.map((memory) => petIdOf(memory)).filter((id): id is string => typeof id === 'string')),
+    ];
+    if (petIds.length === 0) {
+      return memories;
+    }
+    const pets = new Map(
+      (await this.memoryRepository.getStoryPets(auth.user.id, petIds)).map((pet) => [pet.id, pet] as const),
+    );
+    return memories.flatMap((memory) => {
+      if (memory.type !== MemoryType.PetStory) {
+        return [memory];
+      }
+      const petId = petIdOf(memory);
+      const pet = petId ? pets.get(petId) : undefined;
+      if (!pet || pet.isHidden || isSuppressedWhileLocked(auth, 'pet', pet.id)) {
+        return [];
+      }
+      return [{ ...memory, data: { ...(memory.data as object), name: pet.name, species: pet.species } } as Memory];
+    });
   }
 
   private async createOnThisDayMemories(ownerId: string, target: DateTime, rules: MemoryShowLessRow[] = []) {
@@ -823,7 +919,9 @@ export class MemoryService extends BaseService {
     }
     const options = { ...this.nsfwOptions(auth), ...curation };
     const memories = await this.memoryRepository.search(auth.user.id, dto, options);
-    const visible = memories.filter((memory: Memory) => memory.assets && memory.assets.length > 0);
+    // FL-58: pet stories read as their pet is now, and leave when it is gone, hidden or suppressed
+    const current = await this.withCurrentPets(auth, memories as Memory[]);
+    const visible = current.filter((memory: Memory) => memory.assets && memory.assets.length > 0);
     const curations = await this.memoryRepository.getCurations(
       auth.user.id,
       visible.map(({ id }) => id),
@@ -836,7 +934,17 @@ export class MemoryService extends BaseService {
     if (!curation) {
       return { total: 0 };
     }
-    return this.memoryRepository.statistics(auth.user.id, dto, { ...this.nsfwOptions(auth), ...curation });
+    const options = { ...this.nsfwOptions(auth), ...curation };
+    const counted = await this.memoryRepository.statistics(auth.user.id, dto, options);
+    if (dto.type !== undefined && dto.type !== MemoryType.PetStory) {
+      return counted;
+    }
+    // FL-58: a pet story whose pet is gone, hidden or suppressed while locked does not exist here,
+    // as in search and get, so it is not counted either
+    const petDto = { ...dto, type: MemoryType.PetStory, size: undefined, page: undefined };
+    const stories = (await this.memoryRepository.search(auth.user.id, petDto, options)) as Memory[];
+    const excluded = stories.length - (await this.withCurrentPets(auth, stories)).length;
+    return excluded > 0 ? { ...counted, total: Math.max(0, counted.total - excluded) } : counted;
   }
 
   /**
@@ -873,8 +981,12 @@ export class MemoryService extends BaseService {
   async get(auth: AuthDto, id: string): Promise<MemoryResponseDto> {
     await this.requireAccess({ auth, permission: Permission.MemoryRead, ids: [id] });
     const memory = await this.findOrFail(id, await this.readOptions(auth));
+    const [current] = await this.withCurrentPets(auth, [memory as Memory]);
+    if (!current) {
+      throw new NotFoundException('Memory not found');
+    }
     const curations = await this.memoryRepository.getCurations(auth.user.id, [id]);
-    return mapMemory(memory, auth, curations.get(id));
+    return mapMemory(current, auth, curations.get(id));
   }
 
   /** FL-62: the owner's "show less" rules, with the name of each person and pet they name. */
@@ -976,6 +1088,13 @@ export class MemoryService extends BaseService {
   async update(auth: AuthDto, id: string, dto: MemoryUpdateDto): Promise<MemoryResponseDto> {
     await this.requireAccess({ auth, permission: Permission.MemoryUpdate, ids: [id] });
 
+    const options = await this.readOptions(auth);
+    // FL-58: a pet story whose pet is gone, hidden or suppressed while locked answers 404, as get does
+    const [visible] = await this.withCurrentPets(auth, [(await this.findOrFail(id, options)) as Memory]);
+    if (!visible) {
+      throw new NotFoundException('Memory not found');
+    }
+
     // FL-62: hiding, the owner's own title and their item order are the owner's curation
     if (dto.isHidden !== undefined || dto.title !== undefined || dto.assetOrder !== undefined) {
       const assetOrder =
@@ -999,7 +1118,6 @@ export class MemoryService extends BaseService {
       },
       isUndefined,
     );
-    const options = await this.readOptions(auth);
     const memory =
       Object.keys(update).length > 0
         ? options
@@ -1008,7 +1126,8 @@ export class MemoryService extends BaseService {
         : await this.findOrFail(id, options);
 
     const curations = await this.memoryRepository.getCurations(auth.user.id, [id]);
-    return mapMemory(memory, auth, curations.get(id));
+    const [current] = await this.withCurrentPets(auth, [memory as Memory]);
+    return mapMemory(current ?? (memory as Memory), auth, curations.get(id));
   }
 
   async remove(auth: AuthDto, id: string): Promise<void> {

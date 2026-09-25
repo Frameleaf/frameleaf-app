@@ -93,7 +93,7 @@ export const unsetDeep = (object: unknown, key: string) => {
   return isEmpty(object) ? undefined : object;
 };
 
-const isMachineLearningEnabled = (machineLearning: SystemConfig['machineLearning']) => machineLearning.enabled;
+export const isMachineLearningEnabled = (machineLearning: SystemConfig['machineLearning']) => machineLearning.enabled;
 export const isSmartSearchEnabled = (machineLearning: SystemConfig['machineLearning']) =>
   isMachineLearningEnabled(machineLearning) && machineLearning.clip.enabled;
 export const isOcrEnabled = (machineLearning: SystemConfig['machineLearning']) =>
