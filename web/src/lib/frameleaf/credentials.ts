@@ -83,10 +83,7 @@ export const forConfigSave = <T extends PartialConfig>(config: T): T => {
 
 /** Whether a configuration (for example an imported file) carries any credential value. */
 export const hasCredentialValues = (config: PartialConfig): boolean =>
-  !!(
-    config.notifications?.smtp?.transport?.password ||
-    config.oauth?.clientSecret
-  );
+  !!(config.notifications?.smtp?.transport?.password || config.oauth?.clientSecret);
 
 /**
  * The configuration after a credential change, for the shared settings state: the flag follows

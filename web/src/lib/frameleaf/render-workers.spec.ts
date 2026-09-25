@@ -93,7 +93,10 @@ describe('filterWorkers and sortWorkers', () => {
   });
 
   it('narrows to one destination', () => {
-    const cloud = filterWorkers([basement, attic], { filter: 'all', destination: MediaOperationDestination.FrameleafCloud });
+    const cloud = filterWorkers([basement, attic], {
+      filter: 'all',
+      destination: MediaOperationDestination.FrameleafCloud,
+    });
     expect(cloud.map((w) => w.id)).toEqual(['w-2']);
   });
 

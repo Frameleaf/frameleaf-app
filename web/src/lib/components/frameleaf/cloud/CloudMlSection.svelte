@@ -185,8 +185,7 @@
       $t('admin.frameleaf_cloud_ml_consent_revoked'),
     );
 
-  const refreshWallet = () =>
-    run('wallet', () => getCloudMlWallet(), $t('admin.frameleaf_cloud_ml_wallet_error'));
+  const refreshWallet = () => run('wallet', () => getCloudMlWallet(), $t('admin.frameleaf_cloud_ml_wallet_error'));
 
   const settle = () =>
     run(
@@ -204,7 +203,8 @@
       <p>{$t('admin.frameleaf_cloud_ml_description')}</p>
     </div>
     <div class="head-actions">
-      <a class="link-button" href={Route.systemProcessingDestinations()}>{$t('admin.frameleaf_cloud_ml_routes_link')}</a>
+      <a class="link-button" href={Route.systemProcessingDestinations()}>{$t('admin.frameleaf_cloud_ml_routes_link')}</a
+      >
       <Button onclick={() => void load()} disabled={busy !== null}>{$t('refresh')}</Button>
     </div>
   </header>
@@ -307,7 +307,11 @@
             label={$t('admin.frameleaf_cloud_ml_setting_restoration_model')}
             desc={$t('admin.frameleaf_cloud_ml_setting_restoration_model_description')}
             name="cloud-ml-restoration-model"
-            options={defaultModelOptions([MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative, MlWorkload.Upscale])}
+            options={defaultModelOptions([
+              MlWorkload.RestorationFaithful,
+              MlWorkload.RestorationCreative,
+              MlWorkload.Upscale,
+            ])}
             disabled={configDisabled || !configToEdit.frameleafCloud.cloudMl.enabled}
             bind:value={configToEdit.frameleafCloud.cloudMl.restoration.defaultModel}
             isEdited={configToEdit.frameleafCloud.cloudMl.restoration.defaultModel !==
@@ -500,7 +504,9 @@
             <li>
               <div>
                 {#if entry.kind === 'consent'}
-                  <strong>{$t('admin.frameleaf_cloud_ml_history_consent', { values: { version: entry.version } })}</strong>
+                  <strong
+                    >{$t('admin.frameleaf_cloud_ml_history_consent', { values: { version: entry.version } })}</strong
+                  >
                   <span>
                     {[
                       entry.features.identityNames && $t('admin.frameleaf_cloud_ml_consent_feature_names'),
@@ -511,11 +517,16 @@
                       .join(', ') || $t('admin.frameleaf_cloud_ml_history_no_features')}
                   </span>
                 {:else if entry.kind === 'revoked'}
-                  <strong>{$t('admin.frameleaf_cloud_ml_history_revoked', { values: { version: entry.version } })}</strong>
+                  <strong
+                    >{$t('admin.frameleaf_cloud_ml_history_revoked', { values: { version: entry.version } })}</strong
+                  >
                 {:else}
                   <strong>
                     {$t('admin.frameleaf_cloud_ml_history_settlement', {
-                      values: { workload: $t(mlWorkloadLabelKey(entry.workload)), cost: formatUsd(entry.costUsd, $locale) },
+                      values: {
+                        workload: $t(mlWorkloadLabelKey(entry.workload)),
+                        cost: formatUsd(entry.costUsd, $locale),
+                      },
                     })}
                   </strong>
                   <span>
