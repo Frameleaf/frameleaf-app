@@ -202,3 +202,28 @@ describe('VideoQuickEditor', () => {
     expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeDisabled();
   });
 });
+
+describe('HDR and Dolby Vision clips (FL-113)', () => {
+  const openWith = async (policy: 'tone-map' | 'unsupported') => {
+    vi.mocked(getAssetEdits).mockResolvedValue({
+      assetId: 'asset',
+      edits: [],
+      originalVideo: { ...originalVideo, colorPolicy: policy as never, colorReason: 'server reason' },
+    });
+    render(VideoQuickEditor, { asset: video(), onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByTestId('video-color-policy')).toHaveAttribute('data-policy', policy));
+  };
+
+  it('says an HDR clip is edited in standard range while the HDR original is kept, and still saves', async () => {
+    await openWith('tone-map');
+    expect(screen.getByTestId('video-color-policy')).toHaveTextContent('frameleaf_video_editor_color_tone_map');
+    expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled();
+  });
+
+  it('explains why a Dolby Vision profile 5 clip cannot be saved, and does not offer to', async () => {
+    await openWith('unsupported');
+    expect(screen.getByTestId('video-color-policy')).toHaveTextContent('frameleaf_video_editor_color_unsupported');
+    expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeDisabled();
+    expect(editAsset).not.toHaveBeenCalled();
+  });
+});

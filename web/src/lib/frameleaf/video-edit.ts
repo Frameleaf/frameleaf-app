@@ -126,7 +126,14 @@ export type VideoEdit = DevelopValues & {
 };
 
 /** The original's displayed raster and length, from `getAssetEdits().originalVideo`. */
-export type VideoSource = { width: number; height: number; durationMs: number };
+export type VideoSource = {
+  width: number;
+  height: number;
+  durationMs: number;
+  /** FL-113: what an edited version does with the original's colour, from the server's render policy. */
+  colorPolicy?: 'preserve' | 'tone-map' | 'unsupported';
+  colorReason?: string;
+};
 
 const secondsOf = (source: VideoSource) => Math.max(MIN_SPAN, source.durationMs / 1000);
 
