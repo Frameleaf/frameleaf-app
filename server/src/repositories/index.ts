@@ -38,6 +38,7 @@ import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { ICloudAlbumRepository } from 'src/repositories/icloud-album.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
@@ -152,6 +153,7 @@ export const repositories = [
   FrameleafCloudMlRepository,
   FrameleafConsentRepository,
   FrameleafUserLicenseRepository,
+  FrameleafAccountRepository,
   InstanceIdentityRepository,
   MediaRepository,
   MemoryRepository,

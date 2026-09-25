@@ -44,6 +44,7 @@ import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -292,6 +293,7 @@ export type ServiceOverrides = {
   frameleafCloudMl: FrameleafCloudMlRepository;
   frameleafConsent: FrameleafConsentRepository;
   frameleafUserLicense: FrameleafUserLicenseRepository;
+  frameleafAccount: FrameleafAccountRepository;
   instanceIdentity: InstanceIdentityRepository;
   search: SearchRepository;
   serverInfo: ServerInfoRepository;
@@ -393,6 +395,7 @@ export const getMocks = () => {
     frameleafCloudMl: automock(FrameleafCloudMlRepository, { strict: false }),
     frameleafConsent: automock(FrameleafConsentRepository, { strict: false }),
     frameleafUserLicense: automock(FrameleafUserLicenseRepository, { strict: false }),
+    frameleafAccount: automock(FrameleafAccountRepository, { strict: false }),
     instanceIdentity: automock(InstanceIdentityRepository, { strict: false }),
     search: automock(SearchRepository, { strict: false }),
     // eslint-disable-next-line no-sparse-arrays
@@ -515,6 +518,7 @@ export const newTestService = <T extends BaseService>(
     overrides.frameleafCloudMl || (mocks.frameleafCloudMl as As<FrameleafCloudMlRepository>),
     overrides.frameleafConsent || (mocks.frameleafConsent as As<FrameleafConsentRepository>),
     overrides.frameleafUserLicense || (mocks.frameleafUserLicense as As<FrameleafUserLicenseRepository>),
+    overrides.frameleafAccount || (mocks.frameleafAccount as As<FrameleafAccountRepository>),
     overrides.instanceIdentity || (mocks.instanceIdentity as As<InstanceIdentityRepository>),
     overrides.search || (mocks.search as As<SearchRepository>),
     overrides.serverInfo || (mocks.serverInfo as As<ServerInfoRepository>),

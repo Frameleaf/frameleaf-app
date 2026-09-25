@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { JWTVerifyGetKey, createRemoteJWKSet, jwtVerify } from 'jose';
 import {
+  type ClientAuth,
   ClientSecretBasic,
   ClientSecretPost,
   None,
@@ -33,6 +34,12 @@ export type OAuthConfig = {
   tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethod;
   timeout: number;
   allowInsecureRequests: boolean;
+  /**
+   * FL-158: a client authentication of the caller's own, used instead of the secret-based methods.
+   * Sign in with Frameleaf authenticates with a `private_key_jwt` assertion signed by this server's
+   * identity key, which never leaves the identity repository.
+   */
+  clientAuth?: ClientAuth;
 };
 export type OAuthProfile = UserInfoResponse;
 
@@ -201,6 +208,7 @@ export class OAuthRepository {
     tokenEndpointAuthMethod,
     timeout,
     allowInsecureRequests,
+    clientAuth,
   }: OAuthConfig) {
     try {
       return await discovery(
@@ -212,7 +220,7 @@ export class OAuthRepository {
           userinfo_signed_response_alg: profileSigningAlgorithm === 'none' ? undefined : profileSigningAlgorithm,
           id_token_signed_response_alg: signingAlgorithm,
         },
-        this.getTokenAuthMethod(tokenEndpointAuthMethod, clientSecret),
+        clientAuth ?? this.getTokenAuthMethod(tokenEndpointAuthMethod, clientSecret),
         {
           execute: allowInsecureRequests ? [allowInsecureRequestsExecute] : [],
           timeout,

@@ -237,6 +237,7 @@ export const appendConfigHistory = (
 export const CREDENTIAL_TITLES: Record<string, string> = {
   'smtp-password': 'email server password',
   'oauth-client-secret': 'OAuth client secret',
+  'frameleaf-oidc-client-secret': 'Sign in with Frameleaf client secret',
 };
 
 /** "Updated email server password" / "Cleared email server password": the entry for one credential, never its value. */
