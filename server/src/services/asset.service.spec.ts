@@ -458,6 +458,20 @@ describe(AssetService.name, () => {
       );
     });
 
+    it('keeps a typed place when the same edit names it at the new coordinates (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { latitude: 35.68, longitude: 139.69, city: 'Tokyo' });
+
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ city: 'Tokyo' }) }),
+      );
+    });
+
     it('never passes place names to the asset row (FL-36, V-24)', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -713,7 +727,11 @@ describe(AssetService.name, () => {
         rating: undefined,
       });
       expect(mocks.asset.updateAll).toHaveBeenCalled();
-      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { latitude: 0, longitude: 0 });
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { latitude: 0, longitude: 0 }, [
+        'city',
+        'state',
+        'country',
+      ]);
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
     });
 
@@ -730,11 +748,11 @@ describe(AssetService.name, () => {
         rating: undefined,
       });
       expect(mocks.asset.updateAll).toHaveBeenCalled();
-      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], {
-        dateTimeOriginal,
-        latitude: 30,
-        longitude: 50,
-      });
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        ['asset-1'],
+        { dateTimeOriginal, latitude: 30, longitude: 50 },
+        ['city', 'state', 'country'],
+      );
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(
         ['asset-1'],
         expect.objectContaining({
@@ -743,6 +761,26 @@ describe(AssetService.name, () => {
         }),
       );
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+
+    it('releases typed place names when a bulk change moves the items (FL-36, V-24)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1', 'asset-2'], latitude: 35.68, longitude: 139.69 });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        ['asset-1', 'asset-2'],
+        { latitude: 35.68, longitude: 139.69 },
+        ['city', 'state', 'country'],
+      );
+    });
+
+    it('keeps typed place names when a bulk change does not move the items (FL-36, V-24)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], rating: 4 });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { rating: 4 }, []);
     });
 
     it('should update Assets table if duplicateId is provided as null', async () => {
