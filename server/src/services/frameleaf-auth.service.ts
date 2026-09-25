@@ -3,17 +3,17 @@ import { parse } from 'cookie';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { UserAdmin } from 'src/database.js';
 import type { AuthDto, OAuthCallbackDto, OAuthConfigDto } from 'src/dtos/auth.dto.js';
-import type { OAuthConfig } from 'src/repositories/oauth.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE } from 'src/services/auth.service.js';
+import type { OAuthConfig } from 'src/repositories/oauth.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   FrameleafAccountLinkResponseDto,
   FrameleafHandoffRedeemDto,
   FrameleafHandoffResponseDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
-import { mapUserAdmin, UserAdminResponseDto } from 'src/dtos/user.dto.js';
+import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AdminAuditAction, ImmichCookie } from 'src/enum.js';
+import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   frameleafCallbackUrl,

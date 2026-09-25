@@ -10,6 +10,9 @@ import {
 import { getKeysDeep } from 'src/utils/misc.js';
 
 const PUBLIC_PROPERTIES = [
+  // FL-158: the Sign in with Frameleaf button
+  'frameleafCloud.signIn.buttonText',
+  'frameleafCloud.signIn.showOnLocalLogin',
   'oauth.autoLaunch',
   'oauth.buttonText',
   'oauth.enabled',
@@ -18,6 +21,16 @@ const PUBLIC_PROPERTIES = [
   // FL-71 (CC-4): the server name is shown on the sign-in screen and in the Command Center.
   'server.name',
   'theme.customCss',
+];
+
+/** FL-158: worked out per request, not stored configuration. */
+const FRAMELEAF_PUBLIC = [
+  'frameleaf.localUrl',
+  'frameleaf.relayHost',
+  'frameleaf.sameNetwork',
+  'frameleaf.signInAvailable',
+  'frameleaf.signInRequired',
+  'frameleaf.via',
 ];
 
 describe('config visibility', () => {
@@ -30,7 +43,7 @@ describe('config visibility', () => {
   });
 
   it('should expose the public properties to everyone', () => {
-    expect(getKeysDeep(mapPublicConfig(defaults)).sort()).toEqual(PUBLIC_PROPERTIES);
+    expect(getKeysDeep(mapPublicConfig(defaults)).sort()).toEqual([...FRAMELEAF_PUBLIC, ...PUBLIC_PROPERTIES].sort());
   });
 
   it('should expose everything public to logged in users as well', () => {

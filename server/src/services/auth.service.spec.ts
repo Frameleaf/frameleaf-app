@@ -285,7 +285,13 @@ describe(AuthService.name, () => {
                   status: 'linked',
                   cloudUrl: 'https://cloud.test',
                   instanceId: 'instance-1',
-                  oidc: { issuer: 'https://id.cloud.test', clientId: 'instance-1', scope: 'openid', roleClaim: 'frameleaf_role', storageLabelClaim: '' },
+                  oidc: {
+                    issuer: 'https://id.cloud.test',
+                    clientId: 'instance-1',
+                    scope: 'openid',
+                    roleClaim: 'frameleaf_role',
+                    storageLabelClaim: '',
+                  },
                 }
               : key === SystemMetadataKey.SystemConfig
                 ? { frameleafCloud: { signIn: { clientSecret: 'secret' } } }

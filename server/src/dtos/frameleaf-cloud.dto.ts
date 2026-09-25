@@ -70,10 +70,17 @@ const CloudStatusResponseSchema = z
     linkTokenConfigured: z.boolean().describe('FRAMELEAF_LINK_TOKEN is set'),
     signInClientId: z.string().nullable().describe('The OpenID client ID for Sign in with Frameleaf'),
     signInIssuer: z.string().nullable(),
+    signInLinkedAccounts: z.int().describe('Accounts here linked to a Frameleaf account'),
+    signInShowOnLocalLogin: z.boolean().describe('Sign in with Frameleaf is offered at home too'),
   })
   .meta({ id: 'CloudStatusResponseDto' });
 
 const CloudPermissionsUpdateSchema = CloudPermissionsSchema.partial().meta({ id: 'CloudPermissionsUpdateDto' });
 
 export class CloudStatusResponseDto extends createZodDto(CloudStatusResponseSchema) {}
+const CloudSignInUpdateSchema = z
+  .object({ showOnLocalLogin: z.boolean().describe('Offer Sign in with Frameleaf on the login page at home') })
+  .meta({ id: 'CloudSignInUpdateDto' });
+
+export class CloudSignInUpdateDto extends createZodDto(CloudSignInUpdateSchema) {}
 export class CloudPermissionsUpdateDto extends createZodDto(CloudPermissionsUpdateSchema) {}

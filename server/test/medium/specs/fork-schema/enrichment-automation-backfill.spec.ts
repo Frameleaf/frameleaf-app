@@ -589,6 +589,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
             enabled: true,
             descriptions: expect.objectContaining({ defaultModel: 'file-model' }),
           }),
+          signIn: { buttonText: 'Sign in with Frameleaf', clientSecret: '', showOnLocalLogin: false },
         },
       },
       { key: 'smartAlbums', value: expect.objectContaining({ enabled: true }) },

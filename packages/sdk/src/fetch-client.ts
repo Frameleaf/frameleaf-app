@@ -111,6 +111,10 @@ export type CloudStatusResponseDto = {
     /** The OpenID client ID for Sign in with Frameleaf */
     signInClientId: string | null;
     signInIssuer: string | null;
+    /** Accounts here linked to a Frameleaf account */
+    signInLinkedAccounts: number;
+    /** Sign in with Frameleaf is offered at home too */
+    signInShowOnLocalLogin: boolean;
     state: CloudLinkState;
 };
 export type CloudMlConsentFeaturesDto = {
@@ -297,6 +301,10 @@ export type CloudPermissionsUpdateDto = {
     /** Frameleaf Cloud may turn remote access on or off */
     allowRemoteEnable?: boolean;
 };
+export type CloudSignInUpdateDto = {
+    /** Offer Sign in with Frameleaf on the login page at home */
+    showOnLocalLogin: boolean;
+};
 export type AdminConfigAnalyticsDto = {
     /** Collect local analytics history every night */
     enabled: boolean;
@@ -388,8 +396,19 @@ export type AdminConfigFrameleafCloudMlDto = {
     faces: AdminConfigFrameleafCloudFacesDto;
     restoration: AdminConfigFrameleafCloudRestorationDto;
 };
+export type AdminConfigFrameleafSignInDto = {
+    /** Sign in with Frameleaf button text */
+    buttonText: string;
+    /** Frameleaf client secret (write-only; empty preserves the existing secret) */
+    clientSecret: string;
+    /** Read-only indicator that a client secret is stored. Set by the server; ignored on write. */
+    clientSecretConfigured?: boolean;
+    /** Show Sign in with Frameleaf on the local sign-in page too */
+    showOnLocalLogin: boolean;
+};
 export type AdminConfigFrameleafCloudDto = {
     cloudMl: AdminConfigFrameleafCloudMlDto;
+    signIn?: AdminConfigFrameleafSignInDto;
 };
 export type AdminConfigEnhancedRawImageDto = {
     /** Enhanced RAW rendering */
@@ -3968,6 +3987,15 @@ export type UserConfigFFmpegRealtimeDto = {
 export type UserConfigFFmpegDto = {
     realtime: UserConfigFFmpegRealtimeDto;
 };
+export type UserConfigFrameleafSignInDto = {
+    /** Sign in with Frameleaf button text */
+    buttonText: string;
+    /** Show Sign in with Frameleaf on the local sign-in page too */
+    showOnLocalLogin: boolean;
+};
+export type UserConfigFrameleafCloudDto = {
+    signIn: UserConfigFrameleafSignInDto;
+};
 export type UserConfigGeneratedFullsizeImageDto = {
     /** Enabled */
     enabled: boolean;
@@ -3995,6 +4023,14 @@ export type UserConfigFacialRecognitionDto = {
     /** Minimum number of faces required for recognition */
     minFaces: number;
 };
+export type UserConfigImageDescriptionDto = {
+    /** Whether the task is enabled */
+    enabled: boolean;
+};
+export type UserConfigNsfwDetectionDto = {
+    /** Whether the task is enabled */
+    enabled: boolean;
+};
 export type UserConfigOcrDto = {
     /** Whether the task is enabled */
     enabled: boolean;
@@ -4005,6 +4041,8 @@ export type UserConfigMachineLearningDto = {
     /** Enabled */
     enabled: boolean;
     facialRecognition: UserConfigFacialRecognitionDto;
+    imageDescription: UserConfigImageDescriptionDto;
+    nsfwDetection: UserConfigNsfwDetectionDto;
     ocr: UserConfigOcrDto;
 };
 export type UserConfigMapDto = {
@@ -4057,6 +4095,7 @@ export type UserConfigUserDto = {
 };
 export type UserConfigDto = {
     ffmpeg: UserConfigFFmpegDto;
+    frameleafCloud: UserConfigFrameleafCloudDto;
     image: UserConfigImageDto;
     machineLearning: UserConfigMachineLearningDto;
     map: UserConfigMapDto;
@@ -5903,6 +5942,25 @@ export type OAuthCallbackDto = {
     /** OAuth callback URL */
     url: string;
 };
+export type FrameleafHandoffResponseDto = {
+    /** A single-use code for signing in on another address of this server */
+    code: string;
+    expiresAt: string;
+};
+export type FrameleafHandoffRedeemDto = {
+    /** The code from POST oauth/frameleaf/handoff */
+    code: string;
+    rememberMe?: boolean;
+};
+export type FrameleafAccountLinkResponseDto = {
+    /** Sign in with Frameleaf is available on this server (it is linked) */
+    available: boolean;
+    /** The linked Frameleaf account’s email */
+    email: string | null;
+    lastSignInAt: string | null;
+    linked: boolean;
+    linkedAt: string | null;
+};
 export type PartnerResponseDto = {
     avatarColor: UserAvatarColor;
     /** User email */
@@ -6744,6 +6802,29 @@ export type PreservationUploadCreateDto = {
     /** A `.frameleaf-preservation.zip` package */
     file: Blob;
 };
+export type FrameleafPublicConfigDto = {
+    /** This server on the home network, when configured */
+    localUrl: string | null;
+    /** The remote-access host shown on the login page, when known */
+    relayHost: string | null;
+    /** Whether a remote-access visitor is on the same network as this server */
+    sameNetwork: boolean;
+    /** Whether Sign in with Frameleaf is available (the server is linked) */
+    signInAvailable: boolean;
+    /** Whether this visitor arrived through remote access, where only Sign in with Frameleaf is offered */
+    signInRequired: boolean;
+    /** How the request arrived; null when the edge worker did not vouch for it */
+    via: (FrameleafVia) | null;
+};
+export type PublicConfigFrameleafSignInDto = {
+    /** Sign in with Frameleaf button text */
+    buttonText: string;
+    /** Show Sign in with Frameleaf on the local sign-in page too */
+    showOnLocalLogin: boolean;
+};
+export type PublicConfigFrameleafCloudDto = {
+    signIn: PublicConfigFrameleafSignInDto;
+};
 export type PublicConfigOAuthDto = {
     /** Auto launch */
     autoLaunch: boolean;
@@ -6767,6 +6848,8 @@ export type PublicConfigThemeDto = {
     customCss: string;
 };
 export type PublicConfigDto = {
+    frameleaf: FrameleafPublicConfigDto;
+    frameleafCloud: PublicConfigFrameleafCloudDto;
     oauth: PublicConfigOAuthDto;
     passwordLogin: PublicConfigPasswordLoginDto;
     server: PublicConfigServerDto;
@@ -10188,6 +10271,21 @@ export function updateCloudPermissions({ cloudPermissionsUpdateDto }: {
         ...opts,
         method: "PUT",
         body: cloudPermissionsUpdateDto
+    })));
+}
+/**
+ * Choose where Sign in with Frameleaf is offered
+ */
+export function updateCloudSignIn({ cloudSignInUpdateDto }: {
+    cloudSignInUpdateDto: CloudSignInUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/sign-in", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudSignInUpdateDto
     })));
 }
 /**
@@ -14747,6 +14845,98 @@ export function redirectOAuthToFrameleafMobile(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Start Sign in with Frameleaf
+ */
+export function startFrameleafSignIn({ oAuthConfigDto }: {
+    oAuthConfigDto: OAuthConfigDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: OAuthAuthorizeResponseDto;
+    }>("/oauth/frameleaf/authorize", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthConfigDto
+    })));
+}
+/**
+ * Finish Sign in with Frameleaf
+ */
+export function finishFrameleafSignIn({ oAuthCallbackDto }: {
+    oAuthCallbackDto: OAuthCallbackDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LoginResponseDto;
+    }>("/oauth/frameleaf/callback", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthCallbackDto
+    })));
+}
+/**
+ * Hand a Sign in with Frameleaf session to another address
+ */
+export function createFrameleafHandoff(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FrameleafHandoffResponseDto;
+    }>("/oauth/frameleaf/handoff", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Sign in with a handoff code
+ */
+export function redeemFrameleafHandoff({ frameleafHandoffRedeemDto }: {
+    frameleafHandoffRedeemDto: FrameleafHandoffRedeemDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LoginResponseDto;
+    }>("/oauth/frameleaf/handoff/redeem", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafHandoffRedeemDto
+    })));
+}
+/**
+ * Unlink your Frameleaf account
+ */
+export function unlinkFrameleafAccount(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/oauth/frameleaf/link", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get your Frameleaf account link
+ */
+export function getFrameleafAccountLink(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafAccountLinkResponseDto;
+    }>("/oauth/frameleaf/link", {
+        ...opts
+    }));
+}
+/**
+ * Link your Frameleaf account
+ */
+export function linkFrameleafAccount({ oAuthCallbackDto }: {
+    oAuthCallbackDto: OAuthCallbackDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserAdminResponseDto;
+    }>("/oauth/frameleaf/link", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthCallbackDto
+    })));
+}
+/**
  * Link OAuth account
  */
 export function linkOAuthAccount({ oAuthCallbackDto }: {
@@ -19120,7 +19310,8 @@ export enum ClassificationRuleAction {
 }
 export enum ConfigCredential {
     SmtpPassword = "smtp-password",
-    OauthClientSecret = "oauth-client-secret"
+    OauthClientSecret = "oauth-client-secret",
+    FrameleafOidcClientSecret = "frameleaf-oidc-client-secret"
 }
 export enum SystemConfigHistoryCredentialChange {
     Replaced = "replaced",
@@ -19662,6 +19853,8 @@ export enum Permission {
     AdminCloudRead = "adminCloud.read",
     AdminCloudUpdate = "adminCloud.update",
     AdminCloudLink = "adminCloud.link",
+    FrameleafAccountRead = "frameleafAccount.read",
+    FrameleafAccountUpdate = "frameleafAccount.update",
     AdminCloudMlRead = "adminCloudMl.read",
     AdminCloudMlUpdate = "adminCloudMl.update",
     ServerLicenseRead = "serverLicense.read",
@@ -20419,6 +20612,11 @@ export enum PreservationRestoreItemState {
     Restored = "restored",
     Matched = "matched",
     Skipped = "skipped"
+}
+export enum FrameleafVia {
+    Lan = "lan",
+    Wan = "wan",
+    Relay = "relay"
 }
 export enum QueueJobStatus {
     Active = "active",
