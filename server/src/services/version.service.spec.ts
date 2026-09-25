@@ -55,6 +55,16 @@ describe(VersionService.name, () => {
       expect(mocks.versionHistory.create).not.toHaveBeenCalled();
     });
 
+    it('does not wait for the first check before scheduling the cron job', async () => {
+      mocks.database.tryLock.mockResolvedValue(true);
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockReturnValue(new Promise(() => {}));
+      mocks.versionHistory.getLatest.mockResolvedValue({ id: 'version-1', createdAt: new Date(), version: '3.0.0' });
+
+      await sut.onBootstrap();
+      expect(mocks.cron.create).toHaveBeenCalledWith(expect.objectContaining({ name: CronJob.VersionCheck }));
+    });
+
     it('should create a version check cron job when the database lock is acquired', async () => {
       mocks.database.tryLock.mockResolvedValue(true);
       mocks.versionHistory.getLatest.mockResolvedValue({
@@ -210,6 +220,31 @@ describe(VersionService.name, () => {
   });
 
   describe('checkNow (About → Check for updates)', () => {
+    it('answers from the stored state when the last check was under a minute ago', async () => {
+      given({ checkedAt: DateTime.utc().minus({ seconds: 20 }).toISO(), releaseVersion: 'v100.0.0' });
+
+      await expect(sut.checkNow()).resolves.toEqual(expect.objectContaining({ isAvailable: true }));
+      expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('checks again once the stored state is older than a minute, sharing one lookup', async () => {
+      given({ checkedAt: DateTime.utc().minus({ seconds: 90 }).toISO(), releaseVersion: 'v3.0.0' });
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
+
+      await Promise.all([sut.checkNow(), sut.checkNow()]);
+      expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('logs the cause of a failed check', async () => {
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockRejectedValue(
+        new Error('Failed to fetch latest release', { cause: new Error('Release lookup failed with status 403') }),
+      );
+      await expect(sut.checkNow()).rejects.toThrow();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('status 403'));
+    });
+
     it('asks the release feed even when automatic checks are off, and reports a newer version', async () => {
       given(null, { newVersionCheck: { enabled: false, channel: ReleaseChannel.Stable } });
       mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v100.0.0'));

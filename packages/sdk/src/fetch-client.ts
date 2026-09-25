@@ -7500,6 +7500,8 @@ export type ServerVersionResponseDto = {
     patch: number;
     /** Pre-release version number */
     prerelease: number | null;
+    /** Full pre-release identifier (for example rc.1 or beta.2), present only for a pre-release (FL-80) */
+    prereleaseName?: string;
 };
 export type VersionCheckStateResponseDto = {
     /** Last check timestamp */
