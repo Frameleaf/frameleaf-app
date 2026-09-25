@@ -1,6 +1,6 @@
 import { ModuleRef } from '@nestjs/core';
 import { JobsOptions } from 'bullmq';
-import { JobName, QueueName } from 'src/enum.js';
+import { JobName, QueueJobStatus, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository, getForkSchemaBackfillJobOptions } from 'src/repositories/job.repository.js';
@@ -89,6 +89,7 @@ describe(JobRepository.name, () => {
 
       await expect(repository.searchJobs(QueueName.FaceDetection, { status: [] })).resolves.toEqual([
         {
+          status: QueueJobStatus.Waiting,
           id: '1',
           name: JobName.AssetDetectFaces,
           timestamp: 1000,
@@ -96,8 +97,55 @@ describe(JobRepository.name, () => {
           attemptsMade: 3,
           failedReason: 'Machine learning is unreachable',
         },
-        { id: '2', name: JobName.AssetDetectFaces, timestamp: 2000, data: {}, attemptsMade: 0 },
+        {
+          status: QueueJobStatus.Waiting,
+          id: '2',
+          name: JobName.AssetDetectFaces,
+          timestamp: 2000,
+          data: {},
+          attemptsMade: 0,
+        },
       ]);
+    });
+
+    it('reports the requested status, or infers it from the job when several were asked for (FL-71)', async () => {
+      const job = (overrides: Record<string, unknown>) => ({
+        id: '1',
+        name: JobName.AssetDetectFaces,
+        timestamp: Date.now(),
+        data: {},
+        attemptsMade: 1,
+        delay: 0,
+        ...overrides,
+      });
+      const getJobs = vi
+        .fn()
+        .mockResolvedValue([
+          job({ finishedOn: 1, failedReason: 'boom' }),
+          job({ finishedOn: 1 }),
+          job({ processedOn: 1 }),
+          job({ delay: 60_000 }),
+          job({}),
+        ]);
+      const moduleRef = { get: vi.fn().mockReturnValue({ getJobs }) } as unknown as ModuleRef;
+      const repository = new JobRepository(
+        moduleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+
+      const inferred = await repository.searchJobs(QueueName.FaceDetection, {});
+      expect(inferred.map(({ status }) => status)).toEqual([
+        QueueJobStatus.Failed,
+        QueueJobStatus.Complete,
+        QueueJobStatus.Active,
+        QueueJobStatus.Delayed,
+        QueueJobStatus.Waiting,
+      ]);
+      const requested = await repository.searchJobs(QueueName.FaceDetection, { status: [QueueJobStatus.Paused] });
+      expect(requested.every(({ status }) => status === QueueJobStatus.Paused)).toBe(true);
+      expect(getJobs).toHaveBeenLastCalledWith([QueueJobStatus.Paused], 0, 999);
     });
 
     it('cuts a long last error to 500 characters', async () => {
