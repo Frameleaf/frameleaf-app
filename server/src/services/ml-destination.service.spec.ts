@@ -20,6 +20,7 @@ import {
 } from 'src/enum.js';
 import { FRAMELEAF_CLOUD_ENDPOINT } from 'src/repositories/machine-learning.repository.js';
 import { ML_URL_REMOVED_SUMMARY, MlDestinationService } from 'src/services/ml-destination.service.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
@@ -405,6 +406,45 @@ describe(MlDestinationService.name, () => {
           acknowledgeMediaLeavesNetwork: false,
         } as never),
       ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
+    });
+
+    it('withdraws Frameleaf Cloud consent with the cloud too when it answers (FL-159)', async () => {
+      linkCloud();
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id);
+      expect(mocks.frameleafConsent.revoke).toHaveBeenCalledWith(mlDestinationStub.frameleafCloudConsented.id);
+      expect(mocks.frameleafCloudMl.revokeConsent).toHaveBeenCalledWith({
+        url: 'https://ml.eu.cloud.test',
+        bearer: 'instance-token',
+      });
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(
+        mlDestinationStub.frameleafCloudConsented.id,
+        expect.objectContaining({ consentVersion: null }),
+      );
+    });
+
+    it('still withdraws consent here when Frameleaf Cloud does not answer, and logs it (FL-159)', async () => {
+      linkCloud();
+      mocks.frameleafCloudMl.revokeConsent.mockRejectedValue(
+        new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, 'offline'),
+      );
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id);
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(
+        mlDestinationStub.frameleafCloudConsented.id,
+        expect.objectContaining({ consentVersion: null, consentAcknowledgedAt: null }),
+      );
+    });
+
+    it('refuses to withdraw consent during a handoff, before contacting Frameleaf Cloud (FL-159)', async () => {
+      linkCloud();
+      mocks.frameleafConsent.revoke.mockRejectedValue(
+        new Error('Consent cannot be withdrawn while the server is being handed over'),
+      );
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).rejects.toThrow(/handed over/);
+      expect(mocks.frameleafCloudMl.revokeConsent).not.toHaveBeenCalled();
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
 

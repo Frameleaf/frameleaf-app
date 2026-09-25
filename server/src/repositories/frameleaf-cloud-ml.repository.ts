@@ -82,6 +82,18 @@ export class FrameleafCloudMlRepository {
     });
   }
 
+  /**
+   * `DELETE /v2/consent`: withdraw this server's consent with Frameleaf Cloud, so the cloud refuses new
+   * jobs too. A cloud contract addition (FL-145); an empty answer is fine.
+   */
+  async revokeConsent(gateway: CloudMlGateway): Promise<void> {
+    await this.cloud.requestJson(z.unknown(), {
+      method: 'DELETE',
+      url: `${gateway.url}/v2/consent`,
+      bearer: gateway.bearer,
+    });
+  }
+
   recordConsent(
     gateway: CloudMlGateway,
     consent: { version: string; features: CloudConsentFeatures },
