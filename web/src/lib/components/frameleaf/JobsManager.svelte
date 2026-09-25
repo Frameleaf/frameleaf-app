@@ -158,7 +158,11 @@
   let statsOwner = $state<string>();
   const countsLoading = $derived(owner !== 'all' && statsOwner !== owner);
   /** A count as the page shows it: a dash while an account's counts load, never a false 0. */
-  const count = (value: number) => (countsLoading ? '—' : number(value));
+  /** Queues whose counts for the chosen account could not be read: shown as unknown, never as 0. */
+  let failedStats = $state(new Set<QueueName>());
+  const countsUnknown = (name?: QueueName) =>
+    countsLoading || (owner !== 'all' && (name ? failedStats.has(name) : failedStats.size > 0));
+  const count = (value: number, name?: QueueName) => (countsUnknown(name) ? '—' : number(value));
 
   const flags = $derived(featureFlagsManager.value);
   const draft = getSystemConfigDraft();
@@ -193,6 +197,7 @@
     void jobsReload;
     if (account === 'all') {
       ownerStats = new Map();
+      failedStats = new Set();
       statsOwner = undefined;
       return;
     }
@@ -213,6 +218,7 @@
       }
 
       ownerStats = new Map(entries.filter((entry) => entry !== undefined));
+      failedStats = new Set(names.filter((_, index) => entries[index] === undefined));
       statsOwner = account;
     });
     return () => {
@@ -802,6 +808,13 @@
   {#if truncated}
     <p class="jm-scope">{$t('frameleaf_jobs_account_truncated')}</p>
   {/if}
+  {#if !countsLoading && owner !== 'all' && failedStats.size > 0}
+    <div class="jm-message jm-error" role="alert">
+      <Icon icon={mdiAlertCircleOutline} size="16px" aria-hidden={true} />
+      {$t('frameleaf_jobs_account_counts_failed', { values: { name: ownerName } })}
+      <Button onclick={() => jobsReload++}>{$t('retry')}</Button>
+    </div>
+  {/if}
 
   {#if !selected}
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (a scrollable region must be reachable by keyboard to scroll it) -->
@@ -841,8 +854,8 @@
                 </button>
               </th>
               <td>{@render queueStatus(jobQueueStatus(queue))}</td>
-              <td>{count(rowCounts.active)}</td>
-              <td>{count(rowCounts.pending)}</td>
+              <td>{count(rowCounts.active, definition.name)}</td>
+              <td>{count(rowCounts.pending, definition.name)}</td>
               <td>
                 <button
                   type="button"
@@ -850,7 +863,7 @@
                   disabled={!rowCounts.failed}
                   onclick={() => void open(definition.name, 'failed')}
                 >
-                  {count(rowCounts.failed)}
+                  {count(rowCounts.failed, definition.name)}
                 </button>
               </td>
               <td>
@@ -996,7 +1009,7 @@
           onclick={() => selectTab(item)}
         >
           {$t(`frameleaf_jobs_tab_${item}` as Translations)}
-          <span>{count(jobTabCount(item, queueCounts))}</span>
+          <span>{count(jobTabCount(item, queueCounts), definition.name)}</span>
         </button>
       {/each}
     </div>
