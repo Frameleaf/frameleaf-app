@@ -108,7 +108,7 @@ const config = {
             type: 'html',
             position: 'right',
             value:
-              '<a href="https://buy.immich.app" target="_blank" class="no-underline hover:no-underline"><button class="buy-button bg-immich-primary dark:bg-immich-dark-primary text-white dark:text-black rounded-xl">Buy Immich</button></a>',
+              '<a href="/overview/support-the-project" class="no-underline hover:no-underline"><button class="buy-button bg-immich-primary dark:bg-immich-dark-primary text-white dark:text-black rounded-xl">Support Frameleaf</button></a>',
           },
         ],
       },
@@ -140,12 +140,8 @@ const config = {
                 href: 'https://futo.tech/',
               },
               {
-                label: 'Purchase',
-                href: 'https://buy.immich.app/',
-              },
-              {
-                label: 'Merch',
-                href: 'https://immich.store/',
+                label: 'Support Frameleaf',
+                to: '/overview/support-the-project',
               },
             ],
           },
