@@ -48,11 +48,13 @@ describe('diffConfig (FL-66)', () => {
     expect(sectionForConfigPath('trash.days')).toBe('trash');
     expect(sectionForConfigPath('oauth.clientSecret')).toBe('authentication');
     expect(sectionForConfigPath('reverseGeocoding.enabled')).toBe('location');
-    expect(sectionForConfigPath('localFeatures.anything')).toBeUndefined();
     // FL-69: Library care's toggles are spread over three pages.
     expect(sectionForConfigPath('libraryCare.healthScan')).toBe('integrity-checks');
     expect(sectionForConfigPath('libraryCare.rawRecovery')).toBe('repair');
     expect(sectionForConfigPath('libraryCare.manualMetadata')).toBe('enrichment-care');
+    expect(sectionForConfigPath('localFeatures.askSearch.enabled')).toBe('machine-learning');
+    expect(sectionForConfigPath('analytics.historyDays')).toBe('logging');
+    expect(sectionForConfigPath('unknownGroup.anything')).toBeUndefined();
   });
 });
 

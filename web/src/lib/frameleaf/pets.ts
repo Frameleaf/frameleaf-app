@@ -1,11 +1,20 @@
 import {
   AssetVisibility,
+  isHttpError,
+  MlDestinationKind,
+  PetObservationState,
+  PetRecognitionRunStatus,
+  PetRecognitionUnavailableReason,
   PetSpecies,
   type PetCandidateResponseDto,
+  type PetObservationCreateDto,
+  type PetObservationResponseDto,
+  type PetRecognitionRunResponseDto,
   type PetResponseDto,
   type SearchFilter,
 } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
+import { toPixelBox, type FaceBox, type Size } from '$lib/frameleaf/face-tags';
 
 /**
  * Frameleaf Pets page (FL-58): small pure helpers shared by the grid and the recognition
@@ -141,3 +150,98 @@ export const petPhotosFilter = (petId: string): SearchFilter => ({
   visibility: { in: [AssetVisibility.Timeline, AssetVisibility.Archive] },
   trashedAt: { eq: null },
 });
+
+/* -------------------------------------------------------------------------------------------- */
+/* Recognition status (FL-58)                                                                    */
+/* -------------------------------------------------------------------------------------------- */
+
+/**
+ * Where recognition runs, in the owner's words. The managed cloud worker is "Frameleaf Cloud" in
+ * every customer string (owner decision, FL-146); a LAN worker is named by its destination name.
+ */
+export const recognitionDestinationKey = (kind: MlDestinationKind): Translations => {
+  switch (kind) {
+    case MlDestinationKind.Local: {
+      return 'frameleaf_pets_recognition_runs_local';
+    }
+    case MlDestinationKind.Lan: {
+      return 'frameleaf_pets_recognition_runs_lan';
+    }
+    case MlDestinationKind.FrameleafCloud: {
+      return 'frameleaf_pets_recognition_runs_cloud';
+    }
+  }
+};
+
+/** Why recognition cannot run, as an actionable sentence; the server sends the reason, never a guess. */
+export const recognitionReasonKey = (reason: PetRecognitionUnavailableReason): Translations =>
+  `frameleaf_pets_recognition_reason_${reason.replaceAll('-', '_')}` as Translations;
+
+/** A run the page should keep following (polling) and offer to stop. */
+export const isRecognitionRunActive = (run: Pick<PetRecognitionRunResponseDto, 'status'> | null | undefined) =>
+  !!run && (run.status === PetRecognitionRunStatus.Queued || run.status === PetRecognitionRunStatus.Running);
+
+/** How far a run is, 0 to 1. A run that has not counted its photos yet reads as 0, never NaN. */
+export const recognitionRunProgress = ({
+  assetCount,
+  processedCount,
+}: Pick<PetRecognitionRunResponseDto, 'assetCount' | 'processedCount'>): number =>
+  assetCount > 0 ? Math.min(1, Math.max(0, processedCount / assetCount)) : 0;
+
+/* -------------------------------------------------------------------------------------------- */
+/* Observations (FL-58)                                                                          */
+/* -------------------------------------------------------------------------------------------- */
+
+/** A drawn region whose photo was replaced afterwards: kept and confirmed, but it needs a look. */
+export const isStaleObservation = (observation: Pick<PetObservationResponseDto, 'staleAt'>) =>
+  observation.staleAt !== null;
+
+export const hasRegion = (observation: Pick<PetObservationResponseDto, 'boundingBoxX1'>) =>
+  observation.boundingBoxX1 !== null;
+
+/** The pets confirmed in one photo, stale regions first so they are seen. */
+export const confirmedObservations = (observations: PetObservationResponseDto[]) =>
+  observations
+    .filter((observation) => observation.state === PetObservationState.Confirmed)
+    .sort((a, b) => Number(isStaleObservation(b)) - Number(isStaleObservation(a)));
+
+/** A fraction box as the pixel region the pets API stores, measured on the image the region was drawn on. */
+export const regionFromBox = (
+  box: FaceBox,
+  natural: Size,
+): Required<
+  Pick<
+    PetObservationCreateDto,
+    'boundingBoxX1' | 'boundingBoxY1' | 'boundingBoxX2' | 'boundingBoxY2' | 'imageWidth' | 'imageHeight'
+  >
+> => {
+  const { x, y, width, height } = toPixelBox(box, natural);
+  return {
+    boundingBoxX1: x,
+    boundingBoxY1: y,
+    boundingBoxX2: x + width,
+    boundingBoxY2: y + height,
+    imageWidth: natural.width,
+    imageHeight: natural.height,
+  };
+};
+
+/** The same observation written again: what an Undo of its removal sends. */
+export const observationToCreate = (
+  observation: PetObservationResponseDto,
+  expectedChecksum?: string,
+): PetObservationCreateDto => ({
+  assetId: observation.assetId,
+  ...(expectedChecksum && { expectedChecksum }),
+  ...(hasRegion(observation) && {
+    boundingBoxX1: observation.boundingBoxX1!,
+    boundingBoxY1: observation.boundingBoxY1!,
+    boundingBoxX2: observation.boundingBoxX2!,
+    boundingBoxY2: observation.boundingBoxY2!,
+    imageWidth: observation.imageWidth!,
+    imageHeight: observation.imageHeight!,
+  }),
+});
+
+/** A 409 from a pet write: the original changed since the photo was opened (FL-58 source checksums). */
+export const isSourceConflict = (error: unknown): boolean => isHttpError(error) && error.status === 409;

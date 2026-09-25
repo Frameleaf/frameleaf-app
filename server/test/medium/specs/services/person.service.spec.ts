@@ -2,12 +2,13 @@ import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto } from 'src/dtos/person.dto.js';
-import { AssetFileType, AssetMetadataKey, AssetVisibility, JobName, MlWorkload } from 'src/enum.js';
+import { AssetFileType, AssetMetadataKey, AssetType, AssetVisibility, JobName, MlWorkload } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -25,12 +26,13 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  return newMediumService(PersonService, {
+  const service = newMediumService(PersonService, {
     database: db || defaultDatabase,
     real: [
       AccessRepository,
       AssetJobRepository,
       ConfigRepository,
+      CryptoRepository,
       DatabaseRepository,
       PersonRepository,
       AssetRepository,
@@ -39,6 +41,9 @@ const setup = (db?: Kysely<DB>) => {
     ],
     mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository, MlDestinationRepository],
   });
+  // FL-57: face changes queue the refresh of generated text that may name the wrong people
+  service.ctx.getMock(JobRepository).queue.mockResolvedValue();
+  return service;
 };
 
 const nsfwMetadata = (isNsfw: boolean, review?: { action: string; isNsfw: boolean }) => ({
@@ -138,8 +143,37 @@ describe(PersonService.name, () => {
       await expect(sut.getById(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual(
         expect.objectContaining({ id: mixedPerson.personGroupId }),
       );
-      await expect(sut.getStatistics(auth, mixedPerson.personGroupId)).resolves.toEqual({ assets: 2 });
-      await expect(sut.getStatistics(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual({ assets: 1 });
+      await expect(sut.getStatistics(auth, mixedPerson.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ assets: 2 }),
+      );
+      await expect(sut.getStatistics(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ assets: 1 }),
+      );
+    });
+
+    it('splits the person page count into photos and videos over timeline assets only (FL-37)', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Counted' });
+      const { asset: photo } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+      const { asset: video } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+      const { asset: archived } = await ctx.newAsset({
+        ownerId: user.id,
+        type: AssetType.Image,
+        visibility: AssetVisibility.Archive,
+      });
+      const { asset: trashed } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video, deletedAt: new Date() });
+      for (const asset of [photo, video, archived, trashed]) {
+        await ctx.newAssetFace({ personGroupId: person.personGroupId, assetId: asset.id });
+      }
+      // two faces of the same person on one photo still count that photo once
+      await ctx.newAssetFace({ personGroupId: person.personGroupId, assetId: photo.id });
+
+      await expect(sut.getStatistics(factory.auth({ user }), person.personGroupId)).resolves.toEqual({
+        assets: 2,
+        photos: 1,
+        videos: 1,
+      });
     });
 
     it('should not serve person thumbnails generated from private NSFW feature faces', async () => {
@@ -182,8 +216,9 @@ describe(PersonService.name, () => {
   });
 
   describe('Locked media (FL-34)', () => {
-    it("lists a corrected face on Locked media only for that media's owner in an elevated session", async () => {
-      const { sut, ctx } = setup();
+    it('never shows Locked or foreign media as correction history evidence (FL-57)', async () => {
+      // its own database: the corrected faces it leaves would outlast the forced recognition tests below
+      const { sut, ctx } = setup(await getKyselyDB());
       const personRepo = ctx.get(PersonRepository);
       const { user: user1 } = await ctx.newUser();
       const { user: user2 } = await ctx.newUser({ clusterGroupId: user1.clusterGroupId });
@@ -191,25 +226,38 @@ describe(PersonService.name, () => {
       await ctx.newPerson({ ownerId: user2.id, personGroupId: person.personGroupId });
 
       const { asset: locked1 } = await ctx.newAsset({ ownerId: user1.id, visibility: AssetVisibility.Locked });
-      const { asset: locked2 } = await ctx.newAsset({ ownerId: user2.id, visibility: AssetVisibility.Locked });
+      const { asset: timeline1 } = await ctx.newAsset({ ownerId: user1.id });
       const { asset: timeline2 } = await ctx.newAsset({ ownerId: user2.id });
-      for (const asset of [locked1, locked2, timeline2]) {
-        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+      for (const asset of [locked1, timeline1, timeline2]) {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, imageWidth: 100, imageHeight: 100 });
         await personRepo.reassignFace(assetFace.id, person.personGroupId);
+        await personRepo.recordFaceCorrections([
+          {
+            ownerId: user1.id,
+            actorId: user1.id,
+            action: 'reassign',
+            faceId: assetFace.id,
+            toPersonId: person.personGroupId,
+          },
+        ]);
       }
 
-      const assetIds = async (auth: ReturnType<typeof factory.auth>) => {
-        const { corrections } = await sut.getCorrectionHistory(auth, person.personGroupId);
-        return corrections.map(({ assetId }) => assetId).sort();
-      };
+      for (const auth of [
+        factory.auth({ user: user1 }),
+        factory.auth({ user: user1, session: { hasElevatedPermission: true } }),
+      ]) {
+        const { corrections } = await sut.getCorrectionHistory(auth, person.personGroupId, { page: 1, size: 25 });
+        expect(corrections).toHaveLength(3);
+        expect(corrections.filter(({ evidence }) => evidence).map(({ evidence }) => evidence!.assetId)).toEqual([
+          timeline1.id,
+        ]);
+        expect(corrections.filter(({ evidenceRevoked }) => evidenceRevoked)).toHaveLength(2);
+      }
 
-      await expect(assetIds(factory.auth({ user: user1 }))).resolves.toEqual([timeline2.id]);
-      await expect(assetIds(factory.auth({ user: user1, session: { hasElevatedPermission: true } }))).resolves.toEqual(
-        [locked1.id, timeline2.id].sort(),
-      );
-      await expect(assetIds(factory.auth({ user: user2, session: { hasElevatedPermission: true } }))).resolves.toEqual(
-        [locked2.id, timeline2.id].sort(),
-      );
+      // the history is the owner's: the partner sees none of it
+      await expect(
+        sut.getCorrectionHistory(factory.auth({ user: user2 }), person.personGroupId, { page: 1, size: 25 }),
+      ).resolves.toEqual({ corrections: [], hasNextPage: false });
     });
 
     it("reaches a face on the caller's own Locked media only from an elevated session", async () => {

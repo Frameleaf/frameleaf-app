@@ -95,7 +95,11 @@ describe(MemoryController.name, () => {
       expect(status).toBe(400);
       expect(body).toEqual(
         errorDto.validationError([
-          { path: [], message: 'At least one of the following fields is required: isSaved, seenAt, memoryAt' },
+          {
+            path: [],
+            message:
+              'At least one of the following fields is required: isSaved, seenAt, memoryAt, isHidden, title, assetOrder',
+          },
         ]),
       );
     });
@@ -130,6 +134,33 @@ describe(MemoryController.name, () => {
         .send({ ids: ['invalid'] });
       expect(status).toBe(400);
       expect(body).toEqual(errorDto.validationError([{ path: ['ids', 0], message: 'Invalid UUID' }]));
+    });
+  });
+
+  describe('POST /memories/show-less (FL-62)', () => {
+    it('should require a known kind and a value', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/memories/show-less')
+        .send({ kind: 'album', value: 'x' });
+      expect(status).toBe(400);
+
+      const empty = await request(ctx.getHttpServer()).post('/memories/show-less').send({ kind: 'date', value: '' });
+      expect(empty.status).toBe(400);
+    });
+  });
+
+  describe('PUT /memories/:id curation (FL-62)', () => {
+    it('should refuse an empty title and an item order with an invalid id', async () => {
+      const id = factory.uuid();
+      const title = await request(ctx.getHttpServer())
+        .put(`/memories/${id}`)
+        .send({ title: ' '.repeat(3) });
+      expect(title.status).toBe(400);
+
+      const order = await request(ctx.getHttpServer())
+        .put(`/memories/${id}`)
+        .send({ assetOrder: ['nope'] });
+      expect(order.status).toBe(400);
     });
   });
 });

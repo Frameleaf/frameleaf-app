@@ -40,6 +40,7 @@ import {
   hardwareFromProbe,
   hasRequiredConsent,
   healthFromProbe,
+  insufficientMemoryDetail,
   isCloudDestination,
   mayMixRoles,
   mlWorkerRoleOf,
@@ -195,10 +196,22 @@ export class MlDestinationService extends BaseService {
 
     for (const workload of LIBRARY_ML_WORKLOADS) {
       const route = await this.mlDestinationRepository.getRoute(workload);
-      if (!route) {
-        await this.mlDestinationRepository.setRoute(workload, first.id);
-        this.logger.log(`Routed ${workload} to local destination ${first.name}`);
+      if (route) {
+        continue;
       }
+      // FL-58: a library workload added after this destination was created (pet recognition) is
+      // allowed on it as it is routed there, so the route is usable. Only this server's own local
+      // container is ever changed, and never into a worker that would also run restoration.
+      if (!first.workloads.includes(workload)) {
+        const workloads = [...first.workloads, workload];
+        if (workloadPolicyProblem(first.kind, workloads)) {
+          this.logger.log(`Left ${workload} unrouted: ${first.name} is not a library-analysis worker`);
+          continue;
+        }
+        first = await this.mlDestinationRepository.update(first.id, { workloads });
+      }
+      await this.mlDestinationRepository.setRoute(workload, first.id);
+      this.logger.log(`Routed ${workload} to local destination ${first.name}`);
     }
   }
 
@@ -623,7 +636,9 @@ export class MlDestinationService extends BaseService {
           !stale &&
           row.workloads.includes(workload) &&
           row.lastProbeHealth === MlDestinationHealth.Healthy &&
-          (row.lastProbeWorkloads ?? []).includes(workload);
+          (row.lastProbeWorkloads ?? []).includes(workload) &&
+          // FL-58: a worker that reported too little GPU memory for the workload is not offered.
+          insufficientMemoryDetail(row, workload) === null;
         const gpus = row.lastProbeHardware?.gpus ?? [];
         return {
           id: row.id,

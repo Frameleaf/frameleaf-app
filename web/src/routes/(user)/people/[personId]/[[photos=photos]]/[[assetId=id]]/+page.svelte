@@ -32,7 +32,7 @@
 
   let { data }: Props = $props();
 
-  let numberOfAssets = $derived(data.statistics.assets);
+  let statistics = $derived(data.statistics);
   let person = $derived(data.person);
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
@@ -73,6 +73,27 @@
     person = response;
   };
 
+  // A new featured photo is cut into the person thumbnail by a job; the avatar re-reads it once ready.
+  const onPersonThumbnailReady = ({ id }: { id: string }) => {
+    if (id === person.id) {
+      person = { ...person, updatedAt: new Date().toISOString() };
+    }
+  };
+
+  // Faces moved to this person from elsewhere (a merge into them, a face reassigned in the viewer):
+  // re-read the count and the photos. The hero's own changes already do this through `onFacesChanged`.
+  const onPersonFacesChange = ({
+    personIds,
+    removedPersonIds,
+  }: {
+    personIds: string[];
+    removedPersonIds?: string[];
+  }) => {
+    if (personIds.includes(person.id) && !removedPersonIds?.includes(person.id)) {
+      void updateAssetCount();
+    }
+  };
+
   const handlePersonAssetDelete = async ({ id, assetId }: { id: string; assetId: string }) => {
     if (id !== person.id) {
       return;
@@ -84,6 +105,8 @@
 
 <OnEvents
   {onPersonUpdate}
+  {onPersonThumbnailReady}
+  {onPersonFacesChange}
   onPersonAssetDelete={handlePersonAssetDelete}
   onAssetsDelete={updateAssetCount}
   onAssetsArchive={updateAssetCount}
@@ -97,7 +120,6 @@
   {#key `${person.id}:${refresh}`}
     <LibraryView
       enableRouting
-      syncUrl={false}
       selectAll="loaded"
       bind:timelineManager
       {options}
@@ -113,7 +135,7 @@
     >
       <PersonHero
         {person}
-        assetCount={numberOfAssets}
+        {statistics}
         onBack={() => goto(previousRoute)}
         onPersonChange={(updated) => (person = updated)}
         onMergedAway={(target) => goto(Route.viewPerson(target), { replaceState: true })}

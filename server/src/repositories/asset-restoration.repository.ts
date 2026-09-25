@@ -5,8 +5,13 @@ import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
+import { EXPIRING_RESULT_STATUSES } from 'src/utils/restoration.js';
 
 export type AssetRestoration = Selectable<AssetRestorationTable>;
+export type RestoredForPlayback = Pick<
+  AssetRestoration,
+  'id' | 'isCurrent' | 'resultPath' | 'resultPreviewPath' | 'sourceType'
+>;
 
 export type AssetRestorationCreate = Omit<
   Insertable<AssetRestorationTable>,
@@ -86,6 +91,21 @@ export class AssetRestorationRepository {
       .executeTakeFirst()) as AssetRestoration | undefined;
   }
 
+  /**
+   * The owner's finished restorations of an asset, for playback: which one (if any) is chosen, and
+   * whether a switch between versions is possible at all (FL-115).
+   */
+  async listRestoredForPlayback(assetId: string, ownerId: string): Promise<RestoredForPlayback[]> {
+    return (await this.db
+      .selectFrom('asset_restoration')
+      .select(['id', 'isCurrent', 'resultPath', 'resultPreviewPath', 'sourceType'])
+      .where('assetId', '=', assetId)
+      .where('ownerId', '=', ownerId)
+      .where('status', '=', AssetRestorationStatus.Restored)
+      .where('resultPath', 'is not', null)
+      .execute()) as RestoredForPlayback[];
+  }
+
   async update(id: string, patch: AssetRestorationUpdate): Promise<AssetRestoration | undefined> {
     const entries = Object.entries(patch).filter(([, value]) => value !== undefined);
     if (entries.length === 0) {
@@ -159,17 +179,41 @@ export class AssetRestorationRepository {
       .execute()) as unknown as AssetRestoration[];
   }
 
-  /** Restorations whose result files are past their retention date and still on disk. */
+  /**
+   * Failed or cancelled full renders whose leftovers (chunk checkpoints, any partial result) are
+   * past their retention date. A finished result never carries an expiry (FL-115).
+   */
   async listExpiredResults(now: Date, limit: number): Promise<AssetRestoration[]> {
     return (await this.db
       .selectFrom('asset_restoration')
       .selectAll()
       .where('resultExpiresAt', 'is not', null)
       .where('resultExpiresAt', '<=', now)
-      .where((eb) => eb.or([eb('resultPath', 'is not', null), eb('resultPreviewPath', 'is not', null)]))
+      .where('status', 'in', [...EXPIRING_RESULT_STATUSES])
       .orderBy('resultExpiresAt', 'asc')
       .limit(limit)
       .execute()) as unknown as AssetRestoration[];
+  }
+
+  /**
+   * Clears an expired result's paths only while the row is still in the status the retention sweep
+   * read and still past its retention date. A retry or another change since the read makes this a
+   * no-op (undefined), and the sweep then leaves the row's files and work folder alone.
+   */
+  async clearExpiredResult(
+    id: string,
+    status: AssetRestorationStatus,
+    now: Date,
+  ): Promise<AssetRestoration | undefined> {
+    return (await this.db
+      .updateTable('asset_restoration')
+      .set({ resultPath: null, resultPreviewPath: null, resultExpiresAt: null })
+      .where('id', '=', id)
+      .where('status', '=', status)
+      .where('resultExpiresAt', 'is not', null)
+      .where('resultExpiresAt', '<=', now)
+      .returningAll()
+      .executeTakeFirst()) as AssetRestoration | undefined;
   }
 
   /**
@@ -177,7 +221,7 @@ export class AssetRestorationRepository {
    * the owner cancelled from Activity, or one that recovery failed after its attempts ran out.
    * Only rows still in an active status change, so a decision already recorded is never undone.
    */
-  async alignWithOperations(): Promise<{ preview: number; full: number }> {
+  async alignWithOperations(resultExpiresAt: Date): Promise<{ preview: number; full: number }> {
     const preview = await this.db
       .updateTable('asset_restoration')
       .set((eb) => ({
@@ -233,6 +277,7 @@ export class AssetRestorationRepository {
           .selectFrom('media_operation')
           .select('media_operation.error')
           .whereRef('media_operation.id', '=', 'asset_restoration.fullOperationId'),
+        resultExpiresAt,
       }))
       .where('status', 'in', [AssetRestorationStatus.Accepted, AssetRestorationStatus.Restoring])
       .where((eb) =>

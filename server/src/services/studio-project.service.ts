@@ -1070,6 +1070,16 @@ export class StudioProjectService {
     return { ...resolution, cached: false };
   }
 
+  /**
+   * FL-90: drop every cached resolution of these projects, so the next read resolves the sources
+   * again rather than trusting a manifest issued before access changed.
+   */
+  forgetResolutions(projectIds: readonly string[]): void {
+    for (const projectId of projectIds) {
+      this.forgetManifests(projectId);
+    }
+  }
+
   private forgetManifests(projectId: string): void {
     const prefix = `${projectId}:`;
     for (const key of this.manifests.keys()) {

@@ -133,6 +133,24 @@ it('sweeps fork rows of accounts that no longer exist, only while the fork schem
     VALUES (${kept.id}::uuid, 'Family', ARRAY[${kept.id}::uuid, ${removed}::uuid])
     RETURNING id::text AS id
   `.execute(db);
+  // FL-91: Studio workspace layouts of a removed and a kept account.
+  for (const userId of [removed, kept.id]) {
+    await sql`
+      INSERT INTO immich_fork.studio_workspace_layout ("userId", layout, "engineRevision")
+      VALUES (${userId}::uuid, '{"zoom":1}'::jsonb, 'rev')
+    `.execute(db);
+  }
+
+  // FL-62: a removed account's memory show-less rules and memory curation go too; the kept account's stay.
+  for (const userId of [kept.id, removed]) {
+    await sql`
+      INSERT INTO immich_fork.memory_show_less ("userId", kind, value) VALUES (${userId}::uuid, 'date', '09-25')
+    `.execute(db);
+    await sql`
+      INSERT INTO immich_fork.memory_curation ("memoryId", "ownerId", title)
+      VALUES (${randomUUID()}::uuid, ${userId}::uuid, 'Summer')
+    `.execute(db);
+  }
 
   await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
   try {
@@ -145,6 +163,26 @@ it('sweeps fork rows of accounts that no longer exist, only while the fork schem
   const swept = await sut.sweepRemovedAccountForkRows();
   expect(swept?.preferenceHistory).toBeGreaterThanOrEqual(1);
   expect(swept?.recipientGroups).toBeGreaterThanOrEqual(1);
+  expect(swept?.memoryShowLess).toBeGreaterThanOrEqual(1);
+  expect(swept?.memoryCurations).toBeGreaterThanOrEqual(1);
+  const memoryRows = await sql<{ table: string; userId: string }>`
+    SELECT 'show_less' AS table, "userId"::text AS "userId" FROM immich_fork.memory_show_less
+    WHERE "userId" IN (${kept.id}::uuid, ${removed}::uuid)
+    UNION ALL
+    SELECT 'curation', "ownerId"::text FROM immich_fork.memory_curation
+    WHERE "ownerId" IN (${kept.id}::uuid, ${removed}::uuid)
+    ORDER BY 1
+  `.execute(db);
+  expect(memoryRows.rows).toEqual([
+    { table: 'curation', userId: kept.id },
+    { table: 'show_less', userId: kept.id },
+  ]);
+  expect(swept?.workspaceLayouts).toBeGreaterThanOrEqual(1);
+  const layouts = await sql<{ userId: string }>`
+    SELECT "userId"::text AS "userId" FROM immich_fork.studio_workspace_layout
+    WHERE "userId" IN (${removed}::uuid, ${kept.id}::uuid)
+  `.execute(db);
+  expect(layouts.rows).toEqual([{ userId: kept.id }]);
   await expect(sut.getPreferenceHistory(removed)).resolves.toEqual([]);
   await expect(sut.getPreferenceHistory(kept.id)).resolves.toHaveLength(1);
 
@@ -153,4 +191,35 @@ it('sweeps fork rows of accounts that no longer exist, only while the fork schem
     WHERE id IN (${orphanGroup.rows[0].id}::uuid, ${keptGroup.rows[0].id}::uuid)
   `.execute(db);
   expect(groups.rows).toEqual([{ id: keptGroup.rows[0].id, userIds: [kept.id] }]);
+});
+
+// FL-57/FL-58: a removed account's face correction history, merge-suggestion answers and pet
+// recognition run are swept with its other fork rows; a kept account's stay.
+it('sweeps the people and pets fork rows of removed accounts', async () => {
+  const sut = new UserRepository(db);
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user: kept } = await ctx.newUser();
+  const removed = randomUUID();
+  const [low, high] = [randomUUID(), randomUUID()].toSorted();
+  for (const ownerId of [kept.id, removed]) {
+    await sql`
+      INSERT INTO immich_fork.face_correction ("ownerId", "actorId", action) VALUES (${ownerId}::uuid, ${ownerId}::uuid, 'merge')
+    `.execute(db);
+    await sql`
+      INSERT INTO immich_fork.person_merge_verdict ("ownerId", "personId", "suggestionId", verdict)
+      VALUES (${ownerId}::uuid, ${low}::uuid, ${high}::uuid, 'different')
+    `.execute(db);
+    await sql`INSERT INTO immich_fork.pet_recognition_run ("ownerId") VALUES (${ownerId}::uuid)`.execute(db);
+  }
+
+  const swept = await sut.sweepRemovedAccountForkRows();
+  expect(swept?.peopleAndPets).toBe(3);
+
+  for (const table of ['face_correction', 'person_merge_verdict', 'pet_recognition_run']) {
+    const { rows } = await sql<{ ownerId: string }>`
+      SELECT "ownerId"::text AS "ownerId" FROM ${sql.table(`immich_fork.${table}`)}
+      WHERE "ownerId" IN (${kept.id}::uuid, ${removed}::uuid)
+    `.execute(db);
+    expect(rows, table).toEqual([{ ownerId: kept.id }]);
+  }
 });

@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import * as transitions from 'svelte/transition';
 import { describe, expect, it, vi } from 'vitest';
 import PickerHarness from '$lib/../test-data/frameleaf/PickerHarness.svelte';
@@ -54,6 +55,22 @@ it.each([false, true])('restores its invoker even when opening does not focus it
   await fireEvent.click(screen.getByRole('button', { name: 'Close details' }));
   expect(document.activeElement).toBe(opener);
   expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('closes on Escape (the dialog cancel event) and returns focus to its invoker (FL-29)', async () => {
+  const { default: DialogHarness } = await import('$lib/../test-data/frameleaf/DialogHarness.svelte');
+  render(DialogHarness);
+  const opener = screen.getByRole('button', { name: 'Open details' });
+  opener.focus();
+  await fireEvent.click(opener);
+  const dialog = screen.getByRole('dialog', { name: 'Details' });
+  const cancel = new Event('cancel', { cancelable: true });
+  dialog.dispatchEvent(cancel);
+  await tick();
+  // the browser's own close is replaced by the dialog's, so a guarded caller can keep it open
+  expect(cancel.defaultPrevented).toBe(true);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(document.activeElement).toBe(opener);
 });
 
 it('draws the prototype title bar and pins an actions footer outside the scrolling body', async () => {

@@ -524,6 +524,64 @@ export const utils = {
     await client.query('INSERT INTO asset_face ("assetId", "personGroupId") VALUES ($1, $2)', [assetId, personGroupId]);
   },
 
+  /**
+   * FL-37: a face with a recognition embedding that becomes the person's featured face, which is
+   * what `GET /people/merge-suggestions` compares. `seed` picks the direction of the 512-d vector:
+   * the same seed gives two people identical faces (a suggestion), different seeds orthogonal ones.
+   */
+  createFeaturedFaceWithEmbedding: async ({
+    assetId,
+    personGroupId,
+    seed,
+  }: {
+    assetId: string;
+    personGroupId: string;
+    seed: number;
+  }) => {
+    if (!client) {
+      return;
+    }
+
+    const embedding = Array.from({ length: 512 }, (_, index) => (index === seed % 512 ? 1 : 0.001));
+    const { rows } = await client.query<{ id: string }>(
+      'INSERT INTO asset_face ("assetId", "personGroupId") VALUES ($1, $2) RETURNING id',
+      [assetId, personGroupId],
+    );
+    const faceId = rows[0].id;
+    await client.query('INSERT INTO face_search ("faceId", embedding) VALUES ($1, $2)', [
+      faceId,
+      `[${embedding.join(',')}]`,
+    ]);
+    await client.query('UPDATE "person" SET "faceAssetId" = $1 WHERE "personGroupId" = $2', [faceId, personGroupId]);
+    return faceId;
+  },
+
+  /** FL-38: a face as face detection stores it (machine-learning source), with a real box. */
+  createDetectedFace: async ({
+    assetId,
+    personGroupId,
+    imageWidth,
+    imageHeight,
+    box,
+  }: {
+    assetId: string;
+    personGroupId: string | null;
+    imageWidth: number;
+    imageHeight: number;
+    box: { x1: number; y1: number; x2: number; y2: number };
+  }) => {
+    if (!client) {
+      return;
+    }
+
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO asset_face ("assetId", "personGroupId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'machine-learning') RETURNING id`,
+      [assetId, personGroupId, imageWidth, imageHeight, box.x1, box.y1, box.x2, box.y2],
+    );
+    return rows[0].id;
+  },
+
   setPersonThumbnail: async (personId: string) => {
     if (!client) {
       return;

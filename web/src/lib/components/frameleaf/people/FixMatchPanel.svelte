@@ -5,17 +5,19 @@
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import FaceCrop from '$lib/components/frameleaf/people/FaceCrop.svelte';
   import PersonNameField from '$lib/components/frameleaf/people/PersonNameField.svelte';
+  import PersonPicker from '$lib/components/frameleaf/people/PersonPicker.svelte';
   import { isUnnamedPerson, normalizedFaceBox } from '$lib/frameleaf/people';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetMediaSize,
     AssetVisibility,
+    correctFace,
     createPerson,
     deleteFace,
     getAllPeople,
     getFaces,
-    reassignFacesById,
+    isHttpError,
     searchAssets,
     SourceType,
     type AssetFaceResponseDto,
@@ -23,36 +25,46 @@
     type PeopleListItemDto,
     type PersonResponseDto,
   } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { Icon, toastManager } from '@immich/ui';
   import {
+    mdiAccountArrowRightOutline,
     mdiAccountEditOutline,
     mdiAccountOffOutline,
     mdiAccountOutline,
     mdiAccountPlusOutline,
+    mdiAccountSearchOutline,
     mdiClose,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { SvelteMap } from 'svelte/reactivity';
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
   /**
    * "Fix incorrect match" (FL-37/FL-57, PD-3), ported from `FixMatchPanel` in
    * design/frameleaf/template/src/PersonDetail.jsx:43-212. Every face grouped under the person
    * is listed with "Not this person" → "This is {name}" (the six people with the most photos),
-   * "Someone new…" or "Not a face of anyone". It replaces the legacy `UnmergeFaceSelector`,
-   * which opened over an empty selection.
+   * "Someone else…" (any person, searchable), "Someone new…" or "Not a face of anyone". It
+   * replaces the legacy `UnmergeFaceSelector`, which opened over an empty selection.
+   *
+   * FL-57 cleanup: faces can also be selected and split off together — into an existing person
+   * (the searchable `PersonPicker` over all people), into someone new, or as "not a face of
+   * anyone". The prototype has no multi-select here; the check boxes and the bar that appears
+   * with a selection follow its selection pattern (`SelectionBar.jsx`: a count, then the actions,
+   * then clear), inside the panel's footer.
    *
    * Faces are read a page of the person's timeline photos at a time (metadata search filtered
-   * to the person, Locked photos left out) and `getFaces` for each photo. Every action calls
-   * the existing face endpoints: `reassignFacesById`, `createPerson` + `reassignFacesById`,
-   * and `deleteFace` without `force` (a recoverable soft delete).
+   * to the person, Locked photos left out) and `getFaces` for each photo. Every action is
+   * revision-checked (FL-38): a move is `correctFace` (`PATCH /faces/:id` at the face's
+   * `revision`, from this person), someone new is `createPerson` then that move, and "not a face
+   * of anyone" is `deleteFace` without `force` (a recoverable soft delete) at the revision; the
+   * server records each one in the person's correction history (FL-57).
    */
   interface Props {
     person: PersonResponseDto;
     onOpenAsset?: (assetId: string) => void;
-    /** Called once when the panel closes, when at least one face moved. */
-    onChanged?: () => void;
+    /** Called once when the panel closes, when at least one face moved, with the people faces moved to. */
+    onChanged?: (personIds: string[]) => void;
     close: () => void;
   }
 
@@ -66,7 +78,12 @@
   let hasMore = $state(false);
   let loading = $state(false);
   const resolved = new SvelteMap<string, string>();
+  const selected = new SvelteSet<string>();
   let naming: string | null = $state(null);
+  // the faces the searchable picker or the new-name field is choosing a person for
+  let picking: Row[] | null = $state(null);
+  let namingSelection = $state(false);
+  let busy = $state(false);
   let message = $state('');
   let heading: HTMLHeadingElement | undefined = $state();
   let changed = false;
@@ -74,6 +91,7 @@
 
   const name = $derived(isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
   const open = $derived(rows.filter(({ face }) => !resolved.has(face.id)).length);
+  const selectedRows = $derived(rows.filter(({ face }) => selected.has(face.id) && !resolved.has(face.id)));
 
   // Photos already listed (or skipped as Locked), so a later page never repeats one.
   const seen = new Set<string>();
@@ -156,30 +174,112 @@
     }
   });
 
+  // the people faces were moved to, announced once when the panel closes
+  const movedTo = new Set<string>();
+
   const finish = () => {
     if (changed) {
-      onChanged?.();
+      onChanged?.([...movedTo]);
     }
     close();
   };
+
+  /**
+   * FL-38: every change is revision-checked, so it never overwrites a change made elsewhere
+   * meanwhile. On 409 the photo's faces are read again: a face still grouped under this person
+   * stays in the list with its new revision to try again, any other is marked changed elsewhere.
+   */
+  const handleFailure = async (row: Row, error: unknown) => {
+    if (!isHttpError(error) || error.status !== 409) {
+      handleError(error, $t('frameleaf_people_fix_error'));
+      return;
+    }
+    toastManager.warning($t('frameleaf_faces_conflict'));
+    try {
+      const current = (await getFaces({ id: row.asset.id })).find(({ id }) => id === row.face.id);
+      if (current && current.person?.id === person.id && !current.hiddenAt) {
+        rows = rows.map((entry) => (entry.face.id === current.id ? { ...entry, face: current } : entry));
+      } else {
+        changed = true;
+        resolved.set(row.face.id, $t('frameleaf_people_fix_changed_elsewhere'));
+        selected.delete(row.face.id);
+      }
+    } catch (reloadError) {
+      handleError(reloadError, $t('errors.cant_get_faces'));
+    }
+  };
+
+  /** A revision-checked move of one face from this person to `targetId` (FL-38 `PATCH /faces/:id`). */
+  const moveFace = async (row: Row, targetId: string) => {
+    await correctFace({
+      id: row.face.id,
+      assetFaceCorrectionDto: { expectedRevision: row.face.revision, expectedPersonId: person.id, personId: targetId },
+    });
+    movedTo.add(targetId);
+  };
+
+  /**
+   * Recoverable, as the old side panel: a soft delete (`force: false`) takes the face off this
+   * person without destroying the detection. A permanent removal stays behind the confirmation in
+   * the viewer's face menu (`PersonFaceActions`).
+   */
+  const removeFace = (row: Row) =>
+    deleteFace({ id: row.face.id, assetFaceDeleteDto: { force: false, expectedRevision: row.face.revision } });
 
   const act = async (row: Row, action: () => Promise<unknown>, note: string) => {
     try {
       await action();
       changed = true;
       resolved.set(row.face.id, note);
+      selected.delete(row.face.id);
       naming = null;
       message = note;
     } catch (error) {
-      handleError(error, $t('frameleaf_people_fix_error'));
+      await handleFailure(row, error);
+    }
+  };
+
+  /** Runs one action per face, one at a time; a face that fails stays selected to try again. */
+  const actOnAll = async (
+    targets: Row[],
+    action: (row: Row) => Promise<unknown>,
+    note: string,
+    summary: (count: number) => string,
+  ) => {
+    busy = true;
+    let done = 0;
+    try {
+      for (const row of targets) {
+        try {
+          await action(row);
+          changed = true;
+          done++;
+          resolved.set(row.face.id, note);
+          selected.delete(row.face.id);
+        } catch (error) {
+          await handleFailure(row, error);
+        }
+      }
+    } finally {
+      busy = false;
+      picking = null;
+      namingSelection = false;
+      naming = null;
+      if (done > 0) {
+        message = summary(done);
+      }
     }
   };
 
   const reassign = (row: Row, target: PersonResponseDto) =>
-    act(
-      row,
-      () => reassignFacesById({ id: target.id, faceDto: { id: row.face.id } }),
-      $t('frameleaf_people_fix_moved', { values: { name: target.name } }),
+    act(row, () => moveFace(row, target.id), $t('frameleaf_people_fix_moved', { values: { name: target.name } }));
+
+  const moveAll = (targets: Row[], target: PersonResponseDto) =>
+    actOnAll(
+      targets,
+      (row) => moveFace(row, target.id),
+      $t('frameleaf_people_fix_moved', { values: { name: nameOf(target) } }),
+      (count) => $t('frameleaf_people_fix_moved_count', { values: { count, name: nameOf(target) } }),
     );
 
   const createAndAssign = (row: Row, newName: string) => {
@@ -191,21 +291,57 @@
       row,
       async () => {
         const created = await createPerson({ personCreateDto: { name: newName } });
-        await reassignFacesById({ id: created.id, faceDto: { id: row.face.id } });
+        await moveFace(row, created.id);
       },
       $t('frameleaf_people_fix_moved', { values: { name: newName } }),
     );
   };
 
-  const remove = (row: Row) =>
-    act(
-      row,
-      // Recoverable, as the old side panel: a soft delete (`force: false`) takes the face off
-      // this person without destroying the detection. A permanent removal stays behind the
-      // confirmation in the viewer's face menu (`PersonFaceActions`).
-      () => deleteFace({ id: row.face.id, assetFaceDeleteDto: { force: false } }),
+  const createForSelection = async (newName: string) => {
+    const targets = selectedRows;
+    if (!newName || targets.length === 0) {
+      namingSelection = false;
+      return;
+    }
+    let created: PersonResponseDto;
+    try {
+      created = await createPerson({ personCreateDto: { name: newName } });
+    } catch (error) {
+      handleError(error, $t('frameleaf_people_fix_error'));
+      return;
+    }
+    await moveAll(targets, created);
+  };
+
+  const remove = (row: Row) => act(row, () => removeFace(row), $t('frameleaf_people_fix_removed'));
+
+  const removeAll = (targets: Row[]) =>
+    actOnAll(
+      targets,
+      (row) => removeFace(row),
       $t('frameleaf_people_fix_removed'),
+      (count) => $t('frameleaf_people_fix_removed_count', { values: { count } }),
     );
+
+  const pickPerson = async (target: PersonResponseDto) => {
+    const targets = picking ?? [];
+    if (targets.length === 1) {
+      await reassign(targets[0], target);
+      picking = null;
+      return;
+    }
+    await moveAll(targets, target);
+  };
+
+  const toggle = (row: Row) => {
+    if (selected.has(row.face.id)) {
+      selected.delete(row.face.id);
+    } else {
+      selected.add(row.face.id);
+    }
+  };
+
+  const nameOf = (candidate: { name: string }) => (isUnnamedPerson(candidate) ? $t('unnamed_person') : candidate.name);
 
   const shortDate = (asset: AssetResponseDto) =>
     DateTime.fromISO(asset.localDateTime, { zone: 'utc' }).toLocaleString(DateTime.DATE_MED);
@@ -224,7 +360,15 @@
   <ul class="pd-fix-list">
     {#each rows as row (row.face.id)}
       {@const done = resolved.get(row.face.id)}
-      <li class="pd-fix-row" class:is-done={!!done}>
+      <li class="pd-fix-row" class:is-done={!!done} class:is-selected={selected.has(row.face.id)}>
+        <input
+          type="checkbox"
+          class="pd-fix-check"
+          aria-label={$t('frameleaf_people_fix_select_face', { values: { name: row.asset.originalFileName } })}
+          checked={selected.has(row.face.id)}
+          disabled={!!done || busy}
+          onchange={() => toggle(row)}
+        />
         <button
           type="button"
           class="pd-fix-thumb"
@@ -264,9 +408,11 @@
                   <span>{$t('frameleaf_people_fix_this_is', { values: { name: candidate.name } })}</span>
                 </MenuItem>
               {/each}
-              {#if others.length > 0}
-                <hr />
-              {/if}
+              <MenuItem onSelect={() => (picking = [row])}>
+                <Icon icon={mdiAccountSearchOutline} size="16" aria-hidden="true" />
+                <span>{$t('frameleaf_people_fix_someone_else')}</span>
+              </MenuItem>
+              <hr />
               <MenuItem onSelect={() => (naming = row.face.id)}>
                 <Icon icon={mdiAccountPlusOutline} size="16" aria-hidden="true" />
                 <span>{$t('frameleaf_people_fix_someone_new')}</span>
@@ -301,6 +447,46 @@
   {:else if hasMore}
     <div class="more">
       <Button onclick={() => void loadPage()}>{$t('frameleaf_people_show_more')}</Button>
+    </div>
+  {/if}
+  {#if picking}
+    <div class="pd-fix-picker">
+      <PersonPicker
+        excludeId={person.id}
+        label={$t('frameleaf_people_fix_move_faces_to', { values: { count: picking.length } })}
+        onPick={(target) => void pickPerson(target)}
+        onCancel={() => (picking = null)}
+      />
+    </div>
+  {:else if namingSelection}
+    <div class="pd-fix-picker">
+      <PersonNameField
+        person={{ id: 'new-selection', name: '' }}
+        placeholder={$t('frameleaf_people_fix_new_name')}
+        label={$t('frameleaf_people_fix_new_name_label')}
+        onCommit={(newName) => void createForSelection(newName)}
+        onCancel={() => (namingSelection = false)}
+      />
+    </div>
+  {/if}
+  {#if selectedRows.length > 0 && !picking && !namingSelection}
+    <div class="pd-fix-selection" role="toolbar" aria-label={$t('frameleaf_people_fix_selection')}>
+      <strong>{$t('frameleaf_people_fix_selected', { values: { count: selectedRows.length } })}</strong>
+      <Button disabled={busy} onclick={() => (picking = selectedRows)}>
+        <Icon icon={mdiAccountArrowRightOutline} size="16" aria-hidden="true" />
+        {$t('frameleaf_people_fix_move_to')}
+      </Button>
+      <Button disabled={busy} onclick={() => (namingSelection = true)}>
+        <Icon icon={mdiAccountPlusOutline} size="16" aria-hidden="true" />
+        {$t('frameleaf_people_fix_someone_new')}
+      </Button>
+      <Button variant="danger" disabled={busy} onclick={() => void removeAll(selectedRows)}>
+        <Icon icon={mdiAccountOffOutline} size="16" aria-hidden="true" />
+        {$t('frameleaf_people_fix_not_a_face')}
+      </Button>
+      <Button variant="quiet" disabled={busy} onclick={() => selected.clear()}>
+        {$t('frameleaf_people_fix_clear_selection')}
+      </Button>
     </div>
   {/if}
   <footer class="pd-fix-footer">
@@ -375,7 +561,7 @@
   }
   .pd-fix-row {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto auto 1fr auto;
     align-items: center;
     gap: 12px;
     padding: 8px 10px;
@@ -387,6 +573,32 @@
   }
   .pd-fix-row.is-done {
     opacity: 0.6;
+  }
+  .pd-fix-row.is-selected {
+    background: var(--fl-accent-soft);
+  }
+  .pd-fix-check {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--fl-accent);
+  }
+  /* template/src/selection-bar.css: a count, the actions, then clear */
+  .pd-fix-selection {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-top: 1px solid var(--fl-border);
+  }
+  .pd-fix-selection strong {
+    margin-inline-end: auto;
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+  }
+  .pd-fix-picker {
+    padding: 12px 20px;
+    border-top: 1px solid var(--fl-border);
   }
   .pd-fix-thumb {
     display: inline-flex;
@@ -467,7 +679,7 @@
       border-radius: var(--fl-radius-card) var(--fl-radius-card) 0 0;
     }
     .pd-fix-row {
-      grid-template-columns: auto 1fr;
+      grid-template-columns: auto auto 1fr;
     }
     .pd-fix-menu {
       grid-column: 1 / -1;

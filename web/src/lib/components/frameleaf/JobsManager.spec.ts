@@ -1,6 +1,10 @@
 import {
   createJob,
+  deferImageDescriptionRequeue,
   emptyQueue,
+  getImageDescriptionRequeueEstimate,
+  getMachineLearningHardware,
+  MachineLearningHardwareAcceleration,
   getQueueJobs,
   ManualJobName,
   JobName,
@@ -12,6 +16,9 @@ import {
   retryFailedQueueJobs,
   runQueueCommandLegacy,
   searchUsersAdmin,
+  SmartAlbumBuiltInKind,
+  triggerImageDescriptionRequeue,
+  triggerSmartAlbumReevaluate,
   updateQueue,
   type QueueResponseDto,
 } from '@immich/sdk';
@@ -42,6 +49,11 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   retryFailedQueueJobs: vi.fn(),
   searchUsersAdmin: vi.fn(),
   getQueueOwnerStatistics: vi.fn(),
+  triggerImageDescriptionRequeue: vi.fn(),
+  deferImageDescriptionRequeue: vi.fn(),
+  getImageDescriptionRequeueEstimate: vi.fn(),
+  triggerSmartAlbumReevaluate: vi.fn(),
+  getMachineLearningHardware: vi.fn(),
 }));
 vi.mock('$lib/frameleaf/job-history', async (importOriginal) => {
   const original = await importOriginal<typeof import('$lib/frameleaf/job-history')>();
@@ -106,6 +118,13 @@ beforeEach(() => {
     queue(QueueName.BackgroundTask, { active: 1 }),
   ];
   vi.mocked(getQueueJobs).mockResolvedValue([]);
+  vi.mocked(getMachineLearningHardware).mockResolvedValue({
+    preferredAcceleration: MachineLearningHardwareAcceleration.Auto,
+  } as never);
+  vi.mocked(getImageDescriptionRequeueEstimate).mockResolvedValue({
+    totalAssets: 120,
+    estimatedTotalSeconds: 600,
+  } as never);
   vi.mocked(searchUsersAdmin).mockResolvedValue([
     { id: 'ada', name: 'Ada Lovelace' },
     { id: 'grace', name: 'Grace Hopper' },
@@ -427,5 +446,85 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(within(thumbnails).getByText('2')).toBeInTheDocument();
     // The totals would be partial, so they are unknown too.
     expect(screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling).toHaveTextContent('—');
+  });
+});
+
+describe('Enrichment tasks (FL-59, JobsManager.jsx EnrichmentJobDialog)', () => {
+  const openTasks = async () => {
+    render(JobsManager);
+    await fireEvent.click(screen.getByRole('button', { name: 'Enrichment tasks' }));
+    return screen.getByRole('dialog', { name: 'Enrichment tasks' });
+  };
+
+  it('queues a description regeneration after its review, with the saved estimate', async () => {
+    vi.mocked(triggerImageDescriptionRequeue).mockResolvedValue({ queued: true });
+    const dialog = await openTasks();
+
+    expect(within(dialog).getByLabelText('Task')).toHaveValue('descriptions');
+    expect(within(dialog).getByLabelText('When')).toHaveValue('now');
+    expect(within(dialog).getByText('All accounts. Pending settings are not applied by this task.')).toBeVisible();
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Review task' }));
+
+    const review = screen.getByRole('dialog', { name: 'Regenerate descriptions' });
+    expect(await within(review).findByText(/120 eligible items · about 10 min/)).toBeInTheDocument();
+    await fireEvent.click(within(review).getByRole('button', { name: 'Regenerate descriptions' }));
+
+    await waitFor(() => expect(triggerImageDescriptionRequeue).toHaveBeenCalled());
+    expect(await screen.findByText('Regenerate descriptions: request sent to the server.')).toBeInTheDocument();
+  });
+
+  it('keeps a reminder instead of queueing, and offers it again from the page', async () => {
+    vi.mocked(deferImageDescriptionRequeue).mockResolvedValue(undefined as never);
+    const dialog = await openTasks();
+
+    await fireEvent.change(within(dialog).getByLabelText('When'), { target: { value: 'later' } });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Review task' }));
+    const review = screen.getByRole('dialog', { name: 'Remind me to regenerate descriptions' });
+    await fireEvent.click(within(review).getByRole('button', { name: 'Remind me to regenerate descriptions' }));
+
+    await waitFor(() => expect(deferImageDescriptionRequeue).toHaveBeenCalled());
+    expect(triggerImageDescriptionRequeue).not.toHaveBeenCalled();
+    expect(await screen.findByText('Description regeneration is waiting for your review.')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Review reminder' }));
+    expect(screen.getByRole('dialog', { name: 'Enrichment tasks' })).toBeVisible();
+  });
+
+  it('refuses to queue descriptions while description work is already waiting', async () => {
+    queues.list = [...queues.list, queue(QueueName.ImageDescription, { waiting: 4 })];
+    const dialog = await openTasks();
+
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Review task' }));
+    const review = screen.getByRole('dialog', { name: 'Regenerate descriptions' });
+
+    expect(within(review).getByRole('alert')).toHaveTextContent('Description work is already active or waiting.');
+    expect(within(review).getByRole('button', { name: 'Regenerate descriptions' })).toBeDisabled();
+  });
+
+  it('re-evaluates one smart-album category after its review', async () => {
+    vi.mocked(triggerSmartAlbumReevaluate).mockResolvedValue({ queued: true } as never);
+    const dialog = await openTasks();
+
+    await fireEvent.change(within(dialog).getByLabelText('Task'), { target: { value: 'smart-albums' } });
+    await fireEvent.change(within(dialog).getByLabelText('Categories'), {
+      target: { value: SmartAlbumBuiltInKind.Food },
+    });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Review task' }));
+    const review = screen.getByRole('dialog', { name: 'Re-evaluate smart albums' });
+    await fireEvent.click(within(review).getByRole('button', { name: 'Re-evaluate smart albums' }));
+
+    await waitFor(() =>
+      expect(triggerSmartAlbumReevaluate).toHaveBeenCalledWith({
+        smartAlbumReevaluateRequestDto: { kind: SmartAlbumBuiltInKind.Food },
+      }),
+    );
+  });
+
+  it('cannot add a hardware preset without the settings draft', async () => {
+    const dialog = await openTasks();
+
+    await fireEvent.change(within(dialog).getByLabelText('Task'), { target: { value: 'hardware' } });
+
+    expect(within(dialog).getByLabelText('Acceleration')).toHaveValue('auto');
+    expect(within(dialog).getByRole('button', { name: 'Add preset to settings review' })).toBeDisabled();
   });
 });

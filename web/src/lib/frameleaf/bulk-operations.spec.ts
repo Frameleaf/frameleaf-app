@@ -194,6 +194,20 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(result.undo).toEqual({ action: 'untag', ids: ['a'], payload: { tagIds: ['tag-1', 'tag-new'] } });
   });
 
+  it('removes the location with null coordinates and never as a durable job (FL-51)', async () => {
+    const api = gateway();
+    const result = await runBulkAction('change-location', ['a', 'b'], {
+      gateway: api,
+      payload: { clearLocation: true },
+    });
+    expect(api.updateAssets).toHaveBeenCalledWith({
+      assetBulkUpdateDto: { ids: ['a', 'b'], latitude: null, longitude: null },
+    });
+    expect(result.succeeded).toEqual(['a', 'b']);
+    expect(shouldRunDurably('change-location', DURABLE_BULK_THRESHOLD + 1, { clearLocation: true })).toBe(false);
+    expect(shouldRunDurably('change-location', DURABLE_BULK_THRESHOLD + 1, { latitude: 1, longitude: 2 })).toBe(true);
+  });
+
   it('stacks with the chosen primary first and undoes by deleting the stack', async () => {
     const result = await runBulkAction('stack', ['a', 'b', 'c'], { gateway: api, payload: { primaryId: 'b' } });
     expect(api.createStack).toHaveBeenCalledWith({ stackCreateDto: { assetIds: ['b', 'a', 'c'] } });
@@ -750,6 +764,19 @@ describe('durable jobs on the page', () => {
     expect(removesFromView('unmark-sensitive', timeline)).toBe(false);
     expect(removesFromView('unmark-sensitive', revealing)).toBe(false);
     expect(removesFromView('unmark-sensitive', locked)).toBe(true);
+  });
+
+  it('takes an archived item out of a Timeline view and an unarchived one out of Archive (T-17)', () => {
+    const timeline = { isLocked: false, revealsLocks: false, visibility: AssetVisibility.Timeline };
+    const archive = { isLocked: false, revealsLocks: false, visibility: AssetVisibility.Archive };
+    const album = { isLocked: false, revealsLocks: false };
+
+    expect(removesFromView('archive', timeline)).toBe(true);
+    expect(removesFromView('archive', archive)).toBe(false);
+    expect(removesFromView('archive', album)).toBe(false);
+    expect(removesFromView('unarchive', archive)).toBe(true);
+    expect(removesFromView('unarchive', timeline)).toBe(false);
+    expect(removesFromView('unarchive', album)).toBe(false);
   });
 
   it('reads answered items as done and the rest as pending while the job runs', () => {

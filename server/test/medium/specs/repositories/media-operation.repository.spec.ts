@@ -610,6 +610,31 @@ describe(MediaOperationRepository.name, () => {
     });
   });
 
+  describe('revocation lookup (FL-90)', () => {
+    it("lists a project's unfinished jobs of the named kinds, optionally for one account", async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: reviewer } = await ctx.newUser();
+      const exported = await newOperation(sut, owner.id, { projectId: 'project-1' });
+      const previewed = await newOperation(sut, reviewer.id, {
+        projectId: 'project-1',
+        kind: MediaOperationKind.StudioPreview,
+      });
+      const finished = await newOperation(sut, owner.id, { projectId: 'project-1' });
+      await sut.requestCancel(finished.id, owner.id);
+      await newOperation(sut, owner.id, { projectId: 'project-2' });
+      await newOperation(sut, owner.id, { projectId: 'project-1', kind: MediaOperationKind.Bulk });
+
+      const kinds = [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview];
+      const all = await sut.listUnfinishedForProjects(['project-1'], kinds);
+      expect(all.map((row) => row.id).toSorted()).toEqual([exported.id, previewed.id].toSorted());
+      expect(await sut.listUnfinishedForProjects(['project-1'], kinds, reviewer.id)).toEqual([
+        expect.objectContaining({ id: previewed.id, ownerId: reviewer.id }),
+      ]);
+      expect(await sut.listUnfinishedForProjects([], kinds)).toEqual([]);
+    });
+  });
+
   describe('checkpoints', () => {
     const chunk = (sequence: number) => ({
       sequence,
@@ -1439,7 +1464,7 @@ describe(MediaOperationRepository.name, () => {
    * a real database, through cancellation races, worker loss, restart, retry and changed access.
    */
   describe('job-queue edits (FL-43)', () => {
-    const quiet = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const quiet = { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     const newEdit = async (
       ctx: ReturnType<typeof setup>['ctx'],
@@ -1553,11 +1578,15 @@ describe(MediaOperationRepository.name, () => {
       const { user } = await ctx.newUser();
       const { operation: waiting } = await newEdit(ctx, sut, user.id);
       const { operation: lostJob } = await newEdit(ctx, sut, user.id);
-      await ctx.database
-        .updateTable('media_operation')
-        .set({ updatedAt: new Date(Date.now() - 3_600_000) })
-        .where('id', '=', lostJob.id)
-        .execute();
+      // The updatedAt trigger would stamp now(); replica mode skips it so the row really looks old.
+      await ctx.database.transaction().execute(async (trx) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        await trx
+          .updateTable('media_operation')
+          .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+          .where('id', '=', lostJob.id)
+          .execute();
+      });
 
       const dispatched = await sut.claimJobQueueDispatch({ limit: 10, staleMs: 15 * 60_000 });
 

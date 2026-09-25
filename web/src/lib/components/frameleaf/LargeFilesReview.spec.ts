@@ -148,3 +148,52 @@ describe('LargeFilesReview (FL-47): an item under review is removed elsewhere', 
     expect(screen.getByRole('button', { name: en.frameleaf_large_files_move_selected })).toBeEnabled();
   });
 });
+
+describe('LargeFilesReview (FL-47): row detail and recent activity', () => {
+  beforeEach(() => {
+    sdkMock.getPartners.mockResolvedValue([]);
+    sdkMock.reviewTrash.mockImplementation(({ trashReviewDto }) =>
+      Promise.resolve({
+        action: trashReviewDto.action,
+        count: trashReviewDto.ids?.length ?? 0,
+        bytes: 0,
+        retainedOriginals: 0,
+        retainedBytes: 0,
+        names: [],
+        token: 'token',
+      }),
+    );
+    sdkMock.applyTrashReview.mockImplementation(({ trashApplyDto }) =>
+      Promise.resolve({ count: trashApplyDto.ids?.length ?? 0 }),
+    );
+  });
+
+  it("shows each original's type rather than its path (UT-15)", () => {
+    setup();
+    const row = screen.getByText('big.mov').closest('tr')!;
+    expect(within(row).getByText('MOV')).toBeInTheDocument();
+    expect(within(row).queryByText('/library/big.mov')).toBeNull();
+  });
+
+  it('lists the moves and undos of this visit under Recent utility activity (UT-11)', async () => {
+    setup();
+    expect(screen.queryByText(en.library_care_recent_activity)).toBeNull();
+
+    await fireEvent.click(screen.getByLabelText('Select big.mov'));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_large_files_move_selected }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Confirm 1 item' }));
+
+    const history = (await screen.findByText(en.library_care_recent_activity)).closest('details')!;
+    expect(within(history).getByText(`${en.frameleaf_large_files_activity_trash} · 1 item`)).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_large_files_undo }));
+    await waitFor(() =>
+      expect(within(history).getByText(`${en.frameleaf_large_files_activity_restore} · 1 item`)).toBeInTheDocument(),
+    );
+    const entries = within(history).getAllByText(/ · 1 item$/);
+    expect(entries.map((entry) => entry.textContent?.trim())).toEqual([
+      `${en.frameleaf_large_files_activity_restore} · 1 item`,
+      `${en.frameleaf_large_files_activity_trash} · 1 item`,
+    ]);
+  });
+});

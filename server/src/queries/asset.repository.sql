@@ -710,6 +710,7 @@ with
       and asset."ownerId" = $1 as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
+      "asset"."isOffline",
       "asset"."livePhotoVideoId",
       extract(
         epoch
@@ -808,6 +809,7 @@ with
       coalesce(array_agg("isFavorite"), '{}') as "isFavorite",
       coalesce(array_agg("isImage"), '{}') as "isImage",
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
+      coalesce(array_agg("isOffline"), '{}') as "isOffline",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
       coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
       coalesce(array_agg("createdAt"), '{}') as "createdAt",
@@ -857,6 +859,7 @@ with
       and asset."ownerId" = $1 as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
+      "asset"."isOffline",
       "asset"."livePhotoVideoId",
       extract(
         epoch
@@ -958,6 +961,7 @@ with
       coalesce(array_agg("isFavorite"), '{}') as "isFavorite",
       coalesce(array_agg("isImage"), '{}') as "isImage",
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
+      coalesce(array_agg("isOffline"), '{}') as "isOffline",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
       coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
       coalesce(array_agg("createdAt"), '{}') as "createdAt",

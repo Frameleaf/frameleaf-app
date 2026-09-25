@@ -146,6 +146,41 @@ describe(UserAdminService.name, () => {
 
       expect(mocks.user.create).not.toHaveBeenCalled();
     });
+
+    it('should reject a duplicate storage label (FL-76)', async () => {
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.getByStorageLabel.mockResolvedValue(userStub.user1);
+
+      await expect(
+        sut.create(authStub.admin, {
+          email: 'new@example.com',
+          name: 'New',
+          password: 'password',
+          storageLabel: 'label',
+        }),
+      ).rejects.toThrow('Storage label already in use by another account');
+
+      expect(mocks.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a storage label held by a soft-deleted account with a 400, not a 500 (FL-76)', async () => {
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.getByStorageLabel.mockResolvedValue({ ...userStub.user1, deletedAt: new Date() });
+
+      await expect(
+        sut.create(authStub.admin, {
+          email: 'new@example.com',
+          name: 'New',
+          password: 'password',
+          storageLabel: 'label',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.user.getByStorageLabel).toHaveBeenCalledWith('label', true);
+      expect(mocks.user.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('update', () => {
@@ -176,7 +211,7 @@ describe(UserAdminService.name, () => {
       await sut.update(authStub.user1, userStub.user1.id, update);
 
       expect(mocks.user.getByEmail).toHaveBeenCalledWith(update.email);
-      expect(mocks.user.getByStorageLabel).toHaveBeenCalledWith(update.storageLabel);
+      expect(mocks.user.getByStorageLabel).toHaveBeenCalledWith(update.storageLabel, true);
       expect(mocks.session.lockAll).not.toHaveBeenCalled();
       expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
     });

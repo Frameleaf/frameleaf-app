@@ -364,7 +364,13 @@ describe(MachineLearningRepository.name, () => {
 
       const probe = await sut.probe({ url: localUrl });
 
-      expect(probe.workloads).toEqual([MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment]);
+      expect(probe.workloads).toEqual([
+        MlWorkload.Face,
+        MlWorkload.Clip,
+        MlWorkload.Ocr,
+        MlWorkload.Enrichment,
+        MlWorkload.PetRecognition,
+      ]);
       expect(probe.workloads).not.toContain(MlWorkload.RestorationFaithful);
       expect(probe.workloads).not.toContain(MlWorkload.StudioAi);
     });

@@ -1,11 +1,18 @@
 import {
   BURST_SECONDS,
   EVENT_GAP_HOURS,
+  MAX_PET_STORY_ASSETS,
   MIN_EVENT_ASSETS,
+  MIN_PET_STORY_ASSETS,
   type StoryCandidate,
+  birthdayAge,
+  birthdayOn,
+  calendarDayWindow,
   diversifyByDay,
+  diversifyByMonth,
   dominantPlace,
   groupEventStories,
+  groupPetStories,
   placeLabel,
   suppressBursts,
 } from 'src/utils/memory-story.js';
@@ -203,5 +210,97 @@ describe('memory story grouping', () => {
       expect(placeLabel(null)).toBeUndefined();
       expect(placeLabel({ city: null, state: null, country: null })).toBeUndefined();
     });
+  });
+});
+
+describe('groupPetStories (FL-58)', () => {
+  const row = (petId: string, name: string, date: string, assetId = `${petId}-${date}`) => ({
+    petId,
+    name,
+    species: 'cat',
+    assetId,
+    localDateTime: new Date(`${date}T12:00:00.000Z`),
+  });
+
+  it('makes one story per named pet and local month with enough photos', () => {
+    const rows = [
+      ...['01', '02', '03', '04', '05'].map((day) => row('biscuit', 'Biscuit', `2026-08-${day}`)),
+      ...['01', '02', '03', '04'].map((day) => row('rex', 'Rex', `2026-08-${day}`)),
+      ...['01', '02', '03', '04', '05'].map((day) => row('nameless', '  ', `2026-08-${day}`)),
+    ];
+
+    const stories = groupPetStories(rows);
+
+    expect(stories).toHaveLength(1);
+    expect(stories[0]).toMatchObject({ petId: 'biscuit', name: 'Biscuit', month: '2026-08', assetCount: 5 });
+  });
+
+  it('splits months on the owner’s local calendar and counts a photo once', () => {
+    const rows = [
+      ...['01', '02', '03', '04', '05'].map((day) => row('biscuit', 'Biscuit', `2026-07-${day}`)),
+      row('biscuit', 'Biscuit', '2026-07-05', 'biscuit-2026-07-05'),
+      row('biscuit', 'Biscuit', '2026-08-01'),
+    ];
+
+    const stories = groupPetStories(rows);
+
+    expect(stories.map(({ month, assetCount }) => [month, assetCount])).toEqual([['2026-07', 5]]);
+    expect(MIN_PET_STORY_ASSETS).toBe(5);
+  });
+
+  it('keeps at most the story limit, spread across days', () => {
+    const rows = Array.from({ length: 80 }, (_, index) =>
+      row('biscuit', 'Biscuit', `2026-08-${String((index % 20) + 1).padStart(2, '0')}`, `a-${index}`),
+    );
+
+    const [story] = groupPetStories(rows);
+
+    expect(story.assetIds).toHaveLength(MAX_PET_STORY_ASSETS);
+    expect(story.assetCount).toBe(80);
+  });
+});
+
+describe('birthdays and recaps (FL-62)', () => {
+  it('keeps the month and day of a birth date in the given year', () => {
+    expect(birthdayOn('1990-09-25', 2026)).toBe('2026-09-25');
+    expect(birthdayOn('1990-01-01T00:00:00.000Z', 2027)).toBe('2027-01-01');
+  });
+
+  it('keeps a leap-day birthday on 28 February outside leap years', () => {
+    expect(birthdayOn('2000-02-29', 2026)).toBe('2026-02-28');
+    expect(birthdayOn('2000-02-29', 2028)).toBe('2028-02-29');
+  });
+
+  it('returns null for an unreadable birth date', () => {
+    expect(birthdayOn('not a date', 2026)).toBeNull();
+  });
+
+  it('counts the age reached, and none for a missing birth year', () => {
+    expect(birthdayAge('1990-09-25', 2026)).toBe(36);
+    expect(birthdayAge('0001-09-25', 2026)).toBeNull();
+    expect(birthdayAge('2030-01-01', 2026)).toBeNull();
+  });
+
+  it('shows a calendar day from its first moment anywhere to its last moment anywhere', () => {
+    const { showAt, hideAt } = calendarDayWindow('2026-09-25');
+    expect(showAt.toISOString()).toBe('2026-09-24T10:00:00.000Z');
+    expect(hideAt.toISOString()).toBe('2026-09-26T11:59:59.999Z');
+  });
+
+  it('spreads a recap across the months instead of one busy weekend', () => {
+    const busy = Array.from({ length: 40 }, (_, index) => ({
+      id: `june-${index}`,
+      localDateTime: new Date(Date.UTC(2025, 5, 1, 0, index)),
+    }));
+    const quiet = [1, 3, 8, 11].map((month) => ({
+      id: `month-${month}`,
+      localDateTime: new Date(Date.UTC(2025, month, 5)),
+    }));
+    const kept = diversifyByMonth(
+      [...busy, ...quiet].toSorted((a, b) => +a.localDateTime - +b.localDateTime),
+      8,
+    );
+    expect(kept).toHaveLength(8);
+    expect(kept.map(({ id }) => id)).toEqual(expect.arrayContaining(quiet.map(({ id }) => id)));
   });
 });

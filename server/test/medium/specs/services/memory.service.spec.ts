@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetFileType, AssetLockReason, MemoryType, PetObservationState } from 'src/enum.js';
+import { AssetFileType, AssetLockReason, MemoryShowLessKind, MemoryType, PetObservationState } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -222,6 +222,8 @@ describe(MemoryService.name, () => {
         createdAt: expect.any(Date),
         updatedAt: expect.any(Date),
         isSaved: false,
+        isHidden: false,
+        title: null,
         memoryAt: dto.memoryAt,
         ownerId: user.id,
         assets: [],
@@ -480,10 +482,116 @@ describe(MemoryService.name, () => {
     });
   });
 
+  // FL-62 review: hiding, restoring or reading one memory never brings back an item the search leaves out.
+  describe('single-memory reads', () => {
+    const memoryWithTwoPhotos = async (ctx: ReturnType<typeof setup>['ctx'], isHidden: boolean) => {
+      const { user } = await ctx.newUser();
+      const { memory } = await ctx.newMemory({ ownerId: user.id });
+      const { asset: petPhoto } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: otherPhoto } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: petPhoto.id });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: otherPhoto.id });
+      const pet = await ctx.database
+        .insertInto('pet')
+        .values({ ownerId: user.id, name: 'Biscuit', isHidden })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await ctx.database.insertInto('pet_observation').values({ petId: pet.id, assetId: petPhoto.id }).execute();
+      return { user, memory, petPhoto, otherPhoto, pet };
+    };
+
+    it('hides and restores a memory without the photo of a pet the owner hid', async () => {
+      const { sut, ctx } = setup();
+      const { user, memory, otherPhoto } = await memoryWithTwoPhotos(ctx, true);
+      const auth = factory.auth({ user });
+
+      const hidden = await sut.update(auth, memory.id, { isHidden: true });
+      const restored = await sut.update(auth, memory.id, { isHidden: false });
+      const read = await sut.get(auth, memory.id);
+
+      for (const result of [hidden, restored, read]) {
+        expect(result.assets.map(({ id }) => id)).toEqual([otherPhoto.id]);
+      }
+    });
+
+    it('leaves out the photos of a pet the owner asked to see less of', async () => {
+      const { sut, ctx } = setup();
+      const { user, memory, otherPhoto, pet } = await memoryWithTwoPhotos(ctx, false);
+      const auth = factory.auth({ user });
+      await sut.addShowLess(auth, { kind: MemoryShowLessKind.Pet, value: pet.id });
+
+      const restored = await sut.update(auth, memory.id, { isHidden: false, title: 'Our walk' });
+      const read = await sut.get(auth, memory.id);
+      const [byId] = await sut.search(auth, { id: memory.id });
+
+      for (const result of [restored, read, byId]) {
+        expect(result.assets.map(({ id }) => id)).toEqual([otherPhoto.id]);
+      }
+    });
+  });
+
   describe('onMemoriesCleanup', () => {
     it('should run without error', async () => {
       const { sut } = setup();
       await expect(sut.onMemoriesCleanup()).resolves.not.toThrow();
+    });
+  });
+
+  describe('pet stories (FL-58)', () => {
+    it('reads only the owner’s confirmed photos of named, visible pets on the timeline', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const when = new Date('2026-08-10T12:00:00.000Z');
+      const { asset: timeline } = await ctx.newAsset({ ownerId: user.id, localDateTime: when });
+      const { asset: rejected } = await ctx.newAsset({ ownerId: user.id, localDateTime: when });
+      const { asset: strangers } = await ctx.newAsset({ ownerId: other.id, localDateTime: when });
+      const named = await ctx.database
+        .insertInto('pet')
+        .values({ ownerId: user.id, name: 'Biscuit' })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      const nameless = await ctx.database
+        .insertInto('pet')
+        .values({ ownerId: user.id, name: '' })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      await ctx.database
+        .insertInto('pet_observation')
+        .values([
+          { petId: named.id, assetId: timeline.id },
+          { petId: named.id, assetId: rejected.id, state: PetObservationState.Rejected },
+          { petId: named.id, assetId: strangers.id },
+          { petId: nameless.id, assetId: timeline.id },
+        ])
+        .execute();
+
+      const rows = await ctx
+        .get(MemoryRepository)
+        .getPetStoryCandidates(user.id, new Date('2026-08-01T00:00:00.000Z'), new Date('2026-08-31T23:59:59.000Z'));
+
+      expect(rows).toEqual([expect.objectContaining({ petId: named.id, name: 'Biscuit', assetId: timeline.id })]);
+    });
+
+    it('remembers every pet story it made in the window, deleted ones too', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const repository = ctx.get(MemoryRepository);
+      const memory = await repository.create(
+        {
+          ownerId: user.id,
+          type: MemoryType.PetStory,
+          data: { kind: 'pet_story', year: 2026, month: '2026-08', petId: 'pet-1', name: 'Biscuit' } as never,
+          memoryAt: '2026-08-01T00:00:00.000Z',
+          showAt: '2026-09-01T00:00:00.000Z',
+        },
+        new Set(),
+      );
+      await ctx.database.updateTable('memory').set({ deletedAt: new Date() }).where('id', '=', memory.id).execute();
+
+      await expect(
+        repository.getPetStoryKeys(user.id, new Date('2026-07-01T00:00:00.000Z'), new Date('2026-09-30T00:00:00.000Z')),
+      ).resolves.toEqual(new Set(['pet-1:2026-08']));
     });
   });
 });

@@ -168,7 +168,10 @@ import {
 } from "./search.mjs";
 import { Editor } from "./Editor";
 import { Studio } from "./Studio";
-import { Processing, ActivityIndicator } from "./Activity";
+import { Processing, ActivityIndicator, useJobSimulation } from "./Activity";
+import { publishJobs } from "./live-jobs.mjs";
+import { loadCloudState, saveCloudState } from "./frameleaf-cloud-data.mjs";
+import { settleWallet, settlementFor } from "./cloud-jobs.mjs";
 import { HighRiskWorkflows } from "./HighRiskWorkflows";
 const CommandCenter = lazy(() =>
   import("./CommandCenter").then((module) => ({
@@ -436,8 +439,11 @@ export function App() {
   const { edit, undo, redo } = drafts[selected.id];
   const [versions, setVersions] = useState(saved.versions || []);
   const [jobs, setJobs] = useState(Array.isArray(saved.jobs) ? saved.jobs : []);
+  // Jobs keep moving Queued → Starting → Running while Activity is closed; Activity runs its own tick.
+  useJobSimulation(setJobs, screen !== "activity");
+  useEffect(() => publishJobs(jobs), [jobs]);
   const [destination, setDestination] = useState(
-    saved.destination === "runpod" ? "runpod" : "local",
+    saved.destination === "cloud" || saved.destination === "runpod" ? "cloud" : "local",
   );
   const [presets, setPresets] = useState(saved.presets || []);
   const [name, setName] = useState("Summer favorites");
@@ -1616,13 +1622,35 @@ export function App() {
     setToast("Version saved in this prototype");
     setPanel(null);
   };
-  const enqueue = (kind) => {
-    setJobs((current) => [
-      createSimulatedJob(kind, selected, edit, destination),
-      ...current,
-    ]);
-    setPanel(null);
-    setToast("Simulated job queued. No media was uploaded or rendered.");
+  const enqueue = (kind, extra = {}) => {
+    const job = {
+      ...createSimulatedJob(kind, selected, edit, extra.cloud ? "cloud" : (extra.destination ?? destination)),
+      ...(extra.cloud ? { cloud: extra.cloud } : {}),
+      ...(extra.settings ? { settings: extra.settings } : {}),
+    };
+    setJobs((current) => [job, ...current]);
+    if (!extra.keepOpen) setPanel(null);
+    setToast(
+      extra.cloud
+        ? `${kind} sent to Frameleaf Cloud. Follow it in Activity.`
+        : "Simulated job queued. No media was uploaded or rendered.",
+    );
+    return job.id;
+  };
+  /**
+   * A cloud dialog saw its job finish. The shared simulation already moved it
+   * Queued → Starting → Running → Done and settled it, so nothing is forced here.
+   */
+  const finishJob = () => {};
+  const [buySection, setBuySection] = useState(null);
+  const cloudActions = {
+    finishJob,
+    onOpenCloudSettings: (section = "cloud-processing") => openSettings("cloud", section),
+    onAddCredit: () => {
+      setPanel(null);
+      setBuySection("credit");
+      setScreen("buy");
+    },
   };
   const editorProps = {
     selected,
@@ -1639,6 +1667,7 @@ export function App() {
     setDestination,
     saveVersion,
     enqueue,
+    ...cloudActions,
     close: () => setPanel(null),
     openStudio: () => {
       setPanel(null);
@@ -1686,6 +1715,31 @@ export function App() {
       if (supporter) saveSupporter(supporter, localStorage);
     } catch {}
   }, [supporter]);
+  // Frameleaf Cloud jobs settle exactly once when they end: the hold is released
+  // and only what the job used is taken from AI credit (nothing when it failed).
+  const settledCloudJobs = useRef(new Set());
+  useEffect(() => {
+    const ended = jobs.filter(
+      (job) =>
+        job.cloud &&
+        !job.cloud.settled &&
+        !settledCloudJobs.current.has(`${job.id}:${job.cloud.consentedAt}`) &&
+        ["completed", "cancelled", "failed"].includes(job.status),
+    );
+    if (!ended.length) return;
+    for (const job of ended) settledCloudJobs.current.add(`${job.id}:${job.cloud.consentedAt}`);
+    const charges = new Map(ended.map((job) => [job.id, settlementFor(job)]));
+    let cloud = loadCloudState();
+    for (const job of ended) cloud = settleWallet(cloud, job.cloud, charges.get(job.id));
+    saveCloudState(cloud);
+    setJobs((current) =>
+      current.map((job) =>
+        charges.has(job.id) && !job.cloud.settled
+          ? { ...job, cloud: { ...job.cloud, settled: true, chargedUsd: charges.get(job.id) } }
+          : job,
+      ),
+    );
+  }, [jobs]);
   useEffect(
     () =>
       subscribeFaceState((next, error) => {
@@ -2244,6 +2298,7 @@ export function App() {
     login: (
       <Login
         onDone={() => setScreen("library")}
+        via={new URLSearchParams(location.search).get("via") === "relay" ? "relay" : "lan"}
         onRegister={() => setScreen("register")}
         theme={theme}
         setTheme={setTheme}
@@ -2301,8 +2356,13 @@ export function App() {
       <Buy
         user={currentUser}
         onDone={() => setScreen("library")}
-        onCancel={() => setScreen("library")}
+        onCancel={() => {
+          setBuySection(null);
+          setScreen("library");
+        }}
         onChange={setSupporter}
+        section={buySection}
+        onOpenCloudSettings={(section) => openSettings("cloud", section)}
         theme={theme}
         setTheme={setTheme}
       />
@@ -2410,6 +2470,8 @@ export function App() {
           onOpenLocked={() => navigate("Locked")}
           onAccountSettings={() => openSettings("preferences")}
           onAdministration={() => openSettings("overview")}
+          onFrameleafCloud={() => openSettings("cloud", "cloud-account")}
+          onSupportFrameleaf={() => setScreen("buy")}
           onEditAvatar={() => setPanel("avatar")}
           onSupport={() => setPanel("help")}
           onAbout={() => setPanel("about")}
@@ -3536,19 +3598,23 @@ export function App() {
             destination={destination}
             setDestination={setDestination}
             enqueue={(kind, payload = {}) => {
-              setJobs((current) => [
-                {
-                  ...createSimulatedJob(kind, selected, edit, destination),
-                  name: payload?.project?.name || selected.name,
-                  ...(payload?.preview ? { preview: true } : {}),
-                  ...(payload?.estimate ? { estimate: payload.estimate } : {}),
-                  ...(payload?.settings ? { settings: payload.settings } : {}),
-                },
-                ...current,
-              ]);
-              setToast(`${kind} queued. Follow it in Activity.`);
-              return true;
+              const job = {
+                ...createSimulatedJob(kind, selected, edit, payload?.cloud ? "cloud" : destination),
+                name: payload?.project?.name || selected.name,
+                ...(payload?.preview ? { preview: true } : {}),
+                ...(payload?.estimate ? { estimate: payload.estimate } : {}),
+                ...(payload?.settings ? { settings: payload.settings } : {}),
+                ...(payload?.cloud ? { cloud: payload.cloud } : {}),
+              };
+              setJobs((current) => [job, ...current]);
+              setToast(
+                payload?.cloud
+                  ? `${kind} sent to Frameleaf Cloud. Follow it in Activity.`
+                  : `${kind} queued. Follow it in Activity.`,
+              );
+              return job.id;
             }}
+            {...cloudActions}
             back={() => setScreen("library")}
             notify={setToast}
             people={people}
@@ -3567,6 +3633,9 @@ export function App() {
             openStudio={() => setScreen("studio")}
             assets={accessibleAssets}
             onOpenAsset={(id) => openViewer(id)}
+            onOpenSettings={openSettings}
+            uploads={uploads}
+            onOpenUploads={() => setUploadsMinimized(false)}
             notify={setToast}
           />
         )}

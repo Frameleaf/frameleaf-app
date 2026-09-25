@@ -1,9 +1,54 @@
 import { AssetTypeEnum } from '@immich/sdk';
-import { getAssetUrl, semverToName } from '$lib/utils';
+import { bumpPlaybackRevision, resetPlaybackRevisions } from '$lib/frameleaf/playback-revision.svelte';
+import { getAssetUrl, getAssetUrls, semverToName } from '$lib/utils';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 
 describe('utils', () => {
+  describe('FL-115 playback cache key', () => {
+    afterEach(() => resetPlaybackRevisions());
+
+    const photo = () =>
+      assetFactory.build({
+        originalPath: 'image.heic',
+        originalMimeType: 'image/heic',
+        type: AssetTypeEnum.Image,
+        thumbhash: 'hash',
+      });
+
+    it('keys photo preview and full-size URLs on the thumbhash until the playback choice changes', () => {
+      const asset = photo();
+      const urls = getAssetUrls(asset);
+      expect(new URL(urls.preview, 'http://x').searchParams.get('c')).toBe('hash');
+      expect(new URL(urls.original, 'http://x').searchParams.get('c')).toBe('hash');
+    });
+
+    it('gives the photo preview and full-size URLs a fresh cache key after the playback choice changes', () => {
+      const asset = photo();
+      const before = getAssetUrls(asset);
+
+      bumpPlaybackRevision(asset.id);
+      const after = getAssetUrls(asset);
+
+      expect(after.preview).not.toBe(before.preview);
+      expect(after.original).not.toBe(before.original);
+      expect(new URL(after.preview, 'http://x').searchParams.get('c')).toBe('hash-1');
+      expect(new URL(after.original, 'http://x').searchParams.get('c')).toBe('hash-1');
+      // Thumbnails are never replaced by a playback choice.
+      expect(after.thumbnail).toBe(before.thumbnail);
+    });
+
+    it('only changes the cache key of the asset whose choice changed', () => {
+      const chosen = photo();
+      const other = photo();
+      const otherBefore = getAssetUrls(other).preview;
+
+      bumpPlaybackRevision(chosen.id);
+
+      expect(getAssetUrls(other).preview).toBe(otherBefore);
+    });
+  });
+
   describe(getAssetUrl.name, () => {
     it('should return thumbnail URL for static images', () => {
       const asset = assetFactory.build({

@@ -1,8 +1,10 @@
-import { render, waitFor } from '@testing-library/svelte';
+import { PersonMergeVerdict } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { peopleListItemFactory } from '@test-data/factories/person-factory';
 import PeoplePage from './+page.svelte';
 import { PEOPLE_CAP, PEOPLE_PAGE_SIZE } from './people-page';
@@ -63,5 +65,75 @@ describe('People library page loading', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(sdkMock.getAllPeople).toHaveBeenCalledOnce();
+  });
+});
+
+// FL-57: the banner's answers go to the server as verdicts; "ignore" is about the reviewed person
+// alone, so every suggestion naming them leaves the queue.
+describe('People library merge suggestions', () => {
+  const [ada, eve, bob] = [
+    peopleListItemFactory.build({ id: 'ada', name: 'Ada', isHidden: false }),
+    peopleListItemFactory.build({ id: 'eve', name: 'Eve', isHidden: false }),
+    peopleListItemFactory.build({ id: 'bob', name: 'Bob', isHidden: false }),
+  ];
+  const suggestion = (person: typeof ada, other: typeof ada) => ({
+    person,
+    suggestion: other,
+    distance: 0.2,
+    personEvidence: null,
+    suggestionEvidence: null,
+  });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    sdkMock.getAssetStatistics.mockResolvedValue({ images: 0, videos: 0, total: 0 });
+    sdkMock.getAllPeople.mockResolvedValue({ people: [ada, eve, bob], total: 3, hidden: 0, hasNextPage: false });
+    sdkMock.getMergeSuggestions.mockResolvedValue({
+      suggestions: [suggestion(ada, eve), suggestion(ada, bob), suggestion(eve, bob)],
+    });
+  });
+
+  it('stops suggesting the reviewed person with anyone', async () => {
+    sdkMock.setMergeVerdict.mockResolvedValue({
+      personId: 'ada',
+      suggestionId: 'ada',
+      verdict: PersonMergeVerdict.Ignore,
+      createdAt: '2026-09-25T00:00:00.000Z',
+    });
+    render(PeoplePage, { data: data([ada, eve, bob], false) });
+
+    await fireEvent.click(await screen.findByText('frameleaf_people_merge_suggestion_ignore'));
+    await waitFor(() =>
+      expect(sdkMock.setMergeVerdict).toHaveBeenCalledWith({
+        personMergeVerdictCreateDto: { personId: 'ada', suggestionId: 'ada', verdict: PersonMergeVerdict.Ignore },
+      }),
+    );
+    // only the pair without Ada is left to review
+    await waitFor(() => expect(screen.queryByText('frameleaf_people_merge_suggestion_more')).toBeNull());
+    expect(screen.getByText('frameleaf_people_merge_suggestion_question')).toBeTruthy();
+  });
+
+  it('merges on "Yes, merge" through the same verdict', async () => {
+    const emit = vi.spyOn(eventManager, 'emit');
+    sdkMock.setMergeVerdict.mockResolvedValue({
+      personId: 'ada',
+      suggestionId: 'eve',
+      verdict: PersonMergeVerdict.Same,
+      createdAt: '2026-09-25T00:00:00.000Z',
+    });
+    render(PeoplePage, { data: data([ada, eve, bob], false) });
+
+    await fireEvent.click(await screen.findByText('frameleaf_people_merge_suggestion_accept'));
+    await waitFor(() =>
+      expect(sdkMock.setMergeVerdict).toHaveBeenCalledWith({
+        personMergeVerdictCreateDto: { personId: 'ada', suggestionId: 'eve', verdict: PersonMergeVerdict.Same },
+      }),
+    );
+    expect(sdkMock.mergePeople).not.toHaveBeenCalled();
+    // open viewers, search chips and person pages follow the merge
+    await waitFor(() =>
+      expect(emit).toHaveBeenCalledWith('PersonFacesChange', { personIds: ['ada', 'eve'], removedPersonIds: ['eve'] }),
+    );
   });
 });

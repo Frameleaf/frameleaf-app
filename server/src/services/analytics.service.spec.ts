@@ -17,6 +17,7 @@ import {
   JobStatus,
 } from 'src/enum.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
 import { factory } from 'test/small.factory.js';
 
 const ADMIN_ID = '11111111-1111-4111-8111-111111111111';
@@ -128,6 +129,9 @@ describe(AnalyticsService.name, () => {
   };
   const storageRepository = { checkDiskUsage: vitest.fn(), getFolderBytes: vitest.fn(), getDevice: vitest.fn() };
   const jobRepository = { queue: vitest.fn() };
+  const configRepository = { getEnv: () => ({ configFile: undefined }) };
+  const systemMetadataRepository = { get: vitest.fn() };
+  const forkSchemaRepository = { overlayConfig: (config: unknown) => Promise.resolve(config) };
 
   let sut: AnalyticsService;
 
@@ -169,11 +173,16 @@ describe(AnalyticsService.name, () => {
     storageRepository.getFolderBytes.mockResolvedValue(0);
     storageRepository.getDevice.mockResolvedValue(1);
     storageRepository.checkDiskUsage.mockResolvedValue({ total: 1_000_000, free: 400_000, available: 350_000 });
+    clearConfigCache();
+    systemMetadataRepository.get.mockResolvedValue({});
     sut = new AnalyticsService(
       logger as never,
       analyticsRepository as never,
       storageRepository as never,
       jobRepository as never,
+      configRepository as never,
+      systemMetadataRepository as never,
+      forkSchemaRepository as never,
     );
   });
 
@@ -562,10 +571,27 @@ describe(AnalyticsService.name, () => {
       ).toMatchObject({ value: 0, userId: OTHER_ID, libraryId: null });
       expect(samples.find((row) => row.series === AnalyticsSeriesId.HostVolumeUsedBytes)?.value).toBe(600_000);
       expect(samples.some((row) => row.scopeKey !== 'host' && row.series.startsWith('host.'))).toBe(false);
+      // 120 days of daily readings and, by default, 730 days of weekly ones (FL-71 `analytics.historyDays`)
       expect(analyticsRepository.applyRetention).toHaveBeenCalledWith(
         new Date('2026-05-22T00:00:00.000Z'),
-        new Date('2024-07-11T00:00:00.000Z'),
+        new Date('2024-09-19T00:00:00.000Z'),
       );
+    });
+
+    it('keeps the history the administrator chose (FL-71)', async () => {
+      systemMetadataRepository.get.mockResolvedValue({ analytics: { enabled: true, historyDays: 90 } });
+      await expect(sut.handleCollect()).resolves.toBe(JobStatus.Success);
+      expect(analyticsRepository.applyRetention).toHaveBeenCalledWith(
+        new Date('2026-06-21T00:00:00.000Z'),
+        new Date('2026-06-21T00:00:00.000Z'),
+      );
+    });
+
+    it('collects nothing while local metrics are off, keeping the history (FL-71)', async () => {
+      systemMetadataRepository.get.mockResolvedValue({ analytics: { enabled: false, historyDays: 365 } });
+      await expect(sut.handleCollect()).resolves.toBe(JobStatus.Skipped);
+      expect(analyticsRepository.upsertSamples).not.toHaveBeenCalled();
+      expect(analyticsRepository.applyRetention).not.toHaveBeenCalled();
     });
 
     it('leaves a gap for the volume when it cannot be read, rather than writing zero', async () => {

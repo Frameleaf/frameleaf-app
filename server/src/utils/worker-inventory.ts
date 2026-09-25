@@ -20,6 +20,7 @@ export const LIBRARY_ANALYSIS_QUEUES: Readonly<Record<MlWorkload, readonly Queue
   [MlWorkload.Upscale]: [],
   [MlWorkload.Interpolation]: [],
   [MlWorkload.StudioRender]: [],
+  [MlWorkload.PetRecognition]: [QueueName.PetRecognition],
 };
 
 /** Every queue that carries library-analysis requests, once each. */

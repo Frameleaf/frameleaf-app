@@ -7,6 +7,7 @@
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { handlePromiseError } from '$lib/utils';
@@ -14,7 +15,7 @@
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { type SharedLinkResponseDto } from '@immich/sdk';
+  import { getMySharedLink, type SharedLinkResponseDto } from '@immich/sdk';
   import { toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
@@ -65,10 +66,19 @@
   const download = (assetIds: string[]) =>
     handlePromiseError(downloadArchive(sharedDownloadFileName, { assetIds }).catch(ignoreCancelledDownload));
 
+  /**
+   * FL-56 (`PublicViewer.jsx` handleFiles): the server adds each upload through a link to that link,
+   * so the link is read again to show the new items, and the count is announced.
+   */
   const handleUploadAssets = async (files: File[] = []) => {
     try {
-      await (files.length === 0 ? openFileUploadDialog() : fileUploadHandler({ files }));
-      toastManager.primary();
+      const uploaded = await (files.length === 0 ? openFileUploadDialog() : fileUploadHandler({ files }));
+      const count = uploaded.filter(Boolean).length;
+      if (count === 0) {
+        return;
+      }
+      sharedLink = await getMySharedLink({ ...authManager.params });
+      toastManager.success($t('frameleaf_public_added', { values: { count } }));
     } catch (error) {
       handleError(error, $t('errors.unable_to_add_assets_to_shared_link'));
     }

@@ -8,6 +8,7 @@
   import { handlePromiseError } from '$lib/utils';
   import { getNextAsset, getPreviousAsset, navigateToAsset } from '$lib/utils/asset-utils';
   import { navigate } from '$lib/utils/navigation';
+  import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { onDestroy } from 'svelte';
@@ -55,7 +56,8 @@
   });
 
   const preAction = async (payload: Action) => {
-    if (payload.type === AssetAction.TRASH) {
+    // A permanent delete (trash turned off) moves on the same way.
+    if (payload.type === AssetAction.TRASH || payload.type === AssetAction.DELETE) {
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       (await navigateToAsset(assetCursor.nextAsset)) ||
         (await navigateToAsset(assetCursor.previousAsset)) ||
@@ -94,6 +96,7 @@
     <Portal target="body">
       <AssetViewer
         cursor={assetCursor}
+        filmstripAssets={inLibrary.map((asset) => toTimelineAsset(asset))}
         showNavigation={inLibrary.length > 1}
         {onRandom}
         {preAction}

@@ -3,24 +3,27 @@
    * The information panel's inline location edit (FL-36).
    *
    * Ported from the location row and `LocationDialog` in
-   * `design/frameleaf/template/src/MediaViewer.jsx`. The picker is the production
-   * `GeolocationPointPickerModal` — the pin picker the design calls for already exists — and
-   * the write is `updateAsset`. The row adds the design's second line (the coordinates) and
+   * `design/frameleaf/template/src/MediaViewer.jsx`. The edit is the template's "Edit location"
+   * dialog (`ViewerLocationDialog`, audit V-24: place names, coordinates and a pin map), and the
+   * write is `updateAsset`. The row adds the design's second line (the coordinates) and
    * the OpenStreetMap deep link beneath it.
    *
-   * A failed save reports in place: retry replays the same point, a stale asset is reloaded
+   * A failed save reports in place: retry replays the same change, a stale asset is reloaded
    * instead of rewritten, and a rejected or forbidden point is stated without a retry.
    */
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { coordinateLabel, coordinatesOf, locationLabel, osmLink } from '$lib/frameleaf/info-panel';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
-  import GeolocationPointPickerModal from '$lib/modals/GeolocationPointPickerModal.svelte';
+  import ViewerLocationDialog from '$lib/components/frameleaf/ViewerLocationDialog.svelte';
+  import { locationPatch } from '$lib/frameleaf/viewer-location';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
   import { mdiMapMarkerOutline, mdiOpenInNew, mdiPencil } from '@mdi/js';
   import { t } from 'svelte-i18n';
+
+  type LocationChange = Exclude<ReturnType<typeof locationPatch>, 'invalid' | null>;
 
   type Props = {
     isOwner: boolean;
@@ -33,40 +36,48 @@
 
   let failure = $state<InlineEditFailure | null>(null);
   let isSaving = $state(false);
-  /** The last point the person chose, so a retryable failure can replay exactly that point. */
-  let pending = $state<{ lat: number; lng: number } | null>(null);
+  /** The last change the person saved, so a retryable failure can replay exactly that change. */
+  let pending = $state<LocationChange | null>(null);
 
   const point = $derived(coordinatesOf(asset.exifInfo));
   const place = $derived(locationLabel(asset.exifInfo));
   const coordinates = $derived(coordinateLabel(point));
   const mapLink = $derived(osmLink(point));
 
-  const save = async (next: { lat: number; lng: number }) => {
+  const fail = (error: unknown, change: LocationChange | null) => {
+    failure = classifyInlineEditError(error);
+    pending = change;
+  };
+
+  const save = async (change: LocationChange) => {
     isSaving = true;
-    pending = next;
     try {
-      asset = await updateAsset({
-        id: asset.id,
-        updateAssetDto: { latitude: next.lat, longitude: next.lng },
-      });
+      asset = await updateAsset({ id: asset.id, updateAssetDto: change });
       failure = null;
       pending = null;
       onAssetRefresh?.(asset);
     } catch (error) {
-      failure = classifyInlineEditError(error);
+      fail(error, change);
       handleError(error, $t('errors.unable_to_change_location'));
     } finally {
       isSaving = false;
     }
   };
 
+  // V-24: the template's "Edit location" dialog, which saves through `updateAsset` itself.
   const onAction = async () => {
-    const chosen = await modalManager.show(GeolocationPointPickerModal, { asset });
-    if (!chosen) {
+    const updated = await modalManager.show(ViewerLocationDialog, {
+      asset,
+      onError: (error: unknown, change: ReturnType<typeof locationPatch>) =>
+        fail(error, change && change !== 'invalid' ? change : null),
+    });
+    if (!updated) {
       return;
     }
-
-    await save({ lat: chosen.lat, lng: chosen.lng });
+    asset = updated;
+    failure = null;
+    pending = null;
+    onAssetRefresh?.(asset);
   };
 
   const reload = async () => {

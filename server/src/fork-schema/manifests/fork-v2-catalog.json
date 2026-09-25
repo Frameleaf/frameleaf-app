@@ -761,6 +761,74 @@
       "identity": "immich_fork.cutover_verification_run.verifiedCount"
     },
     {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.face_correction.action"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.face_correction.actorId"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "immich_fork.face_correction.assetChecksum"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.face_correction.assetId"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "immich_fork.face_correction.boxX1"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "immich_fork.face_correction.boxX2"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "immich_fork.face_correction.boxY1"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "immich_fork.face_correction.boxY2"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.face_correction.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.face_correction.faceId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.face_correction.fromPersonId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.face_correction.fromPersonName"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.face_correction.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.face_correction.ownerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.face_correction.toPersonId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.face_correction.toPersonName"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.face_correction.undoneAt"
+    },
+    {
       "definition": "timestamp with time zone|not null|clock_timestamp()||",
       "identity": "immich_fork.frameleaf_consent.acceptedAt"
     },
@@ -1117,6 +1185,46 @@
       "identity": "immich_fork.icloud_run.status"
     },
     {
+      "definition": "uuid[]|nullable|||",
+      "identity": "immich_fork.memory_curation.assetOrder"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.memory_curation.hiddenAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.memory_curation.memoryId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.memory_curation.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.memory_curation.title"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.memory_curation.updatedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.memory_show_less.createdAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.memory_show_less.kind"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.memory_show_less.userId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.memory_show_less.value"
+    },
+    {
       "definition": "timestamp with time zone|nullable|||",
       "identity": "immich_fork.migration_audit.completedAt"
     },
@@ -1185,8 +1293,16 @@
       "identity": "immich_fork.person_merge_verdict.ownerId"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.person_merge_verdict.personFaceId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.person_merge_verdict.personId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.person_merge_verdict.suggestionFaceId"
     },
     {
       "definition": "uuid|not null|||",
@@ -1195,6 +1311,50 @@
     {
       "definition": "text|not null|||",
       "identity": "immich_fork.person_merge_verdict.verdict"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.pet_recognition_run.assetCount"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.pet_recognition_run.createdAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.pet_recognition_run.destinationKind"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.pet_recognition_run.error"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.pet_recognition_run.finishedAt"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.pet_recognition_run.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.pet_recognition_run.ownerId"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.pet_recognition_run.processedCount"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.pet_recognition_run.proposalCount"
+    },
+    {
+      "definition": "text|not null|'queued'::text||",
+      "identity": "immich_fork.pet_recognition_run.status"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.pet_recognition_run.updatedAt"
     },
     {
       "definition": "uuid|nullable|||",
@@ -1251,6 +1411,22 @@
     {
       "definition": "uuid[]|not null|'{}'::uuid[]||",
       "identity": "immich_fork.recipient_group.userIds"
+    },
+    {
+      "definition": "text[]|not null|'{}'::text[]||",
+      "identity": "immich_fork.render_worker_session_capability.codecs"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.render_worker_session_capability.createdAt"
+    },
+    {
+      "definition": "text[]|not null|'{}'::text[]||",
+      "identity": "immich_fork.render_worker_session_capability.formats"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.render_worker_session_capability.sessionId"
     },
     {
       "definition": "uuid|not null|||",
@@ -1331,6 +1507,22 @@
     {
       "definition": "character varying(64)|not null|||",
       "identity": "immich_fork.state.upstreamVersion"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.studio_workspace_layout.engineRevision"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.studio_workspace_layout.layout"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.studio_workspace_layout.savedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.studio_workspace_layout.userId"
     },
     {
       "definition": "jsonb|not null|||",
@@ -4261,6 +4453,14 @@
       "identity": "public.pet_observation.source"
     },
     {
+      "definition": "bytea|nullable|||",
+      "identity": "public.pet_observation.sourceChecksum"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.pet_observation.staleAt"
+    },
+    {
       "definition": "character varying|not null|'confirmed'::character varying||",
       "identity": "public.pet_observation.state"
     },
@@ -6847,6 +7047,22 @@
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_verifiedCount_check"
     },
     {
+      "definition": "CHECK (action = ANY (ARRAY['reassign'::text, 'new-person'::text, 'unassign'::text, 'remove'::text, 'merge'::text, 'box-move'::text]))",
+      "identity": "immich_fork.face_correction.face_correction_action_check"
+    },
+    {
+      "definition": "CHECK (action = 'merge'::text OR \"assetId\" IS NOT NULL)",
+      "identity": "immich_fork.face_correction.face_correction_anchor_check"
+    },
+    {
+      "definition": "CHECK (\"boxX1\" IS NULL AND \"boxY1\" IS NULL AND \"boxX2\" IS NULL AND \"boxY2\" IS NULL OR \"boxX1\" IS NOT NULL AND \"boxY1\" IS NOT NULL AND \"boxX2\" IS NOT NULL AND \"boxY2\" IS NOT NULL)",
+      "identity": "immich_fork.face_correction.face_correction_box_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.face_correction.face_correction_pkey"
+    },
+    {
       "definition": "CHECK (jsonb_typeof(features) = 'object'::text)",
       "identity": "immich_fork.frameleaf_consent.frameleaf_consent_features_check"
     },
@@ -6979,6 +7195,26 @@
       "identity": "immich_fork.icloud_run.icloud_run_pkey"
     },
     {
+      "definition": "PRIMARY KEY (\"memoryId\")",
+      "identity": "immich_fork.memory_curation.memory_curation_pkey"
+    },
+    {
+      "definition": "CHECK (title IS NULL OR char_length(title) >= 1 AND char_length(title) <= 200)",
+      "identity": "immich_fork.memory_curation.memory_curation_title_check"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['person'::text, 'pet'::text, 'date'::text, 'type'::text]))",
+      "identity": "immich_fork.memory_show_less.memory_show_less_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"userId\", kind, value)",
+      "identity": "immich_fork.memory_show_less.memory_show_less_pkey"
+    },
+    {
+      "definition": "CHECK (char_length(value) >= 1 AND char_length(value) <= 64)",
+      "identity": "immich_fork.memory_show_less.memory_show_less_value_check"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.migration_audit.migration_audit_pkey"
     },
@@ -6995,7 +7231,7 @@
       "identity": "immich_fork.orphaned_records.orphaned_records_pkey"
     },
     {
-      "definition": "CHECK (\"personId\" < \"suggestionId\")",
+      "definition": "CHECK (\"personId\" < \"suggestionId\" AND verdict <> 'ignore'::text OR \"personId\" = \"suggestionId\" AND verdict = 'ignore'::text)",
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_check"
     },
     {
@@ -7003,8 +7239,16 @@
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_pkey"
     },
     {
-      "definition": "CHECK (verdict = ANY (ARRAY['different'::text, 'later'::text]))",
+      "definition": "CHECK (verdict = ANY (ARRAY['different'::text, 'later'::text, 'ignore'::text]))",
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_verdict_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ownerId\")",
+      "identity": "immich_fork.pet_recognition_run.pet_recognition_run_pkey"
+    },
+    {
+      "definition": "CHECK (status = ANY (ARRAY['queued'::text, 'running'::text, 'completed'::text, 'cancelled'::text, 'failed'::text]))",
+      "identity": "immich_fork.pet_recognition_run.pet_recognition_run_status_check"
     },
     {
       "definition": "PRIMARY KEY (id)",
@@ -7021,6 +7265,10 @@
     {
       "definition": "CHECK (cardinality(\"userIds\") <= 200)",
       "identity": "immich_fork.recipient_group.recipient_group_size_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"sessionId\")",
+      "identity": "immich_fork.render_worker_session_capability.render_worker_session_capability_pkey"
     },
     {
       "definition": "PRIMARY KEY (\"smartAlbumId\", \"assetId\")",
@@ -7049,6 +7297,14 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.state.state_pkey"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(layout) = 'object'::text)",
+      "identity": "immich_fork.studio_workspace_layout.studio_workspace_layout_object_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"userId\")",
+      "identity": "immich_fork.studio_workspace_layout.studio_workspace_layout_pkey"
     },
     {
       "definition": "CHECK (jsonb_typeof(changes) = 'array'::text)",
@@ -8774,6 +9030,12 @@
     "0000000000170-MlWorkloadAccountingJobIndex",
     "0000000000171-UserPreferenceHistory",
     "0000000000172-RenderSessionOutputEvidence",
+    "0000000000175-FaceCorrectionHistory",
+    "0000000000176-PetObservationSourceAndRecognitionRuns",
+    "0000000000181-RenderWorkerSessionCapabilities",
+    "0000000000182-StudioWorkspaceLayout",
+    "0000000000187-MemoryCuration",
+    "0000000000188-MemoryShowLess",
     "0000000000200-FrameleafConsents"
   ],
   "functions": [
@@ -10052,6 +10314,26 @@
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_pkey"
     },
     {
+      "definition": "CREATE INDEX face_correction_asset_idx ON immich_fork.face_correction USING btree (\"assetId\")",
+      "identity": "immich_fork.face_correction.face_correction_asset_idx"
+    },
+    {
+      "definition": "CREATE INDEX face_correction_face_idx ON immich_fork.face_correction USING btree (\"faceId\")",
+      "identity": "immich_fork.face_correction.face_correction_face_idx"
+    },
+    {
+      "definition": "CREATE INDEX face_correction_owner_from_idx ON immich_fork.face_correction USING btree (\"ownerId\", \"fromPersonId\", \"createdAt\" DESC)",
+      "identity": "immich_fork.face_correction.face_correction_owner_from_idx"
+    },
+    {
+      "definition": "CREATE INDEX face_correction_owner_to_idx ON immich_fork.face_correction USING btree (\"ownerId\", \"toPersonId\", \"createdAt\" DESC)",
+      "identity": "immich_fork.face_correction.face_correction_owner_to_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX face_correction_pkey ON immich_fork.face_correction USING btree (id)",
+      "identity": "immich_fork.face_correction.face_correction_pkey"
+    },
+    {
       "definition": "CREATE INDEX frameleaf_consent_destination_accepted_idx ON immich_fork.frameleaf_consent USING btree (\"destinationId\", \"acceptedAt\" DESC)",
       "identity": "immich_fork.frameleaf_consent.frameleaf_consent_destination_accepted_idx"
     },
@@ -10152,6 +10434,18 @@
       "identity": "immich_fork.icloud_run.icloud_run_pkey"
     },
     {
+      "definition": "CREATE INDEX memory_curation_owner_idx ON immich_fork.memory_curation USING btree (\"ownerId\")",
+      "identity": "immich_fork.memory_curation.memory_curation_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX memory_curation_pkey ON immich_fork.memory_curation USING btree (\"memoryId\")",
+      "identity": "immich_fork.memory_curation.memory_curation_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX memory_show_less_pkey ON immich_fork.memory_show_less USING btree (\"userId\", kind, value)",
+      "identity": "immich_fork.memory_show_less.memory_show_less_pkey"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX migration_audit_pkey ON immich_fork.migration_audit USING btree (id)",
       "identity": "immich_fork.migration_audit.migration_audit_pkey"
     },
@@ -10172,6 +10466,10 @@
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX pet_recognition_run_pkey ON immich_fork.pet_recognition_run USING btree (\"ownerId\")",
+      "identity": "immich_fork.pet_recognition_run.pet_recognition_run_pkey"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX physical_file_canonical_path_uq ON immich_fork.physical_file USING btree (\"canonicalPath\")",
       "identity": "immich_fork.physical_file.physical_file_canonical_path_uq"
     },
@@ -10190,6 +10488,10 @@
     {
       "definition": "CREATE UNIQUE INDEX recipient_group_pkey ON immich_fork.recipient_group USING btree (id)",
       "identity": "immich_fork.recipient_group.recipient_group_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX render_worker_session_capability_pkey ON immich_fork.render_worker_session_capability USING btree (\"sessionId\")",
+      "identity": "immich_fork.render_worker_session_capability.render_worker_session_capability_pkey"
     },
     {
       "definition": "CREATE INDEX smart_album_exclusion_asset_idx ON immich_fork.smart_album_exclusion USING btree (\"assetId\")",
@@ -10222,6 +10524,10 @@
     {
       "definition": "CREATE UNIQUE INDEX state_pkey ON immich_fork.state USING btree (id)",
       "identity": "immich_fork.state.state_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_workspace_layout_pkey ON immich_fork.studio_workspace_layout USING btree (\"userId\")",
+      "identity": "immich_fork.studio_workspace_layout.studio_workspace_layout_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX user_preference_history_pkey ON immich_fork.user_preference_history USING btree (id)",
@@ -12572,6 +12878,10 @@
     },
     {
       "definition": "table",
+      "identity": "immich_fork.face_correction"
+    },
+    {
+      "definition": "table",
       "identity": "immich_fork.frameleaf_consent"
     },
     {
@@ -12604,6 +12914,14 @@
     },
     {
       "definition": "table",
+      "identity": "immich_fork.memory_curation"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.memory_show_less"
+    },
+    {
+      "definition": "table",
       "identity": "immich_fork.migration_audit"
     },
     {
@@ -12624,11 +12942,19 @@
     },
     {
       "definition": "table",
+      "identity": "immich_fork.pet_recognition_run"
+    },
+    {
+      "definition": "table",
       "identity": "immich_fork.physical_file"
     },
     {
       "definition": "table",
       "identity": "immich_fork.recipient_group"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.render_worker_session_capability"
     },
     {
       "definition": "table",
@@ -12645,6 +12971,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.state"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.studio_workspace_layout"
     },
     {
       "definition": "table",

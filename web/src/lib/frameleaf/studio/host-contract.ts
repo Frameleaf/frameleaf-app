@@ -177,7 +177,15 @@ export interface StudioHostContext {
    * engine uses its defaults and must not assume anything it lays out is kept.
    */
   workspace?: StudioWorkspaceView;
+  /**
+   * Basic or Advanced (`Studio.jsx:2626-2633`, `setSettings({ mode })`). The host owns the
+   * header's switch and hands the choice to the engine, which shows the fuller workspace in
+   * Advanced. Absent means Basic.
+   */
+  mode?: StudioWorkspaceMode;
 }
+
+export type StudioWorkspaceMode = 'basic' | 'advanced';
 
 /* ------------------------------------------------------------------ */
 /* Workspace layout (FL-91)                                             */
@@ -186,21 +194,25 @@ export interface StudioHostContext {
 /**
  * The editor's own workspace: which panels are open, their sizes, the zoom of the timeline.
  *
- * Freecut keeps this in a workspace folder (`infrastructure/storage/workspace-fs`). In Frameleaf
- * it would be stored per account on the server, never in a folder handle, so it follows the person
- * to Safari and Firefox and to another device. What it contains is the engine's to define, and the
- * engine is not part of this build yet, so the host says so plainly: `unavailable` means the engine
- * starts from its own defaults and nothing it lays out is persisted. It is never a silent no-op
- * that looks like a save.
+ * Freecut keeps this in a workspace folder (`infrastructure/storage/workspace-fs`). In Frameleaf it
+ * is stored per account on the server (`GET`/`PUT /studio/workspace`), never in a folder handle, so
+ * it follows the person to Safari and Firefox and to another device. What it contains is the
+ * engine's to define; the server keeps it as the same JSON value (not its key order). When it cannot be read or kept the host
+ * says so plainly: `unavailable` means the engine starts from its own defaults and nothing it lays
+ * out is persisted. It is never a silent no-op that looks like a save.
  *
  * The project document itself is not workspace state. It is stored, versioned and exported through
  * the project session and portable bundles, which work today.
  */
 export type StudioWorkspaceView =
-  | { state: 'unavailable'; reason: 'engine-absent' }
+  /**
+   * `engine-absent`: nothing to lay out yet. `storage-unavailable`: the server could not read the
+   * stored layout (offline, or the fork schema mid-handoff), so the engine starts from defaults.
+   */
+  | { state: 'unavailable'; reason: 'engine-absent' | 'storage-unavailable' }
   | {
       state: 'ready';
-      /** Opaque engine layout, stored and returned byte for byte like the project graph. */
+      /** Opaque engine layout, returned as the same JSON value it was saved as (key order and spacing are not kept). */
       layout: unknown;
       savedAt: string | null;
     };
@@ -254,6 +266,12 @@ export interface StudioHostServices {
    * answers `unavailable`, and the engine then keeps its layout for the session only.
    */
   saveWorkspace?(layout: unknown): Promise<StudioWorkspaceSaveResult>;
+  /**
+   * Report where the playhead is, as an exact rational instant (FL-93), so review comments the
+   * person adds from the host's Review panel are pinned there (`Studio.jsx:1759`) rather than at
+   * the start of the sequence. Optional; fire and forget.
+   */
+  reportPlayhead?(time: { num: number; den: number }): void;
 }
 
 /* ------------------------------------------------------------------ */

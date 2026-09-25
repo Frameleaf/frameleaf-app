@@ -6,6 +6,7 @@ import {
   folderOf,
   formatDuration,
   formatFileSize,
+  frameRateLabel,
   megapixels,
   viewerHeadline,
   viewerHeadlineText,
@@ -113,7 +114,7 @@ describe('exposureParts', () => {
 });
 
 describe('viewerHeadline', () => {
-  it('orders a still as camera, lens, exposure, dimensions, megapixels, size', () => {
+  it('orders a still as camera, lens, exposure, dimensions, size, as the template does (V-26)', () => {
     expect(viewerHeadline(still())).toEqual([
       'Fujifilm X-T5',
       'XF 23mm F1.4',
@@ -122,17 +123,25 @@ describe('viewerHeadline', () => {
       'ISO 400',
       '23 mm',
       '6,000 × 4,000',
-      '24 MP',
       '24.5 MB',
     ]);
   });
 
-  it('replaces the exposure and megapixels of a video with its duration', () => {
-    const headline = viewerHeadline(still({ type: AssetTypeEnum.Video, duration: 65_000 }));
+  it('replaces the exposure of a video with its frame rate and duration (V-26)', () => {
+    const headline = viewerHeadline(
+      still({ type: AssetTypeEnum.Video, duration: 65_000, exifInfo: { ...still().exifInfo, fps: 29.97 } }),
+    );
     expect(headline).not.toContain('ƒ/1.4');
     expect(headline).not.toContain('ISO 400');
-    expect(headline).not.toContain('24 MP');
+    expect(headline).toContain('29.97 fps');
     expect(headline).toContain('1:05');
+    expect(headline.indexOf('29.97 fps')).toBeLessThan(headline.indexOf('1:05'));
+  });
+
+  it('leaves out an unknown frame rate', () => {
+    expect(frameRateLabel(null)).toBeNull();
+    expect(frameRateLabel(0)).toBeNull();
+    expect(frameRateLabel(60)).toBe('60 fps');
   });
 
   it('is empty when the asset carries no metadata at all', () => {

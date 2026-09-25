@@ -32,37 +32,37 @@ export function updateWorkerUrls(values, change) {
   const index = urls.indexOf(original);
   if (change.kind !== "add" && index < 0)
     throw new Error(
-      "This endpoint changed elsewhere. Close this form and review the current list.",
+      "This list changed elsewhere. Close this and check the current list.",
     );
   if (change.kind === "remove") {
     if (urls.length <= 1)
       throw new Error(
-        "Keep at least one ML endpoint. Disable machine learning to stop new requests.",
+        "Keep at least one computer. To stop AI work, turn off AI features.",
       );
     urls.splice(index, 1);
   } else if (change.kind === "move") {
     const next = index + change.direction;
     if (![-1, 1].includes(change.direction) || next < 0 || next >= urls.length)
-      throw new Error("This endpoint cannot move further.");
+      throw new Error("This computer can't move further.");
     [urls[index], urls[next]] = [urls[next], urls[index]];
   } else if (["add", "edit"].includes(change.kind)) {
     const normalized = normalizeWorkerUrl(change.url);
     if (!normalized)
       throw new Error(
-        "Enter an HTTP or HTTPS endpoint without a password, query, or fragment.",
+        "Enter an http:// or https:// address without a password.",
       );
     if (
       urls.some(
         (url, i) => i !== index && normalizeWorkerUrl(url) === normalized,
       )
     )
-      throw new Error("This endpoint is already listed.");
+      throw new Error("This computer is already listed.");
     if (change.kind === "add") {
       if (urls.length >= 32)
-        throw new Error("This page supports up to 32 endpoints.");
+        throw new Error("You can add up to 32 computers.");
       urls.push(normalized);
     } else urls[index] = normalized;
-  } else throw new Error("Choose a supported endpoint change.");
+  } else throw new Error("Choose add, edit, move or remove.");
   return urls.join("\n");
 }
 
@@ -70,7 +70,7 @@ export function workerRequestPreview(url, kind = "ml") {
   const endpoint = normalizeWorkerUrl(url);
   if (!endpoint)
     throw new Error(
-      "Correct the endpoint URL before previewing a capability check.",
+      "Correct the address first.",
     );
   return {
     endpoint,
@@ -80,6 +80,6 @@ export function workerRequestPreview(url, kind = "ml") {
     capabilities: null,
     availableMemoryBytes: null,
     result:
-      "No endpoint was contacted. Model support, GPU memory and availability remain unverified.",
+      "Nothing was contacted yet, so its models, GPU memory and availability aren't known.",
   };
 }

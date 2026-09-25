@@ -21,7 +21,7 @@ import {
   LogLevel,
   QueueName,
 } from 'src/enum.js';
-import { AppReleaseConfig, parseAppReleases } from 'src/utils/app-releases.js';
+import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
 
@@ -187,6 +187,7 @@ const getEnv = (): EnvData => {
     throw new Error(messages.join('\n'));
   }
   const dto = parseResult.data;
+  const helpLinks = parseHelpLinks(dto);
 
   const includedWorkers = asSet(dto.IMMICH_WORKERS_INCLUDE, [ImmichWorker.Api, ImmichWorker.Microservices]);
   const excludedWorkers = asSet(dto.IMMICH_WORKERS_EXCLUDE, []);
@@ -267,10 +268,11 @@ const getEnv = (): EnvData => {
       sourceRef: dto.IMMICH_SOURCE_REF,
       sourceCommit: dto.IMMICH_SOURCE_COMMIT,
       sourceUrl: dto.IMMICH_SOURCE_URL,
-      thirdPartySourceUrl: dto.IMMICH_THIRD_PARTY_SOURCE_URL,
-      thirdPartyBugFeatureUrl: dto.IMMICH_THIRD_PARTY_BUG_FEATURE_URL,
-      thirdPartyDocumentationUrl: dto.IMMICH_THIRD_PARTY_DOCUMENTATION_URL,
-      thirdPartySupportUrl: dto.IMMICH_THIRD_PARTY_SUPPORT_URL,
+      // FL-135: validated https help destinations, `FRAMELEAF_*` first (see `parseHelpLinks`)
+      thirdPartySourceUrl: helpLinks.sourceUrl,
+      thirdPartyBugFeatureUrl: helpLinks.bugFeatureUrl,
+      thirdPartyDocumentationUrl: helpLinks.documentationUrl,
+      thirdPartySupportUrl: helpLinks.supportUrl,
     },
 
     bull: {
