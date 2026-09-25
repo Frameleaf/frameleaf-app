@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import {
+  MediaOperationCheckpointState,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -265,6 +266,7 @@ describe(RenderWorkerService.name, () => {
       upsertCheckpoint: vi.fn().mockResolvedValue(true),
       completeCheckpoint: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
+      invalidateCheckpointsFrom: vi.fn().mockResolvedValue(undefined),
       complete: vi.fn().mockResolvedValue(true),
       fail: vi.fn().mockResolvedValue('failed'),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
@@ -1179,6 +1181,86 @@ describe(RenderWorkerService.name, () => {
           sizeInBytes: 42,
         }),
       );
+    });
+
+    describe('server-validated chunk reuse (FL-104)', () => {
+      const chunk = (sequence: number, overrides: Record<string, unknown> = {}) => ({
+        id: `chunk-${sequence}`,
+        operationId: claimedByA.id,
+        sequence,
+        state: MediaOperationCheckpointState.Complete,
+        chunkKey: `k${sequence}`,
+        inputDigest: 'i',
+        historyDigest: 'h',
+        configDigest: 'c',
+        seed: null,
+        timebase: '30000/1001',
+        startTicks: String(sequence * 1000),
+        endTicks: String((sequence + 1) * 1000),
+        prerollTicks: '0',
+        requiresSequentialContext: false,
+        outputPath: `/render/chunk-${sequence}.mkv`,
+        ...overrides,
+      });
+      const plan = (sequence: number, overrides: Record<string, unknown> = {}) =>
+        ({
+          claimToken: 'claim-1',
+          sequence,
+          chunkKey: `k${sequence}`,
+          inputDigest: 'i',
+          historyDigest: 'h',
+          configDigest: 'c',
+          seed: null,
+          timebase: '30000/1001',
+          startTicks: String(sequence * 1000),
+          endTicks: String((sequence + 1) * 1000),
+          ...overrides,
+        }) as never;
+
+      it('keeps a finished chunk only when every digest, the timebase and the range match', async () => {
+        vi.mocked(operations.getCheckpoints).mockResolvedValue([chunk(0), chunk(1)] as never);
+
+        await expect(sut.planCheckpoint(SESSION_A, claimedByA.id, plan(0))).resolves.toEqual({
+          accepted: true,
+          refusal: null,
+        });
+        expect(operations.upsertCheckpoint).not.toHaveBeenCalled();
+
+        // A changed effect history is re-rendered, and everything after it loses its reuse.
+        await sut.planCheckpoint(SESSION_A, claimedByA.id, plan(0, { historyDigest: 'h2' }));
+        expect(operations.upsertCheckpoint).toHaveBeenCalledTimes(1);
+        expect(operations.invalidateCheckpointsFrom).toHaveBeenCalledWith(claimedByA.id, 1);
+      });
+
+      it('restarts at the first chunk of a run whose state flows into the re-rendered one', async () => {
+        vi.mocked(operations.getCheckpoints).mockResolvedValue([
+          chunk(0),
+          chunk(1, { requiresSequentialContext: true }),
+          chunk(2, { requiresSequentialContext: true }),
+          chunk(3),
+        ] as never);
+
+        await sut.planCheckpoint(SESSION_A, claimedByA.id, plan(3, { seed: '7' }));
+
+        expect(operations.invalidateCheckpointsFrom).toHaveBeenCalledWith(claimedByA.id, 1);
+        // The re-planned chunk is pending again, not invalid.
+        expect(operations.upsertCheckpoint).toHaveBeenLastCalledWith(
+          claimedByA.id,
+          'claim-1',
+          expect.objectContaining({ sequence: 3, seed: '7' }),
+        );
+      });
+
+      it('refuses validation while a chunk is invalid or unfinished', async () => {
+        vi.mocked(operations.getCheckpoints).mockResolvedValue([
+          chunk(0),
+          chunk(1, { state: MediaOperationCheckpointState.Invalid }),
+        ] as never);
+        await expect(
+          sut.beginValidation(SESSION_A, claimedByA.id, { claimToken: 'claim-1', resultAssetId: null } as never),
+        ).resolves.toEqual({ accepted: false, refusal: null });
+        expect(operations.beginValidation).not.toHaveBeenCalled();
+      });
     });
 
     it('only acknowledges a cancel on a job that is cancelling and held by this worker', async () => {
