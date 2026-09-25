@@ -34,6 +34,9 @@
    * face that represents someone across the app. As in the prototype, a tile is cropped to the
    * person's face when the photo has a detected or tagged face box for them (`getFaces`, read
    * after the page of photos so the grid shows at once); otherwise it shows the whole photo.
+   *
+   * The person's current featured photo is marked with the accent border and check, and named
+   * "current featured photo" to assistive technology, as the prototype does (People.jsx:603-628).
    */
   interface Props {
     person: PersonResponseDto;
@@ -57,6 +60,9 @@
   const faceBoxes = new SvelteMap<string, FaceBox | null>();
   let generation = 0;
   const name = $derived(isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
+  // The photo marked as current (People.jsx:603-628): the one just chosen, otherwise the person's
+  // featured photo as the server names it to their owner (`featuredAssetId`, FL-37).
+  const current = $derived(chosen ?? person.featuredAssetId ?? null);
 
   const loadFaces = async (items: AssetResponseDto[], run: number) => {
     const queue = items.filter((asset) => asset.type === AssetTypeEnum.Image);
@@ -161,9 +167,11 @@
           type="button"
           role="radio"
           class="tile"
-          class:current={chosen === asset.id}
-          aria-checked={chosen === asset.id}
-          aria-label={asset.originalFileName}
+          class:current={current === asset.id}
+          aria-checked={current === asset.id}
+          aria-label={current === asset.id
+            ? $t('frameleaf_people_featured_current', { values: { name: asset.originalFileName } })
+            : asset.originalFileName}
           disabled={busy}
           data-initial-focus={index === 0 ? '' : undefined}
           onclick={() => void select(asset)}
@@ -176,7 +184,7 @@
           {#if asset.type === AssetTypeEnum.Video}
             <span class="video" aria-hidden="true"><Icon icon={mdiPlay} size="14" /></span>
           {/if}
-          {#if chosen === asset.id}
+          {#if current === asset.id}
             <span class="check" aria-hidden="true"><Icon icon={mdiCheck} size="16" /></span>
           {/if}
         </button>

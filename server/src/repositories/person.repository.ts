@@ -1118,6 +1118,25 @@ export class PersonRepository {
     );
   }
 
+  /**
+   * FL-37: the photo a person's featured face is in, with what decides whether it may be shown. A
+   * person group can span the accounts of a cluster, so the featured face may sit on another
+   * account's photo: only a photo `ownerId` owns is returned, and only for a face that still stands
+   * (not soft-deleted) and is visible.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getFeaturedAsset(faceId: string, ownerId: string) {
+    return this.db
+      .selectFrom('asset_face')
+      .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+      .select(['asset.id', effectiveVisibility('asset').as('visibility'), 'asset.deletedAt'])
+      .where('asset_face.id', '=', faceId)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', '=', true)
+      .where('asset.ownerId', '=', ownerId)
+      .executeTakeFirst();
+  }
+
   @GenerateSql({ params: [[DummyValue.UUID]] })
   getForMergePerson(personGroupIds: string[]) {
     return this.db

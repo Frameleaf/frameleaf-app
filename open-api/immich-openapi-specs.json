@@ -27006,6 +27006,51 @@
         ],
         "x-immich-permission": "server.versionCheck",
         "x-immich-state": "Stable"
+      },
+      "post": {
+        "description": "Ask Frameleaf's release feed for the newest version now, whether or not automatic checks are on (About → Check for updates). No other service is contacted.",
+        "operationId": "checkVersionNow",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseEventV1"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check for updates now",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.versionCheck",
+        "x-immich-state": "Alpha"
       }
     },
     "/server/version-history": {
@@ -35498,6 +35543,61 @@
           },
           {
             "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/trash/activity": {
+      "get": {
+        "description": "Your own history of moves to the trash and their undos made from a utility such as Large files, newest first, kept for a year. An item is named only while this session may still see it.",
+        "operationId": "getUtilityActivity",
+        "parameters": [
+          {
+            "name": "tool",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/UtilityActivityTool"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UtilityActivityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get utility activity",
+        "tags": [
+          "Trash"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
             "state": "Alpha"
           }
         ],
@@ -57595,6 +57695,24 @@
             ],
             "x-immich-state": "Stable"
           },
+          "featuredAssetId": {
+            "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
+          },
           "id": {
             "description": "Person ID",
             "format": "uuid",
@@ -58341,6 +58459,24 @@
               }
             ],
             "x-immich-state": "Stable"
+          },
+          "featuredAssetId": {
+            "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
           },
           "id": {
             "description": "Person ID",
@@ -66430,6 +66566,10 @@
       },
       "ServerFeaturesDto": {
         "properties": {
+          "askSearch": {
+            "description": "Whether Ask Search (natural-language questions about the library) is enabled and can answer",
+            "type": "boolean"
+          },
           "configFile": {
             "description": "Whether config file is available",
             "type": "boolean"
@@ -66512,6 +66652,7 @@
           }
         },
         "required": [
+          "askSearch",
           "configFile",
           "duplicateDetection",
           "email",
@@ -66733,6 +66874,16 @@
             "x-immich-history": [
               {
                 "version": "v3.0.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "prereleaseName": {
+            "description": "Full pre-release identifier (for example rc.1 or beta.2), present only for a pre-release (FL-80)",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
                 "state": "Added"
               }
             ]
@@ -75253,6 +75404,10 @@
             "maxItems": 50000,
             "type": "array"
           },
+          "source": {
+            "$ref": "#/components/schemas/UtilityActivityTool",
+            "description": "The utility the change was made from. A move to the trash or a restore from Large files is kept in its activity history."
+          },
           "token": {
             "description": "The token returned by the review",
             "maxLength": 128,
@@ -76812,6 +76967,114 @@
           }
         },
         "type": "object"
+      },
+      "UtilityActivityAction": {
+        "description": "A move to the trash, or its undo",
+        "enum": [
+          "trash",
+          "restore"
+        ],
+        "type": "string"
+      },
+      "UtilityActivityEntryDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/UtilityActivityAction"
+          },
+          "bytes": {
+            "description": "Combined size of the items listed below, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "When the change was made",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Entry ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "itemCount": {
+            "description": "Items listed below",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UtilityActivityItemDto"
+            },
+            "type": "array"
+          },
+          "unavailableCount": {
+            "description": "Items of this change no longer shown: permanently deleted, or not visible to this session",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "bytes",
+          "createdAt",
+          "id",
+          "itemCount",
+          "items",
+          "unavailableCount"
+        ],
+        "type": "object"
+      },
+      "UtilityActivityItemDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "bytes": {
+            "description": "Size of the original when it was moved, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fileName": {
+            "description": "Original file name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "bytes",
+          "fileName"
+        ],
+        "type": "object"
+      },
+      "UtilityActivityResponseDto": {
+        "properties": {
+          "entries": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/UtilityActivityEntryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
+      "UtilityActivityTool": {
+        "description": "The utility whose activity history this is",
+        "enum": [
+          "large-files"
+        ],
+        "type": "string"
       },
       "ValidateAccessTokenResponseDto": {
         "properties": {

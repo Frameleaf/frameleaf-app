@@ -1,4 +1,4 @@
-import { locationDraft, locationPatch } from '$lib/frameleaf/viewer-location';
+import { isLocationRemoval, locationDraft, locationPatch } from '$lib/frameleaf/viewer-location';
 
 describe('viewer location dialog (V-24)', () => {
   const located = locationDraft({
@@ -45,8 +45,15 @@ describe('viewer location dialog (V-24)', () => {
     expect(locationPatch(unplaced, { ...unplaced, latitude: 'north', longitude: '10' })).toBe('invalid');
   });
 
-  it('cannot remove the coordinates of an item that has them', () => {
-    expect(locationPatch(located, { ...located, latitude: '', longitude: '' })).toBe('invalid');
+  it('removes the location of an item when both coordinates are emptied (FL-51)', () => {
+    const patch = locationPatch(located, { ...located, latitude: '', longitude: '', city: 'Elsewhere' });
+    // the place names go with the location, so none is sent
+    expect(patch).toEqual({ latitude: null, longitude: null });
+    expect(isLocationRemoval(patch)).toBe(true);
+    expect(isLocationRemoval(locationPatch(located, { ...located, latitude: '51.42', longitude: '-116.18' }))).toBe(
+      false,
+    );
+    expect(isLocationRemoval(locationPatch(unplaced, { ...unplaced, latitude: '', longitude: '' }))).toBe(false);
   });
 
   it('lets an unplaced item take a place name without coordinates', () => {
