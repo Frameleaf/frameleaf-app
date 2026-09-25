@@ -319,6 +319,30 @@ describe('AssetViewerNavBar component', () => {
     expect(queryByLabelText('frameleaf_viewer_play_slideshow')).not.toBeInTheDocument();
   });
 
+  // FL-35: the template caps the More menu at calc(100dvh - 150px) and scrolls inside (media-viewer.css:145),
+  // so its last entries (Play slideshow) stay clear of the footer, which stacks at the header's level.
+  it('caps the More menu clear of the footer and scrolls it inside when it is taller', async () => {
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+    const innerHeight = vi.spyOn(globalThis, 'innerHeight', 'get').mockReturnValue(700);
+    const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(900);
+    try {
+      const { getByLabelText, getByRole } = renderWithTooltips(AssetViewerNavBar, {
+        asset,
+        ...additionalProps,
+        canNavigateCollection: true,
+      });
+      await fireEvent.click(getByLabelText('frameleaf_viewer_more_actions'));
+
+      const scrollView = getByRole('menu', { hidden: true }).parentElement!;
+      expect(scrollView.style.maxHeight).toBe('550px');
+      expect(scrollView).toHaveClass('overflow-auto');
+    } finally {
+      innerHeight.mockRestore();
+      clientHeight.mockRestore();
+    }
+  });
+
   // FL-35: the template's top row (MediaViewer.jsx:1023-1200), without the legacy Offline and zoom buttons (V-6).
   describe('toolbar', () => {
     it('follows the template order and leaves out the legacy Offline and zoom buttons', () => {

@@ -162,7 +162,13 @@
           color="secondary"
           title={$t('frameleaf_viewer_more_actions')}
           icon={mdiDotsHorizontal}
+          menuMaxHeightInset={150}
         >
+          <!--
+            The menu is capped at the window height less 150px and scrolls inside (.mv-menu,
+            media-viewer.css:142-148), which keeps its lower entries (Play slideshow, Show filmstrip)
+            clear of the frosted footer instead of running under it.
+          -->
           <!--
             FL-35: the complete grouped menu (Download, Organize, Stack, Set as, Go to, Jobs,
             Viewer). Every entry maps to an existing asset action and a group that has no
