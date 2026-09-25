@@ -5411,6 +5411,7 @@
   "frameleaf_license_not_licensed_description": "Frameleaf is free to self-host. A one-time licence supports development, adds a supporter badge and lowers the price of cloud services.",
   "frameleaf_license_not_licensed_title": "This server is not licensed",
   "frameleaf_license_personal_activated_notice": "Thank you! Your supporter key is active for your account.",
+  "frameleaf_license_personal_removed_notice": "Your supporter key was removed from your account on this server.",
   "frameleaf_license_refresh": "Refresh",
   "frameleaf_license_refresh_failed": "The last refresh did not work: {error}",
   "frameleaf_license_refreshed": "Licence refreshed.",
