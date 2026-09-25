@@ -40,7 +40,11 @@ const QueueDeleteSchema = z
 
 const QueueJobSearchSchema = z
   .object({
-    status: z.array(QueueJobStatusSchema).optional().describe('Filter jobs by status'),
+    // A single ?status=failed arrives as a string (the SDK explodes one-element arrays), so wrap it.
+    status: z
+      .preprocess((val) => (typeof val === 'string' ? [val] : val), z.array(QueueJobStatusSchema))
+      .optional()
+      .describe('Filter jobs by status'),
     ownerId: z.uuidv4().optional().describe('Only jobs whose item belongs to this account (FL-71 account filter)'),
   })
   .meta({ id: 'QueueJobSearchDto' });

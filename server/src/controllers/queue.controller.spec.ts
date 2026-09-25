@@ -75,6 +75,19 @@ describe(QueueController.name, () => {
     });
   });
 
+  describe('GET /queues/:name/jobs (FL-71)', () => {
+    it('accepts a single status, which the SDK sends as one query value', async () => {
+      service.searchJobs.mockResolvedValue([]);
+
+      const { status } = await request(ctx.getHttpServer())
+        .get(`/queues/${QueueName.SmartSearch}/jobs`)
+        .query({ status: 'failed' });
+
+      expect(status).toBe(200);
+      expect(service.searchJobs).toHaveBeenCalledWith(undefined, QueueName.SmartSearch, { status: ['failed'] });
+    });
+  });
+
   describe('GET /queues/:name/statistics (FL-71 J-1)', () => {
     it("counts one account's jobs, for an administrator with queueJob.read", async () => {
       const ownerId = 'af1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a03';
