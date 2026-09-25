@@ -167,6 +167,15 @@ export interface TimeBucketOptions extends AssetBuilderOptions {
   order?: AssetOrder;
 }
 
+/** FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. */
+export type TimelineOrderedSort = 'filename' | 'rating';
+
+export interface TimelineOrderedPage {
+  sort: TimelineOrderedSort;
+  skip: number;
+  take: number;
+}
+
 export interface TimeBucketItem {
   timeBucket: string;
   count: number;
@@ -1681,6 +1690,29 @@ export class AssetRepository {
     params: [DummyValue.TIME_BUCKET, { withStacked: true }, { user: { id: DummyValue.UUID } }],
   })
   getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto) {
+    return this.timelineAssetColumns(options, auth, { timeBucket });
+  }
+
+  /**
+   * FL-30 (S-15): one page of the timeline's assets in a flat order — by file name or by rating —
+   * for the Browse and Work layouts. It is the time bucket's own query without the bucket filter,
+   * so everything that decides what a bucket may show (Locked and the elevated session, partners who
+   * hide their locations, hidden content, suppressed-only, lock reasons, stacks, a shared link that
+   * hides EXIF) decides this page identically, and the response has the bucket's columnar shape.
+   */
+  @GenerateSql({
+    params: [{ withStacked: true }, { user: { id: DummyValue.UUID } }, { sort: 'filename', skip: 0, take: 100 }],
+  })
+  getTimelineOrdered(options: TimeBucketOptions, auth: AuthDto, page: TimelineOrderedPage) {
+    return this.timelineAssetColumns(options, auth, { page });
+  }
+
+  private timelineAssetColumns(
+    options: TimeBucketOptions,
+    auth: AuthDto,
+    target: { timeBucket: string; page?: undefined } | { timeBucket?: undefined; page: TimelineOrderedPage },
+  ) {
+    const { timeBucket, page } = target;
     const order = options.order ?? 'desc';
     const withPlaces = !auth.sharedLink || auth.sharedLink.showExif;
     // partners who hide their locations from this viewer (FL-54): their location columns are nulled in SQL
@@ -1748,6 +1780,8 @@ export class AssetRepository {
           )
           // FL-33: Work shows each tile's file name on request; hidden with the rest of the metadata
           .$if(withPlaces, (qb) => qb.select(['asset_exif.rating', 'asset.originalFileName']))
+          // S-15: the list view's dimensions and size column; hidden with the rest of the metadata
+          .$if(withPlaces, (qb) => qb.select(['asset.width', 'asset.height', 'asset_exif.fileSizeInByte']))
           .$if(withPlaces && !hidesLocation, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
           .$if(withPlaces && hidesLocation, (qb) => qb.select([locationColumn('city'), locationColumn('country')]))
           .$if(!!options.withCoordinates && !hidesLocation, (qb) =>
@@ -1781,7 +1815,7 @@ export class AssetRepository {
 
             return withBoundingBox(withBoundingCircle, bbox);
           })
-          .where(timeBucketDate, '=', timeBucket.replace(/^[+-]/, ''))
+          .$if(timeBucket !== undefined, (qb) => qb.where(timeBucketDate, '=', timeBucket!.replace(/^[+-]/, '')))
           .$if(!!options.albumId, (qb) =>
             qb.where((eb) =>
               eb.exists(
@@ -1838,9 +1872,25 @@ export class AssetRepository {
           )
           .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
           .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
-          .orderBy(orderDate, order)
-          .orderBy(orderTimestamp, order)
-          .orderBy('asset.originalFileName', order),
+          .$if(!page, (qb) =>
+            qb.orderBy(orderDate, order).orderBy(orderTimestamp, order).orderBy('asset.originalFileName', order),
+          )
+          // File names in a locale-aware (ICU) collation, so "img_2" sorts with "IMG_10" as a person
+          // expects; the newest capture and then the id break ties, so pages never overlap.
+          .$if(page?.sort === 'filename', (qb) =>
+            qb
+              .orderBy(sql`asset."originalFileName" collate "und-x-icu"`, 'asc')
+              .orderBy('asset.fileCreatedAt', 'desc')
+              .orderBy('asset.id', 'asc'),
+          )
+          // Highest rating first; an unrated item counts as 0, below every star and above rejected.
+          .$if(page?.sort === 'rating', (qb) =>
+            qb
+              .orderBy(sql`coalesce(asset_exif.rating, 0)`, 'desc')
+              .orderBy('asset.fileCreatedAt', 'desc')
+              .orderBy('asset.id', 'asc'),
+          )
+          .$if(!!page, (qb) => qb.offset(page!.skip).limit(page!.take)),
       )
       .with('agg', (qb) =>
         qb
@@ -1872,6 +1922,9 @@ export class AssetRepository {
               eb.fn.coalesce(eb.fn('array_agg', ['country']), sql.lit('{}')).as('country'),
               eb.fn.coalesce(eb.fn('array_agg', ['rating']), sql.lit('{}')).as('rating'),
               eb.fn.coalesce(eb.fn('array_agg', ['originalFileName']), sql.lit('{}')).as('originalFileName'),
+              eb.fn.coalesce(eb.fn('array_agg', ['width']), sql.lit('{}')).as('width'),
+              eb.fn.coalesce(eb.fn('array_agg', ['height']), sql.lit('{}')).as('height'),
+              eb.fn.coalesce(eb.fn('array_agg', ['fileSizeInByte']), sql.lit('{}')).as('fileSizeInByte'),
             ]),
           )
           .$if(!!options.withCoordinates, (qb) =>

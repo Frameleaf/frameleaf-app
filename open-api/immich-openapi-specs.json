@@ -33938,6 +33938,265 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/timeline/ordered": {
+      "get": {
+        "description": "One page of the assets the time buckets would show for the same filters, ordered by file name or by rating instead of by date, in the time bucket response shape.",
+        "operationId": "getTimelineOrdered",
+        "parameters": [
+          {
+            "name": "albumId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets belonging to a specific album",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "bbox",
+            "required": false,
+            "in": "query",
+            "description": "Bounding box coordinates as west,south,east,north (WGS84)",
+            "schema": {
+              "example": "11.075683,49.416711,11.117589,49.454875",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateType",
+            "required": false,
+            "in": "query",
+            "description": "Date source for timeline bucket grouping. Defaults to taken date.",
+            "schema": {
+              "$ref": "#/components/schemas/TimeBucketDateType"
+            }
+          },
+          {
+            "name": "isFavorite",
+            "required": false,
+            "in": "query",
+            "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "isTrashed",
+            "required": false,
+            "in": "query",
+            "description": "Filter by trash status (true for trashed assets only, false for non-trashed only)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lockReason",
+            "required": false,
+            "in": "query",
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
+            "schema": {
+              "$ref": "#/components/schemas/AssetLockReason"
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "description": "Sort order for assets within time buckets (ASC for oldest first, DESC for newest first)",
+            "schema": {
+              "$ref": "#/components/schemas/AssetOrder"
+            }
+          },
+          {
+            "name": "orderBy",
+            "required": false,
+            "in": "query",
+            "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Immich)",
+            "schema": {
+              "$ref": "#/components/schemas/AssetOrderBy"
+            }
+          },
+          {
+            "name": "personId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets containing a specific person (face recognition)",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "petId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets in which the caller confirmed one of their own pets",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "description": "Items to skip",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/TimelineOrderedSort"
+            }
+          },
+          {
+            "name": "suppressedOnly",
+            "required": false,
+            "in": "query",
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "tagId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets with a specific tag",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Items to return (at most 1000)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets by specific user ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "visibility",
+            "required": false,
+            "in": "query",
+            "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)",
+            "schema": {
+              "$ref": "#/components/schemas/AssetVisibility"
+            }
+          },
+          {
+            "name": "withCoordinates",
+            "required": false,
+            "in": "query",
+            "description": "Include location data in the response",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withPartners",
+            "required": false,
+            "in": "query",
+            "description": "Include assets shared by partners",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withStacked",
+            "required": false,
+            "in": "query",
+            "description": "Include stacked assets in the response. When true, only primary assets from stacks are returned.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeBucketAssetResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the timeline in a flat order",
+        "tags": [
+          "Timeline"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/trash/apply": {
       "post": {
         "description": "Applies an action to exactly the reviewed set. The set is resolved again with the same ownership, Locked and privacy rules; if it differs from the review in any way the request fails with 409 and nothing changes.",
@@ -71767,6 +72026,26 @@
             },
             "type": "array"
           },
+          "fileSizeInByte": {
+            "description": "Array of file sizes in bytes (null when unknown). Omitted for shared links that hide EXIF",
+            "items": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "nullable": true,
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "height": {
+            "description": "Array of heights in pixels (null when unknown). Omitted for shared links that hide EXIF",
+            "items": {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "nullable": true,
+              "type": "integer"
+            },
+            "type": "array"
+          },
           "id": {
             "description": "Array of asset IDs in the time bucket",
             "items": {
@@ -71908,6 +72187,16 @@
               "$ref": "#/components/schemas/AssetVisibility"
             },
             "type": "array"
+          },
+          "width": {
+            "description": "Array of widths in pixels (null when unknown). Omitted for shared links that hide EXIF",
+            "items": {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "nullable": true,
+              "type": "integer"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -72007,6 +72296,14 @@
           "timeBucket"
         ],
         "type": "object"
+      },
+      "TimelineOrderedSort": {
+        "description": "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture",
+        "enum": [
+          "filename",
+          "rating"
+        ],
+        "type": "string"
       },
       "ToggleParameters": {
         "properties": {

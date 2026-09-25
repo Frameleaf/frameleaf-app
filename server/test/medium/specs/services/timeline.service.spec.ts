@@ -133,6 +133,8 @@ describe(TimelineService.name, () => {
         country: [],
         createdAt: [],
         duration: [],
+        fileSizeInByte: [],
+        height: [],
         id: [],
         visibility: [],
         isFavorite: [],
@@ -148,6 +150,7 @@ describe(TimelineService.name, () => {
         ratio: [],
         status: [],
         thumbhash: [],
+        width: [],
       });
     });
 
@@ -333,6 +336,168 @@ describe(TimelineService.name, () => {
         await sut.getTimeBucket(elevatedMember, { albumId: album.id, timeBucket: '1970-02-01' }),
       );
       expect(bucket.id).toEqual([plain.id]);
+    });
+  });
+
+  describe('getTimelineOrdered (FL-30, S-15)', () => {
+    const newItem = async (
+      ctx: ReturnType<typeof setup>['ctx'],
+      ownerId: string,
+      originalFileName: string,
+      day: number,
+      exif: { rating?: number | null; city?: string } = {},
+      extra: { visibility?: AssetVisibility } = {},
+    ) => {
+      const date = new Date(`1970-02-${String(day).padStart(2, '0')}`);
+      const { asset } = await ctx.newAsset({
+        ownerId,
+        originalFileName,
+        fileCreatedAt: date,
+        localDateTime: date,
+        ...extra,
+      });
+      await ctx.newExif({ assetId: asset.id, make: 'Canon', ...exif });
+      return asset;
+    };
+
+    it('orders by file name, locale-aware, across every bucket, and pages without overlap', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const b = await newItem(ctx, user.id, 'beach.jpg', 1);
+      const a = await newItem(ctx, user.id, 'Alps.jpg', 20);
+      const c = await newItem(ctx, user.id, 'canyon.jpg', 10);
+      const auth = factory.auth({ user: { id: user.id } });
+
+      const all = JSON.parse(await sut.getTimelineOrdered(auth, { sort: 'filename', skip: 0, take: 10 }));
+      expect(all.id).toEqual([a.id, b.id, c.id]);
+      expect(all.originalFileName).toEqual(['Alps.jpg', 'beach.jpg', 'canyon.jpg']);
+
+      const first = JSON.parse(await sut.getTimelineOrdered(auth, { sort: 'filename', skip: 0, take: 2 }));
+      const second = JSON.parse(await sut.getTimelineOrdered(auth, { sort: 'filename', skip: 2, take: 2 }));
+      expect([...first.id, ...second.id]).toEqual([a.id, b.id, c.id]);
+    });
+
+    it('orders by rating, highest first, unrated as 0 and rejected last, then newest', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const rejected = await newItem(ctx, user.id, 'r.jpg', 5, { rating: -1 });
+      const unratedOld = await newItem(ctx, user.id, 'u1.jpg', 1, { rating: null });
+      const unratedNew = await newItem(ctx, user.id, 'u2.jpg', 9, { rating: null });
+      const five = await newItem(ctx, user.id, 'f.jpg', 3, { rating: 5 });
+      const two = await newItem(ctx, user.id, 't.jpg', 4, { rating: 2 });
+      const auth = factory.auth({ user: { id: user.id } });
+
+      const page = JSON.parse(await sut.getTimelineOrdered(auth, { sort: 'rating', skip: 0, take: 10 }));
+      expect(page.id).toEqual([five.id, two.id, unratedNew.id, unratedOld.id, rejected.id]);
+      expect(page.rating).toEqual([5, 2, null, null, -1]);
+    });
+
+    it('shows exactly what the time buckets show: Locked only in the Locked view of an elevated owner', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const plain = await newItem(ctx, user.id, 'a.jpg', 1);
+      const locked = await newItem(ctx, user.id, 'b.jpg', 2, {}, { visibility: AssetVisibility.Locked });
+      const ordinary = factory.auth({ user: { id: user.id } });
+      const elevated = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+
+      const timeline = JSON.parse(
+        await sut.getTimelineOrdered(ordinary, {
+          sort: 'filename',
+          skip: 0,
+          take: 10,
+          visibility: AssetVisibility.Timeline,
+        }),
+      );
+      expect(timeline.id).toEqual([plain.id]);
+
+      await expect(
+        sut.getTimelineOrdered(ordinary, { sort: 'filename', skip: 0, take: 10, visibility: AssetVisibility.Locked }),
+      ).rejects.toBeInstanceOf(Error);
+      const lockedView = JSON.parse(
+        await sut.getTimelineOrdered(elevated, {
+          sort: 'filename',
+          skip: 0,
+          take: 10,
+          visibility: AssetVisibility.Locked,
+        }),
+      );
+      expect(lockedView.id).toEqual([locked.id]);
+      const bucket = JSON.parse(
+        await sut.getTimeBucket(elevated, { timeBucket: '1970-02-01', visibility: AssetVisibility.Locked }),
+      );
+      expect(lockedView.id).toEqual(bucket.id);
+    });
+
+    it('includes partners like the buckets and hides the locations a partner keeps private', async () => {
+      const { sut, ctx } = setup();
+      const { user: me } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      await ctx.get(PartnerRepository).create({
+        sharedById: partner.id,
+        sharedWithId: me.id,
+        inTimeline: true,
+        shareLocation: false,
+      });
+      const mine = await newItem(ctx, me.id, 'a.jpg', 1, { city: 'Halifax' });
+      const theirs = await newItem(ctx, partner.id, 'b.jpg', 2, { city: 'Oslo' });
+      const auth = factory.auth({ user: { id: me.id } });
+
+      const page = JSON.parse(
+        await sut.getTimelineOrdered(auth, {
+          sort: 'filename',
+          skip: 0,
+          take: 10,
+          withPartners: true,
+          visibility: AssetVisibility.Timeline,
+        }),
+      );
+      expect(page.id).toEqual([mine.id, theirs.id]);
+      expect(page.city).toEqual(['Halifax', null]);
+
+      const bucket = JSON.parse(
+        await sut.getTimeBucket(auth, {
+          timeBucket: '1970-02-01',
+          withPartners: true,
+          visibility: AssetVisibility.Timeline,
+        }),
+      );
+      expect(bucket.id.toSorted()).toEqual(page.id.toSorted());
+    });
+
+    it('returns dimensions and size for the list view, and hides them from a shared link without EXIF', async () => {
+      const { sut, ctx } = setup();
+      const sharedLinkRepo = ctx.get(SharedLinkRepository);
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalFileName: 'a.jpg',
+        width: 4000,
+        height: 3000,
+        localDateTime: new Date('1970-02-12'),
+        fileCreatedAt: new Date('1970-02-12'),
+      });
+      await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1_234_567 });
+      const auth = factory.auth({ user: { id: user.id } });
+      const page = JSON.parse(await sut.getTimelineOrdered(auth, { sort: 'filename', skip: 0, take: 10 }));
+      expect(page).toEqual(expect.objectContaining({ width: [4000], height: [3000], fileSizeInByte: [1_234_567] }));
+
+      const { album } = await ctx.newAlbum({ ownerId: user.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+      const { id: sharedLinkId } = await sharedLinkRepo.create({
+        allowUpload: false,
+        key: Buffer.from('456'),
+        type: SharedLinkType.Album,
+        userId: user.id,
+        albumId: album.id,
+      });
+      const linkAuth = factory.auth({ sharedLink: { id: sharedLinkId, showExif: false } });
+      const hidden = JSON.parse(
+        await sut.getTimelineOrdered(linkAuth, { albumId: album.id, sort: 'filename', skip: 0, take: 10 }),
+      );
+      expect(hidden.id).toEqual([asset.id]);
+      for (const field of ['width', 'height', 'fileSizeInByte', 'originalFileName', 'rating']) {
+        expect(hidden).not.toHaveProperty(field);
+      }
     });
   });
 });
