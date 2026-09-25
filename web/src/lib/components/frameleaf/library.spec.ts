@@ -667,6 +667,20 @@ describe('ResultsToolbar', () => {
     expect(onOpenFilterPanel).not.toHaveBeenCalled();
   });
 
+  it('draws no chip and no count for a condition the page’s grid does not apply (M3)', () => {
+    session.setQuery({
+      ...emptyDiscoveryQuery(),
+      text: 'beach',
+      filter: { city: { eq: 'Halifax' }, tagIds: { any: ['t1'] } },
+    });
+    render(ResultsToolbar, { session, unappliedFields: ['city', 'text'] });
+    const chips = screen.getByTestId('frameleaf-filter-chips');
+    expect(chips.textContent).not.toContain('Halifax');
+    expect(chips.textContent).not.toContain('beach');
+    expect(chips.textContent).toContain('tags');
+    expect(screen.getByTestId('frameleaf-results-toolbar').querySelector('.fl-filter-badge')?.textContent).toBe('1');
+  });
+
   it('switches Grid and List where the page offers them (S-15)', async () => {
     const onViewChange = vi.fn();
     render(ResultsToolbar, { session, view: 'grid', onViewChange });

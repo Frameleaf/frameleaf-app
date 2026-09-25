@@ -1,7 +1,8 @@
 import { AssetVisibility } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
-import { timelineQueryOptions } from './library-query-options';
+import { timelineQueryOptions, viewInLibraryHref } from './library-query-options';
+import { readLibraryView } from './library-session';
 
 const query = (filter: DiscoveryQuery['filter'], text = ''): DiscoveryQuery => ({
   ...emptyDiscoveryQuery(),
@@ -42,5 +43,25 @@ describe('timelineQueryOptions (FL-30, M3)', () => {
     const result = timelineQueryOptions(query({ personIds: { any: ['other'] } }), { ...base, personId: 'p1' });
     expect(result.options.personId).toBe('p1');
     expect(result.unapplied).toEqual(['personIds']);
+  });
+});
+
+describe('viewInLibraryHref (M3)', () => {
+  it('opens the Photos page when the buckets apply the whole query', () => {
+    const href = viewInLibraryHref(query({ tagIds: { any: ['t1'] } }));
+    expect(href.startsWith('/photos?')).toBe(true);
+    expect(readLibraryView(new URL(href, 'http://localhost'))?.query.filter).toEqual({ tagIds: { any: ['t1'] } });
+  });
+
+  it('opens the search results for a folder path, several tags or search text', () => {
+    for (const unsupported of [
+      query({ originalPath: { startsWith: '/photos/2024' } }),
+      query({ tagIds: { any: ['t1', 't2'] } }),
+      query({}, 'beach'),
+    ]) {
+      const href = viewInLibraryHref(unsupported);
+      expect(href.startsWith('/search?dq=')).toBe(true);
+      expect(JSON.parse(new URL(href, 'http://localhost').searchParams.get('dq')!)).toEqual(unsupported);
+    }
   });
 });

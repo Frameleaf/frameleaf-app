@@ -18,7 +18,7 @@
   import FilterChip from '$lib/components/frameleaf/FilterChip.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
-  import { withoutDiscoveryFilters } from '$lib/components/discovery/query';
+  import { activeFilterFields, withoutDiscoveryFilters } from '$lib/components/discovery/query';
   import { describeFilterFields } from '$lib/frameleaf/library-filters';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibrarySort } from '$lib/frameleaf/library-session';
@@ -65,6 +65,11 @@
      * source cannot order by are shown but not offered. Undefined draws no Sort control.
      */
     sorts?: readonly LibrarySort[];
+    /**
+     * Conditions the page's grid does not apply (and `text` for a search it cannot run). They get no
+     * chip and no count here: a library page shows only what narrows its grid (review M3).
+     */
+    unappliedFields?: readonly string[];
     /** Grid or List (prototype "Grid view" / "List view"); undefined draws neither, as in the Timeline. */
     view?: 'grid' | 'list';
     onViewChange?: (view: 'grid' | 'list') => void;
@@ -84,6 +89,7 @@
     inspectorOpen,
     onToggleInspector,
     sorts,
+    unappliedFields = [],
     view,
     onViewChange,
     onMoreActions,
@@ -124,11 +130,20 @@
   let menuButton = $state<HTMLButtonElement>();
   let menu = $state<HTMLUListElement>();
 
-  const text = $derived(session.query.text.trim());
+  const text = $derived(unappliedFields.includes('text') ? '' : session.query.text.trim());
+  const appliedFields = $derived(session.chipFields.filter((field) => !unappliedFields.includes(field)));
   /** The badge counts the search text as one more thing the results are narrowed by (prototype). */
-  const filterCount = $derived(session.filterCount + (text ? 1 : 0));
-  const activeSections = $derived(new Set(session.filterSections));
-  const chips = $derived(describeFilterFields(session.query, session.chipFields));
+  const filterCount = $derived(
+    activeFilterFields(session.query).filter((field) => !unappliedFields.includes(field)).length + (text ? 1 : 0),
+  );
+  const activeSections = $derived(
+    new Set(
+      activeFilterFields(session.query)
+        .filter((field) => !unappliedFields.includes(field))
+        .map((field) => session.sectionForField(field)),
+    ),
+  );
+  const chips = $derived(describeFilterFields(session.query, appliedFields));
 
   const closeMenu = (focus = true) => {
     menuOpen = false;

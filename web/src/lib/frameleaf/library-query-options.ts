@@ -1,7 +1,9 @@
-import type { IdsFilter } from '@immich/sdk';
+import { AssetVisibility, type IdsFilter } from '@immich/sdk';
 import type { DiscoveryQuery } from '$lib/components/discovery/query';
-import { activeFilterFields } from '$lib/components/discovery/query';
+import { activeFilterFields, discoveryUrl } from '$lib/components/discovery/query';
+import { createLibrarySession, writeLibraryView } from '$lib/frameleaf/library-session';
 import type { TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
+import { Route } from '$lib/route';
 
 /**
  * The part of a library session's query the timeline itself can apply (FL-30, review M3).
@@ -89,4 +91,26 @@ export const timelineQueryOptions = (
     unapplied.push(field);
   }
   return { options, unapplied };
+};
+
+/** The Photos page's own timeline options, which a "View in library" link lands on. */
+export const PHOTOS_TIMELINE_OPTIONS: TimelineManagerOptions = {
+  visibility: AssetVisibility.Timeline,
+  withStacked: true,
+  withPartners: true,
+};
+
+/**
+ * Where "View in library" goes for a query (review M3): the Photos page when the time buckets can
+ * apply every condition, so its chips are exactly what narrows the grid; otherwise the search
+ * results page, which applies the whole query (a folder path, search text, several tags).
+ */
+export const viewInLibraryHref = (query: DiscoveryQuery, origin = 'http://localhost'): string => {
+  if (timelineQueryOptions(query, PHOTOS_TIMELINE_OPTIONS).unapplied.length > 0) {
+    return discoveryUrl(query);
+  }
+  const session = createLibrarySession();
+  session.state.query = query;
+  const url = writeLibraryView(new URL(Route.photos(), origin), session.state);
+  return `${url.pathname}${url.search}`;
 };
