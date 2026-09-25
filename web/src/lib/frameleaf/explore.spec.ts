@@ -1,4 +1,4 @@
-import { AssetTypeEnum, SearchFacetField } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, SearchFacetField } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   BEST_PHOTOS_QUALITY_MIN_SCORE,
@@ -9,10 +9,10 @@ import {
   captureDay,
   emptyExploreShortcutCounts,
   EXPLORE_FACETS,
+  exploreFacetsBody,
   facetCounts,
   isVideoAsset,
 } from '$lib/frameleaf/explore';
-import { assetFactory } from '@test-data/factories/asset-factory';
 import { personFactory } from '@test-data/factories/person-factory';
 
 const searchOf = (href: string) => JSON.parse(new URL(href, 'http://localhost').searchParams.get('query') ?? '{}');
@@ -79,8 +79,13 @@ describe('explore', () => {
       expect(facetCounts(null, SearchFacetField.City)).toEqual([]);
     });
 
-    it('asks only for the people, places and tags Explore counts', () => {
+    it('asks only for the people, places and tags Explore counts, with covers, in the Timeline scope', () => {
       expect(EXPLORE_FACETS).toEqual([SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags]);
+      expect(exploreFacetsBody).toMatchObject({
+        visibility: AssetVisibility.Timeline,
+        facets: EXPLORE_FACETS,
+        facetCovers: true,
+      });
     });
   });
 
@@ -121,31 +126,26 @@ describe('explore', () => {
   });
 
   describe('buildExplorePlaces and buildExploreThings', () => {
-    const cover = assetFactory.build({ id: 'cover' });
-
-    it('turns city counts into place cards that open the city search', () => {
-      const [place, other] = buildExplorePlaces(
-        [
-          { value: 'Paris', count: 4 },
-          { value: 'Rome', count: 1 },
-        ],
-        new Map([['Paris', cover]]),
-      );
-      expect(place).toMatchObject({ label: 'Paris', count: 4, cover });
+    it('turns city counts into place cards that open the city search, covered by the facet cover', () => {
+      const [place, other] = buildExplorePlaces([
+        { value: 'Paris', count: 4, coverAssetId: 'cover' },
+        { value: 'Rome', count: 1 },
+      ]);
+      expect(place).toMatchObject({ label: 'Paris', count: 4, coverAssetId: 'cover' });
       expect(searchOf(place.href)).toEqual({ city: 'Paris' });
-      expect(other.cover).toBeNull();
+      expect(other.coverAssetId).toBeNull();
     });
 
     it('names things by the tag label and opens the tag search by id', () => {
-      const [thing] = buildExploreThings([{ value: 'tag-1', label: 'beach', count: 2 }], new Map([['tag-1', cover]]));
-      expect(thing).toMatchObject({ id: 'tag-1', label: 'beach', count: 2, cover });
+      const [thing] = buildExploreThings([{ value: 'tag-1', label: 'beach', count: 2, coverAssetId: 'cover' }]);
+      expect(thing).toMatchObject({ id: 'tag-1', label: 'beach', count: 2, coverAssetId: 'cover' });
       expect(searchOf(thing.href)).toEqual({ tagIds: ['tag-1'] });
     });
 
     it('limits things to ten and places to eight', () => {
       const counts = Array.from({ length: 20 }, (_, index) => ({ value: `v${index}`, count: 1 }));
-      expect(buildExploreThings(counts, new Map())).toHaveLength(10);
-      expect(buildExplorePlaces(counts, new Map())).toHaveLength(8);
+      expect(buildExploreThings(counts)).toHaveLength(10);
+      expect(buildExplorePlaces(counts)).toHaveLength(8);
     });
   });
 
@@ -154,9 +154,12 @@ describe('explore', () => {
       expect(captureDay({ localDateTime: '2024-03-01T23:30:00.000Z' })).toBe('2024-03-01');
     });
 
-    it('is null when the capture date is unknown', () => {
+    it('is null when the capture date is unknown or impossible', () => {
       expect(captureDay({ localDateTime: '' })).toBeNull();
       expect(captureDay({ localDateTime: '0000-01-01T00:00:00.000Z' })).toBeNull();
+      expect(captureDay({ localDateTime: '2024-02-31T10:00:00.000Z' })).toBeNull();
+      expect(captureDay({ localDateTime: '2023-13-01T10:00:00.000Z' })).toBeNull();
+      expect(captureDay({ localDateTime: '2024-02-29T10:00:00.000Z' })).toBe('2024-02-29');
     });
   });
 

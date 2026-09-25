@@ -9,7 +9,6 @@ import { personFactory } from '@test-data/factories/person-factory';
 import ExplorePanel from './ExplorePanel.svelte';
 
 const jamie = personFactory.build({ id: 'jamie', name: 'Jamie', isHidden: false });
-const beach = assetFactory.build({ id: 'beach-cover' });
 const clip = assetFactory.build({
   id: 'clip',
   type: AssetTypeEnum.Video,
@@ -20,8 +19,8 @@ const still = assetFactory.build({ id: 'still', type: AssetTypeEnum.Image, origi
 
 const props = (overrides: Record<string, unknown> = {}) => ({
   people: buildExplorePeople([{ value: 'jamie', count: 12 }], [jamie]),
-  places: buildExplorePlaces([{ value: 'Paris', count: 4 }], new Map()),
-  things: buildExploreThings([{ value: 'tag-1', label: 'beach', count: 1 }], new Map([['tag-1', beach]])),
+  places: buildExplorePlaces([{ value: 'Paris', count: 4 }]),
+  things: buildExploreThings([{ value: 'tag-1', label: 'beach', count: 1, coverAssetId: 'beach-cover' }]),
   recents: [clip, still],
   memories: [{ id: 'm1', title: '1 year ago', href: '/memory', alt: '', src: '/m.jpg', count: 3 }],
   albums: [albumFactory.build({ id: 'a1', albumName: 'Summer', assetCount: 5 })],
@@ -82,10 +81,16 @@ describe('ExplorePanel', () => {
     expect(screen.queryByRole('region', { name: 'People' })).toBeNull();
   });
 
-  it('says there is nothing to explore when the library has nothing the account can see', () => {
+  it('covers a thing with the newest match its facet returned', () => {
+    render(ExplorePanel, props());
+    const thing = within(screen.getByRole('region', { name: 'Things in your photos' })).getByRole('link');
+    expect(thing.querySelector('img')?.getAttribute('src')).toContain('beach-cover');
+  });
+
+  it('points an empty library at uploading, in the prototype empty-state pattern', () => {
     render(ExplorePanel, props({ libraryTotal: 0 }));
-    expect(screen.getByRole('status')).toHaveTextContent('Nothing to explore in this view');
-    expect(screen.getByRole('status')).toHaveTextContent('Choose another album or adjust your filters to see more.');
+    expect(screen.getByRole('status')).toHaveTextContent('Nothing to explore yet');
+    expect(screen.getByRole('status')).toHaveTextContent('Upload photos and videos');
     expect(screen.queryByRole('region', { name: 'People' })).toBeNull();
   });
 });

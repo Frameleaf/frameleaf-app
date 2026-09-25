@@ -460,6 +460,12 @@ const SearchFacetCountResponseSchema = z
       .optional()
       .describe("Display name when the value is an id (a person or a tag); the viewer's own name for it")
       .meta(ADDED_V3_2),
+    coverAssetId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('The newest matching asset with this value (by capture time), when `facetCovers` was asked for')
+      .meta(ADDED_V3_2),
   })
   .meta({ id: 'SearchFacetCountResponseDto' });
 
@@ -545,6 +551,11 @@ const facetRequestShape = {
     .max(SEARCH_FACET_MAX_LIMIT)
     .optional()
     .describe(`Most frequent values per facet (default ${SEARCH_FACET_DEFAULT_LIMIT})`),
+  facetCovers: z
+    .boolean()
+    .optional()
+    .describe('Also return, per value, the newest matching asset (by capture time) as its cover')
+    .meta(ADDED_V3_2),
 };
 
 const SearchFacetsSchema = withShapeExclusivity(StatisticsSearchBaseSchema.extend(facetRequestShape)).meta({

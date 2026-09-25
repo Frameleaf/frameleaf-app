@@ -103,9 +103,9 @@
   </div>
 {/snippet}
 
-{#snippet cover(asset: AssetResponseDto | null | undefined)}
-  {#if asset}
-    <img src={thumbnail(asset.id)} alt="" loading="lazy" />
+{#snippet cover(assetId: string | null | undefined)}
+  {#if assetId}
+    <img src={thumbnail(assetId)} alt="" loading="lazy" />
   {:else}
     <span class="el-cover-empty"><Icon icon={mdiImageMultipleOutline} size="28" aria-hidden="true" /></span>
   {/if}
@@ -118,6 +118,11 @@
   </header>
 
   {#if !hasAnything}
+    <!--
+      The prototype's empty state (ExploreLibrary.jsx:60-66) speaks of albums and filters, which
+      production Explore does not have: here it is only ever an empty library, so the same pattern
+      and tone point at uploading instead.
+    -->
     <div class="el-empty" role="status">
       <Icon icon={mdiImageSearchOutline} size="32" aria-hidden="true" />
       <h2>{$t('frameleaf_explore_empty_title')}</h2>
@@ -142,7 +147,7 @@
     <section class="el-section" aria-label={$t('frameleaf_explore_highlights_label')}>
       <div class="el-highlights">
         <a class="el-best fl-continuous-corners" href={Route.bestPhotos()}>
-          {@render cover(bestPhotos.cover)}
+          {@render cover(bestPhotos.cover?.id)}
           <span class="el-cover-shade"></span>
           <span class="el-best-copy">
             <span class="el-overline"
@@ -184,7 +189,7 @@
         <div class="el-places">
           {#each places as place (place.id)}
             <a href={place.href} class="el-place fl-continuous-corners">
-              {@render cover(place.cover)}
+              {@render cover(place.coverAssetId)}
               <span class="el-cover-shade"></span>
               <span>
                 <strong>{place.label}</strong>
@@ -220,7 +225,7 @@
         <div class="el-things">
           {#each things as thing (thing.id)}
             <a href={thing.href}>
-              {@render cover(thing.cover)}
+              {@render cover(thing.coverAssetId)}
               <span>
                 <strong>{thing.label}</strong>
                 <small>{countLabel(thing.count)}</small>
