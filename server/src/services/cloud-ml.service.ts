@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import type { SystemConfig } from 'src/config.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import type { MachineLearningHardwareResponse, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
-import type { SystemConfig } from 'src/config.js';
 import type { FrameleafMlWallet } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -38,6 +38,7 @@ import {
   CloudUsage,
   FrameleafCloudError,
   cloudFactsFromCapabilities,
+  isLocalOnlyModel,
   knownWorkloads,
 } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination } from 'src/utils/ml-destination-dto.js';
@@ -233,7 +234,7 @@ export class CloudMlService extends BaseService {
     const catalog = await this.callCloud(() => this.frameleafCloudMlRepository.getCatalog(gateway));
     return {
       models: catalog.models
-        .filter((model) => !model.retired)
+        .filter((model) => !model.retired && !isLocalOnlyModel(model.id))
         .map((model) => ({
           id: model.id,
           workload: knownWorkloads([model.workload])[0] ?? null,
@@ -371,7 +372,10 @@ export class CloudMlService extends BaseService {
         this.frameleafCloudMlRepository.getHardware(gateway).catch(() => null),
         this.frameleafCloudMlRepository.getCatalog(gateway).catch(() => null),
       ]);
-      const modelIds = (catalog?.models ?? []).filter((model) => !model.retired).map((model) => model.id);
+      // Local-only models (FL-146) never count as offered, even if a catalogue lists them.
+      const modelIds = (catalog?.models ?? [])
+        .filter((model) => !model.retired && !isLocalOnlyModel(model.id))
+        .map((model) => model.id);
       const facts = cloudFactsFromCapabilities(capabilities, modelIds);
       await this.cacheWallet({
         balanceUsd: capabilities.wallet.balanceUsd,
