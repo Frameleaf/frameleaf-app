@@ -14,7 +14,7 @@
 <h3 align="center">Giải pháp quản lý ảnh và video tự lưu trữ hiệu suất cao</h3>
 <br/>
 <a href="https://immich.app">
-<img src="../design/immich-screenshots.png" title="Ảnh chụp màn hình chính">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="Ảnh chụp màn hình chính">
 </a>
 <br/>
 <p align="center">
