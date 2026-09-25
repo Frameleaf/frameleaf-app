@@ -28,7 +28,6 @@ export const ML_WORKLOAD_ORDER: readonly MlWorkload[] = [
   MlWorkload.StudioAi,
   MlWorkload.Upscale,
   MlWorkload.Interpolation,
-  MlWorkload.StudioRender,
 ];
 
 export const mlWorkloadLabelKey = (workload: MlWorkload): Translations => {
@@ -188,8 +187,8 @@ export const isLibraryWorkload = (workload: MlWorkload) => LIBRARY_WORKLOADS.inc
 export const isRestorationWorkload = (workload: MlWorkload) => RESTORATION_WORKLOADS.includes(workload);
 
 /**
- * The workloads Frameleaf Cloud may run (FL-159): descriptions, restoration, upscaling, Studio AI,
- * interpolation and Studio renders. Faces are refused by policy; search and text recognition stay
+ * The workloads Frameleaf Cloud may run (FL-159): descriptions, restoration, upscaling, Studio AI and
+ * interpolation. Studio exports render at home only (§2.7). Faces are refused by policy; search and text recognition stay
  * on this network. Mirrors the server's `FRAMELEAF_CLOUD_ML_WORKLOADS`.
  */
 export const FRAMELEAF_CLOUD_WORKLOADS: readonly MlWorkload[] = [
@@ -199,7 +198,6 @@ export const FRAMELEAF_CLOUD_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.RestorationCreative,
   MlWorkload.StudioAi,
   MlWorkload.Interpolation,
-  MlWorkload.StudioRender,
 ];
 
 /** The workloads a destination of this kind may be allowed at all. */
