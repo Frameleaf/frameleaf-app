@@ -224,7 +224,7 @@ export class BulkController {
     if (ids.length === 0) {
       return null;
     }
-    if (shouldRunDurably(action, ids.length)) {
+    if (shouldRunDurably(action, ids.length, payload)) {
       await this.#queue(action, ids, payload);
       return null;
     }

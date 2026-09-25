@@ -16,6 +16,12 @@ type LayoutOptions = {
    * Browse square grid and the Work grid. `null` keeps the justified rows (Timeline).
    */
   cells: CellGridOptions | null;
+  /**
+   * Frameleaf (FL-33, T-7): a caption row under every justified Timeline row. The photo keeps the
+   * row height and the row pitch grows by this much (template timeline-library.css `.tl-row .at-open
+   * { height: var(--tl-h) }` with `.at-caption` 6px below it).
+   */
+  captionHeight: number;
 };
 export abstract class VirtualScrollManager {
   topSectionHeight = $state(0);
@@ -36,6 +42,7 @@ export abstract class VirtualScrollManager {
   #gap = $state(12);
   #fillRowWidth = $state(false);
   #cells = $state<CellGridOptions | null>(null);
+  #captionHeight = $state(0);
   #scrolling = $state(false);
   #suspendTransitions = $state(false);
   #resetScrolling = debounce(() => (this.#scrolling = false), 1000);
@@ -46,6 +53,7 @@ export abstract class VirtualScrollManager {
     rowHeight: this.#rowHeight,
     rowWidth: Math.floor(this.viewportWidth),
     fillRowWidth: this.#fillRowWidth,
+    captionHeight: this.#captionHeight,
   });
 
   constructor() {
@@ -125,6 +133,19 @@ export abstract class VirtualScrollManager {
     return true;
   }
 
+  #setCaptionHeight(value: number) {
+    if (this.#captionHeight === value) {
+      return false;
+    }
+    this.#captionHeight = value;
+    return true;
+  }
+
+  /** The caption row under each justified row (Timeline captions), or 0. */
+  get captionHeight() {
+    return this.#captionHeight;
+  }
+
   /** The Browse or Work cell grid, or `null` for justified rows. */
   get cells() {
     return this.#cells;
@@ -188,6 +209,7 @@ export abstract class VirtualScrollManager {
     gap = 12,
     fillRowWidth = false,
     cells = null,
+    captionHeight = 0,
   }: Partial<LayoutOptions> = {}) {
     // Note: every setter must run. `||=` short-circuits, so the first option that reported a change
     // used to stop the rest from being applied at all — switching to the mobile layout set the
@@ -198,6 +220,7 @@ export abstract class VirtualScrollManager {
       this.#setRowHeight(rowHeight),
       this.#setFillRowWidth(fillRowWidth),
       this.#setCells(cells),
+      this.#setCaptionHeight(captionHeight),
     ];
     if (changes.includes(true)) {
       this.refreshLayout();

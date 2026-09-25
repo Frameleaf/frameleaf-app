@@ -124,6 +124,20 @@ describe('filledJustifiedLayout', () => {
     expect(layout.containerHeight).toBe(0);
   });
 
+  it('keeps the photos at the row height and leaves a caption row under each row (T-7)', () => {
+    const ratios = [1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5];
+    const plain = filledJustifiedLayout(ratios, layoutOptions);
+    const captioned = filledJustifiedLayout(ratios, { ...layoutOptions, captionHeight: 24 });
+    const tops = [...new Set(ratios.map((_, index) => plain.getTop(index)))];
+    expect(tops.length).toBeGreaterThan(1);
+    for (const index of ratios.keys()) {
+      const row = tops.indexOf(plain.getTop(index));
+      expect(captioned.getHeight(index)).toBe(plain.getHeight(index));
+      expect(captioned.getTop(index)).toBe(plain.getTop(index) + row * 24);
+    }
+    expect(captioned.containerHeight).toBe(plain.containerHeight + tops.length * 24);
+  });
+
   it('answers out-of-range boxes with a zero rectangle instead of throwing', () => {
     const layout = filledJustifiedLayout([1.5], layoutOptions);
     expect(layout.getPosition(9)).toEqual({ top: 0, left: 0, width: 0, height: 0 });

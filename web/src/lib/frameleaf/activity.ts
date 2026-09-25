@@ -699,7 +699,8 @@ export const activityStatusText = (
   if (item.paused) {
     return progress === null ? status : translate('frameleaf_activity_status_at', { values: { status, progress } });
   }
-  if (item.running && !online) {
+  // Prototype: every unfinished job that is not paused waits for the connection, queued or running.
+  if (!online) {
     return progress === null
       ? translate('frameleaf_activity_status_offline')
       : translate('frameleaf_activity_status_offline_progress', { values: { progress } });

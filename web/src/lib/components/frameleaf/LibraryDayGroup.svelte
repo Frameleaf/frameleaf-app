@@ -33,8 +33,13 @@
     grouped?: boolean;
     /** The layout the tiles are drawn in (FL-33 tile variants). */
     layout?: TileLayout;
-    /** Timeline and Work: the caption row under each tile, included in the tile height. */
+    /** Timeline and Work: the caption row under each tile. */
     captionHeight?: number;
+    /**
+     * Timeline: the caption sits below the laid-out photo (the manager left room for it), so the tile
+     * is the photo plus the caption. Work's cells already include their caption row.
+     */
+    captionBelow?: boolean;
     /** Work: show file names in the captions. */
     showFileNames?: boolean;
     /** Rating override for an asset; by default each tile shows the asset's own rating. */
@@ -58,6 +63,7 @@
     grouped = false,
     layout = 'timeline',
     captionHeight = 0,
+    captionBelow = false,
     showFileNames = false,
     ratingFor,
     onOpen,
@@ -123,17 +129,18 @@
       {@const position = viewerAsset.position}
       {@const asset = viewerAsset.asset}
       {#if position && asset}
+        {@const tileHeight = captionBelow ? position.height + captionHeight : position.height}
         <div
           class="fl-day-cell"
           style:top="{position.top}px"
           style:inset-inline-start="{position.left}px"
           style:width="{position.width}px"
-          style:height="{position.height}px"
+          style:height="{tileHeight}px"
         >
           <AssetTile
             {asset}
             width={position.width}
-            height={position.height}
+            height={tileHeight}
             selected={selected.has(asset.id)}
             {selecting}
             {layout}

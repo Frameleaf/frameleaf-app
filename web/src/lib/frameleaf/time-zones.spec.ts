@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { formatUtcOffset, splitLocalDateTime, timeZoneChoices, timeZoneCity, timeZoneLabel } from './time-zones';
+import {
+  formatUtcOffset,
+  splitLocalDateTime,
+  timeZoneChoices,
+  timeZoneCity,
+  timeZoneLabel,
+  wallTimeInZone,
+  zoneForOffset,
+} from './time-zones';
 
 describe('friendly time zones (FL-32, T-19)', () => {
-  const winter = new Date('2026-01-15T12:00:00Z');
-  const summer = new Date('2026-07-15T12:00:00Z');
+  const winter = '2026-01-15T12:00';
+  const summer = '2026-07-15T12:00';
 
   it('names a zone by its city, its region and the offset on the date being set', () => {
     expect(timeZoneLabel('America/Vancouver', winter, 'en').label).toBe('Vancouver (Pacific Time · UTC−08:00)');
@@ -20,7 +28,7 @@ describe('friendly time zones (FL-32, T-19)', () => {
 
   it('lists UTC first, then places west to east, without raw Etc offsets', () => {
     const choices = timeZoneChoices({
-      at: winter,
+      wallTime: winter,
       locale: 'en',
       zones: ['Europe/London', 'Etc/GMT+5', 'America/Vancouver', 'UTC', 'Asia/Tokyo', 'America/Toronto'],
     });
@@ -38,5 +46,23 @@ describe('friendly time zones (FL-32, T-19)', () => {
     expect(splitLocalDateTime('2024-12-11T18:42')).toEqual({ date: '2024-12-11', time: '18:42' });
     expect(splitLocalDateTime(undefined)).toBeNull();
     expect(splitLocalDateTime('garbage')).toBeNull();
+  });
+
+  it('reads the offset a wall time has in the zone, on either side of a daylight-saving change', () => {
+    expect(timeZoneLabel('America/Vancouver', '2026-03-08T01:30', 'en').offsetMinutes).toBe(-480);
+    expect(timeZoneLabel('America/Vancouver', '2026-03-08T03:30', 'en').offsetMinutes).toBe(-420);
+    expect(wallTimeInZone('2026-03-08T03:30', 'America/Vancouver')).toBe('2026-03-08T03:30:00-07:00');
+    expect(wallTimeInZone('2026-11-01T12:00', 'Europe/London')).toBe('2026-11-01T12:00:00+00:00');
+  });
+
+  it('guesses an item’s zone from its offset, preferring the browser’s own', () => {
+    const choices = timeZoneChoices({
+      wallTime: winter,
+      locale: 'en',
+      zones: ['America/Los_Angeles', 'America/Vancouver', 'Europe/Berlin'],
+    });
+    expect(zoneForOffset(choices, -480, 'America/Vancouver')?.value).toBe('America/Vancouver');
+    expect(zoneForOffset(choices, -480, 'Asia/Tokyo')?.value).toBe('America/Los_Angeles');
+    expect(zoneForOffset(choices, 0, 'Asia/Tokyo')?.value).toBe('UTC');
   });
 });
