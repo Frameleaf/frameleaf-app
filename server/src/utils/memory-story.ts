@@ -72,9 +72,9 @@ const hoursBetween = (from: Date, to: Date) => Math.abs(to.getTime() - from.getT
  * not dominate a story. The first asset of a burst is the one kept, which keeps the result
  * stable across regenerations.
  */
-export const suppressBursts = (candidates: StoryCandidate[]): StoryCandidate[] => {
-  const kept: StoryCandidate[] = [];
-  let previous: StoryCandidate | undefined;
+export const suppressBursts = <T extends { localDateTime: Date }>(candidates: T[]): T[] => {
+  const kept: T[] = [];
+  let previous: T | undefined;
 
   for (const candidate of candidates) {
     if (
@@ -95,14 +95,41 @@ export const suppressBursts = (candidates: StoryCandidate[]): StoryCandidate[] =
  * asset per day in rotation. A day with three photographs is therefore not drowned out by a
  * day with three hundred, and the result stays in capture order.
  */
-export const diversifyByDay = (candidates: StoryCandidate[], limit = MAX_EVENT_ASSETS): StoryCandidate[] => {
+export const diversifyByDay = <T extends { id: string; localDateTime: Date }>(
+  candidates: T[],
+  limit = MAX_EVENT_ASSETS,
+): T[] => diversifyByBucket(candidates, limit, (candidate) => localDay(candidate.localDateTime));
+
+/** The same rotation by local month, for a year-long recap (FL-62). */
+export const diversifyByMonth = <T extends { id: string; localDateTime: Date }>(
+  candidates: T[],
+  limit = MAX_EVENT_ASSETS,
+): T[] =>
+  diversifyByBucket(candidates, limit, (candidate) =>
+    DateTime.fromJSDate(candidate.localDateTime, { zone: 'utc' }).toFormat('yyyy-MM'),
+  );
+
+/** The same rotation by local year, for a birthday that spans a person's whole library (FL-62). */
+export const diversifyByYear = <T extends { id: string; localDateTime: Date }>(
+  candidates: T[],
+  limit = MAX_EVENT_ASSETS,
+): T[] =>
+  diversifyByBucket(candidates, limit, (candidate) =>
+    DateTime.fromJSDate(candidate.localDateTime, { zone: 'utc' }).toFormat('yyyy'),
+  );
+
+const diversifyByBucket = <T extends { id: string }>(
+  candidates: T[],
+  limit: number,
+  bucketOf: (value: T) => string,
+): T[] => {
   if (candidates.length <= limit) {
     return candidates;
   }
 
-  const byDay = new Map<string, StoryCandidate[]>();
+  const byDay = new Map<string, T[]>();
   for (const candidate of candidates) {
-    const day = localDay(candidate.localDateTime);
+    const day = bucketOf(candidate);
     const bucket = byDay.get(day);
     if (bucket) {
       bucket.push(candidate);
@@ -136,6 +163,40 @@ export const diversifyByDay = (candidates: StoryCandidate[], limit = MAX_EVENT_A
 
   return candidates.filter(({ id }) => kept.has(id));
 };
+
+/**
+ * The calendar day a birthday falls on in `year` (FL-62): the same month and day, except that
+ * 29 February is kept on 28 February outside leap years. Returns null for an unreadable date.
+ */
+export const birthdayOn = (birthDate: string, year: number): string | null => {
+  const born = DateTime.fromISO(birthDate.slice(0, 10), { zone: 'utc' });
+  if (!born.isValid) {
+    return null;
+  }
+  const leapDay = born.month === 2 && born.day === 29;
+  const day = DateTime.utc(year, born.month, leapDay && !DateTime.utc(year).isInLeapYear ? 28 : born.day);
+  return day.toFormat('yyyy-MM-dd');
+};
+
+/** The age reached on the birthday in `year`, or null when the birth year is not a real one. */
+export const birthdayAge = (birthDate: string, year: number): number | null => {
+  const born = DateTime.fromISO(birthDate.slice(0, 10), { zone: 'utc' });
+  if (!born.isValid || born.year < 1850) {
+    return null;
+  }
+  const age = year - born.year;
+  return age >= 0 ? age : null;
+};
+
+/**
+ * When a memory for one calendar day shows (FL-62): from the moment that day starts anywhere
+ * (UTC+14) until it has ended everywhere (UTC-12). Clients then decide "today" from their own
+ * local date, so a birthday is today in every time zone on the day itself.
+ */
+export const calendarDayWindow = (date: string) => ({
+  showAt: DateTime.fromISO(date, { zone: 'Etc/GMT-14' }).startOf('day').toUTC().toJSDate(),
+  hideAt: DateTime.fromISO(date, { zone: 'Etc/GMT+12' }).endOf('day').toUTC().toJSDate(),
+});
 
 /** the place most of the event's assets carry, or null when the event has no location at all */
 export const dominantPlace = (candidates: StoryCandidate[]): StoryPlace | null => {

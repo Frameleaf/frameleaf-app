@@ -23,6 +23,8 @@ import {
   MemoryExportSearchDto,
   MemoryResponseDto,
   MemorySearchDto,
+  MemoryShowLessDto,
+  MemoryShowLessResponseDto,
   MemoryStatisticsResponseDto,
   MemoryUpdateDto,
 } from 'src/dtos/memory.dto.js';
@@ -70,6 +72,46 @@ export class MemoryController {
   })
   memoriesStatistics(@Auth() auth: AuthDto, @Query() dto: MemorySearchDto): Promise<MemoryStatisticsResponseDto> {
     return this.service.statistics(auth, dto);
+  }
+
+  // "Show less" on memories (FL-62), declared before `:id` like the exports below.
+
+  @Get('show-less')
+  @Authenticated({ permission: Permission.MemoryRead })
+  @Endpoint({
+    summary: 'Retrieve memories show-less rules',
+    description:
+      "Retrieve the caller's own rules: people, pets, dates and kinds of memory they asked to see less of. Memories of them are neither generated nor shown.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  getMemoryShowLess(@Auth() auth: AuthDto): Promise<MemoryShowLessResponseDto[]> {
+    return this.service.getShowLess(auth);
+  }
+
+  @Post('show-less')
+  @Authenticated({ permission: Permission.MemoryUpdate })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Show less of a person, pet, date or kind of memory',
+    description:
+      "Add a show-less rule for one of the caller's own people or pets, a date written as 'MM-dd', or a memory type, and return every rule.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  addMemoryShowLess(@Auth() auth: AuthDto, @Body() dto: MemoryShowLessDto): Promise<MemoryShowLessResponseDto[]> {
+    return this.service.addShowLess(auth, dto);
+  }
+
+  @Delete('show-less')
+  @Authenticated({ permission: Permission.MemoryUpdate })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Remove a memories show-less rule',
+    description:
+      "Remove one of the caller's show-less rules, so its memories are generated and shown again, and return every rule.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  removeMemoryShowLess(@Auth() auth: AuthDto, @Body() dto: MemoryShowLessDto): Promise<MemoryShowLessResponseDto[]> {
+    return this.service.removeShowLess(auth, dto);
   }
 
   // Private highlight exports (FL-62).

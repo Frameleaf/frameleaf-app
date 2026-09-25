@@ -151,7 +151,27 @@ export enum MemoryType {
   EventStory = 'event_story',
   /** a recap of one calendar year of the owner's library */
   YearInReview = 'year_in_review',
+  /** a named person's birthday, from the birth date the owner entered (FL-62) */
+  Birthday = 'birthday',
+  /** a year with one person or pet the owner named (FL-62) */
+  PersonRecap = 'person_recap',
 }
+
+/**
+ * What a "show less" rule on memories names (FL-62): one of the owner's people or pets, a calendar
+ * date (`MM-dd`), or a kind of memory. Memories of it are no longer generated or shown.
+ */
+export enum MemoryShowLessKind {
+  Person = 'person',
+  Pet = 'pet',
+  Date = 'date',
+  Type = 'type',
+}
+
+export const MemoryShowLessKindSchema = z
+  .enum(MemoryShowLessKind)
+  .describe('What a memories show-less rule names')
+  .meta({ id: 'MemoryShowLessKind' });
 
 export const MemoryTypeSchema = z.enum(MemoryType).describe('Memory type').meta({ id: 'MemoryType' });
 

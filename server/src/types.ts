@@ -705,6 +705,8 @@ export type MemoriesState = {
   lastEventStoryDate?: string;
   /** the most recent calendar year a year-in-review recap was generated for (FL-62) */
   lastYearInReviewYear?: number;
+  /** the most recent calendar year person and pet recaps were generated for (FL-62) */
+  lastPersonRecapYear?: number;
 };
 export type MediaLocation = { location: string };
 
