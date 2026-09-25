@@ -217,10 +217,13 @@ export class UserRepository {
   /**
    * FL-71 (CC-10), FL-55: fork rows of accounts that no longer exist, left behind when an account
    * was removed while the fork schema was not writable. Preference history of a removed account
-   * goes; recipient groups it owned go, and it leaves everyone else's. Returns what was removed,
-   * or undefined while the fork schema is still not writable.
+   * goes; recipient groups it owned go, and it leaves everyone else's. FL-57/FL-58: its face
+   * correction history, merge-suggestion answers and pet recognition run go too. Returns what was
+   * removed, or undefined while the fork schema is still not writable.
    */
-  async sweepRemovedAccountForkRows(): Promise<{ preferenceHistory: number; recipientGroups: number } | undefined> {
+  async sweepRemovedAccountForkRows(): Promise<
+    { preferenceHistory: number; recipientGroups: number; peopleAndPets: number } | undefined
+  > {
     return this.db.transaction().execute(async (trx) => {
       if (!(await canWriteFork(trx))) {
         return;
@@ -245,9 +248,22 @@ export class UserRepository {
           WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = member)
         )
       `.execute(trx);
+      let peopleAndPets = 0;
+      for (const table of [
+        sql`immich_fork.face_correction`,
+        sql`immich_fork.person_merge_verdict`,
+        sql`immich_fork.pet_recognition_run`,
+      ]) {
+        const removed = await sql`
+          DELETE FROM ${table} AS owned
+          WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = owned."ownerId")
+        `.execute(trx);
+        peopleAndPets += Number(removed.numAffectedRows ?? 0);
+      }
       return {
         preferenceHistory: Number(history.numAffectedRows ?? 0),
         recipientGroups: Number(groups.numAffectedRows ?? 0),
+        peopleAndPets,
       };
     });
   }
