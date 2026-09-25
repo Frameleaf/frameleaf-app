@@ -3,6 +3,7 @@ import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { MediaOperation, MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
 import { AlbumUserRole, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import {
   TakeoutFileKind,
@@ -16,6 +17,9 @@ import {
   TakeoutSourceKind,
   TakeoutWarning,
 } from 'src/utils/takeout.js';
+
+/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
+export const TAKEOUT_HANDOFF_REFUSAL = 'Google Photos imports are unavailable during database handoff';
 
 export type TakeoutImport = {
   id: string;
@@ -254,6 +258,11 @@ export class TakeoutNotFound extends Error {}
 export class TakeoutRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    return withPublicForkWrites(this.db, query, TAKEOUT_HANDOFF_REFUSAL);
+  }
+
   /* ------------------------------------------------------------------ */
   /* Imports                                                             */
   /* ------------------------------------------------------------------ */
@@ -266,6 +275,7 @@ export class TakeoutRepository {
     directory?: { name: string; path: string },
   ): Promise<TakeoutImport> {
     return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, TAKEOUT_HANDOFF_REFUSAL);
       const { rows } = await sql<Record<string, unknown>>`
         insert into takeout_import ("ownerId", "name", "options")
         values (${ownerId}::uuid, ${name}, ${json(options)})
@@ -325,7 +335,9 @@ export class TakeoutRepository {
     id: string,
     fn: (tx: Transaction<DB>, row: TakeoutImport, operation: TakeoutOperation | undefined) => Promise<T>,
   ): Promise<T> {
+    // FL-44: every change made through `fn` is a write, so the whole transaction takes the guard.
     return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, TAKEOUT_HANDOFF_REFUSAL);
       const { rows } = await sql<Record<string, unknown>>`
         select * from takeout_import where id = ${id}::uuid and "ownerId" = ${ownerId}::uuid for update
       `.execute(tx);
@@ -357,9 +369,11 @@ export class TakeoutRepository {
 
   /** The worker finishing a step: move on only from the phase the job was working in. */
   async advancePhase(id: string, from: TakeoutPhase, to: TakeoutPhase): Promise<boolean> {
-    const result = await sql`
+    const result = await this.write((db) =>
+      sql`
       update takeout_import set phase = ${to}, "updatedAt" = now() where id = ${id}::uuid and phase = ${from}
-    `.execute(this.db);
+    `.execute(db),
+    );
     return Number(result.numAffectedRows ?? 0) === 1;
   }
 
@@ -372,7 +386,8 @@ export class TakeoutRepository {
    * job holds it, when this job already does, or when the job that held it has finished.
    */
   async claimRun(id: string, operationId: string): Promise<boolean> {
-    const result = await sql`
+    const result = await this.write((db) =>
+      sql`
       update takeout_import set "runOperationId" = ${operationId}::uuid, "updatedAt" = now()
       where id = ${id}::uuid
         and (
@@ -384,7 +399,8 @@ export class TakeoutRepository {
               and media_operation.status in (${sql.join(ACTIVE.map((status) => sql.lit(status)))})
           )
         )
-    `.execute(this.db);
+    `.execute(db),
+    );
     return Number(result.numAffectedRows ?? 0) === 1;
   }
 
@@ -505,6 +521,7 @@ export class TakeoutRepository {
     write: (source: TakeoutSource) => Promise<number>,
   ): Promise<TakeoutSource> {
     return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, TAKEOUT_HANDOFF_REFUSAL);
       const { rows: imports } = await sql<{ phase: string }>`
         select phase from takeout_import where id = ${importId}::uuid and "ownerId" = ${ownerId}::uuid for share
       `.execute(tx);
@@ -545,7 +562,8 @@ export class TakeoutRepository {
   }
 
   async recordFile(file: TakeoutFile): Promise<void> {
-    await sql`
+    await this.write((db) =>
+      sql`
       insert into takeout_file
         (id, "importId", "sourceId", "entryName", "relativePath", folder, name, kind, path, size, checksum, "legacyChecksum", "modifiedAt", metadata)
       values
@@ -553,7 +571,8 @@ export class TakeoutRepository {
          ${file.folder}, ${file.name}, ${file.kind}, ${file.path}, ${file.size}, ${file.checksum}, ${file.legacyChecksum},
          ${file.modifiedAt}, ${file.metadata === null ? null : json(file.metadata)})
       on conflict do nothing
-    `.execute(this.db);
+    `.execute(db),
+    );
   }
 
   async folders(importId: string): Promise<string[]> {
@@ -596,7 +615,8 @@ export class TakeoutRepository {
     // A resumed scan meets items it already recorded, and the owner may have decided about them
     // since. Only an item still waiting, without a chosen sidecar, is updated, and only when this scan
     // found more candidates for it: a sidecar that arrived in an archive added after the first scan.
-    await sql`
+    await this.write((db) =>
+      sql`
       insert into takeout_item (id, "importId", state, metadata, "sidecarId", candidates, albums, warnings, locked)
       values (${item.id}::uuid, ${item.importId}::uuid, ${item.state}, ${json(item.metadata)}, ${item.sidecarId}::uuid,
               ${json(item.candidates)}, ${json(item.albums)}, ${json(item.warnings)}, ${item.locked})
@@ -611,7 +631,8 @@ export class TakeoutRepository {
       where takeout_item.state in ('ready', 'review')
         and takeout_item."sidecarId" is null
         and jsonb_array_length(takeout_item.candidates) < jsonb_array_length(excluded.candidates)
-    `.execute(this.db);
+    `.execute(db),
+    );
   }
 
   private itemSelect(db: Kysely<DB>, where: ReturnType<typeof sql>, tail: ReturnType<typeof sql> = sql``) {
@@ -695,10 +716,12 @@ export class TakeoutRepository {
 
   /** Items that failed get their one automatic retry: back to ready, error kept until they run. */
   async retryFailed(importId: string): Promise<number> {
-    const result = await sql`
+    const result = await this.write((db) =>
+      sql`
       update takeout_item set state = 'ready', "updatedAt" = now()
       where "importId" = ${importId}::uuid and state = 'failed'
-    `.execute(this.db);
+    `.execute(db),
+    );
     return Number(result.numAffectedRows ?? 0);
   }
 
@@ -727,24 +750,30 @@ export class TakeoutRepository {
    * the asset is its own creation rather than a photo that was already there.
    */
   async itemCreating(itemId: string, createPath: string): Promise<void> {
-    await sql`
+    await this.write((db) =>
+      sql`
       update takeout_item set state = 'importing', "createPath" = ${createPath}, "updatedAt" = now()
       where id = ${itemId}::uuid
-    `.execute(this.db);
+    `.execute(db),
+    );
   }
 
   async itemAsset(itemId: string, assetId: string, resultKind: TakeoutResultKind): Promise<void> {
-    await sql`
+    await this.write((db) =>
+      sql`
       update takeout_item set state = 'importing', "assetId" = ${assetId}::uuid, "resultKind" = ${resultKind},
         "updatedAt" = now()
       where id = ${itemId}::uuid
-    `.execute(this.db);
+    `.execute(db),
+    );
   }
 
   async itemDone(itemId: string, state: TakeoutItemState, error: string | null = null): Promise<void> {
-    await sql`
+    await this.write((db) =>
+      sql`
       update takeout_item set state = ${state}, error = ${error}, "updatedAt" = now() where id = ${itemId}::uuid
-    `.execute(this.db);
+    `.execute(db),
+    );
   }
 
   async counts(importId: string): Promise<TakeoutCounts> {
@@ -838,11 +867,13 @@ export class TakeoutRepository {
   /* ------------------------------------------------------------------ */
 
   async recordPair(importId: string, photoItemId: string, videoItemId: string): Promise<void> {
-    await sql`
+    await this.write((db) =>
+      sql`
       insert into takeout_pair ("importId", "photoItemId", "videoItemId", reason)
       values (${importId}::uuid, ${photoItemId}::uuid, ${videoItemId}::uuid, 'same_name')
       on conflict do nothing
-    `.execute(this.db);
+    `.execute(db),
+    );
   }
 
   async pairs(
@@ -921,17 +952,21 @@ export class TakeoutRepository {
   }
 
   async pairDone(photoItemId: string, videoItemId: string, error: string | null): Promise<void> {
-    await sql`
+    await this.write((db) =>
+      sql`
       update takeout_pair set state = ${error ? 'failed' : 'linked'}, error = ${error}
       where "photoItemId" = ${photoItemId}::uuid and "videoItemId" = ${videoItemId}::uuid
-    `.execute(this.db);
+    `.execute(db),
+    );
   }
 
   /** Failed pairs get their automatic retry with the items. */
   async retryFailedPairs(importId: string): Promise<number> {
-    const result = await sql`
+    const result = await this.write((db) =>
+      sql`
       update takeout_pair set state = 'approved' where "importId" = ${importId}::uuid and state = 'failed'
-    `.execute(this.db);
+    `.execute(db),
+    );
     return Number(result.numAffectedRows ?? 0);
   }
 
@@ -959,6 +994,7 @@ export class TakeoutRepository {
    */
   async setAlbumFor(ownerId: string, folder: string, albumId: string): Promise<string> {
     return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, TAKEOUT_HANDOFF_REFUSAL);
       await sql`
         delete from takeout_album mapping
         where mapping."ownerId" = ${ownerId}::uuid and mapping.folder = ${folder}

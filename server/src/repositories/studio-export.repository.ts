@@ -16,6 +16,7 @@ import { DerivativePrivacyRepository, LockedSourceRow } from 'src/repositories/d
 import { getForkSchemaPhase } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { MediaOperation, MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -29,6 +30,9 @@ import {
   satisfiesDerivativePrivacy,
   unionDerivativePrivacy,
 } from 'src/utils/derivative-privacy.js';
+
+/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
+export const STUDIO_EXPORT_HANDOFF_REFUSAL = 'Studio exports are unavailable during database handoff';
 
 export type StudioExportVersion = Selectable<StudioExportVersionTable>;
 export type StudioExportVersionSource = Selectable<StudioExportVersionSourceTable>;
@@ -137,6 +141,11 @@ export class StudioExportRepository {
     private forkEnrichment: ForkEnrichmentRepository,
   ) {}
 
+  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    return withPublicForkWrites(this.db, query, STUDIO_EXPORT_HANDOFF_REFUSAL);
+  }
+
   /* ------------------------------------------------------------------ */
   /* Versions                                                            */
   /* ------------------------------------------------------------------ */
@@ -150,6 +159,7 @@ export class StudioExportRepository {
     >,
   ): Promise<{ operation: MediaOperation; version: StudioExportVersion }> {
     return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, STUDIO_EXPORT_HANDOFF_REFUSAL);
       const created = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
       const row = await tx
         .insertInto('studio_export_version')
@@ -253,6 +263,7 @@ export class StudioExportRepository {
     claim: { workerId: string; engineDigest: string | null; sources: readonly StudioExportSourceInput[] },
   ): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, STUDIO_EXPORT_HANDOFF_REFUSAL);
       const version = await tx
         .updateTable('studio_export_version')
         .set({ workerId: claim.workerId, engineDigest: claim.engineDigest, updatedAt: sql<Date>`now()` })
@@ -291,6 +302,7 @@ export class StudioExportRepository {
     publish: (version: StudioExportVersion) => MediaOperationCreate,
   ): Promise<{ version: StudioExportVersion; operation: MediaOperation } | undefined> {
     return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, STUDIO_EXPORT_HANDOFF_REFUSAL);
       if (!claimToken || !(await this.lockClaim(tx, renderOperationId, claimToken))) {
         return;
       }
@@ -336,35 +348,39 @@ export class StudioExportRepository {
     id: string,
     failure: { errorCode: string; error: string },
   ): Promise<StudioExportVersion | undefined> {
-    return this.db
-      .updateTable('studio_export_version')
-      .set({
-        state: StudioExportVersionState.Failed,
-        errorCode: failure.errorCode,
-        error: failure.error.slice(0, 4000),
-        updatedAt: sql<Date>`now()`,
-      })
-      .where('id', '=', id)
-      .where('state', 'in', [...PENDING_STUDIO_EXPORT_STATES])
-      .returningAll()
-      .executeTakeFirst() as Promise<StudioExportVersion | undefined>;
+    return this.write((db) =>
+      db
+        .updateTable('studio_export_version')
+        .set({
+          state: StudioExportVersionState.Failed,
+          errorCode: failure.errorCode,
+          error: failure.error.slice(0, 4000),
+          updatedAt: sql<Date>`now()`,
+        })
+        .where('id', '=', id)
+        .where('state', 'in', [...PENDING_STUDIO_EXPORT_STATES])
+        .returningAll()
+        .executeTakeFirst(),
+    ) as Promise<StudioExportVersion | undefined>;
   }
 
   /** End a pending version as cancelled. A published version is never touched. */
   async cancel(id: string, reason: { errorCode: string; error: string }): Promise<StudioExportVersion | undefined> {
-    return this.db
-      .updateTable('studio_export_version')
-      .set({
-        state: StudioExportVersionState.Cancelled,
-        errorCode: reason.errorCode,
-        error: reason.error.slice(0, 4000),
-        cancelledAt: sql<Date>`now()`,
-        updatedAt: sql<Date>`now()`,
-      })
-      .where('id', '=', id)
-      .where('state', 'in', [...PENDING_STUDIO_EXPORT_STATES])
-      .returningAll()
-      .executeTakeFirst() as Promise<StudioExportVersion | undefined>;
+    return this.write((db) =>
+      db
+        .updateTable('studio_export_version')
+        .set({
+          state: StudioExportVersionState.Cancelled,
+          errorCode: reason.errorCode,
+          error: reason.error.slice(0, 4000),
+          cancelledAt: sql<Date>`now()`,
+          updatedAt: sql<Date>`now()`,
+        })
+        .where('id', '=', id)
+        .where('state', 'in', [...PENDING_STUDIO_EXPORT_STATES])
+        .returningAll()
+        .executeTakeFirst(),
+    ) as Promise<StudioExportVersion | undefined>;
   }
 
   /** Serialize publication and staging against cancellation and claim recovery (FL-43). */
@@ -732,18 +748,20 @@ export class StudioExportRepository {
 
   /** Record that retention removed a file. Guarded so a file that became referenced is never marked. */
   async markOutputRemoved(id: string): Promise<boolean> {
-    const result = await this.db
-      .updateTable('studio_export_version')
-      .set({ outputRemovedAt: sql<Date>`now()`, updatedAt: sql<Date>`now()` })
-      .where('id', '=', id)
-      .where('outputRemovedAt', 'is', null)
-      .where((eb) =>
-        eb.or([
-          eb('state', 'in', [StudioExportVersionState.Failed, StudioExportVersionState.Cancelled]),
-          eb.and([eb('scope', '=', StudioExportScope.Project), eb('projectId', 'is', null)]),
-        ]),
-      )
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('studio_export_version')
+        .set({ outputRemovedAt: sql<Date>`now()`, updatedAt: sql<Date>`now()` })
+        .where('id', '=', id)
+        .where('outputRemovedAt', 'is', null)
+        .where((eb) =>
+          eb.or([
+            eb('state', 'in', [StudioExportVersionState.Failed, StudioExportVersionState.Cancelled]),
+            eb.and([eb('scope', '=', StudioExportScope.Project), eb('projectId', 'is', null)]),
+          ]),
+        )
+        .executeTakeFirst(),
+    );
     return Number(result.numUpdatedRows) === 1;
   }
 
