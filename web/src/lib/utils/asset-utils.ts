@@ -116,6 +116,17 @@ const downloadGroup = () => (authManager.isSharedLink ? ('share' as const) : und
 const abortError = () => new DOMException('The download was cancelled', 'AbortError');
 
 /**
+ * For a caller that only fires `downloadArchive` off: a cancel is the user's choice, not an error,
+ * so it settles quietly; any other failure is passed on.
+ */
+export const ignoreCancelledDownload = (error: unknown): void => {
+  if ((error as { name?: unknown } | null)?.name === 'AbortError') {
+    return;
+  }
+  throw error;
+};
+
+/**
  * Downloads photos and videos as zip archives (FL-45 D-1/D-3). One row appears at once while the
  * server plans the archives; a plan split by the account's archive size limit becomes one row per
  * part. A part up to `bufferLimit()` is fetched into the tab with progress, Cancel and Retry, one

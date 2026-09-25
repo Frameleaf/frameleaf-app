@@ -32,7 +32,7 @@
   import { Icon } from '@immich/ui';
   import { mdiChevronLeft, mdiChevronRight, mdiClose } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -127,13 +127,26 @@
   let controlsElement = $state<HTMLElement>();
   let pointerOverControls = false;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  // Only keyboard focus holds the controls on screen; a focused button left behind by a click
-  // must not keep them (and the pointer) up forever.
-  let keyboardModality = false;
   // the capsule and the viewer's header and footer (data-viewer-chrome) are one chrome
   const CHROME = '[data-testid="slideshow-controls"], [data-viewer-chrome]';
   const inChrome = (node: EventTarget | Element | null) => node instanceof Element && !!node.closest(CHROME);
-  const focusInsideControls = () => keyboardModality && inChrome(document.activeElement);
+  /**
+   * Visible focus in the chrome holds it on screen: a keyboard or screen-reader user there, or focus
+   * returned to the cog when the settings close. A button left focused by a click is not
+   * focus-visible, so it lets the idle hide run again.
+   */
+  const focusVisible = (element: Element) => {
+    try {
+      return element.matches(':focus-visible');
+    } catch {
+      // an engine without :focus-visible (test DOMs): no focus is treated as visible
+      return false;
+    }
+  };
+  const focusInsideControls = () => {
+    const active = document.activeElement;
+    return !!active && inChrome(active) && focusVisible(active);
+  };
   const setCursor = (value: string) => (document.body.style.cursor = value);
   const scheduleHide = () => {
     clearTimeout(idleTimer);
@@ -157,6 +170,16 @@
     }
     chromeHidden = true;
   };
+  // The viewer brings the chrome back on its own too (a key press, focus); every return restarts
+  // the idle timer, so the chrome never stays up for good.
+  $effect(() => {
+    if (!chromeHidden) {
+      untrack(() => {
+        setCursor('');
+        scheduleHide();
+      });
+    }
+  });
   onMount(() => {
     scheduleHide();
     return () => {
@@ -174,7 +197,6 @@
   // the state at pointerdown decides the toggle, so a swipe-down reveal in between cannot undo it
   let tap: { x: number; y: number; time: number; visible: boolean } | undefined;
   const onPointerDown = (event: PointerEvent) => {
-    keyboardModality = false;
     const target = event.target as Element | null;
     tap =
       target?.closest?.('[data-viewer-content]') && !inChrome(target)
@@ -278,7 +300,6 @@
     pointerOverControls = inChrome(event.target);
     showControls();
   }}
-  onkeydown={() => (keyboardModality = true)}
   onpointerdown={onPointerDown}
   onpointerup={onPointerUp}
 />
@@ -380,9 +401,6 @@
   .slideshow-controls :global(button) {
     color: var(--fl-viewer-text);
     border-radius: var(--fl-radius-pill);
-  }
-  .slideshow-controls :global(button[aria-pressed='true']) {
-    background: var(--fl-viewer-raised);
   }
   @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
     .slideshow-controls {
