@@ -1,7 +1,7 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import PublicShellFrame from '$lib/components/frameleaf/PublicShellFrame.svelte';
-  import { canSendCopies } from '$lib/frameleaf/send-copy';
+  import { canSendCopies, sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import { locale } from '$lib/stores/preferences.store';
   import type { SharedLinkResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
@@ -25,7 +25,8 @@
    * Every action is gated on the link exactly as the server returned it: Add photos only with
    * `allowUpload`, the download button only with `allowDownload`. The server enforces both again.
    *
-   * FL-35 / FL-54: in Select mode a link that allows downloads also offers "Send a copy…", the
+   * FL-35 / FL-54: in Select mode a link that allows downloads and shows metadata (an original
+   * carries its metadata) also offers "Send a copy…", the
    * browser's share sheet with the selected originals (App.jsx:818-846), where the browser can share
    * files. It is a copy, not another link: nothing about the share changes.
    *
@@ -109,7 +110,7 @@
         <Icon icon={selecting ? mdiSelectOff : mdiCheckboxMultipleMarkedOutline} size="18" aria-hidden={true} />
         {selecting ? $t('frameleaf_public_done') : $t('frameleaf_public_select')}
       </Button>
-      {#if sharedLink.allowDownload && selecting && onSendCopy && canSendCopies()}
+      {#if selecting && onSendCopy && sendCopyPermitted(sharedLink) && canSendCopies()}
         <Button disabled={selectedCount === 0} onclick={onSendCopy}>
           <Icon icon={mdiExportVariant} size="18" aria-hidden={true} />
           {$t('frameleaf_send_copy')}
