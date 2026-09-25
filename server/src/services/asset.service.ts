@@ -278,8 +278,11 @@ export class AssetService extends BaseService {
       isUndefined,
     );
 
+    // FL-36 (V-24): moving items releases their typed place names, as a single edit does
+    // (`updateExif`), so reverse geocoding names the new spot instead of keeping the old place.
+    const moved = latitude !== undefined || longitude !== undefined;
     if (Object.keys(exifDto).length > 0) {
-      await this.assetRepository.updateAllExif(ids, exifDto);
+      await this.assetRepository.updateAllExif(ids, exifDto, moved ? [...placeProperties] : []);
     }
 
     const extractedTimeZone = extractTimeZone(dateTimeOriginal);
