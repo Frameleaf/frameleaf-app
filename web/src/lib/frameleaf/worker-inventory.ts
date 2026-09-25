@@ -157,9 +157,9 @@ export type ConfiguredEndpoint = {
 export type InventorySections = {
   /** The machine-learning URL list, in order, each with its destination. */
   endpoints: ConfiguredEndpoint[];
-  /** Other library-analysis workers: LAN `/predict` containers, the RunPod pod, Studio AI workers. */
+  /** Other library-analysis workers: LAN `/predict` containers, Frameleaf Cloud, Studio AI workers. */
   libraryWorkers: WorkerInventoryEntryDto[];
-  /** Restoration workers: local or LAN restoration containers and RunPod video workers. */
+  /** Restoration workers: local or LAN restoration containers. */
   restorationWorkers: WorkerInventoryEntryDto[];
   /** Rows saved before the separation that allow both kinds of work. */
   mixedWorkers: WorkerInventoryEntryDto[];
@@ -201,7 +201,8 @@ export const inventorySections = (
       sections.renderWorkers.push(entry);
     } else if (entry.role === MlWorkerRole.Restoration) {
       sections.restorationWorkers.push(entry);
-    } else if (entry.role === MlWorkerRole.Mixed) {
+    } else if (entry.role === MlWorkerRole.Mixed && entry.kind !== MlDestinationKind.FrameleafCloud) {
+      // Frameleaf Cloud may run both (each job gets its own capacity); it is listed with library workers.
       sections.mixedWorkers.push(entry);
     } else {
       sections.libraryWorkers.push(entry);
@@ -323,9 +324,7 @@ export const workerTypeLabelKey = (entry: Pick<WorkerInventoryEntryDto, 'source'
     return 'admin.frameleaf_workers_type_render';
   }
   if (entry.role === MlWorkerRole.Restoration) {
-    return entry.kind === MlDestinationKind.RunpodVideo
-      ? 'admin.frameleaf_workers_type_persistent_video'
-      : 'admin.frameleaf_workers_type_restoration';
+    return 'admin.frameleaf_workers_type_restoration';
   }
   return 'admin.frameleaf_workers_type_ml';
 };

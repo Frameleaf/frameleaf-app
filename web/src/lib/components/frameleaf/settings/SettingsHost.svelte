@@ -261,6 +261,7 @@
     'workers',
     'routing',
     'render-workers',
+    'cloud-ml',
     'deduplication',
     'mode',
     'backups',

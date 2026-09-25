@@ -29,11 +29,19 @@ const trackedDocs = () =>
     .filter((path) => /\.(mdx?|json|ts|tsx|js|css)$/.test(path))
     .filter((path) => !HISTORY.some((prefix) => path.startsWith(prefix)));
 
+/** Every string of the catalogue with its dotted key, including nested groups such as `admin`. */
+const flatten = (value, prefix = "") =>
+  Object.entries(value).flatMap(([key, child]) =>
+    child !== null && typeof child === "object"
+      ? flatten(child, `${prefix}${key}.`)
+      : [[`${prefix}${key}`, child]],
+  );
+
 test("the translation catalogue never names the previous cloud provider", () => {
   const catalogue = JSON.parse(
     readFileSync(resolve(root, "i18n/en.json"), "utf8"),
   );
-  const hits = Object.entries(catalogue).filter(
+  const hits = flatten(catalogue).filter(
     ([key, value]) =>
       PROVIDER.test(key) ||
       PROVIDER.test(String(value)) ||

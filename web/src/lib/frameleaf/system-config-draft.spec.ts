@@ -38,7 +38,7 @@ describe('diffConfig (FL-66)', () => {
   it('never reports values the server keeps on its own', () => {
     const draft = withChange((config) => {
       config.machineLearning.imageDescription!.pendingRequeueAt = '2026-09-23T10:00:00.000Z';
-      config.machineLearning.runpod!.apiKeyConfigured = false;
+      config.oauth.clientSecretConfigured = false;
     });
 
     expect(diffConfig(configFixture(), draft)).toEqual([]);
@@ -305,7 +305,7 @@ describe('reload journal (FL-66 reload recovery)', () => {
 
   it('treats a change as safe only without secrets or credentials', () => {
     expect(isJournalSafe({ path: 'trash.days', before: 1, after: 2 })).toBe(true);
-    expect(isJournalSafe({ path: 'machineLearning.runpod.hfToken', before: '', after: 'hf_x' })).toBe(false);
+    expect(isJournalSafe({ path: 'oauth.clientSecret', before: '', after: 'secret-x' })).toBe(false);
     expect(isJournalSafe({ path: 'machineLearning.urls', before: [], after: ['https://u:p@ml.example.com'] })).toBe(
       false,
     );
