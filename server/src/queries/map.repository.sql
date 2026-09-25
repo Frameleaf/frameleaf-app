@@ -83,9 +83,21 @@ where
       select
       from
         "album_asset"
+        inner join "album_user" as "album_owner" on "album_owner"."albumId" = "album_asset"."albumId"
+        and "album_owner"."role" = 'owner'
       where
         "asset"."id" = "album_asset"."assetId"
         and "album_asset"."albumId" in ($2)
+        and not exists (
+          select
+          from
+            "partner"
+          where
+            "partner"."sharedById" = "asset"."ownerId"
+            and "partner"."sharedWithId" = "album_owner"."userId"
+            and "partner"."sharedById" != "partner"."sharedWithId"
+            and "partner"."shareLocation" = $3
+        )
     )
   )
 order by

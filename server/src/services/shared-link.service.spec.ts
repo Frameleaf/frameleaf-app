@@ -5,10 +5,13 @@ import { SharedLinkType } from 'src/enum.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { SharedLinkFactory } from 'test/factories/shared-link.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { sharedLinkStub } from 'test/fixtures/shared-link.stub.js';
-import { getForSharedLink } from 'test/mappers.js';
+import { getForPartner, getForSharedLink } from 'test/mappers.js';
 import { factory } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -18,6 +21,7 @@ describe(SharedLinkService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(SharedLinkService));
+    mocks.partner.getAll.mockResolvedValue([]);
   });
 
   it('should work', () => {
@@ -90,6 +94,66 @@ describe(SharedLinkService.name, () => {
         authStub.adminSharedLink.user.id,
         authStub.adminSharedLink.sharedLink?.id,
       );
+    });
+  });
+
+  describe('partner location through a link (FL-54)', () => {
+    const located = { latitude: 39.1, longitude: -108.4, city: 'Thompson Springs', state: 'Utah', country: 'USA' };
+
+    const setup = ({ shareLocation }: { shareLocation: boolean }) => {
+      const creator = UserFactory.create();
+      const owner = UserFactory.create();
+      const sharedLink = SharedLinkFactory.from({ userId: creator.id, showExif: true })
+        .asset({ ownerId: owner.id }, (builder) => builder.exif(located))
+        .asset({ ownerId: creator.id }, (builder) => builder.exif(located))
+        .build();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation }).sharedBy(owner).sharedWith(creator).build()),
+      ]);
+      const auth = AuthFactory.from(creator)
+        .sharedLink({ id: sharedLink.id, userId: creator.id, showExif: true })
+        .build();
+      return { auth, creator, owner };
+    };
+
+    it("clears the location of an owner who hides it from the link's creator", async () => {
+      const { auth, creator, owner } = setup({ shareLocation: false });
+
+      const response = await sut.getMine(auth, []);
+
+      expect(mocks.partner.getAll).toHaveBeenCalledWith(creator.id);
+      const theirs = response.assets.find((asset) => asset.ownerId === owner.id)!;
+      const mine = response.assets.find((asset) => asset.ownerId === creator.id)!;
+      expect(theirs.exifInfo).toMatchObject({
+        latitude: null,
+        longitude: null,
+        city: null,
+        state: null,
+        country: null,
+      });
+      expect(mine.exifInfo).toMatchObject(located);
+      expect(JSON.stringify(theirs)).not.toContain('Thompson Springs');
+    });
+
+    it('keeps the location of an owner who shares it with the creator', async () => {
+      const { auth, owner } = setup({ shareLocation: true });
+
+      const response = await sut.getMine(auth, []);
+
+      expect(response.assets.find((asset) => asset.ownerId === owner.id)!.exifInfo).toMatchObject(located);
+    });
+
+    it("applies the creator's settings when the creator reads their own link", async () => {
+      const { creator, owner } = setup({ shareLocation: false });
+      const link = SharedLinkFactory.from({ userId: creator.id, showExif: true })
+        .asset({ ownerId: owner.id }, (builder) => builder.exif(located))
+        .build();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(link));
+
+      const response = await sut.get(AuthFactory.create(creator), link.id);
+
+      expect(response.assets[0].exifInfo).toMatchObject({ latitude: null, city: null });
     });
   });
 

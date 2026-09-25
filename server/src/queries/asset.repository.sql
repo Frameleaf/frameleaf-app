@@ -1129,6 +1129,7 @@ where
 -- AssetRepository.getForOriginal
 select
   "asset"."id",
+  "asset"."ownerId",
   "originalFileName",
   "asset_file"."path" as "editedPath",
   "originalPath"
@@ -1143,6 +1144,7 @@ where
 -- AssetRepository.getForOriginals
 select
   "asset"."id",
+  "asset"."ownerId",
   "originalFileName",
   "asset_file"."path" as "editedPath",
   "originalPath"
@@ -1156,6 +1158,7 @@ where
 
 -- AssetRepository.getForThumbnail
 select
+  "asset"."ownerId",
   "asset"."originalPath",
   "asset"."originalFileName",
   "asset_file"."path" as "path"
@@ -1171,6 +1174,7 @@ order by
 -- AssetRepository.getForVideo
 select
   "asset"."originalPath",
+  "asset"."ownerId",
   (
     select
       "asset_file"."path"

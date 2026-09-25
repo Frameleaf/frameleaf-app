@@ -1478,6 +1478,50 @@ describe(MediaService.name, () => {
       );
     });
 
+    describe('extracted RAW preview location (FL-54)', () => {
+      const setupExtracted = () => {
+        const asset = AssetFactory.from({ originalFileName: 'file.dng' })
+          .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
+          .build();
+        mocks.systemMetadata.get.mockResolvedValue({
+          image: { fullsize: { enabled: true, format: ImageFormat.Webp }, extractEmbedded: true },
+        });
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        return asset;
+      };
+
+      it('removes the camera location from the extracted fullsize file for every viewer', async () => {
+        const asset = setupExtracted();
+
+        await sut.handleGenerateThumbnails({ id: asset.id });
+
+        const [fullsizePath, buffer] = mocks.storage.createOrOverwriteFile.mock.calls[0];
+        expect(buffer).toBe(extractedBuffer);
+        expect(mocks.media.removeLocation).toHaveBeenCalledWith(fullsizePath);
+        expect(mocks.media.removeLocation.mock.invocationCallOrder[0]).toBeGreaterThan(
+          mocks.media.writeExif.mock.invocationCallOrder[0],
+        );
+        expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+          expect.arrayContaining([expect.objectContaining({ type: AssetFileType.FullSize, path: fullsizePath })]),
+        );
+      });
+
+      it('drops the fullsize file rather than keep a location it cannot remove', async () => {
+        const asset = setupExtracted();
+        mocks.media.removeLocation.mockResolvedValue(false);
+
+        await sut.handleGenerateThumbnails({ id: asset.id });
+
+        const [fullsizePath] = mocks.storage.createOrOverwriteFile.mock.calls[0];
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(fullsizePath);
+        expect(mocks.asset.upsertFiles).not.toHaveBeenCalledWith(
+          expect.arrayContaining([expect.objectContaining({ path: fullsizePath })]),
+        );
+      });
+    });
+
     it('should convert full-size WEBP preview from JXL preview of RAW', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.dng' })
         .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })

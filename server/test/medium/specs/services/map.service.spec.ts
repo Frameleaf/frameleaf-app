@@ -165,4 +165,34 @@ describe(MapService.name, () => {
       }),
     ]);
   });
+
+  describe('partner location (FL-54)', () => {
+    it("keeps a hiding owner's shared-album items off the viewer's map and the album map", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: hiding } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      await ctx.newPartner({ sharedById: hiding.id, sharedWithId: user.id });
+      await defaultDatabase
+        .updateTable('partner')
+        .set({ shareLocation: false })
+        .where('sharedById', '=', hiding.id)
+        .where('sharedWithId', '=', user.id)
+        .execute();
+
+      const { asset: mine } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: theirs } = await ctx.newAsset({ ownerId: hiding.id });
+      await addExif(ctx, [mine, theirs]);
+      const { album } = await ctx.newAlbum({ ownerId: hiding.id }, [mine.id, theirs.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: user.id });
+
+      const markers = await sut.getMapMarkers(auth, { withSharedAlbums: true });
+      expect(markers.map(({ id }) => id)).toEqual([mine.id]);
+
+      const albumMarkers = await ctx
+        .get(MapRepository)
+        .getAlbumMapMarkers(album.id, { locationHiddenOwnerIds: [hiding.id] });
+      expect(albumMarkers.map(({ id }) => id)).toEqual([mine.id]);
+    });
+  });
 });

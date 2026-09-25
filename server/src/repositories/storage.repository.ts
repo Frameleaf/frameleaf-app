@@ -40,6 +40,18 @@ export interface ImmichZipStream extends ImmichReadStream {
   finalize: () => Promise<void>;
 }
 
+/**
+ * A zip stream that can be filled one entry at a time (FL-54): `whenIdle` resolves once every entry added
+ * so far has been written into the archive (so as fast as the client reads it), or once the archive has
+ * been closed or has failed, so a producer never prepares more than the reader has consumed.
+ */
+export interface ImmichPacedZipStream extends ImmichZipStream {
+  addBuffer: (content: Buffer, filename: string) => void;
+  whenIdle: () => Promise<void>;
+  /** true once the archive was closed, destroyed or failed before being finalized */
+  isClosed: () => boolean;
+}
+
 export interface DiskUsage {
   available: number;
   free: number;
@@ -108,6 +120,56 @@ export class StorageRepository {
     const finalize = () => archive.finalize();
 
     return { stream: archive, addFile, finalize };
+  }
+
+  createPacedZipStream(): ImmichPacedZipStream {
+    const archive = archiver('zip', { store: true });
+    let pending = 0;
+    let closed = false;
+    let waiters: Array<() => void> = [];
+    const wake = () => {
+      if (!(pending === 0 || closed)) {
+        return;
+      }
+
+      const ready = waiters;
+      waiters = [];
+      for (const resolve of ready) {
+        resolve();
+      }
+    };
+
+    archive.on('entry', () => {
+      pending = Math.max(0, pending - 1);
+      wake();
+    });
+    // a reader that goes away destroys the stream ('close'); a failing entry errors it
+    for (const event of ['close', 'error'] as const) {
+      archive.on(event, () => {
+        closed = true;
+        wake();
+      });
+    }
+
+    return {
+      stream: archive,
+      addFile: (input: string, filename: string) => {
+        pending++;
+        archive.file(input, { name: filename, mode: 0o644 });
+      },
+      addBuffer: (content: Buffer, filename: string) => {
+        pending++;
+        archive.append(content, { name: filename, mode: 0o644 });
+      },
+      finalize: () => archive.finalize(),
+      whenIdle: () =>
+        pending === 0 || closed
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              waiters.push(resolve);
+            }),
+      isClosed: () => closed || archive.destroyed,
+    };
   }
 
   createGzip(): PassThrough {

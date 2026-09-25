@@ -9,7 +9,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetVisibility, SystemMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -24,6 +24,8 @@ export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   isFavorite?: boolean;
   fileCreatedBefore?: Date;
   fileCreatedAfter?: Date;
+  /** FL-54: owners who hide their locations from the viewer; their assets contribute no markers */
+  locationHiddenOwnerIds?: string[];
 }
 
 /** A timestamptz column as an ISO-8601 UTC string, the shape the JSON API returns for dates. */
@@ -42,6 +44,8 @@ export interface AlbumMapMarkerSearchOptions {
   favoriteOwnerId?: string;
   /** Keep only album items this user owns (the sheet's "Partner items" switched off). Only ever narrows the album. */
   onlyOwnerId?: string;
+  /** FL-54: owners who hide their locations from the viewer (for a shared link, its creator) */
+  locationHiddenOwnerIds?: string[];
 }
 
 export interface GeoPoint {
@@ -98,7 +102,15 @@ export class MapRepository {
     albumId: string,
     options: HiddenContentQueryOptions & LockedVisibilityOptions & AlbumMapMarkerSearchOptions = {},
   ) {
-    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore, favoriteOwnerId, onlyOwnerId } = options;
+    const {
+      isArchived,
+      isFavorite,
+      fileCreatedAfter,
+      fileCreatedBefore,
+      favoriteOwnerId,
+      onlyOwnerId,
+      locationHiddenOwnerIds,
+    } = options;
     return (
       this.mapMarkersQuery()
         .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
@@ -116,13 +128,14 @@ export class MapRepository {
         .$if(fileCreatedAfter !== undefined, (qb) => qb.where('asset.fileCreatedAt', '>=', fileCreatedAfter!))
         .$if(fileCreatedBefore !== undefined, (qb) => qb.where('asset.fileCreatedAt', '<=', fileCreatedBefore!))
         .$if(!!onlyOwnerId, (qb) => qb.where('asset.ownerId', '=', onlyOwnerId!))
+        .$if(!!locationHiddenOwnerIds?.length, (qb) => qb.where('asset.ownerId', 'not in', locationHiddenOwnerIds!))
         .execute()
     );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID]] })
   getMapMarkers(authUserId: string, ownerIds: string[], albumIds: string[], options: MapMarkerSearchOptions = {}) {
-    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore } = options;
+    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore, locationHiddenOwnerIds } = options;
     return this.mapMarkersQuery()
       .$call((qb) => withHiddenContentFilter(qb, options))
       .$if(isArchived === true, (qb) =>
@@ -137,6 +150,7 @@ export class MapRepository {
       .$if(isFavorite !== undefined, (q) => q.where('isFavorite', '=', isFavorite!))
       .$if(fileCreatedAfter !== undefined, (q) => q.where('fileCreatedAt', '>=', fileCreatedAfter!))
       .$if(fileCreatedBefore !== undefined, (q) => q.where('fileCreatedAt', '<=', fileCreatedBefore!))
+      .$if(!!locationHiddenOwnerIds?.length, (qb) => qb.where('asset.ownerId', 'not in', locationHiddenOwnerIds!))
       .where((eb) => {
         const expression: Expression<SqlBool>[] = [];
 
@@ -149,8 +163,27 @@ export class MapRepository {
             eb.exists((eb) =>
               eb
                 .selectFrom('album_asset')
+                .innerJoin('album_user as album_owner', (join) =>
+                  join
+                    .onRef('album_owner.albumId', '=', 'album_asset.albumId')
+                    .on('album_owner.role', '=', sql.lit(AlbumUserRole.Owner)),
+                )
                 .whereRef('asset.id', '=', 'album_asset.assetId')
-                .where('album_asset.albumId', 'in', albumIds),
+                .where('album_asset.albumId', 'in', albumIds)
+                // FL-54 owner default: an item whose owner hides locations from the album's owner puts no
+                // marker on the map through that album
+                .where((eb) =>
+                  eb.not(
+                    eb.exists(
+                      eb
+                        .selectFrom('partner')
+                        .whereRef('partner.sharedById', '=', 'asset.ownerId')
+                        .whereRef('partner.sharedWithId', '=', 'album_owner.userId')
+                        .whereRef('partner.sharedById', '!=', 'partner.sharedWithId')
+                        .where('partner.shareLocation', '=', false),
+                    ),
+                  ),
+                ),
             ),
           );
         }
