@@ -267,7 +267,9 @@ export const Route = {
   // queues
   queues: () => commandCenterUrl('processing', 'queues'),
   /** FL-159: Compute & jobs → Frameleaf Cloud. */
-  cloudMl: () => commandCenterUrl('processing', 'cloud-ml'),
+  cloudMl: () => commandCenterUrl('cloud', 'cloud-processing'),
+  /** FL-159: Compute & jobs → Hardware & GPU. */
+  hardware: () => commandCenterUrl('processing', 'hardware'),
   /** One queue in the Job manager, optionally on one of its job-state tabs (active, waiting, failed, history). */
   viewQueue: ({ name, tab }: { name: QueueName; tab?: string }) =>
     commandCenterUrl('processing', 'queues', { queue: asQueueSlug(name), tab }),
