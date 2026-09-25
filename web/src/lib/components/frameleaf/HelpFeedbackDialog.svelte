@@ -10,6 +10,7 @@
    * attribution requires.
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
   import { type ServerAboutResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
@@ -102,8 +103,10 @@
     },
   ]);
 
-  // Name, what Frameleaf uses it for, and its licence; versions come from this server.
-  const notices = $derived(
+  // Name, what Frameleaf uses it for, and its licence; versions come from this server. Freecut is
+  // Studio's editor (owner decision 2026-09-25): it ships at the revision pinned in
+  // studio/freecut-provenance.json, so that is its version, and it links to its authors' project.
+  const notices: { name: string; role: string; licence: string; version?: string; href?: string }[] = $derived(
     [
       { name: 'Immich', role: $t('frameleaf_help_notice_immich'), licence: 'AGPL-3.0', version: info.version },
       { name: 'Node.js', role: $t('frameleaf_help_notice_runtime'), licence: 'MIT', version: info.nodejs },
@@ -120,6 +123,13 @@
         role: $t('frameleaf_help_notice_metadata'),
         licence: 'Artistic / GPL',
         version: info.exiftool,
+      },
+      {
+        name: 'Freecut',
+        role: $t('frameleaf_help_notice_studio'),
+        licence: 'MIT',
+        version: pinnedFreecutRevision.slice(0, 7),
+        href: 'https://github.com/walterlow/freecut',
       },
     ].filter((notice) => notice.version),
   );
@@ -166,13 +176,20 @@
           <tbody>
             {#each notices as notice (notice.name)}
               <tr>
-                <td>{notice.name}</td>
+                <td>
+                  {#if notice.href}
+                    <a href={notice.href} target="_blank" rel="noreferrer">{notice.name}</a>
+                  {:else}
+                    {notice.name}
+                  {/if}
+                </td>
                 <td>{notice.role}</td>
                 <td>{notice.licence}</td>
               </tr>
             {/each}
           </tbody>
         </table>
+        <p class="help-credit">{$t('frameleaf_help_notice_freecut_credit')}</p>
       </details>
     </li>
   </ul>
@@ -255,6 +272,16 @@
     color: var(--fl-muted);
     text-align: right;
     white-space: nowrap;
+  }
+  .help-notices td a {
+    color: inherit;
+  }
+  .help-credit {
+    margin: 0;
+    padding: 8px 12px 12px;
+    border-top: 1px solid var(--fl-border);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .sr-only {
     position: absolute;

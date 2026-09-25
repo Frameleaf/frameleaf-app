@@ -1,5 +1,7 @@
 # Studio preservation contracts
 
+Studio's video editor is [Freecut](https://github.com/walterlow/freecut), © its authors, used under the MIT licence. Its licence and the notices of the components it bundles are in [`notices/`](notices/NOTICE.md); the owner unparked the engine for Studio on 2026-09-25.
+
 This directory contains preservation metadata and an explicit isolated engine build. The source archive is recovered only by the preparation command below; the vendor snapshot and generated workspace are not committed. The production Studio host is present, but this build does not supply its engine adapter, deploy a rendering worker, qualify hardware or provide licensed Dolby tools. Locked npm packages may contain payloads recorded in the FL-86 resource inventory; no separate weight acquisition is authorized by this build.
 
 - `freecut-provenance.json` records the immutable upstream Freecut revision, exact archive URL and digest, MIT license, and 2,646 ordered source-file hashes.
