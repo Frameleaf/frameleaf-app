@@ -79,11 +79,30 @@ const resolveFromEngine = () => ({
   },
 })
 
+/**
+ * Freecut's timeline persistence is reached by relative imports too (the store facade imports
+ * `./timeline-persistence`), which an alias cannot see. Every import that resolves to that file is
+ * given the gated shim instead; only the shim itself reaches the engine's module (FL-89).
+ */
+const persistenceModule = path.join(engine, 'src/features/timeline/stores/timeline-persistence.ts')
+const persistenceShim = path.join(here, 'src/shims/timeline-persistence.ts')
+const gateTimelinePersistence = () => ({
+  name: 'frameleaf-gate-timeline-persistence',
+  enforce: 'pre',
+  async resolveId(source, importer, options) {
+    if (!importer || importer === persistenceShim || !source.includes('timeline-persistence'))
+      return null
+    const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
+    return resolved?.id === persistenceModule ? persistenceShim : null
+  },
+})
+
 const plugins = async () => {
   const react = engineRequire('@vitejs/plugin-react')
   const tailwind = await import(engineRequire.resolve('@tailwindcss/vite'))
   return [
     resolveFromEngine(),
+    gateTimelinePersistence(),
     (react.default ?? react)(),
     (tailwind.default ?? tailwind)(),
     frameManifest(),
