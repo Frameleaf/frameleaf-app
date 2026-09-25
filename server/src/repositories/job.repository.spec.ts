@@ -282,6 +282,18 @@ describe(JobRepository.name, () => {
         removeOnFail: true,
       });
     });
+
+    it('queues person thumbnails without a priority, which would hide them from the waiting counts', async () => {
+      const { queue, repository } = queueWith();
+
+      await repository.queueAll([
+        { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'user-1', personGroupId: 'group-1' } },
+      ]);
+
+      expect(queue.addBulk).toHaveBeenCalledWith([
+        { name: JobName.PersonGenerateThumbnail, data: expect.anything(), opts: undefined },
+      ]);
+    });
   });
 
   describe('getRollingAvgMs (job completion telemetry)', () => {

@@ -609,9 +609,8 @@ export class JobRepository {
         // The automatic retry of a failed render waits before it is claimed (FL-64).
         return item.data.delay ? { delay: item.data.delay } : null;
       }
-      case JobName.PersonGenerateThumbnail: {
-        return { priority: 1 };
-      }
+      // ponytail: no priority for PersonGenerateThumbnail; a BullMQ priority parks jobs in the prioritized set,
+      // behind every unprioritized job and outside the waiting counts (FL-71 review).
       case JobName.FacialRecognitionQueueAll: {
         return { deduplication: { id: JobName.FacialRecognitionQueueAll } };
       }
