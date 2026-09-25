@@ -1090,7 +1090,14 @@ describe(DatabaseBackupService.name, () => {
     });
 
     it('records the tested parts now and keeps the untested part', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ metadataVerifiedAt: '2026-01-01T00:00:00.000Z' });
+      mocks.database.withLock.mockImplementation((_lock, fn) => fn());
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.BackupRestoreVerification
+            ? { metadataVerifiedAt: '2026-01-01T00:00:00.000Z' }
+            : null) as never,
+        ),
+      );
       mocks.user.get.mockResolvedValue(undefined as never);
 
       await sut.recordRestoreVerification(authStub.admin, { metadata: false, originals: true });
@@ -1099,6 +1106,17 @@ describe(DatabaseBackupService.name, () => {
         metadataVerifiedAt: '2026-01-01T00:00:00.000Z',
         originalsVerifiedAt: expect.any(String),
         verifiedBy: authStub.admin.user.id,
+      });
+      // FL-71 (CC-10): the review lands in the change history as "Reviewed: Recovery readiness".
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfigHistory, {
+        entries: [
+          expect.objectContaining({
+            kind: 'review',
+            title: 'Reviewed: Recovery readiness',
+            actorId: authStub.admin.user.id,
+            changes: [],
+          }),
+        ],
       });
     });
   });

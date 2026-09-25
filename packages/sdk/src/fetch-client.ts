@@ -673,8 +673,11 @@ export type SystemConfigHistoryEntryDto = {
     createdAt: string;
     /** Entry ID */
     id: string;
+    kind?: SystemConfigHistoryKind;
     /** Changed settings left out because the entry reached its limit */
     omittedChanges: number;
+    /** The entry title, such as "Updated RunPod API key"; absent for a settings save */
+    title?: string | null;
 };
 export type SystemConfigHistoryResponseDto = {
     /** The newest settings changes first */
@@ -8527,6 +8530,32 @@ export type OnboardingResponseDto = {
 export type OnboardingDto = {
     /** Is user onboarded */
     isOnboarded: boolean;
+};
+export type UserPreferenceHistoryChangeDto = {
+    /** The value after, JSON encoded; null when protected */
+    after: string | null;
+    /** The value before, JSON encoded; null when protected */
+    before: string | null;
+    /** The changed preference, as a dotted path such as memories.enabled */
+    path: string;
+    /** Changed, but its values are not recorded (Locked content) */
+    "protected"?: boolean;
+};
+export type UserPreferenceHistoryEntryDto = {
+    /** Every changed preference */
+    changes: UserPreferenceHistoryChangeDto[];
+    /** When the change was saved */
+    createdAt: string;
+    /** The device that saved it, such as "macOS · Web" */
+    deviceLabel: string | null;
+    /** Entry ID */
+    id: string;
+    /** Changed preferences left out because the entry reached its limit */
+    omittedChanges: number;
+};
+export type UserPreferenceHistoryResponseDto = {
+    /** The newest preference changes first */
+    entries: UserPreferenceHistoryEntryDto[];
 };
 export type CreateProfileImageDto = {
     /** ID of the photo the image was copied from, if any. A Locked photo is refused. */
@@ -17534,6 +17563,17 @@ export function updateMyPreferences({ userPreferencesUpdateDto }: {
     })));
 }
 /**
+ * Get my preference history
+ */
+export function getMyPreferenceHistory(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserPreferenceHistoryResponseDto;
+    }>("/users/me/preferences/history", {
+        ...opts
+    }));
+}
+/**
  * Delete user profile image
  */
 export function deleteProfileImage(opts?: Oazapfts.RequestOpts) {
@@ -17876,6 +17916,11 @@ export enum ConfigCredential {
 export enum SystemConfigHistoryCredentialChange {
     Replaced = "replaced",
     Cleared = "cleared"
+}
+export enum SystemConfigHistoryKind {
+    Settings = "settings",
+    Credential = "credential",
+    Review = "review"
 }
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",

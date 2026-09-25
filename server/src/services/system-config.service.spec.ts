@@ -1510,6 +1510,7 @@ describe(SystemConfigService.name, () => {
           expect.objectContaining({
             actorId: authStub.admin.user.id,
             actorName: authStub.admin.user.name,
+            kind: 'settings',
             changes: [{ path: 'trash.days', before: '10', after: '12' }],
             omittedChanges: 0,
           }),
@@ -1526,11 +1527,25 @@ describe(SystemConfigService.name, () => {
       expect(store.history()).toEqual({
         entries: [
           expect.objectContaining({
+            // FL-71 (CC-10): the credential's own entry (CommandCenter.jsx:1447).
+            kind: 'credential',
+            title: 'Updated OAuth client secret',
             changes: [{ path: 'oauth.clientSecret', before: null, after: null, credential: 'replaced' }],
           }),
         ],
       });
       expect(JSON.stringify(store.history())).not.toContain('do-not-record-me');
+    });
+
+    it('should title a cleared credential (FL-71 CC-10)', async () => {
+      const store = useStore({ machineLearning: { runpod: { hfToken: 'hf_old' } } } as never);
+
+      await sut.clearCredential(authStub.admin, ConfigCredential.HuggingFaceToken);
+
+      expect(store.history()).toEqual({
+        entries: [expect.objectContaining({ kind: 'credential', title: 'Cleared Hugging Face token' })],
+      });
+      expect(JSON.stringify(store.history())).not.toContain('hf_old');
     });
 
     it('should not record a save that changed nothing', async () => {

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { UserAdmin } from 'src/database.js';
 import { AssetVisibility, CacheControl, CalendarHeatmapType, JobName, UserMetadataKey } from 'src/enum.js';
-import { UserService } from 'src/services/user.service.js';
+import { UserService, describePreferenceChanges } from 'src/services/user.service.js';
 import { UserMetadataItem } from 'src/types.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
@@ -696,6 +696,87 @@ describe(UserService.name, () => {
       await sut.handleUserSyncUsage();
 
       expect(mocks.user.syncUsage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('preference history (FL-71 CC-10)', () => {
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+    });
+
+    it('records what a save changed with the device that saved it', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.session.getByUserId.mockResolvedValue([
+        { id: authStub.user1.session!.id, deviceOS: 'macOS', deviceType: 'Web' },
+      ] as never);
+
+      await sut.updateMyPreferences(authStub.user1, { memories: { enabled: false } });
+
+      expect(mocks.user.addPreferenceHistory).toHaveBeenCalledWith({
+        userId: authStub.user1.user.id,
+        deviceLabel: 'macOS · Web',
+        changes: [{ path: 'memories.enabled', before: 'true', after: 'false' }],
+        omittedChanges: 0,
+      });
+    });
+
+    it('records nothing when nothing changed', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+
+      await sut.updateMyPreferences(authStub.user1, {});
+
+      expect(mocks.user.addPreferenceHistory).not.toHaveBeenCalled();
+    });
+
+    it('never records the values of Locked-content rules, only that they changed', () => {
+      const before = getPreferences([]);
+      const after = {
+        ...before,
+        privacy: {
+          ...before.privacy,
+          suppression: { ...before.privacy.suppression, personIds: ['secret-person'] },
+        },
+      };
+
+      const changes = describePreferenceChanges(before, after);
+
+      expect(changes).toEqual([{ path: 'privacy.suppression', before: null, after: null, protected: true }]);
+      expect(JSON.stringify(changes)).not.toContain('secret-person');
+    });
+
+    it('keeps the save when the history cannot be written', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.user.addPreferenceHistory.mockRejectedValue(new Error('down'));
+
+      await expect(sut.updateMyPreferences(authStub.user1, { tags: { enabled: true } })).resolves.toMatchObject({
+        tags: { enabled: true },
+      });
+    });
+
+    it("serves only the signed-in account's own history", async () => {
+      mocks.user.getPreferenceHistory.mockResolvedValue([
+        {
+          id: 'entry-1',
+          createdAt: new Date('2026-09-24T10:00:00.000Z'),
+          deviceLabel: null,
+          changes: [{ path: 'tags.enabled', before: 'false', after: 'true' }],
+          omittedChanges: 0,
+        },
+      ]);
+
+      await expect(sut.getMyPreferenceHistory(authStub.user1)).resolves.toEqual({
+        entries: [
+          {
+            id: 'entry-1',
+            createdAt: '2026-09-24T10:00:00.000Z',
+            deviceLabel: null,
+            changes: [{ path: 'tags.enabled', before: 'false', after: 'true' }],
+            omittedChanges: 0,
+          },
+        ],
+      });
+      expect(mocks.user.getPreferenceHistory).toHaveBeenCalledWith(authStub.user1.user.id);
     });
   });
 });
