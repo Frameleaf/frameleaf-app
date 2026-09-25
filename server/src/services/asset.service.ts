@@ -266,10 +266,12 @@ export class AssetService extends BaseService {
       { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
       isUndefined,
     );
+    // FL-51: null coordinates remove the location (the geolocation utility's "Remove location")
+    const clearLocation = latitude === null && longitude === null;
     const exifDto = omitBy(
       {
-        latitude,
-        longitude,
+        latitude: clearLocation ? undefined : (latitude ?? undefined),
+        longitude: clearLocation ? undefined : (longitude ?? undefined),
         rating,
         description,
         dateTimeOriginal,
@@ -279,6 +281,10 @@ export class AssetService extends BaseService {
 
     if (Object.keys(exifDto).length > 0) {
       await this.assetRepository.updateAllExif(ids, exifDto);
+    }
+
+    if (clearLocation) {
+      await this.assetRepository.clearLocation(ids);
     }
 
     const extractedTimeZone = extractTimeZone(dateTimeOriginal);
@@ -815,22 +821,31 @@ export class AssetService extends BaseService {
     id: string;
     description?: string;
     dateTimeOriginal?: string;
-    latitude?: number;
-    longitude?: number;
+    latitude?: number | null;
+    longitude?: number | null;
     rating?: number | null;
   }) {
     const { id, description, dateTimeOriginal, latitude, longitude, rating } = dto;
+    // FL-51: null coordinates remove the location
+    const clearLocation = latitude === null && longitude === null;
     const writes = omitBy(
       {
         description,
         dateTimeOriginal,
         timeZone: extractTimeZone(dateTimeOriginal)?.name,
-        latitude,
-        longitude,
+        latitude: clearLocation ? undefined : (latitude ?? undefined),
+        longitude: clearLocation ? undefined : (longitude ?? undefined),
         rating,
       },
       isUndefined,
     );
+
+    if (clearLocation) {
+      await this.assetRepository.clearLocation([id]);
+      if (Object.keys(writes).length === 0) {
+        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+      }
+    }
 
     if (Object.keys(writes).length > 0) {
       await this.assetRepository.upsertExif({

@@ -442,6 +442,32 @@ export class AssetRepository {
       .execute();
   }
 
+  /**
+   * FL-51: removes the location of these assets (the geolocation utility's "Remove location"): the
+   * coordinates and the place names read from them. The coordinates stay locked, so the sidecar is
+   * written without them and a later metadata read keeps the location removed instead of reading
+   * the original file's coordinates back.
+   */
+  @Chunked()
+  async clearLocation(ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+
+    await this.db
+      .updateTable('asset_exif')
+      .set((eb) => ({
+        latitude: null,
+        longitude: null,
+        city: null,
+        state: null,
+        country: null,
+        lockedProperties: distinctLocked(eb, ['latitude', 'longitude']),
+      }))
+      .where('assetId', 'in', ids)
+      .execute();
+  }
+
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.NUMBER, DummyValue.STRING] })
   @Chunked()
   updateDateTimeOriginal(ids: string[], delta?: number, timeZone?: string) {

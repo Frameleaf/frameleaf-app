@@ -155,6 +155,27 @@ describe(MapService.name, () => {
     });
   });
 
+  describe('getMapStatistics (FL-51)', () => {
+    it('counts partner items only from partners who share their locations', async () => {
+      const auth = AuthFactory.create();
+      const hiding = PartnerFactory.create({ sharedWithId: auth.user.id, shareLocation: false });
+      const sharing = PartnerFactory.create({ sharedWithId: auth.user.id, shareLocation: true });
+      mocks.partner.getAll.mockResolvedValue([getForPartner(hiding), getForPartner(sharing)]);
+      mocks.map.getMapStatistics.mockResolvedValue({ archived: 2, partner: 3, unlocated: 4 });
+
+      await expect(sut.getMapStatistics(auth, { isFavorite: true })).resolves.toEqual({
+        archived: 2,
+        partner: 3,
+        unlocated: 4,
+      });
+      expect(mocks.map.getMapStatistics).toHaveBeenCalledWith(
+        auth.user.id,
+        [sharing.sharedById],
+        expect.objectContaining({ isFavorite: true }),
+      );
+    });
+  });
+
   describe('reverseGeocode', () => {
     it('should reverse geocode a location', async () => {
       mocks.map.reverseGeocode.mockResolvedValue({ city: 'foo', state: 'bar', country: 'baz' });

@@ -193,6 +193,59 @@ export class MapRepository {
       .execute();
   }
 
+  /**
+   * FL-51: counts for the map settings sheet under its date and favorite filters: the owner's
+   * located archived items, partners' located timeline items, and the owner's timeline items with no
+   * location. Hidden content follows the session.
+   */
+  async getMapStatistics(
+    authUserId: string,
+    partnerIds: string[],
+    options: MapMarkerSearchOptions = {},
+  ): Promise<{ archived: number; partner: number; unlocated: number }> {
+    const { isFavorite, fileCreatedAfter, fileCreatedBefore } = options;
+    const base = () =>
+      this.db
+        .selectFrom('asset')
+        .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+        .where('asset.deletedAt', 'is', null)
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .$if(isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', isFavorite!))
+        .$if(fileCreatedAfter !== undefined, (qb) => qb.where('asset.fileCreatedAt', '>=', fileCreatedAfter!))
+        .$if(fileCreatedBefore !== undefined, (qb) => qb.where('asset.fileCreatedAt', '<=', fileCreatedBefore!));
+
+    const [archived, partner, unlocated] = await Promise.all([
+      base()
+        .select((eb) => eb.fn.countAll<number>().as('count'))
+        .where('asset.ownerId', '=', authUserId)
+        .where(visibilityIs(AssetVisibility.Archive, 'asset'))
+        .where('asset_exif.latitude', 'is not', null)
+        .where('asset_exif.longitude', 'is not', null)
+        .executeTakeFirst(),
+      partnerIds.length > 0
+        ? base()
+            .select((eb) => eb.fn.countAll<number>().as('count'))
+            .where('asset.ownerId', 'in', partnerIds)
+            .where(isTimelineVisible('asset'))
+            .where('asset_exif.latitude', 'is not', null)
+            .where('asset_exif.longitude', 'is not', null)
+            .executeTakeFirst()
+        : Promise.resolve({ count: 0 }),
+      base()
+        .select((eb) => eb.fn.countAll<number>().as('count'))
+        .where('asset.ownerId', '=', authUserId)
+        .where(isTimelineVisible('asset'))
+        .where((eb) => eb.or([eb('asset_exif.latitude', 'is', null), eb('asset_exif.longitude', 'is', null)]))
+        .executeTakeFirst(),
+    ]);
+
+    return {
+      archived: Number(archived?.count ?? 0),
+      partner: Number(partner?.count ?? 0),
+      unlocated: Number(unlocated?.count ?? 0),
+    };
+  }
+
   private mapMarkersQuery() {
     return this.db
       .selectFrom('asset')

@@ -79,6 +79,20 @@ const MapMarkerResponseSchema = z
   })
   .meta({ id: 'MapMarkerResponseDto' });
 
+/**
+ * The map settings sheet's counts (FL-51, prototype `MapView.jsx` settings): what each switch would
+ * add under the sheet's other filters, and how many of the viewer's own items have no location.
+ * Every count follows the same owner, partner, hidden and Locked rules as the markers.
+ */
+const MapStatisticsResponseSchema = z
+  .object({
+    archived: z.int().min(0).describe("The viewer's own located archived items"),
+    partner: z.int().min(0).describe('Located timeline items of partners who share their locations with the viewer'),
+    unlocated: z.int().min(0).describe("The viewer's own timeline items without a location"),
+  })
+  .meta({ id: 'MapStatisticsResponseDto' });
+
+export class MapStatisticsResponseDto extends createZodDto(MapStatisticsResponseSchema) {}
 export class MapReverseGeocodeDto extends createZodDto(MapReverseGeocodeSchema) {}
 export class MapReverseGeocodeResponseDto extends createZodDto(MapReverseGeocodeResponseSchema) {}
 export class MapMarkerDto extends createZodDto(MapMarkerSchema) {}
