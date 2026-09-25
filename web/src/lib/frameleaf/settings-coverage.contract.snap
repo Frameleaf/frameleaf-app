@@ -170,19 +170,13 @@
   "ffmpeg.twoPass": {
     "type": "boolean"
   },
-  "frameleafCloud.cloudMl.descriptions.autoBatch": {
-    "type": "boolean"
-  },
-  "frameleafCloud.cloudMl.descriptions.dailyBudgetUsd": {
+  "frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd": {
     "type": "number",
     "format": "double",
-    "minimum": 0,
-    "maximum": 100000
+    "minimum": 0.5,
+    "maximum": 100
   },
-  "frameleafCloud.cloudMl.descriptions.defaultModel": {
-    "type": "string"
-  },
-  "frameleafCloud.cloudMl.descriptions.enabled": {
+  "frameleafCloud.cloudMl.autoDescribe.enabled": {
     "type": "boolean"
   },
   "frameleafCloud.cloudMl.enabled": {
@@ -194,11 +188,67 @@
       false
     ]
   },
-  "frameleafCloud.cloudMl.restoration.defaultModel": {
+  "frameleafCloud.cloudMl.models.descriptions": {
     "type": "string"
   },
-  "frameleafCloud.cloudMl.restoration.enabled": {
-    "type": "boolean"
+  "frameleafCloud.cloudMl.models.interpolation": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudMl.models.restoration": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudMl.models.studio": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudMl.models.upscale": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudMl.routing.descriptions": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.routing.interpolation": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.routing.restoration": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.routing.studio": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.routing.upscale": {
+    "type": "string",
+    "enum": [
+      "local",
+      "both",
+      "cloud"
+    ]
+  },
+  "frameleafCloud.cloudMl.startWith": {
+    "type": "string",
+    "enum": [
+      "local",
+      "cloud"
+    ]
   },
   "image.colorspace": {
     "type": "string",

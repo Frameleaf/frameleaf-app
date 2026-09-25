@@ -136,6 +136,7 @@
           max="1000"
           step="1"
           bind:value={capInput}
+          aria-label={$t('admin.frameleaf_cloud_ml_wallet_daily_cap')}
           disabled={!ready || saving}
           onchange={saveCap}
         />
