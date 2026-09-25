@@ -13,7 +13,7 @@
   import { autoPlayVideo, lang, loopVideo as loopVideoPreference, videoQuality } from '$lib/stores/preferences.store';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getAssetHlsSessionUrl, getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl, isEnabled } from '$lib/utils';
-  import { AssetMediaSize, type AssetResponseDto } from '@immich/sdk';
+  import { AssetMediaSize, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
   import { Icon, LoadingSpinner, shortcuts } from '@immich/ui';
   import {
     mdiCheck,
@@ -52,7 +52,7 @@
   import 'media-chrome/menu/media-settings-menu';
   import 'media-chrome/menu/media-settings-menu-button';
   import 'media-chrome/menu/media-settings-menu-item';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
@@ -407,6 +407,8 @@
       return;
     }
     return bindMediaSession({
+      // a Locked video never reaches the lock screen or the OS media controls
+      locked: asset.visibility === AssetVisibility.Locked,
       title: asset.originalFileName,
       artist: MEDIA_SESSION_ARTIST,
       album: asset.exifInfo?.city ?? undefined,
@@ -417,6 +419,26 @@
         previous: onPreviousAsset,
         next: onNextAsset,
       },
+    });
+  });
+
+  // FL-36 (MediaViewer.jsx:898-903): pausing or resuming a slideshow (its button, Space or the media
+  // keys) pauses or resumes the video on screen too.
+  let previousSlideshowState = untrack(() => $slideshowState);
+  $effect(() => {
+    const state = $slideshowState;
+    const player = videoPlayer;
+    untrack(() => {
+      const previous = previousSlideshowState;
+      previousSlideshowState = state;
+      if (!player || state === previous) {
+        return;
+      }
+      if (state === SlideshowState.PauseSlideshow) {
+        player.pause();
+      } else if (state === SlideshowState.PlaySlideshow && previous === SlideshowState.PauseSlideshow) {
+        player.play().catch(() => {});
+      }
     });
   });
 
