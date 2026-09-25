@@ -51,7 +51,11 @@
   let tool = $state(loadAccountTool(user.id));
   let name = $state(user.name);
   let theme = $state<'dark' | 'light'>(themeManager.value === 'light' ? 'light' : 'dark');
-  let language = $state($lang);
+  // The saved language may be a regional tag (en-US) the language files don't have; match its base.
+  const codes = langs.map((entry) => convertBCP47(entry.code));
+  let language = $state(
+    codes.find((code) => code === $lang) ?? codes.find((code) => code === $lang.split('-')[0]) ?? 'en',
+  );
   let albums = $state(preferences.emailNotifications.albumUpdate);
   let email = $state(preferences.emailNotifications.enabled);
   let memories = $state(preferences.memories.enabled);
@@ -180,7 +184,7 @@
     <label for="frs-tool-language">{$t('language')}</label>
     <select id="frs-tool-language" bind:value={language}>
       {#each langs as entry (entry.code)}
-        <option value={entry.code}>{entry.name}</option>
+        <option value={convertBCP47(entry.code)}>{entry.name}</option>
       {/each}
     </select>
   </div>
@@ -227,7 +231,7 @@
   </div>
 {/snippet}
 
-<section class="frameleaf frs-tool-root" data-theme={SETUP_THEME}>
+<section class="frameleaf auth-screen frs-tool-root" data-theme={SETUP_THEME}>
   <div class="frs frs-tool-screen">
     <div class="frs-tool">
       <header class="frs-tool-head">
