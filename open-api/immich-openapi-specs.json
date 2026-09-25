@@ -32233,6 +32233,55 @@
         "x-immich-state": "Stable"
       }
     },
+    "/tags/statistics": {
+      "get": {
+        "description": "Count the Timeline items that carry each tag: exactly that tag, and that tag or any tag nested under it. Archived, Locked and hidden items are never counted, and tags the session may not see are left out.",
+        "operationId": "getTagStatistics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TagStatisticsResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve tag statistics",
+        "tags": [
+          "Tags"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "tag.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/tags/{id}": {
       "delete": {
         "description": "Delete a specific tag by its ID.",
@@ -35991,6 +36040,55 @@
         ],
         "x-immich-permission": "folder.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/view/folder/summary": {
+      "get": {
+        "description": "Retrieve, for each folder, how many originals it holds directly and their size in bytes, counting only the Timeline items the folder views list.",
+        "operationId": "getFolderSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FolderSummaryResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve folder summaries",
+        "tags": [
+          "Views"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "folder.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/view/folder/unique-paths": {
@@ -49424,6 +49522,32 @@
         },
         "required": [
           "id"
+        ],
+        "type": "object"
+      },
+      "FolderSummaryResponseDto": {
+        "properties": {
+          "count": {
+            "description": "Originals directly in this folder",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Folder path, without a trailing slash",
+            "type": "string"
+          },
+          "size": {
+            "description": "Bytes of the originals directly in this folder",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "path",
+          "size"
         ],
         "type": "object"
       },
@@ -71679,6 +71803,34 @@
           "name",
           "updatedAt",
           "value"
+        ],
+        "type": "object"
+      },
+      "TagStatisticsResponseDto": {
+        "properties": {
+          "count": {
+            "description": "Timeline items tagged with exactly this tag",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Tag ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "total": {
+            "description": "Timeline items tagged with this tag or any tag nested under it",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "id",
+          "total"
         ],
         "type": "object"
       },
