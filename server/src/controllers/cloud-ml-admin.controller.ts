@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
@@ -8,6 +8,7 @@ import {
   CloudMlSettlementsResponseDto,
   CloudMlStatusResponseDto,
   CloudMlWalletDto,
+  CloudMlWalletUpdateDto,
 } from 'src/dtos/cloud-ml.dto.js';
 import { MlDestinationResponseDto } from 'src/dtos/ml-destination.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -59,6 +60,19 @@ export class CloudMlAdminController {
   })
   getWallet(): Promise<CloudMlWalletDto> {
     return this.service.getWallet();
+  }
+
+  @Put('wallet')
+  @Authenticated({ permission: Permission.AdminCloudMlUpdate, admin: true })
+  @Endpoint({
+    operationId: 'updateCloudMlWallet',
+    summary: 'Change the AI Wallet daily cap or automatic top-up',
+    description:
+      'Changes the daily spending cap or automatic top-up on the linked Frameleaf account. Payment details stay on frameleaf.cloud.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  updateWallet(@Body() dto: CloudMlWalletUpdateDto): Promise<CloudMlWalletDto> {
+    return this.service.updateWallet(dto);
   }
 
   @Get('catalog')

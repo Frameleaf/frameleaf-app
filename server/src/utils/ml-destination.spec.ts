@@ -245,6 +245,20 @@ describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
     expect(refusal({ ...cloud, modelId: 'restore-faithful' })).toBeNull();
   });
 
+  it('refuses a cloud job for the local-only nllb-clip, MusicGen-small and Qwen2.5-VL-3B models, even if listed (FL-146)', () => {
+    for (const modelId of [
+      'nllb-clip-base-siglip__mrl',
+      'nllb-clip-large-siglip__v1',
+      'Xenova/musicgen-small',
+      'Qwen/Qwen2.5-VL-3B-Instruct',
+      'llmware/qwen2.5-vl-3b-ov',
+    ]) {
+      expect(refusal({ ...withFacts({ modelIds: ['restore-faithful', modelId] }), modelId })).toBe(
+        MlAdmissionRefusal.ModelMismatch,
+      );
+    }
+  });
+
   it('refuses a workload the cloud does not offer this account right now', () => {
     expect(refusal({ ...cloud, probe: { ...mlProbeStub.frameleafCloud, workloads: [MlWorkload.Enrichment] } })).toBe(
       MlAdmissionRefusal.WorkloadNotServed,
@@ -303,6 +317,20 @@ describe('selectMlDestination', () => {
       mlDestinationStub.frameleafCloudConsented.id,
       expect.objectContaining({ cloud: mlProbeStub.frameleafCloud.cloud }),
     );
+  });
+
+  it('names the licensed cloud description default when no model is routed, never the local one (FL-146)', async () => {
+    const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
+    const cloud = await selectMlDestination(d, {
+      workload: MlWorkload.Enrichment,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
+    });
+    expect(cloud.cloudModelId).toBe('qwen3.5-9b@1');
+    const local = await selectMlDestination(deps({}), {
+      workload: MlWorkload.Enrichment,
+      destinationId: 'ml-destination-local',
+    });
+    expect(local.cloudModelId).toBeNull();
   });
 
   it('refuses the routed model when the catalogue dropped it, and never picks another (FL-159)', async () => {
@@ -449,10 +477,13 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
       workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [
         MlWorkload.Upscale,
         MlWorkload.Interpolation,
-        MlWorkload.StudioRender,
         MlWorkload.StudioAi,
       ]),
     ).toBeNull();
+    // Studio exports render at home only (§2.7).
+    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.StudioRender])).toMatch(
+      /studio-render stays/,
+    );
   });
 
   it('refuses restoration on a row saved before FL-72 that also allows library analysis', () => {

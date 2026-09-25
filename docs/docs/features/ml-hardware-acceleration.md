@@ -42,6 +42,18 @@ The full curated dropdown of description models, with VRAM hints, lives in [Imag
 
 The default fallback setting is `microsoft/Florence-2-base-ft`. The fallback is only attempted on local and LAN workers, never on Frameleaf Cloud — see [Image Enrichment → Fallback model behavior](/features/image-enrichment#fallback-model-behavior) for the rationale.
 
+#### Model licences and Frameleaf Cloud
+
+Some models may run on your own hardware but are never offered on Frameleaf Cloud, because their licences do not allow hosted commercial use. The server refuses a cloud job for them, the settings refuse them for work allowed on Frameleaf Cloud, and the model sliders never show them in the cloud (blue) band. They stay available on this server and on home-network workers.
+
+| Model                                                          | Licence                                         | Frameleaf Cloud |
+| -------------------------------------------------------------- | ----------------------------------------------- | --------------- |
+| `Qwen/Qwen2.5-VL-3B-Instruct` (and `llmware/qwen2.5-vl-3b-ov`) | Qwen Research License Agreement (Alibaba Cloud) | Local only      |
+| `nllb-clip` search models (base and large, every variant)      | CC-BY-NC-4.0                                    | Local only      |
+| MusicGen-small (`Xenova/musicgen-small`)                       | CC-BY-NC-4.0                                    | Local only      |
+
+When no description model is chosen for Frameleaf Cloud, cloud descriptions use **Qwen3.5 9B** (Qwen team, Alibaba Cloud; Apache-2.0), a commercially licensed pick from the catalogue. Every model the cloud tier offers is licensed Apache-2.0, MIT or for commercial hosted use.
+
 ## Prerequisites
 
 #### ARM NN

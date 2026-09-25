@@ -502,6 +502,8 @@ export enum SystemMetadataKey {
   FrameleafMlWallet = 'frameleaf-ml-wallet',
   /** FL-156: this server's Frameleaf licence certificate and its refresh state. */
   FrameleafLicense = 'frameleaf-license',
+  /** FL-159: the last Hardware & GPU check of the server and ML containers. */
+  HardwareCheck = 'hardware-check',
   /**
    * FL-159: set by migration 2100000000620 when it removed destinations of the previous cloud
    * provider, so administrators are told once, in plain language, what changed.
@@ -876,6 +878,7 @@ export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [
  * Studio AI, interpolation and Studio render. Faces are refused by policy (biometric law), and search
  * embeddings and OCR stay on this network.
  */
+// Studio exports render at home only (this server or a home-network worker); never on the cloud.
 export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Enrichment,
   MlWorkload.Upscale,
@@ -883,7 +886,6 @@ export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.RestorationCreative,
   MlWorkload.StudioAi,
   MlWorkload.Interpolation,
-  MlWorkload.StudioRender,
 ];
 
 /** The workloads only the separate restoration worker serves (FL-114, FL-72). */

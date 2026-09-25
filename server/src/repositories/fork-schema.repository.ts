@@ -2,9 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { SystemConfig, defaults } from 'src/config.js';
+import { SystemConfig } from 'src/config.js';
+import { readFrameleafCloudConfig } from 'src/dtos/config.dto.js';
 import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { assertNoLiveHandoffLeases, releaseTransientHandoffLeases } from 'src/repositories/fork-handoff-leases.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { DeepPartial } from 'src/types.js';
 
@@ -93,6 +95,8 @@ const getBackfillSource = (kind: BackfillKind) => {
 
 @Injectable()
 export class ForkSchemaRepository {
+  private logger = LoggingRepository.create('ForkSchemaRepository');
+
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
   async overlayConfig(config: SystemConfig): Promise<SystemConfig> {
@@ -112,15 +116,8 @@ export class ForkSchemaRepository {
     }
     return {
       ...config,
-      // FL-158: a sidecar written before a section existed (signIn) takes that section's defaults
-      frameleafCloud: {
-        ...defaults.frameleafCloud,
-        ...(frameleafCloud as Partial<SystemConfig['frameleafCloud']>),
-        signIn: {
-          ...defaults.frameleafCloud.signIn,
-          ...(frameleafCloud as Partial<SystemConfig['frameleafCloud']>).signIn,
-        },
-      },
+      // Read over the defaults: a sidecar saved before a field existed still yields a whole section.
+      frameleafCloud: readFrameleafCloudConfig(frameleafCloud, (message) => this.logger.warn(message)),
       smartAlbums: smartAlbums as SystemConfig['smartAlbums'],
     };
   }

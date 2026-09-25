@@ -405,8 +405,16 @@ export const adminConfigDefaults = {
   frameleafCloud: {
     cloudMl: {
       enabled: false,
-      descriptions: { enabled: false, defaultModel: '', autoBatch: false, dailyBudgetUsd: 0 },
-      restoration: { enabled: false, defaultModel: '' },
+      routing: {
+        descriptions: 'local',
+        upscale: 'local',
+        restoration: 'local',
+        studio: 'local',
+        interpolation: 'local',
+      },
+      startWith: 'local',
+      models: { descriptions: 'qwen3.5-9b@1', upscale: '', restoration: '', studio: '', interpolation: '' },
+      autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
       faces: { enabled: false },
     },
   },

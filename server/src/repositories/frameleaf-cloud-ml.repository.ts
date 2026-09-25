@@ -8,6 +8,7 @@ import {
   CloudConsentFeatures,
   CloudUsage,
   CloudWallet,
+  CloudWalletSettings,
   capabilitiesSchema,
   catalogSchema,
   consentCurrentSchema,
@@ -59,6 +60,16 @@ export class FrameleafCloudMlRepository {
     return this.cloud.requestJson(walletResponseSchema, { url: `${gateway.url}/v2/wallet`, bearer: gateway.bearer });
   }
 
+  /** `PATCH /v2/wallet`: change the daily cap or automatic top-up; answers with the wallet. */
+  updateWallet(gateway: CloudMlGateway, settings: CloudWalletSettings): Promise<CloudWallet> {
+    return this.cloud.requestJson(walletResponseSchema, {
+      method: 'PATCH',
+      url: `${gateway.url}/v2/wallet`,
+      bearer: gateway.bearer,
+      body: settings,
+    });
+  }
+
   getUsage(gateway: CloudMlGateway, since: Date): Promise<CloudUsage> {
     const query = new URLSearchParams({ since: since.toISOString() });
     return this.cloud.requestJson(usageSchema, { url: `${gateway.url}/v2/usage?${query}`, bearer: gateway.bearer });
@@ -67,6 +78,18 @@ export class FrameleafCloudMlRepository {
   getConsent(gateway: CloudMlGateway): Promise<CloudConsentCurrent> {
     return this.cloud.requestJson(consentCurrentSchema, {
       url: `${gateway.url}/v2/consent/current`,
+      bearer: gateway.bearer,
+    });
+  }
+
+  /**
+   * `DELETE /v2/consent`: withdraw this server's consent with Frameleaf Cloud, so the cloud refuses new
+   * jobs too. A cloud contract addition (FL-145); an empty answer is fine.
+   */
+  async revokeConsent(gateway: CloudMlGateway): Promise<void> {
+    await this.cloud.requestJson(z.unknown(), {
+      method: 'DELETE',
+      url: `${gateway.url}/v2/consent`,
       bearer: gateway.bearer,
     });
   }

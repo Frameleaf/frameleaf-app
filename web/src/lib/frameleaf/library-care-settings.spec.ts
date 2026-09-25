@@ -15,7 +15,10 @@ describe('Library care settings (FL-69, settings-catalog.mjs:905-977)', () => {
     const words = Object.fromEntries(
       Object.entries(LIBRARY_CARE_TOGGLES).map(([key, { titleKey, descriptionKey }]) => [
         key,
-        [(en as Record<string, string>)[titleKey], (en as Record<string, string>)[descriptionKey]],
+        [
+          (en as unknown as Record<string, string>)[titleKey],
+          (en as unknown as Record<string, string>)[descriptionKey],
+        ],
       ]),
     );
     expect(words).toEqual({
