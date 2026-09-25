@@ -517,6 +517,10 @@ describe(FrameleafCloudService.name, () => {
         signInShowOnLocalLogin: true,
         signInClientId: 'instance-1',
       });
+      await expect(sut.updateSignIn(authStub.admin, { buttonText: 'Use Frameleaf' })).resolves.toMatchObject({
+        signInShowOnLocalLogin: true,
+        signInButtonText: 'Use Frameleaf',
+      });
     });
   });
 

@@ -646,7 +646,7 @@ const AskSearchSchema = z
 
 const AskSearchPlanSchema = z
   .object({
-    mode: z.enum(['smart', 'metadata']).describe('Search mode used to answer the query'),
+    mode: z.enum(['smart', 'metadata']).describe('Search mode used to answer the query').meta({ id: 'SearchAskMode' }),
     normalizedQuery: z.string().describe('Normalized query text'),
     filters: z.object(MetadataSearchSchema.shape).partial().describe('Structured filters applied to the search'),
   })

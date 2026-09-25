@@ -490,3 +490,11 @@
     flex-direction: column;
   }
 }
+/* FL-158: an input with its own Save button (Sign in with Frameleaf → button text). */
+.frameleaf-cloud .fc-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}

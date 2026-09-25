@@ -1240,3 +1240,34 @@
   width: auto;
   flex: none;
 }
+/* FL-158: Sign in with Frameleaf on the login page (AuthScreens.jsx Login; auth.css .auth-lan). */
+.auth-screen .auth-frameleaf-note {
+  text-align: center;
+}
+.auth-screen .auth-lan {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 10px;
+  padding: 14px;
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-accent-soft);
+}
+.auth-screen .auth-lan > svg {
+  color: var(--fl-accent);
+  margin-top: 2px;
+}
+.auth-screen .auth-lan > div:first-of-type {
+  display: grid;
+  gap: 2px;
+}
+.auth-screen .auth-lan span {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.auth-screen .auth-lan-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
