@@ -23,7 +23,9 @@ const asset = (overrides: Partial<AssetResponseDto> = {}): AssetResponseDto =>
 
 describe('studio asset projection', () => {
   it('hands the engine URLs rather than anything it could call the API with', () => {
-    const projected = toStudioAsset(asset({ type: AssetTypeEnum.Video, duration: 12_500 }));
+    const projected = toStudioAsset(
+      asset({ type: AssetTypeEnum.Video, duration: 12_500, width: 1920, height: 1080, originalMimeType: 'video/mp4' }),
+    );
 
     expect(projected).toEqual({
       id: 'asset-1',
@@ -35,6 +37,10 @@ describe('studio asset projection', () => {
       previewUrl: '/api/assets/asset-1/thumbnail?size=preview',
       playbackUrl: '/api/assets/asset-1/video/playback',
       isOffline: false,
+      // What the library already knows about the pixels, so the editor does not have to guess.
+      width: 1920,
+      height: 1080,
+      mimeType: 'video/mp4',
     });
     expect(Object.keys(projected)).not.toContain('originalPath');
   });

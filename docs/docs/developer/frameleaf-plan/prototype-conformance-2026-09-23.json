@@ -20,11 +20,11 @@
     "routes": 83,
     "byStatus": {
       "match": 58,
-      "partial": 13,
+      "partial": 12,
       "missing": 0,
-      "fixed": 143,
+      "fixed": 145,
       "in-flight": 6,
-      "studio-parked": 3,
+      "studio-parked": 2,
       "retained-live-route": 8,
       "intentional-product-change": 5
     }
@@ -733,9 +733,9 @@
         "design/frameleaf/template/src/state.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/editor/QuickEditor.svelte"],
-      "status": "partial",
-      "gaps": ["E-1", "MPY-10"],
-      "followUp": "Open in Studio from the editor (fix-editor-albums, FL-113); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62); keeping the draft and playhead in the workspace is studio-parked"
+      "status": "fixed",
+      "gaps": ["E-1", "MPY-10", "ST-1"],
+      "followUp": "Open in Studio from the editor keeps the draft, its undo history and the playhead (editor-continuity, FL-113); Studio starts at that playhead in the Freecut editor and Back to quick edit returns to the same draft (ST-1, FL-88); the memory player's Make a movie opens Studio with its items (MPY-10, FL-62)"
     },
     {
       "requirementId": "action:quick-edit:persistent-render-status-cancel-retry-reload-revision-supersession",
@@ -2533,9 +2533,9 @@
       "route": "/studio",
       "prototype": ["design/frameleaf/template/src/Studio.jsx", "design/frameleaf/template/src/studio-project.mjs"],
       "production": ["web/src/routes/(user)/studio/+page.svelte", "web/src/lib/components/frameleaf/StudioHost.svelte"],
-      "status": "studio-parked",
+      "status": "fixed",
       "gaps": ["ST-1", "ST-2", "ST-3", "ST-4", "ST-5", "ST-6"],
-      "followUp": "The header is done (ST-2…ST-7, FL-88: rename, Library back, review count, Basic/Advanced, avatar, export dialog; the workspace layout is stored per account, FL-91). The workspace itself waits on the parked engine (ST-1)"
+      "followUp": "The header (ST-2…ST-7, FL-88: rename, Library back, review count, Basic/Advanced, avatar, export dialog; workspace layout stored per account, FL-91) and the workspace itself: the pinned Freecut editor mounted in a same-origin frame through studio/adapters/web (ST-1, FL-88; engine unparked 2026-09-25), with canonical commands applied by the engine (FL-92)"
     },
     {
       "route": "/studio/projects",

@@ -9,6 +9,7 @@
    * out; nothing falls back to another project's sites. The Immich project's resources stay listed under "Built on Immich", as the
    * attribution requires.
    */
+  import AcknowledgementsList from '$lib/components/frameleaf/AcknowledgementsList.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { type ServerAboutResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
@@ -102,8 +103,10 @@
     },
   ]);
 
-  // Name, what Frameleaf uses it for, and its licence; versions come from this server.
-  const notices = $derived(
+  // Name, what Frameleaf uses it for, and its licence; versions come from this server. Everything
+  // else Frameleaf credits (Studio's Freecut editor, models, voices, fonts, assets) follows in the
+  // acknowledgements list, with its licence text.
+  const notices: { name: string; role: string; licence: string; version?: string; href?: string }[] = $derived(
     [
       { name: 'Immich', role: $t('frameleaf_help_notice_immich'), licence: 'AGPL-3.0', version: info.version },
       { name: 'Node.js', role: $t('frameleaf_help_notice_runtime'), licence: 'MIT', version: info.nodejs },
@@ -166,13 +169,21 @@
           <tbody>
             {#each notices as notice (notice.name)}
               <tr>
-                <td>{notice.name}</td>
+                <td>
+                  {#if notice.href}
+                    <a href={notice.href} target="_blank" rel="noreferrer">{notice.name}</a>
+                  {:else}
+                    {notice.name}
+                  {/if}
+                </td>
                 <td>{notice.role}</td>
                 <td>{notice.licence}</td>
               </tr>
             {/each}
           </tbody>
         </table>
+        <p class="help-credit">{$t('frameleaf_help_notice_freecut_credit')}</p>
+        <AcknowledgementsList />
       </details>
     </li>
   </ul>
@@ -255,6 +266,16 @@
     color: var(--fl-muted);
     text-align: right;
     white-space: nowrap;
+  }
+  .help-notices td a {
+    color: inherit;
+  }
+  .help-credit {
+    margin: 0;
+    padding: 8px 12px 12px;
+    border-top: 1px solid var(--fl-border);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .sr-only {
     position: absolute;

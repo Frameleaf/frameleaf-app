@@ -60,6 +60,7 @@ import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { applyAlbumLocationPolicy, applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
@@ -977,7 +978,29 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Original video metadata is not available for editing');
     }
     const rotated = Math.abs(video.rotation) % 180 === 90;
-    return { width: rotated ? video.height : video.width, height: rotated ? video.width : video.height, durationMs };
+    const { ffmpeg } = await this.getConfig({ withCache: true });
+    // FL-113: the editor says up front what an edited version will do with HDR and Dolby Vision
+    // sources, from the same decision the render makes (media-policy rule 7).
+    let colorPolicy: 'preserve' | 'tone-map' | 'unsupported';
+    let colorReason: string;
+    try {
+      const decision = resolveEditedMasterColorPolicy(video, ffmpeg);
+      colorPolicy = decision.policy === EditedMasterColorPolicy.ToneMap ? 'tone-map' : 'preserve';
+      colorReason = decision.reason;
+    } catch (error) {
+      if (!(error instanceof MediaPolicyError)) {
+        throw error;
+      }
+      colorPolicy = 'unsupported';
+      colorReason = error.message;
+    }
+    return {
+      width: rotated ? video.height : video.width,
+      height: rotated ? video.width : video.height,
+      durationMs,
+      colorPolicy,
+      colorReason,
+    };
   }
 
   async editAsset(
@@ -1030,6 +1053,12 @@ export class AssetService extends BaseService {
     }
 
     const originalDurationMs = originalVideo?.durationMs ?? null;
+
+    // FL-113: an edited version that cannot be rendered honestly is refused here, before anything is
+    // queued, with the reason; the original is never touched. Reverting to the original stays allowed.
+    if (originalVideo?.colorPolicy === 'unsupported' && purpose === 'save' && edits.length > 0) {
+      throw new BadRequestException(originalVideo.colorReason ?? 'This video cannot be edited on this server');
+    }
 
     const crop = edits.find((e) => e.action === AssetEditAction.Crop);
     if (crop) {

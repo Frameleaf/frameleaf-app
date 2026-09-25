@@ -144,6 +144,12 @@
     mdiVectorEllipse,
   } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
+  import {
+    clearEditorContinuity,
+    continuityBase,
+    resumeEditorContinuity,
+    saveEditorContinuity,
+  } from '$lib/frameleaf/editor-continuity';
   import { t, type Translations } from 'svelte-i18n';
 
   type Tool = 'adjust' | 'crop' | 'masks' | 'presets' | 'restore' | 'versions';
@@ -240,6 +246,18 @@
       const start = openingRecipe(develop);
       draft = rebaseDraft(draft, start);
       opened = start;
+      // FL-113: back from Studio (or a reload) with the draft the person left, when it was built on
+      // the version the editor has now (App.jsx keeps one edit across the editor and Studio).
+      const resumed = resumeEditorContinuity<EditorDraft>(asset.id, continuityBase(start));
+      if (resumed.status === 'resumed') {
+        draft = { ...resumed.draft, recipe: normalizeRecipe(resumed.draft.recipe) };
+        if (tools.some((item) => item.id === resumed.tool) || resumed.tool === 'versions') {
+          tool = resumed.tool as Tool;
+        }
+        toastManager.primary($t('frameleaf_editor_continuity_resumed'));
+      } else if (resumed.status === 'stale') {
+        toastManager.primary($t('frameleaf_editor_continuity_stale'));
+      }
       if (anyRevisionBusy(develop.revisions)) {
         follow();
       }
@@ -578,10 +596,28 @@
     }
     onClose(saveChangedCurrent);
   };
-  const cancel = () => discardAndClose();
-  const openStudio = () => {
+  const cancel = () => {
+    clearEditorContinuity(asset.id);
     discardAndClose();
-    void goto(Route.studio({ assetIds: [asset.id] }));
+  };
+  /**
+   * Open in Studio keeps the draft (FL-113; App.jsx `openStudio` only switches screens): it is carried
+   * to Studio and offered back when the person returns, instead of being discarded.
+   */
+  const openStudio = () => {
+    const base = continuityBase(opened);
+    if (dirty || draft.undo.length > 0) {
+      saveEditorContinuity({
+        assetId: asset.id,
+        kind: 'photo',
+        draft: $state.snapshot(draft),
+        base,
+        tool,
+        playhead: { num: 0, den: 1 },
+      });
+    }
+    onClose(saveChangedCurrent);
+    void goto(Route.studio({ assetIds: [asset.id], returnTo: asset.id }));
   };
   const revertDraft = () => change(initialRecipe());
   const copySettings = () => {
@@ -611,6 +647,7 @@
         revisions: [revision, ...(develop?.revisions ?? []).filter((item) => item.id !== revision.id)],
       };
       opened = normalizeRecipe(recipe);
+      clearEditorContinuity(asset.id);
       announce = $t('frameleaf_editor_version_queued', { values: { revision: revision.revision } });
       toastManager.primary(announce);
       followAfterClose(revision.id);

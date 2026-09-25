@@ -289,6 +289,18 @@ describe(StudioExportService.name, () => {
       resolution: '1080p',
     } as never;
 
+    it('renders only at home: a Frameleaf Cloud destination is refused before anything is resolved', async () => {
+      await expect(
+        sut.create(auth(), PROJECT, {
+          ...(dto as object),
+          destination: MediaOperationDestination.FrameleafCloud,
+          cloudConsent: true,
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(studio.authorizeRevision).not.toHaveBeenCalled();
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
     it.each([
       [[], {}, 'no-qualified-worker'],
       [[liveSession({ gpuMemoryBytes: String(2 * 1024 ** 3) })], {}, 'insufficient-memory'],

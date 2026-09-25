@@ -22,14 +22,19 @@
   import { Route } from '$lib/route';
   import { toStudioAssets } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
+  import { decideStudioDraft, studioDraftHeld } from '$lib/frameleaf/studio/draft-staging';
+  import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
+  import { registerFrameStudioEngine } from '$lib/frameleaf/studio/frame-engine';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
   import { createStudioCommandEnvelope, type StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
   import { probeStudioHost } from '$lib/frameleaf/studio/capabilities';
-  import { pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
+  import { loadStudioEngine, pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
   import {
     emptyStudioCapabilities,
     type StudioAuthContext,
     type StudioCapabilities,
+    type StudioCommandEngine,
+    type StudioDraftResult,
     type StudioRenderEvidence,
     type StudioHostServices,
     type StudioProjectHandle,
@@ -51,6 +56,7 @@
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
   import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
+  import { reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
   import { getProfileImageUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { createStudioExport, isHttpError } from '@immich/sdk';
@@ -59,6 +65,10 @@
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  // The built Freecut editor (studio/adapters/web), when this deployment has it (FL-88). Without the
+  // build the loader answers `not-built` and the unavailable state says so.
+  registerFrameStudioEngine();
 
   let capabilities = $state<StudioCapabilities>(emptyStudioCapabilities());
   let renderEvidence = $state<StudioRenderEvidence[]>([]);
@@ -247,6 +257,58 @@
     onRefused: (messageKey) => toastManager.danger($t(messageKey)),
   });
 
+  /**
+   * Canonical commands (FL-92). The engine's command runtime applies them to the session's graph in
+   * its own document, apart from the editor; the result is staged like any other draft. Every graph
+   * this session replaced is kept for `history.undo` / `history.redo`.
+   */
+  const history = createStudioGraphHistory();
+  let commandEngine: Promise<StudioCommandEngine | null> | null = null;
+  const engineForCommands = () => {
+    commandEngine ??= loadStudioEngine()
+      .then((resolution) =>
+        resolution.status === 'available' && resolution.module.createCommandEngine
+          ? resolution.module.createCommandEngine()
+          : null,
+      )
+      .catch(() => null)
+      .then((engine) => {
+        // A runtime that could not start is tried again on the next command, not remembered.
+        if (!engine) {
+          commandEngine = null;
+        }
+        return engine;
+      });
+    return commandEngine;
+  };
+  const releaseCommandEngine = () => {
+    const pending = commandEngine;
+    commandEngine = null;
+    void pending?.then((engine) => engine?.dispose());
+  };
+
+  const engineHandlers = createStudioEngineCommandHandlers({
+    graph: () => project.graph,
+    revision: () => project.revision,
+    assets: () => assets,
+    stage: (graph, commandIds, envelopes) => session.stage(graph, commandIds, envelopes),
+    restore: (revision) => session.restore(revision),
+    engine: engineForCommands,
+    history,
+  });
+
+  // A different project, or a reload that discarded the draft, starts a fresh history.
+  let historyProjectId: string | null = null;
+  $effect(() => {
+    const id = project.id;
+    untrack(() => {
+      if (historyProjectId !== null && historyProjectId !== STUDIO_DRAFT_PROJECT_ID && historyProjectId !== id) {
+        history.clear();
+      }
+      historyProjectId = id;
+    });
+  });
+
   const bridge = createStudioBridge({
     context: () => ({
       revision: project.revision,
@@ -255,10 +317,11 @@
       online,
       capabilities,
     }),
-    // Implemented here: the preview pair (FL-96) and the bundle pair (FL-91). Every editing
-    // command stays a typed extension point owned by a later story and is rejected as
-    // `not-implemented` rather than silently no-oped.
+    // Implemented here: the engine's graph commands and history (FL-92), the preview pair (FL-96)
+    // and the bundle pair (FL-91). Every other row stays a typed extension point owned by a later
+    // story and is rejected as `not-implemented` rather than silently no-oped.
     handlers: {
+      ...engineHandlers,
       'preview.request': async (envelope) => {
         const payload = envelope.payload as StudioCommandPayloads['preview.request'];
 
@@ -303,8 +366,47 @@
     },
   });
 
+  /**
+   * The editor's own saves (FL-89 autosave; FL-92's "replace graph" draft primitive). The same rules
+   * as a command decide it: access, connectivity, then the lease. The server checks the envelope
+   * again before it stores anything.
+   */
+  const stageDraft = (
+    graph: unknown,
+    commandIds: readonly string[],
+    baseRevision?: number,
+  ): Promise<StudioDraftResult> => {
+    // Offline, after a lost lease or in a conflict the session keeps the draft and sends it when the
+    // connection or the lease is back; only a session that may not hold a draft refuses it.
+    const decision = decideStudioDraft(
+      {
+        accessLost,
+        forbidden,
+        authenticated: authManager.authenticated,
+        access: sessionState?.access ?? null,
+        status: saveStatus,
+      },
+      graph,
+    );
+    if (!decision.stage) {
+      return Promise.resolve(decision.result);
+    }
+    // The session keeps `project.graph` on the newest draft (in a conflict too, never the head), so
+    // history records this edit against the draft's own previous graph.
+    const before = project.graph;
+    session.stage(graph, commandIds.length > 0 ? commandIds : ['editor.save'], [], baseRevision);
+    if (!session.state.hasDraft) {
+      return Promise.resolve({ status: 'rejected', reason: 'lease-lost' });
+    }
+    if (before) {
+      history.record(before, graph);
+    }
+    return Promise.resolve({ status: 'staged' });
+  };
+
   const services: StudioHostServices = {
     submitCommands: (envelopes) => bridge.submit(envelopes),
+    stageDraft,
     reloadProject: () => session.reload(),
     resolveAsset: (assetId) => assets.find((asset) => asset.id === assetId),
     notify: (message, tone) => {
@@ -341,6 +443,14 @@
       playhead = { num: time.num, den: time.den };
     },
     saveWorkspace: (layout) => saveStudioWorkspaceLayout(layout, pinnedFreecutRevision),
+    // The editor's own Export control opens the same dialog as the header's (FL-106).
+    requestExport: () => {
+      if (canExportVideo) {
+        videoExportOpen = true;
+      } else {
+        toastManager.danger($t('frameleaf_studio_export_unavailable'));
+      }
+    },
   };
 
   /**
@@ -348,6 +458,19 @@
    * library stays one click away under Tools > Studio in the rail.
    */
   const onBack = () => void goto(Route.photos());
+
+  /**
+   * Back to the quick editor that opened Studio (FL-113). Studio's playhead goes with the person, and
+   * the draft they left there is waiting for them (`editor-continuity.ts`); the unsaved-work guard
+   * still runs for anything Studio holds.
+   */
+  const returnTo = data.returnTo;
+  const onBackToEditor = returnTo
+    ? () => {
+        reportStudioPlayhead(returnTo, playhead);
+        void goto(`${Route.viewAsset({ id: returnTo })}?edit=1`);
+      }
+    : undefined;
   const onOpenActivity = () => void goto(Route.activity());
 
   /** Only an owner's saved project can be exported, so the header offers nothing otherwise. */
@@ -468,7 +591,10 @@
     }
   };
 
-  const onReload = () => void session.reload();
+  const onReload = () => {
+    history.clear();
+    void session.reload();
+  };
   const onReacquire = () => void session.reacquire();
   const onTakeOver = () => void session.takeOver();
   const onSaveCopy = async () => {
@@ -522,6 +648,8 @@
       settleExportChoice(null);
       void previewClient.dispose();
       preview = idleStudioPreviewView();
+      history.clear();
+      releaseCommandEngine();
       void session.dispose();
     };
     const unsubscribe = eventManager.on({
@@ -535,6 +663,7 @@
 
   onDestroy(() => {
     settleExportChoice(null);
+    releaseCommandEngine();
     void previewClient.dispose();
     void session.dispose();
   });
@@ -579,6 +708,9 @@
   {renderEvidence}
   {services}
   {onBack}
+  {onBackToEditor}
+  handoffPlayhead={data.at}
+  draftHeld={studioDraftHeld(sessionState?.status, sessionState?.hasDraft === true)}
   {onOpenActivity}
   onExportBundle={canExportBundle ? onExportBundle : undefined}
   onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}

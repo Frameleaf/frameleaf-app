@@ -11,8 +11,13 @@ import {
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { goto } from '$app/navigation';
+import { continuityBase, readEditorContinuity, saveEditorContinuity } from '$lib/frameleaf/editor-continuity';
+import { openingRecipe } from '$lib/frameleaf/editor-draft';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import QuickEditor from './QuickEditor.svelte';
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 /**
  * QuickEditor (FL-113). The test i18n setup renders the literal key rather than its English
@@ -300,6 +305,80 @@ describe('QuickEditor', () => {
   it('offers Open in Studio in the top bar', () => {
     render(QuickEditor, { asset: photo, onClose: vi.fn() });
     expect(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' })).toBeInTheDocument();
+  });
+
+  describe('continuity with Studio (FL-113)', () => {
+    afterEach(() => sessionStorage.clear());
+
+    it('carries the unsaved draft to Studio instead of discarding it, and says where it came from', async () => {
+      const onClose = vi.fn();
+      render(QuickEditor, { asset: photo, onClose });
+      await ready();
+      await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+        target: { value: '40' },
+      });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' }));
+
+      expect(toastManager.primary).not.toHaveBeenCalledWith('frameleaf_editor_edits_discarded');
+      expect(onClose).toHaveBeenCalled();
+      expect(goto).toHaveBeenCalledWith(`/studio?assets=${photo.id}&from=${photo.id}`);
+      const carried = readEditorContinuity<{ recipe: { contrast: number }; undo: unknown[] }>(photo.id);
+      expect(carried).toMatchObject({ kind: 'photo', tool: 'adjust' });
+      expect(carried?.draft.recipe.contrast).toBe(40);
+      expect(carried?.draft.undo.length).toBeGreaterThan(0);
+    });
+
+    it('opens on the draft left before Studio, with its undo history', async () => {
+      const develop = { assetId: photo.id, currentRevisionId: null, revisions: [] };
+      const start = openingRecipe(develop);
+      saveEditorContinuity({
+        assetId: photo.id,
+        kind: 'photo',
+        draft: { recipe: { ...start, contrast: 25 }, undo: [start], redo: [] },
+        base: continuityBase(start),
+        tool: 'adjust',
+        playhead: { num: 0, den: 1 },
+      });
+
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+
+      await waitFor(() =>
+        expect(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' })).toHaveValue('25'),
+      );
+      expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_continuity_resumed');
+      expect(screen.getByRole('button', { name: 'undo' })).not.toBeDisabled();
+      expect(readEditorContinuity(photo.id)).toBeNull();
+    });
+
+    it('does not replay a draft over a version saved in the meantime', async () => {
+      saveEditorContinuity({
+        assetId: photo.id,
+        kind: 'photo',
+        draft: { recipe: { contrast: 25 }, undo: [], redo: [] },
+        base: continuityBase({ something: 'older' }),
+        tool: 'adjust',
+        playhead: { num: 0, den: 1 },
+      });
+
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+
+      expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_continuity_stale');
+      expect(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' })).toHaveValue('0');
+    });
+
+    it('carries a clip’s draft and playhead, and Studio starts at the same instant', async () => {
+      const video = assetFactory.build({ type: AssetTypeEnum.Video, originalFileName: 'MOV_0001.mp4' });
+      render(QuickEditor, { asset: video, onClose: vi.fn() });
+      await waitFor(() => expect(getAssetEdits).toHaveBeenCalledWith({ id: video.id }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' }));
+
+      expect(goto).toHaveBeenCalledWith(`/studio?assets=${video.id}&from=${video.id}&at=0%2F1`);
+    });
   });
 
   it('opens a video on the video quick editor in the same frame (VE-1)', async () => {
