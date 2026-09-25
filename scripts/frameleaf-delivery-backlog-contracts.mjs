@@ -23,6 +23,94 @@ const EXECUTION_GUIDE = `${PLAN}/01-agent-execution.md`;
 const LIBRARY_GUIDE = `${PLAN}/02-library-and-administration.md`;
 const STUDIO_GUIDE = `${PLAN}/03-studio-rendering-and-restoration.md`;
 const NATIVE_GUIDE = `${PLAN}/04-native-and-release.md`;
+const CLOUD_GUIDE = `${PLAN}/15-frameleaf-cloud-integration.md`;
+const WORKFLOW_IN_PROGRESS = [
+  "FL-29",
+  "FL-30",
+  "FL-31",
+  "FL-32",
+  "FL-42",
+  "FL-43",
+  "FL-44",
+  "FL-33",
+  "FL-34",
+  "FL-35",
+  "FL-36",
+  "FL-45",
+  "FL-46",
+  "FL-47",
+  "FL-50",
+  "FL-51",
+  "FL-56",
+  "FL-37",
+  "FL-38",
+  "FL-57",
+  "FL-58",
+  "FL-59",
+  "FL-62",
+  "FL-69",
+  "FL-73",
+  "FL-74",
+  "FL-71",
+  "FL-76",
+  "FL-67",
+  "FL-78",
+  "FL-72",
+  "FL-80",
+  "FL-81",
+  "FL-83",
+  "FL-86",
+  "FL-88",
+  "FL-90",
+  "FL-91",
+  "FL-92",
+  "FL-95",
+  "FL-96",
+  "FL-104",
+  "FL-16",
+  "FL-93",
+  "FL-101",
+  "FL-102",
+  "FL-113",
+  "FL-110",
+  "FL-114",
+  "FL-115",
+  "FL-131",
+  "FL-135",
+  "FL-142",
+  "FL-153",
+];
+const WORKFLOW_DONE = [
+  "FL-25",
+  "FL-26",
+  "FL-27",
+  "FL-28",
+  "FL-41",
+  "FL-48",
+  "FL-49",
+  "FL-52",
+  "FL-53",
+  "FL-54",
+  "FL-55",
+  "FL-60",
+  "FL-61",
+  "FL-63",
+  "FL-64",
+  "FL-65",
+  "FL-68",
+  "FL-70",
+  "FL-75",
+  "FL-66",
+  "FL-77",
+  "FL-79",
+  "FL-82",
+  "FL-84",
+  "FL-85",
+  "FL-89",
+  "FL-106",
+  "FL-39",
+  "FL-118",
+];
 const BASE_ITEM_KEYS = [
   "acceptance",
   "dependencies",
@@ -287,13 +375,13 @@ export async function validateContracts(root = repository) {
     backlog.statusSemantics,
     "The per-item status records local delivery qualification, not Jira workflow state. Jira remains authoritative for To Do, In Progress, and Done.",
   );
-  assert.equal(backlog.items.length, 142);
-  assert.equal(new Set(backlog.items.map(({ id }) => id)).size, 142);
+  assert.equal(backlog.items.length, 162);
+  assert.equal(new Set(backlog.items.map(({ id }) => id)).size, 162);
   const byId = new Map(backlog.items.map((item) => [item.id, item]));
-  assert.equal(backlog.items.filter(({ type }) => type === "epic").length, 24);
+  assert.equal(backlog.items.filter(({ type }) => type === "epic").length, 28);
   assert.equal(
     backlog.items.filter(({ type }) => type === "story").length,
-    118,
+    134,
   );
   for (const item of backlog.items) {
     const expectedKeys = [
@@ -384,6 +472,12 @@ export async function validateContracts(root = repository) {
         NATIVE_GUIDE,
         `${item.id}: stale native guide fallback`,
       );
+    else if (item.workstream === "cloud")
+      assert.equal(
+        item.workstreamGuide,
+        CLOUD_GUIDE,
+        `${item.id}: stale cloud guide fallback`,
+      );
     else {
       assert.equal(
         item.workstream,
@@ -398,6 +492,7 @@ export async function validateContracts(root = repository) {
     LIBRARY_GUIDE,
     STUDIO_GUIDE,
     NATIVE_GUIDE,
+    CLOUD_GUIDE,
   ])
     await readFile(path.join(root, guide), "utf8");
 
@@ -405,14 +500,14 @@ export async function validateContracts(root = repository) {
     item.dependencies.map((dependency) => [dependency, item.id]),
   );
   const reduced = reduceEdges(backlog.items);
-  assert.equal(declared.length, 408);
-  assert.equal(reduced.length, 275);
+  assert.equal(declared.length, 434);
+  assert.equal(reduced.length, 298);
   assert.deepEqual(
     jira.links,
     reduced,
     "Jira Blocks links differ from graph reduction",
   );
-  assert.equal(backlog.topologicalOrder.length, 142);
+  assert.equal(backlog.topologicalOrder.length, 162);
   assert.deepEqual(new Set(backlog.topologicalOrder), new Set(byId.keys()));
   const positions = new Map(
     backlog.topologicalOrder.map((id, index) => [id, index]),
@@ -428,11 +523,11 @@ export async function validateContracts(root = repository) {
   assert.deepEqual(jira.linkEvidence, []);
   assert.equal(
     jira.linkStrategy,
-    "Transitive reduction: 275 Blocks links preserve all 408 declared dependency relationships.",
+    "Transitive reduction: 298 Blocks links preserve all 434 declared dependency relationships.",
   );
   assert.equal(
     jira.linkEvidenceStatus,
-    "Live Jira comparison details are recorded in delivery-backlog-evidence.json; the 275 Blocks links matched this transitive reduction on 2026-09-20. Workflow and link publication are not implementation qualification.",
+    "Live Jira comparison details are recorded in delivery-backlog-evidence.json; the 298 Blocks links matched this transitive reduction on 2026-09-25. Workflow and link publication are not implementation qualification.",
   );
   assert.deepEqual(Object.keys(jira.issues).sort(), [...byId.keys()].sort());
   const jiraIds = new Set();
@@ -468,27 +563,27 @@ export async function validateContracts(root = repository) {
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.repository, backlog.repository);
   assert.equal(evidence.defaultBranch, backlog.defaultBranchObserved);
-  assert.equal(evidence.observedAt, "2026-09-20T09:51:33Z");
+  assert.equal(evidence.observedAt, "2026-09-25T09:36:49Z");
   assert.equal(evidence.observationBase, OBSERVATION_BASE);
   assert.equal(evidence.deliveryIntegrationBase, DELIVERY_INTEGRATION_BASE);
   assert.notEqual(evidence.observationBase, evidence.deliveryIntegrationBase);
   assert.deepEqual(evidence.identityContract, {
-    issues: 142,
-    epics: 24,
-    stories: 118,
+    issues: 162,
+    epics: 28,
+    stories: 134,
     sha256: digest(identities),
   });
   assert.deepEqual(evidence.workflowSnapshot, {
-    counts: { "To Do": 140, "In Progress": 1, Done: 1 },
-    inProgress: ["FL-25"],
-    done: ["FL-118"],
+    counts: { "To Do": 79, "In Progress": 54, Done: 29 },
+    inProgress: WORKFLOW_IN_PROGRESS,
+    done: WORKFLOW_DONE,
   });
   assert.deepEqual(evidence.dependencyContract, {
-    declaredEdges: 408,
+    declaredEdges: 434,
     declaredEdgesSha256: digest(declared),
-    reducedBlocksLinks: 275,
+    reducedBlocksLinks: 298,
     reducedBlocksLinksSha256: digest(reduced),
-    liveBlocksLinks: 275,
+    liveBlocksLinks: 298,
     liveMatchesReducedGraph: true,
   });
   assert.deepEqual(evidence.qualification, {
@@ -505,10 +600,10 @@ export async function validateContracts(root = repository) {
       order: "created ASC",
       fields: ["summary", "status", "issuetype", "parent", "labels"],
       pageSize: 100,
-      pageCounts: [100, 42],
+      pageCounts: [100, 73],
       pageBoundaries: [
         ["FL-1", "FL-100"],
-        ["FL-101", "FL-142"],
+        ["FL-101", "FL-173"],
       ],
     },
     {
@@ -517,10 +612,10 @@ export async function validateContracts(root = repository) {
       order: "created ASC",
       fields: ["issuelinks"],
       pageSize: 100,
-      pageCounts: [100, 42],
+      pageCounts: [100, 73],
       pageBoundaries: [
         ["FL-1", "FL-100"],
-        ["FL-101", "FL-142"],
+        ["FL-101", "FL-173"],
       ],
     },
   ];
@@ -542,8 +637,8 @@ export async function validateContracts(root = repository) {
     );
   assert.deepEqual(evidence.source.queries, expectedQueries);
   const liveStatuses = new Map([
-    ["FL-25", "In Progress"],
-    ["FL-118", "Done"],
+    ...WORKFLOW_IN_PROGRESS.map((key) => [key, "In Progress"]),
+    ...WORKFLOW_DONE.map((key) => [key, "Done"]),
   ]);
   const normalizedSnapshot = {
     issues: backlog.items.map((item) => {
@@ -634,7 +729,7 @@ export async function validateContracts(root = repository) {
   return {
     declaredEdges: declared.length,
     done: evidence.workflowSnapshot.done.length,
-    epics: 24,
+    epics: 28,
     inProgress: evidence.workflowSnapshot.inProgress.length,
     issues: backlog.items.length,
     libraryGuideRows: backlog.items.filter(
@@ -652,7 +747,7 @@ export async function validateContracts(root = repository) {
         Object.hasOwn(item, "workstreamGuideStatus"),
     ).length,
     reducedBlocksLinks: reduced.length,
-    stories: 118,
+    stories: 134,
     toDo: evidence.workflowSnapshot.counts["To Do"],
   };
 }

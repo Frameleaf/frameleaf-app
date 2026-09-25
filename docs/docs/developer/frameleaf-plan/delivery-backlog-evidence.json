@@ -17,21 +17,21 @@
   ],
   "deliveryIntegrationBase": "7941bd6bc6dfbbb0f4c19fb570128d75432414b6",
   "dependencyContract": {
-    "declaredEdges": 408,
-    "declaredEdgesSha256": "b57fe54cf8c04b8f794775a108f13cb198ac510fafa57a95898745a84a93d091",
-    "liveBlocksLinks": 275,
+    "declaredEdges": 434,
+    "declaredEdgesSha256": "92c971f26263bbd372f3233530a81c5b900f7cafeb6c34cdaf9789884a3eae46",
+    "liveBlocksLinks": 298,
     "liveMatchesReducedGraph": true,
-    "reducedBlocksLinks": 275,
-    "reducedBlocksLinksSha256": "1f9173ffb42d18a5ec321965e1501d1f23f429a26761aa662630e06633eacc01"
+    "reducedBlocksLinks": 298,
+    "reducedBlocksLinksSha256": "ec8f857bcd34ac67e3fa985daf613e0bbe930b70209cfb570e6a9f483b51dd07"
   },
   "identityContract": {
-    "epics": 24,
-    "issues": 142,
-    "sha256": "8525f19af4a2c210e6c6c7bfb6d8b0bc422a640d01b8efac32b1ffcd45a7e8dc",
-    "stories": 118
+    "epics": 28,
+    "issues": 162,
+    "sha256": "fc4f570f15649a91922e6fbc8c033bda81a0015af5fbbca52e5d92d7a9930d7a",
+    "stories": 134
   },
   "observationBase": "b934907b9a53e8367174e3822b119d99584bcbe6",
-  "observedAt": "2026-09-20T09:51:33Z",
+  "observedAt": "2026-09-25T09:36:49Z",
   "qualification": {
     "deploymentEvidence": [],
     "implementationQualified": false,
@@ -43,41 +43,126 @@
   "source": {
     "cloudId": "9b68c4fc-dbd2-4864-a050-674c27f779b2",
     "connector": "Atlassian Rovo Jira",
-    "normalizedSnapshotSha256": "946ca1251b90b92a0251ea805ab7682b6610e33a014b8f31e688a53accfde4ab",
+    "normalizedSnapshotSha256": "925a630769927655b512c43d775ccc42464905bb89c9d40cd5b70f07c01bd84b",
     "queries": [
       {
-        "fields": ["summary", "status", "issuetype", "parent", "labels"],
+        "purpose": "identity-status",
         "jql": "project = FL ORDER BY created ASC",
         "order": "created ASC",
+        "fields": ["summary", "status", "issuetype", "parent", "labels"],
+        "pageSize": 100,
+        "pageCounts": [100, 73],
         "pageBoundaries": [
           ["FL-1", "FL-100"],
-          ["FL-101", "FL-142"]
-        ],
-        "pageCounts": [100, 42],
-        "pageSize": 100,
-        "purpose": "identity-status"
+          ["FL-101", "FL-173"]
+        ]
       },
       {
-        "fields": ["issuelinks"],
+        "purpose": "blocks-links",
         "jql": "project = FL ORDER BY created ASC",
         "order": "created ASC",
+        "fields": ["issuelinks"],
+        "pageSize": 100,
+        "pageCounts": [100, 73],
         "pageBoundaries": [
           ["FL-1", "FL-100"],
-          ["FL-101", "FL-142"]
-        ],
-        "pageCounts": [100, 42],
-        "pageSize": 100,
-        "purpose": "blocks-links"
+          ["FL-101", "FL-173"]
+        ]
       }
     ]
   },
   "workflowSnapshot": {
     "counts": {
-      "Done": 1,
-      "In Progress": 1,
-      "To Do": 140
+      "To Do": 79,
+      "In Progress": 54,
+      "Done": 29
     },
-    "done": ["FL-118"],
-    "inProgress": ["FL-25"]
+    "done": [
+      "FL-25",
+      "FL-26",
+      "FL-27",
+      "FL-28",
+      "FL-41",
+      "FL-48",
+      "FL-49",
+      "FL-52",
+      "FL-53",
+      "FL-54",
+      "FL-55",
+      "FL-60",
+      "FL-61",
+      "FL-63",
+      "FL-64",
+      "FL-65",
+      "FL-68",
+      "FL-70",
+      "FL-75",
+      "FL-66",
+      "FL-77",
+      "FL-79",
+      "FL-82",
+      "FL-84",
+      "FL-85",
+      "FL-89",
+      "FL-106",
+      "FL-39",
+      "FL-118"
+    ],
+    "inProgress": [
+      "FL-29",
+      "FL-30",
+      "FL-31",
+      "FL-32",
+      "FL-42",
+      "FL-43",
+      "FL-44",
+      "FL-33",
+      "FL-34",
+      "FL-35",
+      "FL-36",
+      "FL-45",
+      "FL-46",
+      "FL-47",
+      "FL-50",
+      "FL-51",
+      "FL-56",
+      "FL-37",
+      "FL-38",
+      "FL-57",
+      "FL-58",
+      "FL-59",
+      "FL-62",
+      "FL-69",
+      "FL-73",
+      "FL-74",
+      "FL-71",
+      "FL-76",
+      "FL-67",
+      "FL-78",
+      "FL-72",
+      "FL-80",
+      "FL-81",
+      "FL-83",
+      "FL-86",
+      "FL-88",
+      "FL-90",
+      "FL-91",
+      "FL-92",
+      "FL-95",
+      "FL-96",
+      "FL-104",
+      "FL-16",
+      "FL-93",
+      "FL-101",
+      "FL-102",
+      "FL-113",
+      "FL-110",
+      "FL-114",
+      "FL-115",
+      "FL-131",
+      "FL-135",
+      "FL-142",
+      "FL-153"
+    ]
   }
 }
