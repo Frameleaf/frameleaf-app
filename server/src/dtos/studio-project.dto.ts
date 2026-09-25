@@ -209,6 +209,17 @@ const StudioProjectLeaseRequestSchema = z
   })
   .meta({ id: 'StudioProjectLeaseRequestDto' });
 
+/** One canonical Studio command (FL-92), as the editor issued it. Checked against the catalogue. */
+const StudioCommandEnvelopeSchema = z
+  .object({
+    id: z.string().min(1).max(100).describe('Published command id (studio/frameleaf-studio-commands.json)'),
+    payload: z.record(z.string(), z.unknown()).describe('Command payload; graph-shaped values pass through unread'),
+    revision: z.int().min(0).describe('The head revision the command was issued against'),
+    idempotencyKey: z.string().min(1).max(128),
+    issuedAt: z.number().meta({ format: 'double' }).describe('Epoch milliseconds'),
+  })
+  .meta({ id: 'StudioCommandEnvelopeDto' });
+
 const StudioProjectSaveSchema = z
   .object({
     clientId: IdentifierSchema,
@@ -216,6 +227,13 @@ const StudioProjectSaveSchema = z
     expectedRevision: z.int().min(0).describe('The head this document was built on'),
     envelope: StudioProjectEnvelopeSchema,
     summary: StudioCommandSummarySchema.optional(),
+    commands: z
+      .array(StudioCommandEnvelopeSchema)
+      .max(500)
+      .optional()
+      .describe(
+        'The canonical commands the engine applied to produce this document (FL-92). Each is checked against the catalogue and the head, and the revision summary is counted from them.',
+      ),
   })
   .meta({ id: 'StudioProjectSaveDto' });
 

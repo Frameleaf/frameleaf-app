@@ -286,7 +286,7 @@
     graph: () => project.graph,
     revision: () => project.revision,
     assets: () => assets,
-    stage: (graph, commandIds) => session.stage(graph, commandIds),
+    stage: (graph, commandIds, envelopes) => session.stage(graph, commandIds, envelopes),
     restore: (revision) => session.restore(revision),
     engine: engineForCommands,
     history,
