@@ -27,9 +27,18 @@
   } from '$lib/stores/slideshow.store';
   import { Icon } from '@immich/ui';
   import { mdiClose } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
+  import { get } from 'svelte/store';
 
   let { onClose }: { onClose: () => void } = $props();
+
+  // Closing the viewer (or ending the slideshow) with the panel open leaves it closed next time.
+  onDestroy(() => {
+    if (get(slideshowStore.settingsOpen)) {
+      void slideshowStore.closeSettings({ restoreFocus: false });
+    }
+  });
 
   const titleId = $props.id();
 

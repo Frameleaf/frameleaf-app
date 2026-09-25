@@ -57,6 +57,7 @@
   import OcrButton from './OcrButton.svelte';
   import PhotoViewer from './PhotoViewer.svelte';
   import SlideshowBar from './SlideshowBar.svelte';
+  import SlideshowSettingsPanel from '$lib/components/frameleaf/SlideshowSettingsPanel.svelte';
   import SlideshowMemoriesOverlay from './SlideshowMemoriesOverlay.svelte';
   import SlideshowMetadataOverlay from './SlideshowMetadataOverlay.svelte';
   import VideoViewer from './VideoWrapperViewer.svelte';
@@ -122,6 +123,7 @@
     slideshowAutoplay,
     slideshowTransition,
     slideshowDelay,
+    settingsOpen: slideshowSettingsOpen,
   } = slideshowStore;
   // FL-36: which way the slideshow last moved, so a Slide transition arrives from that side.
   let slideshowDirection = $state<SlideshowDirection>('next');
@@ -188,11 +190,15 @@
 
   onMount(() => {
     syncAssetViewerOpenClass(true);
+    // FL-36: a slideshow starts only from a stopped viewer; resuming from pause is not a new run.
+    let previousSlideshowState = $slideshowState;
     const slideshowStateUnsubscribe = slideshowState.subscribe((value) => {
-      if (value === SlideshowState.PlaySlideshow) {
+      const previous = previousSlideshowState;
+      previousSlideshowState = value;
+      if (value === SlideshowState.PlaySlideshow && previous !== SlideshowState.PauseSlideshow) {
         slideshowHistory.reset();
         slideshowHistory.queue(toTimelineAsset(asset));
-        handlePromiseError(handlePlaySlideshow());
+        handlePlaySlideshow();
       } else if (value === SlideshowState.StopSlideshow) {
         handlePromiseError(handleStopSlideshow());
       }
@@ -332,16 +338,20 @@
     }
   };
 
-  const handlePlaySlideshow = async () => {
+  // FL-36 / V-18 (MediaViewer.jsx:254-263): the slideshow plays in the viewer. Full screen is an
+  // explicit choice from the slideshow controls, never forced.
+  const handlePlaySlideshow = () => {
     slideshowStartAssetId = asset.id;
     if (!$slideshowAutoplay) {
       $slideshowState = SlideshowState.PauseSlideshow;
     }
+  };
+
+  const toggleSlideshowFullScreen = async () => {
     try {
-      await assetViewerHtmlElement?.requestFullscreen?.();
+      await (document.fullscreenElement ? document.exitFullscreen() : assetViewerHtmlElement?.requestFullscreen?.());
     } catch (error) {
       handleError(error, $t('errors.unable_to_enter_fullscreen'));
-      $slideshowState = SlideshowState.StopSlideshow;
     }
   };
 
@@ -578,12 +588,17 @@
         {asset}
         title={album?.albumName ?? person?.name}
         assetType={previewStackedAsset?.type ?? asset.type}
-        onSetToFullScreen={() => assetViewerHtmlElement?.requestFullscreen?.()}
+        onToggleFullScreen={() => void toggleSlideshowFullScreen()}
         onPrevious={() => navigateAsset('previous')}
         onNext={() => navigateAsset('next')}
         onClose={() => ($slideshowState = SlideshowState.StopSlideshow)}
       />
     </div>
+  {/if}
+
+  <!-- FL-36: the slideshow settings panel (MediaViewer.jsx:2086); any control may open it through slideshowStore.toggleSettings. -->
+  {#if $slideshowSettingsOpen}
+    <SlideshowSettingsPanel onClose={() => void slideshowStore.closeSettings()} />
   {/if}
 
   {#if $slideshowState === SlideshowState.None && showNavigation && !assetViewerManager.isShowEditor && !assetViewerManager.isFaceEditMode && previousAsset}

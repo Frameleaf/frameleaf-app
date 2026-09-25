@@ -1,5 +1,6 @@
 import { AssetTypeEnum, getAssetInfo, updateAsset } from '@immich/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
@@ -180,5 +181,49 @@ describe('AssetViewer', () => {
       expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { isFavorite: true } }),
     );
     await waitFor(() => expect(getByLabelText('unfavorite')).toBeInTheDocument());
+  });
+
+  // FL-36 / V-18 (MediaViewer.jsx:254-263): the slideshow plays in the viewer; full screen is a choice.
+  it('starts a slideshow in the viewer without forcing full screen', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    HTMLElement.prototype.requestFullscreen = requestFullscreen;
+    const { findByTestId, getByLabelText } = renderWithTooltips(AssetViewer, {
+      cursor: { current: asset },
+      showNavigation: false,
+    });
+
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+
+    expect(await findByTestId('slideshow-controls')).toBeInTheDocument();
+    expect(requestFullscreen).not.toHaveBeenCalled();
+    await fireEvent.click(getByLabelText('frameleaf_slideshow_enter_full_screen'));
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+
+    // the viewer renders the settings panel for whichever control opened it
+    await fireEvent.click(getByLabelText('slideshow_settings'));
+    expect(await findByTestId('slideshow-settings')).toBeInTheDocument();
+    slideshowStore.slideshowState.set(SlideshowState.StopSlideshow);
+    await waitFor(() => expect(get(slideshowStore.settingsOpen)).toBe(false));
+  });
+
+  // Resuming from pause is not a new run: Autoplay off must not bounce a resumed slideshow back to paused.
+  it('keeps a resumed slideshow playing when Autoplay is off', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    slideshowStore.slideshowAutoplay.set(false);
+    renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+    await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PauseSlideshow));
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+    await Promise.resolve();
+    expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+    slideshowStore.slideshowAutoplay.set(true);
   });
 });

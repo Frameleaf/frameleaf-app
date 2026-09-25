@@ -1,23 +1,41 @@
 <script lang="ts">
+  /**
+   * Slideshow controls (FL-36, V-18). The slideshow plays inside the viewer (MediaViewer.jsx:254-263):
+   * full screen is an explicit choice here, never forced, and leaving full screen does not end the
+   * slideshow. A frosted capsule of playback controls (end slideshow, play or pause, previous and
+   * next, settings, full screen) floats over the top of the canvas, and the thin accent progress
+   * line runs along the top edge (media-viewer.css:425-450). The viewer footer (V-13, Packet 4A)
+   * drives the same state: `slideshowStore.slideshowState` and `slideshowStore.toggleSettings`.
+   *
+   * Escape follows MediaViewer.jsx:733-747: it closes the settings panel first, then leaves full
+   * screen (the browser does that itself), then ends the slideshow. S and Space play and pause.
+   */
   import { shortcuts, type ShortcutOptions } from '$lib/actions/shortcut';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import ProgressBar from '$lib/components/shared-components/progress-bar/ProgressBar.svelte';
   import { ProgressBarStatus } from '$lib/constants';
-  import { languageManager } from '$lib/managers/language-manager.svelte';
-  import SlideshowSettingsPanel from '$lib/components/frameleaf/SlideshowSettingsPanel.svelte';
   import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
+  import { languageManager } from '$lib/managers/language-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { fromISODateTimeUTC } from '$lib/utils/timeline-util';
   import { acquireWakeLock, releaseWakeLock } from '$lib/utils/wakelock.svelte';
   import { AssetMediaSize, AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
-  import { IconButton } from '@immich/ui';
-  import { mdiChevronLeft, mdiChevronRight, mdiClose, mdiCog, mdiFullscreen, mdiPause, mdiPlay } from '@mdi/js';
+  import { Icon } from '@immich/ui';
+  import {
+    mdiChevronLeft,
+    mdiChevronRight,
+    mdiClose,
+    mdiCogOutline,
+    mdiFullscreen,
+    mdiFullscreenExit,
+    mdiPause,
+    mdiPlay,
+  } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { onDestroy, onMount, tick } from 'svelte';
-  import { useSwipe } from 'svelte-gestures';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { motionFly } from '$lib/frameleaf/motion';
 
   interface Props {
     isFullScreen: boolean;
@@ -29,7 +47,8 @@
     onNext?: () => void;
     onPrevious?: () => void;
     onClose?: () => void;
-    onSetToFullScreen?: () => void;
+    /** Enters or leaves full screen for the viewer. */
+    onToggleFullScreen?: () => void;
   }
 
   let {
@@ -40,79 +59,41 @@
     onNext = () => {},
     onPrevious = () => {},
     onClose = () => {},
-    onSetToFullScreen = () => {},
+    onToggleFullScreen = () => {},
   }: Props = $props();
 
-  const { restartProgress, stopProgress, slideshowDelay, showProgressBar, slideshowNavigation, slideshowState } =
-    slideshowStore;
+  const {
+    restartProgress,
+    stopProgress,
+    slideshowDelay,
+    showProgressBar,
+    slideshowNavigation,
+    slideshowState,
+    settingsOpen,
+    toggleSettings,
+    closeSettings,
+  } = slideshowStore;
 
-  let progressBarStatus: ProgressBarStatus | undefined = $state();
   let progressBar = $state<ReturnType<typeof ProgressBar>>();
-  let showControls = $state(true);
-  let timer: NodeJS.Timeout;
-  let isOverControls = $state(false);
+  let progressBarStatus: ProgressBarStatus | undefined = $state();
   const isVideoSlide = $derived(assetType === AssetTypeEnum.Video);
-
-  let unsubscribeRestart: () => void;
-  let unsubscribeStop: () => void;
-
-  const setCursorStyle = (style: string) => {
-    document.body.style.cursor = style;
-  };
-
-  const stopControlsHideTimer = () => {
-    clearTimeout(timer);
-    setCursorStyle('');
-  };
-
-  const showControlBar = () => {
-    showControls = true;
-    stopControlsHideTimer();
-    hideControlsAfterDelay();
-  };
-
-  const hideControlsAfterDelay = () => {
-    timer = setTimeout(() => {
-      // the settings panel keeps the controls and the pointer on screen while it is open
-      if (settingsOpen) {
-        return;
-      }
-      if (isOverControls) {
-        return;
-      }
-
-      showControls = false;
-      setCursorStyle('none');
-    }, 2500);
-  };
+  const playing = $derived($slideshowState === SlideshowState.PlaySlideshow);
 
   onMount(() => {
-    hideControlsAfterDelay();
-    unsubscribeRestart = restartProgress.subscribe((value) => {
+    const unsubscribeRestart = restartProgress.subscribe((value) => {
       if (value) {
         progressBar?.restart();
       }
     });
-
-    unsubscribeStop = stopProgress.subscribe((value) => {
-      if (!value) {
-        return;
+    const unsubscribeStop = stopProgress.subscribe((value) => {
+      if (value) {
+        progressBar?.restart();
       }
-
-      progressBar?.restart();
-      stopControlsHideTimer();
     });
-  });
-
-  onDestroy(() => {
-    setCursorStyle('');
-    if (unsubscribeRestart) {
+    return () => {
       unsubscribeRestart();
-    }
-
-    if (unsubscribeStop) {
       unsubscribeStop();
-    }
+    };
   });
 
   const handleDone = async () => {
@@ -125,74 +106,32 @@
     onNext();
   };
 
-  // FL-36 (MediaViewer.jsx:1700-1716, 2086): the settings are a non-modal panel over the running
-  // slideshow, so the photo stays in view and a new transition shows on the next item. Closing
-  // it (Escape or its close button) hands focus back to the settings button (MediaViewer.jsx:740-744).
-  let settingsOpen = $state(false);
-  let controlsElement = $state<HTMLElement>();
-  const toggleSettings = () => {
-    if (settingsOpen) {
-      void closeSettings();
-    } else {
-      settingsOpen = true;
+  // Play and pause are the slideshow state; the progress line follows it, whoever changed it
+  // (these controls, the viewer footer, Space, S or the media keys).
+  const play = () => ($slideshowState = SlideshowState.PlaySlideshow);
+  const pause = () => ($slideshowState = SlideshowState.PauseSlideshow);
+  const togglePause = () => (playing ? pause() : play());
+  $effect(() => {
+    const bar = progressBar;
+    if (!bar) {
+      return;
     }
-  };
-  const closeSettings = async () => {
-    settingsOpen = false;
-    showControlBar();
-    await tick();
-    controlsElement?.querySelector<HTMLElement>('[data-slideshow-settings]')?.focus();
-  };
-
-  onMount(() => {
-    function exitFullscreenHandler() {
-      const doc = document as Document & {
-        webkitIsFullScreen?: boolean;
-      };
-
-      if (!document.fullscreenElement && !doc.webkitIsFullScreen) {
-        onClose();
-      }
+    if (playing && progressBarStatus === ProgressBarStatus.Paused) {
+      void bar.play();
+    } else if (!playing && progressBarStatus !== ProgressBarStatus.Paused) {
+      void bar.pause();
     }
-
-    document.addEventListener('fullscreenchange', exitFullscreenHandler);
-    document.addEventListener('webkitfullscreenchange', exitFullscreenHandler);
-
-    return () => {
-      document.removeEventListener('fullscreenchange', exitFullscreenHandler);
-      document.removeEventListener('webkitfullscreenchange', exitFullscreenHandler);
-    };
   });
 
-  const { swipe, onswipe, onswipedown } = useSwipe(
-    () => {},
-    () => ({ touchAction: 'pan-x' }),
-    { onswipedown: showControlBar },
-    true,
-  );
-
-  const play = () => {
-    $slideshowState = SlideshowState.PlaySlideshow;
-    progressBar?.play();
-  };
-
-  const pause = () => {
-    $slideshowState = SlideshowState.PauseSlideshow;
-    progressBar?.pause();
-  };
-
-  const togglePause = () => {
-    if (progressBarStatus === ProgressBarStatus.Paused) {
-      play();
-    } else {
-      pause();
-    }
-  };
+  // The settings panel is the viewer's (SlideshowSettingsPanel); ending the slideshow closes it.
+  onDestroy(() => {
+    void closeSettings({ restoreFocus: false });
+  });
 
   // FL-36 (MediaViewer.jsx:863-885): keep the screen awake while the slideshow plays, and while
   // its settings are open over it.
   $effect(() => {
-    if ($slideshowState === SlideshowState.PlaySlideshow || settingsOpen) {
+    if (playing || $settingsOpen) {
       void acquireWakeLock('slideshow');
     } else {
       releaseWakeLock('slideshow').catch(() => {});
@@ -218,118 +157,135 @@
         .filter(Boolean)
         .join(' · '),
       artwork: getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }),
-      playing: isVideoSlide ? undefined : $slideshowState === SlideshowState.PlaySlideshow,
+      playing: isVideoSlide ? undefined : playing,
       controls: { play, pause, previous: onPrevious, next: onNext },
     });
   });
 
   const shortcutBindings = $derived.by((): ShortcutOptions[] => {
-    // while the settings are open, Escape closes them and the arrow keys stay with their controls
-    if (settingsOpen) {
+    // MediaViewer.jsx:733-747: Escape closes the settings first; with them open, the arrow keys
+    // stay with their controls
+    if ($settingsOpen) {
       return [{ shortcut: { key: 'Escape' }, onShortcut: () => void closeSettings() }];
     }
     const bindings: ShortcutOptions[] = [
       { shortcut: { key: 'Escape' }, onShortcut: onClose },
       { shortcut: { key: 'ArrowLeft' }, onShortcut: onPrevious },
       { shortcut: { key: 'ArrowRight' }, onShortcut: onNext },
+      { shortcut: { key: 's' }, onShortcut: togglePause, preventDefault: true },
     ];
 
     // For videos, allow the native HTML5 element to handle space for play/pause
     if (!isVideoSlide) {
-      bindings.push({
-        shortcut: { key: ' ' },
-        onShortcut: togglePause,
-        preventDefault: true,
-      });
+      bindings.push({ shortcut: { key: ' ' }, onShortcut: togglePause, preventDefault: true });
     }
 
     return bindings;
   });
 </script>
 
-<svelte:document onmousemove={showControlBar} use:shortcuts={shortcutBindings} />
+<svelte:document use:shortcuts={shortcutBindings} />
 
-{/* @ts-expect-error https://github.com/Rezi/svelte-gestures/issues/38#issuecomment-3315953573 */ null}
-<svelte:body {@attach swipe} {onswipe} {onswipedown} />
-
-{#if showControls}
-  <div
-    class="dark m-4 flex gap-2 rounded-3xl bg-black/40 px-2 backdrop-blur-sm"
-    onmouseenter={() => (isOverControls = true)}
-    onmouseleave={() => (isOverControls = false)}
-    bind:this={controlsElement}
-    transition:motionFly={{ duration: 150 }}
-    role="navigation"
-  >
-    <IconButton
-      variant="ghost"
-      shape="round"
-      color="secondary"
-      icon={mdiClose}
-      onclick={onClose}
-      aria-label={$t('exit_slideshow')}
+<!-- media-viewer.css:425-450: the thin accent line along the top of the canvas -->
+{#if !isVideoSlide}
+  <div class="frameleaf slideshow-progress" data-theme="dark" class:hidden={!$showProgressBar} aria-hidden="true">
+    <ProgressBar
+      autoplay={playing}
+      hidden={!$showProgressBar}
+      duration={$slideshowDelay}
+      bind:this={progressBar}
+      bind:status={progressBarStatus}
+      onDone={handleDone}
     />
-
-    {#if !isVideoSlide}
-      <IconButton
-        variant="ghost"
-        shape="round"
-        color="secondary"
-        icon={progressBarStatus === ProgressBarStatus.Paused ? mdiPlay : mdiPause}
-        onclick={togglePause}
-        aria-label={progressBarStatus === ProgressBarStatus.Paused ? $t('play') : $t('pause')}
-      />
-    {/if}
-    <IconButton
-      variant="ghost"
-      shape="round"
-      color="secondary"
-      icon={languageManager.rtl ? mdiChevronRight : mdiChevronLeft}
-      onclick={onPrevious}
-      aria-label={$t('previous')}
-    />
-    <IconButton
-      variant="ghost"
-      shape="round"
-      color="secondary"
-      icon={languageManager.rtl ? mdiChevronLeft : mdiChevronRight}
-      onclick={onNext}
-      aria-label={$t('next')}
-    />
-    <IconButton
-      variant="ghost"
-      shape="round"
-      color="secondary"
-      icon={mdiCog}
-      onclick={toggleSettings}
-      aria-label={$t('slideshow_settings')}
-      aria-expanded={settingsOpen}
-      data-slideshow-settings
-    />
-    {#if !isFullScreen}
-      <IconButton
-        variant="ghost"
-        shape="round"
-        color="secondary"
-        icon={mdiFullscreen}
-        onclick={onSetToFullScreen}
-        aria-label={$t('set_slideshow_to_fullscreen')}
-      />
-    {/if}
   </div>
 {/if}
 
-{#if !isVideoSlide}
-  <ProgressBar
-    autoplay={$slideshowState === SlideshowState.PlaySlideshow}
-    hidden={!$showProgressBar}
-    duration={$slideshowDelay}
-    bind:this={progressBar}
-    bind:status={progressBarStatus}
-    onDone={handleDone}
-  />
-{/if}
+<div
+  class="frameleaf slideshow-controls"
+  data-theme="dark"
+  role="toolbar"
+  aria-label={$t('slideshow')}
+  data-testid="slideshow-controls"
+>
+  <IconButton label={$t('exit_slideshow')} onclick={onClose}>
+    <Icon icon={mdiClose} size="1.25rem" />
+  </IconButton>
+  <IconButton
+    label={playing ? $t('frameleaf_slideshow_pause') : $t('frameleaf_slideshow_play')}
+    pressed={playing}
+    onclick={togglePause}
+  >
+    <Icon icon={playing ? mdiPause : mdiPlay} size="1.25rem" />
+  </IconButton>
+  <IconButton label={$t('previous')} onclick={onPrevious}>
+    <Icon icon={languageManager.rtl ? mdiChevronRight : mdiChevronLeft} size="1.25rem" />
+  </IconButton>
+  <IconButton label={$t('next')} onclick={onNext}>
+    <Icon icon={languageManager.rtl ? mdiChevronLeft : mdiChevronRight} size="1.25rem" />
+  </IconButton>
+  <IconButton
+    label={$t('slideshow_settings')}
+    pressed={$settingsOpen}
+    onclick={(event) => toggleSettings(event.currentTarget as HTMLElement)}
+  >
+    <Icon icon={mdiCogOutline} size="1.25rem" />
+  </IconButton>
+  <IconButton
+    label={isFullScreen ? $t('frameleaf_slideshow_exit_full_screen') : $t('frameleaf_slideshow_enter_full_screen')}
+    onclick={onToggleFullScreen}
+  >
+    <Icon icon={isFullScreen ? mdiFullscreenExit : mdiFullscreen} size="1.25rem" />
+  </IconButton>
+</div>
 
-{#if settingsOpen}
-  <SlideshowSettingsPanel onClose={() => void closeSettings()} />
-{/if}
+<style>
+  /* media-viewer.css:425-434 */
+  .slideshow-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    height: 3px;
+    background: #ffffff14;
+    pointer-events: none;
+  }
+  .slideshow-progress :global(span) {
+    top: 0;
+    background: var(--fl-accent);
+  }
+  /* The prototype's capsule toolbar pattern (apple-style.css frosted materials, capsule toolbars),
+     floating over the top of the canvas while the viewer header steps aside for the slideshow. */
+  .slideshow-controls {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    left: 50%;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    translate: -50% 0;
+    color: var(--fl-viewer-text);
+    background: color-mix(in srgb, var(--fl-viewer-panel) 72%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    backdrop-filter: blur(24px) saturate(1.6);
+    border: 1px solid var(--fl-viewer-border);
+    border-radius: var(--fl-radius-pill);
+    box-shadow: var(--fl-shadow-2);
+  }
+  .slideshow-controls :global(button) {
+    color: var(--fl-viewer-text);
+    border-radius: var(--fl-radius-pill);
+  }
+  .slideshow-controls :global(button[aria-pressed='true']) {
+    background: var(--fl-viewer-raised);
+  }
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .slideshow-controls {
+      background: var(--fl-viewer-panel);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+</style>

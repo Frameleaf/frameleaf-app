@@ -61,7 +61,6 @@ test.describe('Slideshow', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    await page.mouse.move(10, 10);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
     const panel = page.getByRole('region', { name: 'Slideshow' });
     await expect(panel).toBeVisible();
@@ -87,8 +86,35 @@ test.describe('Slideshow', () => {
     await context.addInitScript(() => localStorage.setItem('slideshow-transition', 'false'));
     await openSlideshow(page);
 
-    await page.mouse.move(10, 10);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
     await expect(page.getByRole('region', { name: 'Slideshow' }).getByLabel('Transition')).toHaveValue('none');
+  });
+
+  // V-18 (MediaViewer.jsx:254-263): the slideshow plays in the viewer; full screen is a choice.
+  test('plays in the viewer without forcing full screen', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await openSlideshow(page);
+
+    await expect(page.getByRole('toolbar', { name: 'Slideshow' })).toBeVisible();
+    expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+    await expect(page.getByRole('button', { name: 'Enter full screen' })).toBeVisible();
+  });
+
+  // MediaViewer.jsx:733-747: Escape closes the settings first, then ends the slideshow.
+  test('Escape closes the settings before it ends the slideshow', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await openSlideshow(page);
+
+    await page.getByRole('button', { name: 'Slideshow settings' }).click();
+    const panel = page.getByRole('region', { name: 'Slideshow' });
+    await expect(panel).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(panel).toHaveCount(0);
+    const exitButton = page.getByRole('button', { name: 'Exit Slideshow' });
+    await expect(exitButton).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(exitButton).not.toBeVisible();
   });
 });
