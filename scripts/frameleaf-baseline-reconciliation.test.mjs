@@ -45,9 +45,9 @@ test("reconciles all 3,520 paths without accepting dirty source", () => {
         .filter(({ issueType }) => issueType === "epic")
         .map(({ planId }) => ({ filePath, planId })),
   );
-  assert.equal(epicRouting.length, 44);
-  assert.equal(new Set(epicRouting.map(({ filePath }) => filePath)).size, 36);
-  assert.equal(new Set(epicRouting.map(({ planId }) => planId)).size, 17);
+  assert.equal(epicRouting.length, 49);
+  assert.equal(new Set(epicRouting.map(({ filePath }) => filePath)).size, 40);
+  assert.equal(new Set(epicRouting.map(({ planId }) => planId)).size, 20);
   assert.ok(
     report.entries.every(({ sourceBackedRouting }) =>
       sourceBackedRouting.every(({ issueType }) =>
