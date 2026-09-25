@@ -76,12 +76,13 @@ test.describe('Shared Links', () => {
     await page.locator(`[data-asset-id="${asset.id}"]`).getByRole('checkbox').click();
     // PublicViewer.jsx: a selection turns the header's download into "Download selected (n)".
     await page.getByRole('button', { name: 'Download selected (1)' }).click();
-    // FL-45: the archive is prepared in the download panel (UploadPanel.jsx DownloadPanel), then saved.
-    const downloads = page.getByRole('region', { name: 'Downloads' });
-    await expect(downloads.getByText('1 download ready')).toBeVisible();
-    await expect(downloads.getByText(/^1 item · .* · Ready$/)).toBeVisible();
-    await Promise.all([page.waitForEvent('download'), downloads.getByRole('button', { name: 'Save' }).click()]);
-    await expect(downloads).toHaveCount(0);
+    // FL-45: a public share prepares the archive in its own strip (PublicViewer.jsx:402-426), not the
+    // Downloads panel, then saves it with "Save archive".
+    await expect(page.getByRole('region', { name: 'Downloads' })).toHaveCount(0);
+    const strip = page.getByRole('status').filter({ hasText: 'Archive ready' });
+    await expect(strip).toContainText(/Archive ready · 1 file/);
+    await Promise.all([page.waitForEvent('download'), strip.getByRole('button', { name: 'Save archive' }).click()]);
+    await expect(strip).toHaveCount(0);
   });
 
   test('a public page has no sticky toolbar, so its header scrolls away with the photos', async ({ page }) => {
@@ -96,12 +97,9 @@ test.describe('Shared Links', () => {
     await page.goto(`/share/${sharedLink.key}`);
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
     await page.getByRole('button', { name: 'Download all' }).click();
-    const downloads = page.getByRole('region', { name: 'Downloads' });
-    await expect(downloads.getByRole('button', { name: 'Save' })).toBeVisible();
-    const [download] = await Promise.all([
-      page.waitForEvent('download'),
-      downloads.getByRole('button', { name: 'Save' }).click(),
-    ]);
+    const save = page.getByRole('button', { name: 'Save archive' });
+    await expect(save).toBeVisible();
+    const [download] = await Promise.all([page.waitForEvent('download'), save.click()]);
     expect(download.suggestedFilename()).toMatch(/\.zip$/);
   });
 

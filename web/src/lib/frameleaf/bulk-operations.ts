@@ -878,13 +878,20 @@ export const runBulkAction = async (
       );
     }
 
-    /* POST /download/info and /download/archive, through the web client's download manager. */
+    /*
+     * POST /download/info and /download/archive, through the web client's download manager. The
+     * gateway settles when every archive is ready to save (FL-45), so a failed or cancelled
+     * download is reported as such rather than as a success.
+     */
     case 'download': {
       try {
         await gateway.downloadArchive(payload?.fileName ?? 'frameleaf', { assetIds: ids });
         report(ids.length);
         return finish({ outcomes: ids.map((id) => ok(id)), cancelled: false });
       } catch (error) {
+        if ((error as { name?: unknown } | null)?.name === 'AbortError') {
+          return finish({ outcomes: [], cancelled: true });
+        }
         return finish({ outcomes: ids.map((id) => failed(id, error)), cancelled: false });
       }
     }

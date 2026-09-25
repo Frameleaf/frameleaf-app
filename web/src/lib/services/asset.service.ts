@@ -1,5 +1,6 @@
 import {
   AssetJobName,
+  AssetMediaSize,
   AssetTypeEnum,
   AssetVisibility,
   getAssetInfo,
@@ -60,7 +61,7 @@ import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
 import { Route } from '$lib/route';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
-import { getSharedLink } from '$lib/utils';
+import { downloadUrl, getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
 import { downloadAssetFile } from '$lib/utils/asset-utils';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
@@ -399,6 +400,18 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
         size: motionAsset.exifInfo?.fileSizeInByte ?? undefined,
       });
     }
+  }
+
+  // A public share's lightbox saves the file directly (PublicViewer.jsx:508-517).
+  if (authManager.isSharedLink) {
+    for (const [index, { filename, id }] of assets.entries()) {
+      if (index > 0) {
+        // Play nice with Safari, which drops a second download started in the same tick.
+        await sleep(500);
+      }
+      downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited }), filename);
+    }
+    return;
   }
 
   // FL-45 D-3: each file is its own row in the download panel, with progress, Cancel and Retry,
