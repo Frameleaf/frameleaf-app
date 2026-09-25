@@ -40,7 +40,7 @@ from frameleaf_ml.models.ocr.detection import TextDetector
 from frameleaf_ml.models.ocr.recognition import TextRecognizer
 from frameleaf_ml.schemas import FaceDetectionOutput, ModelFormat, ModelPrecision, ModelSource, ModelTask, ModelType
 from frameleaf_ml.sessions.ann import AnnSession
-from frameleaf_ml.sessions.ort import OrtSession
+from frameleaf_ml.sessions.ort import OrtSession, flush_denormals
 from frameleaf_ml.sessions.rknn import RknnSession, run_inference
 
 
@@ -336,6 +336,50 @@ class TestBase:
 
         snapshot_download.assert_called_once()
         ort_session.assert_not_called()
+
+    def test_unload_drops_the_session_and_load_takes_it_back(
+        self, snapshot_download: mock.Mock, ort_session: mock.Mock, path: mock.Mock
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        detector = FaceDetector("buffalo_s", cache_dir=path)
+
+        detector.load()
+        detector.unload()
+
+        assert not detector.loaded
+        assert not hasattr(detector, "session")
+
+        detector.load()
+
+        assert detector.loaded
+        assert ort_session.call_count == 2
+
+    def test_load_serializes_requests_for_a_model_neither_has_loaded(
+        self, snapshot_download: mock.Mock, ort_session: mock.Mock, path: mock.Mock
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        detector = FaceDetector("buffalo_s", cache_dir=path)
+        started = threading.Barrier(2)
+
+        def slow_session(*args: Any, **kwargs: Any) -> mock.Mock:
+            time.sleep(0.05)
+            return mock.Mock()
+
+        ort_session.side_effect = slow_session
+
+        def worker() -> None:
+            started.wait()
+            detector.load()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert detector.loaded
+        assert detector.load_attempts == 1
+        ort_session.assert_called_once()
 
 
 class TestImageDescriptionModel:
@@ -1196,6 +1240,47 @@ class TestOrtSession:
         assert session.sess_options.execution_mode == ort.ExecutionMode.ORT_SEQUENTIAL
         assert session.sess_options.inter_op_num_threads == 1
         assert session.sess_options.intra_op_num_threads == 2
+
+    def test_runs_a_model_on_the_threads_it_asks_for(self) -> None:
+        session = OrtSession("ViT-B-32__openai", providers=["CPUExecutionProvider"], threads=4)
+
+        assert session.sess_options.intra_op_num_threads == 4
+
+    def test_flushes_denormals_in_the_session(self) -> None:
+        session = OrtSession("ViT-B-32__openai", providers=["CPUExecutionProvider"])
+
+        assert session.sess_options.get_session_config_entry("session.set_denormal_as_zero") == "1"
+
+    @pytest.mark.parametrize(
+        ("machine", "providers", "disabled"),
+        [
+            ("x86_64", ["CPUExecutionProvider"], []),
+            ("aarch64", ["CPUExecutionProvider"], ["ConvAddActivationFusion"]),
+            ("x86_64", ["CUDAExecutionProvider", "CPUExecutionProvider"], ["MatMulAddFusion"]),
+            (
+                "arm64",
+                ["CoreMLExecutionProvider", "CPUExecutionProvider"],
+                ["ConvAddActivationFusion", "MatMulAddFusion"],
+            ),
+        ],
+    )
+    def test_disables_the_optimizers_that_slow_a_provider(
+        self, ort_session: mock.Mock, mocker: MockerFixture, machine: str, providers: list[str], disabled: list[str]
+    ) -> None:
+        mocker.patch("frameleaf_ml.sessions.ort.platform.machine", return_value=machine)
+
+        session = OrtSession("ViT-B-32__openai", providers=providers)
+
+        assert session.disabled_optimizers == disabled
+        assert ort_session.call_args.kwargs["disabled_optimizers"] == disabled
+
+    def test_flush_denormals_only_touches_linux_x86_64(self, mocker: MockerFixture) -> None:
+        mocker.patch("frameleaf_ml.sessions.ort.sys.platform", "darwin")
+        cdll = mocker.patch("frameleaf_ml.sessions.ort.ctypes.CDLL")
+
+        flush_denormals()
+
+        cdll.assert_not_called()
 
     @pytest.mark.ov_device_ids(["CPU"])
     def test_sets_default_sess_options_if_openvino_cpu(self, ov_device_ids: list[str]) -> None:
@@ -2503,6 +2588,41 @@ class TestCache:
             ],
             any_order=True,
         )
+
+
+@pytest.mark.asyncio
+class TestRequestState:
+    async def test_releases_memory_shortly_after_the_last_request(self, mocker: MockerFixture) -> None:
+        from frameleaf_ml import main
+
+        release = mocker.patch("frameleaf_ml.main.allocator.release")
+        mocker.patch.object(main, "release", None)
+        mocker.patch.object(main, "active_requests", 0)
+        first, second = main.update_state(), main.update_state()
+
+        await first.__anext__()
+        await second.__anext__()
+        assert main.active_requests == 2
+        with pytest.raises(StopAsyncIteration):
+            await first.__anext__()
+        assert main.release is None  # one request is still running
+
+        with pytest.raises(StopAsyncIteration):
+            await second.__anext__()
+
+        assert main.active_requests == 0
+        timer = main.release
+        assert timer is not None
+        assert timer.when() - asyncio.get_running_loop().time() == pytest.approx(5, abs=0.5)
+        release.assert_not_called()
+
+        third = main.update_state()
+        await third.__anext__()
+        assert main.release is None  # a new request keeps the memory
+        assert timer.cancelled()
+        with pytest.raises(StopAsyncIteration):
+            await third.__anext__()
+        main.release.cancel()
 
 
 @pytest.mark.asyncio

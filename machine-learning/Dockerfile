@@ -195,6 +195,11 @@ ENV TRANSFORMERS_CACHE=/cache \
     FRAMELEAF_STUDIO_CHROMIUM=/usr/local/bin/frameleaf-studio-browser \
     FREECUT_CHROME_ARGS=--no-sandbox
 
+# The GPU runtimes' JIT caches live beside the models, so a recreated container keeps what they compiled.
+ENV CUDA_CACHE_PATH=/cache/jit/cuda \
+    AMD_COMGR_CACHE_DIR=/cache/jit/comgr \
+    NEO_CACHE_DIR=/cache/jit/neo
+
 # prevent core dumps
 RUN echo "hard core 0" >> /etc/security/limits.conf && \
     echo "fs.suid_dumpable 0" >> /etc/sysctl.conf && \

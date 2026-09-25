@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ctypes
+import platform
+import sys
 from collections.abc import Sequence
 from contextlib import nullcontext
 from pathlib import Path
@@ -97,9 +100,11 @@ class OrtSession:
         provider_options: list[dict[str, Any]] | None = None,
         sess_options: ort.SessionOptions | None = None,
         device_id: str | None = None,
+        threads: int = 2,
     ):
         self.model_path = Path(model_path)
         self.source_model_path = self.model_path
+        self.threads = threads
         native = current_policy()
         self._coreml_lock = (
             Lock()
@@ -121,6 +126,8 @@ class OrtSession:
             providers = requested
         self.device_id = device_id
         self.providers = providers if providers is not None else self._providers_default
+        self.disabled_optimizers = _disabled_optimizers_default(self.providers)
+        log.debug(f"Setting disabled_optimizers to {self.disabled_optimizers}")
         self.provider_options = provider_options if provider_options is not None else self._provider_options_default
         self.sess_options = sess_options if sess_options is not None else self._sess_options_default
         if native is not None and native.profile_dir is not None:
@@ -131,6 +138,7 @@ class OrtSession:
             providers=self.providers,
             provider_options=self.provider_options,
             sess_options=self.sess_options,
+            disabled_optimizers=self.disabled_optimizers,
         )
         if native is not None:
             self.session.disable_fallback()
@@ -229,6 +237,7 @@ class OrtSession:
                 providers=self.providers,
                 provider_options=providers,
                 sess_options=options,
+                disabled_optimizers=self.disabled_optimizers,
             )
             session.disable_fallback()
             if "CoreMLExecutionProvider" not in session.get_providers():
@@ -323,6 +332,8 @@ class OrtSession:
     @property
     def _sess_options_default(self) -> ort.SessionOptions:
         sess_options = ort.SessionOptions()
+        # some CPUs slow down many times over on subnormal operands, and ORT clears the flush in its threads otherwise
+        sess_options.add_session_config_entry("session.set_denormal_as_zero", "1")
         sess_options.enable_cpu_mem_arena = settings.model_arena
 
         # avoid thread contention between models
@@ -337,9 +348,32 @@ class OrtSession:
         if settings.model_intra_op_threads > 0:
             sess_options.intra_op_num_threads = settings.model_intra_op_threads
         elif settings.model_intra_op_threads == 0 and self.providers == ["CPUExecutionProvider"]:
-            sess_options.intra_op_num_threads = 2
+            sess_options.intra_op_num_threads = self.threads
 
         if sess_options.inter_op_num_threads > 1:
             sess_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
 
         return sess_options
+
+
+def _disabled_optimizers_default(providers: list[str]) -> list[str]:
+    disabled_optimizers: list[str] = []
+    if platform.machine() in ("arm64", "aarch64"):  # as macOS and Linux name the same architecture
+        disabled_optimizers.append("ConvAddActivationFusion")
+
+    # the Gemm it makes runs slower than the pair it replaces there, and on CUDA it also keeps BiasGelu from fusing
+    if "CoreMLExecutionProvider" in providers or "CUDAExecutionProvider" in providers:
+        disabled_optimizers.append("MatMulAddFusion")
+
+    return disabled_optimizers
+
+
+def flush_denormals() -> None:
+    """Reads subnormal floats as zero on the calling thread, which ORT does only on its own threads."""
+    if sys.platform != "linux" or platform.machine() != "x86_64":
+        return
+    libm = ctypes.CDLL("libm.so.6")
+    env = (ctypes.c_uint32 * 8)()  # glibc's fenv_t here: the x87 environment, then MXCSR
+    libm.fegetenv(env)
+    env[7] |= 0x8040  # denormals are zero, flush to zero
+    libm.fesetenv(env)
