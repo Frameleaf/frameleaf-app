@@ -255,7 +255,7 @@ describe('PersonService face history (FL-57)', () => {
       mocks.person.getAllFacesOfAsset.mockResolvedValue([current]);
       mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([current.id]));
       mocks.person.getByGroupId.mockResolvedValue(PersonFactory.create({ ownerId: entry.ownerId }));
-      mocks.person.setFaceCorrectionUndone.mockResolvedValue(true);
+      mocks.person.undoFaceCorrection.mockResolvedValue('undone');
       return { auth, current };
     };
 
@@ -266,8 +266,11 @@ describe('PersonService face history (FL-57)', () => {
       await expect(sut.undoCorrection(auth, entry.id)).resolves.toEqual(
         expect.objectContaining({ id: entry.id, undoneAt: expect.any(String), undoable: false }),
       );
-      expect(mocks.person.setFacePerson).toHaveBeenCalledWith(current.id, entry.fromPersonId);
-      expect(mocks.person.setFaceCorrectionUndone).toHaveBeenCalledWith(entry.id);
+      expect(mocks.person.undoFaceCorrection).toHaveBeenCalledWith(
+        entry.id,
+        { id: current.id, expectedRevision: current.updateId },
+        { personGroupId: entry.fromPersonId },
+      );
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.PersonIdentityRefresh,
         data: { ownerId: entry.ownerId, assetIds: [entry.assetId] },
@@ -279,7 +282,11 @@ describe('PersonService face history (FL-57)', () => {
       const { auth, current } = setup(entry, { deletedAt: newDate(), personGroupId: entry.fromPersonId });
 
       await sut.undoCorrection(auth, entry.id);
-      expect(mocks.person.restoreAssetFace).toHaveBeenCalledWith(current.id);
+      expect(mocks.person.undoFaceCorrection).toHaveBeenCalledWith(
+        entry.id,
+        { id: current.id, expectedRevision: current.updateId },
+        { restore: true },
+      );
     });
 
     it('finds the face that replaced the one the change was about, at the same place', async () => {
@@ -299,7 +306,11 @@ describe('PersonService face history (FL-57)', () => {
       mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([replacement.id]));
 
       await sut.undoCorrection(auth, entry.id);
-      expect(mocks.person.setFacePerson).toHaveBeenCalledWith(replacement.id, entry.fromPersonId);
+      expect(mocks.person.undoFaceCorrection).toHaveBeenCalledWith(
+        entry.id,
+        { id: replacement.id, expectedRevision: replacement.updateId },
+        { personGroupId: entry.fromPersonId },
+      );
     });
 
     const conflict = async (promise: Promise<unknown>) => {
@@ -312,7 +323,26 @@ describe('PersonService face history (FL-57)', () => {
       const entry = correction();
       const { auth } = setup(entry, { personGroupId: newUuid() });
       await expect(conflict(sut.undoCorrection(auth, entry.id))).resolves.toBe('face-changed');
-      expect(mocks.person.setFacePerson).not.toHaveBeenCalled();
+      expect(mocks.person.undoFaceCorrection).not.toHaveBeenCalled();
+    });
+
+    // FL-38: a revision-checked correction that lands between the check and the write wins
+    it('refuses, and keeps the change standing, when another view corrects the face meanwhile', async () => {
+      const entry = correction();
+      const { auth } = setup(entry);
+      mocks.person.undoFaceCorrection.mockResolvedValue('face-changed');
+
+      await expect(conflict(sut.undoCorrection(auth, entry.id))).resolves.toBe('face-changed');
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(
+        expect.objectContaining({ name: JobName.PersonIdentityRefresh }),
+      );
+    });
+
+    it('refuses a change undone meanwhile', async () => {
+      const entry = correction();
+      const { auth } = setup(entry);
+      mocks.person.undoFaceCorrection.mockResolvedValue('already-undone');
+      await expect(conflict(sut.undoCorrection(auth, entry.id))).resolves.toBe('already-undone');
     });
 
     it('refuses when the original was replaced (another checksum)', async () => {

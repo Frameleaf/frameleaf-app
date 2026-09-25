@@ -413,13 +413,18 @@ export class PersonService extends BaseService {
       }
     }
 
-    if (!(await this.personRepository.setFaceCorrectionUndone(entry.id))) {
+    // FL-38: the face is written only at the revision checked above, together with the history
+    // entry, so an undo never overwrites a correction another view made meanwhile
+    const outcome = await this.personRepository.undoFaceCorrection(
+      entry.id,
+      { id: face.id, expectedRevision: face.updateId },
+      entry.action === 'remove' ? { restore: true } : { personGroupId: restoreTo },
+    );
+    if (outcome === 'already-undone') {
       throw correctionConflict('already-undone', 'This change was already undone');
     }
-    if (entry.action === 'remove') {
-      await this.personRepository.restoreAssetFace(face.id);
-    } else {
-      await this.personRepository.setFacePerson(face.id, restoreTo);
+    if (outcome === 'face-changed') {
+      throw correctionConflict('face-changed', 'This face has changed since');
     }
 
     await this.refreshFeaturePhotos(auth.user.id, [restoreTo, face.personGroupId], face.id);
