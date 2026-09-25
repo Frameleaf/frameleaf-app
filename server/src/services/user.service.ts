@@ -201,12 +201,17 @@ export class UserService extends BaseService {
         deviceLabel = [session?.deviceOS, session?.deviceType].filter(Boolean).join(' · ') || null;
       }
       const kept = changes.slice(0, PREFERENCE_HISTORY_CHANGE_LIMIT);
-      await this.userRepository.addPreferenceHistory({
+      const written = await this.userRepository.addPreferenceHistory({
         userId: auth.user.id,
         deviceLabel,
         changes: kept,
         omittedChanges: changes.length - kept.length,
       });
+      if (!written) {
+        this.logger.warn(
+          `Preference history not recorded for user ${auth.user.id}: the fork schema is not writable (database handoff)`,
+        );
+      }
     } catch (error) {
       this.logger.error(`Unable to record the preferences change in the history: ${error}`);
     }
@@ -429,6 +434,16 @@ export class UserService extends BaseService {
     const config = await this.getConfig({ withCache: false });
     const users = await this.userRepository.getDeletedAfter(DateTime.now().minus({ days: config.user.deleteDelay }));
     await this.jobRepository.queueAll(users.map((user) => ({ name: JobName.UserDelete, data: { id: user.id } })));
+
+    // FL-71, FL-55: fork rows of accounts removed while the fork schema was not writable.
+    const swept = await this.userRepository.sweepRemovedAccountForkRows();
+    if (swept === undefined) {
+      this.logger.warn('Removed-account fork rows not swept: the fork schema is not writable (database handoff)');
+    } else if (swept.preferenceHistory + swept.recipientGroups > 0) {
+      this.logger.log(
+        `Swept fork rows of removed accounts: ${swept.preferenceHistory} preference history entries, ${swept.recipientGroups} recipient groups`,
+      );
+    }
     return JobStatus.Success;
   }
 
@@ -476,8 +491,11 @@ export class UserService extends BaseService {
 
     await this.albumRepository.deleteAll(user.id);
     await this.albumUserRepository.forgetRecipient(user.id);
-    // FL-71 (CC-10): the account's own preference history goes with it.
-    await this.userRepository.deletePreferenceHistory(user.id);
+    // FL-71 (CC-10): the account's own preference history goes with it. While the fork schema is
+    // not writable it stays behind and the next user cleanup sweeps it (handleUserDeleteCheck).
+    if (!(await this.userRepository.deletePreferenceHistory(user.id))) {
+      this.logger.warn(`Preference history of user ${user.id} kept until the fork schema is writable again`);
+    }
     await this.userRepository.delete(user, true);
 
     await this.eventRepository.emit('UserDelete', user);
