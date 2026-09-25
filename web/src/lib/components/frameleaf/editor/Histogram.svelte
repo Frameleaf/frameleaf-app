@@ -14,8 +14,8 @@
     fromServer,
     tick = 0,
   }: {
-    /** The image element currently shown on the stage, once it has loaded. */
-    source: HTMLImageElement | undefined;
+    /** The image or video element currently shown on the stage, once it has loaded (a clip samples its current frame). */
+    source: HTMLImageElement | HTMLVideoElement | undefined;
     /** Applied to sampled pixels only while the stage shows the CSS approximation. */
     approximation: CssFilterInfo;
     fromServer: boolean;
@@ -78,12 +78,15 @@
       return;
     }
     const frame = requestAnimationFrame(() => {
-      if (!image.complete || image.naturalWidth === 0) {
+      const isVideo = image instanceof HTMLVideoElement;
+      const sourceWidth = isVideo ? image.videoWidth : image.naturalWidth;
+      const sourceHeight = isVideo ? image.videoHeight : image.naturalHeight;
+      if ((isVideo ? image.readyState < 2 : !image.complete) || sourceWidth === 0) {
         return;
       }
       try {
         const width = 128;
-        const height = Math.max(1, Math.round((width * image.naturalHeight) / image.naturalWidth));
+        const height = Math.max(1, Math.round((width * sourceHeight) / sourceWidth));
         sampler ??= document.createElement('canvas');
         sampler.width = width;
         sampler.height = height;
