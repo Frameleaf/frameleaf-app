@@ -6293,6 +6293,7 @@
   "frameleaf_search_sensitivity_review": "Sensitivity review",
   "frameleaf_search_sensitivity_review_help": "Items flagged by detection wait for a review; overridden items keep a person’s decision.",
   "frameleaf_search_shortcut_hint": "Ctrl K",
+  "frameleaf_search_shortcut_hint_mac": "⌘ K",
   "frameleaf_search_show_all": "Show all {count}",
   "frameleaf_search_show_count": "Show {label} {count, plural, one {result} other {results}}",
   "frameleaf_search_show_results": "Show results",
