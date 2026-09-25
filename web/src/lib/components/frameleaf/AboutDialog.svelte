@@ -6,16 +6,19 @@
    * row "Immich"). The facts are what this server reports: version, build, server, runtime, media
    * tools, licence and source.
    *
-   * The prototype's "Check for updates" is not offered: Frameleaf never contacts a release feed on
-   * its own (the version check is disabled by its privacy policy), so whether a manual check may is
-   * left to the owner.
+   * "Check for updates" (FL-80 S-4, `SystemPanels.jsx:331-344, 366-369, 404-419`) asks Frameleaf's
+   * own release feed through the server (owner decision on FL-146, 2026-09-25: the privacy direction
+   * applied only to Immich-origin calls). An administrator's check runs now; any other account sees
+   * the server's last recorded check. A newer version links to its GitHub release notes.
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { checkForUpdates, releaseNotesUrl, type UpdateCheckResult } from '$lib/frameleaf/version-check';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { type ServerAboutResponseDto, type ServerVersionHistoryResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiAlertOutline, mdiInformationOutline } from '@mdi/js';
+  import { mdiAlertOutline, mdiCheckCircle, mdiInformationOutline, mdiProgressClock, mdiUpdate } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
   // FL-135: the symbol is imported unmodified from the authorized brand kit (never redrawn);
@@ -68,6 +71,25 @@
       ] satisfies Fact[]
     ).filter((fact) => fact.value),
   );
+
+  let checking = $state(false);
+  let result = $state<UpdateCheckResult | 'failed' | undefined>();
+  const check = async () => {
+    if (checking) {
+      return;
+    }
+    checking = true;
+    result = undefined;
+    try {
+      result = await checkForUpdates(authManager.user.isAdmin, info.version);
+    } catch {
+      result = 'failed';
+    } finally {
+      checking = false;
+    }
+  };
+  const checkedWhen = (iso: string | undefined) =>
+    (iso && DateTime.fromISO(iso).toRelative({ locale: $locale })) || $t('frameleaf_about_update_just_now');
 
   const longDate = (iso: string) =>
     DateTime.fromISO(iso).toLocaleString({ day: 'numeric', month: 'short', year: 'numeric' }, { locale: $locale });
@@ -123,6 +145,37 @@
       </FormatMessage>
     </span>
   </p>
+  <div
+    class="about-check"
+    class:ok={result && result !== 'failed' && result.status === 'current'}
+    class:available={result && result !== 'failed' && result.status === 'available'}
+    role="status"
+    aria-live="polite"
+  >
+    {#if checking}
+      <Icon icon={mdiProgressClock} size="16" aria-hidden={true} />
+      {$t('frameleaf_about_update_checking')}
+    {:else if result === 'failed'}
+      <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
+      {$t('frameleaf_about_update_failed')}
+    {:else if result?.status === 'current'}
+      <Icon icon={mdiCheckCircle} size="16" aria-hidden={true} />
+      {$t('frameleaf_about_update_current', { values: { when: checkedWhen(result.checkedAt) } })}
+    {:else if result?.status === 'available'}
+      <Icon icon={mdiUpdate} size="16" aria-hidden={true} />
+      <span>
+        {$t('frameleaf_about_update_available', {
+          values: { version: result.version, when: checkedWhen(result.checkedAt) },
+        })}
+        <a href={releaseNotesUrl(result.version)} target="_blank" rel="noopener noreferrer"
+          >{$t('frameleaf_about_update_release_notes')}</a
+        >
+      </span>
+    {:else if result?.status === 'unknown'}
+      <Icon icon={mdiInformationOutline} size="16" aria-hidden={true} />
+      {$t('frameleaf_about_update_unknown')}
+    {/if}
+  </div>
   {#if versions.length > 0}
     <section class="about-history" aria-labelledby="fl-about-history-title">
       <h3 id="fl-about-history-title">{$t('version_history')}</h3>
@@ -139,6 +192,10 @@
     </section>
   {/if}
   {#snippet actions()}
+    <button type="button" class="button" disabled={checking} onclick={check}>
+      <Icon icon={mdiUpdate} size="16" aria-hidden={true} />
+      {checking ? $t('frameleaf_about_checking') : $t('frameleaf_about_check_for_updates')}
+    </button>
     <button type="button" class="button primary" data-initial-focus onclick={() => (open = false)}>
       {$t('done')}
     </button>
@@ -210,6 +267,24 @@
     color: var(--fl-warning);
   }
   .about-attribution a {
+    color: var(--fl-text);
+  }
+  .about-check {
+    margin-top: 14px;
+    min-height: 20px;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .about-check.ok :global(svg) {
+    color: var(--fl-teal);
+  }
+  .about-check.available :global(svg) {
+    color: var(--fl-blue);
+  }
+  .about-check a {
     color: var(--fl-text);
   }
   .about-history {
