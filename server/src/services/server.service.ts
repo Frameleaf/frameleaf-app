@@ -53,7 +53,7 @@ export class ServerService extends BaseService {
 
     return {
       version,
-      versionUrl: `https://github.com/immich-app/immich/releases/tag/${version}`,
+      versionUrl: `https://github.com/Frameleaf/frameleaf-app/releases/tag/${version}`,
       licensed: !!licensed,
       ...buildMetadata,
       ...buildVersions,

@@ -158,6 +158,19 @@ describe(ServerService.name, () => {
     });
   });
 
+  describe('getAboutInfo', () => {
+    it('links the version to its Frameleaf release notes', async () => {
+      mocks.serverInfo.getBuildVersions.mockResolvedValue({} as never);
+      mocks.systemMetadata.get.mockResolvedValue(null);
+
+      const about = await sut.getAboutInfo();
+
+      expect(about.versionUrl).toBe(`https://github.com/Frameleaf/frameleaf-app/releases/tag/${about.version}`);
+      expect(about.version).toMatch(/^v\d+\.\d+\.\d+/);
+      expect(about.versionUrl).not.toContain('immich-app');
+    });
+  });
+
   describe('ping', () => {
     it('should respond with pong', () => {
       expect(sut.ping()).toEqual({ res: 'pong' });
