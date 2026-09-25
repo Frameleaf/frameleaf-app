@@ -57,6 +57,12 @@ describe('new server setup (FL-176)', () => {
     expect(sdkMock.login).toHaveBeenCalledWith({
       loginCredentialDto: { email: 'ada@example.test', password: 'Correct-Horse-9' },
     });
+    // The new-server flow is saved straight away, before the debounced progress save (FL-176 N2).
+    expect(sdkMock.updateFrameleafSetup).toHaveBeenCalledWith({
+      frameleafSetupUpdateDto: expect.objectContaining({ flow: 'new' }),
+    });
+    const firstSave = sdkMock.updateFrameleafSetup.mock.invocationCallOrder[0];
+    expect(firstSave).toBeLessThan(sdkMock.getFrameleafSetupStorage.mock.invocationCallOrder[0]);
     expect(await screen.findByRole('heading', { name: en.frameleaf_setup_library_title })).toBeInTheDocument();
     expect(await screen.findByText('Writable, 2.0 TB free')).toBeInTheDocument();
     await waitFor(() => expect(sdkMock.updateFrameleafSetup).toHaveBeenCalled());
