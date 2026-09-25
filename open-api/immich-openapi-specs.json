@@ -27006,6 +27006,51 @@
         ],
         "x-immich-permission": "server.versionCheck",
         "x-immich-state": "Stable"
+      },
+      "post": {
+        "description": "Ask Frameleaf's release feed for the newest version now, whether or not automatic checks are on (About → Check for updates). No other service is contacted.",
+        "operationId": "checkVersionNow",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseEventV1"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check for updates now",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.versionCheck",
+        "x-immich-state": "Alpha"
       }
     },
     "/server/version-history": {

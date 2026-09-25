@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
 import { ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import {
+  ReleaseEventV1,
   ServerAboutResponseDto,
   ServerApkLinksDto,
   ServerAppReleasesResponseDto,
@@ -207,5 +208,18 @@ export class ServerController {
   })
   getVersionCheck(): Promise<VersionCheckStateResponseDto> {
     return this.systemMetadataService.getVersionCheckState();
+  }
+
+  @Post('version-check')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.ServerVersionCheck, admin: true })
+  @Endpoint({
+    summary: 'Check for updates now',
+    description:
+      "Ask Frameleaf's release feed for the newest version now, whether or not automatic checks are on (About → Check for updates). No other service is contacted.",
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  checkVersionNow(): Promise<ReleaseEventV1> {
+    return this.versionService.checkNow();
   }
 }

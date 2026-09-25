@@ -7507,6 +7507,16 @@ export type VersionCheckStateResponseDto = {
     /** Release version */
     releaseVersion: string | null;
 };
+export type ReleaseEventV1 = {
+    /** When the server last checked for a latest version. As an ISO timestamp */
+    checkedAt: string;
+    /** Whether a new version is available */
+    isAvailable: boolean;
+    releaseVersion: ServerVersionResponseDto;
+    serverVersion: ServerVersionResponseDto;
+    /** Release type */
+    "type": ReleaseType;
+};
 export type ServerVersionHistoryResponseDto = {
     /** When this version was first seen */
     createdAt: string;
@@ -9054,16 +9064,6 @@ export type WorkflowShareResponseDto = {
     trigger: string;
 };
 export type LicenseResponseDto = UserLicense;
-export type ReleaseEventV1 = {
-    /** When the server last checked for a latest version. As an ISO timestamp */
-    checkedAt: string;
-    /** Whether a new version is available */
-    isAvailable: boolean;
-    releaseVersion: ServerVersionResponseDto;
-    serverVersion: ServerVersionResponseDto;
-    /** Release type */
-    "type": ReleaseType;
-};
 export type SyncAckV1 = {};
 export type SyncAlbumDeleteV1 = {
     /** Album ID */
@@ -15939,6 +15939,18 @@ export function getVersionCheck(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Check for updates now
+ */
+export function checkVersionNow(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ReleaseEventV1;
+    }>("/server/version-check", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get version history
  */
 export function getVersionHistory(opts?: Oazapfts.RequestOpts) {
@@ -19976,6 +19988,15 @@ export enum SearchSuggestionType {
     CameraModel = "camera-model",
     CameraLensModel = "camera-lens-model"
 }
+export enum ReleaseType {
+    Major = "major",
+    Premajor = "premajor",
+    Minor = "minor",
+    Preminor = "preminor",
+    Patch = "patch",
+    Prepatch = "prepatch",
+    Prerelease = "prerelease"
+}
 export enum SharedLinkType {
     Album = "ALBUM",
     Individual = "INDIVIDUAL"
@@ -20272,15 +20293,6 @@ export enum WorkflowResult {
 export enum WorkflowRunErrorCode {
     Unsupported = "unsupported",
     StepFailed = "step_failed"
-}
-export enum ReleaseType {
-    Major = "major",
-    Premajor = "premajor",
-    Minor = "minor",
-    Preminor = "preminor",
-    Patch = "patch",
-    Prepatch = "prepatch",
-    Prerelease = "prerelease"
 }
 export enum UserMetadataKey {
     Preferences = "preferences",
