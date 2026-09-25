@@ -623,9 +623,9 @@ const actions = {
       "Text & descriptions and Sensitivity review radiogroups over the one enrichment enum; palette Enrichment quick filters with counts (fixed on codex/FL-49-search-palette)",
     ],
   "explore-empty-error-loading-states": [
-    "partial",
+    "fixed",
     ["T-12"],
-    "Explore empty copy",
+    'Explore empty copy "Nothing to explore in this view" (fixed on codex/FL-50-explore-albums-map)',
     {
       prototype: [`${P}/ExploreLibrary.jsx`],
       production: [`${W}/lib/components/frameleaf/ExplorePanel.svelte`],
@@ -641,36 +641,36 @@ const actions = {
     },
   ],
   "explore-people-and-view-all": [
-    "partial",
+    "fixed",
     ["T-12"],
-    "Per-card counts",
+    "Per-card counts from POST /search/facets in the scope of the search each card opens (fixed on codex/FL-50-explore-albums-map)",
     {
       prototype: [`${P}/ExploreLibrary.jsx`],
       production: [`${W}/lib/components/frameleaf/ExplorePanel.svelte`],
     },
   ],
   "explore-places-and-view-all": [
-    "partial",
+    "fixed",
     ["T-12"],
-    "Per-card counts",
+    "Per-card counts from POST /search/facets in the scope of the search each card opens (fixed on codex/FL-50-explore-albums-map)",
     {
       prototype: [`${P}/ExploreLibrary.jsx`],
       production: [`${W}/lib/components/frameleaf/ExplorePanel.svelte`],
     },
   ],
   "explore-recently-added-and-direct-asset-viewer": [
-    "partial",
+    "fixed",
     ["T-12"],
-    "Recent captures tile content",
+    "Recent captures by capture date with name, Video label and capture day (fixed on codex/FL-50-explore-albums-map)",
     {
       prototype: [`${P}/ExploreLibrary.jsx`],
       production: [`${W}/lib/components/frameleaf/ExplorePanel.svelte`],
     },
   ],
   "extra-things-collections-highlight-cards": [
-    "partial",
+    "fixed",
     ["T-12"],
-    '"Things in your photos" tags section',
+    '"Things in your photos" tags section with counts and covers (fixed on codex/FL-50-explore-albums-map)',
     {
       prototype: [`${P}/ExploreLibrary.jsx`],
       production: [`${W}/lib/components/frameleaf/ExplorePanel.svelte`],
@@ -1373,7 +1373,7 @@ const routes = {
   "/best-photos/[[photos=photos]]/[[assetId=id]]": [
     "partial",
     ["T-6"],
-    "Score as tile rating",
+    "Score as tile rating (T-6 open); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map",
     [`${P}/App.jsx`, `${P}/AssetTile.jsx`],
     [
       `${W}/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1396,9 +1396,9 @@ const routes = {
     ],
   ],
   "/explore": [
-    "partial",
+    "fixed",
     ["T-12"],
-    "Explore sections",
+    "Explore sections, counts and snapping carousels (fixed on codex/FL-50-explore-albums-map)",
     [`${P}/ExploreLibrary.jsx`, `${P}/explore-timeline.mjs`],
     [
       `${W}/routes/(user)/explore/+page.svelte`,
