@@ -49,4 +49,19 @@ describe('HelpFeedbackDialog (S-3)', () => {
     expect(screen.getByText('Third-party notices')).toBeInTheDocument();
     expect(screen.getByText('AGPL-3.0')).toBeInTheDocument();
   });
+
+  it('acknowledges Freecut, the Studio editor, at its pinned revision (owner decision 2026-09-25)', () => {
+    render(HelpFeedbackDialog, {
+      onClose: vi.fn(),
+      info: { version: 'v3.2.0', versionUrl: '', licensed: false },
+    });
+
+    expect(screen.getByRole('link', { name: 'Freecut' })).toHaveAttribute(
+      'href',
+      'https://github.com/walterlow/freecut',
+    );
+    expect(screen.getByText('Studio video editor')).toBeInTheDocument();
+    expect(screen.getByText('MIT')).toBeInTheDocument();
+    expect(screen.getByText(/Freecut, © its authors, used under the MIT licence/)).toBeInTheDocument();
+  });
 });
