@@ -108,8 +108,9 @@
   /** Albums a user may change: their own, or one shared with them as an editor (`Permission.AlbumUpdate`). */
   const canEditAlbum = (candidate: AlbumResponseDto) =>
     !!userId &&
-    (candidate.ownerId === userId ||
-      candidate.albumUsers.some(({ user, role }) => user.id === userId && role === AlbumUserRole.Editor));
+    candidate.albumUsers.some(
+      ({ user, role }) => user.id === userId && (role === AlbumUserRole.Owner || role === AlbumUserRole.Editor),
+    );
 
   const isLocked = $derived(asset.visibility === AssetVisibility.Locked);
   const contextAlbumEditable = $derived(!!album && (isOwner || canEditAlbum(album)));
