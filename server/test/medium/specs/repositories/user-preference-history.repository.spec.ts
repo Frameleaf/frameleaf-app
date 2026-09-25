@@ -3,8 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000171-UserPreferenceHistory.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { USER_PREFERENCE_HISTORY_LIMIT, UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 /** FL-71 (CC-10): an account's own preference history, a fork-owned table. */
@@ -110,4 +113,44 @@ it('forgets a deleted account’s history and leaves everyone else’s, and writ
   } finally {
     await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
   }
+});
+
+it('sweeps fork rows of accounts that no longer exist, only while the fork schema is writable', async () => {
+  const sut = new UserRepository(db);
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user: kept } = await ctx.newUser();
+  const removed = randomUUID();
+  const change = { path: 'tags.enabled', before: 'false', after: 'true' };
+  for (const userId of [kept.id, removed]) {
+    await sut.addPreferenceHistory({ userId, deviceLabel: null, changes: [change], omittedChanges: 0 });
+  }
+  const orphanGroup = await sql<{ id: string }>`
+    INSERT INTO immich_fork.recipient_group ("ownerId", name, "userIds") VALUES (${removed}::uuid, 'Gone', '{}')
+    RETURNING id::text AS id
+  `.execute(db);
+  const keptGroup = await sql<{ id: string }>`
+    INSERT INTO immich_fork.recipient_group ("ownerId", name, "userIds")
+    VALUES (${kept.id}::uuid, 'Family', ARRAY[${kept.id}::uuid, ${removed}::uuid])
+    RETURNING id::text AS id
+  `.execute(db);
+
+  await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
+  try {
+    await expect(sut.sweepRemovedAccountForkRows()).resolves.toBeUndefined();
+    await expect(sut.getPreferenceHistory(removed)).resolves.toHaveLength(1);
+  } finally {
+    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
+  }
+
+  const swept = await sut.sweepRemovedAccountForkRows();
+  expect(swept?.preferenceHistory).toBeGreaterThanOrEqual(1);
+  expect(swept?.recipientGroups).toBeGreaterThanOrEqual(1);
+  await expect(sut.getPreferenceHistory(removed)).resolves.toEqual([]);
+  await expect(sut.getPreferenceHistory(kept.id)).resolves.toHaveLength(1);
+
+  const groups = await sql<{ id: string; userIds: string[] }>`
+    SELECT id::text AS id, "userIds"::text[] AS "userIds" FROM immich_fork.recipient_group
+    WHERE id IN (${orphanGroup.rows[0].id}::uuid, ${keptGroup.rows[0].id}::uuid)
+  `.execute(db);
+  expect(groups.rows).toEqual([{ id: keptGroup.rows[0].id, userIds: [kept.id] }]);
 });

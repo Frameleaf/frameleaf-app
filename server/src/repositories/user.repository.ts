@@ -176,11 +176,11 @@ export class UserRepository {
     deviceLabel: string | null;
     changes: UserPreferenceHistoryRow['changes'];
     omittedChanges: number;
-  }): Promise<void> {
-    await this.db.transaction().execute(async (trx) => {
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
       // Skipped (never blocking the save) while the fork schema is not writable, as recipient groups are.
       if (!(await canWriteFork(trx))) {
-        return;
+        return false;
       }
       await sql`
         INSERT INTO immich_fork.user_preference_history ("userId", "deviceLabel", changes, "omittedChanges")
@@ -196,6 +196,7 @@ export class UserRepository {
             LIMIT ${USER_PREFERENCE_HISTORY_LIMIT}
           )
       `.execute(trx);
+      return true;
     });
   }
 
@@ -203,12 +204,51 @@ export class UserRepository {
    * FL-71 (CC-10): a deleted account leaves no preference history behind. Skipped (never blocking
    * the delete) while the fork schema is not writable, like `forgetRecipient`.
    */
-  async deletePreferenceHistory(userId: string): Promise<void> {
-    await this.db.transaction().execute(async (trx) => {
+  async deletePreferenceHistory(userId: string): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      if (!(await canWriteFork(trx))) {
+        return false;
+      }
+      await sql`DELETE FROM immich_fork.user_preference_history WHERE "userId" = ${userId}::uuid`.execute(trx);
+      return true;
+    });
+  }
+
+  /**
+   * FL-71 (CC-10), FL-55: fork rows of accounts that no longer exist, left behind when an account
+   * was removed while the fork schema was not writable. Preference history of a removed account
+   * goes; recipient groups it owned go, and it leaves everyone else's. Returns what was removed,
+   * or undefined while the fork schema is still not writable.
+   */
+  async sweepRemovedAccountForkRows(): Promise<{ preferenceHistory: number; recipientGroups: number } | undefined> {
+    return this.db.transaction().execute(async (trx) => {
       if (!(await canWriteFork(trx))) {
         return;
       }
-      await sql`DELETE FROM immich_fork.user_preference_history WHERE "userId" = ${userId}::uuid`.execute(trx);
+      const history = await sql`
+        DELETE FROM immich_fork.user_preference_history AS history
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = history."userId")
+      `.execute(trx);
+      const groups = await sql`
+        DELETE FROM immich_fork.recipient_group AS recipient_group
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = recipient_group."ownerId")
+      `.execute(trx);
+      await sql`
+        UPDATE immich_fork.recipient_group
+        SET "userIds" = ARRAY(
+              SELECT member FROM unnest("userIds") AS member
+              WHERE EXISTS (SELECT 1 FROM "user" WHERE "user".id = member)
+            ),
+            "updatedAt" = clock_timestamp()
+        WHERE EXISTS (
+          SELECT 1 FROM unnest("userIds") AS member
+          WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = member)
+        )
+      `.execute(trx);
+      return {
+        preferenceHistory: Number(history.numAffectedRows ?? 0),
+        recipientGroups: Number(groups.numAffectedRows ?? 0),
+      };
     });
   }
 

@@ -389,12 +389,25 @@ describe(UserService.name, () => {
       expect(mocks.user.getDeletedAfter).toHaveBeenCalled();
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.UserDelete, data: { id: user.id } }]);
     });
+
+    it('sweeps fork rows of removed accounts, and warns while the fork schema is not writable (FL-71)', async () => {
+      mocks.user.getDeletedAfter.mockResolvedValue([]);
+      mocks.user.sweepRemovedAccountForkRows.mockResolvedValue({ preferenceHistory: 2, recipientGroups: 1 });
+
+      await sut.handleUserDeleteCheck();
+      expect(mocks.user.sweepRemovedAccountForkRows).toHaveBeenCalled();
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
+
+      mocks.user.sweepRemovedAccountForkRows.mockResolvedValue(undefined);
+      await sut.handleUserDeleteCheck();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('not swept'));
+    });
   });
 
   describe('handleUserDelete', () => {
     beforeEach(() => {
       mocks.albumUser.forgetRecipient.mockResolvedValue();
-      mocks.user.deletePreferenceHistory.mockResolvedValue();
+      mocks.user.deletePreferenceHistory.mockResolvedValue(true);
     });
 
     it('should skip users not ready for deletion', async () => {
@@ -780,6 +793,20 @@ describe(UserService.name, () => {
         ],
       });
       expect(mocks.user.getPreferenceHistory).toHaveBeenCalledWith(authStub.user1.user.id);
+    });
+  });
+
+  describe('skipped fork writes are logged (FL-71)', () => {
+    it('warns when the preference history is not recorded because the fork schema is not writable', async () => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.session.getByUserId.mockResolvedValue([]);
+      mocks.user.addPreferenceHistory.mockResolvedValue(false);
+
+      await sut.updateMyPreferences(authStub.user1, { tags: { enabled: true } });
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Preference history not recorded'));
     });
   });
 });
