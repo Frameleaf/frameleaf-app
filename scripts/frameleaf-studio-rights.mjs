@@ -7,7 +7,9 @@
  * each with three decisions (redistribution, local runtime, hosted use). Those decisions stay as
  * the engine packager reviewed them. `studio/rights-approval.json` records the owner's approval
  * (FL-146, September 25, 2026, afternoon: all 210 bundled resources approved), bound to a digest
- * of each approved row. The server mirror admits a use when the reviewed decision allows it or the
+ * of each approved row. An approved row may name uses the owner withheld (`excludedUses`, with the
+ * reason, e.g. MusicGen-small's CC-BY-NC-4.0 licence keeps it off hosted use, FL-146 comment
+ * 34944); those uses stay blocked and the refusal carries the reason. The server mirror admits a use when the reviewed decision allows it or the
  * owner approved that exact row; a row that changed after approval, or a resource that is new or
  * unknown, stays blocked. The resolver that admits Studio graph resources refuses a blocked one by
  * name instead of loading it.
@@ -142,6 +144,7 @@ export function ownerApproval(approval, manifest) {
   }
   const byId = new Map((manifest.resources ?? []).map((resource) => [resource.id, resource]));
   const approved = new Map();
+  const excluded = new Map();
   for (const entry of approval.resources ?? []) {
     const resource = byId.get(entry?.id);
     if (!resource) {
@@ -152,8 +155,30 @@ export function ownerApproval(approval, manifest) {
     }
     // A row that changed after it was approved is not what the owner approved: it stays blocked.
     approved.set(entry.id, entry.sha256 === approvalRowDigest(resource));
+    if (entry.excludedUses !== undefined) {
+      const exclusions = entry.excludedUses;
+      if (!exclusions || typeof exclusions !== 'object' || Array.isArray(exclusions)) {
+        failApproval(`${entry.id} excludedUses must map a use to its reason`);
+      }
+      for (const [use, reason] of Object.entries(exclusions)) {
+        if (!RIGHTS_USES.includes(use)) {
+          failApproval(`${entry.id} excludes unknown use ${use}`);
+        }
+        if (typeof reason !== 'string' || reason.trim().length === 0) {
+          failApproval(`${entry.id} must give the reason ${use} is excluded`);
+        }
+      }
+      excluded.set(entry.id, exclusions);
+    }
   }
-  return { approvedBy: approval.approvedBy, approvedOn: approval.approvedOn, source: approval.source, uses, approved };
+  return {
+    approvedBy: approval.approvedBy,
+    approvedOn: approval.approvedOn,
+    source: approval.source,
+    uses,
+    approved,
+    excluded,
+  };
 }
 
 const quote = (value) => (value === null ? 'null' : `'${String(value).replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`);
@@ -164,13 +189,19 @@ export function buildServerMirror(manifestText, approvalText = null) {
   const approval = ownerApproval(approvalText === null ? null : JSON.parse(approvalText), manifest);
   const rows = reviewed.map((row) => {
     const approved = approval?.approved.get(row.id) === true;
-    const decide = (use) => (row[use] === ALLOWED || (approved && approval.uses.includes(use)) ? ALLOWED : 'blocked');
+    const excluded = approval?.excluded.get(row.id) ?? {};
+    const decide = (use) =>
+      row[use] === ALLOWED || (approved && approval.uses.includes(use) && !Object.hasOwn(excluded, use))
+        ? ALLOWED
+        : 'blocked';
+    const restrictions = RIGHTS_USES.filter((use) => Object.hasOwn(excluded, use)).map((use) => [use, excluded[use]]);
     return {
       ...row,
       redistribution: decide('redistribution'),
       localRuntime: decide('localRuntime'),
       hostedUse: decide('hostedUse'),
       approvedOn: approved ? approval.approvedOn : null,
+      restrictions,
     };
   });
   const sha256 = createHash('sha256').update(manifestText).digest('hex');
@@ -190,6 +221,8 @@ export function buildServerMirror(manifestText, approvalText = null) {
     '',
     "export type StudioRightsDecision = 'allowed' | 'blocked';",
     '',
+    "export type StudioRightsUseName = 'redistribution' | 'localRuntime' | 'hostedUse';",
+    '',
     'export type StudioResourceRights = {',
     '  kind: string;',
     '  license: string | null;',
@@ -198,6 +231,8 @@ export function buildServerMirror(manifestText, approvalText = null) {
     '  hostedUse: StudioRightsDecision;',
     '  /** The date the owner approved this exact row, or null when it was not approved. */',
     '  approvedOn: string | null;',
+    '  /** Why the owner withheld a use of an approved row. A refusal repeats the reason. */',
+    '  restrictions: Readonly<Partial<Record<StudioRightsUseName, string>>>;',
     '};',
     '',
     `export const STUDIO_RIGHTS_SOURCE_SHA256 = '${sha256}';`,
@@ -229,6 +264,17 @@ export function buildServerMirror(manifestText, approvalText = null) {
       `    localRuntime: ${quote(row.localRuntime)},`,
       `    hostedUse: ${quote(row.hostedUse)},`,
       `    approvedOn: ${quote(row.approvedOn)},`,
+      ...(row.restrictions.length === 0
+        ? ['    restrictions: {},']
+        : [
+            '    restrictions: {',
+            ...row.restrictions.flatMap(([use, reason]) =>
+              `      ${use}: ${quote(reason)},`.length > 120
+                ? [`      ${use}:`, `        ${quote(reason)},`]
+                : [`      ${use}: ${quote(reason)},`],
+            ),
+            '    },',
+          ]),
       '  },',
     ]),
     '};',

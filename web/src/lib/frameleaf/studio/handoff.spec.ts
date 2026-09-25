@@ -31,11 +31,23 @@ describe('studio handoff', () => {
   it('builds a link that parses back to what went in', () => {
     const query = studioHandoffQuery({ projectId: 'proj-1', assetIds: ['a', 'b'] });
 
-    expect(parse(query.slice(1))).toEqual({ projectId: 'proj-1', assetIds: ['a', 'b'] });
+    expect(parse(query.slice(1))).toEqual({ projectId: 'proj-1', assetIds: ['a', 'b'], returnTo: null, at: null });
   });
 
   it('builds a bare link when there is nothing to carry', () => {
     expect(studioHandoffQuery({})).toBe('');
     expect(studioHandoffQuery({ assetIds: ['../bad'] })).toBe('');
+  });
+
+  it('carries the quick editor that opened Studio and its exact playhead (FL-113)', () => {
+    const query = studioHandoffQuery({ assetIds: ['a'], returnTo: 'a', at: { num: 25, den: 2 } });
+    expect(query).toBe('?assets=a&from=a&at=25%2F2');
+    expect(parseStudioHandoff(new URLSearchParams(query))).toEqual({
+      projectId: null,
+      assetIds: ['a'],
+      returnTo: 'a',
+      at: { num: 25, den: 2 },
+    });
+    expect(parseStudioHandoff(new URLSearchParams('from=../x&at=1.5'))).toMatchObject({ returnTo: null, at: null });
   });
 });

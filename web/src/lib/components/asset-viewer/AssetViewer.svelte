@@ -1,5 +1,7 @@
 <script lang="ts">
   import { browser } from '$app/environment';
+  import { replaceState } from '$app/navigation';
+  import { page } from '$app/state';
   import { focusTrap } from '$lib/actions/focus-trap';
   import { shortcuts } from '$lib/actions/shortcut';
   import type { Action, OnAction, PreAction } from '$lib/components/asset-viewer/actions/action';
@@ -228,6 +230,33 @@
     await assetViewerManager.setAssetId(restoredAsset.id);
     await navigate({ targetRoute: 'current', assetId: restoredAsset.id });
   };
+
+  /**
+   * FL-113: Studio's "Back to the quick editor" arrives as `?edit=1` on the asset's page. The editor
+   * opens on the draft the person left (QuickEditor picks it up from `editor-continuity.ts`), and
+   * only for an asset this account may edit, the same rule as the viewer's Edit action.
+   */
+  let editRequestHandled = false;
+  $effect(() => {
+    const requested = page.url.searchParams.get('edit') === '1';
+    if (!requested || editRequestHandled) {
+      return;
+    }
+    const editable =
+      authManager.authenticated &&
+      asset.ownerId === authManager.user.id &&
+      !asset.isTrashed &&
+      (asset.type === AssetTypeEnum.Image || asset.type === AssetTypeEnum.Video);
+    editRequestHandled = true;
+    untrack(() => {
+      const url = new URL(page.url);
+      url.searchParams.delete('edit');
+      replaceState(url, page.state);
+      if (editable) {
+        assetViewerManager.openEditor();
+      }
+    });
+  });
 
   onMount(() => {
     syncAssetViewerOpenClass(true);

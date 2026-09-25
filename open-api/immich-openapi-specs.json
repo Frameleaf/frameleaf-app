@@ -46080,6 +46080,14 @@
         ],
         "type": "object"
       },
+      "AssetEditsColorPolicy": {
+        "enum": [
+          "preserve",
+          "tone-map",
+          "unsupported"
+        ],
+        "type": "string"
+      },
       "AssetEditsCreateDto": {
         "properties": {
           "edits": {
@@ -46098,6 +46106,14 @@
       },
       "AssetEditsOriginalVideoDto": {
         "properties": {
+          "colorPolicy": {
+            "$ref": "#/components/schemas/AssetEditsColorPolicy",
+            "description": "FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged"
+          },
+          "colorReason": {
+            "description": "Why, in plain words, for the person editing",
+            "type": "string"
+          },
           "durationMs": {
             "description": "Duration of the original in milliseconds",
             "exclusiveMinimum": true,
@@ -73167,6 +73183,45 @@
         ],
         "type": "object"
       },
+      "StudioCommandEnvelopeDto": {
+        "properties": {
+          "id": {
+            "description": "Published command id (studio/frameleaf-studio-commands.json)",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "issuedAt": {
+            "description": "Epoch milliseconds",
+            "format": "double",
+            "type": "number"
+          },
+          "payload": {
+            "additionalProperties": {},
+            "description": "Command payload; graph-shaped values pass through unread",
+            "type": "object"
+          },
+          "revision": {
+            "description": "The head revision the command was issued against",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "idempotencyKey",
+          "issuedAt",
+          "payload",
+          "revision"
+        ],
+        "type": "object"
+      },
       "StudioCommandSummaryDto": {
         "properties": {
           "counts": {
@@ -74547,6 +74602,14 @@
             "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
             "pattern": "^[\\w.:-]{1,128}$",
             "type": "string"
+          },
+          "commands": {
+            "description": "The canonical commands the engine applied to produce this document (FL-92). Each is checked against the catalogue and the head, and the revision summary is counted from them.",
+            "items": {
+              "$ref": "#/components/schemas/StudioCommandEnvelopeDto"
+            },
+            "maxItems": 500,
+            "type": "array"
           },
           "envelope": {
             "$ref": "#/components/schemas/StudioProjectEnvelopeDto"

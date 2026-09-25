@@ -29,6 +29,9 @@ const config = {
       '$tests/*': 'src/../tests/*',
       '@test-data': 'src/test-data',
       $i18n: '../i18n',
+      // Third-party acknowledgements and the licence texts that ship with the product (FL-86).
+      $licenses: '../licenses',
+      $studioNotices: '../studio/notices',
       'chromecast-caf-sender': './node_modules/@types/chromecast-caf-sender/index.d.ts',
     },
   },

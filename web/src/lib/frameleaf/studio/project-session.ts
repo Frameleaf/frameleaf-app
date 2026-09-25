@@ -52,6 +52,7 @@ import {
   type StudioProjectSaveDto,
   type StudioProjectSaveResponseDto,
 } from '@immich/sdk';
+import type { StudioCommandEnvelope } from './commands';
 import type { StudioProjectHandle } from './host-contract';
 
 /* ------------------------------------------------------------------ */
@@ -65,6 +66,13 @@ export const STUDIO_AUTOSAVE_DEBOUNCE_MS = 1500;
 export const STUDIO_LEASE_RENEW_MS = 30_000;
 /** First retry after a transport failure; doubles up to the cap. */
 export const STUDIO_SAVE_RETRY_MS = 5000;
+/** Canonical commands one save may carry; the server's `STUDIO_MAX_COMMANDS_PER_SAVE` (FL-92). */
+export const STUDIO_MAX_COMMANDS_PER_SAVE = 500;
+/**
+ * Summary id for commands a save could not carry as envelopes (beyond the limit, or refused by the
+ * server as a batch). Not a catalogue id, so the server keeps its count as reported.
+ */
+export const STUDIO_UNCHECKED_COMMANDS_SUMMARY = 'commands.unchecked';
 export const STUDIO_SAVE_RETRY_MAX_MS = 60_000;
 /** The id a project has before its first save creates it on the server. */
 export const STUDIO_DRAFT_PROJECT_ID = 'draft';
@@ -134,6 +142,9 @@ export const readStudioConflict = (error: unknown): StudioConflict | null => {
     lease: body.lease && typeof body.lease === 'object' ? (body.lease as StudioProjectLeaseDto) : null,
   };
 };
+
+/** The server refused the request itself (`400`): sending it again unchanged cannot succeed. */
+const isBadRequest = (error: unknown): boolean => httpFailure(error)?.status === 400;
 
 const isNotFound = (error: unknown): boolean => {
   const status = httpFailure(error)?.status;
@@ -246,9 +257,20 @@ export interface StudioProjectSession {
   open(): Promise<void>;
   /**
    * Record the engine's current document and the command ids that produced it since the last
-   * stage. The save happens after the debounce, not now.
+   * stage. The save happens after the debounce, not now. `envelopes` are the canonical commands the
+   * engine applied (FL-92); they travel with the save, and the server checks them and counts the
+   * revision summary from them.
    */
-  stage(graph: unknown, commands?: readonly string[]): void;
+  /**
+   * `baseRevision` is the revision the edited graph was loaded from, when the caller knows it (the
+   * editor frame reports it). Without it the draft is taken to be built on what the session shows.
+   */
+  stage(
+    graph: unknown,
+    commands?: readonly string[],
+    envelopes?: readonly StudioCommandEnvelope[],
+    baseRevision?: number,
+  ): void;
   /** Send the staged draft now, if there is one. */
   flush(): Promise<void>;
   /** Discard the draft and re-read the project. Resolves a `conflict` by accepting the head. */
@@ -279,8 +301,19 @@ type Draft = {
   graph: unknown;
   counts: Record<string, number>;
   total: number;
+  /** Canonical commands behind this draft (FL-92), sent with the save; at most the per-save limit. */
+  envelopes: StudioCommandEnvelope[];
+  /** Commands over the per-save envelope limit, reported as a count only. */
+  unchecked: number;
   /** Assigned on the first attempt and kept for retries; a new `stage` clears it. */
   requestKey: string | null;
+  /**
+   * The revision this draft was built on. It is the save's `expectedRevision` and the only thing a
+   * moved head is judged against: `state.project.revision` may already show someone else's save.
+   */
+  baseRevision: number;
+  /** The graph is the editor's own (its last stage came from the editor with a base revision). */
+  fromEditor: boolean;
 };
 
 const defaultTimer = (callback: () => void, ms: number): CancelTimer => {
@@ -330,6 +363,13 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
 
   let projectId: string | null = options.projectId;
   let draft: Draft | null = null;
+  /**
+   * Revisions this session stored from the editor's own graph, as base → stored revision. The editor
+   * keeps editing from what it staged, so its later graphs build on each of these; a draft that
+   * arrives before the editor has heard of the save is taken forward along this chain instead of
+   * meeting a false conflict. Cleared whenever the project is read again.
+   */
+  const editorSaves = new Map<number, number>();
   let debounce: CancelTimer | null = null;
   let renew: CancelTimer | null = null;
   let retry: CancelTimer | null = null;
@@ -430,6 +470,12 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     renew = null;
     cancel(debounce);
     debounce = null;
+    if (state.status === 'conflict') {
+      // An unresolved stale revision outranks the lease: only Reload or Save as copy settle it, so a
+      // take over or reacquire can never send the draft over the newer head.
+      emit({ project: { ...state.project, hasLease: false } });
+      return;
+    }
     emit({
       status: 'lease-lost',
       project: { ...state.project, hasLease: false },
@@ -441,6 +487,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     if (gen !== generation) {
       return;
     }
+    editorSaves.clear();
     projectId = detail.id;
     emit({
       project: {
@@ -545,7 +592,20 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     retryMs = Math.min(retryMs * 2, STUDIO_SAVE_RETRY_MAX_MS);
   };
 
-  const summaryOf = (current: Draft) => ({ counts: current.counts, total: current.total });
+  /**
+   * The summary a save reports. With envelopes, the server counts catalogue commands from them, so
+   * commands over the per-save limit are added under one non-catalogue id; without envelopes (after
+   * a quarantine) the counts are reported as they are, unchecked.
+   */
+  const summaryOf = (current: Draft) => {
+    if (current.unchecked === 0 || current.envelopes.length === 0) {
+      return { counts: current.counts, total: current.total };
+    }
+    return {
+      counts: { ...current.counts, [STUDIO_UNCHECKED_COMMANDS_SUMMARY]: current.unchecked },
+      total: current.total + current.unchecked,
+    };
+  };
 
   /** One save attempt for the current draft. Serialized: a second call waits for the first. */
   const flush = async (): Promise<void> => {
@@ -578,9 +638,18 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           const saved = await api.save(projectId, {
             clientId,
             requestKey: current.requestKey as string,
-            expectedRevision: state.project.revision,
+            expectedRevision: current.baseRevision,
             envelope: emptyEnvelope(engineRevision, current.graph),
             summary: summaryOf(current),
+            ...(current.envelopes.length > 0 && {
+              commands: current.envelopes.map((envelope) => ({
+                id: envelope.id,
+                payload: envelope.payload as unknown as Record<string, unknown>,
+                revision: envelope.revision,
+                idempotencyKey: envelope.idempotencyKey,
+                issuedAt: envelope.issuedAt,
+              })),
+            }),
           });
           if (gen !== generation) {
             return;
@@ -608,12 +677,19 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           applyLease(result.lease);
         }
         retryMs = STUDIO_SAVE_RETRY_MS;
+        if (current.fromEditor) {
+          editorSaves.set(current.baseRevision, result.revision);
+        }
         // A newer stage while this one was in flight keeps its own draft and gets its own save.
         if (draft === current) {
           draft = null;
+        } else if (draft && draft.baseRevision === current.baseRevision) {
+          // The newer draft was built on top of this one, so it now follows the revision just stored.
+          draft.baseRevision = result.revision;
         }
         emit({
-          project: { ...state.project, revision: result.revision, graph: current.graph },
+          // The graph shown stays the newest edit; a newer draft is not rolled back to this save.
+          project: { ...state.project, revision: result.revision, graph: (draft ?? current).graph },
           lastSavedAt: now(),
           conflict: null,
           error: null,
@@ -646,6 +722,23 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         }
         if (isNotFound(error)) {
           fail(error, gen);
+          return;
+        }
+        if (isBadRequest(error)) {
+          // Final: the same request would be refused again. When the draft carried canonical
+          // commands, they are the likely cause (FL-92): quarantine them as a count and save the
+          // document on its own, once, with a fresh key. Otherwise the document itself was refused;
+          // it stays in memory for Save as copy, and the next edit sends a new document.
+          const message = error instanceof Error ? error.message : String(error);
+          current.requestKey = null;
+          if (current.envelopes.length > 0 && draft === current) {
+            current.unchecked = 0;
+            current.envelopes = [];
+            emit({ status: 'dirty', error: message });
+            scheduleFlush();
+            return;
+          }
+          emit({ status: 'error', error: message });
           return;
         }
         if (!isOnline()) {
@@ -689,10 +782,11 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       if (gen !== generation) {
         return false;
       }
-      const headMoved = detail.revision !== state.project.revision;
-      if (headMoved && draft) {
-        applyDetail(detail, gen, true);
+      const headMoved = draft !== null && detail.revision !== draft.baseRevision;
+      if (headMoved) {
+        // The draft stays what the person sees and edits (as after a refused save); Reload shows the head.
         emit({
+          project: { ...state.project, hasLease: true },
           status: 'conflict',
           conflict: { reason: 'stale-revision', currentRevision: detail.revision, lease },
         });
@@ -716,12 +810,23 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       }
       const conflict = readStudioConflict(error);
       if (conflict) {
-        emit({ status: 'lease-lost', conflict });
+        loseLease(conflict);
         return false;
       }
       fail(error, gen);
       return false;
     }
+  };
+
+  const followEditorSaves = (base: number | undefined): number => {
+    if (base === undefined) {
+      return Infinity;
+    }
+    let revision = base;
+    while (editorSaves.has(revision)) {
+      revision = editorSaves.get(revision) as number;
+    }
+    return revision;
   };
 
   const session: StudioProjectSession = {
@@ -734,8 +839,11 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       await load(generation, { keepDraft: false });
     },
 
-    stage(graph, commands = []) {
-      if (disposed || state.access === 'reviewer' || !state.project.hasLease) {
+    stage(graph, commands = [], envelopes = [], baseRevision) {
+      // Edits made after the lease was lost are kept with the draft until the person reacquires,
+      // takes over or saves a copy; they are never dropped (FL-89).
+      const keepsDraft = (state.status === 'lease-lost' || state.status === 'conflict') && state.access === 'owner';
+      if (disposed || state.access === 'reviewer' || (!state.project.hasLease && !keepsDraft)) {
         return;
       }
       // Commands already travelling in a save belong to that revision's summary, not the next.
@@ -744,21 +852,41 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       for (const id of commands) {
         counts[id] = (counts[id] ?? 0) + 1;
       }
+      // A save carries at most the per-save limit of envelopes (FL-92); the oldest beyond it travel
+      // as a count, and a draft that reaches the limit is sent now rather than after the pause.
+      const merged = [...(base?.envelopes ?? []), ...envelopes];
+      const overflow = Math.max(0, merged.length - STUDIO_MAX_COMMANDS_PER_SAVE);
       draft = {
         graph,
         counts,
         total: (base?.total ?? 0) + commands.length,
+        envelopes: merged.slice(overflow),
+        unchecked: (base?.unchecked ?? 0) + overflow,
         // A different document is a different request; the key is assigned when it is sent.
         requestKey: null,
+        // Later edits share the first unsaved edit's base, even while that one is in flight. A graph
+        // loaded from an older revision keeps that older base, so it can never claim a newer head; the
+        // editor's own saves it has not heard of yet carry it forward.
+        baseRevision: Math.min(draft?.baseRevision ?? state.project.revision, followEditorSaves(baseRevision)),
+        fromEditor: baseRevision !== undefined,
       };
+      if (keepsDraft) {
+        emit({ project: { ...state.project, graph } });
+        return;
+      }
       if (state.status === 'conflict') {
         // The person has not decided yet; more edits join the draft and wait with it.
         emit({ project: { ...state.project, graph } });
         return;
       }
+      // A document the server refused ('error') gets a fresh attempt with the next edit.
       emit({ project: { ...state.project, graph }, status: isOnline() ? 'dirty' : 'offline' });
       if (isOnline()) {
-        scheduleFlush();
+        if (draft.envelopes.length >= STUDIO_MAX_COMMANDS_PER_SAVE) {
+          void flush();
+        } else {
+          scheduleFlush();
+        }
       }
     },
 
