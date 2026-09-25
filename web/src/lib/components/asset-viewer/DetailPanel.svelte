@@ -11,7 +11,7 @@
   import VideoMomentsPanel from '$lib/components/frameleaf/VideoMomentsPanel.svelte';
   import ViewerDetailRows from '$lib/components/frameleaf/ViewerDetailRows.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
-  import type { DescriptionSource } from '$lib/frameleaf/info-panel';
+  import type { DescriptionReview } from '$lib/frameleaf/info-panel';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -62,7 +62,7 @@
    * editor above can badge it without a second request. Reset per asset, because a
    * provenance carried over from the previous item would be a lie about this one.
    */
-  let descriptionSource = $state<DescriptionSource>('none');
+  let descriptionReview = $state<DescriptionReview | null>(null);
 
   const refreshAlbums = async () => {
     if (authManager.isSharedLink) {
@@ -89,7 +89,7 @@
       return;
     }
 
-    descriptionSource = 'none';
+    descriptionReview = null;
     previousId = asset.id;
   });
 
@@ -116,32 +116,12 @@
     <p class="text-lg text-immich-fg dark:text-immich-dark-fg">{$t('frameleaf_viewer_information_heading')}</p>
   </div>
 
-  {#if asset.isOffline}
-    <section class="p-4">
-      <div role="alert">
-        <div class="rounded-t bg-red-500 px-4 py-2 font-bold text-white">
-          {$t('asset_offline')}
-        </div>
-        <div class="border border-t-0 border-red-400 bg-red-100 px-4 py-3 text-red-700">
-          <p>
-            {#if authManager.authenticated && authManager.user.isAdmin}
-              {$t('admin.asset_offline_description')}
-            {:else}
-              {$t('asset_offline_description')}
-            {/if}
-          </p>
-        </div>
-        <div class="rounded-b bg-red-500 px-4 py-2 text-sm text-white">
-          <p>{asset.originalPath}</p>
-        </div>
-      </div>
-    </section>
-  {/if}
+  <!-- V-6: a missing original is explained by the viewer's offline banner (ViewerOfflineBanner), not again here. -->
 
   <DetailPanelDescription
     {asset}
     {isOwner}
-    source={descriptionSource}
+    review={descriptionReview}
     onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
   />
   <DetailPanelImageEnrichment
@@ -149,7 +129,7 @@
     {isOwner}
     onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
     {onAssetSuppressed}
-    onDescriptionReview={(review) => (descriptionSource = review?.source ?? 'none')}
+    onDescriptionReview={(review) => (descriptionReview = review)}
   />
   <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
   <VideoMomentsPanel {asset} {isOwner} />

@@ -21,6 +21,7 @@
     type BulkAsset,
   } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { canSendCopies, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
   import { SharedLinkType } from '@immich/sdk';
   import { Icon } from '@immich/ui';
@@ -35,6 +36,7 @@
     mdiDeleteRestore,
     mdiDotsHorizontal,
     mdiDownloadOutline,
+    mdiExportVariant,
     mdiFaceRecognition,
     mdiHeart,
     mdiHeartOutline,
@@ -73,6 +75,7 @@
     mdiDeleteOutline,
     mdiDeleteRestore,
     mdiDownloadOutline,
+    mdiExportVariant,
     mdiFaceRecognition,
     mdiHeart,
     mdiHeartOutline,
@@ -102,7 +105,9 @@
    * It owns presentation and payload collection only. Every action is handed to `onAction`, which
    * the library view binds to `runBulkAction`; the bar never runs an action itself, so there is
    * one place where an action is bound and one place where its failures are reported. The only read
-   * it makes is the Add to album picker loading the album list it offers.
+   * it makes is the Add to album picker loading the album list it offers. The one exception is
+   * "Send a copy…" (FL-35 / FL-54): the browser's share sheet, which changes nothing on the server
+   * and must start from the click, so the bar hands the selection to `sendCopiesWithFeedback`.
    *
    * September 22, 2026 revision: the bar carries the complete bulk set, nothing is selected on
    * load, and "select everything matching" offers a scope-bound snapshot that runs in the
@@ -166,7 +171,9 @@
   let open = $derived(count > 0);
   let trash = $derived(!!context.trash);
   let locked = $derived(!!context.locked);
-  let actions = $derived(bulkActions({ ...context, assets, count }));
+  let actions = $derived(
+    bulkActions({ canSendCopy: canSendCopies() && sendCopyPermitted(), ...context, assets, count }),
+  );
   let byId = $derived(bulkActionById(actions));
   let primary = $derived(primaryBulkActions(actions, trash, locked));
   let menuGroups = $derived(menuBulkActions(actions, trash, locked));
@@ -195,6 +202,12 @@
     if (action.dialog || action.confirm) {
       dialog = id;
       dialogOpen = true;
+      return;
+    }
+    if (id === 'send-copy') {
+      // The one action the bar runs itself: the browser's share sheet, which changes nothing on the
+      // server and has to start from this click (App.jsx:818-846 `sendCopy`).
+      void sendCopiesWithFeedback(selectedIds);
       return;
     }
     if (id === 'unstack') {

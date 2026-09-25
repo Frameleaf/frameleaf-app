@@ -21,6 +21,7 @@ import {
   mdiDatabaseRefreshOutline,
   mdiDownload,
   mdiDownloadBox,
+  mdiExportVariant,
   mdiFaceRecognition,
   mdiFilmstrip,
   mdiFolderOpenOutline,
@@ -49,6 +50,7 @@ import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import ShareSheetModal from '$lib/components/frameleaf/ShareSheetModal.svelte';
 import { ProjectionType } from '$lib/constants';
+import { canSendCopies, isSendable, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
 import { folderOf } from '$lib/frameleaf/viewer-headline';
 import { isPanorama } from '$lib/frameleaf/viewer-media';
 import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
@@ -65,6 +67,16 @@ import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
 import { downloadUrl } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
+
+/**
+ * Whether a slideshow may play from this item: never from a Locked item, and on a shared link only
+ * when the link allows downloads (FL-83). The More menu, the shared link's bar and the viewer footer
+ * (V-13) all read this one rule.
+ */
+export const canPlaySlideshow = (
+  asset: Pick<AssetResponseDto, 'visibility'>,
+  sharedLink: { allowDownload: boolean } | undefined = getSharedLink(),
+): boolean => asset.visibility !== AssetVisibility.Locked && (!sharedLink || sharedLink.allowDownload);
 
 export const getAssetActions = (
   $t: MessageFormatter,
@@ -105,6 +117,19 @@ export const getAssetActions = (
     $if: () => isOwner || !!sharedLink?.allowDownload,
   };
 
+  /**
+   * FL-35 / FL-54: the native share sheet with the original file, separate from Frameleaf sharing
+   * (App.jsx:818-846). Offered wherever the item may be downloaded with its metadata (a shared link
+   * needs downloads and metadata, like `SharedLinkDownload` above), never for a Locked item, and only
+   * where the browser can share files.
+   */
+  const SendCopy: ActionItem = {
+    title: $t('frameleaf_send_copy'),
+    icon: mdiExportVariant,
+    $if: () => sendCopyPermitted(sharedLink) && isSendable(asset) && canSendCopies(),
+    onAction: () => void sendCopiesWithFeedback([asset.id]),
+  };
+
   const PlayMotionPhoto: ActionItem = {
     title: $t('play_motion_photo'),
     icon: mdiMotionPlayOutline,
@@ -126,7 +151,7 @@ export const getAssetActions = (
   const PlaySlideshow: ActionItem = {
     title: $t('frameleaf_viewer_play_slideshow'),
     icon: mdiPresentationPlay,
-    $if: () => asset.visibility !== AssetVisibility.Locked,
+    $if: () => canPlaySlideshow(asset, sharedLink),
     onAction: () => slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow),
   };
 
@@ -340,6 +365,7 @@ export const getAssetActions = (
     Download,
     DownloadOriginal,
     SharedLinkDownload,
+    SendCopy,
     Offline,
     Info,
     Favorite,

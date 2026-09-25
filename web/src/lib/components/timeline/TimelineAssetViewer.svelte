@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { positionInTimeline } from '$lib/frameleaf/viewer-position';
   import type { Action } from '$lib/components/asset-viewer/actions/action';
   import type { AssetCursor } from '$lib/components/asset-viewer/AssetViewer.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -111,6 +112,11 @@
     }
     return timelineManager.getTimelineMonthByAssetId(current.id)?.getAssets() ?? [];
   });
+
+  // V-12: "n of N" through the whole timeline, from the month counts it already holds.
+  const position = $derived(
+    assetCursor.current ? positionInTimeline(timelineManager.months, assetCursor.current.id) : null,
+  );
 
   const handleRandom = async () => {
     const randomAsset = await timelineManager.getRandomAsset();
@@ -320,5 +326,6 @@
     onAssetSuppressed={handleAssetSuppressed}
     onClose={handleClose}
     {filmstripAssets}
+    {position}
   />
 {/await}

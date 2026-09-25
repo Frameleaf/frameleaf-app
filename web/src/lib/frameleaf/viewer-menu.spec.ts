@@ -12,6 +12,7 @@ const baseContext = (overrides: Partial<ViewerMenuContext> = {}): ViewerMenuCont
   isLivePhoto: false,
   isSharedLink: false,
   canDownload: true,
+  canSendCopy: false,
   canCopyImage: true,
   hasStack: false,
   stackSize: 0,
@@ -72,6 +73,18 @@ describe('viewerMenuGroups', () => {
       const ids = idsOf(baseContext({ canDownload: false, isEdited: true }));
       expect(ids).not.toContain('download');
       expect(ids).not.toContain('download-original');
+    });
+
+    // FL-35 / FL-54: "Send a copy…" through the native share sheet, beside the downloads.
+    it('offers Send a copy only where the browser can share files and the item may be downloaded', () => {
+      expect(idsOf(baseContext())).not.toContain('send-copy');
+      expect(idsOf(baseContext({ canSendCopy: true }))).toContain('send-copy');
+      expect(idsOf(baseContext({ canSendCopy: true, canDownload: false }))).not.toContain('send-copy');
+    });
+
+    it('never offers Send a copy for a Locked or trashed item', () => {
+      expect(idsOf(baseContext({ canSendCopy: true, isLocked: true }))).not.toContain('send-copy');
+      expect(idsOf(baseContext({ canSendCopy: true, isTrashed: true }))).not.toContain('send-copy');
     });
 
     it('hides copy image for video and where the clipboard cannot take it', () => {

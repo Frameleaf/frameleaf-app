@@ -1,4 +1,4 @@
-import { AssetTypeEnum, getAssetInfo, updateAsset } from '@immich/sdk';
+import { AssetTypeEnum, getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
@@ -30,6 +30,12 @@ vi.mock('socket.io-client', () => ({
 }));
 
 vi.mock('$lib/components/asset-viewer/VideoWrapperViewer.svelte', async () => {
+  const { default: MockText } = await import('@test-data/components/MockText.svelte');
+  return { default: MockText };
+});
+
+// The photo-sphere viewer loads its image over the network; the gesture tests only need it mounted.
+vi.mock('$lib/components/asset-viewer/ImagePanoramaViewer.svelte', async () => {
   const { default: MockText } = await import('@test-data/components/MockText.svelte');
   return { default: MockText };
 });
@@ -180,5 +186,165 @@ describe('AssetViewer', () => {
       expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { isFavorite: true } }),
     );
     await waitFor(() => expect(getByLabelText('unfavorite')).toBeInTheDocument());
+  });
+
+  // FL-35 hands-on viewer (apple-style.css:366-407, MediaViewer.jsx:524-578).
+  describe('hands-on viewer', () => {
+    const renderImage = (props: Record<string, unknown> = {}, overrides: Partial<AssetResponseDto> = {}) => {
+      const user = userAdminFactory.build();
+      const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, ...overrides });
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false, ...props });
+      const viewer = view.container.ownerDocument.querySelector<HTMLElement>('#immich-asset-viewer')!;
+      const canvas = viewer.querySelector<HTMLElement>('[data-viewer-content]')!;
+      return { asset, viewer, canvas };
+    };
+
+    it('draws a pure black canvas with the viewer tokens', () => {
+      const { viewer } = renderImage();
+      expect(viewer).toHaveClass('fl-media-viewer');
+      expect(viewer).toHaveAttribute('data-theme', 'dark');
+    });
+
+    it('hides and shows the chrome on a tap on the photo', async () => {
+      const { viewer, canvas } = renderImage();
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 201, clientY: 200 });
+      expect(viewer).toHaveClass('chrome-hidden');
+
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 200 });
+      expect(viewer).not.toHaveClass('chrome-hidden');
+    });
+
+    it('closes on a downward swipe at normal zoom', async () => {
+      const onClose = vi.fn();
+      const { asset, viewer, canvas } = renderImage({ onClose });
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 300 });
+      expect(viewer).toHaveClass('dragging');
+      expect(canvas.style.transform).toContain('scale(');
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 340 });
+      expect(onClose).toHaveBeenCalledWith(asset.id);
+    });
+
+    it('springs back from a short swipe and ignores presses on controls', async () => {
+      const onClose = vi.fn();
+      const { viewer, canvas } = renderImage({ onClose });
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 250 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 250 });
+      expect(onClose).not.toHaveBeenCalled();
+      expect(viewer).not.toHaveClass('dragging');
+      expect(canvas.style.transform).toBe('');
+
+      const button = document.createElement('button');
+      canvas.append(button);
+      await fireEvent.pointerDown(button, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 200 });
+      expect(viewer).not.toHaveClass('chrome-hidden');
+    });
+
+    const swipeDown = async (canvas: HTMLElement) => {
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 300 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 360 });
+    };
+
+    // B1: a two-finger pinch at normal zoom must never close the viewer.
+    it('never closes on a pinch: a second finger ends the gesture and neither finger restarts it', async () => {
+      const onClose = vi.fn();
+      const { viewer, canvas } = renderImage({ onClose });
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 300, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 400 });
+      await fireEvent.pointerMove(document, { pointerId: 2, clientX: 300, clientY: 450 });
+      await fireEvent.pointerUp(document, { pointerId: 2, clientX: 300, clientY: 450 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 400 });
+      expect(onClose).not.toHaveBeenCalled();
+      expect(viewer).not.toHaveClass('dragging');
+      expect(viewer).not.toHaveClass('chrome-hidden');
+    });
+
+    it('never restarts the swipe when one finger of a pinch is lifted and put back', async () => {
+      const onClose = vi.fn();
+      const { viewer, canvas } = renderImage({ onClose });
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 300, clientY: 200 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 200 });
+      // Finger 2 is still down: putting finger 1 back is still a pinch, not a new swipe.
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 420 });
+      expect(viewer).not.toHaveClass('dragging');
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 420 });
+      await fireEvent.pointerUp(document, { pointerId: 2, clientX: 300, clientY: 200 });
+      expect(onClose).not.toHaveBeenCalled();
+
+      // With every finger up, a single finger swipes again.
+      await fireEvent.pointerDown(canvas, { pointerId: 3, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 3, clientX: 200, clientY: 300 });
+      await fireEvent.pointerUp(document, { pointerId: 3, clientX: 200, clientY: 360 });
+      expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    it('ignores another pointer’s moves and releases while following one', async () => {
+      const onClose = vi.fn();
+      const { canvas } = renderImage({ onClose });
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 9, clientX: 200, clientY: 500 });
+      await fireEvent.pointerUp(document, { pointerId: 9, clientX: 200, clientY: 500 });
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('lets go when the photo is zoomed in mid-drag', async () => {
+      const onClose = vi.fn();
+      const { viewer, canvas } = renderImage({ onClose });
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 260 });
+      assetViewerManager.zoom = 2;
+      await fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 400 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 400 });
+      expect(onClose).not.toHaveBeenCalled();
+      expect(viewer).not.toHaveClass('dragging');
+      assetViewerManager.resetZoomState();
+    });
+
+    it('never closes a panorama, the editor or a slideshow by swiping', async () => {
+      const onClose = vi.fn();
+      const panorama = renderImage({ onClose }, { exifInfo: { projectionType: 'EQUIRECTANGULAR' } });
+      await swipeDown(panorama.canvas);
+      expect(onClose).not.toHaveBeenCalled();
+      panorama.viewer.remove();
+
+      assetViewerManager.isShowEditor = true;
+      const editor = renderImage({ onClose });
+      await swipeDown(editor.canvas);
+      expect(onClose).not.toHaveBeenCalled();
+      assetViewerManager.closeEditor();
+      editor.viewer.remove();
+
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      const slideshow = renderImage({ onClose });
+      await swipeDown(slideshow.canvas);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('brings hidden chrome back when the keyboard is used', async () => {
+      const { viewer, canvas } = renderImage();
+      await fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 200, clientY: 200 });
+      await fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 200 });
+      expect(viewer).toHaveClass('chrome-hidden');
+      await fireEvent.keyDown(document, { key: 'Tab' });
+      expect(viewer).not.toHaveClass('chrome-hidden');
+    });
+
+    // V-13 / V-12: the footer with the position.
+    it('draws the footer with the position in the collection', () => {
+      const { viewer } = renderImage({ position: { index: 2, total: 40 } });
+      const footer = viewer.querySelector('[data-testid="viewer-footer"]')!;
+      expect(footer).not.toBeNull();
+      expect(footer.querySelector('[data-testid="viewer-position"]')).toHaveAttribute('aria-live', 'polite');
+    });
   });
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { afterNavigate, beforeNavigate } from '$app/navigation';
+  import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock, watchSessionLockOwner } from '$lib/frameleaf/session-lock';
@@ -23,6 +23,7 @@
   import { maintenanceShouldRedirect } from '$lib/utils/maintenance';
   import { installSearchShortcuts } from '$lib/frameleaf/search-shortcuts';
   import { applyThemeColor } from '$lib/frameleaf/theme-color';
+  import { viewerZoomTransition } from '$lib/frameleaf/viewer-zoom';
   import frameleafLogoDarkUrl from '$lib/assets/frameleaf/frameleaf-logo-dark.svg?url';
   import frameleafSymbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
   import { getServerConfig } from '@immich/sdk';
@@ -44,6 +45,9 @@
   import '../app.css';
 
   trackSessionModals(modalManager);
+
+  // FL-35: a photo grows out of its thumbnail into the viewer and back (interactions.js viewerTransition).
+  onNavigate((navigation) => viewerZoomTransition(navigation));
 
   // The browser chrome follows the app theme, not the OS colour scheme (App.jsx:2193-2203).
   $effect(() => applyThemeColor(themeManager.value === Theme.Dark ? 'dark' : 'light'));

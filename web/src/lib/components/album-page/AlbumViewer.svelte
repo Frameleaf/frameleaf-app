@@ -6,6 +6,7 @@
   import Portal from '$lib/elements/Portal.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { handleDownloadAlbum } from '$lib/services/album.service';
@@ -100,6 +101,7 @@
   onUpload={() => void openFileUploadDialog({ albumId: album.id })}
   onDownloadAll={() => handlePromiseError(handleDownloadAlbum(album))}
   onDownloadSelected={downloadSelected}
+  onSendCopy={() => void sendCopiesWithFeedback([...librarySession.selection])}
   onSelectAll={() => handlePromiseError(selectAll())}
   onClear={() => librarySession.clearSelection()}
 >

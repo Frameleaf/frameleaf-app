@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { positionInList } from '$lib/frameleaf/viewer-position';
   /**
    * The viewer over a flat, paged list of results (FL-33 cleanup).
    *
@@ -48,6 +49,15 @@
   } = $props();
 
   const filmstripAssets = $derived(assets.map((asset) => toTimelineAsset(asset)));
+  // V-12: "n of N" in the list the page holds.
+  const position = $derived(
+    assetViewerManager.asset
+      ? positionInList(
+          assets.map((asset) => asset.id),
+          assetViewerManager.asset.id,
+        )
+      : null,
+  );
 
   const cursor = $derived<AssetCursor>({
     current: assetViewerManager.asset!,
@@ -123,6 +133,7 @@
           handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
         }}
         {filmstripAssets}
+        {position}
         {album}
         {isShared}
         {activityPanel}
