@@ -14,6 +14,7 @@ import {
   type YearInReviewDto,
 } from '@immich/sdk';
 import { DateTime } from 'luxon';
+import type { Translations } from 'svelte-i18n';
 
 /**
  * Frameleaf memory story helpers (FL-62).
@@ -176,7 +177,10 @@ export const groupMemories = (
   return sections;
 };
 
-type Translate = (key: string, options?: { values?: Record<string, string | number | null | undefined> }) => string;
+type Translate = (
+  key: Translations,
+  options?: { values?: Record<string, string | number | boolean | Date | null | undefined> },
+) => string;
 
 const longDate = (day: string, locale?: string) => {
   const date = DateTime.fromISO(day, { zone: 'utc' });
