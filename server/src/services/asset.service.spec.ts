@@ -998,6 +998,39 @@ describe(AssetService.name, () => {
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, -5000);
     });
 
+    it('keeps an asset restored from the trash since the deletion was queued (FL-71)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({ ...getForAssetDeletion(asset), deletedAt: null });
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+
+      await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+      expect(mocks.stack.delete).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('keeps a restored photo’s motion part while a photo still uses it (FL-71)', async () => {
+      const motion = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({ ...getForAssetDeletion(motion), deletedAt: null });
+      mocks.asset.getLivePhotoCount.mockResolvedValue(1);
+
+      await expect(sut.handleAssetDeletion({ id: motion.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.asset.getLivePhotoCount).toHaveBeenCalledWith(motion.id);
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+    });
+
+    it('deletes a motion part that no photo uses any more, though it was never trashed (FL-71)', async () => {
+      const motion = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({ ...getForAssetDeletion(motion), deletedAt: null });
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+
+      await expect(sut.handleAssetDeletion({ id: motion.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.remove).toHaveBeenCalled();
+    });
+
     it('should fail if asset could not be found', async () => {
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(void 0);
       await expect(sut.handleAssetDeletion({ id: AssetFactory.create().id, deleteOnDisk: true })).resolves.toBe(

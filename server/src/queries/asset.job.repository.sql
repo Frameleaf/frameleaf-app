@@ -776,6 +776,7 @@ select
   "asset"."livePhotoVideoId",
   "asset"."originalPath",
   "asset"."isOffline",
+  "asset"."deletedAt",
   to_json("asset_exif") as "exifInfo",
   (
     select

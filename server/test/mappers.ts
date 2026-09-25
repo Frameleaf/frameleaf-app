@@ -217,6 +217,8 @@ export const getForAssetDeletion = (asset: ReturnType<AssetFactory['build']>) =>
   livePhotoVideoId: asset.livePhotoVideoId,
   originalPath: asset.originalPath,
   isOffline: asset.isOffline,
+  // a deletion job runs on an asset in the trash
+  deletedAt: asset.deletedAt ?? new Date('2024-01-01T00:00:00.000Z'),
   exifInfo: asset.exifInfo ? getDehydrated(asset.exifInfo) : null,
   files: asset.files.map((file) => getDehydrated(file)),
   stack: asset.stack
