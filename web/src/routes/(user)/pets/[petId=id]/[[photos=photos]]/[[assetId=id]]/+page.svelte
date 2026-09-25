@@ -1,6 +1,7 @@
 <script lang="ts">
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
+  import PetDecisions from '$lib/components/frameleaf/pets/PetDecisions.svelte';
   import PetThumbnail from '$lib/components/frameleaf/pets/PetThumbnail.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
@@ -168,6 +169,8 @@
               {/if}
             </div>
           </div>
+          <!-- FL-58: every decision about this pet, with remove/undo and review of changed photos. -->
+          <PetDecisions petId={pet.id} onChanged={() => void reload()} />
         </header>
       {/snippet}
 

@@ -26,8 +26,8 @@
   interface Props {
     candidates: PetCandidateResponseDto[];
     pets: PetResponseDto[];
+    /** Why it is unavailable is said by `PetRecognitionPanel` above this panel (FL-58). */
     recognitionAvailable: boolean;
-    recognitionUnavailableReason: string | null;
     busyCandidateId?: string | null;
     onAccept: (candidate: PetCandidateResponseDto) => void;
     onReassign: (candidate: PetCandidateResponseDto, petId: string) => void;
@@ -38,7 +38,6 @@
     candidates,
     pets,
     recognitionAvailable,
-    recognitionUnavailableReason,
     busyCandidateId = null,
     onAccept,
     onReassign,
@@ -79,9 +78,6 @@
     <p class="empty">
       {#if emptyState === 'unavailable'}
         {$t('frameleaf_pets_review_unavailable')}
-        {#if recognitionUnavailableReason}
-          <span class="reason">{$t('frameleaf_pets_review_unavailable_reason')}</span>
-        {/if}
       {:else}
         {$t('frameleaf_pets_review_all_done')}
       {/if}
@@ -206,9 +202,6 @@
     margin: 0;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
-  }
-  .reason {
-    display: block;
   }
   .groups,
   .proposals {

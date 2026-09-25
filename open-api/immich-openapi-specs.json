@@ -56982,6 +56982,10 @@
       },
       "PetCandidateResponseDto": {
         "properties": {
+          "assetChecksum": {
+            "description": "Checksum (base64) of the asset now; send it back as expectedChecksum",
+            "type": "string"
+          },
           "assetId": {
             "description": "Asset the proposal is about",
             "format": "uuid",
@@ -57056,6 +57060,7 @@
           }
         },
         "required": [
+          "assetChecksum",
           "assetId",
           "boundingBoxX1",
           "boundingBoxX2",
