@@ -21,7 +21,7 @@
     type StackResponseDto,
   } from '@immich/sdk';
   import { ActionButton, CommandPaletteDefaultProvider, Tooltip, type ActionItem } from '@immich/ui';
-  import { mdiArrowLeft, mdiArrowRight, mdiDotsVertical, mdiVideoOutline } from '@mdi/js';
+  import { mdiArrowLeft, mdiArrowRight, mdiDotsHorizontal, mdiVideoOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -97,10 +97,10 @@
 <!--
   FL-35: the frosted viewer header (apple-style.css:383-403, 504-507). The actions follow the template's
   top row (MediaViewer.jsx:1023-1200): Share, Cast, Copy image (wide screens only), Information,
-  Favorite, Rating, Edit, Trash and More. The legacy Offline button and split zoom buttons are gone
-  (audit V-6): the offline banner explains a missing original, and zoom stays on double-click,
-  pinch, the wheel and the + / − / Z keys. On phones the actions leave the header for a frosted
-  bottom toolbar, like iPhone Photos (apple-style.css:756-790).
+  Favorite, Rating, Edit, Trash and More. The legacy Offline button is gone (audit V-6): the offline
+  banner explains a missing original. Zoom lives in the footer, as in the template (ViewerFooter,
+  MediaViewer.jsx:1765-1790). On phones the actions leave the header for a frosted bottom toolbar
+  above the footer, like iPhone Photos (apple-style.css:756-790).
 -->
 <div class="fl-viewer-header">
   <div class="flex min-w-0 flex-1 items-center gap-2">
@@ -161,7 +161,7 @@
           align="top-right"
           color="secondary"
           title={$t('frameleaf_viewer_more_actions')}
-          icon={mdiDotsVertical}
+          icon={mdiDotsHorizontal}
         >
           <!--
             FL-35: the complete grouped menu (Download, Organize, Stack, Set as, Go to, Jobs,
@@ -255,12 +255,12 @@
     .fl-viewer-toolbar {
       position: fixed;
       inset-inline: 0;
-      bottom: 0;
+      /* Above the 60px footer (apple-style.css:760-763). */
+      bottom: calc(60px + env(safe-area-inset-bottom));
       z-index: 3;
       isolation: isolate;
       display: block;
-      padding: 4px max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom))
-        max(8px, env(safe-area-inset-left));
+      padding: 4px max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left));
       border-top: 1px solid #ffffff14;
       transition:
         opacity 260ms ease,
