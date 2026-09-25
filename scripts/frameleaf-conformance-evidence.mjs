@@ -1005,9 +1005,9 @@ const actions = {
     },
   ],
   "slideshow-blurred-background-look-progress-transition-settings": [
-    "partial",
+    "fixed",
     ["V-8", "V-18"],
-    "Inline slideshow (V-18); the Frameleaf settings and the five transitions are fixed (V-8)",
+    "Frameleaf settings panel, five transitions and inline slideshow (fixed on codex/FL-62-sept24-slideshow-memories)",
     {
       production: [
         `${W}/lib/components/asset-viewer/SlideshowBar.svelte`,
@@ -1490,7 +1490,7 @@ const routes = {
       "MPY-8",
       "MPY-9",
     ],
-    "Player P0s (fix-discovery), end card (the title card is fixed, MPY-4), shortcuts, soundtrack",
+    "Player P0s (fix-discovery), shortcuts, soundtrack; title and end cards fixed (MPY-4)",
     [`${P}/MemoryPlayer.jsx`],
     [
       `${W}/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
