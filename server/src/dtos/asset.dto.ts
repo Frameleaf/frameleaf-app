@@ -56,8 +56,14 @@ const AssetBulkUpdateSchema = AssetBulkUpdateBaseSchema.pipe(
   IsNotSiblingOf(AssetBulkUpdateBaseSchema, 'dateTimeRelative', ['dateTimeOriginal']),
 ).meta({ id: 'AssetBulkUpdateDto' });
 
+/** FL-36 (V-24): a place name the owner types; an empty or null value clears it. */
+const placeNameSchema = z.string().max(255).nullish();
+
 const UpdateAssetSchema = UpdateAssetBaseSchema.extend({
   livePhotoVideoId: z.uuidv4().nullish().describe('Live photo video ID'),
+  city: placeNameSchema.describe('City name; kept over reverse geocoding until the item is moved again'),
+  state: placeNameSchema.describe('State or region name; kept over reverse geocoding until the item is moved again'),
+  country: placeNameSchema.describe('Country name; kept over reverse geocoding until the item is moved again'),
 }).meta({ id: 'UpdateAssetDto' });
 
 const AssetBulkDeleteSchema = BulkIdsSchema.extend({

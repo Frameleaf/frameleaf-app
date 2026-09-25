@@ -3,8 +3,8 @@
    * The information panel's capture date and timezone row (FL-36).
    *
    * Ported from the "Captured" row in `design/frameleaf/template/src/MediaViewer.jsx`. The
-   * edit opens the production `AssetChangeDateModal`, which writes `dateTimeOriginal` through
-   * `updateAsset` and carries the timezone chooser; the panel adds the failure handling the
+   * edit opens the template's "Edit date and time" dialog (`ViewerDateDialog`, audit V-23), which
+   * writes `dateTimeOriginal` through `updateAsset`; the panel adds the failure handling the
    * prototype's dialog only simulated.
    *
    * Retry here means reopening the picker, because the attempted value lives in the modal:
@@ -13,11 +13,11 @@
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import AssetChangeDateModal from '$lib/modals/AssetChangeDateModal.svelte';
+  import ViewerDateDialog from '$lib/components/frameleaf/ViewerDateDialog.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { fromISODateTime, fromISODateTimeUTC, toTimelineAsset } from '$lib/utils/timeline-util';
+  import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
   import { mdiCalendar, mdiPencil } from '@mdi/js';
@@ -45,8 +45,8 @@
       return;
     }
 
-    const succeeded = await modalManager.show(AssetChangeDateModal, {
-      asset: toTimelineAsset(asset),
+    const succeeded = await modalManager.show(ViewerDateDialog, {
+      asset,
       initialDate: dateTime,
       initialTimeZone: timeZone,
       onError: (error: unknown) => {

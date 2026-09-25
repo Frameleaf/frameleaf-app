@@ -49789,6 +49789,13 @@
             "nullable": true,
             "type": "number"
           },
+          "fps": {
+            "default": null,
+            "description": "Video frame rate (frames per second)",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
           "iso": {
             "default": null,
             "description": "ISO sensitivity",
@@ -74154,6 +74161,18 @@
       },
       "UpdateAssetDto": {
         "properties": {
+          "city": {
+            "description": "City name; kept over reverse geocoding until the item is moved again",
+            "maxLength": 255,
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "description": "Country name; kept over reverse geocoding until the item is moved again",
+            "maxLength": 255,
+            "nullable": true,
+            "type": "string"
+          },
           "dateTimeOriginal": {
             "description": "Original date and time",
             "type": "string"
@@ -74211,6 +74230,12 @@
               }
             ],
             "x-immich-state": "Stable"
+          },
+          "state": {
+            "description": "State or region name; kept over reverse geocoding until the item is moved again",
+            "maxLength": 255,
+            "nullable": true,
+            "type": "string"
           },
           "visibility": {
             "$ref": "#/components/schemas/AssetVisibility"
