@@ -431,6 +431,28 @@ export class StudioProjectRepository {
     return rows.map((row) => row.id);
   }
 
+  /**
+   * Owner decision (FL-146, 2026-09-25): when a project's owner leaves or is removed from its
+   * shared space, the project is kept and becomes the owner's private project again. Space sharing
+   * ends: `spaceId` is cleared, and a lease held by another member is released. Nothing is deleted;
+   * a project goes only when someone deletes it. Returns the ids that were detached.
+   */
+  async detachOwnerFromSpace(spaceId: string, ownerId: string): Promise<string[]> {
+    const rows = await this.db
+      .updateTable('studio_project')
+      .set((eb) => ({
+        spaceId: null,
+        leaseHolderId: eb.case().when('leaseHolderId', '=', ownerId).then(eb.ref('leaseHolderId')).else(null).end(),
+        leaseClientId: eb.case().when('leaseHolderId', '=', ownerId).then(eb.ref('leaseClientId')).else(null).end(),
+        leaseExpiresAt: eb.case().when('leaseHolderId', '=', ownerId).then(eb.ref('leaseExpiresAt')).else(null).end(),
+      }))
+      .where('spaceId', '=', spaceId)
+      .where('ownerId', '=', ownerId)
+      .returning('id')
+      .execute();
+    return rows.map((row) => row.id);
+  }
+
   /** FL-90: the projects placed in an album or shared space. */
   async getIdsInSpace(spaceId: string): Promise<string[]> {
     const rows = await this.db.selectFrom('studio_project').select('id').where('spaceId', '=', spaceId).execute();
