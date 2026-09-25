@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { defaults } from 'src/config.js';
-import { AssetStatus, AssetType, AssetVisibility, EnrichmentItemState, VideoMomentSource } from 'src/enum.js';
+import { AssetStatus, AssetType, AssetVisibility, EnrichmentItemState, JobName, VideoMomentSource } from 'src/enum.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import {
   VIDEO_MOMENT_EXTRACTOR_VERSION,
@@ -95,6 +95,7 @@ describe(VideoMomentIndexService.name, () => {
       mocks.person as never,
       mocks.config as never,
       mocks.systemMetadata as never,
+      mocks.job as never,
     );
   });
 
@@ -304,6 +305,25 @@ describe(VideoMomentIndexService.name, () => {
       expect(response.staleReason).toBe('source-changed');
       expect(response.coverFrameId).toBe(frames[1].id);
       expect(response.frames.find(({ isCover }) => isCover)?.rank).toBe(1);
+    });
+  });
+
+  describe('setCover', () => {
+    it("records the owner's cover and regenerates the video's thumbnail from it", async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+
+      await sut.setCover(authStub.user1, assetId, { timestampMs: 2000 });
+
+      expect(moments.setCover).toHaveBeenCalledWith(assetId, 2000, authStub.user1.user.id);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetGenerateThumbnails, data: { id: assetId } });
+    });
+
+    it('refuses a video without frames and queues nothing', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      moments.getIndex.mockResolvedValue(undefined);
+
+      await expect(sut.setCover(authStub.user1, assetId, { timestampMs: 2000 })).rejects.toThrow(BadRequestException);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 

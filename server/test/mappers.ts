@@ -181,6 +181,7 @@ export const getForGenerateThumbnail = (asset: ReturnType<AssetFactory['build']>
   videoStream: null as (VideoStreamInfo & { timeBase: number }) | null,
   audioStream: null as AudioStreamInfo | null,
   format: null as VideoFormat | null,
+  coverTimestampMs: null as number | null,
 });
 
 export const getForAssetFace = (face: ReturnType<AssetFaceFactory['build']>) => ({
