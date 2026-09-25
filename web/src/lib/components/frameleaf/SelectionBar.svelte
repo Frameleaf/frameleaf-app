@@ -21,7 +21,7 @@
     type BulkAsset,
   } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
-  import { canSendCopies, sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
+  import { canSendCopies, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
   import { SharedLinkType } from '@immich/sdk';
   import { Icon } from '@immich/ui';
@@ -171,7 +171,9 @@
   let open = $derived(count > 0);
   let trash = $derived(!!context.trash);
   let locked = $derived(!!context.locked);
-  let actions = $derived(bulkActions({ canSendCopy: canSendCopies(), ...context, assets, count }));
+  let actions = $derived(
+    bulkActions({ canSendCopy: canSendCopies() && sendCopyPermitted(), ...context, assets, count }),
+  );
   let byId = $derived(bulkActionById(actions));
   let primary = $derived(primaryBulkActions(actions, trash, locked));
   let menuGroups = $derived(menuBulkActions(actions, trash, locked));

@@ -1,7 +1,7 @@
 <script lang="ts">
   import Dialog from './Dialog.svelte';
   import SharedLinkForm from './SharedLinkForm.svelte';
-  import { canSendCopies, sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
+  import { canSendCopies, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import { SharedLinkType } from '@immich/sdk';
   import { t } from 'svelte-i18n';
 
@@ -58,7 +58,7 @@
 <Dialog title={$t('frameleaf_sharing.share_subject', { values: { subject } })} closeLabel={$t('close')} bind:open>
   <p class="ss-link-copy">{$t('frameleaf_sharing.link_option_description')}</p>
   <div class="ss-actions">
-    {#if canSendCopies()}
+    {#if canSendCopies() && sendCopyPermitted()}
       <button type="button" onclick={sendCopy}>{$t('frameleaf_send_copy')}</button>
     {/if}
     <button type="button" onclick={() => (open = false)}>{$t('cancel')}</button>
