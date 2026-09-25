@@ -7385,6 +7385,8 @@ export type ServerConfigDto = {
     userDeleteDelay: number;
 };
 export type ServerFeaturesDto = {
+    /** Whether Ask Search (natural-language questions about the library) is enabled and can answer */
+    askSearch: boolean;
     /** Whether config file is available */
     configFile: boolean;
     /** Whether duplicate detection is enabled */
