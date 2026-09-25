@@ -10,6 +10,7 @@
   import QuickEditor from '$lib/components/frameleaf/editor/QuickEditor.svelte';
   import FaceTagger from '$lib/components/frameleaf/FaceTagger.svelte';
   import ViewerFilmstrip from '$lib/components/frameleaf/ViewerFilmstrip.svelte';
+  import ViewerFooter from '$lib/components/frameleaf/ViewerFooter.svelte';
   import ViewerOfflineBanner from '$lib/components/frameleaf/ViewerOfflineBanner.svelte';
   import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -45,12 +46,14 @@
   } from '@immich/sdk';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
-  import { CommandPaletteDefaultProvider } from '@immich/ui';
+  import { CommandPaletteDefaultProvider, modalManager } from '@immich/ui';
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import type { SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { motionFly } from '$lib/frameleaf/motion';
   import { isGestureExempt, ViewerGesture, type DismissDrag } from '$lib/frameleaf/viewer-gesture';
+  import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
+  import SlideshowSettingsModal from '$lib/modals/SlideshowSettingsModal.svelte';
   import ActivityStatus from './ActivityStatus.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import ImagePanoramaViewer from './ImagePanoramaViewer.svelte';
@@ -91,6 +94,8 @@
      * per-item conversation here; without it the panel keeps the album activity viewer.
      */
     activityPanel?: Snippet<[AssetResponseDto]>;
+    /** V-12: where the open item sits in the caller's collection, for the footer's "n of N". */
+    position?: ViewerPosition | null;
   }
 
   let {
@@ -110,6 +115,7 @@
     onRandom,
     filmstripAssets = [],
     activityPanel,
+    position = null,
   }: Props = $props();
 
   const {
@@ -541,7 +547,14 @@
     if (!gesturesEnabled || event.button > 0 || assetViewerManager.zoom > 1 || isGestureExempt(event.target)) {
       return;
     }
-    gesture.start(event.clientX, event.clientY);
+    gesture.start(event.pointerId, event.clientX, event.clientY);
+  };
+
+  // A second finger anywhere (a pinch) ends the gesture; the canvas handler covers the canvas itself.
+  const onWindowPointerDown = (event: PointerEvent) => {
+    if (gesture.active && gesture.pointerId !== event.pointerId) {
+      gesture.cancel();
+    }
   };
 
   const onWindowPointerMove = (event: PointerEvent) => {
@@ -549,7 +562,7 @@
       gesture.cancel();
       return;
     }
-    gesture.move(event.clientX, event.clientY);
+    gesture.move(event.pointerId, event.clientX, event.clientY);
   };
 
   // The chrome comes back whenever something else takes over the screen.
@@ -567,11 +580,63 @@
       : undefined,
   );
 
+  /** V-13: the footer's full-screen toggle (MediaViewer.jsx:1799-1806). */
+  const toggleFullscreen = async () => {
+    try {
+      await (document.fullscreenElement ? document.exitFullscreen() : assetViewerHtmlElement?.requestFullscreen());
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_enter_fullscreen'));
+    }
+  };
+
+  /**
+   * V-13: the footer's cog sets the settings-open flag. Until the slideshow's own settings panel reads
+   * it, the flag opens the existing slideshow settings and is cleared when they close.
+   */
+  const { settingsOpen: slideshowSettingsOpen } = slideshowStore;
+  $effect(() => {
+    if (!$slideshowSettingsOpen) {
+      return;
+    }
+    void untrack(() => modalManager.show(SlideshowSettingsModal)).finally(() => slideshowStore.closeSettings());
+  });
+
+  /** Hidden chrome comes back as soon as the keyboard is used, so nothing focusable stays invisible. */
+  const revealChrome = () => {
+    if (chromeHidden) {
+      chromeHidden = false;
+    }
+  };
+
+  /**
+   * Closing the information card from inside it puts focus back on the Information button, not on
+   * the page behind the viewer.
+   */
+  let infoHadFocus = false;
+  const infoFocusOut = (event: FocusEvent) => {
+    const next = event.relatedTarget as Node | null;
+    if (next && !(event.currentTarget as HTMLElement).contains(next)) {
+      infoHadFocus = false;
+    }
+  };
+
   const VIDEO_VIEWERS = new Set(['VideoViewer', 'StackVideoViewer', 'LiveVideoViewer']);
+
+  const showFooter = $derived($slideshowState === SlideshowState.None && !assetViewerManager.isShowEditor);
 
   const showStackStrip = $derived(
     !!stack && withStacked && !assetViewerManager.isShowEditor && $slideshowState === SlideshowState.None,
   );
+
+  $effect(() => {
+    if (showDetailPanel || !infoHadFocus) {
+      return;
+    }
+    infoHadFocus = false;
+    const label = $t('frameleaf_viewer_information');
+    const buttons = assetViewerHtmlElement?.querySelectorAll<HTMLElement>(':scope [data-viewer-chrome] button') ?? [];
+    [...buttons].find((button) => button.getAttribute('aria-label') === label)?.focus();
+  });
 
   const onSwipe = (event: SwipeCustomEvent) => {
     if (assetViewerManager.zoom > 1) {
@@ -594,9 +659,15 @@
 <OnEvents {onAssetUpdate} {onAssetsUndoArchive} />
 
 <svelte:window
+  onkeydown={revealChrome}
+  onpointerdown={onWindowPointerDown}
   onpointermove={onWindowPointerMove}
-  onpointerup={(event) => gesture.end(event.clientX, event.clientY)}
-  onpointercancel={() => gesture.cancel()}
+  onpointerup={(event) => gesture.end(event.pointerId, event.clientX, event.clientY)}
+  onpointercancel={(event) => {
+    if (gesture.pointerId === event.pointerId) {
+      gesture.cancel();
+    }
+  }}
 />
 
 <svelte:document
@@ -618,6 +689,7 @@
   data-theme="dark"
   use:focusTrap
   bind:this={assetViewerHtmlElement}
+  onfocusin={revealChrome}
 >
   <!-- Top navigation bar -->
   {#if $slideshowState === SlideshowState.None && !assetViewerManager.isShowEditor}
@@ -762,7 +834,13 @@
       entering on the spring; phones keep the bottom sheet (media-viewer.css:1942-1987). Either way it
       stays dark, like the rest of the viewer.
     -->
-    <div id="detail-panel" class="fl-viewer-info fl-continuous-corners dark" translate="yes">
+    <div
+      id="detail-panel"
+      class="fl-viewer-info fl-continuous-corners dark"
+      translate="yes"
+      onfocusin={() => (infoHadFocus = true)}
+      onfocusout={infoFocusOut}
+    >
       <span class="fl-viewer-sheet-handle" aria-hidden="true"></span>
       <!--
           FL-35 stops at the viewer's media sources, navigation and actions. FL-36 rebuilt
@@ -795,7 +873,7 @@
   {#if showStackStrip && stack}
     <div
       id="stack-slideshow"
-      class="fl-viewer-footer absolute bottom-0 col-span-4 col-start-1 w-fit max-w-full"
+      class="fl-viewer-strip absolute bottom-0 col-span-4 col-start-1 w-fit max-w-full"
       data-viewer-chrome="footer"
     >
       <ViewerStackStrip
@@ -814,11 +892,29 @@
 
   <!-- FL-35: the filmstrip, shown only when the caller supplied the neighbours. -->
   {#if showFilmstripStrip}
-    <div class="fl-viewer-footer absolute inset-x-0 bottom-0 col-span-4 col-start-1" data-viewer-chrome="footer">
+    <div class="fl-viewer-strip absolute inset-x-0 bottom-0 col-span-4 col-start-1" data-viewer-chrome="footer">
       <ViewerFilmstrip
         assets={filmstripAssets}
         currentAssetId={asset.id}
         onSelect={(selected) => handlePromiseError(navigate({ targetRoute: 'current', assetId: selected.id }))}
+      />
+    </div>
+  {/if}
+
+  <!-- V-13: the footer (MediaViewer.jsx:1693-1797), frosted over the bottom of the photo. -->
+  {#if showFooter}
+    <div class="absolute inset-x-0 bottom-0 z-2 col-span-4 col-start-1" data-viewer-chrome="footer">
+      <ViewerFooter
+        {asset}
+        {position}
+        canNavigateCollection={!!(nextAsset || previousAsset)}
+        canShowFilmstrip={filmstripAssets.length > 1}
+        hasStack={!!stack && withStacked}
+        zoomable={viewerKind === 'PhotoViewer' && !previewStackedAsset}
+        {isPlayingOriginalVideo}
+        {setPlayOriginalVideo}
+        fullscreen={isFullScreen}
+        onToggleFullscreen={() => handlePromiseError(toggleFullscreen())}
       />
     </div>
   {/if}
@@ -848,8 +944,12 @@
     /* apple-style.css:366-370: a pure black canvas in both themes. */
     background: #000;
     color: #fff;
-    /* Phones lift the footer strips above the bottom toolbar (AssetViewerNavBar). */
-    --fl-viewer-toolbar-offset: 0px;
+    /*
+     * What sits along the bottom edge: the 60px footer (V-13) and, on phones, the bottom toolbar above
+     * it (AssetViewerNavBar, apple-style.css:756-763). Strips, badges and video controls clear both.
+     */
+    --fl-viewer-footer-height: calc(60px + env(safe-area-inset-bottom));
+    --fl-viewer-toolbar-offset: var(--fl-viewer-footer-height);
   }
 
   .fl-viewer-canvas {
@@ -890,15 +990,14 @@
     translate: 0 12px;
   }
 
-  /* The frosted footer: the stack strip and the filmstrip (apple-style.css:383-392, 508-510). */
-  .fl-viewer-footer {
+  /* The frosted strips above the footer: the stack strip and the filmstrip (apple-style.css:383-392). */
+  .fl-viewer-strip {
     isolation: isolate;
     bottom: var(--fl-viewer-toolbar-offset);
-    padding-bottom: max(0px, calc(env(safe-area-inset-bottom) - var(--fl-viewer-toolbar-offset)));
     border-top: 1px solid #ffffff14;
   }
 
-  .fl-viewer-footer::before {
+  .fl-viewer-strip::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -933,7 +1032,7 @@
 
   /* Clear of the filmstrip or stack strip (apple-style.css:540-542). */
   .with-footer .fl-viewer-info {
-    bottom: 120px;
+    bottom: 168px;
   }
 
   @supports (corner-shape: squircle) {
@@ -968,7 +1067,7 @@
 
   @media (max-width: 700px) {
     #immich-asset-viewer {
-      --fl-viewer-toolbar-offset: calc(53px + env(safe-area-inset-bottom));
+      --fl-viewer-toolbar-offset: calc(var(--fl-viewer-footer-height) + 53px);
     }
   }
 
@@ -994,7 +1093,7 @@
   }
 
   @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-    .fl-viewer-footer::before {
+    .fl-viewer-strip::before {
       background: #1c1c1e;
       backdrop-filter: none;
     }

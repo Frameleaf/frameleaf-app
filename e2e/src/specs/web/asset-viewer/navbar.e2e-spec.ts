@@ -17,6 +17,14 @@ test.describe('Asset Viewer Navbar', () => {
   });
 
   test.describe('shared link without metadata', () => {
+    // "Send a copy…" depends on the browser's share sheet; take it away so the row is the same everywhere.
+    test.beforeEach(async ({ page }) => {
+      await page.addInitScript(() => {
+        Reflect.deleteProperty(Navigator.prototype, 'share');
+        Reflect.deleteProperty(Navigator.prototype, 'canShare');
+      });
+    });
+
     test('visible guest actions', async ({ page }) => {
       const sharedLink = await utils.createSharedLink(admin.accessToken, {
         type: SharedLinkType.Individual,
@@ -26,9 +34,10 @@ test.describe('Asset Viewer Navbar', () => {
       await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      // FL-35: the template's row has no zoom buttons (audit V-6); zoom stays on double-click, pinch and keys.
+      // FL-35: zoom moved to the footer, as in the template (MediaViewer.jsx:1765-1790).
       const expected = ['Copy Image', 'Download'];
       const buttons = await page.getByTestId('asset-viewer-navbar-actions').getByRole('button').all();
+      expect(buttons).toHaveLength(expected.length);
 
       for (const [i, button] of buttons.entries()) {
         await expect(button).toHaveAccessibleName(expected[i]);
@@ -47,6 +56,7 @@ test.describe('Asset Viewer Navbar', () => {
 
       const expected = ['Share', 'Copy Image', 'Download'];
       const buttons = await page.getByTestId('asset-viewer-navbar-actions').getByRole('button').all();
+      expect(buttons).toHaveLength(expected.length);
 
       for (const [i, button] of buttons.entries()) {
         await expect(button).toHaveAccessibleName(expected[i]);
@@ -85,6 +95,18 @@ test.describe('Asset Viewer Navbar', () => {
       await expect(viewer).toHaveCount(0);
       await expect(page).toHaveURL(/\/photos(\?.*)?$/);
     });
+  });
+
+  // V-13: the footer carries the zoom, the position and the playback controls.
+  test('the footer zooms the photo and returns to Fit', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto(`/photos/${asset.id}`);
+    const footer = page.getByTestId('viewer-footer');
+    await expect(footer).toBeVisible();
+    await footer.getByRole('button', { name: 'Zoom in' }).click();
+    await expect(footer.getByRole('button', { name: /% of fit$/ })).toBeVisible();
+    await footer.getByRole('button', { name: /% of fit$/ }).click();
+    await expect(footer.getByRole('button', { name: 'Fit', exact: true })).toBeVisible();
   });
 
   test.describe('actions', () => {
