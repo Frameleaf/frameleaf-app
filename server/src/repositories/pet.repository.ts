@@ -3,7 +3,6 @@ import { type Insertable, type Kysely, type Selectable, type Transaction, type U
 import { InjectKysely } from 'nestjs-kysely';
 import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { lockForkWrites } from 'src/utils/fork-write-lock.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { PetObservationState, PetRecognitionRunStatus, PetSpecies, VectorIndex } from 'src/enum.js';
 import { probes } from 'src/repositories/database.repository.js';
@@ -17,6 +16,7 @@ import {
   isLockedAsset,
   lockedOwnerScope,
 } from 'src/utils/database.js';
+import { lockForkWrites } from 'src/utils/fork-write-lock.js';
 
 export type Pet = Selectable<PetTable>;
 export type PetObservation = Selectable<PetObservationTable>;
