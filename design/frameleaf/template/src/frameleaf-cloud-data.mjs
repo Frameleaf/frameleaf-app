@@ -294,7 +294,11 @@ export const cloudJobs = Object.freeze([
 export const backupManifests = Object.freeze([
   { id: "m-2026-09-25", createdAt: "2026-09-25T03:00:00Z", assets: 48211, bytes: 612e9, db: { createdAt: "2026-09-25T02:00:00Z", bytes: 1.84e9 } },
   { id: "m-2026-09-24", createdAt: "2026-09-24T03:00:00Z", assets: 48160, bytes: 611.4e9, db: { createdAt: "2026-09-24T02:00:00Z", bytes: 1.83e9 } },
+  { id: "m-2026-09-18", createdAt: "2026-09-18T03:00:00Z", assets: 47904, bytes: 606.2e9, db: { createdAt: "2026-09-18T02:00:00Z", bytes: 1.82e9 } },
   { id: "m-2026-09-01", createdAt: "2026-09-01T03:00:00Z", assets: 47302, bytes: 598e9, db: { createdAt: "2026-09-01T02:00:00Z", bytes: 1.79e9 } },
+  { id: "m-2026-06-01", createdAt: "2026-06-01T03:00:00Z", assets: 44870, bytes: 561.3e9, db: { createdAt: "2026-06-01T02:00:00Z", bytes: 1.66e9 } },
+  { id: "m-2026-01-01", createdAt: "2026-01-01T03:00:00Z", assets: 41215, bytes: 509.8e9, db: { createdAt: "2026-01-01T02:00:00Z", bytes: 1.51e9 } },
+  { id: "m-2025-10-01", createdAt: "2025-10-01T03:00:00Z", assets: 39480, bytes: 488.1e9, db: { createdAt: "2025-10-01T02:00:00Z", bytes: 1.44e9 } },
 ]);
 
 export function formatUsd(value, digits = 2) {
@@ -1373,12 +1377,17 @@ export const libraryRestoreSteps = Object.freeze([
 ]);
 
 /** Kept backups that hold a file, newest first. The newest one listed is where the file first appears. */
-export function manifestsWithFile(newestId) {
+export function manifestsWithFile(newestId, since = null) {
   const start = backupManifests.findIndex((item) => item.id === newestId);
-  return start < 0 ? [] : backupManifests.slice(start);
+  if (start < 0) return [];
+  const kept = backupManifests.slice(start);
+  return since ? kept.filter((item) => item.createdAt >= since) : kept;
 }
 
-/** Deleted items can come back for as long as the oldest kept manifest lists them. */
+/**
+ * Deleted items can come back for as long as the oldest kept manifest lists them.
+ * Retention keeps 7 daily, 4 weekly and 12 monthly manifests, so about a year.
+ */
 export const recoverableSince = () => backupManifests[backupManifests.length - 1]?.createdAt ?? null;
 
 /** Sample contents of the kept backups for Settings › Backup › Restore. */
@@ -1388,6 +1397,7 @@ export const restoreSampleItems = Object.freeze([
   { id: "ri-3", name: "Campfire evening.jpg", ownerId: "taylor", owner: "Taylor", takenAt: "2026-07-22T21:05:00Z", bytes: 5.1e6, inLibrary: false, deletedAt: "2026-09-06T11:02:00Z", newest: "m-2026-09-01" },
   { id: "ri-4", name: "Hiking with Jamie.jpg", ownerId: "jamie", owner: "Jamie", takenAt: "2025-09-13T15:30:00Z", bytes: 4.4e6, inLibrary: false, deletedAt: "2026-09-24T20:15:00Z", newest: "m-2026-09-24" },
   { id: "ri-5", name: "DSC_2210.NEF", ownerId: "taylor", owner: "Taylor", takenAt: "2026-07-03T17:44:00Z", bytes: 24.8e6, inLibrary: true, newest: "m-2026-09-25" },
+  { id: "ri-7", name: "PANO_0018.jpg", ownerId: "taylor", owner: "Taylor", takenAt: "2024-10-12T16:20:00Z", bytes: 18.6e6, inLibrary: false, deletedAt: "2025-11-03T19:05:00Z", newest: "m-2025-10-01" },
   { id: "ri-6", name: "Skating.mp4", ownerId: "jamie", owner: "Jamie", takenAt: "2025-12-28T14:02:00Z", bytes: 188e6, inLibrary: true, newest: "m-2026-09-25" },
 ]);
 
@@ -1406,7 +1416,7 @@ export function searchRestoreItems({ manifestId, query = "", filter = "all", own
   const text = String(query).trim().toLowerCase();
   return restoreSampleItems.filter(
     (item) =>
-      manifestsWithFile(item.newest).some((manifest) => manifest.id === chosen.id) &&
+      manifestsWithFile(item.newest, item.takenAt).some((manifest) => manifest.id === chosen.id) &&
       (!ownerId || item.ownerId === ownerId) &&
       (filter === "all" || (filter === "deleted" ? !item.inLibrary : item.inLibrary)) &&
       (!text || item.name.toLowerCase().includes(text)),
