@@ -378,12 +378,12 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     ).rejects.toThrow('rollback original-official lock probe');
 
     expect(observedLocks).toEqual(report.tableEvidence.map(({ table }) => table).toSorted());
-    // 66 v3.1.0 public + the 47 fork tables: the video version (FL-39), archive operation (FL-32),
+    // 66 v3.1.0 public + the 48 fork tables: the video version (FL-39), archive operation (FL-32),
     // merge verdict (FL-57), album position (FL-52), recipient group (FL-55), preference
     // history (FL-71), face correction history (FL-57), pet recognition run (FL-58), memory curation
-    // and show-less (FL-62), render worker session capability (FL-95) and Studio workspace layout
-    // (FL-91) tables included
-    expect(observedLocks).toHaveLength(113);
+    // and show-less (FL-62), render worker session capability (FL-95), Studio workspace layout
+    // (FL-91) and utility activity (FL-47) tables included
+    expect(observedLocks).toHaveLength(114);
     expect(observedLocks).toEqual(
       expect.arrayContaining([
         'immich_fork.video_edit_version',
@@ -400,6 +400,7 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
         'immich_fork.memory_show_less',
         'immich_fork.render_worker_session_capability',
         'immich_fork.studio_workspace_layout',
+        'immich_fork.utility_activity',
       ]),
     );
   });

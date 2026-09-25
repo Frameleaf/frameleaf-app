@@ -35505,6 +35505,61 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/trash/activity": {
+      "get": {
+        "description": "Your own history of moves to the trash and their undos made from a utility such as Large files, newest first, kept for a year. An item is named only while this session may still see it.",
+        "operationId": "getUtilityActivity",
+        "parameters": [
+          {
+            "name": "tool",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/UtilityActivityTool"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UtilityActivityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get utility activity",
+        "tags": [
+          "Trash"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/trash/apply": {
       "post": {
         "description": "Applies an action to exactly the reviewed set. The set is resolved again with the same ownership, Locked and privacy rules; if it differs from the review in any way the request fails with 409 and nothing changes.",
@@ -75294,6 +75349,10 @@
             "maxItems": 50000,
             "type": "array"
           },
+          "source": {
+            "$ref": "#/components/schemas/UtilityActivityTool",
+            "description": "The utility the change was made from. A move to the trash or a restore from Large files is kept in its activity history."
+          },
           "token": {
             "description": "The token returned by the review",
             "maxLength": 128,
@@ -76853,6 +76912,114 @@
           }
         },
         "type": "object"
+      },
+      "UtilityActivityAction": {
+        "description": "A move to the trash, or its undo",
+        "enum": [
+          "trash",
+          "restore"
+        ],
+        "type": "string"
+      },
+      "UtilityActivityEntryDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/UtilityActivityAction"
+          },
+          "bytes": {
+            "description": "Combined size of the items listed below, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "When the change was made",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Entry ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "itemCount": {
+            "description": "Items listed below",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UtilityActivityItemDto"
+            },
+            "type": "array"
+          },
+          "unavailableCount": {
+            "description": "Items of this change no longer shown: permanently deleted, or not visible to this session",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "bytes",
+          "createdAt",
+          "id",
+          "itemCount",
+          "items",
+          "unavailableCount"
+        ],
+        "type": "object"
+      },
+      "UtilityActivityItemDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "bytes": {
+            "description": "Size of the original when it was moved, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fileName": {
+            "description": "Original file name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "bytes",
+          "fileName"
+        ],
+        "type": "object"
+      },
+      "UtilityActivityResponseDto": {
+        "properties": {
+          "entries": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/UtilityActivityEntryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
+      "UtilityActivityTool": {
+        "description": "The utility whose activity history this is",
+        "enum": [
+          "large-files"
+        ],
+        "type": "string"
       },
       "ValidateAccessTokenResponseDto": {
         "properties": {

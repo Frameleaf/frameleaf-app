@@ -8771,10 +8771,38 @@ export type TimelineHighlightResponseDto = {
     /** First day of the year or month in YYYY-MM-DD format, as in GET /timeline/buckets */
     timeBucket: string;
 };
+export type UtilityActivityItemDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Size of the original when it was moved, in bytes */
+    bytes: number;
+    /** Original file name */
+    fileName: string;
+};
+export type UtilityActivityEntryDto = {
+    action: UtilityActivityAction;
+    /** Combined size of the items listed below, in bytes */
+    bytes: number;
+    /** When the change was made */
+    createdAt: string;
+    /** Entry ID */
+    id: string;
+    /** Items listed below */
+    itemCount: number;
+    items: UtilityActivityItemDto[];
+    /** Items of this change no longer shown: permanently deleted, or not visible to this session */
+    unavailableCount: number;
+};
+export type UtilityActivityResponseDto = {
+    /** Newest first */
+    entries: UtilityActivityEntryDto[];
+};
 export type TrashApplyDto = {
     action: TrashReviewAction;
     /** The chosen items, for trash, restore and delete. Ignored by restore-all and empty. */
     ids?: string[];
+    /** The utility the change was made from. A move to the trash or a restore from Large files is kept in its activity history. */
+    source?: UtilityActivityTool;
     /** The token returned by the review */
     token: string;
 };
@@ -17925,6 +17953,21 @@ export function getTimelineOrdered({ albumId, bbox, dateType, isFavorite, isTras
     }));
 }
 /**
+ * Get utility activity
+ */
+export function getUtilityActivity({ tool }: {
+    tool: UtilityActivityTool;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UtilityActivityResponseDto;
+    }>(`/trash/activity${QS.query(QS.explode({
+        tool
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Apply a reviewed trash change
  */
 export function applyTrashReview({ trashApplyDto }: {
@@ -20251,6 +20294,13 @@ export enum TimelineHighlightGrouping {
 export enum TimelineOrderedSort {
     Filename = "filename",
     Rating = "rating"
+}
+export enum UtilityActivityTool {
+    LargeFiles = "large-files"
+}
+export enum UtilityActivityAction {
+    Trash = "trash",
+    Restore = "restore"
 }
 export enum TrashReviewAction {
     Trash = "trash",
