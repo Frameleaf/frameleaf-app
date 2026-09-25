@@ -196,6 +196,27 @@ export class AssetRestorationRepository {
   }
 
   /**
+   * Clears an expired result's paths only while the row is still in the status the retention sweep
+   * read and still past its retention date. A retry or another change since the read makes this a
+   * no-op (undefined), and the sweep then leaves the row's files and work folder alone.
+   */
+  async clearExpiredResult(
+    id: string,
+    status: AssetRestorationStatus,
+    now: Date,
+  ): Promise<AssetRestoration | undefined> {
+    return (await this.db
+      .updateTable('asset_restoration')
+      .set({ resultPath: null, resultPreviewPath: null, resultExpiresAt: null })
+      .where('id', '=', id)
+      .where('status', '=', status)
+      .where('resultExpiresAt', 'is not', null)
+      .where('resultExpiresAt', '<=', now)
+      .returningAll()
+      .executeTakeFirst()) as AssetRestoration | undefined;
+  }
+
+  /**
    * Bring rows into line with jobs that finished without the worker writing back: a queued job
    * the owner cancelled from Activity, or one that recovery failed after its attempts ran out.
    * Only rows still in an active status change, so a decision already recorded is never undone.

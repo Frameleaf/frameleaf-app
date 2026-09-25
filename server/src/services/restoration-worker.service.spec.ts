@@ -176,6 +176,7 @@ describe(RestorationWorkerService.name, () => {
       setCurrent: vi.fn(),
       listExpiredPreviews: vi.fn().mockResolvedValue([]),
       listExpiredResults: vi.fn().mockResolvedValue([]),
+      clearExpiredResult: vi.fn().mockImplementation((id: string) => Promise.resolve(row({ id }))),
       alignWithOperations: vi.fn().mockResolvedValue({ preview: 0, full: 0 }),
       getFilePaths: vi.fn(),
       deleteByAsset: vi.fn(),
@@ -808,16 +809,33 @@ describe(RestorationWorkerService.name, () => {
       await sut.sweep();
 
       expect(restorations.listExpiredResults).toHaveBeenCalledWith(expect.any(Date), expect.any(Number));
-      expect(restorations.update).toHaveBeenCalledWith(RESTORATION_ID, {
-        resultPath: null,
-        resultPreviewPath: null,
-        resultExpiresAt: null,
-      });
+      expect(restorations.clearExpiredResult).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        AssetRestorationStatus.RestoreCancelled,
+        expect.any(Date),
+      );
       expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining(RESTORATION_ID), {
         recursive: true,
         force: true,
       });
       // Nothing to delete file by file: the checkpoints live in the work folder.
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('leaves the files and work folder alone when the row changed since the read (FL-115)', async () => {
+      restorations.listExpiredResults.mockResolvedValue([
+        row({
+          status: AssetRestorationStatus.RestoreCancelled,
+          resultExpiresAt: new Date(0) as never,
+          resultPath: '/thumbs/restored.mp4',
+        }),
+      ]);
+      // A retry moved the row on between the read and the write.
+      restorations.clearExpiredResult.mockResolvedValue(undefined);
+
+      await sut.sweep();
+
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
