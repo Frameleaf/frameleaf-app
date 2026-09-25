@@ -27,7 +27,7 @@ What you trash, restore or delete in one tab or on another device shows up every
 - An item moved to the trash appears in the trash of your other open tabs, and leaves their timelines.
 - A restored item comes back into your other open timelines. A very large restore reloads the timeline instead.
 - When the item open in a viewer (the trash, Large files or the timeline) is trashed, restored or deleted elsewhere, the viewer shows the next item, or closes when there is none.
-- **Large files** lists what you moved to the trash and undid during this visit under **Recent utility activity**.
+- **Large files** keeps a history of what you moved to the trash and undid there, under **Recent utility activity**: each change with its items, their sizes and the time. It is kept for a year (at most 500 changes) and deleted with your account. An item is named only while you can still see it, so Locked items are listed by name only after you unlock, and permanently deleted items are only counted.
 
 ## Freed space
 

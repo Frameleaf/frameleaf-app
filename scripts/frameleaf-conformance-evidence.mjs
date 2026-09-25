@@ -849,7 +849,11 @@ const actions = {
   ],
   // viewer
   "add-to-album": ["match", []],
-  "add-to-stack": ["fixed", ["V-11"], 'Label "Add to stack" (codex/FL-35-complete-viewer)'],
+  "add-to-stack": [
+    "fixed",
+    ["V-11"],
+    'Label "Add to stack" (codex/FL-35-complete-viewer)',
+  ],
   "album-activity-comments-likes-activity-panel": [
     "fixed",
     ["AL-18"],
@@ -863,7 +867,11 @@ const actions = {
     undefined,
     { production: [`${W}/lib/services/app.service.ts`] },
   ],
-  "copy-image-to-clipboard": ["fixed", ["V-5"], 'Label "Copy image" (codex/FL-35-complete-viewer)'],
+  "copy-image-to-clipboard": [
+    "fixed",
+    ["V-5"],
+    'Label "Copy image" (codex/FL-35-complete-viewer)',
+  ],
   "download-current-edited-media": [
     "fixed",
     ["D-1", "D-2", "D-3"],
@@ -958,7 +966,11 @@ const actions = {
       production: [`${W}/lib/components/frameleaf/ViewerOfflineBanner.svelte`],
     },
   ],
-  "open-editor": ["fixed", ["V-5"], 'Label "Edit" (codex/FL-35-complete-viewer)'],
+  "open-editor": [
+    "fixed",
+    ["V-5"],
+    'Label "Edit" (codex/FL-35-complete-viewer)',
+  ],
   "open-full-viewer-close-back-escape-previous-next": [
     "fixed",
     ["V-5"],
@@ -1001,22 +1013,22 @@ const actions = {
     ["V-4"],
     "Restore in the trash toolbar and the Trash group (codex/FL-35-complete-viewer)",
   ],
-  "set-account-profile-picture": [
-    "fixed",
-    ["V-11"],
-    'Label "Profile picture"',
-  ],
+  "set-account-profile-picture": ["fixed", ["V-11"], 'Label "Profile picture"'],
   "set-album-cover": [
     "fixed",
     ["V-9", "V-11"],
     "Album cover, with the album chooser outside the album (codex/FL-35-complete-viewer)",
-    { production: [`${W}/lib/components/frameleaf/ViewerChooserDialog.svelte`] },
+    {
+      production: [`${W}/lib/components/frameleaf/ViewerChooserDialog.svelte`],
+    },
   ],
   "set-persons-featured-photo": [
     "fixed",
     ["V-9", "V-11"],
     "Featured photo for person, with the person chooser (codex/FL-35-complete-viewer)",
-    { production: [`${W}/lib/components/frameleaf/ViewerChooserDialog.svelte`] },
+    {
+      production: [`${W}/lib/components/frameleaf/ViewerChooserDialog.svelte`],
+    },
   ],
   "share-with-recipients-create-or-manage-a-public-link": [
     "partial",
@@ -1105,7 +1117,11 @@ const actions = {
     { production: [`${W}/lib/components/frameleaf/ViewerStackStrip.svelte`] },
   ],
   "view-in-timeline": ["match", []],
-  "view-similar-photos": ["fixed", ["V-11"], 'Label "Find similar" (codex/FL-35-complete-viewer)'],
+  "view-similar-photos": [
+    "fixed",
+    ["V-11"],
+    'Label "Find similar" (codex/FL-35-complete-viewer)',
+  ],
   "zoom-in-out-fit-image-pan": [
     "fixed",
     ["V-6", "V-13", "V-14"],
@@ -1415,7 +1431,7 @@ const routes = {
   "/auth/onboarding": [
     "fixed",
     ["O-8", "O-12"],
-    "Store links only when configured (O-12, FL-135); the version check stays off under the FL-146 privacy default (O-8, intentional). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)",
+    "Store links only when configured (O-12, FL-135); Check for new versions is a real switch that asks only Frameleaf's releases (O-8, FL-80). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)",
     [`${P}/AuthScreens.jsx`, `${P}/system-data.mjs`],
     [`${W}/routes/auth/onboarding/+page.svelte`],
   ],

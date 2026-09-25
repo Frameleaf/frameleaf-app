@@ -31,6 +31,10 @@
   import { downloadJson, getAssetMediaUrl } from '$lib/utils';
   import {
     applyTrashReview,
+    getUtilityActivity,
+    UtilityActivityAction,
+    UtilityActivityTool,
+    type UtilityActivityEntryDto,
     AssetMediaSize,
     getPartners,
     PartnerDirection,
@@ -41,7 +45,7 @@
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { DateTime } from 'luxon';
-  import { mdiCheckCircleOutline, mdiClose, mdiDownload, mdiUndo } from '@mdi/js';
+  import { mdiCheckCircleOutline, mdiClose, mdiDownload, mdiHistory, mdiUndo } from '@mdi/js';
   import { onMount } from 'svelte';
   import type { SvelteSet } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
@@ -71,15 +75,21 @@
   let busy = $state(false);
 
   /**
-   * UT-11: "Recent utility activity" (`UtilitiesManager.jsx:946-956`), newest first. The template
-   * keeps it with the utility's saved state; here it is what this page did in this visit, because
-   * the moves themselves are the trash's record.
+   * UT-11: "Recent utility activity" (`UtilitiesManager.jsx:946-956`), newest first, drawn with the
+   * settings history rows (`CommandCenter.jsx:2594-2622`, `.cc-history`). Owner decision (FL-146,
+   * 2026-09-25): it is the server's persistent history of this owner's moves and undos made here
+   * (`GET /trash/activity`), kept for a year, not this visit's. An item is named only while this
+   * session may still see it; the others are counted.
    */
-  type Activity = { id: number; action: 'trash' | 'restore'; count: number; at: string };
-  let activity = $state<Activity[]>([]);
-  let activityId = 0;
-  const record = (action: Activity['action'], count: number) => {
-    activity = [{ id: ++activityId, action, count, at: new Date().toISOString() }, ...activity].slice(0, 30);
+  let activity = $state<UtilityActivityEntryDto[]>([]);
+  let activityError = $state(false);
+  const loadActivity = async () => {
+    try {
+      ({ entries: activity } = await getUtilityActivity({ tool: UtilityActivityTool.LargeFiles }));
+      activityError = false;
+    } catch {
+      activityError = true;
+    }
   };
 
   let review = $state<Review | null>(null);
@@ -178,14 +188,19 @@
     busy = true;
     try {
       const { count } = await applyTrashReview({
-        trashApplyDto: { action: TrashReviewAction.Trash, ids, token: current.token },
+        trashApplyDto: {
+          action: TrashReviewAction.Trash,
+          ids,
+          token: current.token,
+          source: UtilityActivityTool.LargeFiles,
+        },
       });
       for (const id of ids) {
         trashed.add(id);
       }
       selected = selected.filter((id) => !ids.includes(id));
       undoIds = ids;
-      record('trash', count);
+      void loadActivity();
       notice = $t('frameleaf_large_files_moved', { values: { count } });
       error = '';
       reviewOpen = false;
@@ -208,10 +223,15 @@
     busy = true;
     try {
       const reviewed = await reviewTrash({ trashReviewDto: { action: TrashReviewAction.Restore, ids } });
-      const { count } = await applyTrashReview({
-        trashApplyDto: { action: TrashReviewAction.Restore, ids, token: reviewed.token },
+      await applyTrashReview({
+        trashApplyDto: {
+          action: TrashReviewAction.Restore,
+          ids,
+          token: reviewed.token,
+          source: UtilityActivityTool.LargeFiles,
+        },
       });
-      record('restore', count);
+      void loadActivity();
       for (const id of ids) {
         trashed.delete(id);
       }
@@ -249,6 +269,7 @@
   const exportList = () => downloadJson(largeFileExport(rows, { owner, ownerName }), 'large-file-review.json');
 
   onMount(() => {
+    void loadActivity();
     void getPartners({ direction: PartnerDirection.SharedWith })
       .then((partners) => {
         partnerNames = Object.fromEntries(partners.map((partner) => [partner.id, partner.name]));
@@ -448,21 +469,47 @@
     {/if}
   </div>
 
-  {#if activity.length > 0}
+  {#if activity.length > 0 || activityError}
     <details class="lf-history">
       <summary>{$t('library_care_recent_activity')}</summary>
-      {#each activity.slice(0, 8) as item (item.id)}
-        <p>
-          <span>
-            {item.action === 'trash'
-              ? $t('frameleaf_large_files_activity_trash')
-              : $t('frameleaf_large_files_activity_restore')} · {$t('library_care_activity_items', {
-              values: { count: item.count },
-            })}
-          </span>
-          <time datetime={item.at}>{DateTime.fromISO(item.at).toLocaleString(DateTime.DATETIME_MED)}</time>
-        </p>
-      {/each}
+      {#if activityError}
+        <p role="alert" class="lf-history-error">{$t('frameleaf_large_files_activity_unavailable')}</p>
+      {/if}
+      <div class="cc-history">
+        {#each activity as entry (entry.id)}
+          <article>
+            <div>
+              <Icon icon={mdiHistory} size="1rem" aria-hidden={true} />
+              <strong>
+                {entry.action === UtilityActivityAction.Trash
+                  ? $t('frameleaf_large_files_activity_trash')
+                  : $t('frameleaf_large_files_activity_restore')} · {$t('library_care_activity_items', {
+                  values: { count: entry.itemCount },
+                })}{entry.bytes > 0 ? ` · ${formatBytes(entry.bytes)}` : ''}
+              </strong>
+              <time datetime={entry.createdAt}>
+                {DateTime.fromISO(entry.createdAt).toLocaleString(DateTime.DATETIME_MED)}
+              </time>
+            </div>
+            {#if entry.items.length > 0}
+              <details>
+                <summary>{$t('frameleaf_large_files_activity_view_items')}</summary>
+                {#each entry.items as item (item.assetId)}
+                  <p>
+                    <strong>{item.fileName}</strong>
+                    <span>{formatBytes(item.bytes)}</span>
+                  </p>
+                {/each}
+              </details>
+            {/if}
+            {#if entry.unavailableCount > 0}
+              <small>
+                {$t('frameleaf_large_files_activity_not_shown', { values: { count: entry.unavailableCount } })}
+              </small>
+            {/if}
+          </article>
+        {/each}
+      </div>
     </details>
   {/if}
 </div>
@@ -535,16 +582,50 @@
   .lf-history summary {
     cursor: pointer;
   }
-  .lf-history p {
+  .lf-history-error {
+    color: var(--fl-danger);
+  }
+  /* command-center.css:1012-1051 (.cc-history) */
+  .cc-history article {
+    padding: 20px 0;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .cc-history article > div {
     display: flex;
     flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 12px;
-    margin: 8px 0 0;
+    gap: 10px;
+    align-items: center;
   }
-  .lf-history time {
+  .cc-history strong {
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .cc-history time {
+    margin-left: auto;
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
+    font-size: 11px;
+  }
+  .cc-history small {
+    display: block;
+    color: var(--fl-muted);
+    font-size: 10px;
+    margin-top: 10px;
+  }
+  .cc-history details {
+    margin-top: 15px;
+  }
+  .cc-history details summary {
+    font-size: 11px;
+    color: var(--fl-muted);
+  }
+  .cc-history details p {
+    display: flex;
+    gap: 20px;
+    margin: 6px 0 0;
+    font-size: 11px;
+  }
+  .cc-history details span {
+    color: var(--fl-muted);
   }
   .large-files {
     min-width: 0;

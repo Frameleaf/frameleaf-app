@@ -10,7 +10,11 @@ const ASSET = '0195e2a0-0000-7000-8000-00000000a001';
 
 describe(StudioRevocationService.name, () => {
   let sut: StudioRevocationService;
-  let projectRepository: { getIdsReferencingAssets: ReturnType<typeof vi.fn>; getIdsInSpace: ReturnType<typeof vi.fn> };
+  let projectRepository: {
+    getIdsReferencingAssets: ReturnType<typeof vi.fn>;
+    getIdsInSpace: ReturnType<typeof vi.fn>;
+    detachOwnerFromSpace: ReturnType<typeof vi.fn>;
+  };
   let projects: { forgetResolutions: ReturnType<typeof vi.fn> };
   let previews: { revokeForProjects: ReturnType<typeof vi.fn> };
   let operations: { listUnfinishedForProjects: ReturnType<typeof vi.fn>; requestCancel: ReturnType<typeof vi.fn> };
@@ -19,6 +23,7 @@ describe(StudioRevocationService.name, () => {
     projectRepository = {
       getIdsReferencingAssets: vi.fn().mockResolvedValue(['project-1', 'project-2']),
       getIdsInSpace: vi.fn().mockResolvedValue(['project-3']),
+      detachOwnerFromSpace: vi.fn().mockResolvedValue([]),
     };
     projects = { forgetResolutions: vi.fn() };
     previews = { revokeForProjects: vi.fn().mockResolvedValue(2) };
@@ -82,6 +87,15 @@ describe(StudioRevocationService.name, () => {
       [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview],
       'reviewer-1',
     );
+  });
+
+  it("keeps the departing member's own projects as private ones and ends their space sharing (FL-146)", async () => {
+    projectRepository.detachOwnerFromSpace.mockResolvedValue(['project-9']);
+    await sut.onAlbumUserRemove({ albumId: 'space-1', userId: 'owner-9' });
+    expect(projectRepository.detachOwnerFromSpace).toHaveBeenCalledWith('space-1', 'owner-9');
+    // Nothing is deleted; every other member's view of the project stops.
+    expect(projects.forgetResolutions).toHaveBeenCalledWith(['project-9']);
+    expect(previews.revokeForProjects).toHaveBeenCalledWith(['project-9']);
   });
 
   it('keeps going when one cancellation fails', async () => {

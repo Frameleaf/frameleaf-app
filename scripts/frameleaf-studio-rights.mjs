@@ -4,10 +4,13 @@
  *
  * `studio/dependency-attribution.json` is the reviewed bill of materials: every model, voice,
  * font, bundled weight, runtime download, asset service and tool the pinned engine can reach,
- * each with three decisions (redistribution, local runtime, hosted use). The owner's decision
- * (FL-146, September 25, 2026) is that each stays "blocked" until it is approved one resource
- * at a time. This script copies those decisions, unchanged, into a server mirror so the resolver
- * that admits Studio graph resources can refuse a blocked one by name instead of loading it.
+ * each with three decisions (redistribution, local runtime, hosted use). Those decisions stay as
+ * the engine packager reviewed them. `studio/rights-approval.json` records the owner's approval
+ * (FL-146, September 25, 2026, afternoon: all 210 bundled resources approved), bound to a digest
+ * of each approved row. The server mirror admits a use when the reviewed decision allows it or the
+ * owner approved that exact row; a row that changed after approval, or a resource that is new or
+ * unknown, stays blocked. The resolver that admits Studio graph resources refuses a blocked one by
+ * name instead of loading it.
  *
  *   node scripts/frameleaf-studio-rights.mjs           verify the mirror is current (CI)
  *   node scripts/frameleaf-studio-rights.mjs --write   regenerate it
@@ -18,6 +21,7 @@ import path from 'node:path';
 
 export const ATTRIBUTION_PATH = 'studio/dependency-attribution.json';
 export const SERVER_MIRROR_PATH = 'server/src/utils/studio-rights.generated.ts';
+export const APPROVAL_PATH = 'studio/rights-approval.json';
 const GENERATOR = 'scripts/frameleaf-studio-rights.mjs';
 
 /** The only value that admits a use. Anything else (today: "blocked") refuses it. */
@@ -81,11 +85,96 @@ export function rightsRows(manifest) {
   };
 }
 
+const canonical = (value) => {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonical(item)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+};
+
+/** The digest an approval is bound to: what the resource is, not how it was reviewed. */
+export const approvalRowDigest = (resource) =>
+  createHash('sha256')
+    .update(
+      canonical({
+        id: resource.id,
+        kind: resource.kind,
+        locator: resource.locator ?? null,
+        revision: resource.revision ?? null,
+        licenseDeclared: resource.licenseDeclared ?? null,
+        files: resource.files ?? null,
+      }),
+    )
+    .digest('hex');
+
+const failApproval = (message) => {
+  throw new Error(`${APPROVAL_PATH}: ${message}`);
+};
+
+/**
+ * The owner's approval record: who approved, when, where it is recorded, and the rows it covers.
+ * Returns null when there is no approval file. An approved id that is not in the manifest fails.
+ */
+export function ownerApproval(approval, manifest) {
+  if (approval === null) {
+    return null;
+  }
+  if (approval?.schemaVersion !== 1) {
+    failApproval('schemaVersion must be 1');
+  }
+  for (const key of ['approvedBy', 'approvedOn', 'source']) {
+    if (typeof approval[key] !== 'string' || approval[key].length === 0) {
+      failApproval(`${key} is required`);
+    }
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(approval.approvedOn)) {
+    failApproval('approvedOn must be a date (YYYY-MM-DD)');
+  }
+  const uses = approval.uses;
+  if (!Array.isArray(uses) || uses.length === 0 || uses.some((use) => !RIGHTS_USES.includes(use))) {
+    failApproval(`uses must name some of ${RIGHTS_USES.join(', ')}`);
+  }
+  const byId = new Map((manifest.resources ?? []).map((resource) => [resource.id, resource]));
+  const approved = new Map();
+  for (const entry of approval.resources ?? []) {
+    const resource = byId.get(entry?.id);
+    if (!resource) {
+      failApproval(`${entry?.id} is not a reviewed resource`);
+    }
+    if (approved.has(entry.id)) {
+      failApproval(`duplicate approval ${entry.id}`);
+    }
+    // A row that changed after it was approved is not what the owner approved: it stays blocked.
+    approved.set(entry.id, entry.sha256 === approvalRowDigest(resource));
+  }
+  return { approvedBy: approval.approvedBy, approvedOn: approval.approvedOn, source: approval.source, uses, approved };
+}
+
 const quote = (value) => (value === null ? 'null' : `'${String(value).replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`);
 
-export function buildServerMirror(manifestText) {
-  const { distributionApproval, rows } = rightsRows(JSON.parse(manifestText));
+export function buildServerMirror(manifestText, approvalText = null) {
+  const manifest = JSON.parse(manifestText);
+  const { distributionApproval, rows: reviewed } = rightsRows(manifest);
+  const approval = ownerApproval(approvalText === null ? null : JSON.parse(approvalText), manifest);
+  const rows = reviewed.map((row) => {
+    const approved = approval?.approved.get(row.id) === true;
+    const decide = (use) => (row[use] === ALLOWED || (approved && approval.uses.includes(use)) ? ALLOWED : 'blocked');
+    return {
+      ...row,
+      redistribution: decide('redistribution'),
+      localRuntime: decide('localRuntime'),
+      hostedUse: decide('hostedUse'),
+      approvedOn: approved ? approval.approvedOn : null,
+    };
+  });
   const sha256 = createHash('sha256').update(manifestText).digest('hex');
+  const approvalSha256 = approvalText === null ? null : createHash('sha256').update(approvalText).digest('hex');
   const lines = [
     '/**',
     ' * GENERATED FILE — do not edit.',
@@ -94,9 +183,9 @@ export function buildServerMirror(manifestText) {
     ` * Generator: ${GENERATOR}`,
     ' *',
     ' * The reviewed rights decisions for every resource the pinned Studio engine can reach (FL-86,',
-    " * `STU-103`). A use is admitted only when its decision is 'allowed'; the owner's default",
-    ' * (FL-146, September 25, 2026) keeps every row blocked until it is approved individually.',
-    ' * Enforcement lives in `studio-rights.ts`.',
+    " * `STU-103`). A use is admitted only when its decision is 'allowed': reviewed so, or approved by",
+    ` * the owner in ${APPROVAL_PATH} for that exact row. A new, changed or unknown resource stays`,
+    ' * blocked. Enforcement lives in `studio-rights.ts`.',
     ' */',
     '',
     "export type StudioRightsDecision = 'allowed' | 'blocked';",
@@ -107,9 +196,26 @@ export function buildServerMirror(manifestText) {
     '  redistribution: StudioRightsDecision;',
     '  localRuntime: StudioRightsDecision;',
     '  hostedUse: StudioRightsDecision;',
+    '  /** The date the owner approved this exact row, or null when it was not approved. */',
+    '  approvedOn: string | null;',
     '};',
     '',
     `export const STUDIO_RIGHTS_SOURCE_SHA256 = '${sha256}';`,
+    '',
+    '/** The owner approval the allowed rows come from, or null when there is none. */',
+    approval === null
+      ? 'export const STUDIO_RIGHTS_APPROVAL = null;'
+      : [
+          'export const STUDIO_RIGHTS_APPROVAL = {',
+          `  approvedBy: ${quote(approval.approvedBy)},`,
+          `  approvedOn: ${quote(approval.approvedOn)},`,
+          // Wrapped the way prettier wraps a long property, so the generated file stays formatted.
+          `  source: ${quote(approval.source)},`.length > 120
+            ? `  source:\n    ${quote(approval.source)},`
+            : `  source: ${quote(approval.source)},`,
+          `  sha256: ${quote(approvalSha256)},`,
+          '} as const;',
+        ].join('\n'),
     '',
     '/** Whether the engine as a whole may be redistributed. False blocks every redistribution. */',
     `export const STUDIO_DISTRIBUTION_APPROVAL = ${distributionApproval};`,
@@ -122,6 +228,7 @@ export function buildServerMirror(manifestText) {
       `    redistribution: ${quote(row.redistribution)},`,
       `    localRuntime: ${quote(row.localRuntime)},`,
       `    hostedUse: ${quote(row.hostedUse)},`,
+      `    approvedOn: ${quote(row.approvedOn)},`,
       '  },',
     ]),
     '};',
@@ -132,7 +239,10 @@ export function buildServerMirror(manifestText) {
 
 export async function generate(root) {
   const manifestText = await readFile(path.join(root, ATTRIBUTION_PATH), 'utf8');
-  return { [SERVER_MIRROR_PATH]: buildServerMirror(manifestText) };
+  const approvalText = await readFile(path.join(root, APPROVAL_PATH), 'utf8').catch((error) =>
+    error?.code === 'ENOENT' ? null : Promise.reject(error),
+  );
+  return { [SERVER_MIRROR_PATH]: buildServerMirror(manifestText, approvalText) };
 }
 
 export async function main(argv, root) {
