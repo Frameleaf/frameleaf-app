@@ -203,6 +203,113 @@ describe('downloadArchive', () => {
   });
 });
 
+describe('downloadArchive, what the tab holds (review)', () => {
+  it('streams a later part that would take the held total over the limit', async () => {
+    const part = Math.floor(bufferLimit() * 0.6);
+    vi.mocked(getDownloadInfo).mockResolvedValue(plan(part, part));
+    vi.mocked(requestArchive).mockImplementation(() =>
+      Promise.resolve(new Blob([new Uint8Array(8)]) as Blob & { size: number }),
+    );
+    // Stand in for a part of `part` bytes without allocating it.
+    vi.mocked(requestArchive).mockImplementationOnce(() => {
+      const blob = new Blob(['x']);
+      Object.defineProperty(blob, 'size', { value: part });
+      return Promise.resolve(blob);
+    });
+
+    expect(await settle(downloadArchive('trip', { assetIds: ['asset-0', 'asset-1'] }))).toBe('resolved');
+
+    expect(requestArchive).toHaveBeenCalledTimes(1);
+    const [first, second] = rows().map(([, row]) => row);
+    expect(first.buffered).toBe(true);
+    expect(second).toMatchObject({ status: 'ready', buffered: false });
+  });
+
+  it('still resolves when a streamed part is saved before the first part is ready', async () => {
+    let finish!: (blob: Blob) => void;
+    vi.mocked(getDownloadInfo).mockResolvedValue(plan(10, bufferLimit() + 1));
+    vi.mocked(requestArchive).mockReturnValue(
+      new Promise<Blob>((resolve) => {
+        finish = resolve;
+      }),
+    );
+
+    const started = settle(downloadArchive('trip', { assetIds: ['asset-0', 'asset-1'] }));
+    await flush();
+    const [streamedKey, streamed] = rows()[1];
+    expect(streamed.status).toBe('ready');
+    downloadManager.save(streamedKey, vi.fn());
+
+    finish(new Blob(['zip']));
+    expect(await started).toBe('resolved');
+  });
+});
+
+describe('downloadAssetFile, files of unknown size (review B1)', () => {
+  /** Calls the provided `fetch` the way the SDK's `fetchBlob` does, swallowing a failed body. */
+  const throughSdk = () =>
+    vi.mocked(requestAsset).mockImplementation(async (_args, options) => {
+      const response = await options!.fetch!('/assets/asset-1/original');
+      try {
+        return await response.blob();
+      } catch {
+        return undefined as unknown as Blob;
+      }
+    });
+
+  const serve = (headers: Record<string, string>) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers })),
+    );
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('streams a file with no Content-Length', async () => {
+    throughSdk();
+    serve({});
+
+    const key = downloadAssetFile({ id: 'asset-1', filename: 'a.jpg', edited: false });
+    await flush();
+
+    expect(downloadManager.assets.get(key)).toMatchObject({ status: 'ready', buffered: false });
+    downloadManager.save(key, vi.fn());
+    expect(downloadUrl).toHaveBeenCalledWith(expect.stringContaining('/assets/asset-1/original'), 'a.jpg');
+  });
+
+  it('holds a file whose Content-Length is small', async () => {
+    throughSdk();
+    serve({ 'content-length': '3' });
+
+    const key = downloadAssetFile({ id: 'asset-1', filename: 'a.jpg', edited: false });
+    await flush();
+
+    expect(downloadManager.assets.get(key)).toMatchObject({ status: 'ready', buffered: true, received: 3 });
+  });
+
+  it('streams a file whose Content-Length is over the limit', async () => {
+    throughSdk();
+    serve({ 'content-length': String(bufferLimit() + 1) });
+
+    const key = downloadAssetFile({ id: 'asset-1', filename: 'a.jpg', edited: false });
+    await flush();
+
+    expect(downloadManager.assets.get(key)).toMatchObject({ status: 'ready', buffered: false });
+  });
+
+  it('trusts the headers, not the original size, for an edited file', async () => {
+    throughSdk();
+    serve({ 'content-length': String(bufferLimit() + 1) });
+
+    const key = downloadAssetFile({ id: 'asset-1', filename: 'a.jpg', edited: true, size: 3 });
+    await flush();
+
+    expect(downloadManager.assets.get(key)).toMatchObject({ status: 'ready', buffered: false });
+  });
+});
+
 describe('downloadAssetFile', () => {
   it('fetches a small original through the panel under its file name', async () => {
     vi.mocked(requestAsset).mockResolvedValue(new Blob(['jpg']));
@@ -218,7 +325,7 @@ describe('downloadAssetFile', () => {
   });
 
   it('streams a large original on Save instead of fetching it', async () => {
-    const key = downloadAssetFile({ id: 'asset-1', filename: 'movie.mov', edited: true, size: bufferLimit() + 1 });
+    const key = downloadAssetFile({ id: 'asset-1', filename: 'movie.mov', edited: false, size: bufferLimit() + 1 });
     await flush();
 
     expect(requestAsset).not.toHaveBeenCalled();

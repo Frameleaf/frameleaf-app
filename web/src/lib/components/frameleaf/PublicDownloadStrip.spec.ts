@@ -60,6 +60,17 @@ describe('PublicDownloadStrip', () => {
     expect(downloadManager.assets.size).toBe(0);
   });
 
+  it('offers Save archive for a ready part while a later part is still being prepared', async () => {
+    downloadManager.start({ name: 'a+1.zip', assetIds: ['1'], group: 'share' }, () => Promise.resolve(new Blob(['1'])));
+    downloadManager.start({ name: 'a+2.zip', assetIds: ['2'], group: 'share' }, never);
+    await flush();
+
+    render(PublicDownloadStrip);
+
+    expect(screen.getByRole('button', { name: en.frameleaf_public_save_archive })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en.cancel })).toBeInTheDocument();
+  });
+
   it('streams a large archive on Save archive', async () => {
     const start = vi.fn();
     downloadManager.start({ name: 'big.zip', assetIds: ['1'], group: 'share' }, () =>
