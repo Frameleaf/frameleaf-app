@@ -8168,6 +8168,14 @@ export type TagBulkAssetsResponseDto = {
     /** Number of assets tagged */
     count: number;
 };
+export type TagStatisticsResponseDto = {
+    /** Timeline items tagged with exactly this tag */
+    count: number;
+    /** Tag ID */
+    id: string;
+    /** Timeline items tagged with this tag or any tag nested under it */
+    total: number;
+};
 export type TagUpdateDto = {
     /** Tag color (hex) */
     color?: string | null;
@@ -8582,6 +8590,14 @@ export type CreateProfileImageResponseDto = {
     profileImagePath: string;
     /** User ID */
     userId: string;
+};
+export type FolderSummaryResponseDto = {
+    /** Originals directly in this folder */
+    count: number;
+    /** Folder path, without a trailing slash */
+    path: string;
+    /** Bytes of the originals directly in this folder */
+    size: number;
 };
 export type WorkflowIssueDto = {
     code: WorkflowIssueCode;
@@ -16845,6 +16861,17 @@ export function bulkTagAssets({ tagBulkAssetsDto }: {
     })));
 }
 /**
+ * Retrieve tag statistics
+ */
+export function getTagStatistics(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TagStatisticsResponseDto[];
+    }>("/tags/statistics", {
+        ...opts
+    }));
+}
+/**
  * Delete a tag
  */
 export function deleteTag({ id }: {
@@ -17702,6 +17729,17 @@ export function getAssetsByOriginalPath({ path }: {
     }>(`/view/folder${QS.query(QS.explode({
         path
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve folder summaries
+ */
+export function getFolderSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FolderSummaryResponseDto[];
+    }>("/view/folder/summary", {
         ...opts
     }));
 }
