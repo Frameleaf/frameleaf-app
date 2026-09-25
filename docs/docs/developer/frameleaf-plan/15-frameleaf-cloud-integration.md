@@ -264,7 +264,7 @@ admin/cloud/link` implement RFC 8628 against the cloud (user code + `verificatio
   `server/src/constants.ts` (pinned Ed25519 keys + spare), `server/src/services/server.service.ts`,
   `server/src/controllers/server.controller.ts`, `server/src/services/user.service.ts`, `server/src/dtos/user.dto.ts`,
   `server/src/dtos/license.dto.ts`, `server/src/repositories/config.repository.ts`, `server/src/emails/license.email.tsx`,
-  `server/helmet.json`, `server/src/fork-schema/migrations/0000000000204-FrameleafUserLicenses.ts` (new),
+  `server/helmet.json`, `server/src/fork-schema/migrations/0000000000190-FrameleafUserLicenses.ts` (new),
   `web/src/lib/components/frameleaf/cloud/LicenseSection.svelte` (new). AC: `GET admin/license` returns
   `LicenseStatusResponseDto {state none|active|grace|expired|invalid, kind, keyHint, expiresAt, graceUntil,
 fingerprint, entitlements{remoteAccess,cloudMl,cloudBackup,supporter}, refresh, offline}`; `PUT admin/license/activate
