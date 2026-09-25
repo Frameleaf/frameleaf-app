@@ -704,11 +704,24 @@ export class MemoryService extends BaseService {
       .map((memory: Memory) => mapMemory(memory, auth));
   }
 
-  statistics(auth: AuthDto, dto: MemorySearchDto) {
+  async statistics(auth: AuthDto, dto: MemorySearchDto) {
     const options = this.nsfwOptions(auth);
-    return options
-      ? this.memoryRepository.statistics(auth.user.id, dto, options)
-      : this.memoryRepository.statistics(auth.user.id, dto);
+    const counted = options
+      ? await this.memoryRepository.statistics(auth.user.id, dto, options)
+      : await this.memoryRepository.statistics(auth.user.id, dto);
+    if (dto.type !== undefined && dto.type !== MemoryType.PetStory) {
+      return counted;
+    }
+    // FL-58: a pet story whose pet is gone, hidden or suppressed while locked does not exist here,
+    // as in search and get, so it is not counted either
+    const petDto = { ...dto, type: MemoryType.PetStory, size: undefined, page: undefined };
+    const stories = (
+      options
+        ? await this.memoryRepository.search(auth.user.id, petDto, options)
+        : await this.memoryRepository.search(auth.user.id, petDto)
+    ) as Memory[];
+    const excluded = stories.length - (await this.withCurrentPets(auth, stories)).length;
+    return excluded > 0 ? { ...counted, total: Math.max(0, counted.total - excluded) } : counted;
   }
 
   async get(auth: AuthDto, id: string): Promise<MemoryResponseDto> {
@@ -756,11 +769,17 @@ export class MemoryService extends BaseService {
       seenAt: dto.seenAt,
     };
     const options = this.nsfwOptions(auth);
+    // FL-58: a pet story whose pet is gone, hidden or suppressed while locked answers 404, as get does
+    const [visible] = await this.withCurrentPets(auth, [(await this.findOrFail(id, options)) as Memory]);
+    if (!visible) {
+      throw new NotFoundException('Memory not found');
+    }
     const memory = options
       ? await this.memoryRepository.update(id, update, options)
       : await this.memoryRepository.update(id, update);
+    const [current] = await this.withCurrentPets(auth, [memory as Memory]);
 
-    return mapMemory(memory, auth);
+    return mapMemory(current ?? (memory as Memory), auth);
   }
 
   async remove(auth: AuthDto, id: string): Promise<void> {
