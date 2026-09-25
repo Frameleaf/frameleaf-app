@@ -6,8 +6,8 @@ import type { SystemConfig } from 'src/config.js';
 import type { OAuthConfig, OAuthProfile } from 'src/repositories/oauth.repository.js';
 import type { FrameleafCloudLink } from 'src/types.js';
 import { OAuthTokenEndpointAuthMethod } from 'src/enum.js';
-import { cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
 import { CloudGatewayDeps, loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Sign in with Frameleaf (FL-158, CLD-005): a second OpenID Connect provider slot beside the
