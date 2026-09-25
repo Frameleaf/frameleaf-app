@@ -66,6 +66,12 @@
      */
     sorts?: readonly LibrarySort[];
     /**
+     * The sort shown and a handler for a new one, where the page keeps its own (an album's personal
+     * viewing sort, FL-31); by default the session's sort.
+     */
+    sort?: LibrarySort;
+    onSortChange?: (sort: LibrarySort) => void;
+    /**
      * Conditions the page's grid does not apply (and `text` for a search it cannot run). They get no
      * chip and no count here: a library page shows only what narrows its grid (review M3).
      */
@@ -89,6 +95,8 @@
     inspectorOpen,
     onToggleInspector,
     sorts,
+    sort,
+    onSortChange,
     unappliedFields = [],
     view,
     onViewChange,
@@ -360,8 +368,15 @@
         <Icon icon={mdiSort} size="16" aria-hidden />
         <select
           aria-label={$t('frameleaf_library_sort')}
-          value={session.state.sort}
-          onchange={(event) => session.patchView({ sort: event.currentTarget.value as LibrarySort })}
+          value={sort ?? session.state.sort}
+          onchange={(event) => {
+            const value = event.currentTarget.value as LibrarySort;
+            if (onSortChange) {
+              onSortChange(value);
+            } else {
+              session.patchView({ sort: value });
+            }
+          }}
         >
           {#each SORT_OPTIONS as option (option.value)}
             <!-- A sort this view's source cannot apply is listed, not offered. -->

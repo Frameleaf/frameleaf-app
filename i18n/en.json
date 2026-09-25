@@ -6334,6 +6334,8 @@
   "frameleaf_search_with_people": "With people",
   "frameleaf_search_word": "word",
   "frameleaf_selection_actions": "Actions for selected items",
+  "frameleaf_selection_deselect": "Deselect",
+  "frameleaf_selection_deselect_all": "Deselect all",
   "frameleaf_selection_deselect_hint": "Deselect (Esc)",
   "frameleaf_selection_more_actions": "More actions",
   "frameleaf_selection_open_in_studio": "Open in Studio",
