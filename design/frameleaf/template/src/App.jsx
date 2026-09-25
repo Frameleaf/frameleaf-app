@@ -72,13 +72,13 @@ import {
 import { matchShortcut } from "./shortcuts.mjs";
 import {
   Login,
-  Register,
   ChangePassword,
   PinPrompt,
-  Onboarding,
   MaintenanceSplash,
   Buy,
 } from "./AuthScreens";
+import { AccountSetupTool, FirstRunSetup } from "./FirstRunSetup";
+import { loadAccountTool, setupStageTheme } from "./first-run-setup.mjs";
 import {
   NotificationsBell,
   NotificationsPanel,
@@ -202,10 +202,10 @@ const PARTNER = {
 };
 const AUTH_SCREENS = [
   "login",
-  "register",
+  "setup",
+  "account-setup",
   "change-password",
   "pin",
-  "onboarding",
   "maintenance",
   "buy",
 ];
@@ -292,6 +292,9 @@ export function App() {
     return SCREEN_IDS.includes(value) ? value : "library";
   });
   const [settingsStart, setSettingsStart] = useState("overview");
+  const [setupFlow, setSetupFlow] = useState(() =>
+    new URL(location.href).searchParams.get("flow") === "existing" ? "existing" : "new",
+  );
   const [initialContext] = useState(() =>
     restoredViewContext(saved, readLibraryView(new URL(location.href))),
   );
@@ -2253,8 +2256,10 @@ export function App() {
       });
       document.head.append(meta);
     }
-    meta.content = theme === "light" ? "#f4f6f7" : "#101416";
-  }, [theme]);
+    // Setup screens always run dark, whatever the saved theme.
+    const shown = screen === "setup" || screen === "account-setup" ? setupStageTheme() : theme;
+    meta.content = shown === "light" ? "#f4f6f7" : "#101416";
+  }, [theme, screen]);
   // Timeline day headers and the scrubber stick below the frosted toolbar, whatever its height.
   useEffect(() => {
     const container = grid.current;
@@ -2294,23 +2299,52 @@ export function App() {
       </div>
     );
   }
+  const previewSetup = (which) => {
+    const url = new URL(location.href);
+    url.searchParams.set("screen", which === "account" ? "account-setup" : "setup");
+    if (which === "account") url.searchParams.delete("flow");
+    else url.searchParams.set("flow", which);
+    history.replaceState({}, "", url);
+    if (which !== "account") setSetupFlow(which);
+    setScreen(which === "account" ? "account-setup" : "setup");
+  };
   const authScreen = {
     login: (
       <Login
         onDone={() => setScreen("library")}
         via={new URLSearchParams(location.search).get("via") === "relay" ? "relay" : "lan"}
-        onRegister={() => setScreen("register")}
+        onRegister={() => previewSetup("new")}
         theme={theme}
         setTheme={setTheme}
         users={resources.users}
       />
     ),
-    register: (
-      <Register
-        onDone={() => setScreen("onboarding")}
-        onCancel={() => setScreen("login")}
-        theme={theme}
-        setTheme={setTheme}
+    // First-run setup. A server with no users opens the "new" flow; the first
+    // Frameleaf launch on an existing library asks the admin to sign in, then
+    // opens the "existing" flow (other users keep using the library). Every
+    // other user gets the one-time account tool. Preview with ?screen=setup&flow=new|existing
+    // or ?screen=account-setup, or the Preview links in each footer.
+    setup: (
+      <FirstRunSetup
+        key={setupFlow}
+        flow={setupFlow}
+        onPreview={previewSetup}
+        onOpenSettings={(area) => (area === "activity" ? setScreen("activity") : openSettings(area))}
+        onDone={({ theme: next, restore }) => {
+          setTheme(next);
+          if (restore) openSettings("cloud", "cloud-backup");
+          else setScreen("library");
+        }}
+      />
+    ),
+    "account-setup": (
+      <AccountSetupTool
+        user={currentUser}
+        onPreview={previewSetup}
+        onDone={({ theme: next }) => {
+          setTheme(next);
+          setScreen("library");
+        }}
       />
     ),
     "change-password": (
@@ -2330,15 +2364,6 @@ export function App() {
         }}
         onCancel={() => setScreen("library")}
         onReset={() => openSettings("preferences", "account-security")}
-        theme={theme}
-        setTheme={setTheme}
-      />
-    ),
-    onboarding: (
-      <Onboarding
-        user={currentUser}
-        onDone={() => setScreen("library")}
-        onCancel={() => setScreen("library")}
         theme={theme}
         setTheme={setTheme}
       />
@@ -2370,7 +2395,11 @@ export function App() {
   }[screen];
   if (authScreen)
     return (
-      <div className="frameleaf app" data-theme={theme} data-screen={screen}>
+      <div
+        className="frameleaf app"
+        data-theme={screen === "setup" || screen === "account-setup" ? setupStageTheme() : theme}
+        data-screen={screen}
+      >
         {authScreen}
       </div>
     );
@@ -2469,6 +2498,10 @@ export function App() {
           onLock={hideLocked}
           onOpenLocked={() => navigate("Locked")}
           onAccountSettings={() => openSettings("preferences")}
+          // Admins go through first-run setup; everyone else gets the account tool,
+          // reopenable here once they've finished it.
+          onAccountSetup={currentUser?.isAdmin ? undefined : () => setScreen("account-setup")}
+          accountSetupDone={loadAccountTool().completed}
           onAdministration={() => openSettings("overview")}
           onFrameleafCloud={() => openSettings("cloud", "cloud-account")}
           onSupportFrameleaf={() => setScreen("buy")}
