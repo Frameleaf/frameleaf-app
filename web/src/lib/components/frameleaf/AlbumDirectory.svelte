@@ -948,19 +948,26 @@
 {/if}
 
 <style>
+  /*
+   * The Albums page rhythm of apple-style.css:941-984 ("tighter rhythm, denser grid, like Photos'
+   * Albums"), over collections.css: page padding, a 10px header gap, 20px under the filters, 28px
+   * between shelves and sections, 17px section titles and a 164px (132px compact) grid.
+   */
   .albums {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1rem;
+    padding: 18px 24px 120px;
     color: var(--fl-text);
+  }
+  .albums > :global(*) {
+    max-width: 1400px;
+    margin-inline: auto;
   }
   .head {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: 14px 18px;
+    margin-bottom: 10px;
   }
   .heading h1 {
     margin: 0;
@@ -1027,6 +1034,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.375rem;
+    margin: 0 0 20px;
   }
   .filters button {
     padding: 0 0.875rem;
@@ -1055,8 +1063,9 @@
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+    gap: 18px 12px;
+    align-items: start;
   }
   .list {
     display: flex;
@@ -1073,12 +1082,16 @@
     font-size: 0.875rem;
     text-align: center;
   }
+  .plain {
+    margin-bottom: 28px;
+  }
   .plain h2 {
     display: flex;
     align-items: baseline;
-    gap: 0.5rem;
-    margin: 0 0 0.75rem;
-    font-size: 1rem;
+    gap: 8px;
+    margin: 0 0 10px;
+    padding-left: 4px;
+    font-size: 17px;
     font-weight: 600;
   }
   .spaces-head {
@@ -1170,17 +1183,28 @@
     color: var(--fl-text);
     background: var(--fl-raised);
   }
-  @media (max-width: 640px) {
+  @media (max-width: 700px) {
     .albums {
-      padding: 0.75rem;
+      padding: 14px 16px 120px;
+    }
+    .head {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .tools {
+      width: 100%;
     }
     .search {
       min-width: 0;
       flex: 1 1 100%;
     }
+    .filters {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
     .grid {
-      grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
-      gap: 0.75rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 </style>

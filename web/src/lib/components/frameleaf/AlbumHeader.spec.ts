@@ -1,7 +1,7 @@
 import { AlbumUserRole, type AlbumResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -152,5 +152,62 @@ describe('AlbumHeader', () => {
   it('keeps activity reachable when comments are turned off, so likes and history stay visible', () => {
     renderHeader(albumAs(AlbumUserRole.Viewer, { isActivityEnabled: false }));
     expect(screen.getByRole('button', { name: /^Activity/ })).toBeInTheDocument();
+  });
+
+  describe('on a phone', () => {
+    const phoneWidth = (query: string) => ({
+      matches: query.includes('max-width: 700px'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+
+    beforeEach(() => {
+      vi.mocked(matchMedia).mockImplementation(phoneWidth as never);
+    });
+
+    afterEach(() => {
+      vi.mocked(matchMedia).mockImplementation(((query: string) => ({
+        ...phoneWidth(query),
+        matches: false,
+      })) as never);
+    });
+
+    // INTERACTION-REQUIREMENTS.md (Sept 24 second pass), CollectionHeader.jsx:1410-1510.
+    it('keeps Add photos and Share in the row and moves everything else into "…"', async () => {
+      renderHeader(albumAs(AlbumUserRole.Owner));
+
+      const toolbar = screen.getByRole('toolbar');
+      expect(within(toolbar).getByRole('button', { name: 'Add photos' })).toBeInTheDocument();
+      expect(within(toolbar).getByRole('button', { name: 'Share' })).toBeInTheDocument();
+      for (const name of ['Shared links', 'Slideshow', 'Download', /^Activity/]) {
+        expect(within(toolbar).queryByRole('button', { name })).toBeNull();
+      }
+
+      const menu = await openMore();
+      for (const name of ['Shared links', 'Slideshow', 'Download', 'Activity']) {
+        expect(menu.getByRole(name === 'Activity' ? 'menuitemcheckbox' : 'menuitem', { name })).toBeInTheDocument();
+      }
+      expect(menu.getByRole('menuitem', { name: 'Delete album' })).toBeInTheDocument();
+    });
+
+    it('opens activity from the menu, with its count', async () => {
+      const onToggleActivity = vi.fn();
+      render(AlbumHeader, {
+        album: albumAs(AlbumUserRole.Owner),
+        assetCount: 3,
+        likeCount: 2,
+        commentCount: 1,
+        onAlbumChange: vi.fn(),
+        onRefresh: vi.fn(),
+        onToggleActivity,
+      });
+
+      const menu = await openMore();
+      await fireEvent.click(menu.getByRole('menuitemcheckbox', { name: 'Activity (3)' }));
+      expect(onToggleActivity).toHaveBeenCalledOnce();
+    });
   });
 });
