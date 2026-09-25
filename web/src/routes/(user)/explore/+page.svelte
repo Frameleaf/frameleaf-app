@@ -28,23 +28,15 @@
   // Kept `$state` (not read straight off `data`) so a thumbnail-ready event can bump a
   // person's `updatedAt` in place and the avatar picks up the freshly generated image
   // without a full reload — the same cache-busting the legacy page relied on.
-  let people = $state(data.people.people);
+  let peopleCards = $state(data.peopleCards);
   const onPersonThumbnailReady = ({ id }: { id: string }) => {
-    for (const person of people) {
-      if (person.id === id) {
-        person.updatedAt = new Date().toISOString();
+    for (const card of peopleCards) {
+      if (card.person.id === id) {
+        card.person.updatedAt = new Date().toISOString();
       }
     }
   };
 
-  const getFieldItems = (field: string) => data.explore.find((item) => item.fieldName === field)?.items ?? [];
-
-  let places = $derived(getFieldItems('exifInfo.city'));
-  let recents = $derived(
-    getFieldItems('createdAt')
-      .sort((a, b) => new Date(b.value).getTime() - new Date(a.value).getTime())
-      .map((item) => item.data),
-  );
   let memories = $derived(
     data.memories.map((memory) => ({
       id: memory.id,
@@ -52,6 +44,7 @@
       href: Route.viewMemory({ id: memory.id, assetId: memory.assets[0].id }),
       alt: $getAltText(toTimelineAsset(memory.assets[0])),
       src: getAssetMediaUrl({ id: memory.assets[0].id }),
+      count: memory.assets.length,
     })),
   );
 
@@ -69,9 +62,11 @@
 
 <UserPageLayout title={data.meta.title}>
   <ExplorePanel
-    {people}
-    {places}
-    {recents}
+    people={peopleCards}
+    places={data.places}
+    things={data.things}
+    recents={data.recentCaptures}
+    libraryTotal={data.libraryTotal}
     {memories}
     albums={data.albums}
     bestPhotos={data.bestPhotosPreview}

@@ -1,5 +1,7 @@
 import {
+  AssetOrder,
   AssetTypeEnum,
+  AssetVisibility,
   getAlbumTree,
   getAllPeople,
   getAssetStatistics,
@@ -7,12 +9,26 @@ import {
   getExploreData,
   MemorySearchOrder,
   searchAssetStatistics,
+  searchAssets,
+  searchFacets,
+  SearchFacetField,
   type AlbumResponseDto,
   type AlbumTreeResponseDto,
+  type AssetResponseDto,
+  type MetadataSearchDto,
 } from '@immich/sdk';
 import {
   BEST_PHOTOS_PREVIEW_LIMIT,
   BEST_PHOTOS_QUALITY_MIN_SCORE,
+  buildExplorePeople,
+  buildExplorePlaces,
+  buildExploreThings,
+  EXPLORE_FACET_LIMIT,
+  EXPLORE_FACETS,
+  EXPLORE_PLACE_LIMIT,
+  EXPLORE_RECENT_LIMIT,
+  EXPLORE_THING_LIMIT,
+  facetCounts,
   type ExploreBestPhotosPreview,
   type ExploreShortcutCounts,
 } from '$lib/frameleaf/explore';
@@ -33,6 +49,23 @@ const previewAlbums = (albums: AlbumTreeResponseDto): AlbumResponseDto[] => {
     .slice(0, EXPLORE_ALBUM_PREVIEW_COUNT);
 };
 
+/**
+ * The newest match of the very search a card opens, as its cover (the prototype covers a bucket with
+ * its newest asset). Going through the same search keeps the cover inside the card's scope, so a
+ * Locked, hidden or partner-hidden item can never be one.
+ */
+const coverOf = async (dto: MetadataSearchDto): Promise<AssetResponseDto | undefined> => {
+  const { assets } = await searchAssets({ metadataSearchDto: { ...dto, size: 1, order: AssetOrder.Desc } });
+  return assets.items[0];
+};
+
+const coversFor = async (keys: string[], search: (key: string) => MetadataSearchDto) => {
+  const entries = await Promise.all(
+    keys.map(async (key) => [key, await coverOf(search(key)).catch(() => undefined)] as const),
+  );
+  return new Map(entries.filter((entry): entry is readonly [string, AssetResponseDto] => !!entry[1]));
+};
+
 export const load = (async ({ url }) => {
   await authenticate(url);
   memoryManager.setFilters({ size: 12, order: MemorySearchOrder.Desc });
@@ -48,6 +81,8 @@ export const load = (async ({ url }) => {
     videoStatistics,
     withoutPeopleStatistics,
     bestPhotos,
+    facets,
+    recentCaptures,
   ] = await Promise.all([
     getExploreData(),
     getAllPeople({ withHidden: false }),
@@ -66,6 +101,15 @@ export const load = (async ({ url }) => {
     searchAssetStatistics({ statisticsSearchDto: { filter: { hasPeople: { eq: false } } } }).catch(() => null),
     // Never a star-rating fallback: only assets with a computed quality score count here.
     getBestPhotos({ minScore: BEST_PHOTOS_QUALITY_MIN_SCORE, limit: BEST_PHOTOS_PREVIEW_LIMIT }).catch(() => null),
+    // T-12: People, Places and Things counts, from the same flat search scope their cards open.
+    searchFacets({ searchFacetsDto: { facets: EXPLORE_FACETS, facetLimit: EXPLORE_FACET_LIMIT } }).catch(() => null),
+    // "Recent captures" (ExploreLibrary.jsx:223-250) are the newest by capture date, not upload
+    // ("Recently added" keeps upload order); the Timeline's own visibility, so nothing archived.
+    searchAssets({
+      metadataSearchDto: { size: EXPLORE_RECENT_LIMIT, order: AssetOrder.Desc, visibility: AssetVisibility.Timeline },
+    })
+      .then(({ assets }) => assets.items)
+      .catch(() => null),
   ]);
   const $t = await getFormatter();
 
@@ -81,9 +125,29 @@ export const load = (async ({ url }) => {
     cover: bestPhotos?.items[0] ?? null,
   };
 
+  const cityCounts = facetCounts(facets?.facets, SearchFacetField.City).slice(0, EXPLORE_PLACE_LIMIT);
+  const tagCounts = facetCounts(facets?.facets, SearchFacetField.Tags).slice(0, EXPLORE_THING_LIMIT);
+  // The Explore endpoint already carries one photo per city; only cities it does not cover search.
+  const exploreCovers = new Map(
+    (explore.find((item) => item.fieldName === 'exifInfo.city')?.items ?? []).map((item) => [item.value, item.data]),
+  );
+  const [placeCovers, thingCovers] = await Promise.all([
+    coversFor(
+      cityCounts.map(({ value }) => value).filter((city) => !exploreCovers.has(city)),
+      (city) => ({ city }),
+    ),
+    coversFor(
+      tagCounts.map(({ value }) => value),
+      (tagId) => ({ tagIds: [tagId] }),
+    ),
+  ]);
+
   return {
-    explore,
-    people,
+    peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people.people),
+    places: buildExplorePlaces(cityCounts, new Map([...exploreCovers, ...placeCovers])),
+    things: buildExploreThings(tagCounts, thingCovers),
+    libraryTotal: facets ? facets.total : null,
+    recentCaptures: recentCaptures ?? [],
     albums: previewAlbums(albums),
     memories,
     shortcutCounts,
