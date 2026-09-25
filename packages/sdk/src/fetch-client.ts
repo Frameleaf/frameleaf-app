@@ -186,6 +186,7 @@ export type AdminConfigJobDto = {
     notifications: AdminConfigJobSettingsDto;
     nsfwDetection?: AdminConfigForkJobSettingsDto;
     ocr: AdminConfigJobSettingsDto;
+    petRecognition?: AdminConfigForkJobSettingsDto;
     search: AdminConfigJobSettingsDto;
     sidecar: AdminConfigJobSettingsDto;
     smartSearch: AdminConfigJobSettingsDto;
@@ -4334,6 +4335,7 @@ export type QueuesResponseLegacyDto = {
     notifications: QueueResponseLegacyDto;
     nsfwDetection: QueueResponseLegacyDto;
     ocr: QueueResponseLegacyDto;
+    petRecognition: QueueResponseLegacyDto;
     search: QueueResponseLegacyDto;
     sidecar: QueueResponseLegacyDto;
     smartSearch: QueueResponseLegacyDto;
@@ -4995,11 +4997,27 @@ export type YearInReviewDto = {
     /** Calendar year being recapped */
     year: number;
 };
+export type PetStoryDto = {
+    /** Confirmed photos of the pet that month, before the diversity pass */
+    assetCount: number;
+    /** Discriminator for a pet story */
+    kind: Kind3;
+    /** The owner's local month, 'yyyy-MM' */
+    month: string;
+    /** The pet name */
+    name: string;
+    /** The pet the story is about */
+    petId: string;
+    /** The pet species */
+    species: string;
+    /** Year of the month */
+    year: number;
+};
 export type OnThisDayDto = {
     /** Year for on this day memory */
     year: number;
 };
-export type MemoryData = EventStoryDto | YearInReviewDto | OnThisDayDto;
+export type MemoryData = EventStoryDto | YearInReviewDto | PetStoryDto | OnThisDayDto;
 export type MemoryResponseDto = {
     assets: AssetResponseDto[];
     /** Creation date */
@@ -5530,15 +5548,55 @@ export type PetCandidateResponseDto = {
     /** Model confidence, 0 to 1 */
     score: number;
 };
+export type PetRecognitionRunResponseDto = {
+    /** Photos the run looks at */
+    assetCount: number;
+    /** When the run was started */
+    createdAt: string;
+    /** Kind of destination the run was started on */
+    destinationKind: (MlDestinationKind) | null;
+    /** Why the run stopped, when it failed */
+    error: string | null;
+    /** When the run finished */
+    finishedAt: string | null;
+    /** Run ID */
+    id: string;
+    /** Photos looked at so far */
+    processedCount: number;
+    /** Proposals made so far */
+    proposalCount: number;
+    status: PetRecognitionRunStatus;
+};
+export type PetRecognitionStatusResponseDto = {
+    /** Whether recognition can run on the routed destination now */
+    available: boolean;
+    /** The destination pet recognition is routed to, if any */
+    destination: {
+        kind: MlDestinationKind;
+        /** Destination name */
+        name: string;
+    } | null;
+    /** The refusal in words, for display */
+    detail: string | null;
+    /** Whether any pet is confirmed in a photo, which recognition learns from */
+    hasConfirmedPhotos: boolean;
+    /** Why it cannot; null when it can */
+    reason: (PetRecognitionUnavailableReason) | null;
+    /** The latest run over this library */
+    run: (PetRecognitionRunResponseDto) | null;
+};
 export type PetCandidateListResponseDto = {
     /** Proposals awaiting review */
     candidates: PetCandidateResponseDto[];
+    recognition: PetRecognitionStatusResponseDto;
     /** Whether a pet recognition model is configured and available */
     recognitionAvailable: boolean;
     /** Why recognition is unavailable, for display; null when it is available */
     recognitionUnavailableReason: string | null;
 };
 export type PetCandidateReviewDto = {
+    /** Checksum of the original the decision was made on (base64); refused with 409 when it changed */
+    expectedChecksum?: string;
     /** Pet to assign instead of the proposed one */
     petId?: string;
 };
@@ -5564,9 +5622,17 @@ export type PetObservationResponseDto = {
     /** Pet ID */
     petId: string;
     source: PetObservationSource;
+    /** Checksum (base64) of the original when the decision was made; null for older decisions */
+    sourceChecksum: string | null;
+    /** When the original was replaced under a drawn region, which then needs review; null when current */
+    staleAt: string | null;
     state: PetObservationState;
     /** Last update date */
     updatedAt: string;
+};
+export type PetCandidateRejectDto = {
+    /** Checksum of the original the decision was made on (base64); refused with 409 when it changed */
+    expectedChecksum?: string;
 };
 export type PetUpdateDto = {
     /** Pet date of birth */
@@ -5596,6 +5662,8 @@ export type PetObservationCreateDto = {
     boundingBoxY1?: number;
     /** Region Y2, in source pixels */
     boundingBoxY2?: number;
+    /** Checksum of the original the decision was made on (base64); refused with 409 when it changed */
+    expectedChecksum?: string;
     /** Height of the image the region was drawn on */
     imageHeight?: number;
     /** Width of the image the region was drawn on */
@@ -14031,26 +14099,81 @@ export function acceptPetCandidate({ id, petCandidateReviewDto }: {
 /**
  * Reject a pet recognition candidate
  */
-export function rejectPetCandidate({ id }: {
+export function rejectPetCandidate({ id, petCandidateRejectDto }: {
     id: string;
+    petCandidateRejectDto: PetCandidateRejectDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: PetObservationResponseDto;
-    }>(`/pets/candidates/${encodeURIComponent(id)}/reject`, {
+    }>(`/pets/candidates/${encodeURIComponent(id)}/reject`, oazapfts.json({
         ...opts,
-        method: "POST"
+        method: "POST",
+        body: petCandidateRejectDto
+    })));
+}
+/**
+ * Retrieve the pet observations of an asset
+ */
+export function getAssetPetObservations({ assetId }: {
+    assetId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetObservationResponseDto[];
+    }>(`/pets/observations${QS.query(QS.explode({
+        assetId
+    }))}`, {
+        ...opts
     }));
 }
 /**
  * Remove a pet observation
  */
-export function deletePetObservation({ id }: {
+export function deletePetObservation({ expectedChecksum, id }: {
+    expectedChecksum?: string;
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText(`/pets/observations/${encodeURIComponent(id)}`, {
+    return oazapfts.ok(oazapfts.fetchText(`/pets/observations/${encodeURIComponent(id)}${QS.query(QS.explode({
+        expectedChecksum
+    }))}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * Cancel pet recognition
+ */
+export function cancelPetRecognition(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetRecognitionStatusResponseDto;
+    }>("/pets/recognition", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Retrieve pet recognition status
+ */
+export function getPetRecognition(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetRecognitionStatusResponseDto;
+    }>("/pets/recognition", {
+        ...opts
+    }));
+}
+/**
+ * Start pet recognition
+ */
+export function startPetRecognition(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PetRecognitionStatusResponseDto;
+    }>("/pets/recognition", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -18208,7 +18331,8 @@ export enum MlAdmissionRefusal {
     BudgetExceeded = "budget-exceeded",
     EndpointUnresolved = "endpoint-unresolved",
     DestinationUnhealthy = "destination-unhealthy",
-    RoleConflict = "role-conflict"
+    RoleConflict = "role-conflict",
+    InsufficientMemory = "insufficient-memory"
 }
 export enum MlWorkload {
     Face = "face",
@@ -18217,7 +18341,8 @@ export enum MlWorkload {
     Enrichment = "enrichment",
     RestorationFaithful = "restoration-faithful",
     RestorationCreative = "restoration-creative",
-    StudioAi = "studio-ai"
+    StudioAi = "studio-ai",
+    PetRecognition = "pet-recognition"
 }
 export enum WorkerCredentialState {
     None = "none",
@@ -18268,7 +18393,8 @@ export enum QueueName {
     MediaHealth = "mediaHealth",
     Workflow = "workflow",
     IntegrityCheck = "integrityCheck",
-    Editor = "editor"
+    Editor = "editor",
+    PetRecognition = "petRecognition"
 }
 export enum AlbumUserRole {
     Editor = "editor",
@@ -18996,13 +19122,17 @@ export enum MemorySearchOrder {
 export enum MemoryType {
     OnThisDay = "on_this_day",
     EventStory = "event_story",
-    YearInReview = "year_in_review"
+    YearInReview = "year_in_review",
+    PetStory = "pet_story"
 }
 export enum Kind {
     EventStory = "event_story"
 }
 export enum Kind2 {
     YearInReview = "year_in_review"
+}
+export enum Kind3 {
+    PetStory = "pet_story"
 }
 export enum RestorationDynamicRange {
     Sdr = "sdr",
@@ -19040,6 +19170,28 @@ export enum PetSpecies {
     Fish = "fish",
     SmallMammal = "small_mammal",
     Other = "other"
+}
+export enum PetRecognitionUnavailableReason {
+    MachineLearningDisabled = "machine-learning-disabled",
+    SmartSearchDisabled = "smart-search-disabled",
+    DestinationMissing = "destination-missing",
+    DestinationDisabled = "destination-disabled",
+    WorkloadNotRouted = "workload-not-routed",
+    WorkloadNotAllowed = "workload-not-allowed",
+    WorkloadNotServed = "workload-not-served",
+    ConsentMissing = "consent-missing",
+    BudgetExceeded = "budget-exceeded",
+    EndpointUnresolved = "endpoint-unresolved",
+    DestinationUnhealthy = "destination-unhealthy",
+    RoleConflict = "role-conflict",
+    InsufficientMemory = "insufficient-memory"
+}
+export enum PetRecognitionRunStatus {
+    Queued = "queued",
+    Running = "running",
+    Completed = "completed",
+    Cancelled = "cancelled",
+    Failed = "failed"
 }
 export enum PetObservationSource {
     Manual = "manual",
@@ -19245,6 +19397,9 @@ export enum JobName {
     ImageDescription = "ImageDescription",
     NsfwDetectionQueueAll = "NsfwDetectionQueueAll",
     NsfwDetection = "NsfwDetection",
+    PetRecognitionQueueAll = "PetRecognitionQueueAll",
+    PetRecognition = "PetRecognition",
+    PetRecognitionNearest = "PetRecognitionNearest",
     SmartAlbumReevaluateAll = "SmartAlbumReevaluateAll",
     WorkflowAssetTrigger = "WorkflowAssetTrigger",
     IntegrityUntrackedFilesQueueAll = "IntegrityUntrackedFilesQueueAll",

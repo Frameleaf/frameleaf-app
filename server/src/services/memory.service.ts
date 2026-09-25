@@ -36,9 +36,13 @@ import {
 import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
-import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import {
+  type HiddenContentQueryOptions,
+  getHiddenContentQueryOptions,
+  isSuppressedWhileLocked,
+} from 'src/utils/hidden-content.js';
 import { isLockedRow } from 'src/utils/locked.js';
-import { groupEventStories, placeLabel } from 'src/utils/memory-story.js';
+import { groupEventStories, groupPetStories, placeLabel } from 'src/utils/memory-story.js';
 import { findOrFail } from 'src/utils/misc.js';
 
 const DAYS = 3;
@@ -130,6 +134,7 @@ export class MemoryService extends BaseService {
 
       await this.createEventStories(users);
       await this.createYearInReviews(users);
+      await this.createPetStories(users);
     });
   }
 
@@ -269,6 +274,94 @@ export class MemoryService extends BaseService {
       },
       new Set(candidates.map(({ id }) => id)),
     );
+  }
+
+  /**
+   * Pet stories (FL-58): "Moments with {name}" for each named pet the owner confirmed in enough
+   * photos of one local month. The last full month and the current one are looked at, so a story
+   * appears within a day of the month collecting enough photos; each pet and month gets one story,
+   * never again once deleted.
+   */
+  private async createPetStories(users: { id: string }[]) {
+    const now = DateTime.utc();
+    const from = now.minus({ months: 1 }).startOf('month');
+    const until = now.endOf('day');
+
+    for (const { id: ownerId } of users) {
+      try {
+        await this.createPetStoriesForOwner(ownerId, from, until);
+      } catch (error) {
+        this.logger.error(`Failed to create pet stories for ${ownerId}: ${error}`);
+      }
+    }
+  }
+
+  private async createPetStoriesForOwner(ownerId: string, from: DateTime, until: DateTime) {
+    const candidates = await this.memoryRepository.getPetStoryCandidates(ownerId, from.toJSDate(), until.toJSDate());
+    const stories = groupPetStories(candidates);
+    if (stories.length === 0) {
+      return;
+    }
+
+    const taken = await this.memoryRepository.getPetStoryKeys(ownerId, from.toJSDate(), until.toJSDate());
+    for (const story of stories) {
+      const key = `${story.petId}:${story.month}`;
+      if (taken.has(key)) {
+        continue;
+      }
+      const memoryAt = DateTime.fromFormat(story.month, 'yyyy-MM', { zone: 'utc' }).startOf('month');
+      await this.memoryRepository.create(
+        {
+          ownerId,
+          type: MemoryType.PetStory,
+          data: {
+            kind: 'pet_story',
+            year: memoryAt.year,
+            month: story.month,
+            petId: story.petId,
+            name: story.name,
+            species: story.species,
+            assetCount: story.assetCount,
+          },
+          memoryAt: memoryAt.toISO()!,
+          showAt: DateTime.utc().startOf('day').toISO()!,
+        },
+        new Set(story.assetIds),
+      );
+      taken.add(key);
+    }
+  }
+
+  /**
+   * A pet story reads as its pet is now (FL-58): renamed pets show the new name, and a story about
+   * a pet that was deleted, hidden, or is suppressed in a session that is not unlocked is left out,
+   * as the pet itself is.
+   */
+  private async withCurrentPets(auth: AuthDto, memories: Memory[]): Promise<Memory[]> {
+    const petIdOf = (memory: Memory) =>
+      memory.type === MemoryType.PetStory
+        ? ((memory.data as { petId?: unknown }).petId as string | undefined)
+        : undefined;
+    const petIds = [
+      ...new Set(memories.map((memory) => petIdOf(memory)).filter((id): id is string => typeof id === 'string')),
+    ];
+    if (petIds.length === 0) {
+      return memories;
+    }
+    const pets = new Map(
+      (await this.memoryRepository.getStoryPets(auth.user.id, petIds)).map((pet) => [pet.id, pet] as const),
+    );
+    return memories.flatMap((memory) => {
+      if (memory.type !== MemoryType.PetStory) {
+        return [memory];
+      }
+      const petId = petIdOf(memory);
+      const pet = petId ? pets.get(petId) : undefined;
+      if (!pet || pet.isHidden || isSuppressedWhileLocked(auth, 'pet', pet.id)) {
+        return [];
+      }
+      return [{ ...memory, data: { ...(memory.data as object), name: pet.name, species: pet.species } } as Memory];
+    });
   }
 
   private async createOnThisDayMemories(ownerId: string, target: DateTime) {
@@ -605,7 +698,8 @@ export class MemoryService extends BaseService {
     const memories = options
       ? await this.memoryRepository.search(auth.user.id, dto, options)
       : await this.memoryRepository.search(auth.user.id, dto);
-    return memories
+    const current = await this.withCurrentPets(auth, memories as Memory[]);
+    return current
       .filter((memory: Memory) => memory.assets && memory.assets.length > 0)
       .map((memory: Memory) => mapMemory(memory, auth));
   }
@@ -620,7 +714,11 @@ export class MemoryService extends BaseService {
   async get(auth: AuthDto, id: string): Promise<MemoryResponseDto> {
     await this.requireAccess({ auth, permission: Permission.MemoryRead, ids: [id] });
     const memory = await this.findOrFail(id, this.nsfwOptions(auth));
-    return mapMemory(memory, auth);
+    const [current] = await this.withCurrentPets(auth, [memory as Memory]);
+    if (!current) {
+      throw new NotFoundException('Memory not found');
+    }
+    return mapMemory(current, auth);
   }
 
   async create(auth: AuthDto, dto: MemoryCreateDto) {
