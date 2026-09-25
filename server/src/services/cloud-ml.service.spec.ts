@@ -35,7 +35,12 @@ describe(CloudMlService.name, () => {
   let mocks: ServiceMocks;
   let metadata: Map<string, unknown>;
 
-  const configure = ({ cloudMlEnabled = true, url = 'https://cloud.test' as string | null } = {}) => {
+  const allBoth = { descriptions: 'both', upscale: 'both', restoration: 'both', studio: 'both', interpolation: 'both' };
+  const configure = ({
+    cloudMlEnabled = true,
+    url = 'https://cloud.test' as string | null,
+    routing = allBoth as Record<string, string>,
+  } = {}) => {
     mocks.config.getEnv.mockReturnValue({
       ...mocks.config.getEnv(),
       frameleafCloud: { url, identityDir: '/tmp/identity' },
@@ -43,7 +48,7 @@ describe(CloudMlService.name, () => {
     mocks.systemMetadata.get.mockImplementation((key) =>
       Promise.resolve(
         (key === SystemMetadataKey.SystemConfig
-          ? { frameleafCloud: { cloudMl: { ...defaults.frameleafCloud.cloudMl, enabled: cloudMlEnabled } } }
+          ? { frameleafCloud: { cloudMl: { ...defaults.frameleafCloud.cloudMl, enabled: cloudMlEnabled, routing } } }
           : (metadata.get(key) ?? null)) as never,
       ),
     );
@@ -120,6 +125,7 @@ describe(CloudMlService.name, () => {
       dailyCapUsd: null,
       spentTodayUsd: 0,
       topUpUrl: 'https://account.cloud.test/wallet',
+      autoTopUp: false,
     });
     mocks.frameleafCloudMl.getConsent.mockResolvedValue({
       requiredVersion: '2026-10-01',
@@ -180,6 +186,15 @@ describe(CloudMlService.name, () => {
         url: 'https://ml.eu.cloud.test',
         bearer: 'ml-token',
       });
+    });
+
+    it('serves only the work set to Both or Cloud only in Where each job runs', async () => {
+      link();
+      configure({ routing: { ...allBoth, restoration: 'local' } });
+
+      const probe = await sut.probe();
+
+      expect(probe.workloads).toEqual([MlWorkload.Enrichment]);
     });
 
     it('keeps the refusal when the gateway answers but refuses (402)', async () => {
@@ -310,6 +325,7 @@ describe(CloudMlService.name, () => {
         dailyCapUsd: null,
         spentTodayUsd: 0,
         topUpUrl: null,
+        autoTopUp: false,
       });
 
       await expect(sut.getStatus()).resolves.toMatchObject({ wallet: { topUpUrl: null } });
@@ -341,7 +357,19 @@ describe(CloudMlService.name, () => {
     it('applies settlements to the accounting rows of their jobs', async () => {
       link();
       mocks.frameleafCloudMl.getUsage.mockResolvedValue({
-        items: [{ jobId: 'job-1', clientRef: null, settledUsd: 0.42, credits: 42, settledAt: '2026-09-25T10:00:00Z' }],
+        items: [
+          {
+            jobId: 'job-1',
+            clientRef: null,
+            settledUsd: 0.42,
+            credits: 42,
+            settledAt: '2026-09-25T10:00:00Z',
+            modelId: 'qwen3.5-9b@1',
+            gpuSeconds: 312,
+            workers: 1,
+            estimateUsd: 0.5,
+          },
+        ],
       });
       mocks.mlDestination.applySettlements.mockResolvedValue(1);
 
@@ -349,6 +377,38 @@ describe(CloudMlService.name, () => {
       expect(mocks.mlDestination.applySettlements).toHaveBeenCalledWith([
         { cloudJobId: 'job-1', costUsd: 0.42, credits: 42 },
       ]);
+    });
+  });
+
+  describe('updateWallet', () => {
+    it('changes the daily cap and automatic top-up on the account and caches the answer', async () => {
+      link();
+      mocks.frameleafCloudMl.updateWallet.mockResolvedValue({
+        balanceUsd: 12,
+        heldUsd: 2,
+        dailyCapUsd: 40,
+        spentTodayUsd: 0,
+        topUpUrl: null,
+        autoTopUp: true,
+      });
+
+      await expect(sut.updateWallet({ dailyCapUsd: 40, autoTopUp: true })).resolves.toMatchObject({
+        dailyCapUsd: 40,
+        autoTopUp: true,
+        availableUsd: 10,
+      });
+      expect(mocks.frameleafCloudMl.updateWallet).toHaveBeenCalledWith(expect.anything(), {
+        dailyCapUsd: 40,
+        autoTopUp: true,
+      });
+      expect(metadata.get(SystemMetadataKey.FrameleafMlWallet)).toMatchObject({ dailyCapUsd: 40, autoTopUp: true });
+    });
+
+    it('refuses an empty change and refuses while the server is not linked', async () => {
+      link();
+      await expect(sut.updateWallet({})).rejects.toBeInstanceOf(BadRequestException);
+      metadata.clear();
+      await expect(sut.updateWallet({ autoTopUp: true })).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
@@ -383,11 +443,36 @@ describe(CloudMlService.name, () => {
             costUsd: 0.42,
             credits: 42,
             finishedAt: '2026-09-25T10:00:00.000Z',
+            modelId: null,
+            gpuSeconds: null,
+            workers: null,
+            estimateUsd: null,
           },
         ],
       });
       expect(mocks.mlDestination.getSettlements).toHaveBeenCalledWith(mlDestinationStub.frameleafCloud.id, 50);
+      // Not linked: the local rows stand on their own and nothing is asked of the cloud.
       expect(mocks.frameleafCloudMl.getUsage).not.toHaveBeenCalled();
+
+      link();
+      mocks.frameleafCloudMl.getUsage.mockResolvedValue({
+        items: [
+          {
+            jobId: 'job-1',
+            clientRef: null,
+            settledUsd: 0.42,
+            credits: 42,
+            settledAt: '2026-09-25T10:00:00Z',
+            modelId: 'qwen3.5-9b@1',
+            gpuSeconds: 312,
+            workers: 1,
+            estimateUsd: 0.5,
+          },
+        ],
+      });
+      await expect(sut.getSettlements()).resolves.toMatchObject({
+        items: [{ cloudJobId: 'job-1', modelId: 'qwen3.5-9b@1', gpuSeconds: 312, workers: 1, estimateUsd: 0.5 }],
+      });
     });
   });
 

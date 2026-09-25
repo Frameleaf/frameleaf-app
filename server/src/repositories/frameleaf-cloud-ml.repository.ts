@@ -8,6 +8,7 @@ import {
   CloudConsentFeatures,
   CloudUsage,
   CloudWallet,
+  CloudWalletSettings,
   capabilitiesSchema,
   catalogSchema,
   consentCurrentSchema,
@@ -57,6 +58,16 @@ export class FrameleafCloudMlRepository {
 
   getWallet(gateway: CloudMlGateway): Promise<CloudWallet> {
     return this.cloud.requestJson(walletResponseSchema, { url: `${gateway.url}/v2/wallet`, bearer: gateway.bearer });
+  }
+
+  /** `PATCH /v2/wallet`: change the daily cap or automatic top-up; answers with the wallet. */
+  updateWallet(gateway: CloudMlGateway, settings: CloudWalletSettings): Promise<CloudWallet> {
+    return this.cloud.requestJson(walletResponseSchema, {
+      method: 'PATCH',
+      url: `${gateway.url}/v2/wallet`,
+      bearer: gateway.bearer,
+      body: settings,
+    });
   }
 
   getUsage(gateway: CloudMlGateway, since: Date): Promise<CloudUsage> {

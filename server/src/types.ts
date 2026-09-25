@@ -787,6 +787,8 @@ export type FrameleafMlWallet = {
   dailyCapUsd: number | null;
   spentTodayUsd: number;
   topUpUrl: string | null;
+  /** Automatic top-up is on for the account (read from Frameleaf Cloud). */
+  autoTopUp?: boolean;
   updatedAt: string;
 };
 
