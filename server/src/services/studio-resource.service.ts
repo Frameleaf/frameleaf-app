@@ -221,6 +221,13 @@ export type StudioResourceResolution = {
   refused: StudioRefusedReference[];
 };
 
+/** Kinds whose access follows the acting user's live access to a library asset. */
+const LIBRARY_BACKED_KINDS: ReadonlySet<StudioResourceKind> = new Set([
+  StudioResourceKind.LibraryAsset,
+  StudioResourceKind.Audio,
+  StudioResourceKind.EditedMaster,
+]);
+
 export type StudioReadGrantPayload = {
   v: 1;
   scope: 'render' | 'preview';
@@ -235,6 +242,13 @@ export type StudioReadGrantPayload = {
   workerId: string;
   /** The issuing manifest, so a grant cannot outlive a re-resolution. */
   manifest: string;
+  /**
+   * Preview grants only: the library assets the previewed revision reads. Every frame read
+   * re-checks the acting user's live access to each of them (STU-203), so an asset removed from an
+   * album, a deleted or unlinked album, an ended partner share or a member leaving a space stops
+   * the preview at the next frame instead of serving a cached one.
+   */
+  assetIds?: string[];
 };
 
 export type StudioReadGrant = {
@@ -929,6 +943,9 @@ export class StudioResourceService extends BaseService {
       userId: manifest.userId,
       workerId,
       manifest: manifest.digest,
+      assetIds: [
+        ...new Set(manifest.entries.filter((entry) => LIBRARY_BACKED_KINDS.has(entry.kind)).map((entry) => entry.id)),
+      ],
     };
     return this.cryptoRepository.signJwt(payload, this.secret, { expiresIn: ttlSeconds });
   }
@@ -970,12 +987,27 @@ export class StudioResourceService extends BaseService {
     }
 
     if (grant.scope === 'preview') {
+      const assetIds = grant.assetIds ?? [];
+      if (assetIds.length > 0) {
+        const decisions = await this.decideAssets(auth, new Set(assetIds), { backgroundRunner });
+        for (const id of assetIds) {
+          const decision = decisions.get(id);
+          if (!decision) {
+            return {
+              valid: false,
+              reason: StudioRefusalReason.NotFound,
+              detail: 'A previewed source no longer exists.',
+            };
+          }
+          if (!decision.ok) {
+            return { valid: false, reason: decision.reason, detail: decision.detail };
+          }
+        }
+      }
       return { valid: true, grant, path: '' };
     }
 
-    if (
-      [StudioResourceKind.LibraryAsset, StudioResourceKind.Audio, StudioResourceKind.EditedMaster].includes(grant.kind)
-    ) {
+    if (LIBRARY_BACKED_KINDS.has(grant.kind)) {
       const decisions = await this.decideAssets(auth, new Set([grant.id]), { backgroundRunner });
       const decision = decisions.get(grant.id);
       if (!decision) {

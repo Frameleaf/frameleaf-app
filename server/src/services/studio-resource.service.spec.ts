@@ -925,6 +925,8 @@ describe(StudioResourceService.name, () => {
           scope: 'preview',
           kind: StudioResourceKind.RemotePreviewFrame,
           manifest: manifest.digest,
+          // STU-203: the previewed revision's library sources, re-checked on every frame read.
+          assetIds: [assetId],
         }),
         expect.any(String),
         { expiresIn: STUDIO_GRANT_TTL_SECONDS },
@@ -967,6 +969,30 @@ describe(StudioResourceService.name, () => {
           path: manifest.entries[0].path,
         });
         expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledTimes(2);
+      });
+
+      it('re-checks live access to every previewed source on a preview frame read (STU-203)', async () => {
+        const preview = payload({
+          scope: 'preview',
+          kind: StudioResourceKind.RemotePreviewFrame,
+          id: manifest.digest,
+          assetIds: [assetId],
+        });
+        mocks.crypto.verifyJwt.mockReturnValue(preview);
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual({
+          valid: true,
+          grant: preview,
+          path: '',
+        });
+
+        // The asset left the album, the album was deleted or unlinked, the partner share ended or the
+        // member left the space: the account no longer reaches it, and the cached frame stops.
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+        mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set());
+        mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set());
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
+          expect.objectContaining({ valid: false }),
+        );
       });
 
       it('lets a background runner reopen a Locked source that the interactive path refuses', async () => {
