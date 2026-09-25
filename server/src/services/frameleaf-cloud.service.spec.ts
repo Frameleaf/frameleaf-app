@@ -1,11 +1,12 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { generateKeyPairSync } from 'node:crypto';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink } from 'src/types.js';
 import { AdminAuditAction, JobName, JobStatus, NotificationLevel, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
-import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
+import { CANDIDATE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
@@ -489,6 +490,59 @@ describe(FrameleafCloudService.name, () => {
         state: 'revoked',
         revoked: { reason: expect.any(String) },
       });
+    });
+
+    it('keeps a key whose rotation answer was lost, and finishes the rotation when the cloud turns out to hold it', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string };
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 200,
+        body: { commands: [{ id: 'k1', type: 'key.rotate' }] },
+      }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      // the cloud stores the new key but the answer never arrives
+      let held = '';
+      cloud.on('POST /api/v1/instance/keys/rotate', (request) => {
+        held = request.json().newJwk.kid;
+        return { status: 503, body: { code: 'unavailable', message: 'lost' } };
+      });
+      cloud.on('POST /api/v1/instance/commands/k1/ack', () => ({ status: 200, body: {} }));
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(held).not.toBe('');
+      expect((metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string }).kid).toBe(before.kid);
+
+      // from now on the cloud only accepts the new key
+      cloud.on('POST /id/token', (request) => {
+        const header = JSON.parse(
+          Buffer.from(request.form().get('client_assertion')!.split('.', 1)[0], 'base64url').toString('utf8'),
+        );
+        return header.kid === held
+          ? { status: 200, body: { access_token: 'api-token', expires_in: 600 } }
+          : { status: 401, body: { error: 'invalid_client' } };
+      });
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      sutForgetTokens();
+      makeDue();
+      await sut.handleHeartbeat();
+
+      expect(storedLink()?.status).toBe('linked');
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string; retiring: { kid: string } };
+      expect(after.kid).toBe(held);
+      expect(after.retiring.kid).toBe(before.kid);
+    });
+
+    it('revokes when the cloud refuses both the current and the candidate key', async () => {
+      await writeFile(
+        join(identityDir, CANDIDATE_KEY_FILE),
+        generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }),
+        { mode: 0o600 },
+      );
+      cloud.on('POST /id/token', () => ({ status: 401, body: { error: 'invalid_client' } }));
+      sutForgetTokens();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.status).toBe('revoked');
+      await expect(access(join(identityDir, CANDIDATE_KEY_FILE))).rejects.toThrow();
     });
 
     it('rotates the key when allowed, keeping the old one retiring for 24 hours', async () => {

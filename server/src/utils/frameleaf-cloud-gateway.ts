@@ -58,7 +58,8 @@ export const loadInstanceIdentity = async (deps: CloudGatewayDeps): Promise<Fram
       !existing ||
       existing.kid !== identity.kid ||
       existing.instanceId !== identity.instanceId ||
-      existing.retiring?.keyFile !== identity.retiring?.keyFile
+      existing.retiring?.rotationId !== identity.retiring?.rotationId ||
+      existing.candidate?.kid !== identity.candidate?.kid
     ) {
       await deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, identity);
     }
