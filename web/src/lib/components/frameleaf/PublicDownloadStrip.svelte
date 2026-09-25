@@ -14,8 +14,9 @@
    * `PublicViewer.jsx:402-426` and `sharing.css:856-897`: "Preparing archive · n of m" with Cancel,
    * then "Archive ready · n files · size" with Save archive. It shows the download rows the share
    * page started (group `share`), which the Downloads panel leaves out. A part split off by the
-   * archive size limit follows once the one before it is saved. A failure keeps Retry and Dismiss,
-   * as the Downloads panel does (a recorded deviation: the prototype's strip cannot fail).
+   * archive size limit can be saved as soon as it is ready, while later parts are still being
+   * prepared. A failure keeps Retry and Dismiss, as the Downloads panel does (a recorded deviation:
+   * the prototype's strip cannot fail).
    */
 
   const rows = $derived(downloadManager.rows('share'));
@@ -58,11 +59,11 @@
     />
     <div class="pv-job-copy">
       <strong>
-        {#if phase === 'preparing'}
+        {#if phase === 'preparing' && !ready}
           {total > 0
             ? $t('frameleaf_public_archive_preparing', { values: { done: doneCount, total } })
             : $t('frameleaf_public_archive_planning')}
-        {:else if phase === 'ready' && ready}
+        {:else if ready}
           {$t('frameleaf_public_archive_ready', { values: { count: ready[1].count } })}{ready[1].total > 0
             ? ` · ${getByteUnitString(ready[1].total, $locale)}`
             : ''}
@@ -76,14 +77,16 @@
         </span>
       {/if}
     </div>
-    {#if phase === 'ready' && ready}
+    {#if ready}
+      <!-- A ready part is offered at once, even while later parts are still being prepared. -->
       <Button variant="primary" onclick={() => downloadManager.save(ready[0], downloadBlob)}>
         <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />
         {$t('frameleaf_public_save_archive')}
       </Button>
-    {:else if phase === 'preparing'}
+    {/if}
+    {#if phase === 'preparing'}
       <Button onclick={cancel}>{$t('cancel')}</Button>
-    {:else if failed}
+    {:else if phase === 'error' && failed}
       <Button onclick={() => downloadManager.retry(failed[0])}>{$t('retry')}</Button>
       <Button onclick={() => downloadManager.remove(failed[0])}>{$t('dismiss')}</Button>
     {/if}
@@ -99,8 +102,11 @@
     margin-block-end: 0.875rem;
     color: var(--fl-text);
     background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
+  }
+  /* sharing.css:865-867: only the light theme draws the border. */
+  :global(.frameleaf[data-theme='light']) .pv-job {
+    border: 1px solid var(--fl-border);
   }
   .pv-job > :global(svg) {
     flex-shrink: 0;

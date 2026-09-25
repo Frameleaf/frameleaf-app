@@ -48,6 +48,8 @@ export interface DownloadDetails {
 export type DownloadGroup = 'share';
 
 export interface DownloadContext {
+  /** The row's key. */
+  key: string;
   signal: AbortSignal;
   /** Reports bytes received; `total` replaces the expected size when the server announces one. */
   onProgress: (progress: DownloadProgress) => void;
@@ -93,8 +95,19 @@ const isAppleWebKit = () => {
  */
 export const bufferLimit = () => (isAppleWebKit() ? 128 : 512) * MiB;
 
-/** Whether a file of `size` bytes (0 or undefined when unknown) is fetched into the tab. */
-export const shouldBuffer = (size: number | undefined) => !size || size <= bufferLimit();
+/** The request was stopped because the file is too large to hold in the tab; it is streamed instead. */
+export class TooLargeToHold extends Error {
+  override name = 'TooLargeToHold';
+}
+
+export interface HoldLimit {
+  /** The most bytes this response may bring into the tab. */
+  maxBytes: number;
+  /** Stream rather than hold a response that does not announce its size. */
+  requireLength: boolean;
+  /** Set when the response was stopped for its size. */
+  tooLarge: boolean;
+}
 
 /** Row counts for one surface, as the prototype's `downloadSummary` (system-data.mjs:483-488). */
 export const summarizeDownloads = (rows: Iterable<DownloadState>) => {
@@ -136,7 +149,7 @@ const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
  * option, which keeps the SDK's base URL, headers and HTTP error handling.
  */
 export const progressFetch =
-  (onProgress: DownloadContext['onProgress'], fetcher: typeof fetch = fetch): typeof fetch =>
+  (onProgress: DownloadContext['onProgress'], fetcher: typeof fetch = fetch, limit?: HoldLimit): typeof fetch =>
   async (input, init) => {
     const response = await fetcher(input, init);
     if (!response.ok || !response.body) {
@@ -145,12 +158,24 @@ export const progressFetch =
 
     const length = Number(response.headers.get('content-length'));
     const total = Number.isFinite(length) && length > 0 ? length : undefined;
+    // Decide from the headers, before the body is read, whether the file may be held (review B1).
+    if (limit && ((total === undefined && limit.requireLength) || (total !== undefined && total > limit.maxBytes))) {
+      limit.tooLarge = true;
+      await response.body.cancel();
+      throw new TooLargeToHold();
+    }
     let received = 0;
     onProgress({ received, total });
     const counted = response.body.pipeThrough(
       new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
           received += chunk.byteLength;
+          // A body larger than announced or planned (an edited file, an archive estimate) stops too.
+          if (limit && received > limit.maxBytes) {
+            limit.tooLarge = true;
+            controller.error(new TooLargeToHold());
+            return;
+          }
           onProgress({ received, total });
           controller.enqueue(chunk);
         },
@@ -187,6 +212,17 @@ class DownloadManager {
   constructor() {
     // B2: logging out aborts every request and forgets every row and file name, as uploads do.
     eventManager.on({ AuthLogout: () => this.clearAll() });
+  }
+
+  /** Bytes of prepared files held in this tab. */
+  heldBytes() {
+    let held = 0;
+    for (const download of this.assets.values()) {
+      if (download.buffered) {
+        held += download.received;
+      }
+    }
+    return held;
   }
 
   /** The rows of one surface. */
@@ -366,7 +402,7 @@ class DownloadManager {
     };
 
     try {
-      const file = await task({ signal: controller.signal, onProgress, describe });
+      const file = await task({ key, signal: controller.signal, onProgress, describe });
       const download = current();
       if (!download || controller.signal.aborted) {
         return;
@@ -398,3 +434,48 @@ class DownloadManager {
 }
 
 export const downloadManager = new DownloadManager();
+
+/**
+ * Fetches a file into the tab, or hands back `stream` when it is too large to hold (review B1). What
+ * the tab may hold is `bufferLimit()` less the prepared files it already holds, so the parts of a
+ * split archive never add up to more than about one limit.
+ *
+ * - `size` is the size the server planned or recorded. Leave it out when it is unknown or cannot be
+ *   trusted (an edited file): the response must then announce a `Content-Length` within the limit,
+ *   checked before the body is read.
+ * - `request` runs the SDK call with the given `fetch`.
+ */
+export const holdOrStream = async (
+  { signal, onProgress }: DownloadContext,
+  {
+    size,
+    request,
+    stream,
+  }: {
+    size?: number;
+    request: (fetch: typeof globalThis.fetch) => Promise<Blob | undefined>;
+    stream: StreamedDownload;
+  },
+): Promise<Blob | StreamedDownload> => {
+  const allowance = bufferLimit() - downloadManager.heldBytes();
+  if (size !== undefined && size > allowance) {
+    return stream;
+  }
+  const limit: HoldLimit = { maxBytes: allowance, requireLength: size === undefined, tooLarge: false };
+  try {
+    const file = await request(progressFetch(onProgress, fetch, limit));
+    if (limit.tooLarge) {
+      return stream;
+    }
+    // The SDK swallows a body that failed part-way and answers with no data.
+    if (!(file instanceof Blob)) {
+      throw signal.aborted ? abortError() : new Error('The download was interrupted');
+    }
+    return file;
+  } catch (error) {
+    if (limit.tooLarge || error instanceof TooLargeToHold) {
+      return stream;
+    }
+    throw error;
+  }
+};
