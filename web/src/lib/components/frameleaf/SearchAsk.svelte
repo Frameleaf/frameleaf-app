@@ -86,7 +86,7 @@
       }
       case 'Enter': {
         event.preventDefault();
-        ask(active >= 0 ? SEARCH_ASK_EXAMPLES[active] : query);
+        ask(active >= 0 ? $t(SEARCH_ASK_EXAMPLES[active]) : query);
         break;
       }
     }
@@ -111,7 +111,7 @@
         role="combobox"
         aria-label={$t('frameleaf_search_ask_title')}
         aria-expanded={!disabled}
-        aria-controls={listId}
+        aria-controls={disabled ? undefined : listId}
         aria-autocomplete="list"
         aria-activedescendant={active >= 0 ? optionId(active) : undefined}
         aria-busy={loading}
@@ -175,7 +175,8 @@
         <section class="sa-examples">
           <h3 id="{listId}-examples">{$t('frameleaf_search_ask_try')}</h3>
           <div id={listId} role="listbox" aria-labelledby="{listId}-examples">
-            {#each SEARCH_ASK_EXAMPLES as example, index (example)}
+            {#each SEARCH_ASK_EXAMPLES as exampleKey, index (exampleKey)}
+              {@const example = $t(exampleKey)}
               <!-- Options are chosen from the field (combobox); a pointer can pick one directly. -->
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <div
@@ -237,7 +238,10 @@
     min-width: 0;
     padding: 6px 0;
     color: var(--fl-text);
-    font: 400 21px/1.2 inherit;
+    font-family: inherit;
+    font-size: 21px;
+    font-weight: 400;
+    line-height: 1.2;
     letter-spacing: -0.01em;
     background: transparent;
     border: 0;

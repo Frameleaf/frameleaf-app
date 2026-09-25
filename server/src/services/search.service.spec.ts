@@ -658,6 +658,35 @@ describe(SearchService.name, () => {
       );
     });
 
+    it('caps the whole answer at Most answers shown, across pages (FL-31)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ localFeatures: { askSearch: { enabled: true, maxResults: 20 } } });
+      // only the number of items matters here
+      const assets = (count: number) => Array.from({ length: count }, () => AssetFactory.create()) as never[];
+      mocks.search.searchSmart.mockResolvedValueOnce({ hasNextPage: true, items: assets(20) });
+
+      const first = await sut.askSearch(authStub.user1, { query: 'beach' });
+
+      expect(mocks.search.searchSmart).toHaveBeenCalledWith({ page: 1, size: 20 }, expect.anything());
+      expect(first.results.assets.items).toHaveLength(20);
+      expect(first.results.assets.nextPage).toBeNull();
+
+      // a smaller page size: the page that reaches the limit is trimmed and ends the answer
+      mocks.search.searchSmart.mockResolvedValueOnce({ hasNextPage: true, items: assets(15) });
+      const last = await sut.askSearch(authStub.user1, { query: 'beach', page: 2, size: 15 });
+      expect(last.results.assets.items).toHaveLength(5);
+      expect(last.results.assets.count).toBe(5);
+      expect(last.results.assets.nextPage).toBeNull();
+
+      mocks.search.searchSmart.mockResolvedValueOnce({ hasNextPage: true, items: assets(15) });
+      const beyond = await sut.askSearch(authStub.user1, { query: 'beach', page: 3, size: 15 });
+      expect(beyond.results.assets.items).toEqual([]);
+      expect(beyond.results.assets.nextPage).toBeNull();
+
+      mocks.search.searchSmart.mockResolvedValueOnce({ hasNextPage: true, items: assets(10) });
+      const within = await sut.askSearch(authStub.user1, { query: 'beach', page: 1, size: 10 });
+      expect(within.results.assets.nextPage).toBe('2');
+    });
+
     it('should understand relative date phrases', async () => {
       vitest.setSystemTime(new Date('2026-05-15T12:00:00.000Z'));
 
