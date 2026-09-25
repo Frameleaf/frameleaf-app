@@ -2,15 +2,17 @@
  * The message protocol between the Studio host and the Freecut editor frame (FL-88, FL-92).
  *
  * The React editor runs in its own same-origin document, built by `studio/adapters/web`, and the
- * host talks to it over one `MessageChannel` per mount. The frame is the isolation boundary the
- * plan asks for (`03-studio-rendering-and-restoration.md`, "Isolate React routing/styles, hotkeys
- * and focus"): React, its router, its stylesheet, its stores and its global listeners live in a
+ * host talks to it over one `MessageChannel` per mount. The frame is the isolation the plan asks
+ * for (`03-studio-rendering-and-restoration.md`, "Isolate React routing/styles, hotkeys and
+ * focus"): React, its router, its stylesheet, its stores and its global listeners live in a
  * document the Svelte app never shares, and removing the frame is what finally releases every
  * AudioContext, GPU device, worker and object URL the editor made, even one its own teardown
- * missed.
+ * missed. It is not a security boundary: the document is same-origin, shares the session's cookies
+ * and could reach the parent. The host still checks every message it receives.
  *
  * Only structured-cloneable data crosses: the host context, service calls and their answers. No
- * function, SDK instance, token or API base URL is ever posted. This file is imported by the
+ * function, SDK instance, token or API base URL is posted; that keeps the engine's dependencies
+ * explicit, but a same-origin frame is trusted code, not a sandbox. This file is imported by the
  * adapter build as well, so it stays free of Svelte and of runtime imports from the web app.
  */
 import type { StudioCommandEnvelope, StudioCommandResult } from './commands';

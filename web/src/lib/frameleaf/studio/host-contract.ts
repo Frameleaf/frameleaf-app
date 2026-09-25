@@ -9,9 +9,12 @@
  * Boundary rules, from `docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md`
  * and from FL-96 (no client API dependency in preview):
  *
- * - The engine receives data, never credentials. There is no token, no API base URL and no
- *   SDK instance in `StudioHostContext`. Media arrives as already-authorized URLs the host
- *   built, and everything else goes through `StudioHostServices`.
+ * - The contract passes data, never credentials: there is no token, no API base URL and no SDK
+ *   instance in `StudioHostContext`, media arrives as URLs the host built, and everything else goes
+ *   through `StudioHostServices`. This is a design discipline, not a security boundary: the engine
+ *   runs same-origin with the session's cookies, so it could call the API itself. It is trusted
+ *   because it is the pinned, hash-verified Freecut revision built with Frameleaf's adapter; the
+ *   server still authorizes every request on its own.
  * - The engine never writes storage. A canonical change is a `StudioCommandEnvelope` handed to
  *   `submitCommands`; the editor's own autosave hands the complete graph to `stageDraft` (the
  *   FL-89 draft primitive). Either way the host applies revision, lease and access rules, and the
