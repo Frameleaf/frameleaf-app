@@ -7077,6 +7077,8 @@ export type ServerAppReleasesResponseDto = {
         links?: ServerApkLinksDto;
         /** SHA-256 fingerprint of the release signing certificate, as AA:BB:... */
         signingCertificateSha256?: string;
+        /** Store listing of the Android app, when the operator configured one (FL-135) */
+        storeUrl?: string;
     };
     /** iOS application */
     ios: {
