@@ -109,6 +109,11 @@ describe('ViewerLocationDialog (V-24)', () => {
     await waitFor(() => expect(confirmRequest).toHaveBeenCalledOnce());
     expect(updateAsset).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+    // every field is as it was, so a later Save changes nothing
+    expect(screen.getByLabelText('latitude')).toHaveValue('51.4');
+    expect(screen.getByLabelText('longitude')).toHaveValue('-116.2');
+    expect(screen.getByLabelText('city')).toHaveValue('Banff');
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('heading', { name: 'edit_location' })).toBeInTheDocument();
   });
 
