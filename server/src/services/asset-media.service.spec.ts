@@ -1164,6 +1164,44 @@ describe(AssetMediaService.name, () => {
       );
     });
 
+    it('plays the unedited source for the owner when the quick editor asks (FL-113)', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({
+        originalPath: asset.originalPath,
+        encodedVideoPath: '/path/to/encoded/video.mp4',
+        editedVideoPath: '/path/to/encoded/video_edited.mp4',
+        ownerId: authStub.admin.user.id,
+      });
+
+      await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
+        new ImmichFileResponse({
+          path: '/path/to/encoded/video.mp4',
+          cacheControl: CacheControl.PrivateWithCache,
+          contentType: 'video/mp4',
+        }),
+      );
+    });
+
+    it('never gives anyone but the owner the unedited source', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({
+        originalPath: asset.originalPath,
+        encodedVideoPath: '/path/to/encoded/video.mp4',
+        editedVideoPath: '/path/to/encoded/video_edited.mp4',
+        ownerId: 'someone-else',
+      });
+
+      await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
+        new ImmichFileResponse({
+          path: '/path/to/encoded/video_edited.mp4',
+          cacheControl: CacheControl.PrivateWithCache,
+          contentType: 'video/mp4',
+        }),
+      );
+    });
+
     it('should fall back to the original path', async () => {
       const asset = AssetFactory.create({ type: AssetType.Video, originalPath: '/original/path.ext' });
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));

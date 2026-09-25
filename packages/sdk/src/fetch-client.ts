@@ -11427,7 +11427,8 @@ export function viewAsset({ edited, id, key, size, slug }: {
 /**
  * Play asset video
  */
-export function playAssetVideo({ id, key, slug }: {
+export function playAssetVideo({ edited, id, key, slug }: {
+    edited?: boolean;
     id: string;
     key?: string;
     slug?: string;
@@ -11436,6 +11437,7 @@ export function playAssetVideo({ id, key, slug }: {
         status: 200;
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/video/playback${QS.query(QS.explode({
+        edited,
         key,
         slug
     }))}`, {
