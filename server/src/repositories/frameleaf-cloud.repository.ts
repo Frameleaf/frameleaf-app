@@ -12,6 +12,7 @@ import {
   FrameleafDiscoveryDocument,
   discoverySchema,
   errorEnvelopeSchema,
+  oauthErrorSchema,
   refusalFromCloudError,
   tokenResponseSchema,
 } from 'src/utils/frameleaf-cloud.js';
@@ -108,6 +109,26 @@ export class FrameleafCloudRepository {
     this.tokenCache.clear();
   }
 
+  /**
+   * One OAuth request (device authorization, device-code poll, registration): like `requestJson`,
+   * but an OAuth error answer (`{error, error_description}`, RFC 6749 section 5.2) comes back as a
+   * value instead of a thrown error, so the caller can honour `authorization_pending`, `slow_down`,
+   * `expired_token` and `access_denied`. Unreachable clouds and unreadable answers still throw.
+   */
+  async requestOAuth<T extends z.ZodType>(
+    schema: T,
+    request: FrameleafCloudRequest,
+  ): Promise<{ ok: true; data: z.infer<T> } | { ok: false; status: number; error: string; description?: string }> {
+    try {
+      return { ok: true, data: await this.requestJson(schema, request) };
+    } catch (error) {
+      if (!(error instanceof FrameleafCloudError) || error.status === null || error.status < 400 || !error.oauth) {
+        throw error;
+      }
+      return { ok: false, status: error.status, error: error.oauth.error, description: error.oauth.error_description };
+    }
+  }
+
   /** One JSON request: bounded, no redirects, validated against `schema`. */
   async requestJson<T extends z.ZodType>(schema: T, request: FrameleafCloudRequest): Promise<z.infer<T>> {
     const headers: Record<string, string> = { Accept: 'application/json', ...request.headers };
@@ -143,9 +164,13 @@ export class FrameleafCloudRepository {
     const text = await this.readBounded(response);
     if (!response.ok) {
       let envelope = null;
+      let oauth = null;
       try {
-        const parsed = errorEnvelopeSchema.safeParse(JSON.parse(text));
+        const body = JSON.parse(text);
+        const parsed = errorEnvelopeSchema.safeParse(body);
         envelope = parsed.success ? parsed.data : null;
+        const oauthParsed = oauthErrorSchema.safeParse(body);
+        oauth = oauthParsed.success ? oauthParsed.data : null;
       } catch {
         // an unreadable body carries no envelope; the status decides the refusal
       }
@@ -156,8 +181,9 @@ export class FrameleafCloudRepository {
       throw new FrameleafCloudError(
         refusal,
         response.status,
-        envelope?.message || `Frameleaf Cloud answered ${response.status}`,
+        envelope?.message || oauth?.error_description || `Frameleaf Cloud answered ${response.status}`,
         envelope,
+        oauth,
       );
     }
 

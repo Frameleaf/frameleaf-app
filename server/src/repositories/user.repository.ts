@@ -99,6 +99,19 @@ export class UserRepository {
       .executeTakeFirst();
   }
 
+  /** FL-155: every administrator that is not deleted, oldest first. */
+  @GenerateSql()
+  getAdmins() {
+    return this.db
+      .selectFrom('user')
+      .select(columns.userAdmin)
+      .select(withMetadata)
+      .where('user.isAdmin', '=', true)
+      .where('user.deletedAt', 'is', null)
+      .orderBy('user.createdAt', 'asc')
+      .execute();
+  }
+
   @GenerateSql()
   getFileSamples() {
     return this.db

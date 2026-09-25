@@ -206,6 +206,10 @@ export const endpointTags: Record<ApiTag, string> = {
     'Enrichment previews, durable enrichment plans and timestamped video moments. A preview runs a draft prompt or model on chosen samples without writing anything; a plan runs chosen stages on a frozen set of assets through the destinations pinned when it was queued.',
   [ApiTag.Faces]:
     'A face is a detected human face within an asset, which can be associated with a person. Faces are normally detected via machine learning, but can also be created manually.',
+  [ApiTag.FrameleafCloud]:
+    'Linking this server to a Frameleaf account: status, the device-code link, the check-in and what Frameleaf Cloud may ask this server to do. Nothing is contacted until an administrator starts linking, and an unset FRAMELEAF_CLOUD_URL is never replaced by a default host.',
+  [ApiTag.FrameleafLicense]:
+    'Frameleaf licence certificates: activation by key or offline file, refresh with a grace period, and the entitlements cloud-connected features read. Self-hosted features never depend on a licence.',
   [ApiTag.FrameleafCloudMl]:
     'Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback.',
   [ApiTag.Integrity]: 'Endpoints for viewing and managing integrity reports.',

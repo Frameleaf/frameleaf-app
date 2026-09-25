@@ -54,6 +54,65 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type CloudLinkPendingDto = {
+    expiresAt: string;
+    /** How often this server asks whether the code was approved */
+    intervalSeconds: number;
+    /** The code to enter on the approval page, XXXX-XXXX */
+    userCode: string;
+    verificationUri: string;
+    /** The approval page with the code filled in; shown as a QR code */
+    verificationUriComplete: string;
+};
+export type CloudPermissionsDto = {
+    /** Frameleaf Cloud may start a cloud backup run */
+    allowBackupTrigger: boolean;
+    /** Frameleaf Cloud may refresh the plan and rotate this server’s credentials */
+    allowEntitlementRefresh: boolean;
+    /** Frameleaf Cloud may turn remote access on or off */
+    allowRemoteEnable: boolean;
+};
+export type CloudStatusResponseDto = {
+    /** The linked Frameleaf account */
+    account: {
+        id: string | null;
+        label: string | null;
+    } | null;
+    /** Frameleaf Cloud saw this server’s identity start from two places */
+    cloneSuspected: boolean;
+    /** Host of the configured Frameleaf Cloud address */
+    cloudHost: string | null;
+    /** FRAMELEAF_CLOUD_URL is set */
+    configured: boolean;
+    dataRegion: string | null;
+    /** Check-ins that failed in a row */
+    heartbeatFailures: number;
+    /** Exactly the fields each check-in sends; the "What this server sends" panel lists them */
+    heartbeatFields: CloudHeartbeatField[];
+    /** This server’s instance ID, once its identity exists */
+    instanceId: string | null;
+    /** RFC 7638 thumbprint of this server’s key */
+    keyFingerprint: string | null;
+    lastContactAt: string | null;
+    /** The last link or check-in problem, in plain words */
+    lastError: string | null;
+    linkResult: (CloudLinkResult) | null;
+    /** FRAMELEAF_LINK_TOKEN is set */
+    linkTokenConfigured: boolean;
+    linkedAt: string | null;
+    pending: (CloudLinkPendingDto) | null;
+    permissions: CloudPermissionsDto;
+    /** Frameleaf Cloud asked an administrator to link again */
+    relinkRequested: boolean;
+    revoked: {
+        at: string;
+        reason: string;
+    } | null;
+    /** The OpenID client ID for Sign in with Frameleaf */
+    signInClientId: string | null;
+    signInIssuer: string | null;
+    state: CloudLinkState;
+};
 export type CloudMlConsentFeaturesDto = {
     identityNames: boolean;
     medicalSignals: boolean;
@@ -229,6 +288,14 @@ export type CloudMlSettlementDto = {
 export type CloudMlSettlementsResponseDto = {
     /** Settled charges, newest first (at most 50) */
     items: CloudMlSettlementDto[];
+};
+export type CloudPermissionsUpdateDto = {
+    /** Frameleaf Cloud may start a cloud backup run */
+    allowBackupTrigger?: boolean;
+    /** Frameleaf Cloud may refresh the plan and rotate this server’s credentials */
+    allowEntitlementRefresh?: boolean;
+    /** Frameleaf Cloud may turn remote access on or off */
+    allowRemoteEnable?: boolean;
 };
 export type AdminConfigAnalyticsDto = {
     /** Collect local analytics history every night */
@@ -9880,6 +9947,65 @@ export function unlinkAllOAuthAccountsAdmin(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Check in with Frameleaf Cloud now
+ */
+export function checkInCloud(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/heartbeat", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Unlink this server from Frameleaf Cloud
+ */
+export function unlinkCloud(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/link", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Check the Frameleaf Cloud link
+ */
+export function getCloudLink(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/link", {
+        ...opts
+    }));
+}
+/**
+ * Start linking this server to a Frameleaf account
+ */
+export function startCloudLink(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/link", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Cancel a pending link
+ */
+export function cancelCloudLink(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/link/pending", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Get Frameleaf Cloud processing status
  */
 export function getCloudMlStatus(opts?: Oazapfts.RequestOpts) {
@@ -9955,6 +10081,32 @@ export function getCloudMlWallet(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: CloudMlWalletDto;
     }>("/admin/cloud/ml/wallet", {
+        ...opts
+    }));
+}
+/**
+ * Choose what Frameleaf Cloud may ask this server to do
+ */
+export function updateCloudPermissions({ cloudPermissionsUpdateDto }: {
+    cloudPermissionsUpdateDto: CloudPermissionsUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/permissions", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudPermissionsUpdateDto
+    })));
+}
+/**
+ * Get the Frameleaf Cloud link status
+ */
+export function getCloudStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/status", {
         ...opts
     }));
 }
@@ -18653,6 +18805,29 @@ export enum UserAvatarColor {
     Gray = "gray",
     Amber = "amber"
 }
+export enum CloudHeartbeatField {
+    Version = "version",
+    BootId = "bootId",
+    UptimeSec = "uptimeSec",
+    Health = "health",
+    Endpoints = "endpoints",
+    RemoteAccess = "remoteAccess",
+    Permissions = "permissions",
+    LicenseKid = "licenseKid"
+}
+export enum CloudLinkResult {
+    Pending = "pending",
+    Approved = "approved",
+    Denied = "denied",
+    Expired = "expired"
+}
+export enum CloudLinkState {
+    NotConfigured = "not-configured",
+    Unlinked = "unlinked",
+    Pending = "pending",
+    Linked = "linked",
+    Revoked = "revoked"
+}
 export enum CloudMlConnection {
     NotConfigured = "not-configured",
     NotLinked = "not-linked",
@@ -19014,7 +19189,15 @@ export enum AdminAuditAction {
     LibraryUpdated = "library-updated",
     LibraryScanQueued = "library-scan-queued",
     LibraryScanCancelled = "library-scan-cancelled",
-    LibraryDeleted = "library-deleted"
+    LibraryDeleted = "library-deleted",
+    CloudLinked = "cloud-linked",
+    CloudUnlinked = "cloud-unlinked",
+    CloudRevoked = "cloud-revoked",
+    CloudPermissionsChanged = "cloud-permissions-changed",
+    LicenseActivated = "license-activated",
+    LicenseRemoved = "license-removed",
+    FrameleafAccountLinked = "frameleaf-account-linked",
+    FrameleafAccountUnlinked = "frameleaf-account-unlinked"
 }
 export enum AssetOrder {
     Asc = "asc",
@@ -19314,6 +19497,9 @@ export enum Permission {
     ServerStorage = "server.storage",
     ServerStatistics = "server.statistics",
     ServerVersionCheck = "server.versionCheck",
+    AdminCloudRead = "adminCloud.read",
+    AdminCloudUpdate = "adminCloud.update",
+    AdminCloudLink = "adminCloud.link",
     AdminCloudMlRead = "adminCloudMl.read",
     AdminCloudMlUpdate = "adminCloudMl.update",
     ServerLicenseRead = "serverLicense.read",
@@ -20139,6 +20325,8 @@ export enum JobName {
     PhysicalDeduplicationMigrationApply = "PhysicalDeduplicationMigrationApply",
     TagCleanup = "TagCleanup",
     VersionCheck = "VersionCheck",
+    FrameleafHeartbeat = "FrameleafHeartbeat",
+    FrameleafLicenseRefresh = "FrameleafLicenseRefresh",
     OcrQueueAll = "OcrQueueAll",
     Ocr = "Ocr",
     ImageDescriptionQueueAll = "ImageDescriptionQueueAll",

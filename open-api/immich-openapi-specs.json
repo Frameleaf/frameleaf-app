@@ -333,6 +333,237 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/cloud/heartbeat": {
+      "post": {
+        "description": "Sends one check-in with exactly the fields the \"What this server sends\" panel lists.",
+        "operationId": "checkInCloud",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check in with Frameleaf Cloud now",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/link": {
+      "delete": {
+        "description": "Clears the link and switches remote access, cloud processing and cloud backup off. Local photos, accounts and sign-in are unchanged.",
+        "operationId": "unlinkCloud",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Unlink this server from Frameleaf Cloud",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.link",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "The link state. While a code waits for approval, this server asks Frameleaf Cloud whether it was approved, denied or expired, no more often than the interval the cloud set.",
+        "operationId": "getCloudLink",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check the Frameleaf Cloud link",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Starts an RFC 8628 device authorization and returns the code to approve on the Frameleaf Cloud approval page, with a QR payload and its expiry.",
+        "operationId": "startCloudLink",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start linking this server to a Frameleaf account",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.link",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/link/pending": {
+      "delete": {
+        "description": "Stops waiting for the current code. Nothing changes on this server.",
+        "operationId": "cancelCloudLink",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a pending link",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.link",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/ml": {
       "get": {
         "description": "Whether Frameleaf Cloud is configured and linked, the destination once added, the consent version it requires and the AI Wallet. Nothing is contacted unless the server is linked.",
@@ -662,6 +893,110 @@
           }
         ],
         "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/permissions": {
+      "put": {
+        "description": "The instance-side toggles every cloud command is checked against. This server always decides and records each request.",
+        "operationId": "updateCloudPermissions",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudPermissionsUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose what Frameleaf Cloud may ask this server to do",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/status": {
+      "get": {
+        "description": "Whether Frameleaf Cloud is configured, and whether this server is unlinked, waiting for approval, linked or revoked. Reads local state only; nothing is contacted.",
+        "operationId": "getCloudStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Frameleaf Cloud link status",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
         "x-immich-state": "Alpha"
       }
     },
@@ -37732,6 +38067,14 @@
       "description": "A face is a detected human face within an asset, which can be associated with a person. Faces are normally detected via machine learning, but can also be created manually."
     },
     {
+      "name": "Frameleaf Cloud (admin)",
+      "description": "Linking this server to a Frameleaf account: status, the device-code link, the check-in and what Frameleaf Cloud may ask this server to do. Nothing is contacted until an administrator starts linking, and an unset FRAMELEAF_CLOUD_URL is never replaced by a default host."
+    },
+    {
+      "name": "Frameleaf licence",
+      "description": "Frameleaf licence certificates: activation by key or offline file, refresh with a grace period, and the entitlements cloud-connected features read. Self-hosted features never depend on a licence."
+    },
+    {
       "name": "Frameleaf Cloud processing (admin)",
       "description": "Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback."
     },
@@ -38198,7 +38541,15 @@
           "library-updated",
           "library-scan-queued",
           "library-scan-cancelled",
-          "library-deleted"
+          "library-deleted",
+          "cloud-linked",
+          "cloud-unlinked",
+          "cloud-revoked",
+          "cloud-permissions-changed",
+          "license-activated",
+          "license-removed",
+          "frameleaf-account-linked",
+          "frameleaf-account-unlinked"
         ],
         "type": "string"
       },
@@ -48236,6 +48587,72 @@
         ],
         "type": "object"
       },
+      "CloudHeartbeatField": {
+        "enum": [
+          "version",
+          "bootId",
+          "uptimeSec",
+          "health",
+          "endpoints",
+          "remoteAccess",
+          "permissions",
+          "licenseKid"
+        ],
+        "type": "string"
+      },
+      "CloudLinkPendingDto": {
+        "properties": {
+          "expiresAt": {
+            "type": "string"
+          },
+          "intervalSeconds": {
+            "description": "How often this server asks whether the code was approved",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "userCode": {
+            "description": "The code to enter on the approval page, XXXX-XXXX",
+            "type": "string"
+          },
+          "verificationUri": {
+            "type": "string"
+          },
+          "verificationUriComplete": {
+            "description": "The approval page with the code filled in; shown as a QR code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "intervalSeconds",
+          "userCode",
+          "verificationUri",
+          "verificationUriComplete"
+        ],
+        "type": "object"
+      },
+      "CloudLinkResult": {
+        "description": "How the current or last device authorization stands",
+        "enum": [
+          "pending",
+          "approved",
+          "denied",
+          "expired"
+        ],
+        "type": "string"
+      },
+      "CloudLinkState": {
+        "description": "not-configured: FRAMELEAF_CLOUD_URL is unset and nothing is contacted; unlinked: configured but not linked; pending: waiting for approval of a device code; linked; revoked: Frameleaf Cloud ended the link",
+        "enum": [
+          "not-configured",
+          "unlinked",
+          "pending",
+          "linked",
+          "revoked"
+        ],
+        "type": "string"
+      },
       "CloudMlCatalogResponseDto": {
         "properties": {
           "models": {
@@ -48614,6 +49031,200 @@
           "spentTodayUsd",
           "topUpUrl",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "CloudPermissionsDto": {
+        "properties": {
+          "allowBackupTrigger": {
+            "description": "Frameleaf Cloud may start a cloud backup run",
+            "type": "boolean"
+          },
+          "allowEntitlementRefresh": {
+            "description": "Frameleaf Cloud may refresh the plan and rotate this server’s credentials",
+            "type": "boolean"
+          },
+          "allowRemoteEnable": {
+            "description": "Frameleaf Cloud may turn remote access on or off",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "allowBackupTrigger",
+          "allowEntitlementRefresh",
+          "allowRemoteEnable"
+        ],
+        "type": "object"
+      },
+      "CloudPermissionsUpdateDto": {
+        "properties": {
+          "allowBackupTrigger": {
+            "description": "Frameleaf Cloud may start a cloud backup run",
+            "type": "boolean"
+          },
+          "allowEntitlementRefresh": {
+            "description": "Frameleaf Cloud may refresh the plan and rotate this server’s credentials",
+            "type": "boolean"
+          },
+          "allowRemoteEnable": {
+            "description": "Frameleaf Cloud may turn remote access on or off",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "CloudStatusResponseDto": {
+        "properties": {
+          "account": {
+            "description": "The linked Frameleaf account",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "nullable": true,
+                "type": "string"
+              },
+              "label": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ],
+            "type": "object"
+          },
+          "cloneSuspected": {
+            "description": "Frameleaf Cloud saw this server’s identity start from two places",
+            "type": "boolean"
+          },
+          "cloudHost": {
+            "description": "Host of the configured Frameleaf Cloud address",
+            "nullable": true,
+            "type": "string"
+          },
+          "configured": {
+            "description": "FRAMELEAF_CLOUD_URL is set",
+            "type": "boolean"
+          },
+          "dataRegion": {
+            "nullable": true,
+            "type": "string"
+          },
+          "heartbeatFailures": {
+            "description": "Check-ins that failed in a row",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "heartbeatFields": {
+            "description": "Exactly the fields each check-in sends; the \"What this server sends\" panel lists them",
+            "items": {
+              "$ref": "#/components/schemas/CloudHeartbeatField"
+            },
+            "type": "array"
+          },
+          "instanceId": {
+            "description": "This server’s instance ID, once its identity exists",
+            "nullable": true,
+            "type": "string"
+          },
+          "keyFingerprint": {
+            "description": "RFC 7638 thumbprint of this server’s key",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastContactAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastError": {
+            "description": "The last link or check-in problem, in plain words",
+            "nullable": true,
+            "type": "string"
+          },
+          "linkResult": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudLinkResult"
+              }
+            ],
+            "nullable": true
+          },
+          "linkTokenConfigured": {
+            "description": "FRAMELEAF_LINK_TOKEN is set",
+            "type": "boolean"
+          },
+          "linkedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pending": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudLinkPendingDto"
+              }
+            ],
+            "nullable": true
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/CloudPermissionsDto"
+          },
+          "relinkRequested": {
+            "description": "Frameleaf Cloud asked an administrator to link again",
+            "type": "boolean"
+          },
+          "revoked": {
+            "nullable": true,
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "at",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "signInClientId": {
+            "description": "The OpenID client ID for Sign in with Frameleaf",
+            "nullable": true,
+            "type": "string"
+          },
+          "signInIssuer": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CloudLinkState"
+          }
+        },
+        "required": [
+          "account",
+          "cloneSuspected",
+          "cloudHost",
+          "configured",
+          "dataRegion",
+          "heartbeatFailures",
+          "heartbeatFields",
+          "instanceId",
+          "keyFingerprint",
+          "lastContactAt",
+          "lastError",
+          "linkResult",
+          "linkTokenConfigured",
+          "linkedAt",
+          "pending",
+          "permissions",
+          "relinkRequested",
+          "revoked",
+          "signInClientId",
+          "signInIssuer",
+          "state"
         ],
         "type": "object"
       },
@@ -52349,6 +52960,8 @@
           "PhysicalDeduplicationMigrationApply",
           "TagCleanup",
           "VersionCheck",
+          "FrameleafHeartbeat",
+          "FrameleafLicenseRefresh",
           "OcrQueueAll",
           "Ocr",
           "ImageDescriptionQueueAll",
@@ -58670,6 +59283,9 @@
           "server.storage",
           "server.statistics",
           "server.versionCheck",
+          "adminCloud.read",
+          "adminCloud.update",
+          "adminCloud.link",
           "adminCloudMl.read",
           "adminCloudMl.update",
           "serverLicense.read",

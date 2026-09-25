@@ -98,7 +98,13 @@ export const envData: EnvData = {
   },
 
   appReleases: {},
-  frameleafCloud: { url: null, identityDir: null },
+  frameleafCloud: {
+    url: null,
+    identityDir: null,
+    linkToken: null,
+    edge: { port: 2443, bind: '0.0.0.0' },
+    trustedLanCidrs: [],
+  },
 
   noColor: false,
 };
