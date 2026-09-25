@@ -3,9 +3,11 @@ name: Migration Order
   pull_request:
     branches:
       - fork/main
+      - master/frameleaf-implementation
   push:
     branches:
       - fork/main
+      - master/frameleaf-implementation
 permissions:
   contents: read
 concurrency:
@@ -23,6 +25,8 @@ jobs:
       BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
       BASELINE: ${{ github.workspace }}/.frameleaf-migration-base/server/src/schema/migrations/ORDER
       ORDER: ${{ github.workspace }}/server/src/schema/migrations/ORDER
+      FORK_MANIFEST_BASE: ${{ github.workspace }}/.frameleaf-migration-base/server/src/fork-schema/manifests/fork-migration-order.json
+      FORK_MANIFEST: ${{ github.workspace }}/server/src/fork-schema/manifests/fork-migration-order.json
     steps:
       - name: Checkout candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -55,3 +59,5 @@ jobs:
           node --test scripts/check-fork-migration-order.test.mjs
           pnpm --filter immich migrations:verify-order
           node scripts/check-fork-migration-order.mjs "$BASELINE" "$ORDER"
+      - name: Verify the fork-schema migration manifest is append-only
+        run: node scripts/check-fork-migration-order.mjs --fork-manifest "$FORK_MANIFEST_BASE" "$FORK_MANIFEST"
