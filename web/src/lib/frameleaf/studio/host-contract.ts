@@ -178,7 +178,7 @@ export type StudioWorkspaceMode = 'basic' | 'advanced';
  * Freecut keeps this in a workspace folder (`infrastructure/storage/workspace-fs`). In Frameleaf it
  * is stored per account on the server (`GET`/`PUT /studio/workspace`), never in a folder handle, so
  * it follows the person to Safari and Firefox and to another device. What it contains is the
- * engine's to define; the server keeps it byte for byte. When it cannot be read or kept the host
+ * engine's to define; the server keeps it as the same JSON value (not its key order). When it cannot be read or kept the host
  * says so plainly: `unavailable` means the engine starts from its own defaults and nothing it lays
  * out is persisted. It is never a silent no-op that looks like a save.
  *
@@ -193,7 +193,7 @@ export type StudioWorkspaceView =
   | { state: 'unavailable'; reason: 'engine-absent' | 'storage-unavailable' }
   | {
       state: 'ready';
-      /** Opaque engine layout, stored and returned byte for byte like the project graph. */
+      /** Opaque engine layout, returned as the same JSON value it was saved as (key order and spacing are not kept). */
       layout: unknown;
       savedAt: string | null;
     };

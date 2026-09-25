@@ -392,7 +392,11 @@ describe(UserService.name, () => {
 
     it('sweeps fork rows of removed accounts, and warns while the fork schema is not writable (FL-71)', async () => {
       mocks.user.getDeletedAfter.mockResolvedValue([]);
-      mocks.user.sweepRemovedAccountForkRows.mockResolvedValue({ preferenceHistory: 2, recipientGroups: 1 });
+      mocks.user.sweepRemovedAccountForkRows.mockResolvedValue({
+        preferenceHistory: 2,
+        recipientGroups: 1,
+        workspaceLayouts: 1,
+      });
 
       await sut.handleUserDeleteCheck();
       expect(mocks.user.sweepRemovedAccountForkRows).toHaveBeenCalled();
