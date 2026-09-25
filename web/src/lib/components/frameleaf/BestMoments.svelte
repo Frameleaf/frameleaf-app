@@ -17,10 +17,16 @@
    * reveal a Locked or hidden video; the moments index is read per video with the same access check.
    */
   import { formatMomentTime } from '$lib/frameleaf/enrichment';
-  import { bestMomentsOf, type BestMoment } from '$lib/frameleaf/best-moments';
+  import { bestMomentsOf, isEffectiveCover, type BestMoment } from '$lib/frameleaf/best-moments';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, getVideoMoments, setVideoMomentCover, type BestPhotoAssetResponseDto } from '@immich/sdk';
+  import {
+    AssetMediaSize,
+    getVideoMoments,
+    setVideoMomentCover,
+    type BestPhotoAssetResponseDto,
+    type VideoMomentFrameDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiImageCheckOutline, mdiImageOutline, mdiPlay } from '@mdi/js';
   import { SvelteMap } from 'svelte/reactivity';
@@ -35,7 +41,7 @@
 
   const moments = $derived(bestMomentsOf(assets));
 
-  type CoverState = { canCover: boolean; coverTimestampMs: number | null };
+  type CoverState = { frames: VideoMomentFrameDto[] };
   /** Per video: whether the moments index can take a cover yet, and the cover it has. */
   const covers = new SvelteMap<string, CoverState>();
   let busy = $state<string | null>(null);
@@ -46,14 +52,9 @@
       if (covers.has(moment.asset.id)) {
         continue;
       }
-      covers.set(moment.asset.id, { canCover: false, coverTimestampMs: null });
+      covers.set(moment.asset.id, { frames: [] });
       void getVideoMoments({ id: moment.asset.id })
-        .then((index) =>
-          covers.set(moment.asset.id, {
-            canCover: index.frames.length > 0,
-            coverTimestampMs: index.coverTimestampMs,
-          }),
-        )
+        .then((index) => covers.set(moment.asset.id, { frames: index.frames }))
         // No index (or enrichment is off): the video can be played from its moment, not covered.
         .catch(() => undefined);
     }
@@ -66,7 +67,7 @@
         id: moment.asset.id,
         videoMomentCoverDto: { timestampMs: moment.timestampMs },
       });
-      covers.set(moment.asset.id, { canCover: index.frames.length > 0, coverTimestampMs: index.coverTimestampMs });
+      covers.set(moment.asset.id, { frames: index.frames });
       status = $t('frameleaf_best_moments_cover_set', {
         values: { name: moment.asset.originalFileName, time: formatMomentTime(moment.timestampMs) },
       });
@@ -87,8 +88,8 @@
     <ul class="row">
       {#each moments as moment (moment.asset.id)}
         {@const time = formatMomentTime(moment.timestampMs)}
-        {@const cover = covers.get(moment.asset.id)}
-        {@const isCover = cover?.coverTimestampMs === moment.timestampMs}
+        {@const frames = covers.get(moment.asset.id)?.frames ?? []}
+        {@const isCover = isEffectiveCover(frames, moment.timestampMs)}
         <li>
           <button
             type="button"
@@ -109,16 +110,16 @@
             <button type="button" class="link" onclick={() => onPlay(moment)}>
               {$t('frameleaf_moments_play_from', { values: { time } })}
             </button>
-            {#if cover?.canCover}
-              <button
-                type="button"
-                class="link"
-                aria-pressed={isCover}
-                disabled={busy !== null || isCover}
-                onclick={() => void useAsCover(moment)}
-              >
-                <Icon icon={isCover ? mdiImageCheckOutline : mdiImageOutline} size="14" aria-hidden="true" />
-                {isCover ? $t('frameleaf_moments_cover') : $t('frameleaf_moments_use_as_cover')}
+            <!-- Only once frames are cut, and not for the moment that already is the cover. -->
+            {#if isCover}
+              <span class="is-cover">
+                <Icon icon={mdiImageCheckOutline} size="14" aria-hidden="true" />
+                {$t('frameleaf_moments_cover')}
+              </span>
+            {:else if frames.length > 0}
+              <button type="button" class="link" disabled={busy !== null} onclick={() => void useAsCover(moment)}>
+                <Icon icon={mdiImageOutline} size="14" aria-hidden="true" />
+                {$t('frameleaf_moments_use_as_cover')}
               </button>
             {/if}
           </div>
@@ -236,6 +237,14 @@
     font: inherit;
     font-size: 12px;
     cursor: pointer;
+  }
+  .is-cover {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 28px;
+    color: var(--fl-muted);
+    font-size: 12px;
   }
   .link:disabled {
     color: var(--fl-muted);

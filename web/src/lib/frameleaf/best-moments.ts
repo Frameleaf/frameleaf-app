@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type BestPhotoAssetResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, type BestPhotoAssetResponseDto, type VideoMomentFrameDto } from '@immich/sdk';
 
 /** A ranked video and the time of its best-scored frame (FL-50). */
 export interface BestMoment {
@@ -18,3 +18,21 @@ export const bestMomentsOf = (assets: BestPhotoAssetResponseDto[]): BestMoment[]
       ? [{ asset, timestampMs }]
       : [];
   });
+
+/**
+ * Whether a moment is already the video's effective cover: the moments index keeps its cover as a
+ * frame (the owner's chosen time, or the best-ranked frame by default), and choosing a time lands on
+ * the nearest frame, so the moment is the cover when its nearest frame is the cover frame.
+ */
+export const isEffectiveCover = (
+  frames: Pick<VideoMomentFrameDto, 'timestampMs' | 'isCover'>[],
+  timestampMs: number,
+) => {
+  let nearest: (typeof frames)[number] | undefined;
+  for (const frame of frames) {
+    if (!nearest || Math.abs(frame.timestampMs - timestampMs) < Math.abs(nearest.timestampMs - timestampMs)) {
+      nearest = frame;
+    }
+  }
+  return nearest?.isCover ?? false;
+};
