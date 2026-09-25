@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { JobItem } from 'src/types.js';
+import { JOBS_NOT_RETRIED } from 'src/constants.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
@@ -105,31 +106,62 @@ export class JobService extends BaseService {
   @OnEvent({ name: 'JobRun' })
   async onJobRun(...[queueName, job]: ArgsOf<'JobRun'>) {
     try {
-      await this.eventRepository.emit('JobStart', queueName, job);
-      const response = await this.jobRepository.run(job);
-      await this.eventRepository.emit('JobSuccess', { job, response });
-      const shouldRunFollowUp =
-        response &&
-        typeof response === 'string' &&
-        [JobStatus.Success, JobStatus.Skipped].includes(response) &&
-        !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
-      if (shouldRunFollowUp) {
-        await this.onDone(job);
-      } else if (job.name === JobName.AssetVideoEditGeneration && response === JobStatus.Failed) {
-        // FL-39: a failed version render still settles. Only the fork's history view listens for
-        // this; official clients would treat AssetEditReadyV2 as a published edit and refetch.
-        const asset = await this.assetRepository.getById(job.data.id);
-        if (asset) {
-          this.websocketRepository.clientSend('VideoEditVersionFailedV1', asset.ownerId, {
-            assetId: asset.id,
-            versionId: job.data.versionId ?? null,
-          });
+      let response: JobStatus | undefined;
+      try {
+        await this.eventRepository.emit('JobStart', queueName, job);
+        response = await this.jobRepository.run(job);
+      } catch (error: any) {
+        await this.reportJobError(job, error);
+        // FL-71: a job whose handler throws is a failed job. Rethrown, BullMQ records it as failed with
+        // its reason and attempts, which the Job manager's Failed tab, "Retry failed" and "Remove failed
+        // records" work on. Jobs that are unsafe to run again, or whose data is sensitive, are reported
+        // but not kept (JOBS_NOT_RETRIED).
+        if (JOBS_NOT_RETRIED.has(job.name)) {
+          return;
         }
+        throw error;
       }
-    } catch (error: any) {
-      await this.eventRepository.emit('JobError', { job, error });
+
+      // FL-71: the handler has succeeded from here on. An error in the events or follow-up jobs below
+      // is logged, not rethrown, so it cannot record the job as failed and have a retry repeat it.
+      try {
+        await this.onSuccess(job, response);
+      } catch (error: any) {
+        this.logger.error(`Unable to finish job ${job.name} after it succeeded: ${error}`, error?.stack);
+      }
     } finally {
       await this.eventRepository.emit('JobComplete', queueName, job);
+    }
+  }
+
+  /** Reports a handler error; a failing listener is logged and never replaces the handler's error. */
+  private async reportJobError(job: JobItem, error: any) {
+    try {
+      await this.eventRepository.emit('JobError', { job, error });
+    } catch (listenerError: any) {
+      this.logger.error(`Unable to report the error of job ${job.name}: ${listenerError}`, listenerError?.stack);
+    }
+  }
+
+  private async onSuccess(job: JobItem, response: JobStatus | undefined) {
+    await this.eventRepository.emit('JobSuccess', { job, response });
+    const shouldRunFollowUp =
+      response &&
+      typeof response === 'string' &&
+      [JobStatus.Success, JobStatus.Skipped].includes(response) &&
+      !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
+    if (shouldRunFollowUp) {
+      await this.onDone(job);
+    } else if (job.name === JobName.AssetVideoEditGeneration && response === JobStatus.Failed) {
+      // FL-39: a failed version render still settles. Only the fork's history view listens for
+      // this; official clients would treat AssetEditReadyV2 as a published edit and refetch.
+      const asset = await this.assetRepository.getById(job.data.id);
+      if (asset) {
+        this.websocketRepository.clientSend('VideoEditVersionFailedV1', asset.ownerId, {
+          assetId: asset.id,
+          versionId: job.data.versionId ?? null,
+        });
+      }
     }
   }
 
