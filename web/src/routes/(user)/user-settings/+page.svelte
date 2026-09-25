@@ -23,12 +23,7 @@
   let { data }: Props = $props();
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
-  const personal = $derived(
-    personalSections($t, {
-      oauth: featureFlagsManager.value.oauth,
-      frameleafCloud: featureFlagsManager.value.frameleafCloud,
-    }),
-  );
+  const personal = $derived(personalSections($t, { oauth: featureFlagsManager.value.oauth }));
 </script>
 
 {#snippet sectionBody(section: SettingsHostSection)}
