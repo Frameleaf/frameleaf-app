@@ -2152,4 +2152,133 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
     });
   });
+
+  describe('face and person changes (FL-57)', () => {
+    const enabledConfig = {
+      machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
+    };
+    const namedFace = (name: string) => ({
+      id: newUuid(),
+      assetId,
+      personGroupId: newUuid(),
+      imageWidth: 400,
+      imageHeight: 500,
+      boundingBoxX1: 100,
+      boundingBoxX2: 200,
+      boundingBoxY1: 100,
+      boundingBoxY2: 200,
+      isVisible: true,
+      deletedAt: null,
+      correctedAt: null,
+      sourceType: 'machine-learning' as never,
+      updatedAt: new Date(),
+      updateId: newUuid(),
+      person: { id: newUuid(), name, isHidden: false } as never,
+    });
+    const publishedDescription = () =>
+      mocks.asset.upsertMetadata.mock.calls.some(
+        (call) =>
+          (call[1][0]?.value as { description?: { status?: string } } | undefined)?.description?.status === 'success',
+      );
+
+    beforeEach(() => {
+      mocks.systemMetadata.get.mockResolvedValue(enabledConfig);
+      mocks.machineLearning.describeImage.mockResolvedValue({
+        description: 'Ada is at the beach.',
+        people: [],
+        environment: 'beach',
+        objects: [],
+        visible_text: [],
+        context: '',
+        tags: ['beach'],
+      });
+    });
+
+    it('publishes nothing and describes again when a name changes while the model is working', async () => {
+      // the names the prompt got, then the names under the publish lock after a rename
+      mocks.person.getFaces.mockResolvedValueOnce([namedFace('Ada')]).mockResolvedValue([namedFace('Ada Lovelace')]);
+
+      await expect(sut.describeAsset(assetId)).resolves.toEqual({
+        status: JobStatus.Skipped,
+        reasonKey: 'identity-changed',
+      });
+
+      expect(publishedDescription()).toBe(false);
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.ImageDescription, data: { id: assetId } });
+    });
+
+    it('fails a plan stage instead of queueing, so the plan retries with its pinned destination', async () => {
+      const pinned = { ...mlDestinationStub.local, id: newUuid() };
+      mocks.mlDestination.getById.mockResolvedValue(pinned);
+      mocks.person.getFaces.mockResolvedValueOnce([namedFace('Ada')]).mockResolvedValue([]);
+
+      await expect(sut.describeAsset(assetId, { planRun: true, enrichmentDestinationId: pinned.id })).resolves.toEqual({
+        status: JobStatus.Failed,
+        reasonKey: 'identity-changed',
+      });
+
+      expect(publishedDescription()).toBe(false);
+      expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.ImageDescription, data: { id: assetId } });
+    });
+
+    it('publishes when the names are unchanged', async () => {
+      mocks.person.getFaces.mockResolvedValue([namedFace('Ada')]);
+      await expect(sut.describeAsset(assetId)).resolves.toEqual({ status: JobStatus.Success });
+      expect(publishedDescription()).toBe(true);
+    });
+
+    it('describes again only the affected assets whose generated description names other people', async () => {
+      const stale = newUuid();
+      const current = newUuid();
+      const manualOnly = newUuid();
+      const names = identityHash(['Ada']);
+      mocks.asset.getById.mockImplementation((id: string) =>
+        Promise.resolve({ id, ownerId, type: AssetType.Image, deletedAt: null } as never),
+      );
+      mocks.person.getFaces.mockResolvedValue([namedFace('Ada')]);
+      mocks.database.withAssetMetadataLock.mockImplementation((_id, fn) => fn({} as never));
+      const stored: Record<string, unknown> = {
+        [stale]: {
+          description: { status: 'success', result: {}, provenance: { identityHash: identityHash(['Eve']) } },
+        },
+        [current]: { description: { status: 'success', result: {}, provenance: { identityHash: names } } },
+        [manualOnly]: {},
+      };
+      mocks.asset.getMetadataByKey.mockImplementation((id: string) =>
+        Promise.resolve({ value: stored[id] ?? {} } as never),
+      );
+      mocks.person.getAssetIdsForPeople.mockResolvedValueOnce([stale, current, manualOnly]).mockResolvedValue([]);
+      const personGroupId = newUuid();
+
+      await expect(sut.handlePersonIdentityRefresh({ ownerId, personGroupIds: [personGroupId] })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.person.getAssetIdsForPeople).toHaveBeenCalledWith(ownerId, [personGroupId], {
+        after: undefined,
+        limit: expect.any(Number),
+      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.ImageDescription, data: { id: stale } }]);
+      expect(mocks.job.queueAll).not.toHaveBeenCalledWith(
+        expect.arrayContaining([{ name: JobName.ImageDescription, data: { id: current } }]),
+      );
+    });
+
+    it('withdraws stale generated captions of an affected video', async () => {
+      const video = newUuid();
+      const moments = { withdrawStaleCaptions: vi.fn().mockResolvedValue(2) };
+      sut.useVideoMomentRepository(moments as never);
+      mocks.asset.getById.mockResolvedValue({ id: video, ownerId, type: AssetType.Video, deletedAt: null } as never);
+      mocks.person.getFaces.mockResolvedValue([namedFace('Ada')]);
+      mocks.database.withAssetMetadataLock.mockImplementation((_id, fn) => fn({} as never));
+      mocks.asset.getMetadataByKey.mockResolvedValue({ value: {} } as never);
+      mocks.person.getAssetIdsForPeople.mockResolvedValue([]);
+
+      await sut.handlePersonIdentityRefresh({ ownerId, assetIds: [video] });
+
+      expect(moments.withdrawStaleCaptions).toHaveBeenCalledWith(video, identityHash(['Ada']));
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
+    });
+  });
 });

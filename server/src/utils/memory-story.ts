@@ -300,3 +300,84 @@ export const placeLabel = (place: StoryPlace | null): string | undefined => {
   const parts = [place.city, place.city ? null : place.state, place.country].filter(Boolean);
   return parts.length > 0 ? parts.join(', ') : undefined;
 };
+
+/* -------------------------------------------------------------------------------------------- */
+/* Pet stories (FL-58)                                                                          */
+/* -------------------------------------------------------------------------------------------- */
+
+/** a named pet needs at least this many confirmed photos in a month for a story about it */
+export const MIN_PET_STORY_ASSETS = 5;
+
+/** the most photos a pet story keeps, spread across the month's days */
+export const MAX_PET_STORY_ASSETS = 40;
+
+export type PetStoryCandidate = {
+  petId: string;
+  name: string;
+  species: string;
+  assetId: string;
+  /** the asset's local wall clock, stored as a UTC instant */
+  localDateTime: Date;
+};
+
+export type PetStoryGroup = {
+  petId: string;
+  name: string;
+  species: string;
+  /** the owner's local month, 'yyyy-MM' */
+  month: string;
+  /** confirmed photos of the pet that month, before the diversity pass */
+  assetCount: number;
+  assetIds: string[];
+};
+
+/**
+ * One story per named pet per local month with enough confirmed photos. Only the owner's
+ * confirmed observations reach this (the query sees nothing else), and a pet without a name has no
+ * story: "Moments with" needs someone to be with. Photos are spread across the month's days.
+ */
+export const groupPetStories = (candidates: PetStoryCandidate[]): PetStoryGroup[] => {
+  const byPet = new Map<string, { month: string; rows: PetStoryCandidate[] }>();
+  for (const candidate of candidates) {
+    if (!candidate.name.trim()) {
+      continue;
+    }
+    const month = DateTime.fromJSDate(candidate.localDateTime, { zone: 'utc' }).toFormat('yyyy-MM');
+    const key = `${candidate.petId}:${month}`;
+    const entry = byPet.get(key) ?? { month, rows: [] };
+    entry.rows.push(candidate);
+    byPet.set(key, entry);
+  }
+
+  const stories: PetStoryGroup[] = [];
+  for (const { month, rows } of byPet.values()) {
+    const unique = new Map(rows.map((row) => [row.assetId, row]))
+      .values()
+      .toArray()
+      .sort((a, b) => a.localDateTime.getTime() - b.localDateTime.getTime() || a.assetId.localeCompare(b.assetId));
+    if (unique.length < MIN_PET_STORY_ASSETS) {
+      continue;
+    }
+    const kept = diversifyByDay(
+      unique.map((row) => ({
+        id: row.assetId,
+        localDateTime: row.localDateTime,
+        city: null,
+        state: null,
+        country: null,
+      })),
+      MAX_PET_STORY_ASSETS,
+    );
+    const [first] = unique;
+    stories.push({
+      petId: first.petId,
+      name: first.name.trim(),
+      species: first.species,
+      month,
+      assetCount: unique.length,
+      assetIds: kept.map(({ id }) => id),
+    });
+  }
+
+  return stories.sort((a, b) => a.month.localeCompare(b.month) || a.petId.localeCompare(b.petId));
+};

@@ -4,35 +4,38 @@
    * (`DetailPanelPeople.svelte`), ported from the design template's `mv-chip-menu`
    * (`design/frameleaf/template/src/MediaViewer.jsx`, `PeopleSection`).
    *
-   * Every action below calls the real face/person endpoints that already ship in
-   * production Immich — `reassignFacesById`, `createPerson`, `deleteFace`. Since V-22 this
-   * menu is the only per-face editing surface in the info panel (the legacy "Edit people"
-   * side panel is gone), so it also serves unassigned faces: the prototype's `peopleChips`
-   * (media-viewer.mjs) gives every detected face a chip, named "Unnamed person" when it has
-   * no person, with the chip menu of MediaViewer.jsx:2182-2218. For such a face this menu
-   * offers Reassign / Create / Remove: Open person needs a person, and Hide face is kept
-   * for assigned faces only (FL-38 V-22 scope; the prototype also offers it there).
+   * Every action calls the real face/person endpoints. Since V-22 this menu is the only
+   * per-face editing surface in the info panel, so it also serves unassigned faces: the
+   * prototype's `peopleChips` (media-viewer.mjs:451) gives every detected face a chip, named
+   * "Unnamed person" when it has no person, with the chip menu of MediaViewer.jsx:2920-2988
+   * (Open person / Reassign face… / Create new person… / Remove face / Hide face). Hide face is
+   * offered for unassigned faces too (owner default, FL-146).
    *
-   * Nothing here writes to a derived/local view: the prototype's `face-tags.mjs`
-   * localStorage model is design evidence only, not something production reproduces (see
-   * the FL-38 Jira ticket and `AGENT-BRIEF.md`).
+   * FL-38 corrections are revision-checked: reassign, create-and-assign, hide and show go
+   * through `correctFace` and remove through `deleteFace`, each at the face `revision` this chip
+   * was drawn from (and, for reassignment, the person it showed). When another view changed
+   * the face meanwhile the server answers 409; the menu then says so and re-reads the faces
+   * instead of overwriting that change.
    *
-   * "Remove face" and "Hide face" both go through `deleteFace`, which already exposes a
-   * `force` flag: `force: true` permanently deletes the face (`person.repository.ts`
-   * `deleteAssetFace`), `force: false` soft-deletes it (`softDeleteAssetFaces`, i.e. sets
-   * `deletedAt` while keeping the row recoverable). That distinction already matches the
-   * design's "remove" vs "hide" split, so no server/DTO change is needed.
+   * Remove is permanent (`deleteFace` with `force`). Hide is the server's restorable soft
+   * delete (`correctFace` `hidden: true` sets `deletedAt`; face detection keeps such a face
+   * hidden rather than re-adding it), and "Show face" on a hidden face's chip — listed with
+   * the People section's "Show hidden" toggle — brings it back. `asset_face.isVisible` is not
+   * used for this: it records whether a crop left the face in view and is recomputed on every
+   * edit. The menu also names the face's provenance (detected, added by you, corrected).
    */
   import { goto } from '$app/navigation';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
+  import { faceProvenance, type FaceProvenance } from '$lib/frameleaf/face-tags';
   import {
+    correctFace,
     createPerson,
     deleteFace,
     getAllPeople,
-    reassignFacesById,
+    isHttpError,
     type AssetFaceResponseDto,
     type PersonResponseDto,
   } from '@immich/sdk';
@@ -44,9 +47,10 @@
     mdiClose,
     mdiDotsVertical,
     mdiEyeOffOutline,
+    mdiEyeOutline,
   } from '@mdi/js';
   import { tick } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   type Props = {
     /** Absent for a detected face that nobody has been assigned to yet. */
@@ -60,6 +64,30 @@
   const { person, face, previousRoute, onFacesChanged }: Props = $props();
 
   const name = $derived(person?.name || $t('unnamed_person'));
+  const isHidden = $derived(!!face.hiddenAt);
+  const PROVENANCE: Record<FaceProvenance, Translations> = {
+    detected: 'frameleaf_face_provenance_detected',
+    manual: 'frameleaf_face_provenance_manual',
+    corrected: 'frameleaf_face_provenance_corrected',
+  };
+  const provenance = $derived(PROVENANCE[faceProvenance(face)]);
+
+  /** A revision-checked correction of this face, as the chip showed it. */
+  const correct = (change: { personId?: string | null; hidden?: boolean }) =>
+    correctFace({
+      id: face.id,
+      assetFaceCorrectionDto: { expectedRevision: face.revision, expectedPersonId: person?.id ?? null, ...change },
+    });
+
+  /** 409: another view changed this face; say so and show what the server holds now. */
+  const handleFailure = async (error: unknown, message: string) => {
+    if (isHttpError(error) && error.status === 409) {
+      toastManager.warning($t('frameleaf_faces_conflict'));
+      await onFacesChanged();
+      return;
+    }
+    handleError(error, message);
+  };
 
   let open = $state(false);
   let mode = $state<'menu' | 'reassign' | 'create'>('menu');
@@ -119,11 +147,12 @@
   const reassignTo = async (target: PersonResponseDto) => {
     isBusy = true;
     try {
-      await reassignFacesById({ id: target.id, faceDto: { id: face.id } });
+      await correct({ personId: target.id });
       toastManager.primary($t('frameleaf_faces_reassigned_toast', { values: { name: target.name } }));
       await finishMutation();
     } catch (error) {
-      handleError(error, $t('frameleaf_faces_reassign_error'));
+      open = false;
+      await handleFailure(error, $t('frameleaf_faces_reassign_error'));
     } finally {
       isBusy = false;
     }
@@ -137,11 +166,12 @@
     isBusy = true;
     try {
       const created = await createPerson({ personCreateDto: { name } });
-      await reassignFacesById({ id: created.id, faceDto: { id: face.id } });
+      await correct({ personId: created.id });
       toastManager.primary($t('frameleaf_faces_created_toast', { values: { name } }));
       await finishMutation();
     } catch (error) {
-      handleError(error, $t('frameleaf_faces_create_error'));
+      open = false;
+      await handleFailure(error, $t('frameleaf_faces_create_error'));
     } finally {
       isBusy = false;
     }
@@ -156,25 +186,25 @@
       return;
     }
     try {
-      // Permanent: deletes the asset_face row outright.
-      await deleteFace({ id: face.id, assetFaceDeleteDto: { force: true } });
+      // Permanent: deletes the asset_face row outright, only at the revision shown.
+      await deleteFace({ id: face.id, assetFaceDeleteDto: { force: true, expectedRevision: face.revision } });
       toastManager.primary($t('frameleaf_faces_removed_toast', { values: { name } }));
       await onFacesChanged();
     } catch (error) {
-      handleError(error, $t('frameleaf_faces_remove_error'));
+      await handleFailure(error, $t('frameleaf_faces_remove_error'));
     }
   };
 
-  const hideFace = async () => {
+  const setHidden = async (hidden: boolean) => {
     open = false;
     try {
-      // Recoverable: soft-deletes the asset_face row (sets deletedAt) instead of
-      // removing it, so it can come back through a re-detection pass.
-      await deleteFace({ id: face.id, assetFaceDeleteDto: { force: false } });
-      toastManager.primary($t('frameleaf_faces_hidden_toast', { values: { name } }));
+      await correct({ hidden });
+      toastManager.primary(
+        $t(hidden ? 'frameleaf_faces_hidden_toast' : 'frameleaf_faces_shown_toast', { values: { name } }),
+      );
       await onFacesChanged();
     } catch (error) {
-      handleError(error, $t('frameleaf_faces_hide_error'));
+      await handleFailure(error, $t(hidden ? 'frameleaf_faces_hide_error' : 'frameleaf_faces_show_error'));
     }
   };
 
@@ -198,6 +228,7 @@
       <Icon icon={mdiDotsVertical} aria-hidden="true" size="16" />
     {/snippet}
     {#if mode === 'menu'}
+      <p class="fl-face-provenance" data-provenance={faceProvenance(face)}>{$t(provenance)}</p>
       {#if person}
         <MenuItem onSelect={openPerson}>
           <Icon icon={mdiAccountOutline} aria-hidden="true" size="18" />
@@ -216,8 +247,13 @@
         <Icon icon={mdiClose} aria-hidden="true" size="18" />
         {$t('frameleaf_faces_remove_face')}
       </MenuItem>
-      {#if person && !person.isHidden}
-        <MenuItem onSelect={hideFace} disabled={isBusy}>
+      {#if isHidden}
+        <MenuItem onSelect={() => setHidden(false)} disabled={isBusy}>
+          <Icon icon={mdiEyeOutline} aria-hidden="true" size="18" />
+          {$t('frameleaf_faces_show_face')}
+        </MenuItem>
+      {:else if !person?.isHidden}
+        <MenuItem onSelect={() => setHidden(true)} disabled={isBusy}>
           <Icon icon={mdiEyeOffOutline} aria-hidden="true" size="18" />
           {$t('frameleaf_faces_hide_face')}
         </MenuItem>
@@ -295,6 +331,12 @@
   .fl-face-trigger :global(.menu-root > button:hover) {
     color: var(--fl-text);
     background: var(--fl-raised);
+  }
+  .fl-face-provenance {
+    margin: 0;
+    padding: 0.25rem 0.625rem 0.375rem;
+    font-size: 0.75rem;
+    color: var(--fl-muted);
   }
   .fl-face-picker {
     display: flex;

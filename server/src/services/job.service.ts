@@ -391,6 +391,9 @@ export class JobService extends BaseService {
       }
 
       case JobName.SmartSearch: {
+        // FL-58: a fresh CLIP embedding is what pet recognition reads. The handler returns at once
+        // for an owner who has not confirmed a pet yet, before any destination is contacted.
+        await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
         if (item.data.source === 'upload') {
           const asset = await this.assetRepository.getById(item.data.id);
           await this.jobRepository.queue({

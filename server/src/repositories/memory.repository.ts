@@ -201,8 +201,13 @@ export class MemoryRepository implements IBulkAsset {
       .$if(hasItems(options.excludeSubjectIds), (qb) =>
         qb.where((eb) =>
           eb.or([
-            eb(sql`"memory"."data"->>'subjectId'`, 'is', null),
-            eb(sql`"memory"."data"->>'subjectId'`, 'not in', options.excludeSubjectIds!),
+            // FL-58 pet stories name their pet as `petId`
+            eb(sql`coalesce("memory"."data"->>'subjectId', "memory"."data"->>'petId')`, 'is', null),
+            eb(
+              sql`coalesce("memory"."data"->>'subjectId', "memory"."data"->>'petId')`,
+              'not in',
+              options.excludeSubjectIds!,
+            ),
           ]),
         ),
       )
@@ -369,6 +374,63 @@ export class MemoryRepository implements IBulkAsset {
       .execute();
 
     return rows.map(({ memoryAt }) => memoryAt);
+  }
+
+  /**
+   * Pet stories (FL-58): the photos the owner confirmed each of their named, visible pets in, captured
+   * (owner's local time) inside the window. Timeline photos only, so Locked, archived and hidden
+   * photos never reach a story; only the owner's own pets and own assets are read.
+   */
+  // No @GenerateSql: like getEventStoryCandidates, the snapshot needs a live database.
+  getPetStoryCandidates(ownerId: string, from: Date, to: Date) {
+    return this.db
+      .selectFrom('pet_observation')
+      .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+      .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
+      .select([
+        'pet.id as petId',
+        'pet.name as name',
+        'pet.species as species',
+        'asset.id as assetId',
+        'asset.localDateTime as localDateTime',
+      ])
+      .where('pet.ownerId', '=', ownerId)
+      .where('pet.isHidden', '=', false)
+      .where('pet.name', '!=', '')
+      .where('pet_observation.state', '=', PetObservationState.Confirmed)
+      .where('asset.ownerId', '=', ownerId)
+      .where(isTimelineVisible('asset'))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.localDateTime', '>=', from)
+      .where('asset.localDateTime', '<=', to)
+      .orderBy('asset.localDateTime', 'asc')
+      .execute();
+  }
+
+  /** `petId:month` of every pet story the owner already has in the window, deleted ones included. */
+  async getPetStoryKeys(ownerId: string, from: Date, to: Date): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('memory')
+      .select([sql<string>`memory.data->>'petId'`.as('petId'), sql<string>`memory.data->>'month'`.as('month')])
+      .where('ownerId', '=', ownerId)
+      .where('type', '=', MemoryType.PetStory)
+      .where('memoryAt', '>=', from)
+      .where('memoryAt', '<=', to)
+      .execute();
+    return new Set(rows.map(({ petId, month }) => `${petId}:${month}`));
+  }
+
+  /** The owner's pets a set of pet stories name, as they are now. */
+  getStoryPets(ownerId: string, petIds: string[]) {
+    if (petIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.db
+      .selectFrom('pet')
+      .select(['pet.id', 'pet.name', 'pet.species', 'pet.isHidden'])
+      .where('pet.ownerId', '=', ownerId)
+      .where('pet.id', 'in', petIds)
+      .execute();
   }
 
   // Private highlight exports (FL-62). These live here rather than in their own repository

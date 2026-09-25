@@ -536,4 +536,62 @@ describe(MemoryService.name, () => {
       await expect(sut.onMemoriesCleanup()).resolves.not.toThrow();
     });
   });
+
+  describe('pet stories (FL-58)', () => {
+    it('reads only the owner’s confirmed photos of named, visible pets on the timeline', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const when = new Date('2026-08-10T12:00:00.000Z');
+      const { asset: timeline } = await ctx.newAsset({ ownerId: user.id, localDateTime: when });
+      const { asset: rejected } = await ctx.newAsset({ ownerId: user.id, localDateTime: when });
+      const { asset: strangers } = await ctx.newAsset({ ownerId: other.id, localDateTime: when });
+      const named = await ctx.database
+        .insertInto('pet')
+        .values({ ownerId: user.id, name: 'Biscuit' })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      const nameless = await ctx.database
+        .insertInto('pet')
+        .values({ ownerId: user.id, name: '' })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      await ctx.database
+        .insertInto('pet_observation')
+        .values([
+          { petId: named.id, assetId: timeline.id },
+          { petId: named.id, assetId: rejected.id, state: PetObservationState.Rejected },
+          { petId: named.id, assetId: strangers.id },
+          { petId: nameless.id, assetId: timeline.id },
+        ])
+        .execute();
+
+      const rows = await ctx
+        .get(MemoryRepository)
+        .getPetStoryCandidates(user.id, new Date('2026-08-01T00:00:00.000Z'), new Date('2026-08-31T23:59:59.000Z'));
+
+      expect(rows).toEqual([expect.objectContaining({ petId: named.id, name: 'Biscuit', assetId: timeline.id })]);
+    });
+
+    it('remembers every pet story it made in the window, deleted ones too', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const repository = ctx.get(MemoryRepository);
+      const memory = await repository.create(
+        {
+          ownerId: user.id,
+          type: MemoryType.PetStory,
+          data: { kind: 'pet_story', year: 2026, month: '2026-08', petId: 'pet-1', name: 'Biscuit' } as never,
+          memoryAt: '2026-08-01T00:00:00.000Z',
+          showAt: '2026-09-01T00:00:00.000Z',
+        },
+        new Set(),
+      );
+      await ctx.database.updateTable('memory').set({ deletedAt: new Date() }).where('id', '=', memory.id).execute();
+
+      await expect(
+        repository.getPetStoryKeys(user.id, new Date('2026-07-01T00:00:00.000Z'), new Date('2026-09-30T00:00:00.000Z')),
+      ).resolves.toEqual(new Set(['pet-1:2026-08']));
+    });
+  });
 });

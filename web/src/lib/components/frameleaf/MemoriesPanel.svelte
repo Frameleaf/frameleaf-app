@@ -67,6 +67,7 @@
     mdiImageMultipleOutline,
     mdiMapMarkerOutline,
     mdiMinusCircleOutline,
+    mdiPawOutline,
     mdiPlay,
     mdiRestore,
     mdiStarOutline,
@@ -83,6 +84,7 @@
     year_in_review: mdiStarOutline,
     birthday: mdiCakeVariantOutline,
     person_recap: mdiAccountHeartOutline,
+    pet_story: mdiPawOutline,
   };
 
   // "Today" is the viewer's local day, and it moves on at midnight while the page stays open.

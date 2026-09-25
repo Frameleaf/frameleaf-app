@@ -80,6 +80,9 @@ export const memoryOverlineKey = (kind: MemoryStoryKind | undefined): Translatio
     case 'year_in_review': {
       return 'frameleaf_memories_overline_highlights';
     }
+    case 'pet_story': {
+      return 'frameleaf_memories_overline_pet';
+    }
     // FL-62: the two server kinds the template has no card for keep the same one-word overline.
     case 'birthday': {
       return 'frameleaf_memories_overline_birthday';

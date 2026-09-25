@@ -436,10 +436,19 @@ export class VideoMomentRepository {
       captionIdentityHash: string;
       captionDestinationId: string | null;
     },
-  ): Promise<number> {
+    /**
+     * FL-57: checked under the asset's metadata lock (the lock a face change's invalidation takes):
+     * false when the video's confirmed names changed while it was captioned, and nothing is written.
+     */
+    namesStillCurrent?: () => Promise<boolean>,
+  ): Promise<number | 'identity-changed'> {
     return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${assetId})::int)`.execute(trx);
       if (!(await this.framesMatchSource(trx, assetId))) {
         return 0;
+      }
+      if (namesStillCurrent && !(await namesStillCurrent())) {
+        return 'identity-changed' as const;
       }
       const frames = await trx
         .selectFrom('video_moment_frame')
@@ -485,6 +494,30 @@ export class VideoMomentRepository {
           .execute();
       }
       return written;
+    });
+  }
+
+  /**
+   * FL-57: withdraws the generated captions of a video made with other confirmed names than
+   * `identityHash`: their text is removed (so moment search no longer finds the old names) and their
+   * provenance notes why. Manual moments are never touched. Taken under the asset's metadata lock, as
+   * `publishCaptions` is. Returns how many were withdrawn.
+   */
+  async withdrawStaleCaptions(assetId: string, identityHash: string): Promise<number> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${assetId})::int)`.execute(trx);
+      const result = await trx
+        .updateTable('video_moment')
+        .set({
+          caption: null,
+          provenance: sql`coalesce(provenance, '{}'::jsonb) || jsonb_build_object('withdrawn', 'identity-changed', 'withdrawnAt', now())`,
+        })
+        .where('assetId', '=', asUuid(assetId))
+        .where('source', '=', VideoMomentSource.Generated)
+        .where('caption', 'is not', null)
+        .where(sql<boolean>`(provenance ->> 'identityHash') is distinct from ${identityHash}`)
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows ?? 0);
     });
   }
 
