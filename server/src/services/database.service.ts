@@ -169,18 +169,30 @@ export class DatabaseService extends BaseService {
     if (pending.length === 0) {
       return;
     }
-    if (skipped === 'awaiting-return') {
-      this.logger.log(
-        `${pending.length} newer Frameleaf migration(s) wait for the return from the official server (immich-admin fork-handoff prepare-fork)`,
-      );
-    } else if (skipped === 'awaiting-activation') {
-      this.logger.warn(
-        `${pending.length} newer Frameleaf migration(s) wait until the library is activated (ready to active); until then the next cutover's catalog check will not pass`,
-      );
-    } else if (skipped === 'unexpected-phase') {
-      this.logger.warn(
-        `${pending.length} newer Frameleaf migration(s) were not applied because the library is in an unexpected handoff phase; check immich-admin fork-schema status`,
-      );
+    switch (skipped) {
+      case 'awaiting-return': {
+        this.logger.log(
+          `${pending.length} newer Frameleaf migration(s) wait for the return from the official server (immich-admin fork-handoff prepare-fork)`,
+        );
+        break;
+      }
+      case 'awaiting-activation': {
+        this.logger.warn(
+          `${pending.length} newer Frameleaf migration(s) wait until the library is activated (ready to active); until then the next cutover's catalog check will not pass`,
+        );
+        break;
+      }
+      case 'unexpected-phase': {
+        this.logger.warn(
+          `${pending.length} newer Frameleaf migration(s) were not applied because the library is in an unexpected handoff phase; check immich-admin fork-schema status`,
+        );
+        break;
+      }
+      case 'not-cut-over':
+      case 'no-frameleaf-schema':
+      case null: {
+        break;
+      }
     }
   }
 
