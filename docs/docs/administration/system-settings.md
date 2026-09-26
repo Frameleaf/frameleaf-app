@@ -244,7 +244,7 @@ The system administrator can choose to delete users through the administration p
 
 ## Version Check
 
-When this option is enabled the server checks Frameleaf's own GitHub releases (`https://api.github.com/repos/Frameleaf/frameleaf-app/releases`) for a new version every hour, and administrators see an announcement that links to the release notes. The server reads the version from the `frameleaf-v<version>-<n>` release tag. No Immich service is contacted, and no library data is sent. The **Update channel** choice picks Stable releases or also release candidates.
+When this option is enabled the server asks the Frameleaf release feed (`https://api.frameleaf.cloud/v1/releases/latest`) for a new version every hour, and administrators see an announcement that links to the release notes. If the feed cannot answer, the server asks Frameleaf's own GitHub releases (`https://api.github.com/repos/Frameleaf/frameleaf-app/releases`) instead and reads the version from the `frameleaf-v<version>-<n>` release tag. No Immich service is contacted, and no library data or instance identifier is sent to either. The **Update channel** choice picks Stable releases (`stable`) or also release candidates (`beta`). Turn this option off to stop the check.
 
 Checking never installs anything. An administrator can also check at any time with **Check for updates** in About Frameleaf or on the Versions & compatibility page, even when automatic checks are off. Other accounts see the result of the last check in About Frameleaf.
 
