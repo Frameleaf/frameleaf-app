@@ -28,16 +28,28 @@ export const billingValues = (
 /**
  * What an estimate or confirmation refusal asks of the person (FL-162). `model` goes back to the
  * model slider (409 `model-mismatch`), `estimate` estimates again (409 `estimate-expired`, or the
- * terms changed), `money` shows the refusal as it is (402: never a lighter model), and anything else
- * is shown as an error.
+ * terms changed), `preparing` asks again shortly (409 `input-preparing`: a whole video is being
+ * prepared in the background), `money` shows the refusal as it is (402: never a lighter model), and
+ * anything else is shown as an error.
  */
-export type CloudJobRefusal = 'model' | 'estimate' | 'money' | 'other';
+export type CloudJobRefusal = 'model' | 'estimate' | 'preparing' | 'money' | 'other';
+
+/** How long to wait before asking again for an estimate whose video is being prepared. */
+export const preparingRetryMs = (error: unknown): number => {
+  const seconds = isHttpError(error)
+    ? (error.data as { retryAfterSeconds?: unknown } | undefined)?.retryAfterSeconds
+    : undefined;
+  return typeof seconds === 'number' && seconds > 0 ? Math.min(seconds, 60) * 1000 : 5000;
+};
 
 export const cloudJobRefusal = (error: unknown): CloudJobRefusal => {
   if (!isHttpError(error)) {
     return 'other';
   }
   const code = (error.data as { code?: unknown } | undefined)?.code;
+  if (error.status === 409 && code === 'input-preparing') {
+    return 'preparing';
+  }
   if (error.status === 402) {
     return 'money';
   }

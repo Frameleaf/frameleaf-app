@@ -933,11 +933,14 @@
 </div>
 
 {#if cloudJob}
-  <CloudJobDialog
-    bind:open={cloudJobOpen}
-    title={cloudJob.title}
-    summary={cloudJob.summary}
-    request={cloudJob.request}
-    onSubmitted={cloudJobSubmitted}
-  />
+  <!-- a new request is a new dialog: nothing of the previous job or estimate carries over -->
+  {#key cloudJob}
+    <CloudJobDialog
+      bind:open={cloudJobOpen}
+      title={cloudJob.title}
+      summary={cloudJob.summary}
+      request={cloudJob.request}
+      onSubmitted={cloudJobSubmitted}
+    />
+  {/key}
 {/if}
