@@ -227,11 +227,11 @@ export class StorageTemplateService extends BaseService {
       const pending = await this.moveRepository.getPendingAssetMoves();
       const originals = new Set<string>();
       const generated = new Set<string>();
-      const finished: string[] = [];
+      const finished: PendingAssetMove[] = [];
       for (const move of pending) {
         const isTemplateMove = move.pathType === AssetPathType.Original || move.pathType === AssetFileType.Sidecar;
         if (await this.isMoveFinished(move, isTemplateMove)) {
-          finished.push(move.id);
+          finished.push(move);
           continue;
         }
         (isTemplateMove ? originals : generated).add(move.entityId);
@@ -259,11 +259,35 @@ export class StorageTemplateService extends BaseService {
     ) {
       return true;
     }
-    const [atOld, atNew] = await Promise.all([
-      this.storageRepository.checkFileExists(move.oldPath),
-      this.storageRepository.checkFileExists(move.newPath),
-    ]);
-    return !atOld && !atNew;
+    // Only a file that is certainly gone ends the record: a storage that cannot be read tonight (an
+    // offline mount, EIO, EACCES) may still hold the only copy the record can recover.
+    for (const file of [move.oldPath, move.newPath]) {
+      if ((await this.getFileState(file)) !== 'missing' || !(await this.isMediaFolderReachable(file))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** `missing` only when the filesystem says so (ENOENT); any other failure leaves it unknown. */
+  private async getFileState(file: string): Promise<'present' | 'missing' | 'unknown'> {
+    try {
+      await this.storageRepository.stat(file);
+      return 'present';
+    } catch (error: any) {
+      return error?.code === 'ENOENT' ? 'missing' : 'unknown';
+    }
+  }
+
+  /** Whether the media folder holding `file` is mounted: its mount-check file (`.immich`) is there. */
+  private async isMediaFolderReachable(file: string): Promise<boolean> {
+    for (const folder of Object.values(StorageFolder)) {
+      const base = StorageCore.getBaseFolder(folder);
+      if (file.startsWith(`${base}/`)) {
+        return (await this.getFileState(path.join(base, '.immich'))) === 'present';
+      }
+    }
+    return false;
   }
 
   @OnEvent({ name: 'AssetDelete' })
