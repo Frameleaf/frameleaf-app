@@ -49,13 +49,13 @@
 ## Inhoud
 
 - [Officiële documentatie](https://docs.immich.app/)
-- [Introductie](https://docs.immich.app/overview/introduction)
-- [Installatie](https://docs.immich.app/install/requirements)
+- [Introductie](https://help.frameleaf.ai/overview/quick-start)
+- [Installatie](https://help.frameleaf.ai/install/requirements)
 - [Toekomstplannen](https://immich.app/roadmap)
 - [Demo](#demo)
 - [Functies](#functies)
-- [Vertalingen](https://docs.immich.app/developer/translations)
-- [Richtlijnen voor bijdragen](https://docs.immich.app/overview/support-the-project)
+- [Vertalingen](https://help.frameleaf.ai/developer/translations)
+- [Richtlijnen voor bijdragen](https://help.frameleaf.ai/overview/support-the-project)
 
 ## Demo
 
@@ -102,7 +102,7 @@ Je kunt de demo [hier](https://demo.immich.app/) bekijken. Voor de mobiele app k
 
 ## Vertalingen
 
-Je kunt [hier](https://docs.immich.app/developer/translations) meer over vertalingen lezen.
+Je kunt [hier](https://help.frameleaf.ai/developer/translations) meer over vertalingen lezen.
 
 ## Repository activiteit
 

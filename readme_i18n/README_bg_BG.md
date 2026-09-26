@@ -49,13 +49,13 @@
 ## Връзки
 
 - [Документация](https://docs.immich.app)
-- [За проекта](https://docs.immich.app/overview/introduction)
-- [Инсталиране](https://docs.immich.app/install/requirements)
+- [За проекта](https://help.frameleaf.ai/overview/quick-start)
+- [Инсталиране](https://help.frameleaf.ai/install/requirements)
 - [Пътна карта](https://immich.app/roadmap)
 - [Демо](#демо)
 - [Функции](#функции)
-- [Преводи](https://docs.immich.app/developer/translations)
-- [Принос към проекта](https://docs.immich.app/overview/support-the-project)
+- [Преводи](https://help.frameleaf.ai/developer/translations)
+- [Принос към проекта](https://help.frameleaf.ai/overview/support-the-project)
 
 ## Демо
 
@@ -104,7 +104,7 @@
 
 ## Преводи
 
-Повече за преводите [тук](https://docs.immich.app/developer/translations).
+Повече за преводите [тук](https://help.frameleaf.ai/developer/translations).
 
 <a href="https://hosted.weblate.org/engage/immich/">
 <img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="Translation status" />
