@@ -23,6 +23,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS "workflow_run_step_workflowId_idx" ON "workflow_run_step" ("workflowId");`.execute(
     db,
   );
+  await sql`CREATE INDEX IF NOT EXISTS "workflow_run_step_createdAt_idx" ON "workflow_run_step" ("createdAt");`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

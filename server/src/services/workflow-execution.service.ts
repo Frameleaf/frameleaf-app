@@ -78,6 +78,16 @@ type HostContext = {
 /** FL-179: how long a queued run's completed steps are kept for a replay of its job. */
 const WORKFLOW_RUN_STEP_RETENTION_DAYS = 7;
 
+/**
+ * FL-179: the execution id of the automatic retry a run queues, derived from the run's own. A replay of
+ * the run that queues the retry again queues the same job (its job id is the execution id), and a
+ * duplicate that still runs skips the steps the first one completed.
+ */
+export const getAutomaticRetryExecutionId = (executionId: string): string => {
+  const hex = createHash('sha256').update(`${executionId}:automatic-retry`).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+};
+
 export class WorkflowExecutionService extends BaseService {
   private jwtSecret!: string;
 
@@ -629,10 +639,13 @@ export class WorkflowExecutionService extends BaseService {
     let data = readResult.data;
 
     let haltedStepId: string | undefined;
+    // set when this is a replay that skipped a step an earlier run of the job completed
+    let replayed = false;
     for (const [index, step] of steps.entries()) {
       const definitionStep = expectedDefinition.steps.find((item) => item.id === step.id);
       const completed = completedSteps.get(step.id);
       if (completed) {
+        replayed = true;
         this.logger.debug(`Workflow ${workflowId} run ${runId} already completed step ${step.id}; skipping it`);
         if (completed.halted) {
           haltedStepId = step.id;
@@ -745,7 +758,8 @@ export class WorkflowExecutionService extends BaseService {
                 attempt: 1,
                 fromStepId: retryFromStepId,
                 definitionSha256: definitionSha256(expectedDefinition),
-                executionId: crypto.randomUUID(),
+                // FL-179: a replay of this run queues the same retry, not a second one
+                executionId: executionId ? getAutomaticRetryExecutionId(executionId) : crypto.randomUUID(),
               },
             });
           } catch (queueError: any) {
@@ -761,13 +775,37 @@ export class WorkflowExecutionService extends BaseService {
       }
     }
 
+    // FL-179: a replay of a run that already finished and logged it does not log it again
+    const finish = async (entry: RunLogEntry) => {
+      if (replayed && workflow.logging && (await this.isRunFinished(workflowId, runId, attempt))) {
+        this.logger.debug(`Workflow ${workflowId} run ${runId} was already recorded as ${entry.result}`);
+        return;
+      }
+      await record(entry);
+    };
+
     if (haltedStepId) {
-      await record({ result: WorkflowResult.Halted, workflowStepId: haltedStepId });
+      await finish({ result: WorkflowResult.Halted, workflowStepId: haltedStepId });
       this.logger.debug(`Workflow ${workflowId} run ${runId} stopped on step ${haltedStepId}`);
       return;
     }
 
-    await record({ result: WorkflowResult.Completed });
+    await finish({ result: WorkflowResult.Completed });
     this.logger.debug(`Workflow ${workflowId} run ${runId} executed successfully`);
+  }
+
+  /** Whether this attempt of the run is already logged as completed or halted; unknown counts as not. */
+  private async isRunFinished(workflowId: string, runId: string, attempt: number): Promise<boolean> {
+    try {
+      const latest = await this.workflowRepository.getLatestRunAttempt(workflowId, runId);
+      return (
+        !!latest &&
+        (latest.attempt ?? 0) === attempt &&
+        (latest.result === WorkflowResult.Completed || latest.result === WorkflowResult.Halted)
+      );
+    } catch (error: any) {
+      this.logger.warn(`Unable to read the run history of workflow ${workflowId} run ${runId}: ${error}`);
+      return false;
+    }
   }
 }
