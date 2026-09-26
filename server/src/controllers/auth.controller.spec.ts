@@ -66,7 +66,7 @@ describe(AuthController.name, () => {
       service.adminSignUp.mockReset();
       const { status } = await request(ctx.getHttpServer())
         .post('/auth/admin-sign-up')
-        .send({ name: 'admin', password: 'password', email: 'aDmIn@IMMICH.cloud' });
+        .send({ name: 'admin', password: 'password', email: 'aDmIn@ExAmPlE.CoM' });
       expect(status).toEqual(201);
       expect(service.adminSignUp).toHaveBeenCalledWith(expect.objectContaining({ email: 'admin@example.com' }));
     });

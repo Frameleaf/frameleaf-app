@@ -1324,7 +1324,7 @@ describe(AuthService.name, () => {
 
     it('should normalize the email from the OAuth profile before linking', async () => {
       const user = UserFactory.create();
-      const profile = OAuthProfileFactory.create({ email: '  TEST@IMMICH.CLOUD  ' });
+      const profile = OAuthProfileFactory.create({ email: '  TeSt@ExAmPlE.CoM  ' });
 
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
       mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile });
