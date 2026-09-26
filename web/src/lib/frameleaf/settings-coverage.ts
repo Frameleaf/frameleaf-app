@@ -165,6 +165,42 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: "change('allowPasswordOverRelay', value)",
   },
   {
+    pattern: 'frameleafCloud.remoteAccess.customHostname.*',
+    kind: 'resource-action',
+    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    evidence: 'setRemoteHostname({ remoteHostnameUpdateDto',
+  },
+  {
+    pattern: 'frameleafCloud.remoteAccess.directPort',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    evidence: 'update({ directPort: value }',
+  },
+  {
+    pattern: 'frameleafCloud.remoteAccess.enabled',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    evidence: '{ enabled: value }',
+  },
+  {
+    pattern: 'frameleafCloud.remoteAccess.mode',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    evidence: 'update({ mode: event.currentTarget.value as RemoteAccessMode })',
+  },
+  {
+    pattern: 'frameleafCloud.remoteAccess.portMapping',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    evidence: 'update({ portMapping: !value })',
+  },
+  {
+    pattern: 'frameleafCloud.remoteAccess.publicUrl',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    evidence: 'publicUrl: RemoteAccessPublicUrl.Custom',
+  },
+  {
     pattern: 'frameleafCloud.signIn.buttonText',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/FrameleafSignInSection.svelte',

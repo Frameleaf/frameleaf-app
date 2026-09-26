@@ -1,0 +1,97 @@
+import { faker } from '@faker-js/faker';
+import { expect, test } from '@playwright/test';
+import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
+import { CloudMockState, setupCloudMockApiRoutes } from 'src/ui/mock-network/cloud-network.js';
+
+/**
+ * Settings → Frameleaf Cloud → Remote access (FL-165) against a mocked server: why it cannot be turned
+ * on, turning it on with the public address, the custom hostname from its records to verified and
+ * "Use my domain", the connection test, and direct connections.
+ */
+const remotePage = '/user-settings?area=cloud&section=cloud-remote';
+
+const defaults = (): NonNullable<CloudMockState['remote']> => ({
+  entitled: true,
+  enabled: false,
+  mode: 'relay',
+  customHostname: null,
+  customHostnameStatus: null,
+  publicUrlChoice: 'frameleaf',
+  tested: false,
+});
+
+test.describe.configure({ mode: 'parallel' });
+test.describe('Frameleaf Cloud remote access', () => {
+  let mock: CloudMockState;
+
+  test.beforeEach(async ({ context }) => {
+    await setupBaseMockApiRoutes(context, faker.string.uuid());
+    mock = { state: 'linked', requests: [], remote: defaults() };
+    await setupCloudMockApiRoutes(context, mock);
+  });
+
+  test('explains why remote access cannot be turned on', async ({ page }) => {
+    mock.state = 'unlinked';
+    await page.goto(remotePage);
+    await expect(page.getByText('Link this server to a Frameleaf account first.').first()).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Allow remote access' })).toBeDisabled();
+
+    mock.state = 'linked';
+    mock.remote = { ...defaults(), entitled: false };
+    await page.reload();
+    await expect(page.getByText('Remote access is included with a Frameleaf Cloud plan.').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'See plans' })).toBeVisible();
+  });
+
+  test('turns remote access on and shows the public address', async ({ page }) => {
+    await page.goto(remotePage);
+    await page.getByRole('switch', { name: 'Allow remote access' }).click();
+    await expect(page.getByText('Remote access is on.')).toBeVisible();
+    await expect(page.getByText('https://r.u225vlzhsdlhwh4l.frameleaf.net').first()).toBeVisible();
+    await expect(page.getByText('This server only; the private key never leaves it')).toBeVisible();
+    expect(mock.requests).toContainEqual(
+      expect.objectContaining({ method: 'PUT', path: 'admin/cloud/remote', body: { enabled: true } }),
+    );
+  });
+
+  test('adds a custom hostname, verifies it and publishes it', async ({ page }) => {
+    mock.remote = { ...defaults(), enabled: true };
+    await page.goto(remotePage);
+    const hostname = page.getByPlaceholder('photos.example.com');
+    await hostname.fill('photos.frameleaf.net');
+    await expect(page.getByText('Use a domain you own; Frameleaf addresses are already set up.')).toBeVisible();
+
+    await hostname.fill('photos.example.com');
+    await expect(page.getByText('_acme-challenge.u225vlzhsdlhwh4l.frameleaf.net')).toBeVisible();
+    await page.getByRole('button', { name: 'Check DNS' }).click();
+    await expect(page.getByText('Waiting for DNS')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Check DNS' }).click();
+    await expect(page.getByText('photos.example.com is verified.')).toBeVisible();
+    await page.getByRole('button', { name: 'Use my domain' }).click();
+    await expect(page.getByText('https://photos.example.com').first()).toBeVisible();
+    expect(mock.requests).toContainEqual(
+      expect.objectContaining({ method: 'PUT', path: 'admin/cloud/remote', body: { publicUrl: 'custom' } }),
+    );
+
+    await page.getByRole('button', { name: 'Remove domain' }).click();
+    await expect(page.getByText('Custom domain removed.')).toBeVisible();
+  });
+
+  test('runs the connection test', async ({ page }) => {
+    mock.remote = { ...defaults(), enabled: true };
+    await page.goto(remotePage);
+    await page.getByRole('button', { name: 'Test connection' }).click();
+    await expect(page.getByText('Connection test finished.')).toBeVisible();
+    await expect(page.getByText('This server answered over HTTPS through the direct listener.')).toBeVisible();
+  });
+
+  test('offers port forwarding for direct connections', async ({ page }) => {
+    mock.remote = { ...defaults(), enabled: true };
+    await page.goto(remotePage);
+    await expect(page.getByText('Port forwarding')).toBeHidden();
+    await page.getByRole('combobox').selectOption('relay-and-direct');
+    await expect(page.getByText('Port forwarding')).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'I forward the port myself' })).toBeVisible();
+  });
+});
