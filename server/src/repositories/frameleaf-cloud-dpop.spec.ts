@@ -11,6 +11,7 @@ import { FrameleafCloudError, FrameleafDiscoveryDocument } from 'src/utils/frame
 import { BoundTokenRefusedError, FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
 import {
   FakeCloud,
+  FakeCloudAnswer,
   FakeCloudRequest,
   USE_DPOP_NONCE_ENVELOPE,
   assertionKidOf,
@@ -20,6 +21,17 @@ import {
   tokenAnswer,
   tokenClaims,
 } from 'test/fake-frameleaf-cloud.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+
+/** One `packages/contracts/fixtures/exchanges/*.json` golden answer (FL-184, FC-66 final). */
+type GoldenExchange = { status: number; headers?: Record<string, string>; body: Record<string, unknown> };
+const exchange = (name: string) => cloudContractFixture<GoldenExchange>(`exchanges/${name}`);
+/** The golden exchange's status/headers/body, exactly as the fake cloud answers with. */
+const answerOf = (golden: GoldenExchange): FakeCloudAnswer => ({
+  status: golden.status,
+  body: golden.body,
+  headers: golden.headers,
+});
 
 describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
   let cloud: FakeCloud;
@@ -390,6 +402,87 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
           body: {},
         }),
       ).rejects.toMatchObject({ status: 401, envelope: { code: 'invalid_token' } });
+    });
+  });
+
+  describe('golden exchanges (FL-184, FC-19/FC-66 final fixtures)', () => {
+    it('mints a token from the golden token-dpop.json exchange', async () => {
+      cloud.on('POST /id/token', () => answerOf(exchange('token-dpop.json')));
+      const token = await mint();
+      expect(token.accessToken).toBe(exchange('token-dpop.json').body.access_token);
+    });
+
+    it('retries once on the golden token-use-dpop-nonce.json exchange, then succeeds', async () => {
+      const nonceChallenge = exchange('token-use-dpop-nonce.json');
+      let first = true;
+      cloud.on('POST /id/token', (request) => {
+        if (first) {
+          first = false;
+          return answerOf(nonceChallenge);
+        }
+        // the retry carries the challenge's nonce; the fake cloud answers it like any other token request
+        expect(request.dpop!.claims.nonce).toBe(nonceChallenge.headers!['DPoP-Nonce']);
+        return tokenAnswer(request);
+      });
+      await mint();
+      expect(tokenRequests()).toHaveLength(2);
+    });
+
+    it('refuses the golden token-invalid-dpop-proof.json exchange without retrying', async () => {
+      cloud.on('POST /id/token', () => answerOf(exchange('token-invalid-dpop-proof.json')));
+      const error = await mint().catch((error_: unknown) => error_);
+      expect(error).toMatchObject({ status: 400, oauth: { error: 'invalid_dpop_proof' } });
+      expect(tokenRequests()).toHaveLength(1);
+    });
+
+    it('refuses the golden token-clone-suspected.json exchange as Frameleaf Cloud being unavailable', async () => {
+      cloud.on('POST /id/token', () => answerOf(exchange('token-clone-suspected.json')));
+      const error = await mint().catch((error_: unknown) => error_);
+      expect(error).toMatchObject({ status: 400, oauth: { error: 'clone_suspected' } });
+      expect((error as FrameleafCloudError).refusal).toBe('cloud-unavailable');
+      expect(tokenRequests()).toHaveLength(1);
+    });
+
+    it('retries once on the golden api-use-dpop-nonce.json exchange, then succeeds', async () => {
+      const nonceChallenge = exchange('api-use-dpop-nonce.json');
+      let first = true;
+      cloud.on('POST /api/v1/instance/thing', (request) => {
+        if (first) {
+          first = false;
+          return answerOf(nonceChallenge);
+        }
+        expect(request.dpop!.claims.nonce).toBe(nonceChallenge.headers!['DPoP-Nonce']);
+        return { status: 200, body: {} };
+      });
+      await mint();
+      await call();
+      const calls = cloud.requests.filter(({ path }) => path === '/api/v1/instance/thing');
+      expect(calls).toHaveLength(2);
+    });
+
+    it('refuses the golden api-invalid-dpop-proof.json exchange, carrying its detail, without retrying', async () => {
+      cloud.on('POST /api/v1/instance/thing', () => answerOf(exchange('api-invalid-dpop-proof.json')));
+      await mint();
+      const error = await call().catch((error_: unknown) => error_);
+      expect(error).toMatchObject({
+        status: 401,
+        envelope: { code: 'invalid_dpop_proof', detail: 'replayed', retryable: false },
+      });
+      expect(cloud.requests.filter(({ path }) => path === '/api/v1/instance/thing')).toHaveLength(1);
+    });
+
+    it('refuses the golden api-bearer-refused.json exchange (a token sent without a DPoP proof)', async () => {
+      const token = await mint();
+      cloud.on('POST /api/v1/instance/thing', () => answerOf(exchange('api-bearer-refused.json')));
+      const error = await repository
+        .requestJson(z.unknown(), {
+          method: 'POST',
+          url: `${cloud.url}/api/v1/instance/thing`,
+          bearer: token.accessToken,
+          body: {},
+        })
+        .catch((error_: unknown) => error_);
+      expect(error).toMatchObject({ status: 401, envelope: { code: 'invalid_token' } });
     });
   });
 });

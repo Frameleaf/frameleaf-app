@@ -25,6 +25,18 @@ tested against what the cloud publishes (FL-177).
 - `licence/check-symbol/` (every file) is byte-identical to `packages/contracts/fixtures/licence/check-symbol/` at
   `8bf5b83ed2a5a4ce22b64f553a6f48ec78768504` (`feat: FC-22 Luhn mod 32 check symbol for licence keys`); see that
   folder's own `SOURCE.md` for what it exercises (FL-182).
+- FL-184: refreshed `errors/` and `instance/` against `origin/main` at `4658c6a72e274512a935fff73cee142163ff9635`
+  (merges FC-19 `2042045`, FC-66 `57c7170` and FC-22 `4658c6a`, all final). The FC-19/FC-18 files above and
+  `ml/`, `ml/rejected/` and `licence/check-symbol/` were verified byte-identical to this commit; nothing in
+  them changed. New at this commit: `exchanges/` (every file: `token-dpop`, `token-use-dpop-nonce`,
+  `token-invalid-dpop-proof`, `token-clone-suspected`, `api-use-dpop-nonce`, `api-invalid-dpop-proof`,
+  `api-bearer-refused`), `instance/dpop-proof-token.json`, `instance/dpop-proof-api.json`,
+  `instance/token-response-dpop.json` (FL-178), the new `errors/` files (`invalid-dpop-proof`,
+  `estimate-mismatch`, `request-invalid`, `license-not-found`, `activation-limit`, `activation-rate-limited`),
+  and all of `licence/` except `licence/check-symbol/` (already copied for FL-182 and byte-identical): the
+  keys document, certificate claims and verdict cases (`certificates/`), activation request/response
+  including `activation-jose.json` and its `-kid-mismatch`/`-jkt-mismatch`/`-missing-jwk` variants, the
+  offline activation request, refresh, deactivate and entitlements (FL-177).
 
 Do not edit these files by hand, except `ml/catalog-restoration.json`, which is ours to maintain until FC-34
 ships a real one. When the cloud changes a fixture, copy the new version and update the commit above.
