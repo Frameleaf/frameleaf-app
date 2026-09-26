@@ -284,6 +284,45 @@
   "frameleafCloud.remoteAccess.allowPasswordOverRelay": {
     "type": "boolean"
   },
+  "frameleafCloud.remoteAccess.customHostname.checkedAt": {
+    "type": "string",
+    "nullable": true
+  },
+  "frameleafCloud.remoteAccess.customHostname.host": {
+    "type": "string"
+  },
+  "frameleafCloud.remoteAccess.customHostname.status": {
+    "type": "string",
+    "enum": [
+      "pending",
+      "verified"
+    ]
+  },
+  "frameleafCloud.remoteAccess.directPort": {
+    "type": "integer",
+    "minimum": 1024,
+    "maximum": 65535
+  },
+  "frameleafCloud.remoteAccess.enabled": {
+    "type": "boolean"
+  },
+  "frameleafCloud.remoteAccess.mode": {
+    "type": "string",
+    "enum": [
+      "relay",
+      "relay-and-direct"
+    ]
+  },
+  "frameleafCloud.remoteAccess.portMapping": {
+    "type": "boolean"
+  },
+  "frameleafCloud.remoteAccess.publicUrl": {
+    "type": "string",
+    "enum": [
+      "frameleaf",
+      "custom"
+    ]
+  },
   "frameleafCloud.signIn.buttonText": {
     "type": "string"
   },
