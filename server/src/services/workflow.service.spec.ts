@@ -446,7 +446,7 @@ describe(WorkflowService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.WorkflowAssetTrigger,
-        data: { workflowId, assetId, runId, attempt: 2, manual: true },
+        data: { workflowId, assetId, runId, attempt: 2, manual: true, executionId: expect.any(String) },
       });
     });
 

@@ -590,15 +590,26 @@ export class AssetDevelopService {
   /**
    * Rows and rendered files go with the asset; the original was never ours to delete. A permanent
    * deletion takes the rows and releases the files inside its removal (FL-169); this cleans up what
-   * that removal had to leave while fork writes were disabled.
+   * that removal had to leave. FL-179: like the removal, it leaves them while fork writes are refused
+   * (a handoff or return reconciliation running), and the nightly sweep below releases them later.
    */
   @OnEvent({ name: 'AssetDelete' })
   async onAssetDelete({ assetId }: ArgOf<'AssetDelete'>) {
-    const files = await this.assetDevelopRepository.getFilePaths(assetId);
-    await this.assetDevelopRepository.deleteByAsset(assetId);
-    if (files.length > 0) {
-      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
+    await this.assetDevelopRepository.releaseRemovedAssetRevisions((files) => this.queueFileDelete(files), assetId);
+  }
+
+  /** FL-179: revisions of removed assets that were left while fork writes were refused. */
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  async onNightlyDatabaseCleanup() {
+    try {
+      await this.assetDevelopRepository.releaseRemovedAssetRevisions((files) => this.queueFileDelete(files));
+    } catch (error: any) {
+      this.logger.warn(`Develop revision cleanup deferred: ${error}`);
     }
+  }
+
+  private async queueFileDelete(files: string[]) {
+    await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
   }
 
   private async queueRender(revision: AssetDevelopRevision, label: string): Promise<AssetDevelopRevisionResponseDto> {

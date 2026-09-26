@@ -26,7 +26,31 @@ export type WorkflowRunLog = Insertable<WorkflowLogTable> & {
 @Injectable()
 export class WorkflowRepository {
   private allowedHostsColumn: Promise<boolean> | undefined;
+  private runStepTable: Promise<boolean> | undefined;
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  /**
+   * FL-179: whether `workflow_run_step` exists. A database past its handoff cutover does not receive
+   * new Frameleaf public migrations, so the table can be missing; then no step is recorded or skipped
+   * and a stalled replay runs every step again, as before the table existed. Checked once and cached;
+   * `resetRunStepTable` (after the startup migrations) checks again.
+   */
+  hasRunStepTable(): Promise<boolean> {
+    return (this.runStepTable ??= sql<{ table: string | null }>`
+      SELECT to_regclass('public.workflow_run_step')::text AS "table"
+    `
+      .execute(this.db)
+      .then(({ rows }) => !!rows[0]?.table)
+      .catch((error: unknown) => {
+        // a failed check is not remembered
+        this.runStepTable = undefined;
+        throw error;
+      }));
+  }
+
+  resetRunStepTable() {
+    this.runStepTable = undefined;
+  }
 
   private queryBuilder(db?: Kysely<DB>) {
     return (db ?? this.db)
@@ -210,6 +234,43 @@ export class WorkflowRepository {
         .execute();
       return id;
     });
+  }
+
+  /**
+   * The steps a queued run has already completed (FL-179), by the job's `executionId`, and whether one
+   * of them stopped the run. A replay of the same job skips them.
+   */
+  async getCompletedSteps(executionId: string): Promise<Map<string, { halted: boolean }>> {
+    if (!(await this.hasRunStepTable())) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('workflow_run_step')
+      .select(['stepId', 'halted'])
+      .where('executionId', '=', executionId)
+      .execute();
+    return new Map(rows.map(({ stepId, halted }) => [stepId, { halted }]));
+  }
+
+  /** Records that a queued run completed a step (FL-179); recording it again changes nothing. */
+  async completeStep(step: { executionId: string; workflowId: string; stepId: string; halted: boolean }) {
+    if (!(await this.hasRunStepTable())) {
+      return;
+    }
+    await this.db
+      .insertInto('workflow_run_step')
+      .values(step)
+      .onConflict((oc) => oc.columns(['executionId', 'stepId']).doNothing())
+      .execute();
+  }
+
+  /** Forgets completed steps recorded before `before`; no replay of those runs can still happen. */
+  async deleteCompletedStepsBefore(before: Date): Promise<number> {
+    if (!(await this.hasRunStepTable())) {
+      return 0;
+    }
+    const result = await this.db.deleteFrom('workflow_run_step').where('createdAt', '<', before).executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 
   /** The newest logged attempt of one run, for a manual retry. */
