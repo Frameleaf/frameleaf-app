@@ -128,6 +128,13 @@ export class DatabaseService extends BaseService {
         await (migrationMode === 'isolated' || migrationMode === 'official-origin'
           ? this.databaseRepository.runOfficialMigrations()
           : this.databaseRepository.runMigrations());
+        if (migrationMode === 'isolated') {
+          // FL-180: a library past the certified cutover no longer lists Frameleaf public migrations in
+          // the official ledger, so the official provider above never applies newer ones. They run
+          // here, recorded in `immich_fork.migration_audit`, before the `immich_fork` migrations that
+          // may build on them (the same order as a fresh install).
+          await this.runIsolatedFrameleafMigrations();
+        }
         await this.databaseRepository.runForkMigrations();
         if (await this.databaseRepository.isAwaitingOfficialAdoption()) {
           this.logger.warn(
@@ -152,6 +159,29 @@ export class DatabaseService extends BaseService {
         this.databaseRepository.prewarm(VectorIndex.Face),
       ]);
     });
+  }
+
+  private async runIsolatedFrameleafMigrations() {
+    const { applied, pending, skipped } = await this.databaseRepository.applyIsolatedFrameleafMigrations('startup');
+    for (const name of applied) {
+      this.logger.log(`Frameleaf migration "${name}" succeeded`);
+    }
+    if (pending.length === 0) {
+      return;
+    }
+    if (skipped === 'awaiting-return') {
+      this.logger.log(
+        `${pending.length} newer Frameleaf migration(s) wait for the return from the official server (immich-admin fork-handoff prepare-fork)`,
+      );
+    } else if (skipped === 'awaiting-activation') {
+      this.logger.warn(
+        `${pending.length} newer Frameleaf migration(s) wait until the library is activated (ready to active); until then the next cutover's catalog check will not pass`,
+      );
+    } else if (skipped === 'unexpected-phase') {
+      this.logger.warn(
+        `${pending.length} newer Frameleaf migration(s) were not applied because the library is in an unexpected handoff phase; check immich-admin fork-schema status`,
+      );
+    }
   }
 
   private async createExtension(extension: DatabaseExtension) {
