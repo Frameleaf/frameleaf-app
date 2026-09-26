@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "validFor": 86400,
+  "issuer": "https://id.frameleaf.cloud",
+  "api": "https://api.frameleaf.cloud",
+  "store": "https://account.frameleaf.cloud/store",
+  "ml": { "eu": "https://ml.eu.frameleaf.cloud", "na": "https://ml.na.frameleaf.cloud" },
+  "endpoints": {
+    "heartbeat": "https://api.frameleaf.cloud/v1/instance/heartbeat",
+    "commands": "https://api.frameleaf.cloud/v1/instance/commands",
+    "entitlements": "https://api.frameleaf.cloud/v1/entitlements",
+    "licenseRefresh": "https://api.frameleaf.cloud/v1/licenses/refresh",
+    "relayToken": "https://api.frameleaf.cloud/v1/remote/relay-token",
+    "dnsTxt": "https://api.frameleaf.cloud/v1/remote/dns/txt",
+    "backupGrant": "https://api.frameleaf.cloud/v1/backup/grant",
+    "mlGrant": "https://id.frameleaf.cloud/token"
+  },
+  "jwks": { "oidc": "https://id.frameleaf.cloud/jwks", "keys": "https://api.frameleaf.cloud/.well-known/frameleaf-keys.json" },
+  "regions": ["eu", "na"],
+  "intervals": { "heartbeatSec": 300, "entitlementRefreshSec": 86400, "relayTokenRefreshPct": 50 },
+  "limits": { "heartbeatBodyBytes": 65536, "heartbeatEndpoints": 16, "commandsPerResponse": 50, "noticesPerResponse": 20, "commandsLongPollSec": 25, "commandTtlSec": 86400 }
+}

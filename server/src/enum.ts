@@ -507,6 +507,11 @@ export enum SystemMetadataKey {
    * licensed-server plan discount), so a restart keeps it instead of the bundled snapshot.
    */
   FrameleafPricing = 'frameleaf-pricing',
+  /**
+   * FL-177: this server's current boot id, written when the microservices worker starts and read by
+   * every worker, so registration, "Check in now" and scheduled check-ins all send the same `bootId`.
+   */
+  FrameleafBoot = 'frameleaf-boot',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
   HardwareCheck = 'hardware-check',
   /**
@@ -1021,6 +1026,8 @@ export enum MlAdmissionRefusal {
   ModelMismatch = 'model-mismatch',
   /** The worker reported its GPU memory and none of its GPUs has enough for the workload (FL-58). */
   InsufficientMemory = 'insufficient-memory',
+  /** Frameleaf Cloud refused the request itself as invalid (422 `request-invalid`), not an outage (FL-177). */
+  RequestInvalid = 'request-invalid',
 }
 
 export const MlAdmissionRefusalSchema = z
@@ -1112,6 +1119,7 @@ export enum PetRecognitionUnavailableReason {
   WalletInsufficient = 'wallet-insufficient',
   QuotaExceeded = 'quota-exceeded',
   ModelMismatch = 'model-mismatch',
+  RequestInvalid = 'request-invalid',
 }
 
 export const PetRecognitionUnavailableReasonSchema = z
@@ -2241,6 +2249,11 @@ export enum DatabaseLock {
   FrameleafHeartbeat = 946,
   /** FL-156: one server refreshes the Frameleaf licence certificate at a time. */
   FrameleafLicenseRefresh = 947,
+  /**
+   * FL-177: a Sign in with Frameleaf role change counts the administrators and demotes as one step,
+   * so two sign-ins at once can never demote the last two administrators.
+   */
+  FrameleafRoleChange = 948,
 }
 
 export enum MaintenanceAction {
@@ -2930,8 +2943,6 @@ export enum ConfigCredential {
   SmtpPassword = 'smtp-password',
   /** `oauth.clientSecret` */
   OAuthClientSecret = 'oauth-client-secret',
-  /** FL-158: `frameleafCloud.signIn.clientSecret` */
-  FrameleafOidcClientSecret = 'frameleaf-oidc-client-secret',
 }
 
 export const ConfigCredentialSchema = z

@@ -256,6 +256,89 @@ describe(AuthService.name, () => {
       expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'token123' });
     });
 
+    describe('for a Sign in with Frameleaf session (FL-177)', () => {
+      const auth = { user: { id: '123' }, session: { id: 'fl-session' } } as AuthDto;
+
+      beforeEach(() => {
+        mocks.config.getEnv.mockReturnValue({
+          ...mocks.config.getEnv(),
+          frameleafCloud: { ...mocks.config.getEnv().frameleafCloud, url: 'https://api.frameleaf.cloud' },
+        });
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.FrameleafCloudLink
+              ? {
+                  status: 'linked',
+                  cloudUrl: 'https://api.frameleaf.cloud',
+                  instanceId: 'instance-1',
+                  oidc: {
+                    issuer: 'https://id.frameleaf.cloud',
+                    clientId: 'instance-1',
+                    scope: 'openid email profile',
+                    roleClaim: 'frameleaf_role',
+                    storageLabelClaim: '',
+                  },
+                }
+              : null) as never,
+          ),
+        );
+        mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+        mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ instanceId: 'instance-1', kid: 'kid-1' } as never);
+        mocks.session.get.mockResolvedValue({
+          id: 'fl-session',
+          expiresAt: null,
+          oauthBearerToken: 'id-token-1',
+          pinExpiresAt: null,
+        });
+        mocks.session.delete.mockResolvedValue();
+        mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'fl-session', sub: 'fl-sub' } as never);
+      });
+
+      it('ends the Frameleaf session through the issuer’s end_session_endpoint', async () => {
+        mocks.oauth.getLogoutEndpoint.mockResolvedValue('https://id.frameleaf.cloud/session/end');
+
+        const result = await sut.logout(auth, AuthType.Password);
+
+        const url = new URL(result.redirectUri);
+        expect(`${url.origin}${url.pathname}`).toBe('https://id.frameleaf.cloud/session/end');
+        expect(url.searchParams.get('client_id')).toBe('instance-1');
+        expect(url.searchParams.get('id_token_hint')).toBe('id-token-1');
+        expect(mocks.oauth.getLogoutEndpoint).toHaveBeenCalledWith(
+          expect.objectContaining({ clientId: 'instance-1', issuerUrl: 'https://id.frameleaf.cloud' }),
+        );
+        expect(mocks.session.delete).toHaveBeenCalledWith('fl-session');
+      });
+
+      it('never sends anyone to an end-session endpoint outside the configured cloud', async () => {
+        mocks.oauth.getLogoutEndpoint.mockResolvedValue('https://id.elsewhere.test/session/end');
+
+        await expect(sut.logout(auth, AuthType.Password)).resolves.toEqual({
+          successful: true,
+          redirectUri: '/auth/login?autoLaunch=0',
+        });
+      });
+
+      it('signs out locally when the issuer cannot be reached', async () => {
+        mocks.oauth.getLogoutEndpoint.mockRejectedValue(new Error('unreachable'));
+
+        await expect(sut.logout(auth, AuthType.Password)).resolves.toEqual({
+          successful: true,
+          redirectUri: '/auth/login?autoLaunch=0',
+        });
+        expect(mocks.session.delete).toHaveBeenCalledWith('fl-session');
+      });
+
+      it('leaves a session Sign in with Frameleaf did not create to the usual sign-out', async () => {
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+
+        await expect(sut.logout(auth, AuthType.Password)).resolves.toEqual({
+          successful: true,
+          redirectUri: '/auth/login?autoLaunch=0',
+        });
+        expect(mocks.oauth.getLogoutEndpoint).not.toHaveBeenCalled();
+      });
+    });
+
     it('should return the default redirect if auth type is OAUTH but oauth is not enabled', async () => {
       const auth = { user: { id: '123' } } as AuthDto;
 
@@ -293,11 +376,12 @@ describe(AuthService.name, () => {
                     storageLabelClaim: '',
                   },
                 }
-              : key === SystemMetadataKey.SystemConfig
-                ? { frameleafCloud: { signIn: { clientSecret: 'secret' } } }
-                : null) as never,
+              : null) as never,
           ),
         );
+        // FL-177: the client authenticates with this server's key only
+        mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+        mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ instanceId: 'instance-1', kid: 'kid-1' } as never);
       });
 
       it('ends every session tagged with the sid or sub, verified against the Frameleaf client', async () => {

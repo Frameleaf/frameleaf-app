@@ -464,7 +464,7 @@
                   {$t(mlWorkloadLabelKey(job.workload))}
                   <small>{formatDateTime(job.finishedAt, $locale)}</small>
                 </th>
-                <td>{positionById(job.modelId)?.name ?? job.modelId ?? '—'}</td>
+                <td>{positionById(job.modelSku)?.name ?? job.modelSku ?? '—'}</td>
                 <td>
                   <span class="fc-status" class:is-ok={job.succeeded} class:is-warning={!job.succeeded}>
                     {job.succeeded
