@@ -492,6 +492,8 @@ describe(CloudMlService.name, () => {
         fingerprint: 'mr_68JDMAM8444M',
         pricingUnit: 'second',
         priceUsd: 0.004_583,
+        rank: 5,
+        isDefault: false,
       });
       expect(result.models[3]).toMatchObject({
         id: 'ms_YS60DAXB',
@@ -499,6 +501,28 @@ describe(CloudMlService.name, () => {
         description: 'RealBasicVSR, L40S-class, 48 GB. Start fee 0.1 USD per worker',
         fingerprint: 'mr_4H8QZ2N7C1TX',
       });
+    });
+
+    it("marks the catalogue's default per group for the model picker, and never one for Studio AI (FL-186)", async () => {
+      link();
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(
+        catalogSchema.parse({
+          ...catalogFixture,
+          models: [
+            { ...catalogFixture.models[0], default: true },
+            catalogFixture.models[1],
+            { ...catalogFixture.models[2], sku: 'ms_TTS00001', workload: 'tts', default: true },
+          ],
+        }),
+      );
+
+      const result = await sut.getCatalog();
+
+      expect(result.models.map((model) => [model.id, model.workload, model.isDefault])).toEqual([
+        ['ms_K6WT70CS', MlWorkload.Enrichment, true],
+        ['ms_M7QG26PT', MlWorkload.Enrichment, false],
+        ['ms_TTS00001', MlWorkload.StudioAi, false],
+      ]);
     });
 
     it('assigns each restoration model of catalog-restoration.json to the app workload its own mode names (FL-181)', async () => {

@@ -4,7 +4,8 @@
    * the Command Center as in the prototype; the old `/admin/processing-destinations` page only
    * redirects here. The section only loads the server's worker inventory and destination model and
    * hands them to the panels; every change goes back through the ml-destinations, system-config and
-   * render-worker endpoints. A change saved in the destinations panel reloads the inventory.
+   * render-worker endpoints. A change saved in the destinations panel reloads the inventory and Where
+   * each job runs.
    */
   import MlDestinationsPanel from '$lib/components/frameleaf/MlDestinationsPanel.svelte';
   import WorkloadRoutingTable from '$lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte';
@@ -32,8 +33,11 @@
   </div>
 {:else}
   <div id="ml-destinations" class="routing-section">
-    <!-- FL-159 (handoff §3.2): "Where each job runs" first, then the destinations each workload uses. -->
-    <WorkloadRoutingTable />
+    <!-- FL-159 (handoff §3.2): "Where each job runs" first, then the destinations each workload uses.
+         FL-186: a route changed below reloads the table, whose model pickers follow the routes. -->
+    {#key inventoryKey}
+      <WorkloadRoutingTable />
+    {/key}
     <MlDestinationsPanel destinations={data.destinations} routes={data.routes} onChanged={() => (inventoryKey += 1)} />
   </div>
 {/if}

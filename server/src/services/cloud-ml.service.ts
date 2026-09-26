@@ -42,6 +42,7 @@ import {
   FrameleafCloudError,
   catalogDefaults,
   cloudAddressProblem,
+  cloudDefaultGroupFor,
   cloudErrorCode,
   cloudFactsFromCapabilities,
   knownWorkloads,
@@ -293,21 +294,28 @@ export class CloudMlService extends BaseService {
     const catalog = await this.callCloud(() => this.frameleafCloudMlRepository.getCatalog(gateway));
     this.warnRefusedEntries(catalog);
     return {
-      models: offeredCatalogModels(catalog).map((model) => ({
-        id: model.sku,
-        workload: workloadForCatalogEntry(model.workload, model.mode),
-        name: model.label,
-        description: [
-          `${model.display.model}, ${model.display.gpu}`,
-          `Start fee ${model.rate.startFeeUsd} USD per worker`,
-          model.notice,
-        ]
-          .filter(Boolean)
-          .join('. '),
-        fingerprint: model.rev,
-        pricingUnit: 'second',
-        priceUsd: model.rate.perSecondUsd,
-      })),
+      models: offeredCatalogModels(catalog).map((model) => {
+        const workload = workloadForCatalogEntry(model.workload, model.mode);
+        return {
+          id: model.sku,
+          workload,
+          name: model.label,
+          description: [
+            `${model.display.model}, ${model.display.gpu}`,
+            `Start fee ${model.rate.startFeeUsd} USD per worker`,
+            model.notice,
+          ]
+            .filter(Boolean)
+            .join('. '),
+          fingerprint: model.rev,
+          pricingUnit: 'second',
+          priceUsd: model.rate.perSecondUsd,
+          rank: model.rank,
+          // FL-186: the catalogue's recommendation for the model's group. Studio AI never takes a
+          // default (it has no group), so none of its models is shown as one.
+          isDefault: model.default && workload !== null && cloudDefaultGroupFor(workload) !== null,
+        };
+      }),
     };
   }
 

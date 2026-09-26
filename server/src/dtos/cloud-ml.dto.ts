@@ -79,6 +79,12 @@ const CloudMlModelSchema = z
     fingerprint: z.string(),
     pricingUnit: z.string().nullable().describe('What one price unit is (for example an image or a video minute)'),
     priceUsd: z.number().meta({ format: 'double' }).nullable().describe('Price per unit, USD'),
+    rank: z.int().describe("Position on its workload's ladder, 1 = lightest"),
+    isDefault: z
+      .boolean()
+      .describe(
+        'Frameleaf Cloud recommends this model for its workload (and restoration mode) in this region; work with no chosen model uses it',
+      ),
   })
   .meta({ id: 'CloudMlModelDto' });
 
