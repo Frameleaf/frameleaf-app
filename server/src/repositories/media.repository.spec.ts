@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -341,6 +341,70 @@ describe(MediaRepository.name, () => {
         );
 
         expect(statSync(file).blksize).toBeGreaterThan(0);
+      } finally {
+        rmSync(dirPath, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('writeStrippedStill (FL-162)', () => {
+    it('keeps the pixels and the ICC profile, and drops every EXIF, GPS and XMP byte', async () => {
+      const dirPath = mkdtempSync(join(tmpdir(), 'media-repository-'));
+      try {
+        const input = join(dirPath, 'located.jpg');
+        await sharp({ create: { width: 64, height: 48, channels: 3, background: { r: 200, g: 40, b: 40 } } })
+          .withIccProfile('p3')
+          .withExif({
+            IFD0: { Make: 'FrameleafTestCamera', Copyright: 'Private person' },
+            IFD3: {
+              GPSLatitudeRef: 'N',
+              GPSLatitude: '51/1 30/1 0/1',
+              GPSLongitudeRef: 'W',
+              GPSLongitude: '0/1 7/1 0/1',
+            },
+          })
+          .jpeg()
+          .toFile(input);
+        const before = await sharp(input).metadata();
+        expect(before.exif).toBeDefined();
+
+        const output = join(dirPath, 'stripped.jpg');
+        await sut.writeStrippedStill(input, output, 'jpeg');
+
+        const after = await sharp(output).metadata();
+        expect(after.format).toBe('jpeg');
+        expect(after.width).toBe(64);
+        expect(after.height).toBe(48);
+        expect(after.exif).toBeUndefined();
+        expect(after.xmp).toBeUndefined();
+        expect(after.iptc).toBeUndefined();
+        expect(after.icc).toBeDefined();
+        // the bytes that would be uploaded carry none of the camera or location text
+        const bytes = readFileSync(output).toString('latin1');
+        expect(bytes).not.toContain('FrameleafTestCamera');
+        expect(bytes).not.toContain('Private person');
+        expect(bytes).not.toContain('Exif\u0000\u0000');
+      } finally {
+        rmSync(dirPath, { recursive: true, force: true });
+      }
+    });
+
+    it('writes anything that is not a JPEG as a lossless PNG without metadata', async () => {
+      const dirPath = mkdtempSync(join(tmpdir(), 'media-repository-'));
+      try {
+        const input = join(dirPath, 'located.png');
+        await sharp({ create: { width: 16, height: 16, channels: 3, background: { r: 0, g: 0, b: 0 } } })
+          .withExif({ IFD0: { Make: 'FrameleafTestCamera' } })
+          .png()
+          .toFile(input);
+
+        const output = join(dirPath, 'stripped.png');
+        await sut.writeStrippedStill(input, output, 'png');
+
+        const after = await sharp(output).metadata();
+        expect(after.format).toBe('png');
+        expect(after.exif).toBeUndefined();
+        expect(readFileSync(output).toString('latin1')).not.toContain('FrameleafTestCamera');
       } finally {
         rmSync(dirPath, { recursive: true, force: true });
       }

@@ -17,6 +17,7 @@ import {
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
+import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import {
   RESTORATION_ABANDONED_RESULT_DAYS,
   RestorationErrorCode,
@@ -597,6 +598,25 @@ describe(RestorationWorkerService.name, () => {
       );
     });
 
+    it('sends a web-native original to the worker as a copy without EXIF or GPS, its ICC kept (FL-162)', async () => {
+      await sut.run(
+        operation({
+          kind: MediaOperationKind.Restoration,
+          snapshot: snapshot({ stage: 'full', model: { name: 'faithful-v1', version: '1.0' } }),
+        }),
+        CLAIM,
+      );
+
+      expect(mocks.media.writeStrippedStill).toHaveBeenCalledWith(
+        asset.originalPath,
+        expect.stringMatching(/\/input-.*\.jpg$/),
+        'jpeg',
+      );
+      const [, input] = restore.mock.calls[0];
+      expect(input.path).not.toBe(asset.originalPath);
+      expect(input.path).toBe(mocks.media.writeStrippedStill.mock.calls[0][1]);
+    });
+
     it('never sets a retention date on a preview stage that stops', async () => {
       restorations.get.mockResolvedValue(row());
       restore.mockRejectedValue(new Error('worker unreachable'));
@@ -607,6 +627,35 @@ describe(RestorationWorkerService.name, () => {
         status: AssetRestorationStatus.PreviewFailed,
         error: 'worker unreachable',
       });
+    });
+  });
+
+  describe('run: video preview (FL-162)', () => {
+    it('cuts the preview clip with the video and audio streams only, and no metadata or chapters', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 1920, height: 1080 }],
+        audioStreams: [],
+      } as never);
+      const video = snapshot({
+        sourceType: AssetRestorationSourceType.Video,
+        sourceWidth: 1920,
+        sourceHeight: 1080,
+        sourceDurationSeconds: 60,
+        output: { width: 3840, height: 2160 },
+      });
+
+      await sut.run(operation({ snapshot: video }), CLAIM);
+
+      const [, clip, options] = mocks.media.transcode.mock.calls[0];
+      expect(clip).toEqual(expect.stringContaining('/before-'));
+      expect(stripsVideoMetadata(options.outputOptions ?? [])).toBe(true);
+      expect(options.outputOptions).toEqual(expect.arrayContaining(['-map', '0:v:0', '0:a:0?']));
+      expect(restore).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ kind: 'video', path: clip }),
+        expect.anything(),
+      );
     });
   });
 
