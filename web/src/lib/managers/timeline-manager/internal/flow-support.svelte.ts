@@ -194,7 +194,11 @@ function layoutFlowMonth(manager: TimelineManager, index: number, compensation: 
     }
   }
   month.flowTail = items.slice(tailStart);
-  month.flowCarried = carry.slice(0, Math.min(carry.length, laid));
+  const carried = carry.slice(0, Math.min(carry.length, laid));
+  // Drawn by this month: a new list redraws every carried tile, so keep it when it holds the same tiles.
+  if (!sameItems(month.flowCarried, carried)) {
+    month.flowCarried = carried;
+  }
   month.flowClosed = closeTail;
   month.flowContentWidth = layout.width;
   month.flowContentHeight = layout.height;

@@ -138,6 +138,8 @@
   let scrollable = $state<HTMLElement>();
   let root = $state<HTMLElement>();
   let scrubberWidth = $state(0);
+  /** While the scrubber is dragged, tiles drawn meanwhile wait for their thumbnails (`AssetTile`). */
+  let scrubbing = $state(false);
   let viewportTopMonth: ViewportTopMonth = $state(undefined);
   let viewportTopMonthScrollPercent = $state(0);
   let timelineScrollPercent = $state(0);
@@ -1268,6 +1270,7 @@
                   onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
                   {tileOverlay}
                   {quickActions}
+                  deferImages={scrubbing}
                 />
               {/each}
               {#each filterIsInOrNearViewport(month.timelineDays) as timelineDay (timelineDay.day)}
@@ -1289,6 +1292,7 @@
                   onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
                   {tileOverlay}
                   {quickActions}
+                  deferImages={scrubbing}
                 />
               {/each}
             </div>
@@ -1314,6 +1318,7 @@
         {onScrub}
         {onJump}
         bind:scrubberWidth
+        bind:dragging={scrubbing}
       />
     {/if}
   {/if}
