@@ -6,9 +6,10 @@ import {
   parseFrameleafReleaseTag,
   releaseFeedChannel,
 } from 'src/utils/frameleaf-release.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
-// Frameleaf Cloud release feed response (FC-70, `GET /v1/releases/latest`).
-// TODO(FC-70): replace with the shared fixture in packages/contracts/fixtures/releases/ when it lands.
+// Frameleaf Cloud release feed response (FC-70, `GET /v1/releases/latest`), in this app's own tag format; the
+// cloud's published answers are read from `releases/` below.
 const feedRelease: FrameleafFeedRelease = {
   version: '3.2.1',
   tag: 'frameleaf-v3.2.1-4',
@@ -26,6 +27,20 @@ describe('releaseFeedChannel', () => {
 });
 
 describe('parseFrameleafFeedRelease', () => {
+  it('reads the release feed answers the cloud publishes', () => {
+    const stable = cloudContractFixture<FrameleafFeedRelease>('releases/latest-stable.json');
+    const beta = cloudContractFixture<FrameleafFeedRelease>('releases/latest-beta.json');
+    expect(parseFrameleafFeedRelease(stable, ReleaseChannel.Stable)).toEqual({
+      version: stable.version,
+      publishedAt: stable.publishedAt,
+    });
+    expect(parseFrameleafFeedRelease(beta, ReleaseChannel.ReleaseCandidate)).toEqual({
+      version: beta.version,
+      publishedAt: beta.publishedAt,
+    });
+    expect(parseFrameleafFeedRelease(beta, ReleaseChannel.Stable)).toBeUndefined();
+  });
+
   it('reads the version and publication time of a feed release', () => {
     expect(parseFrameleafFeedRelease(feedRelease, ReleaseChannel.Stable)).toEqual({
       version: '3.2.1',

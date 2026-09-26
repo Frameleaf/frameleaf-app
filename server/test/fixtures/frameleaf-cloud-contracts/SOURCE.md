@@ -55,6 +55,9 @@ tested against what the cloud publishes (FL-177).
   (`already-shared.json`, `invitation-email-mismatch.json`, `invitation-gone.json`, `invitation-pending.json`,
   `velocity-limit.json`), plus `errors/balance-cap.json` and `errors/top-up-minimum.json` (account API, noted
   above).
+- FC-70 release feed: `releases/latest-stable.json` and `releases/latest-beta.json` are byte-identical to
+  `origin/main` at `86adf20ee0f403859abf225c1a14531214a465c1` (Frameleaf/frameleaf-cloud#43). The contract is
+  `packages/contracts/src/releases/latest.ts`; `server/src/utils/frameleaf-release.ts` reads them (FL-192).
 
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
 above.
