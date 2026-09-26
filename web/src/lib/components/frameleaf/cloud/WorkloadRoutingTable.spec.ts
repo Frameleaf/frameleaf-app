@@ -7,6 +7,7 @@ import {
   type CloudMlModelChoicesResponseDto,
   type CloudMlModelDto,
   type CloudMlStatusResponseDto,
+  type HardwareCheckResponseDto,
 } from '@immich/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
@@ -30,8 +31,9 @@ vi.mock('$lib/frameleaf/system-config-draft.svelte', async (original) => ({
 
 type Routing = Record<'descriptions' | 'upscale' | 'restoration' | 'studio' | 'interpolation', string>;
 
-const config = (enabled: boolean, routing: Partial<Routing> = {}) =>
+const config = (enabled: boolean, routing: Partial<Routing> = {}, modelName?: string) =>
   ({
+    ...(modelName && { machineLearning: { imageDescription: { modelName } } }),
     frameleafCloud: {
       cloudMl: {
         enabled,
@@ -50,9 +52,9 @@ const config = (enabled: boolean, routing: Partial<Routing> = {}) =>
     },
   }) as unknown as AdminConfigDto;
 
-const useDraft = (enabled: boolean, routing: Partial<Routing> = {}) => {
+const useDraft = (enabled: boolean, routing: Partial<Routing> = {}, modelName?: string) => {
   const store = new SystemConfigDraftStore(
-    { config: config(enabled, routing), revision: 'r1' },
+    { config: config(enabled, routing, modelName), revision: 'r1' },
     { defaults: config(false), load: vi.fn(), save: vi.fn() },
   );
   draftRef.current = store;
@@ -123,6 +125,44 @@ const radioValues = (group: HTMLElement) =>
     .getAllByRole('radio')
     .map((radio) => (radio as HTMLInputElement).value);
 
+/** One slider per model group, named "Model for …" as in the prototype. */
+const findPicker = (name: string) => screen.findByRole('group', { name: `Model for ${name}` });
+/** The Frameleaf Cloud (blue) stops of a slider. */
+const cloudStops = (picker: HTMLElement, name: string) =>
+  within(picker).getByRole('radiogroup', { name: `Frameleaf Cloud model for ${name}` });
+/** This server's (white and green) stops of a slider. */
+const localStopsOf = (picker: HTMLElement) =>
+  within(picker).getByRole('radiogroup', { name: "This server's model for Descriptions & tags" });
+
+const hardwareCheck = (ml: Partial<HardwareCheckResponseDto['ml']>) =>
+  ({
+    checkedAt: '2026-09-26T09:00:00.000Z',
+    server: { reachable: true, vendor: null, model: null, vramGb: null, driver: null, backend: 'CPU', test: null },
+    ml: {
+      reachable: true,
+      vendor: 'NVIDIA',
+      model: 'NVIDIA GeForce RTX 3060',
+      vramGb: 12,
+      driver: '550',
+      backend: 'CUDA',
+      test: null,
+      ...ml,
+    },
+    mlImage: 'cuda',
+    issues: [],
+    benchmark: null,
+  }) as HardwareCheckResponseDto;
+
+const LOCAL_MODELS = [
+  'microsoft/Florence-2-base-ft',
+  'microsoft/Florence-2-large-ft',
+  'Qwen/Qwen2.5-VL-3B-Instruct',
+  'Qwen/Qwen2.5-VL-7B-Instruct',
+  'Qwen/Qwen3-VL-30B-A3B-Instruct',
+  'Qwen/Qwen2.5-VL-32B-Instruct',
+  'Qwen/Qwen2.5-VL-72B-Instruct',
+];
+
 describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
   beforeAll(() => {
     addMessages('dev', en);
@@ -186,14 +226,20 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
         .mockResolvedValueOnce({ choices: [choice(CloudMlModelGroup.Descriptions)] });
       render(WorkloadRoutingTable);
 
-      const group = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' });
+      const group = await findPicker('descriptions & tags');
       // lightest first, only this group's models
-      expect(radioValues(group)).toEqual(['ms_DESCFAST', 'ms_DESCBEST', 'ms_DESCHUGE']);
+      expect(radioValues(cloudStops(group, 'Descriptions & tags'))).toEqual([
+        'ms_DESCFAST',
+        'ms_DESCBEST',
+        'ms_DESCHUGE',
+      ]);
       expect(within(group).getByRole('radio', { name: /Descriptions · Fast: .*Recommended/ })).toBeChecked();
       expect(within(group).getByText(/Used until you choose another model\./)).toBeInTheDocument();
       expect(within(group).getAllByText(/\$0\.0600 per minute of GPU time/).length).toBeGreaterThan(0);
-      // work set to Local only has no cloud model to choose
-      expect(screen.queryByRole('group', { name: 'Frameleaf Cloud model for Enhance & upscale' })).toBeNull();
+      // work set to Local only still has its slider (prototype); this catalogue has no upscale model yet
+      const upscale = await findPicker('enhance & upscale');
+      expect(within(upscale).getByText(/Frameleaf Cloud offers no model for this work/)).toBeInTheDocument();
+      expect(within(upscale).queryAllByRole('radio')).toEqual([]);
 
       await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Best/ }));
       // the choice shows at once, and the group stays usable while it is saved
@@ -237,7 +283,7 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       });
       render(WorkloadRoutingTable);
 
-      const group = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' });
+      const group = await findPicker('descriptions & tags');
       await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Best/ }));
       await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Huge/ }));
 
@@ -260,7 +306,7 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
         .mockResolvedValueOnce({ choices: [choice(CloudMlModelGroup.Descriptions, 'ms_DESCHUGE')] });
       render(WorkloadRoutingTable);
 
-      const group = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' });
+      const group = await findPicker('descriptions & tags');
       await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Best/ }));
       await vi.waitFor(() => expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledTimes(1));
       await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Huge/ }));
@@ -281,10 +327,10 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       useCloudModels([choice(CloudMlModelGroup.RestorationFaithful, 'ms_RESTFAIT')]);
       render(WorkloadRoutingTable);
 
-      const faithful = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Restoration (faithful)' });
-      const creative = screen.getByRole('group', { name: 'Frameleaf Cloud model for Restoration (creative)' });
-      expect(radioValues(faithful)).toEqual(['ms_RESTFAIT']);
-      expect(radioValues(creative)).toEqual(['ms_RESTCREA']);
+      const faithful = await findPicker('restoration (faithful)');
+      const creative = await findPicker('restoration (creative)');
+      expect(radioValues(cloudStops(faithful, 'Restoration (faithful)'))).toEqual(['ms_RESTFAIT']);
+      expect(radioValues(cloudStops(creative, 'Restoration (creative)'))).toEqual(['ms_RESTCREA']);
       expect(within(faithful).getByRole('radio')).toBeChecked();
       // the faithful recommendation never stands in for creative work: the picker asks for a choice
       expect(within(creative).getByRole('radio')).not.toBeChecked();
@@ -292,6 +338,10 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
         within(creative).getByText(
           'Frameleaf Cloud recommends no model for this work in this region. Choose one; these jobs are refused until you do.',
         ),
+      ).toBeInTheDocument();
+      // restoration workers bring their own models, so there is no local model to choose here
+      expect(
+        within(faithful).getByText(/This server's model for this work comes with the worker that runs it/),
       ).toBeInTheDocument();
       expect(sdkMock.getMlWorkloadRoutes).not.toHaveBeenCalled();
     });
@@ -301,10 +351,8 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       useCloudModels([choice(CloudMlModelGroup.Tts, 'ms_STUDIOVO')]);
       render(WorkloadRoutingTable);
 
-      const words = await screen.findByRole('group', {
-        name: 'Frameleaf Cloud model for Speech to text and captions',
-      });
-      const voice = screen.getByRole('group', { name: 'Frameleaf Cloud model for Speech' });
+      const words = await findPicker('speech to text and captions');
+      const voice = await findPicker('speech');
       expect(radioValues(words)).toEqual(['ms_STUDIOWD']);
       expect(radioValues(voice)).toEqual(['ms_STUDIOVO']);
       expect(within(voice).getByRole('radio')).toBeChecked();
@@ -320,9 +368,7 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       await vi.waitFor(() => expect(sdkMock.getCloudMlStatus).toHaveBeenCalled());
       expect(sdkMock.getCloudMlCatalog).not.toHaveBeenCalled();
       store.draft.frameleafCloud!.cloudMl.enabled = true;
-      expect(
-        await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' }),
-      ).toBeInTheDocument();
+      expect(await findPicker('descriptions & tags')).toBeInTheDocument();
       expect(sdkMock.getCloudMlCatalog).toHaveBeenCalledTimes(1);
     });
 
@@ -337,7 +383,147 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
           'The Frameleaf Cloud model list could not be read. Check the connection in Cloud processing.',
         ),
       ).toBeInTheDocument();
-      expect(screen.queryByRole('group', { name: /Frameleaf Cloud model for/ })).toBeNull();
+      expect(screen.queryByRole('radiogroup', { name: /Frameleaf Cloud model for/ })).toBeNull();
+    });
+  });
+
+  describe("This server's model on the same slider (FL-189)", () => {
+    it('picks the local description model on white and green stops, saved with the settings bar', async () => {
+      const store = useDraft(false, {}, 'Qwen/Qwen2.5-VL-3B-Instruct');
+      sdkMock.getCloudMlStatus.mockResolvedValue(status(CloudMlConnection.NotLinked));
+      sdkMock.getHardwareCheck.mockResolvedValue(hardwareCheck({}));
+      render(WorkloadRoutingTable);
+
+      const picker = await findPicker('descriptions & tags');
+      await vi.waitFor(() =>
+        expect(within(picker).getByText('Green · your GPU (NVIDIA GeForce RTX 3060, 12 GB)')).toBeInTheDocument(),
+      );
+      const local = localStopsOf(picker);
+      // the names the description setting accepts, lightest first; nothing from the cloud with cloud off
+      expect(radioValues(local)).toEqual(LOCAL_MODELS);
+      expect(within(picker).queryByRole('radiogroup', { name: /Frameleaf Cloud model for/ })).toBeNull();
+      expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 3B: Your GPU · about 6 GB/ })).toBeChecked();
+      expect(within(picker).getByText('White · processor, no GPU')).toBeInTheDocument();
+      // a model that needs more memory than the GPU has is crossed out, with the reason
+      expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 32B/ })).toBeDisabled();
+      expect(
+        within(picker).getByText('Qwen2.5-VL 32B needs about 64 GB of GPU memory; NVIDIA GeForce RTX 3060 has 12 GB.'),
+      ).toBeInTheDocument();
+      expect(within(picker).getByText(/downloads the first time a job uses it/)).toBeInTheDocument();
+
+      await fireEvent.click(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B: CPU · slow/ }));
+      expect(store.draft.machineLearning.imageDescription.modelName).toBe('Qwen/Qwen2.5-VL-7B-Instruct');
+      expect(store.baseline.machineLearning.imageDescription.modelName).toBe('Qwen/Qwen2.5-VL-3B-Instruct');
+      expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B/ })).toBeChecked();
+      expect(
+        within(picker).getByText(/Save with the settings bar to use Qwen2\.5-VL 7B on this server\./),
+      ).toBeInTheDocument();
+      // a local model is a setting, not a Frameleaf Cloud choice
+      expect(sdkMock.setCloudMlModelChoice).not.toHaveBeenCalled();
+    });
+
+    it("keeps each side's model when the other side changes", async () => {
+      const store = useDraft(true, { descriptions: 'both' }, 'Qwen/Qwen2.5-VL-3B-Instruct');
+      useCloudModels();
+      sdkMock.getHardwareCheck.mockResolvedValue(hardwareCheck({}));
+      sdkMock.setCloudMlModelChoice.mockResolvedValue({
+        choices: [choice(CloudMlModelGroup.Descriptions, 'ms_DESCHUGE')],
+      });
+      render(WorkloadRoutingTable);
+
+      const picker = await findPicker('descriptions & tags');
+      const cloud = await vi.waitFor(() => cloudStops(picker, 'Descriptions & tags'));
+      const local = localStopsOf(picker);
+      // one track: this server's stops, then Frameleaf Cloud's; each side is a real radio group, sized by stop count
+      expect(radioValues(picker)).toEqual([...LOCAL_MODELS, 'ms_DESCFAST', 'ms_DESCBEST', 'ms_DESCHUGE']);
+      expect(local.parentElement).toBe(cloud.parentElement);
+      expect(local.nextElementSibling).toBe(cloud);
+      expect(local.style.getPropertyValue('--ms-count')).toBe(String(LOCAL_MODELS.length));
+      expect(cloud.style.getPropertyValue('--ms-count')).toBe('3');
+      expect(within(picker).getByText('Blue · Frameleaf Cloud only, cost shown first')).toBeInTheDocument();
+
+      await fireEvent.click(within(cloud).getByRole('radio', { name: /Descriptions · Huge/ }));
+      await vi.waitFor(() =>
+        expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledWith({
+          group: CloudMlModelGroup.Descriptions,
+          cloudMlModelChoiceUpdateDto: { modelId: 'ms_DESCHUGE' },
+        }),
+      );
+      expect(store.draft.machineLearning.imageDescription.modelName).toBe('Qwen/Qwen2.5-VL-3B-Instruct');
+      expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 3B/ })).toBeChecked();
+
+      await fireEvent.click(within(local).getByRole('radio', { name: /^Florence-2 large/ }));
+      expect(store.draft.machineLearning.imageDescription.modelName).toBe('microsoft/Florence-2-large-ft');
+      expect(within(cloud).getByRole('radio', { name: /Descriptions · Huge/ })).toBeChecked();
+      expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledTimes(1);
+      expect(store.draft.frameleafCloud!.cloudMl.routing.descriptions).toBe('both');
+    });
+
+    it('shows every local stop as white before a hardware check', async () => {
+      useDraft(false, {}, 'Qwen/Qwen2.5-VL-3B-Instruct');
+      sdkMock.getCloudMlStatus.mockResolvedValue(status(CloudMlConnection.NotLinked));
+      render(WorkloadRoutingTable);
+
+      const picker = await findPicker('descriptions & tags');
+      const local = localStopsOf(picker);
+      for (const radio of within(local).getAllByRole('radio')) {
+        expect(radio).toBeEnabled();
+      }
+      expect(within(picker).getByText('White · processor, no GPU')).toBeInTheDocument();
+      expect(within(picker).queryByText(/^Green/)).toBeNull();
+      expect(within(picker).getByText(/^No hardware check yet, so every model shows as white\./)).toBeInTheDocument();
+    });
+
+    it('crosses out the side a route does not use, with the reason', async () => {
+      useDraft(true, { descriptions: 'cloud', upscale: 'local' }, 'Qwen/Qwen2.5-VL-3B-Instruct');
+      useCloudModels();
+      sdkMock.getHardwareCheck.mockResolvedValue(hardwareCheck({}));
+      render(WorkloadRoutingTable);
+
+      const picker = await findPicker('descriptions & tags');
+      await vi.waitFor(() => cloudStops(picker, 'Descriptions & tags'));
+      for (const radio of within(localStopsOf(picker)).getAllByRole('radio')) {
+        expect(radio).toBeDisabled();
+      }
+      expect(
+        within(picker).getByText(/^This work is set to Cloud only, so its jobs don't use this server's model\./),
+      ).toBeInTheDocument();
+      expect(
+        within(cloudStops(picker, 'Descriptions & tags')).getByRole('radio', { name: /Descriptions · Best/ }),
+      ).toBeEnabled();
+    });
+
+    it('crosses out the blue stops of work set to Local only', async () => {
+      useDraft(true, { descriptions: 'local' }, 'Qwen/Qwen2.5-VL-3B-Instruct');
+      useCloudModels([choice(CloudMlModelGroup.Descriptions, 'ms_DESCBEST')]);
+      render(WorkloadRoutingTable);
+
+      const picker = await findPicker('descriptions & tags');
+      const cloud = await vi.waitFor(() => cloudStops(picker, 'Descriptions & tags'));
+      for (const radio of within(cloud).getAllByRole('radio')) {
+        expect(radio).toBeDisabled();
+      }
+      expect(
+        within(picker).getByText(
+          'This work is set to run on this server only. Choose Both or Cloud only in Where each job runs.',
+        ),
+      ).toBeInTheDocument();
+      expect(within(picker).queryByRole('button', { name: /Use the recommended model/ })).toBeNull();
+      expect(within(localStopsOf(picker)).getByRole('radio', { name: /^Qwen2\.5-VL 7B/ })).toBeEnabled();
+    });
+
+    it('says which model this server uses when it was typed in Machine learning settings', async () => {
+      useDraft(false, {}, 'my-org/custom-vlm');
+      sdkMock.getCloudMlStatus.mockResolvedValue(status(CloudMlConnection.NotLinked));
+      render(WorkloadRoutingTable);
+
+      const picker = await findPicker('descriptions & tags');
+      expect(
+        within(picker).getByText('This server uses my-org/custom-vlm, set in Machine learning settings.'),
+      ).toBeInTheDocument();
+      for (const radio of within(localStopsOf(picker)).getAllByRole('radio')) {
+        expect(radio).not.toBeChecked();
+      }
     });
   });
 });

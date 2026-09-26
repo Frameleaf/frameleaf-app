@@ -154,9 +154,9 @@ The default configuration looks like this:
     "urls": ["http://immich-machine-learning:3003"]
   },
   "map": {
-    "darkStyle": "https://tiles.immich.cloud/v1/style/dark.json",
+    "darkStyle": "https://tiles.frameleaf.cloud/v1/style/dark.json",
     "enabled": true,
-    "lightStyle": "https://tiles.immich.cloud/v1/style/light.json"
+    "lightStyle": "https://tiles.frameleaf.cloud/v1/style/light.json"
   },
   "metadata": {
     "faces": {

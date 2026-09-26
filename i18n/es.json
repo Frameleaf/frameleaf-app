@@ -239,7 +239,7 @@
     "map_enable_description": "Habilitar características del mapa",
     "map_gps_settings": "Configuración de mapas y GPS",
     "map_gps_settings_description": "Administrar la configuración de mapas y GPS (geocodificación inversa)",
-    "map_implications": "La función de mapa depende de un servicio externo de mosaicos (tiles.immich.cloud)",
+    "map_implications": "La función de mapa depende de un servicio externo de mosaicos (tiles.frameleaf.cloud)",
     "map_light_style": "Estilo claro",
     "map_manage_reverse_geocoding_settings": "Gestionar los ajustes de la <link>geocodificación inversa</link>",
     "map_reverse_geocoding": "Geocodificación inversa",

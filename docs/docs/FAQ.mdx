@@ -266,11 +266,11 @@ However, disabling all jobs will not disable the machine learning service itself
 
 ### I'm getting errors about models being corrupt or failing to download. What do I do?
 
-You can delete the model cache volume, where models are downloaded. This will give the service a clean environment to download the model again. If models are failing to download entirely, you can manually download them from [Hugging Face][huggingface] and place them in the cache folder.
+You can delete the model cache volume, where models are downloaded. This will give the service a clean environment to download the model again. If models are failing to download entirely, you can manually download them from the model source (by default the Frameleaf model mirror at [models.frameleaf.cloud][model-source], or the host set in `MACHINE_LEARNING_MODEL_SOURCE_URL`) and place them in the cache folder.
 
 ### Can I use a custom CLIP model?
 
-No, this is not supported. Only models listed in the [Hugging Face][huggingface] page are compatible. Feel free to make a feature request if there's a model not listed here that you think should be added.
+No, this is not supported. Only models listed in [Searching](/features/searching#clip-models) are compatible. Feel free to make a feature request if there's a model not listed here that you think should be added.
 
 ### I want to be able to search in other languages besides English. How can I do that?
 
@@ -543,4 +543,4 @@ A common alternative suggestion is to offer bounties that can be collected by an
 
 If you really want to pay someone to build a feature you like, you're welcome to hire somebody directly and pay them for their time, but please note that we provide no guarantee that we'll merge the resulting work so we recommend that you check in with us first.
 
-[huggingface]: https://huggingface.co/immich-app
+[model-source]: https://models.frameleaf.cloud

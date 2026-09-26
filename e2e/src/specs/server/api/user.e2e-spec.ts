@@ -89,7 +89,7 @@ describe('/users', () => {
 
     beforeAll(async () => {
       owner = await utils.userSetup(admin.accessToken, {
-        email: 'locked-rules@immich.cloud',
+        email: 'locked-rules@example.com',
         name: 'Locked Rules',
         password,
       });
@@ -152,7 +152,7 @@ describe('/users', () => {
       expect(unlocked.status).toBe(204);
       await setPreferences(owner.accessToken, { privacy: { suppression: { tagIds: [tagId], scope: 'owned' } } });
 
-      const otherDevice = await login({ loginCredentialDto: { email: 'locked-rules@immich.cloud', password } });
+      const otherDevice = await login({ loginCredentialDto: { email: 'locked-rules@example.com', password } });
       const { status, body } = await getPreferences(otherDevice.accessToken);
       expect(status).toBe(200);
       expect(body.privacy.suppression).toEqual({ tagIds: [], personIds: [], petIds: [], scope: 'owned' });

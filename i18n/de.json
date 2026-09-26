@@ -239,7 +239,7 @@
     "map_enable_description": "Kartenfunktionen aktivieren",
     "map_gps_settings": "Karten- & GPS-Einstellungen",
     "map_gps_settings_description": "Karten- & GPS-Einstellungen verwalten",
-    "map_implications": "Die Kartenfunktion verwendet einen externen Tile-Service (tiles.immich.cloud)",
+    "map_implications": "Die Kartenfunktion verwendet einen externen Tile-Service (tiles.frameleaf.cloud)",
     "map_light_style": "Heller Stil",
     "map_manage_reverse_geocoding_settings": "Einstellungen für die <link>umgekehrte Geokodierung</link> verwalten",
     "map_reverse_geocoding": "Umgekehrte Geokodierung",

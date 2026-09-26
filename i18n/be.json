@@ -239,7 +239,7 @@
     "map_enable_description": "Уключыць функцыі карты",
     "map_gps_settings": "Налады карты і GPS",
     "map_gps_settings_description": "Кіраванне наладамі карты і GPS (Зваротнае геакадаванне)",
-    "map_implications": "Функцыя карты выкарыстоўвае знешні сэрвіс тайлаў (tiles.immich.cloud)",
+    "map_implications": "Функцыя карты выкарыстоўвае знешні сэрвіс тайлаў (tiles.frameleaf.cloud)",
     "map_light_style": "Светлы стыль",
     "map_manage_reverse_geocoding_settings": "Кіраванне наладамі <link>Зваротнага геакадавання</link>",
     "map_reverse_geocoding": "Зваротнае геакадаванне",

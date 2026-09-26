@@ -63,12 +63,6 @@ export const ALLOWLIST = [
     files: /^docs\/docs\/developer\//,
     allow: /(?:https:\/\/)?github\.com\/immich-app\/immich(?:\.git)?\b/g,
   },
-  {
-    reason:
-      "FL-192 replaces the map tile host (one locale spells it diles.immich.cloud); drop this entry once it lands",
-    keys: /^admin\.map_implications$/,
-    allow: /\b[dt]iles\.immich\.cloud/g,
-  },
 ];
 
 const blank = (text) => text.replaceAll(/[^\n]/g, " ");

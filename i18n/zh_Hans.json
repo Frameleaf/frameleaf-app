@@ -237,7 +237,7 @@
     "map_enable_description": "启用地图功能",
     "map_gps_settings": "地图与 GPS 设置",
     "map_gps_settings_description": "管理地图与 GPS（逆地理编码）设置",
-    "map_implications": "地图功能依赖于外部瓦片服务 (tiles.immich.cloud)",
+    "map_implications": "地图功能依赖于外部瓦片服务 (tiles.frameleaf.cloud)",
     "map_light_style": "亮色风格",
     "map_manage_reverse_geocoding_settings": "管理 <link>逆地理编码</link> 设置",
     "map_reverse_geocoding": "逆地理编码",

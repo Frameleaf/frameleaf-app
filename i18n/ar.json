@@ -236,7 +236,7 @@
     "map_enable_description": "تفعيل ميزات الخرائط",
     "map_gps_settings": "إعدادات الخريطة ونظام تحديد المواقع",
     "map_gps_settings_description": "إدارة إعدادات الخريطة و نظام تحديد المواقع (عكس الترميز الجغرافي)",
-    "map_implications": "تعتمد ميزة الخريطة على خدمة خارجية (tiles.immich.cloud)",
+    "map_implications": "تعتمد ميزة الخريطة على خدمة خارجية (tiles.frameleaf.cloud)",
     "map_light_style": "النمط الفاتح",
     "map_manage_reverse_geocoding_settings": "إدارة إعدادات <link>التكوين الجغرافي المعكوس</link>",
     "map_reverse_geocoding": "عكس الترميز الجغرافي",
