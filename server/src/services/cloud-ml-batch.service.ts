@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SystemConfig } from 'src/config.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -218,7 +219,7 @@ export class CloudMlBatchService extends BaseService {
         this.logger.warn(`Automatic Frameleaf Cloud description batching did not run: ${errorMessage(error)}`);
       }
     }
-    await this.releaseAbandoned();
+    await this.releaseAbandoned(now);
 
     let finished = false;
     for (let step = 0; step < CLOUD_DESCRIPTION_STEPS_PER_PASS; step++) {
@@ -256,7 +257,7 @@ export class CloudMlBatchService extends BaseService {
    * batch, shown as a p50–p90 range with a per-photo figure and the wallet balance. The server keeps
    * the estimate, with the photos it covers, under the id it answers with.
    */
-  async estimateBackfill(now = new Date()): Promise<CloudMlDescriptionEstimateResponseDto> {
+  async estimateBackfill(auth: AuthDto, now = new Date()): Promise<CloudMlDescriptionEstimateResponseDto> {
     const { gateway, destination } = await this.requireCloud();
     const { model, offered } = await this.resolveModel(gateway);
     const { candidates, truncated } = await this.collectCandidates(CLOUD_DESCRIPTION_BACKFILL_MAX);
@@ -314,6 +315,7 @@ export class CloudMlBatchService extends BaseService {
       photos: projection.photos,
       p90Usd: projection.p90Usd,
       owners,
+      createdBy: auth.user.id,
       started: null,
     };
     await this.keepEstimate(record, now);
@@ -381,37 +383,12 @@ export class CloudMlBatchService extends BaseService {
         throw new BadRequestException('The description model changed since the estimate; estimate again');
       }
 
-      const open = await this.mediaOperationRepository.getOpenCloudDescriptionAssetIds();
-      const items = Object.entries(record.owners).flatMap(([ownerId, assetIds]) =>
-        assetIds.filter((assetId) => !open.has(assetId)).map((assetId) => ({ assetId, ownerId })),
+      // Lock order: the backfill lock (962), then the automatic queue's (961), which automatic batching
+      // also holds while it checks open batches and creates its own; so the two never batch one photo.
+      const { batches, operationIds } = await this.databaseRepository.withLock(
+        DatabaseLock.FrameleafCloudMlBatchQueue,
+        () => this.queueBackfill(record, gateway, destination, now),
       );
-      const batches = groupCloudDescriptionBatches(await this.describable(items));
-      const approvals = batches.map(({ assetIds }) =>
-        micros(record.startupUsd + assetIds.length * record.perPhotoP90Usd),
-      );
-      const approvedTotal = micros(approvals.reduce((sum, value) => sum + value, 0));
-      // a subset of the estimated photos never costs more than the estimate's ceiling; checked anyway
-      if (approvedTotal > record.p90Usd + 1e-6) {
-        throw new BadRequestException('These photos would cost more than the estimate; estimate again');
-      }
-
-      let operationIds: string[] = [];
-      if (batches.length > 0) {
-        const wallet = await this.callCloud(() => this.frameleafCloudMlRepository.getWallet(gateway));
-        const refusal = this.spendingRefusal(
-          destination,
-          wallet,
-          Math.max(0, wallet.balanceUsd - wallet.heldUsd),
-          approvedTotal,
-          approvals[0],
-          await this.spentInWindow(destination.id, now),
-        );
-        if (refusal) {
-          throw new BadRequestException(refusal);
-        }
-        operationIds = await this.createBatches('backfill', destination, record.modelSku, batches, approvals);
-      }
-
       const started = {
         at: now.toISOString(),
         batches: operationIds.length,
@@ -426,6 +403,46 @@ export class CloudMlBatchService extends BaseService {
       }
       return { batches: started.batches, photos: started.photos, operationIds };
     });
+  }
+
+  /** The part of a backfill that must not race automatic batching: open batches, then the new ones. */
+  private async queueBackfill(
+    record: CloudDescriptionEstimateRecord,
+    gateway: CloudMlGateway,
+    destination: MlDestinationRow,
+    now: Date,
+  ): Promise<{ batches: Array<{ ownerId: string; assetIds: string[] }>; operationIds: string[] }> {
+    const open = await this.mediaOperationRepository.getOpenCloudDescriptionAssetIds();
+    const items = Object.entries(record.owners).flatMap(([ownerId, assetIds]) =>
+      assetIds.filter((assetId) => !open.has(assetId)).map((assetId) => ({ assetId, ownerId })),
+    );
+    const batches = groupCloudDescriptionBatches(await this.describable(items));
+    const approvals = batches.map(({ assetIds }) =>
+      micros(record.startupUsd + assetIds.length * record.perPhotoP90Usd),
+    );
+    const approvedTotal = micros(approvals.reduce((sum, value) => sum + value, 0));
+    // a subset of the estimated photos never costs more than the estimate's ceiling; checked anyway
+    if (approvedTotal > record.p90Usd + 1e-6) {
+      throw new BadRequestException('These photos would cost more than the estimate; estimate again');
+    }
+
+    let operationIds: string[] = [];
+    if (batches.length > 0) {
+      const wallet = await this.callCloud(() => this.frameleafCloudMlRepository.getWallet(gateway));
+      const refusal = this.spendingRefusal(
+        destination,
+        wallet,
+        Math.max(0, wallet.balanceUsd - wallet.heldUsd),
+        approvedTotal,
+        approvals[0],
+        await this.spentInWindow(destination.id, now),
+      );
+      if (refusal) {
+        throw new BadRequestException(refusal);
+      }
+      operationIds = await this.createBatches('backfill', destination, record.modelSku, batches, approvals);
+    }
+    return { batches, operationIds };
   }
 
   /**
@@ -480,7 +497,7 @@ export class CloudMlBatchService extends BaseService {
     const since = new Date(now.getTime() - ML_BUDGET_WINDOW_DAYS * DAY_MS);
     const [spent, held] = await Promise.all([
       this.mlDestinationRepository.getSpend(destinationId, since),
-      this.mediaOperationRepository.sumCloudDescriptionOpenHolds(destinationId),
+      this.mediaOperationRepository.sumCloudDescriptionOpenHolds(destinationId, since),
     ]);
     return spent + held;
   }
@@ -813,11 +830,16 @@ export class CloudMlBatchService extends BaseService {
       await this.reestimate(run);
       return;
     }
-    if (submission.attemptedAt) {
-      await this.submit(run, gateway);
-      return;
-    }
     if (await this.inputsChanged(run)) {
+      // an attempted submission may have created a job: it is never estimated again, the batch stops
+      // with its attempt kept, and the cleanup pass stops any job it created (`releasePending`)
+      if (submission.attemptedAt) {
+        throw new BatchRefusal(
+          'cloud_description_photos_changed',
+          'A photo of this batch was Locked, removed or changed after the batch was sent; nothing more is sent',
+          false,
+        );
+      }
       await this.reestimate(run);
       return;
     }
@@ -998,17 +1020,7 @@ export class CloudMlBatchService extends BaseService {
     try {
       admitted = await this.frameleafCloudMlRepository.createJob(
         gateway,
-        {
-          estimate: submission.estimate,
-          workload: 'descriptions',
-          modelSku: snapshot.modelSku,
-          modelRev: submission.modelRev,
-          clientRef: `batch-${operation.id}`,
-          packKey: snapshot.packKey,
-          deadlineSeconds: CLOUD_DESCRIPTION_DEADLINE_SECONDS,
-          inputs: inputs.map((item) => this.toInput(item)),
-          request: { ...CLOUD_DESCRIPTION_REQUEST },
-        },
+        this.jobBody(operation.id, snapshot, run.result, submission),
         submission.idempotencyKey,
       );
     } catch (error) {
@@ -1065,6 +1077,26 @@ export class CloudMlBatchService extends BaseService {
     if (await this.save(run)) {
       await this.wait(run, CLOUD_DESCRIPTION_POLL_MS);
     }
+  }
+
+  /** The `POST /v2/jobs` body of a submission, the same every time it is sent or replayed. */
+  private jobBody(
+    operationId: string,
+    snapshot: CloudDescriptionSnapshot,
+    result: CloudDescriptionResult,
+    submission: NonNullable<CloudDescriptionResult['submission']>,
+  ) {
+    return {
+      estimate: submission.estimate,
+      workload: 'descriptions' as const,
+      modelSku: snapshot.modelSku,
+      modelRev: submission.modelRev,
+      clientRef: `batch-${operationId}`,
+      packKey: snapshot.packKey,
+      deadlineSeconds: CLOUD_DESCRIPTION_DEADLINE_SECONDS,
+      inputs: result.items.filter((item) => !item.refused).map((item) => this.toInput(item)),
+      request: { ...CLOUD_DESCRIPTION_REQUEST },
+    };
   }
 
   private async reestimate(run: BatchRun) {
@@ -1195,19 +1227,68 @@ export class CloudMlBatchService extends BaseService {
    * Release cloud jobs of batches that were cancelled or failed while no step held them (a cancel of a
    * waiting batch is immediate). Until the cloud confirms, the batch stays on the list.
    */
-  private async releaseAbandoned() {
+  private async releaseAbandoned(now: Date) {
     const unreleased = await this.mediaOperationRepository.getUnreleasedRemoteOperations(100, [
       MediaOperationKind.CloudDescriptionBatch,
     ]);
-    if (unreleased.length === 0) {
+    const pending = CLOUD_DESCRIPTION_CONTRACT.uploadsPublished
+      ? await this.mediaOperationRepository.listCloudDescriptionPendingReleases(20)
+      : [];
+    if (unreleased.length === 0 && pending.length === 0) {
       return;
     }
     const resolution = await resolveCloudGateway(this.gatewayDeps());
     if (resolution.state !== CloudConnectionState.Ready) {
       return;
     }
+    await this.releasePending(resolution.gateway, pending, now);
     for (const operation of unreleased) {
       await this.release(resolution.gateway, operation.id, operation.remoteJobId!, true);
+    }
+  }
+
+  /**
+   * FL-163 re-check: a batch that ended after its `POST /v2/jobs` was sent (retries ran out, a photo
+   * changed, processing was turned off) but before its job was recorded. Its saved submission (the
+   * idempotency key and body, written before the POST) is the pending-release marker. Once its sealed
+   * estimate expired, so a replay can no longer create a job, the same key and body are replayed: an
+   * admission names the job that was created, which is recorded and then stopped and released; a 409
+   * means none was, and the marker is cleared.
+   */
+  private async releasePending(gateway: CloudMlGateway, pending: MediaOperation[], now: Date) {
+    for (const operation of pending) {
+      let snapshot: CloudDescriptionSnapshot;
+      try {
+        snapshot = parseCloudDescriptionSnapshot(operation.snapshot);
+      } catch {
+        continue;
+      }
+      const result = parseCloudDescriptionResult(operation.result, snapshot.assetIds);
+      const submission = result.submission;
+      if (!submission?.attemptedAt || estimateUsable({ expiresAt: submission.expiresAt }, now.getTime())) {
+        continue;
+      }
+      const cleared = { ...result, submission: { ...submission, attemptedAt: null } };
+      try {
+        const admitted = await this.frameleafCloudMlRepository.createJob(
+          gateway,
+          this.jobBody(operation.id, snapshot, result, submission),
+          submission.idempotencyKey,
+        );
+        await this.mediaOperationRepository.recordRemoteJobId(operation.id, admitted.jobId);
+        await this.release(gateway, operation.id, admitted.jobId, true);
+      } catch (error) {
+        if (!(error instanceof FrameleafCloudError && error.refusal === MlAdmissionRefusal.ModelMismatch)) {
+          this.logger.warn(
+            `Description batch ${operation.id}: its submission could not be checked yet: ${errorMessage(error)}`,
+          );
+          continue;
+        }
+      }
+      await this.mediaOperationRepository.setFinishedResult(
+        operation.id,
+        cleared as unknown as Record<string, unknown>,
+      );
     }
   }
 
@@ -1233,10 +1314,12 @@ export class CloudMlBatchService extends BaseService {
   /** A step met a refusal: wait and retry once when it may pass (the job is never sent elsewhere), else fail. */
   private async refuse(run: BatchRun, refusal: BatchRefusal | WaitUntil) {
     if (refusal instanceof WaitUntil) {
+      // an attempted submission is kept (and replayed later with its key), never estimated again
+      const attempted = !!run.result.submission?.attemptedAt && !run.result.job;
       run.result = {
         ...run.result,
-        phase: CloudDescriptionPhase.Queued,
-        submission: null,
+        phase: attempted ? CloudDescriptionPhase.Estimated : CloudDescriptionPhase.Queued,
+        submission: attempted ? run.result.submission : null,
         waiting: { refusal: 'cloud_description_waiting', detail: refusal.message, at: run.now.toISOString() },
       };
       if (await this.save(run)) {

@@ -1599,6 +1599,9 @@ describe(SystemConfigService.name, () => {
     it('queues nothing and says so while descriptions are routed to Frameleaf Cloud (FL-163)', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
         machineLearning: { imageDescription: { enabled: true } },
+        frameleafCloud: {
+          cloudMl: { enabled: true, routing: { ...defaults.frameleafCloud.cloudMl.routing, descriptions: 'cloud' } },
+        },
       });
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
 
@@ -1606,6 +1609,24 @@ describe(SystemConfigService.name, () => {
 
       expect(mocks.job.getJobCounts).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('claims no batches for Frameleaf Cloud while its processing is off (FL-163)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { imageDescription: { enabled: true } },
+        frameleafCloud: { cloudMl: { enabled: false } },
+      });
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      mocks.job.getJobCounts.mockResolvedValue({
+        active: 0,
+        completed: 0,
+        failed: 0,
+        delayed: 0,
+        waiting: 0,
+        paused: 0,
+      });
+
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: true, cloudBatches: false });
     });
 
     it('should throw BadRequestException when image description is disabled', async () => {

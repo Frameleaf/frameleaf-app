@@ -571,9 +571,10 @@ export class SystemConfigService extends BaseService {
       throw new BadRequestException('Image description is not enabled');
     }
 
-    // FL-163: descriptions routed to Frameleaf Cloud are described in batches from Frameleaf Cloud
-    // processing, where the estimate comes first; the queue-all job queues none of them
-    if (await cloudDescriptionDestination(this.mlDestinationRepository)) {
+    // FL-163: while cloud processing is on for descriptions routed to Frameleaf Cloud, they are described
+    // in batches from Frameleaf Cloud processing, where the estimate comes first, and the queue-all job
+    // queues none of them; while it is off, nothing is claimed to go through batches
+    if (await cloudDescriptionDestination(this.mlDestinationRepository, null, oldConfig.frameleafCloud.cloudMl)) {
       return { queued: false, cloudBatches: true };
     }
 
