@@ -66,6 +66,8 @@ jobs:
           pnpm --filter @immich/sdk build
           pnpm --filter @immich/sdk test
       - name: Check server types and lint
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm --filter immich check
           pnpm --filter immich lint
