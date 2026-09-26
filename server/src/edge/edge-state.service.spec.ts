@@ -214,7 +214,7 @@ describe(EdgeStateService.name, () => {
         identityDir,
         expect.objectContaining({
           directoryUrl: 'https://acme.test/directory',
-          names: ['*.u225vlzhsdlhwh4l.frameleaf-direct.net', 'u225vlzhsdlhwh4l.frameleaf-direct.net'],
+          names: ['*.u225vlzhsdlhwh4l.frameleaf.net', 'u225vlzhsdlhwh4l.frameleaf.net'],
           profile: 'tlsserver',
         }),
       );
@@ -238,13 +238,13 @@ describe(EdgeStateService.name, () => {
       const state = remoteState()!;
       expect(state).toMatchObject({
         status: 'ready',
-        names: { label: 'u225vlzhsdlhwh4l', domain: 'frameleaf-direct.net' },
+        names: { label: 'u225vlzhsdlhwh4l', domain: 'frameleaf.net' },
         certificate: { reported: true },
         direct: { listening: true, port: 2443 },
       });
       expect(state.candidates.map((candidate) => candidate.uri)).toEqual([
-        'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf-direct.net:2443',
-        'https://r.u225vlzhsdlhwh4l.frameleaf-direct.net',
+        'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443',
+        'https://r.u225vlzhsdlhwh4l.frameleaf.net',
       ]);
       // no key or secret is ever part of the state
       expect(JSON.stringify(state)).not.toContain('PRIVATE KEY');
@@ -302,7 +302,7 @@ describe(EdgeStateService.name, () => {
       await sut.tick(now);
 
       expect(issue.mock.calls.map(([, request]) => request.names)).toEqual([
-        ['*.u225vlzhsdlhwh4l.frameleaf-direct.net', 'u225vlzhsdlhwh4l.frameleaf-direct.net'],
+        ['*.u225vlzhsdlhwh4l.frameleaf.net', 'u225vlzhsdlhwh4l.frameleaf.net'],
         ['photos.example.com'],
       ]);
       const txt = calls.filter(({ url, method }) => url === `${API}/v1/remote/dns/txt` && method === 'PUT');

@@ -82,6 +82,12 @@ tested against what the cloud publishes (FL-177).
   `daa22f68296bc5a897b40b3af34b750fd6586e2f` (the `frameleaf.net` rename): both gained the optional
   `remote: { directDomain }` (contract `packages/contracts/src/instance/discovery.ts`), which
   `server/src/utils/frameleaf-cloud.ts` reads and remote access uses as the direct domain before enrolment.
+- Apex and domain layout (Frameleaf/frameleaf-cloud#57, merge `e318c18314b30a9c0fad7472a34be3c706837b52`, which also
+  carries the `frameleaf.net` rename from #56): `instance/discovery.json`, `instance/discovery-instance.json`,
+  `ml/wallet.json`, `remote/certs-request.json`, `remote/dns-txt-put-response.json`, `remote/enroll-response.json` and
+  `remote/hostnames-list.json` are byte-identical to that commit. The store and wallet links now point at the
+  `https://frameleaf.cloud` apex and the direct names at `frameleaf.net`; every other copied `remote/` and `backup/`
+  fixture was checked byte-identical there.
 
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
 above.

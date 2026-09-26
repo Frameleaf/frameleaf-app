@@ -1,8 +1,8 @@
 {
   "propagated": true,
   "servers": [
-    { "name": "ns1.frameleaf-direct.net", "propagated": true },
-    { "name": "ns2.frameleaf-direct.net", "propagated": true }
+    { "name": "ns1.frameleaf.net", "propagated": true },
+    { "name": "ns2.frameleaf.net", "propagated": true }
   ],
   "expiresAt": "2026-09-25T18:00:00.000Z"
 }

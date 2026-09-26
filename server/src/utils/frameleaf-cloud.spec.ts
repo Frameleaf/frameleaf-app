@@ -145,7 +145,7 @@ describe(discoveryProblem.name, () => {
         expect(document.remote).toEqual(cloudContractFixture(name).remote);
         // FC-19 final (383f815): the account site's store, a sibling too (as-built decision #29)
         expect(storeAddress('https://api.frameleaf.cloud', document.store)).toBe(
-          'https://account.frameleaf.cloud/store',
+          'https://frameleaf.cloud/store',
         );
         expect(storeAddress('https://api.frameleaf.example', document.store)).toBeNull();
         // the same document under another configured cloud is refused as a whole
@@ -160,13 +160,17 @@ describe(discoveryProblem.name, () => {
       expect(
         cloudAddressProblem('https://api.frameleaf.cloud', 'sign-in issuer', 'https://id.frameleaf.cloud'),
       ).toBeNull();
+      // frameleaf-cloud#57: the account app and store are served at the cloud domain's apex
+      expect(
+        cloudAddressProblem('https://api.frameleaf.cloud', 'account link', 'https://frameleaf.cloud/wallet'),
+      ).toBeNull();
     });
 
     it('drops a store address that is not a URL without failing discovery', () => {
       const document = discoverySchema.parse({ ...production, store: 'not a url' });
       expect(document.store).toBeUndefined();
       expect(storeAddress('https://api.frameleaf.cloud', undefined)).toBeNull();
-      expect(storeAddress('https://api.frameleaf.cloud', 'http://account.frameleaf.cloud/store')).toBeNull();
+      expect(storeAddress('https://api.frameleaf.cloud', 'http://frameleaf.cloud/store')).toBeNull();
     });
 
     it('keeps refusing every other host', () => {
@@ -418,8 +422,8 @@ describe('error envelope (FL-177, as-built decisions #15–#18)', () => {
   it('finds the account-app page of a step-up refusal only on the configured cloud', () => {
     const stepUp = (url: unknown) =>
       failure(403, { code: CloudErrorCode.StepUpRequired, message: 'confirm', data: { url } });
-    expect(stepUpUrl('https://api.frameleaf.cloud', stepUp('https://account.frameleaf.cloud/wallet'))).toBe(
-      'https://account.frameleaf.cloud/wallet',
+    expect(stepUpUrl('https://api.frameleaf.cloud', stepUp('https://frameleaf.cloud/wallet'))).toBe(
+      'https://frameleaf.cloud/wallet',
     );
     expect(stepUpUrl('https://api.frameleaf.cloud', stepUp('https://account.attacker.example/wallet'))).toBeNull();
     expect(stepUpUrl('https://api.frameleaf.cloud', stepUp('javascript:alert(1)'))).toBeNull();
@@ -427,7 +431,7 @@ describe('error envelope (FL-177, as-built decisions #15–#18)', () => {
     expect(
       stepUpUrl(
         'https://api.frameleaf.cloud',
-        failure(403, { code: 'consent-missing', message: '', data: { url: 'https://account.frameleaf.cloud' } }),
+        failure(403, { code: 'consent-missing', message: '', data: { url: 'https://frameleaf.cloud' } }),
       ),
     ).toBeNull();
   });
@@ -440,15 +444,15 @@ describe('gateway amounts and usage (FL-177, as-built decisions #21, #22 and #24
       heldUsd: 0.1 + 0.2,
       dailyCapUsd: 20,
       spentTodayUsd: 1.0000004,
-      topUpUrl: 'https://account.frameleaf.cloud/wallet/top-up',
-      settingsUrl: 'https://account.frameleaf.cloud/wallet',
+      topUpUrl: 'https://frameleaf.cloud/wallet/top-up',
+      settingsUrl: 'https://frameleaf.cloud/wallet',
     });
     expect(wallet).toMatchObject({
       balanceUsd: 12.345678,
       heldUsd: 0.3,
       dailyCapUsd: 20,
       spentTodayUsd: 1,
-      settingsUrl: 'https://account.frameleaf.cloud/wallet',
+      settingsUrl: 'https://frameleaf.cloud/wallet',
     });
     // an address that is not https is dropped on its own, never failing the wallet
     expect(walletResponseSchema.parse({ balanceUsd: 1, settingsUrl: 'http://x.test' }).settingsUrl).toBeNull();
@@ -699,7 +703,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         spentTodayUsd: 0,
         topUpUrl: null,
         autoTopUp: false,
-        settingsUrl: 'https://account.frameleaf.cloud/wallet',
+        settingsUrl: 'https://frameleaf.cloud/wallet',
       });
     });
   });

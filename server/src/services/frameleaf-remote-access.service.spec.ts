@@ -51,7 +51,7 @@ describe(FrameleafRemoteAccessService.name, () => {
       reason: null,
       names: { ...answer, cloudUrl: CLOUD, instanceId: INSTANCE_ID, enrolledAt: new Date().toISOString() },
       certificate: {
-        names: ['*.u225vlzhsdlhwh4l.frameleaf-direct.net', 'u225vlzhsdlhwh4l.frameleaf-direct.net'],
+        names: ['*.u225vlzhsdlhwh4l.frameleaf.net', 'u225vlzhsdlhwh4l.frameleaf.net'],
         serial: '41f9a',
         issuer: 'CN=R11',
         notBefore: new Date(Date.now() - 86_400_000).toISOString(),
@@ -125,9 +125,9 @@ describe(FrameleafRemoteAccessService.name, () => {
       metadata.set(SystemMetadataKey.FrameleafRemoteAccess, edgeState());
       await expect(sut.getStatus()).resolves.toMatchObject({
         status: 'ready',
-        publicUrl: 'https://r.u225vlzhsdlhwh4l.frameleaf-direct.net',
-        frameleafAddress: 'https://r.u225vlzhsdlhwh4l.frameleaf-direct.net',
-        certificateName: '*.u225vlzhsdlhwh4l.frameleaf-direct.net',
+        publicUrl: 'https://r.u225vlzhsdlhwh4l.frameleaf.net',
+        frameleafAddress: 'https://r.u225vlzhsdlhwh4l.frameleaf.net',
+        certificateName: '*.u225vlzhsdlhwh4l.frameleaf.net',
         relayRegion: 'eu1',
         directListening: true,
       });
@@ -273,7 +273,7 @@ describe(FrameleafRemoteAccessService.name, () => {
         .spyOn(sut as unknown as { probeEdge: () => Promise<unknown> }, 'probeEdge')
         .mockResolvedValue({ ok: true, detail: 'answered' });
       const status = await sut.test(authStub.admin);
-      expect(probe).toHaveBeenCalledWith('127.0.0.1', 2443, '127-0-0-1.u225vlzhsdlhwh4l.frameleaf-direct.net');
+      expect(probe).toHaveBeenCalledWith('127.0.0.1', 2443, '127-0-0-1.u225vlzhsdlhwh4l.frameleaf.net');
       expect(status.lastTestOk).toBe(true);
       expect(status.lastTestChecks.map(({ id, ok }) => [id, ok])).toEqual([
         ['certificate', true],
