@@ -1,0 +1,25 @@
+{
+  "etag": "\"cat-restoration-app-authored.1\"",
+  "models": [
+    {
+      "id": "realesrgan-faithful@1",
+      "workload": "restoration",
+      "mode": "faithful",
+      "name": "Restore · Faithful",
+      "fingerprint": "sha256:app-authored-faithful",
+      "description": "Faithful restoration: light retouching, the original kept recognisable.",
+      "pricing": { "unit": "image", "usd": 0.01 },
+      "retired": false
+    },
+    {
+      "id": "realesrgan-creative@1",
+      "workload": "restoration",
+      "mode": "creative",
+      "name": "Restore · Creative",
+      "fingerprint": "sha256:app-authored-creative",
+      "description": "Creative restoration: heavier reconstruction of missing detail.",
+      "pricing": { "unit": "image", "usd": 0.012 },
+      "retired": false
+    }
+  ]
+}

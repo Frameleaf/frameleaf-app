@@ -36,8 +36,11 @@ both repos test against.
   boundary mapping between them (`appWorkloadsForCloudId`, `cloudWorkloadIdFor`, `studioAiCloudWorkloadId`,
   `workloadForCatalogEntry`), used everywhere a workload crosses the cloud boundary. Mapping: `enrichment`↔`descriptions`;
   `upscale`↔`upscale`; `restoration-faithful`/`restoration-creative`↔`restoration` (one wire workload; which mode a
-  job runs is chosen by the model, and each catalogue entry carries its own mode — field name pending cloud
-  confirmation, 2026-09-25); `interpolation`↔`interpolation` (including interpolation at export); `studio-ai`↔`transcription`
+  job runs is chosen by the model, and each catalogue entry names its own mode — `models[].mode`, cloud-confirmed
+  2026-09-25 as exactly `"faithful"`/`"creative"` on every restoration model, never absent). A restoration mode is
+  only ever admitted once the catalogue names a usable model for it (capabilities' `restoration` alone cannot tell
+  the modes apart, and a catalogue that could not be read admits neither mode); a chosen model's own mode must also
+  match the workload asked for. `interpolation`↔`interpolation` (including interpolation at export); `studio-ai`↔`transcription`
   (speech-to-text and captions) or `tts` (speech) depending on the Studio feature run — a destination is admitted for
   Studio AI if either ID is present, but a specific job needs its own ID. Music is not a cloud workload in v1: a
   Studio AI music job is refused for the cloud by the existing refusal, never silently moved to `transcription` or

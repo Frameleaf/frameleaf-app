@@ -96,6 +96,7 @@ const refusedFacts = (refusal: MlAdmissionRefusal, detail: string, region: strin
   limits: {},
   catalogEtag: null,
   modelIds: [],
+  modelWorkloads: {},
   refusal: { refusal, detail },
 });
 
@@ -425,10 +426,22 @@ export class CloudMlService extends BaseService {
         this.frameleafCloudMlRepository.getCatalog(gateway).catch(() => null),
       ]);
       // Local-only models (FL-146) never count as offered, even if a catalogue lists them.
-      const modelIds = (catalog?.models ?? [])
-        .filter((model) => !model.retired && !isLocalOnlyModel(model.id))
-        .map((model) => model.id);
-      const facts = cloudFactsFromCapabilities(capabilities, modelIds);
+      const usableModels = (catalog?.models ?? []).filter((model) => !model.retired && !isLocalOnlyModel(model.id));
+      const modelIds = usableModels.map((model) => model.id);
+      const modelWorkloads = Object.fromEntries(
+        usableModels.map((model) => [model.id, workloadForCatalogEntry(model.workload, model.mode)]),
+      );
+      const facts = cloudFactsFromCapabilities(capabilities, modelIds, modelWorkloads);
+      // FL-181 (P1): `restoration` is one wire workload for both modes, so the capability alone
+      // cannot tell faithful and creative apart; a mode is only offered once the catalogue itself
+      // names a usable model for it. A catalogue that could not be read (`catalog` is null) offers
+      // neither: this server never over-admits a restoration mode it has not confirmed.
+      const restorationModesInCatalog = new Set(
+        Object.values(modelWorkloads).filter(
+          (workload): workload is MlWorkload =>
+            workload === MlWorkload.RestorationFaithful || workload === MlWorkload.RestorationCreative,
+        ),
+      );
       await this.cacheWallet({
         balanceUsd: capabilities.wallet.balanceUsd,
         heldUsd: capabilities.wallet.heldUsd,
@@ -439,11 +452,18 @@ export class CloudMlService extends BaseService {
         reachable: true,
         // Only what the gateway offers, and only work the administrator allowed on the cloud (§3.2):
         // a kind of work set to "Local only" is not served here, so admission refuses it.
-        workloads: knownWorkloads(capabilities.workloads).filter(
-          (workload) =>
-            FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload) &&
-            cloudRouteAllows(config.frameleafCloud.cloudMl, workload),
-        ),
+        workloads: knownWorkloads(capabilities.workloads).filter((workload) => {
+          if (
+            !FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload) ||
+            !cloudRouteAllows(config.frameleafCloud.cloudMl, workload)
+          ) {
+            return false;
+          }
+          if (workload === MlWorkload.RestorationFaithful || workload === MlWorkload.RestorationCreative) {
+            return restorationModesInCatalog.has(workload);
+          }
+          return true;
+        }),
         hardware: this.toHardware(hardware),
         latencyMs: Date.now() - started,
         probedAt,
