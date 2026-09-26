@@ -638,14 +638,14 @@ export class AssetService extends BaseService {
       }
     }
 
-    const videoDuplicateFrameFiles = await this.duplicateRepository.getVideoDuplicateFrames([id]);
-    const assetFiles = getAssetFiles(asset.files ?? []);
-
-    // FL-169: the file cleanup is queued inside the removal's transaction. If it cannot be queued the
-    // row stays and a retry runs the whole deletion again; once the row is gone, its files are queued.
-    // FileDelete still keeps any file another asset references (a deduplicated original).
+    // FL-169: the file cleanup is queued inside the removal's transaction, from the files read there
+    // under the asset's row lock. If it cannot be queued the row stays and a retry runs the whole
+    // deletion again; once the row is gone, its files are queued. The job names the asset, so a job
+    // whose removal rolled back after it was queued deletes nothing; FileDelete also keeps any file
+    // another asset references (a deduplicated original).
     const removedAsset = await this.assetRepository.remove(asset, {
       files: (removed) => {
+        const assetFiles = getAssetFiles(removed.files);
         const files = [
           assetFiles.thumbnailFile?.path,
           assetFiles.previewFile?.path,
@@ -654,8 +654,10 @@ export class AssetService extends BaseService {
           assetFiles.editedPreviewFile?.path,
           assetFiles.editedThumbnailFile?.path,
           assetFiles.encodedVideoFile?.path,
-          ...videoDuplicateFrameFiles.map(({ path }) => path),
+          ...removed.videoDuplicateFramePaths,
           ...(removed.videoEditPaths ?? []),
+          // restoration and develop outputs; never the original they were made from
+          ...removed.derivedPaths,
         ];
 
         // FL-78: an external library item only references its original, which stays in the library's
@@ -665,9 +667,10 @@ export class AssetService extends BaseService {
           files.push(assetFiles.sidecarFile?.path, removed.originalPath, removed.reservationTemporaryPath ?? undefined);
         }
 
-        return files.filter((file): file is string => !!file);
+        // a path can be named twice (a version file that is also a generated file); delete it once
+        return [...new Set(files.filter((file): file is string => !!file))];
       },
-      queue: (files) => this.jobRepository.queue({ name: JobName.FileDelete, data: { files } }),
+      queue: (files) => this.jobRepository.queue({ name: JobName.FileDelete, data: { files, removedAssetId: id } }),
     });
     if (!removedAsset) {
       return JobStatus.Failed;
