@@ -2,6 +2,7 @@ import { SystemMetadataKey } from 'src/enum.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
+import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(StorageService.name, () => {
@@ -233,6 +234,18 @@ describe(StorageService.name, () => {
       await sut.handleDeleteFiles({ files: ['path/to/shared-original'] });
 
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('passes the removed asset on, so a job whose removal rolled back keeps every file (FL-169)', async () => {
+      const removedAssetId = newUuid();
+
+      await sut.handleDeleteFiles({ files: ['path/to/frame.jpeg'], removedAssetId });
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        'path/to/frame.jpeg',
+        expect.any(Function),
+        { removedAssetId },
+      );
     });
   });
 });

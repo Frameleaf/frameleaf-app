@@ -235,6 +235,7 @@
       previewUnavailable: $t('frameleaf_studio_preview_unavailable'),
       previewToneMapped: $t('frameleaf_studio_preview_tone_mapped'),
       previewNoWorker: $t('frameleaf_studio_server_preview_no_worker'),
+      editSuperseded: $t('frameleaf_studio_edit_superseded'),
     },
   });
 

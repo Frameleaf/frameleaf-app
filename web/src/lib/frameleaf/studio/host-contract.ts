@@ -147,6 +147,14 @@ export interface StudioProjectHandle {
   graph: unknown;
   /** True when this session holds the write lease; false means read-only review. */
   hasLease: boolean;
+  /**
+   * Counts the graphs the host put in place itself: a canonical command, undo or redo, Reload and a
+   * restore (FL-174). The editor's own drafts never change it. The editor sends back the version its
+   * graph was loaded from with every draft; a draft from before the host's latest graph is refused as
+   * `superseded`, so it can never replace a change the host made (the editor reloads to show it).
+   * Absent means 0.
+   */
+  graphVersion?: number;
 }
 
 export interface StudioHostContext {
@@ -219,7 +227,9 @@ export type StudioAdapterString =
   | 'previewStale'
   | 'previewUnavailable'
   | 'previewToneMapped'
-  | 'previewNoWorker';
+  | 'previewNoWorker'
+  /** An edit made on a graph the host has since replaced was not kept (FL-174). */
+  | 'editSuperseded';
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 
@@ -261,7 +271,15 @@ export type StudioWorkspaceSaveResult = { status: 'saved'; savedAt: string } | {
  * edit is kept when it is not.
  */
 export type StudioDraftResult =
-  { status: 'staged' } | { status: 'rejected'; reason: 'invalid' | 'forbidden' | 'lease-lost' | 'offline' };
+  | { status: 'staged' }
+  | {
+      status: 'rejected';
+      /**
+       * `superseded`: the draft was built on a graph the host has since replaced itself (FL-174). It is
+       * not kept; the editor takes the host's graph instead.
+       */
+      reason: 'invalid' | 'forbidden' | 'lease-lost' | 'offline' | 'superseded';
+    };
 
 export const unavailableStudioWorkspace = (): StudioWorkspaceView => ({
   state: 'unavailable',
@@ -294,9 +312,17 @@ export interface StudioHostServices {
    * "replace graph" draft primitive). `commandIds` names the editor actions the draft contains,
    * for the revision summary. `baseRevision` is the project revision the editor's graph was loaded
    * from, so a draft from an editor still showing an older revision is never judged against a newer
-   * head. Optional: a host without project storage leaves it out and the editor stays read-only.
+   * head. `graphVersion` is the `StudioProjectHandle.graphVersion` the graph was loaded from (FL-174).
+   * The editor frame always sends both; a draft without them is refused as `invalid`, never staged as
+   * the host's own. Optional: a host without project storage leaves it out and the editor stays
+   * read-only.
    */
-  stageDraft?(graph: unknown, commandIds: readonly string[], baseRevision?: number): Promise<StudioDraftResult>;
+  stageDraft?(
+    graph: unknown,
+    commandIds: readonly string[],
+    baseRevision?: number,
+    graphVersion?: number,
+  ): Promise<StudioDraftResult>;
   /** Re-read the project, for reconciling after a `stale-revision` rejection. */
   reloadProject(): Promise<StudioProjectHandle>;
   /** Resolve one asset the engine knows only by id. */

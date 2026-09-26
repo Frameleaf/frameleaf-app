@@ -14,6 +14,7 @@ import {
   discoverySchema,
   errorEnvelopeSchema,
   oauthErrorSchema,
+  parseRetryAfter,
   refusalFromCloudError,
   tokenResponseSchema,
 } from 'src/utils/frameleaf-cloud.js';
@@ -195,6 +196,7 @@ export class FrameleafCloudRepository {
         envelope?.message || oauth?.error_description || `Frameleaf Cloud answered ${response.status}`,
         envelope,
         oauth,
+        parseRetryAfter(response.headers.get('retry-after')),
       );
     }
 

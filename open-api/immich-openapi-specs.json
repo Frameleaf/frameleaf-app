@@ -39646,6 +39646,7 @@
           "cloud-unlinked",
           "cloud-revoked",
           "cloud-permissions-changed",
+          "cloud-key-recovery-rotation",
           "license-activated",
           "license-removed",
           "frameleaf-account-linked",

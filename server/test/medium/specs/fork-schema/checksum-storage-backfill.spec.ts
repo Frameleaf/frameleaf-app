@@ -574,6 +574,10 @@ describe('checksum and physical-storage normalization', () => {
     await expect(new AssetRepository(db).remove({ id: assetId })).resolves.toEqual({
       originalPath: upstreamPath,
       reservationTemporaryPath: temporaryPath,
+      // FL-169: the removal reports every path it releases, empty here
+      files: [],
+      videoDuplicateFramePaths: [],
+      derivedPaths: [],
     });
     const remaining = await sql<{ count: number }>`
       SELECT count(*)::int AS count FROM immich_fork.asset_storage_reservation WHERE "assetId" = ${assetId}::uuid

@@ -16,7 +16,7 @@ export type FakeCloudRequest = {
   form: () => URLSearchParams;
 };
 
-export type FakeCloudAnswer = { status: number; body?: unknown };
+export type FakeCloudAnswer = { status: number; body?: unknown; headers?: Record<string, string> };
 
 export type FakeCloud = {
   url: string;
@@ -59,8 +59,8 @@ export const startFakeCloud = async (): Promise<FakeCloud> => {
       form: () => new URLSearchParams(body),
     };
     fake.requests.push(request);
-    const send = ({ status, body: payload }: FakeCloudAnswer) => {
-      response.writeHead(status, { 'content-type': 'application/json' });
+    const send = ({ status, body: payload, headers }: FakeCloudAnswer) => {
+      response.writeHead(status, { ...headers, 'content-type': 'application/json' });
       response.end(payload === undefined ? '' : JSON.stringify(payload));
     };
 
