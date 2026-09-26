@@ -1,8 +1,13 @@
 import {
+  CloudMlJobActivityStage,
+  CloudMlJobPurpose,
+  CloudMlJobStage,
   MediaOperationBulkAction,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  Outcome,
+  type CloudMlJobActivityDto,
   type MediaOperationDto,
 } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
@@ -22,6 +27,7 @@ import {
   matchesActivityFilter,
   mediaOperationEdit,
   mediaOperationPauseState,
+  mediaOperationStage,
 } from '$lib/frameleaf/activity';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import { UploadState } from '$lib/types';
@@ -774,5 +780,99 @@ describe('Studio renders, server estimates and completion (FL-104)', () => {
       outcome: 'failed',
     });
     expect(activityCompletion(new Map([[done.id, done.statusKey]]), [done])).toBeNull();
+  });
+});
+
+describe('stages and Frameleaf Cloud jobs (FL-162)', () => {
+  const cloudJob = (overrides: Partial<CloudMlJobActivityDto> = {}): CloudMlJobActivityDto => ({
+    activityStage: CloudMlJobActivityStage.Running,
+    cloudStatus: 'running',
+    model: 'Restore XL',
+    modelSku: 'ms_RESTORE_XL',
+    plannedWorkers: 3,
+    progressUnit: 'segments',
+    purpose: CloudMlJobPurpose.Restoration,
+    stage: CloudMlJobStage.Full,
+    workers: 3,
+    cost: {
+      estimatedP50Usd: 1.2,
+      estimatedP90Usd: 1.6,
+      holdUsd: 1.6,
+      note: null,
+      outcome: null,
+      settledUsd: null,
+      soFarUsd: 0.4,
+    },
+    ...overrides,
+  });
+  const cloudOperation = (job: CloudMlJobActivityDto, overrides: Partial<MediaOperationDto> = {}) =>
+    operation({
+      kind: MediaOperationKind.CloudMlJob,
+      destination: MediaOperationDestination.FrameleafCloud,
+      status: MediaOperationStatus.Queued,
+      cloudJob: job,
+      ...overrides,
+    });
+
+  it('maps a server status to the stage a person sees', () => {
+    expect(mediaOperationStage(operation({ status: MediaOperationStatus.Queued }))).toBe('queued');
+    expect(mediaOperationStage(operation({ status: MediaOperationStatus.Preparing }))).toBe('starting');
+    expect(mediaOperationStage(operation({ status: MediaOperationStatus.Validating }))).toBe('running');
+    expect(mediaOperationStage(operation({ status: MediaOperationStatus.Paused }))).toBe('paused');
+    expect(mediaOperationStage(operation({ status: MediaOperationStatus.Completed }))).toBe('done');
+    expect(mediaOperationStage(operation({ status: MediaOperationStatus.Cancelled }))).toBe('cancelled');
+  });
+
+  it("takes a cloud job's stage from the cloud job, not from the server's queue", () => {
+    // between two reads of the cloud job the server row sits queued; the job itself is running
+    const item = fromMediaOperation(cloudOperation(cloudJob()));
+    expect(item.stage).toBe('running');
+    expect(item.statusKey).toBe('frameleaf_activity_stage_running');
+    expect(item.kindKey).toBe('frameleaf_activity_kind_cloud_restoration');
+    expect(item.progress).toBe(42);
+    expect(item.canRetry).toBe(false);
+    expect(item.cloud).toMatchObject({
+      model: 'Restore XL',
+      plannedWorkers: 3,
+      cost: { estimatedUsd: 1.2, estimatedHighUsd: 1.6, holdUsd: 1.6, soFarUsd: 0.4, settledUsd: null },
+    });
+  });
+
+  it('shows a starting cloud job as indeterminate, never as a made-up percentage', () => {
+    const item = fromMediaOperation(
+      cloudOperation(cloudJob({ activityStage: CloudMlJobActivityStage.Starting, workers: 0 }), { progress: 0 }),
+    );
+    expect(item.stage).toBe('starting');
+    expect(item.progress).toBeNull();
+  });
+
+  it('names Smooth motion jobs and carries a settled outcome', () => {
+    const item = fromMediaOperation(
+      cloudOperation(
+        cloudJob({
+          activityStage: CloudMlJobActivityStage.Failed,
+          purpose: CloudMlJobPurpose.SmoothMotion,
+          cost: {
+            estimatedP50Usd: 0.5,
+            estimatedP90Usd: 0.8,
+            holdUsd: 0.8,
+            note: null,
+            outcome: Outcome.NotCharged,
+            settledUsd: 0,
+            soFarUsd: null,
+          },
+        }),
+        { status: MediaOperationStatus.Failed },
+      ),
+    );
+    expect(item.kindKey).toBe('frameleaf_activity_kind_cloud_smooth_motion');
+    expect(item.stage).toBe('failed');
+    expect(item.canRetry).toBe(false);
+    expect(item.cloud?.cost.outcome).toBe(Outcome.NotCharged);
+  });
+
+  it('gives every other job a stage too', () => {
+    expect(fromMediaOperation(operation()).stage).toBe('running');
+    expect(fromMediaOperation(operation({ status: MediaOperationStatus.Failed })).stage).toBe('failed');
   });
 });
