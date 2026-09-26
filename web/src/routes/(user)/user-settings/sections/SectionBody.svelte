@@ -5,6 +5,7 @@
    * Trash and repair queues, and the account settings (`UserSettingsList`).
    */
   import CloudAccountSection from '$lib/components/frameleaf/cloud/CloudAccountSection.svelte';
+  import CloudBackupSection from '$lib/components/frameleaf/cloud/CloudBackupSection.svelte';
   import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
   import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
   import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
@@ -52,6 +53,8 @@
     <PlanSection />
   {:else if section.key === 'cloud-license'}
     <LicenseSection />
+  {:else if section.key === 'cloud-backup'}
+    <CloudBackupSection />
   {:else if section.key === 'frameleaf-signin'}
     <FrameleafSignInSection />
   {:else if section.key === 'render-workers'}

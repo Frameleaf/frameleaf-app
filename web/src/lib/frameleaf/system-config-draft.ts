@@ -57,6 +57,7 @@ export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
 export const SECRET_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'notifications.smtp.transport.password',
   'oauth.clientSecret',
+  'frameleafCloud.cloudBackup.s3.secretAccessKey',
 ]);
 
 const SECRET_NAME = /(password|secret|token|apikey|api_key|credential)$/i;

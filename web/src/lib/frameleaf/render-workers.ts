@@ -170,6 +170,7 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.PreservationReview]: 'frameleaf_render_workers_kind_preservation_review',
   [MediaOperationKind.PreservationRestore]: 'frameleaf_render_workers_kind_preservation_restore',
   [MediaOperationKind.StudioExportPublish]: 'frameleaf_render_workers_kind_studio_export_publish',
+  [MediaOperationKind.CloudBackup]: 'frameleaf_render_workers_kind_cloud_backup',
 };
 
 /**

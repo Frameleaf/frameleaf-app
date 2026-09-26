@@ -112,7 +112,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'cloud',
     group: 'server',
-    sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-processing'],
+    sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-processing', 'cloud-backup'],
     adminOnly: true,
   },
   // The template's Access & security holds each account's own sign-in (password, PIN, provider),
@@ -447,6 +447,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'cloud-plan': 'licensing',
     'cloud-license': 'licensing',
     'cloud-processing': 'cloud_services',
+    'cloud-backup': 'cloud_services',
   },
   security: {
     authentication: 'sign_in',
