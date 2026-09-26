@@ -2,6 +2,10 @@
 # selected on the exact current fork/main, gated by FRAMELEAF_ENABLE_CLI_PUBLISH=true. Releases are created
 # with the workflow token, which never triggers this workflow, so there is no release trigger; release
 # promotion refuses to promote until frameleaf-cli:latest exists (FL-191).
+# Unlike the Postgres publisher, the CLI publish job rebuilds for amd64 and arm64 (arm64 under QEMU)
+# instead of pushing bytes a test job checked: the CLI build job compiles amd64 only and runs no image
+# test, so there are no tested bytes to reuse. Build-once publication needs a native arm64 build and an
+# image test first.
 name: CLI Build
 'on':
   pull_request:
