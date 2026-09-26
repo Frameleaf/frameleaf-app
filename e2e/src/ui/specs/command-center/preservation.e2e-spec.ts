@@ -361,8 +361,11 @@ test.describe('Preservation packages', () => {
 
   test('exports a typed search, then verifies the package and reports what is missing or changed', async ({ page }) => {
     await page.goto(section);
-    await expect(page.getByText('Include checksums and a manifest')).toBeVisible();
-    await expect(page.getByText('Always protected')).toBeVisible();
+    // The closed export dialog keeps the same toggle in the DOM, so read the section's own switch.
+    const checksums = page.getByRole('switch', { name: 'Include checksums and a manifest' });
+    await expect(checksums).toBeChecked();
+    await expect(checksums).toBeDisabled();
+    await expect(page.getByText('Always protected').filter({ visible: true })).toBeVisible();
 
     await exportSearch(page);
 

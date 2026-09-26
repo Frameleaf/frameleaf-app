@@ -6573,6 +6573,7 @@
   "frameleaf_preservation_step_include": "Include",
   "frameleaf_preservation_step_manifest": "Manifest",
   "frameleaf_preservation_step_verify": "Verify",
+  "frameleaf_preservation_support_count": "{count, plural, one {# kind of information} other {# kinds of information}}",
   "frameleaf_preservation_support_heading": "What a restoration brings back",
   "frameleaf_preservation_support_not_included": "Not included",
   "frameleaf_preservation_support_originals_only": "Without metadata, a package carries only the original files and their checksums.",

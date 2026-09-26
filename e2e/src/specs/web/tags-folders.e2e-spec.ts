@@ -41,7 +41,8 @@ test.describe('Tags and Folders', () => {
     await page.goto('/tags');
 
     const tree = page.getByRole('tree', { name: 'Tags' });
-    const trips = tree.getByRole('treeitem', { name: /^trips/ });
+    // A parent's name starts with its toggle's label (Tags.jsx:47-53: "Expand trips" / "Collapse trips").
+    const trips = tree.getByRole('treeitem', { name: /^(Expand|Collapse) trips trips\b/ });
     // the hidden (archived) descendant item is not counted anywhere up the tree
     await expect(trips.locator(':scope > .dv-tree-row small')).toHaveText('1');
 

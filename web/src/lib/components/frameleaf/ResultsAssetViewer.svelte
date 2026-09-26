@@ -130,7 +130,9 @@
         }}
         onClose={() => {
           assetViewerManager.showAssetViewer(false);
-          handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
+          // Closing the viewer is not a new place to go back to: it replaces the viewer's entry, so
+          // Back from the results returns to where they were opened from (FL-50, Explore → results).
+          handlePromiseError(navigate({ targetRoute: 'current', assetId: null }, { replaceState: true }));
         }}
         {filmstripAssets}
         {position}
