@@ -42,7 +42,7 @@
   };
 </script>
 
-<AuthShell attribution>
+<AuthShell>
   <div class="auth-heading">
     <h1>{$t('frameleaf_auth_change_password_title')}</h1>
     <p>{$t('frameleaf_auth_change_password_body')}</p>
