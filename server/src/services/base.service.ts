@@ -327,11 +327,14 @@ export class BaseService {
   }
 
   /** FL-190: this server's public address for links it sends, or `undefined` (see `resolvePublicUrl`). */
-  protected getPublicUrl(server: SystemConfig['server']) {
-    return resolvePublicUrl(server, {
-      configRepository: this.configRepository,
-      systemMetadataRepository: this.systemMetadataRepository,
-    });
+  protected async getPublicUrl(server: SystemConfig['server']) {
+    // FL-165: "Use my domain" publishes the verified custom hostname in links too
+    const { frameleafCloud } = await this.getConfig({ withCache: true });
+    return resolvePublicUrl(
+      server,
+      { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository },
+      frameleafCloud.remoteAccess,
+    );
   }
 
   get worker() {

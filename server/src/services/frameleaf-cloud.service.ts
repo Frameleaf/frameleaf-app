@@ -72,6 +72,7 @@ import {
 } from 'src/utils/frameleaf-cloud.js';
 import { BoundTokenRefusedError, USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
+import { edgeStateCurrent, heartbeatEndpoints } from 'src/utils/frameleaf-remote-access.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /** Capabilities this build announces when it registers (instance contract step 4). */
@@ -117,6 +118,8 @@ export class FrameleafCloudService extends BaseService {
       !!cloudUrl && !!link?.instanceId && !!(await readMlSuspension(this.gatewayDeps(), cloudUrl, link.instanceId));
     return {
       ...this.mapStatus(cloudUrl, identity, link, mlSuspended),
+      // FL-165: the remote access switch (Settings › Frameleaf Cloud › Remote access)
+      remoteAccessEnabled: link?.status === 'linked' && !!config.frameleafCloud.remoteAccess?.enabled,
       signInLinkedAccounts: await this.frameleafAccountRepository.countLinks(),
       signInShowOnLocalLogin: !!config.frameleafCloud.signIn?.showOnLocalLogin,
       signInButtonText: config.frameleafCloud.signIn?.buttonText ?? '',
@@ -594,8 +597,18 @@ export class FrameleafCloudService extends BaseService {
     await this.removePlanCertificate();
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
       config.frameleafCloud.cloudMl.enabled = false;
-      // FL-161: what remote access may carry goes back to the safe defaults with the link
-      config.frameleafCloud.remoteAccess = { allowOriginalsOverRelay: false, allowPasswordOverRelay: false };
+      // FL-161: what remote access may carry goes back to the safe defaults with the link. FL-165: remote
+      // access switches off (the edge worker then closes its listener and removes the certificates),
+      // and the custom hostname goes too (Frameleaf Cloud releases it with the link); the connection
+      // mode and ports stay for a later link
+      config.frameleafCloud.remoteAccess = {
+        ...config.frameleafCloud.remoteAccess,
+        enabled: false,
+        allowOriginalsOverRelay: false,
+        allowPasswordOverRelay: false,
+        publicUrl: 'frameleaf',
+        customHostname: { host: '', status: 'pending', checkedAt: null },
+      };
     });
     if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
       await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
@@ -797,6 +810,39 @@ export class FrameleafCloudService extends BaseService {
     return this.getStatus();
   }
 
+  /**
+   * FL-165: a `remote.enable` or `remote.disable` command (allowed by the instance-side toggle) flips
+   * the same switch an administrator does; the edge worker follows it.
+   */
+  private async setRemoteAccessSwitch(enabled: boolean) {
+    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
+      config.frameleafCloud.remoteAccess = { ...config.frameleafCloud.remoteAccess, enabled };
+    });
+    if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    }
+  }
+
+  /**
+   * FL-165: what the edge worker reports for the check-in: whether remote access is on, the relay
+   * and direct connection, and the connection candidates (the heartbeat's `endpoints`).
+   */
+  private async remoteAccessReport(link: FrameleafCloudLink) {
+    const config = await this.getConfig({ withCache: true });
+    const settings = config.frameleafCloud.remoteAccess;
+    const enabled = link.status === 'linked' && !!settings?.enabled;
+    const state = enabled ? await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess) : null;
+    const current = edgeStateCurrent(state) && state?.names?.instanceId === link.instanceId;
+    return {
+      endpoints: current && state ? heartbeatEndpoints(state.candidates) : [],
+      remoteAccess: {
+        enabled,
+        relayConnected: current && !!state?.relay.connected,
+        direct: current && settings.mode === 'relay-and-direct' && !!state?.direct.listening,
+      },
+    };
+  }
+
   /** The exact payload of one check-in. */
   async buildHeartbeatPayload(link: FrameleafCloudLink) {
     const license = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
@@ -806,13 +852,14 @@ export class FrameleafCloudService extends BaseService {
     } catch {
       storage = 'error';
     }
+    const { endpoints, remoteAccess } = await this.remoteAccessReport(link);
     return buildHeartbeat({
       version: serverVersion.toString(),
       bootId: await this.bootId(),
       uptimeSec: process.uptime(),
       health: { database: 'ok', storage, jobs: 'ok' },
-      endpoints: [],
-      remoteAccess: { enabled: !!link.desired?.remoteAccess, relayConnected: false, direct: false },
+      endpoints,
+      remoteAccess,
       permissions: permissionsOf(link),
       licenseKid: license?.plan?.kid ?? license?.key?.kid ?? null,
     });
@@ -1140,9 +1187,11 @@ export class FrameleafCloudService extends BaseService {
     const desired = link.desired ?? { remoteAccess: false, cloudBackup: false };
     switch (type) {
       case CloudCommandType.RemoteEnable: {
+        await this.setRemoteAccessSwitch(true);
         return { ...link, desired: { ...desired, remoteAccess: true } };
       }
       case CloudCommandType.RemoteDisable: {
+        await this.setRemoteAccessSwitch(false);
         return { ...link, desired: { ...desired, remoteAccess: false } };
       }
       case CloudCommandType.BackupRun: {
