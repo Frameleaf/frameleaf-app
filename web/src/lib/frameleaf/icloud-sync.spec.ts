@@ -173,9 +173,9 @@ describe('sync preferences', () => {
 
   it('asks for consent only to what saving newly allows', () => {
     const draft = { ...icloudDraft(connection()), includeHidden: true };
-    expect(icloudConsentNeeded(draft, connection())).toEqual({ hidden: true, external: false });
+    expect(icloudConsentNeeded(draft, connection())).toEqual({ hidden: true });
     expect(icloudConsentNeeded(draft, connection({ config: { ...connection().config, includeHidden: true } }))).toEqual(
-      { hidden: false, external: false },
+      { hidden: false },
     );
   });
 });

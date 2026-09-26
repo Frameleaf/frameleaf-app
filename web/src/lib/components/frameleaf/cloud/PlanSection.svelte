@@ -8,9 +8,8 @@
    *   the store link, refresh and "remove from this server" (the plan only).
    * - Plan cards with the licensed-server price struck through when the server is licensed. AI
    *   credit is never discounted.
-   * - Owner decision on FL-146 (2026-09-25): cloud backup is usage based and is not part of a plan, so
-   *   the cards do not list "1 TB encrypted cloud backup" as the prototype's sample data did; backup
-   *   is shown as its own item priced from `CLOUD_BACKUP_PRICING`.
+   * - Owner decision (2026-09-25): every plan includes 1 TB of cloud backup, listed on the cards as in
+   *   the prototype; more storage is sold in 1 TB blocks, priced from `CLOUD_BACKUP_PRICING`.
    * - Checkout happens in the store the server was deployed with; with none configured the cards
    *   say purchasing is not available yet (FL-172). The simulated "Preview other plan states" is
    *   prototype-only and left out.
@@ -22,8 +21,8 @@
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import {
     CLOUD_BACKUP_PRICING,
-    LICENSED_DISCOUNT,
     cloudPlanPrice,
+    discountPercent,
     formatUsd,
     licensedDiscount,
   } from '$lib/frameleaf/cloud';
@@ -54,15 +53,16 @@
   const license = $derived(cloudManager.license);
   const products = $derived(cloudManager.products);
   const plan = $derived(license?.plan ?? null);
-  // FL-156: an activated server key or this person's own supporter key takes 20 % off plans; AI
-  // credit never changes
+  // FL-156: an activated server key or this person's own supporter key takes the published share
+  // (license/products) off plans; AI credit and extra backup never change
   const discount = $derived(
     licensedDiscount({ serverLicensed: !!license?.entitlements.supporter, personalKey: !!authManager.user.license }),
   );
-  const licensed = $derived(discount !== null);
+  const offered = $derived(products?.licensedDiscount ?? 0);
+  const share = $derived(discount === null ? 0 : offered);
   const linked = $derived(!!license?.linked);
   const plans = $derived(products?.products.filter((product) => product.kind === 'plan') ?? []);
-  const pct = `${Math.round(LICENSED_DISCOUNT * 100)}%`;
+  const pct = $derived(discountPercent(offered));
 
   let removing = $state(false);
   let checkout = $state<(typeof plans)[number] | null>(null);
@@ -132,7 +132,7 @@
 </script>
 
 {#snippet price(amount: number, period: string)}
-  {@const paid = cloudPlanPrice(amount, licensed)}
+  {@const paid = cloudPlanPrice(amount, share)}
   <p class="fc-price">
     {#if paid !== amount}
       <s>{formatUsd(amount)}</s>
@@ -202,19 +202,21 @@
         </dl>
       {/if}
       <p class="fc-note"><Icon icon={mdiShieldCheckOutline} size="16" /> {$t('frameleaf_plan_never_locked')}</p>
-      <p class="fc-note">
-        <Icon icon={mdiTagOutline} size="16" />
-        {#if discount === 'server'}
-          {$t('frameleaf_plan_discount_licensed', { values: { pct } })}
-        {:else if discount === 'personal'}
-          {$t('frameleaf_plan_discount_personal', { values: { pct } })}
-        {:else}
-          {$t('frameleaf_plan_discount_offer', { values: { pct } })}
-          <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-license')}
-            >{$t('frameleaf_plan_activate_licence')}</a
-          >
-        {/if}
-      </p>
+      {#if offered > 0}
+        <p class="fc-note">
+          <Icon icon={mdiTagOutline} size="16" />
+          {#if discount === 'server'}
+            {$t('frameleaf_plan_discount_licensed', { values: { pct } })}
+          {:else if discount === 'personal'}
+            {$t('frameleaf_plan_discount_personal', { values: { pct } })}
+          {:else}
+            {$t('frameleaf_plan_discount_offer', { values: { pct } })}
+            <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-license')}
+              >{$t('frameleaf_plan_activate_licence')}</a
+            >
+          {/if}
+        </p>
+      {/if}
       <div class="fc-actions">
         {#if plan && plan.source !== 'file' && products.storeUrl}
           <a class="fc-button" href={products.storeUrl} target="_blank" rel="noopener noreferrer">
@@ -253,6 +255,7 @@
               {@render price(item.priceUsd, item.period)}
               <ul>
                 <li>{$t('frameleaf_plan_feature_remote')}</li>
+                <li>{$t('frameleaf_plan_feature_backup', { values: { size: CLOUD_BACKUP_PRICING.includedTb } })}</li>
                 <li>{$t('frameleaf_plan_feature_servers')}</li>
                 {#if item.id === 'cloud-annual'}
                   <li>{$t('frameleaf_plan_feature_two_months')}</li>
@@ -274,8 +277,12 @@
         </div>
         <p class="fc-note">
           <Icon icon={mdiCloudUploadOutline} size="16" />
-          {$t('frameleaf_plan_backup_separate', {
-            values: { price: formatUsd(CLOUD_BACKUP_PRICING.usdPerTbMonth), minimum: CLOUD_BACKUP_PRICING.minimumTb },
+          {$t('frameleaf_plan_backup_extra', {
+            values: {
+              included: CLOUD_BACKUP_PRICING.includedTb,
+              price: formatUsd(CLOUD_BACKUP_PRICING.usdPerTbMonth * CLOUD_BACKUP_PRICING.blockTb),
+              block: CLOUD_BACKUP_PRICING.blockTb,
+            },
           })}
         </p>
         <div class="fc-actions">
@@ -303,11 +310,11 @@
       {$t('frameleaf_plan_checkout_body', {
         values: {
           plan: planTitle(checkout.id),
-          price: formatUsd(cloudPlanPrice(checkout.priceUsd, licensed)),
+          price: formatUsd(cloudPlanPrice(checkout.priceUsd, share)),
           period: periodLabel(checkout.period),
         },
       })}
-      {#if licensed}
+      {#if share > 0}
         {$t('frameleaf_plan_checkout_licensed')}
       {/if}
     </p>

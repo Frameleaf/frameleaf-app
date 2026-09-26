@@ -3,7 +3,8 @@ import { Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
-import { JobName, JobStatus, QueueName } from 'src/enum.js';
+import { DatabaseLock, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { OfficialAdoptionResult } from 'src/fork-schema/official-adoption.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
@@ -34,6 +35,7 @@ export type ForkSchemaMigrationStatus = ForkState & {
   progress: BackfillProgress[];
   verified: boolean;
 };
+export type ForkSchemaAdoptionStatus = ForkSchemaMigrationStatus & { adoption: OfficialAdoptionResult };
 export type ReturnReconciliationHooks = {
   afterBatch?: (kind: BackfillKind, claim: BackfillClaim) => Promise<void> | void;
   afterConfigEvidence?: (evidence: ReturnConfigReconciliation) => Promise<void> | void;
@@ -115,6 +117,17 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
   async activateAfterReturnReconciliation(): Promise<ForkSchemaMigrationStatus> {
     await this.forkSchemaRepository.activateAfterReturnReconciliation();
     return this.status();
+  }
+
+  /**
+   * FL-44: make a library the official server created a full Frameleaf library, ready for `start`.
+   * Holds the migrations lock so no server boot migrates at the same time.
+   */
+  async adopt(): Promise<ForkSchemaAdoptionStatus> {
+    const adoption = await this.databaseRepository.withLock(DatabaseLock.Migrations, () =>
+      this.databaseRepository.adoptOfficialOrigin(),
+    );
+    return { ...(await this.status()), adoption };
   }
 
   async start(batchSize = DEFAULT_BATCH_SIZE): Promise<ForkSchemaMigrationStatus> {

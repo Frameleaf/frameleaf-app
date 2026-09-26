@@ -24,6 +24,7 @@
   import {
     CLOUD_BACKUP_PRICING,
     cloudPlanPrice,
+    discountPercent,
     formatUsd,
     productKeyMessageKey,
     validateProductKey,
@@ -90,7 +91,9 @@
   });
 
   const discount = $derived(licensedDiscount({ serverLicensed: serverSupporter, personalKey: !!personal }));
-  const discounted = $derived(discount !== null);
+  // the share Frameleaf Cloud published (license/products), for a viewer who gets the discount
+  const share = $derived(discount === null ? 0 : (products?.licensedDiscount ?? 0));
+  const pct = $derived(discountPercent(products?.licensedDiscount ?? 0));
 
   const load = async () => {
     products = await getLicenseProducts();
@@ -232,13 +235,17 @@
           <BuyPlanCard
             title={planTitle(plan.id)}
             tag={plan.id === 'cloud-annual' ? $t('frameleaf_buy_recommended') : undefined}
-            price={cloudPlanPrice(plan.priceUsd, discounted)}
+            price={cloudPlanPrice(plan.priceUsd, share)}
             listPrice={plan.priceUsd}
             period={plan.period === 'year' ? $t('frameleaf_buy_per_year') : $t('frameleaf_buy_per_month')}
             description={plan.id === 'cloud-annual'
               ? $t('frameleaf_buy_plan_annual_description')
               : $t('frameleaf_buy_plan_monthly_description')}
-            features={[$t('frameleaf_plan_feature_remote'), $t('frameleaf_plan_feature_servers')]}
+            features={[
+              $t('frameleaf_plan_feature_remote'),
+              $t('frameleaf_plan_feature_backup', { values: { size: CLOUD_BACKUP_PRICING.includedTb } }),
+              $t('frameleaf_plan_feature_servers'),
+            ]}
             recommended={plan.id === 'cloud-annual'}
           >
             {#snippet action()}
@@ -258,13 +265,17 @@
         {/each}
       </div>
       <p class="buy-note">
-        {$t('frameleaf_plan_backup_separate', {
-          values: { price: formatUsd(CLOUD_BACKUP_PRICING.usdPerTbMonth), minimum: CLOUD_BACKUP_PRICING.minimumTb },
+        {$t('frameleaf_plan_backup_extra', {
+          values: {
+            included: CLOUD_BACKUP_PRICING.includedTb,
+            price: formatUsd(CLOUD_BACKUP_PRICING.usdPerTbMonth * CLOUD_BACKUP_PRICING.blockTb),
+            block: CLOUD_BACKUP_PRICING.blockTb,
+          },
         })}
-        {#if discount === 'server'}
-          {$t('frameleaf_buy_licensed_discount')}
-        {:else if discount === 'personal'}
-          {$t('frameleaf_buy_personal_discount')}
+        {#if share > 0 && discount === 'server'}
+          {$t('frameleaf_buy_licensed_discount', { values: { pct } })}
+        {:else if share > 0 && discount === 'personal'}
+          {$t('frameleaf_buy_personal_discount', { values: { pct } })}
         {/if}
       </p>
     </section>
@@ -400,7 +411,7 @@
             ? $t('frameleaf_buy_checkout_plan', {
                 values: {
                   plan: checkout.title,
-                  price: formatUsd(cloudPlanPrice(checkout.product.priceUsd, discounted)),
+                  price: formatUsd(cloudPlanPrice(checkout.product.priceUsd, share)),
                   period:
                     checkout.product.period === 'year'
                       ? $t('frameleaf_plan_period_year')

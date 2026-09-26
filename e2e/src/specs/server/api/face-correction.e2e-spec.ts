@@ -45,9 +45,10 @@ describe('/people corrections', () => {
         .set(asBearerAuth(admin.accessToken));
       expect(status).toBe(200);
       expect(body.hasNextPage).toBe(false);
+      // Blair had no faces yet, so the move is recorded as naming a new person
       expect(body.corrections).toEqual([
         expect.objectContaining({
-          action: 'reassign',
+          action: 'new-person',
           fromPerson: expect.objectContaining({ id: ada.id, name: 'Ada' }),
           toPerson: expect.objectContaining({ id: blair.id, name: 'Blair' }),
           evidenceRevoked: false,
@@ -59,8 +60,9 @@ describe('/people corrections', () => {
   });
 
   it('keeps the history owner-only', async () => {
+    // another account's person answers 404, like every single-person route (FL-37)
     const { status } = await request(app).get(`/people/${blair.id}/corrections`).set(asBearerAuth(other.accessToken));
-    expect(status).toBe(400);
+    expect(status).toBe(404);
   });
 
   it('refuses a page size over 100', async () => {

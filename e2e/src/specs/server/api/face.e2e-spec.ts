@@ -80,7 +80,10 @@ describe('/faces (FL-38 corrections)', () => {
       personGroupId: emma.id,
       imageWidth: 400,
       imageHeight: 300,
-      box: { x1: 40, y1: 30, x2: 120, y2: 110 },
+      // Inside the crop the round-trip test applies (x 100-300, y 50-200): the editor render hides a face
+      // that is mostly outside the crop (checkFaceVisibility, under half its area inside), and a hidden
+      // face is not listed.
+      box: { x1: 140, y1: 80, x2: 220, y2: 160 },
     }))!;
   });
 
@@ -196,6 +199,8 @@ describe('/faces (FL-38 corrections)', () => {
         ],
       });
     expect(edit.status).toBe(200);
+    // a saved edit renders on the editor queue, which also records the edited image's size
+    await utils.waitForQueueFinish(admin.accessToken, 'editor');
     await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
 
     const { body: source } = await request(app)
@@ -256,10 +261,11 @@ describe('/faces (FL-38 corrections)', () => {
     ]);
 
     // back to the original: both faces sit inside the crop rectangle, in 400x300 pixels
-    await request(app)
-      .put(`/assets/${asset.id}/edits`)
-      .set('Authorization', `Bearer ${admin.accessToken}`)
-      .send({ edits: [] });
+    // `PUT` needs at least one edit (AssetEditsCreateSchema `.min(1)`); removing them all is `DELETE`
+    const removed = await request(app)
+      .delete(`/assets/${asset.id}/edits`)
+      .set('Authorization', `Bearer ${admin.accessToken}`);
+    expect(removed.status).toBe(204);
     const { body: original } = await listFaces(admin.accessToken, asset.id);
     for (const row of original) {
       expect(row).toEqual(expect.objectContaining({ imageWidth: 400, imageHeight: 300 }));

@@ -2943,4 +2943,58 @@ describe(MediaHealthService.name, () => {
       expect(ownerItem.provenance).toBeNull();
     });
   });
+
+  describe('external original digests (FL-69)', () => {
+    const digests = { sha1: Buffer.alloc(20, 1), sha256: Buffer.alloc(32, 2), sizeInBytes: 123 };
+    const healthy = { status: 'healthy', reason: 'verified', ...digests, identity: {} };
+    const readsHealthy = () => {
+      Object.assign(sut, { integrityService: { validate: vi.fn().mockResolvedValue(healthy) } });
+    };
+
+    it('records the digests of a path-checksum original that reads back intact', async () => {
+      readsHealthy();
+      const asset = AssetFactory.create({
+        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        originalPath: '/external/photos/lake.png',
+      });
+
+      await expect((sut as any).validateReadableAssetIntegrity(asset)).resolves.toBeNull();
+
+      expect(mocks.forkSchema.recordExternalScanChecksums).toHaveBeenCalledWith({
+        assetId: asset.id,
+        ...digests,
+        path: '/external/photos/lake.png',
+      });
+      expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
+    });
+
+    it.each([ChecksumAlgorithm.sha1File, ChecksumAlgorithm.sha256File])(
+      'leaves a %s original alone, whether or not the scan verifies checksums',
+      async (checksumAlgorithm) => {
+        readsHealthy();
+        const asset = AssetFactory.create({ checksumAlgorithm });
+
+        await expect((sut as any).validateReadableAssetIntegrity(asset)).resolves.toBeNull();
+        await expect((sut as any).validateReadableAssetIntegrity(asset, { verifyChecksum: false })).resolves.toBeNull();
+
+        expect(mocks.forkSchema.recordExternalScanChecksums).not.toHaveBeenCalled();
+      },
+    );
+
+    it('only logs a failed write, and the scan result stays healthy', async () => {
+      readsHealthy();
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      vi.mocked(mocks.forkSchema.recordExternalScanChecksums).mockRejectedValue(new Error('database busy'));
+      const asset = AssetFactory.create({ checksumAlgorithm: ChecksumAlgorithm.sha1Path });
+
+      await expect((sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).resolves.toBe('healthy');
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('database busy'));
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.markResolvedForAssets).toHaveBeenCalledWith(
+        [MediaHealthCategory.Missing, MediaHealthCategory.Corrupt],
+        [asset],
+      );
+    });
+  });
 });

@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { FrameleafLicense, FrameleafLicenseClaims } from 'src/types.js';
 import { FRAMELEAF_LICENSE_KEYS } from 'src/constants.js';
 import {
+  BUNDLED_PRICING,
+  acceptPublishedPricing,
   certificateKind,
   checkLicenseKey,
+  comparePricing,
+  effectivePricing,
   entitlementFlags,
   isLicensed,
   licenseStatus,
@@ -223,5 +227,132 @@ describe('frameleaf-license (FL-156)', () => {
     ])('refuses %s (%s)', (key, reason) => {
       expect(checkLicenseKey(key)).toEqual({ valid: false, reason });
     });
+  });
+});
+
+describe('published pricing', () => {
+  const NOW_MS = Date.UTC(2026, 9, 5, 12);
+  const pricing = (pricesVersion: string, licensedDiscountPercent: number, effectiveFrom: string) => ({
+    pricesVersion,
+    licensedDiscountPercent,
+    effectiveFrom,
+  });
+  const published = pricing('2026-10-01.2', 25, '2026-10-01T00:00:00Z');
+  const lastGood = { current: pricing('2026-09-30.1', 15, '2026-09-30T00:00:00Z') };
+
+  it('makes a valid pricing whose time has come current, dropping anything else it carries', () => {
+    expect(acceptPublishedPricing({ ...published, extra: true }, null, NOW_MS)).toEqual({ current: published });
+    expect(effectivePricing({ current: published }, NOW_MS).licensedDiscountPercent).toBe(25);
+    for (const percent of [0, 50]) {
+      const edge = pricing('2026-10-02.1', percent, '2026-10-02T00:00:00Z');
+      expect(acceptPublishedPricing(edge, lastGood, NOW_MS)).toEqual({ current: edge });
+    }
+  });
+
+  it('keeps the bundled pricing when nothing is published', () => {
+    expect(acceptPublishedPricing(undefined, null, NOW_MS)).toEqual({ current: null });
+    expect(effectivePricing(null, NOW_MS)).toEqual(BUNDLED_PRICING);
+    expect(BUNDLED_PRICING).toEqual(pricing('2026-09-25.1', 20, '2026-09-25T00:00:00Z'));
+  });
+
+  it.each([
+    ['above 50', { licensedDiscountPercent: 51 }],
+    ['negative', { licensedDiscountPercent: -1 }],
+    ['fractional', { licensedDiscountPercent: 12.5 }],
+    ['a string', { licensedDiscountPercent: '20' }],
+  ])('ignores a discount that is %s', (_label, patch) => {
+    expect(acceptPublishedPricing({ ...published, ...patch }, lastGood, NOW_MS)).toEqual(lastGood);
+  });
+
+  it.each([
+    ['without a revision', '2026-10-01'],
+    ['in another format', 'v2026.10.01'],
+    ['too long', `2026-10-01.${'1'.repeat(30)}`],
+    ['missing', undefined],
+  ])('ignores a prices version %s', (_label, pricesVersion) => {
+    expect(acceptPublishedPricing({ ...published, pricesVersion }, lastGood, NOW_MS)).toEqual(lastGood);
+  });
+
+  it.each([
+    ['not a date', 'soon'],
+    ['a date without a time', '2026-10-01'],
+    ['with an offset instead of UTC', '2026-10-01T00:00:00+02:00'],
+  ])('ignores an effective date that is %s', (_label, effectiveFrom) => {
+    expect(acceptPublishedPricing({ ...published, effectiveFrom }, lastGood, NOW_MS)).toEqual(lastGood);
+  });
+
+  it('keeps the last good pricing through a bad or missing value, and uses it over the bundle', () => {
+    let kept = acceptPublishedPricing(published, null, NOW_MS);
+    kept = acceptPublishedPricing(null, kept, NOW_MS);
+    kept = acceptPublishedPricing({ ...published, licensedDiscountPercent: 99 }, kept, NOW_MS);
+    expect(kept).toEqual({ current: published });
+    expect(effectivePricing(kept, NOW_MS).licensedDiscountPercent).toBe(25);
+  });
+
+  it('holds a future pricing as pending and serves it only once its time has passed', () => {
+    const future = pricing('2026-11-01.1', 30, '2026-11-01T00:00:00Z');
+    const kept = acceptPublishedPricing(future, lastGood, NOW_MS);
+    expect(kept).toEqual({ ...lastGood, pending: future });
+    expect(effectivePricing(kept, NOW_MS).licensedDiscountPercent).toBe(15);
+    expect(effectivePricing(kept, Date.parse('2026-10-31T23:59:59Z')).licensedDiscountPercent).toBe(15);
+    expect(effectivePricing(kept, Date.parse('2026-11-01T00:00:00Z')).licensedDiscountPercent).toBe(30);
+    // the next heartbeat after that time stores it as current
+    expect(acceptPublishedPricing(undefined, kept, Date.parse('2026-11-02T00:00:00Z'))).toEqual({ current: future });
+    // with nothing published before, the bundle stays in force until then
+    expect(effectivePricing(acceptPublishedPricing(future, null, NOW_MS), NOW_MS)).toEqual(BUNDLED_PRICING);
+  });
+
+  it('replaces a pending pricing with a newer one, and never with an older one', () => {
+    const first = pricing('2026-11-01.1', 30, '2026-11-01T00:00:00Z');
+    const revised = pricing('2026-11-01.2', 35, '2026-11-01T00:00:00Z');
+    const later = pricing('2026-12-01.1', 40, '2026-12-01T00:00:00Z');
+    let kept = acceptPublishedPricing(first, lastGood, NOW_MS);
+    kept = acceptPublishedPricing(revised, kept, NOW_MS);
+    expect(kept.pending).toEqual(revised);
+    kept = acceptPublishedPricing(later, kept, NOW_MS);
+    expect(kept.pending).toEqual(later);
+    expect(acceptPublishedPricing(first, kept, NOW_MS)).toEqual(kept);
+  });
+
+  it('clears a pending pricing when the cloud publishes the one in force again, so it never applies', () => {
+    const future = pricing('2026-11-01.1', 30, '2026-11-01T00:00:00Z');
+    const pending = acceptPublishedPricing(future, { current: published }, NOW_MS);
+    expect(pending).toEqual({ current: published, pending: future });
+
+    const withdrawn = acceptPublishedPricing(published, pending, NOW_MS);
+    expect(withdrawn).toEqual({ current: published });
+    expect(effectivePricing(withdrawn, Date.parse('2026-11-02T00:00:00Z')).licensedDiscountPercent).toBe(25);
+  });
+
+  it('clears a pending pricing when a newer one comes into force, and when the bundle is republished', () => {
+    const future = pricing('2026-11-01.1', 30, '2026-11-01T00:00:00Z');
+    const now = pricing('2026-10-05.1', 10, '2026-10-05T00:00:00Z');
+    const pending = acceptPublishedPricing(future, lastGood, NOW_MS);
+    expect(acceptPublishedPricing(now, pending, NOW_MS)).toEqual({ current: now });
+
+    const fromBundle = acceptPublishedPricing(future, null, NOW_MS);
+    expect(acceptPublishedPricing(BUNDLED_PRICING, fromBundle, NOW_MS)).toEqual({ current: null });
+  });
+
+  it('ignores a pricing older than the one in force', () => {
+    const current = { current: published };
+    expect(acceptPublishedPricing(pricing('2026-10-01.1', 40, '2026-10-01T00:00:00Z'), current, NOW_MS)).toEqual(
+      current,
+    );
+    expect(acceptPublishedPricing(pricing('2026-10-03.1', 40, '2026-09-30T00:00:00Z'), current, NOW_MS)).toEqual(
+      current,
+    );
+    expect(acceptPublishedPricing({ ...published }, current, NOW_MS)).toEqual(current);
+    // nor one older than the bundle when nothing was published yet
+    expect(acceptPublishedPricing(pricing('2026-09-24.1', 40, '2026-09-24T00:00:00Z'), null, NOW_MS)).toEqual({
+      current: null,
+    });
+  });
+
+  it('orders pricings by effective time, then by version date and revision', () => {
+    const at = '2026-10-01T00:00:00Z';
+    expect(comparePricing(pricing('2026-10-01.10', 0, at), pricing('2026-10-01.9', 0, at))).toBe(1);
+    expect(comparePricing(pricing('2026-09-30.5', 0, at), pricing('2026-10-01.1', 0, at))).toBe(-1);
+    expect(comparePricing(pricing('2026-10-01.1', 0, '2026-10-02T00:00:00Z'), pricing('2026-10-09.1', 0, at))).toBe(1);
   });
 });

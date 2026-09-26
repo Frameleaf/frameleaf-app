@@ -631,7 +631,10 @@
     };
   });
 
-  $effect(() => {
+  // `onMount`, not `$effect`: `eventManager.on` reads and replaces the manager's listener list, so a
+  // tracking effect would depend on its own subscription and re-run until Svelte stops it
+  // (effect_update_depth_exceeded), leaving the page's later updates unapplied.
+  onMount(() => {
     void probeStudioHost().then((next) => {
       capabilities = next.capabilities;
       renderEvidence = next.renderEvidence;

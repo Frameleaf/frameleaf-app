@@ -502,6 +502,11 @@ export enum SystemMetadataKey {
   FrameleafMlWallet = 'frameleaf-ml-wallet',
   /** FL-156: this server's Frameleaf licence certificate and its refresh state. */
   FrameleafLicense = 'frameleaf-license',
+  /**
+   * The last valid plan pricing Frameleaf Cloud published on a heartbeat (prices version and the
+   * licensed-server plan discount), so a restart keeps it instead of the bundled snapshot.
+   */
+  FrameleafPricing = 'frameleaf-pricing',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
   HardwareCheck = 'hardware-check',
   /**
@@ -528,6 +533,12 @@ export enum SystemMetadataKey {
    * the original files, each recorded separately, and who recorded it.
    */
   BackupRestoreVerification = 'backup-restore-verification',
+  /**
+   * FL-176: Frameleaf first-run setup — whether it is complete, which flow it runs (a new server or
+   * the first Frameleaf launch on an existing library) and the saved per-step progress. Never a
+   * password.
+   */
+  FrameleafSetup = 'frameleaf-setup',
 }
 
 export enum UserMetadataKey {

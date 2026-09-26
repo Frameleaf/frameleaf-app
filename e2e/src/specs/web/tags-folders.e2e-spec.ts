@@ -41,7 +41,8 @@ test.describe('Tags and Folders', () => {
     await page.goto('/tags');
 
     const tree = page.getByRole('tree', { name: 'Tags' });
-    const trips = tree.getByRole('treeitem', { name: /^trips/ });
+    // A parent's name starts with its toggle's label (Tags.jsx:47-53: "Expand trips" / "Collapse trips").
+    const trips = tree.getByRole('treeitem', { name: /^(Expand|Collapse) trips trips\b/ });
     // the hidden (archived) descendant item is not counted anywhere up the tree
     await expect(trips.locator(':scope > .dv-tree-row small')).toHaveText('1');
 
@@ -133,13 +134,18 @@ test.describe('Tags and Folders', () => {
     const files = page.locator('.dv-file-grid-host [data-testid="frameleaf-asset-tile"]');
     await expect(files).toHaveCount(1);
     await expect(page.locator('.dv-file-grid-host .fl-grid-caption')).toContainText('lake.png');
-    await expect(page.getByRole('contentinfo')).toContainText('1 file');
+    // The details bar is a <footer> inside the folder's region (Folders.jsx:289), so it has no
+    // contentinfo role; read it by its class.
+    await expect(page.locator('footer.dv-details-bar')).toContainText('1 file');
     const folderUrl = page.url();
 
     await files.first().locator('.fl-tile-open').click();
     await page.waitForURL(/\/folders\/photos\/[\w-]+/);
+    // The address changes before the viewer has loaded its item; go back from the open viewer.
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
     await page.goBack();
     await page.waitForURL(folderUrl);
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
     await expect(files).toHaveCount(1);
 
     await page.getByRole('navigation', { name: 'Folder path' }).getByRole('button', { name: 'All folders' }).click();

@@ -1,6 +1,12 @@
 import { createPublicKey, verify } from 'node:crypto';
 import z from 'zod';
-import type { FrameleafLicense, FrameleafLicenseClaims, FrameleafLicenseStore } from 'src/types.js';
+import type {
+  FrameleafLicense,
+  FrameleafLicenseClaims,
+  FrameleafLicenseStore,
+  FrameleafPricing,
+  FrameleafPricingState,
+} from 'src/types.js';
 
 /**
  * Frameleaf licence certificates (FL-156, CLD-003; instance contract "License certificate";
@@ -345,3 +351,91 @@ export const certificateProblem = (reason: LicenseRefusal) => {
     }
   }
 };
+
+// ------------------------------------------------------------------ published pricing
+
+/** The pricing bundled with this release, used until Frameleaf Cloud publishes a valid one. */
+export const BUNDLED_PRICING: Readonly<FrameleafPricing> = Object.freeze({
+  pricesVersion: '2026-09-25.1',
+  licensedDiscountPercent: 20,
+  effectiveFrom: '2026-09-25T00:00:00Z',
+});
+
+const publishedPricingSchema = z.object({
+  pricesVersion: z
+    .string()
+    .max(32)
+    .regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$/),
+  licensedDiscountPercent: z.number().int().min(0).max(50),
+  effectiveFrom: z.iso.datetime(),
+});
+
+const versionParts = (version: string) => {
+  const [date, revision] = version.split('.', 2);
+  return { date, revision: Number(revision) };
+};
+
+/** Orders two pricings: by `effectiveFrom`, then by `pricesVersion` (date, then revision). */
+export const comparePricing = (a: FrameleafPricing, b: FrameleafPricing) => {
+  const byTime = Date.parse(a.effectiveFrom) - Date.parse(b.effectiveFrom);
+  if (byTime !== 0) {
+    return Math.sign(byTime);
+  }
+  const [x, y] = [versionParts(a.pricesVersion), versionParts(b.pricesVersion)];
+  return x.date === y.date ? Math.sign(x.revision - y.revision) : x.date < y.date ? -1 : 1;
+};
+
+/** The stored state with a pending pricing whose `effectiveFrom` has passed made current. */
+export const settlePricing = (
+  stored: FrameleafPricingState | null | undefined,
+  now = Date.now(),
+): FrameleafPricingState => {
+  const current = stored?.current ?? null;
+  const pending = stored?.pending;
+  if (pending && Date.parse(pending.effectiveFrom) <= now) {
+    return { current: pending };
+  }
+  return pending ? { current, pending } : { current };
+};
+
+/**
+ * The pricing state to keep after a heartbeat. This is the one place that reads the `pricing`
+ * object Frameleaf Cloud publishes:
+ *
+ * - One that is missing or fails validation changes nothing.
+ * - One older than the pricing in force (the last good one, else the bundle) is ignored.
+ * - One already in force is authoritative: it becomes (or stays) current and clears any pending
+ *   pricing, so the cloud withdraws a pending change by publishing the current one again.
+ * - One still to come waits as `pending`, replacing a pending one only when it is newer.
+ */
+export const acceptPublishedPricing = (
+  raw: unknown,
+  stored: FrameleafPricingState | null | undefined,
+  now = Date.now(),
+): FrameleafPricingState => {
+  const state = settlePricing(stored, now);
+  const parsed = publishedPricingSchema.safeParse(raw);
+  if (!parsed.success) {
+    return state;
+  }
+  const published = parsed.data;
+  const inForce = state.current ?? BUNDLED_PRICING;
+  const order = comparePricing(published, inForce);
+  if (order < 0) {
+    return state;
+  }
+  if (Date.parse(published.effectiveFrom) <= now) {
+    // the same version republished keeps the stored copy (null while the bundle is in force)
+    return { current: order === 0 ? state.current : published };
+  }
+  if (order === 0 || (state.pending && comparePricing(published, state.pending) <= 0)) {
+    return state;
+  }
+  return { current: state.current, pending: published };
+};
+
+/** The pricing in force at `now`: the last good published value that has taken effect, else the bundle. */
+export const effectivePricing = (
+  stored: FrameleafPricingState | null | undefined,
+  now = Date.now(),
+): FrameleafPricing => settlePricing(stored, now).current ?? BUNDLED_PRICING;

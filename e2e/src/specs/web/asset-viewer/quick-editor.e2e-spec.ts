@@ -87,12 +87,14 @@ test.describe('Quick editor and Studio continuity', () => {
   test('keeps the draft across Studio and back', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto(`/photos/${asset.id}`);
+    // E is the viewer's shortcut, so it only works once the viewer has loaded the item.
+    await expect(page.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);
     await page.keyboard.press('e');
     const editor = page.getByRole('dialog', { name: /Edit/ });
     await editor.getByRole('slider', { name: 'Exposure' }).fill('0.5');
 
     await editor.getByRole('button', { name: 'Open in Studio' }).first().click();
-    await expect(page).toHaveURL(new RegExp(`/studio\\?assets=${asset.id}&from=${asset.id}`));
+    await expect(page).toHaveURL(new RegExp(String.raw`/studio\?assets=${asset.id}&from=${asset.id}`));
 
     await page.getByRole('button', { name: 'Back to quick edit' }).click();
     await expect(page).toHaveURL(new RegExp(`/photos/${asset.id}$`));
@@ -134,6 +136,10 @@ test.describe('Video quick editor', () => {
       await route.fulfill({ json: { assetId: clip.id, edits: route.request().postDataJSON().edits } });
     });
     await page.goto(`/photos/${clip.id}`);
+    // E is the viewer's shortcut, so it only works once the viewer has loaded the item and its actions.
+    await expect(
+      page.getByRole('toolbar', { name: 'Media actions' }).getByRole('button', { name: 'Edit', exact: true }),
+    ).toBeVisible();
     await page.keyboard.press('e');
     await expect(page.getByRole('dialog', { name: /Edit/ })).toBeVisible();
   });

@@ -380,8 +380,8 @@ export function summariseBackgroundQueues(state, catalog = QUEUE_CATALOG) {
 
 /**
  * Frameleaf Cloud work that is not a personal job: running cloud batches
- * (when cloud processing is on) and a cloud backup run when the cloud state
- * reports one.
+ * (when cloud processing is on), and a cloud backup or restore run when the
+ * cloud state reports one.
  */
 export function summariseCloudWork(cloudState, cloudJobList = []) {
   if (!cloudState) return [];
@@ -428,6 +428,31 @@ export function summariseCloudWork(cloudState, cloudJobList = []) {
         run.status === "running" && Number(run.uploaded) > 0
           ? `${Number(run.uploaded).toLocaleString("en-US")} new or changed files uploaded`
           : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      target: { area: "cloud", section: "cloud-backup", label: "Cloud backup" },
+    });
+  }
+  const restore = cloudState.backup?.restoreRun;
+  if (restore && ["queued", "running"].includes(restore.status)) {
+    const progress = restore.status === "running" && Number.isFinite(restore.progress) ? Math.round(restore.progress) : null;
+    const files = Number(restore.files) || 1;
+    rows.push({
+      id: "cloud-restore-run",
+      title: restore.title || "Restore from backup",
+      icon: "mdiBackupRestore",
+      stage: restore.status,
+      running: restore.status === "running" ? 1 : 0,
+      waiting: restore.status === "queued" ? 1 : 0,
+      progress,
+      where: "Frameleaf Cloud",
+      detail: [
+        STAGE_LABEL[restore.status],
+        progress !== null ? `${progress}%` : null,
+        Array.isArray(restore.steps) && restore.steps.length
+          ? restore.steps[Math.min(restore.steps.length - 1, Math.floor(((progress ?? 0) / 100) * restore.steps.length))]
+          : `${files.toLocaleString("en-US")} ${files === 1 ? "file" : "files"}, each checked against its fingerprint`,
       ]
         .filter(Boolean)
         .join(" · "),

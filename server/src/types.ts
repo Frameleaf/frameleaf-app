@@ -861,6 +861,26 @@ export type FrameleafLicenseStore = {
   noticeState?: 'active' | 'grace' | 'expired';
 };
 
+/**
+ * Plan pricing Frameleaf Cloud publishes on the heartbeat: the prices version and the percentage
+ * taken off the Frameleaf Cloud plans on a licensed server (never AI credit or extra backup).
+ */
+export type FrameleafPricing = {
+  pricesVersion: string;
+  licensedDiscountPercent: number;
+  effectiveFrom: string;
+};
+
+/**
+ * The published pricing kept in system metadata: the last good value already in force (`current`)
+ * and a newer one waiting for its `effectiveFrom` (`pending`). Which one applies is decided when it
+ * is read, with the server clock.
+ */
+export type FrameleafPricingState = {
+  current: FrameleafPricing | null;
+  pending?: FrameleafPricing;
+};
+
 /** FL-159: the public half of this server's identity; the private key stays in a 0600 file. */
 export type FrameleafInstanceIdentity = {
   instanceId: string;
@@ -926,13 +946,27 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
   [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
+  [SystemMetadataKey.FrameleafPricing]: FrameleafPricingState;
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
+  [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
 }
+
+/** FL-176: which first-run setup flow an administrator sees. */
+export type FrameleafSetupFlow = 'new' | 'existing';
+
+/** FL-176: the saved first-run setup state. `progress` is the validated, password-free step payload. */
+export type FrameleafSetupState = {
+  completed: boolean;
+  completedAt: string | null;
+  flow: FrameleafSetupFlow | null;
+  progress: Record<string, unknown> | null;
+  updatedAt: string | null;
+};
 
 /** FL-71: the last recorded restore test of each part of a backup (ISO date-times), and who recorded it. */
 export type BackupRestoreVerification = {
