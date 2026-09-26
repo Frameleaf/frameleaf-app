@@ -229,6 +229,8 @@ describe(RestorationWorkerService.name, () => {
       sumCloudDescriptionOpenHolds: vi.fn(),
       hasUnsettledCloudDescriptionJobs: vi.fn(),
       listCloudDescriptionPendingReleases: vi.fn(),
+      // FL-162: the Frameleaf Cloud job settle pass, which restoration never reaches
+      listCloudMlJobsAwaitingCost: vi.fn(),
       recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 }),
       upsertCheckpoint: vi.fn().mockResolvedValue(true),
       completeCheckpoint: vi.fn().mockResolvedValue(true),

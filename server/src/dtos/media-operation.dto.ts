@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { CloudMlJobActivitySchema } from 'src/dtos/cloud-ml-job.dto.js';
 import {
   DuplicateDecisionKindSchema,
   MediaOperationBulkActionSchema,
@@ -194,6 +195,8 @@ export const MediaOperationSchema = z
     estimate: MediaOperationEstimateSchema.nullable(),
     /** Present only on `bulk` jobs. Null everywhere else rather than an empty object. */
     bulk: MediaOperationBulkSummarySchema.nullable(),
+    /** FL-162: present only on `cloud_ml_job` jobs: the stage, the model and the cost. Null elsewhere. */
+    cloudJob: CloudMlJobActivitySchema.nullable().optional(),
     progress: z.number().meta({ format: 'double' }).describe('Percent complete, from counted work'),
     processedUnits: z.string(),
     totalUnits: z.string().nullable(),

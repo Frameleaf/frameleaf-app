@@ -141,6 +141,9 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   // FL-160: a cloud backup run records its phase and asset cursor every 25 assets and finishes the same
   // manifest when it resumes.
   MediaOperationKind.CloudBackup,
+  // FL-162: a Frameleaf Cloud job records its cloud job and every uploaded part, and resumes by the cloud
+  // job id; it can pause only until it was started on Frameleaf Cloud (`cloudMlJobCanPause`).
+  MediaOperationKind.CloudMlJob,
 ];
 
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);
