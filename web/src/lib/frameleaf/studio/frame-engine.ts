@@ -191,18 +191,25 @@ export const toNavigationTarget = (value: unknown): StudioNavigationTarget | nul
 
 type ServiceCall = (services: StudioHostServices, args: unknown[]) => Promise<unknown>;
 
+const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
+
 /** The services a frame may call, each checked for shape before it reaches the host. */
 const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
   submitCommands: (services, [envelopes]) =>
     services.submitCommands(Array.isArray(envelopes) ? (envelopes as StudioCommandEnvelope[]) : []),
-  stageDraft: (services, [graph, commandIds, baseRevision]) =>
-    services.stageDraft
-      ? services.stageDraft(
-          graph,
-          Array.isArray(commandIds) ? commandIds.filter((id): id is string => typeof id === 'string') : [],
-          ...(Number.isSafeInteger(baseRevision) && (baseRevision as number) >= 0 ? [baseRevision as number] : []),
-        )
-      : Promise.resolve({ status: 'rejected', reason: 'forbidden' } as const),
+  stageDraft: (services, [graph, commandIds, baseRevision, graphVersion]) => {
+    if (!services.stageDraft) {
+      return Promise.resolve({ status: 'rejected', reason: 'forbidden' } as const);
+    }
+    // Protocol 3: an editor draft names the revision and the host graph version it was loaded from,
+    // both whole counts. Without them it could not be judged as the editor's, so it is refused
+    // rather than staged as anything else (FL-174).
+    if (!isCount(baseRevision) || !isCount(graphVersion)) {
+      return Promise.resolve({ status: 'rejected', reason: 'invalid' } as const);
+    }
+    const ids = Array.isArray(commandIds) ? commandIds.filter((id): id is string => typeof id === 'string') : [];
+    return services.stageDraft(graph, ids, baseRevision, graphVersion);
+  },
   reloadProject: (services) => services.reloadProject(),
   saveWorkspace: (services, [layout]) =>
     services.saveWorkspace ? services.saveWorkspace(layout) : Promise.resolve({ status: 'unavailable' } as const),
