@@ -16,7 +16,8 @@ case "${DB_STORAGE_TYPE^^}" in
     ;;
 esac
 
-# shellcheck source=docker/postgres/set-env.sh
+# set-env.sh is installed beside this script in the image (/usr/local/bin); CI lints without -x.
+# shellcheck source=/dev/null
 . /usr/local/bin/set-env.sh
 
 exec /usr/local/bin/docker-entrypoint.sh "$@"
