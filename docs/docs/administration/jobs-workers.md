@@ -8,6 +8,9 @@ The `immich-server` container contains multiple workers:
 
 - `api`: responds to API requests for data and files for the web and mobile app.
 - `microservices`: handles most other work, such as thumbnail generation and video encoding, in the form of _jobs_. Simply put, a job is a request to process data in the background.
+- `edge`: serves Frameleaf Cloud remote access (its HTTPS listener and certificates) and passes each request to `api`. It does nothing until remote access is turned on for a linked server. See [Workers and endpoints](/administration/workers-and-endpoints#the-edge-worker-remote-access).
+
+With `IMMICH_WORKERS_EXCLUDE: 'api'` a container still runs `edge` next to `microservices`; exclude it too (`'api,edge'`) unless that container should serve remote access. When `edge` runs in a different container from `api`, give both the same `FRAMELEAF_EDGE_SECRET`.
 
 ## Split workers
 
