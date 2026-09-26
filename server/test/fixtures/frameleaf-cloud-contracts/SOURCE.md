@@ -58,6 +58,15 @@ tested against what the cloud publishes (FL-177).
 - FC-70 release feed: `releases/latest-stable.json` and `releases/latest-beta.json` are byte-identical to
   `origin/main` at `86adf20ee0f403859abf225c1a14531214a465c1` (Frameleaf/frameleaf-cloud#43). The contract is
   `packages/contracts/src/releases/latest.ts`; `server/src/utils/frameleaf-release.ts` reads them (FL-192).
+- FL-165 remote access: `remote/enroll-response.json`, `remote/dns-txt-put-request.json`,
+  `remote/dns-txt-put-response.json`, `remote/certs-request.json`, `remote/caa-put-request.json`,
+  `remote/hostname-put-request.json`, `remote/hostnames-list.json` and `remote/label-vectors.json` are
+  byte-identical to `origin/main` at `39488a50b176ea0778ee138d202bc8eda8376a70`. The contracts are
+  `packages/contracts/src/remote/{enroll,dns-txt,certs,caa,hostnames}.ts`; `server/src/utils/frameleaf-remote-access.ts`
+  reads and builds them. These fixtures still name the earlier direct domain `frameleaf-direct.net`; the server
+  takes the domain from the enrolment answer (or discovery's `remote.directDomain`) and only documents
+  `frameleaf.net` as the default. The relay fixtures (`remote/relay-*.json`, `remote/wan-probe-*.json`,
+  `remote/remote-usage.json`) belong to CLD-103/CLD-104 and are not copied yet.
 
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
 above.
