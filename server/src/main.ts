@@ -187,10 +187,14 @@ class Workers {
       return;
     }
 
-    // FL-165: the edge worker failing takes nothing else down; it starts again on its own, waiting
-    // 1 s, then 2 s, 4 s … up to a minute while it keeps failing (a minute of running resets that)
+    // FL-165: the edge worker ending takes nothing else down. Stopped on purpose (exit 0, or a
+    // signal) it stays stopped; failing, it starts again on its own, waiting 1 s, then 2 s, 4 s … up
+    // to a minute while it keeps failing (a minute of running resets that)
     if (name === ImmichWorker.Edge) {
       delete this.workers[name];
+      if (exitCode === 0 || exitCode === null) {
+        return;
+      }
       const ranMs = Date.now() - this.edgeStartedAt;
       this.edgeFailures = ranMs > 60_000 ? 1 : this.edgeFailures + 1;
       const delay = Math.min(60_000, 1000 * 2 ** (this.edgeFailures - 1));
@@ -213,10 +217,10 @@ class Workers {
         console.error('Killing api process');
         void this.workers[ImmichWorker.Api]!.kill('SIGTERM');
       }
-      // FL-165: the edge worker is a process of its own too; it must not keep the direct port open
-      if (Object.hasOwn(this.workers, ImmichWorker.Edge) && name !== ImmichWorker.Edge) {
-        void this.workers[ImmichWorker.Edge]!.kill('SIGTERM');
-      }
+    }
+    // FL-165: the edge worker is a process of its own; it must not outlive the server and keep the port
+    if (Object.hasOwn(this.workers, ImmichWorker.Edge) && name !== ImmichWorker.Edge) {
+      void this.workers[ImmichWorker.Edge]!.kill('SIGTERM');
     }
 
     process.exit(exitCode);

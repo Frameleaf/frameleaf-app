@@ -149,6 +149,7 @@ describe(EdgeStateService.name, () => {
       proxy as unknown as EdgeProxyService,
     );
     sut.wait = () => Promise.resolve();
+    sut.inContainer = () => true;
   });
 
   afterEach(async () => {
