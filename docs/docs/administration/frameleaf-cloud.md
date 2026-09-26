@@ -62,6 +62,8 @@ The server proves who it is to Frameleaf Cloud with its own key. A client secret
 
 ## Remote access security
 
+Remote access itself (the switch, the connection, the server's certificate, your own domain and the connection test) is described in [Workers and endpoints](/administration/workers-and-endpoints#the-edge-worker-remote-access). Turning it on needs a linked server and a plan that includes remote access; unlinking turns it off, removes the server's remote-access certificates and stops using a custom domain.
+
 These protections are in place before any remote path opens. The sign-in and download rules apply only to requests that arrive through remote access, so people on your home network sign in and download as before; the rate limits apply to every request. Both settings below are under Settings → Frameleaf Cloud → **Remote access**, and go back to off when the server is unlinked.
 
 **How the server knows a request is remote.** The edge worker, which carries remote-access traffic, marks each request with how it arrived (home network, a direct connection from outside, or the Frameleaf relay) and proves the mark with a secret the server generates again on every start (`FRAMELEAF_EDGE_SECRET`; a value you set is used instead). A request that carries a mark (`X-Frameleaf-Via` or `X-Frameleaf-Via-Auth`) without the right secret is refused with `403` (`frameleaf_via_unverified`); it is never treated as coming from home. Every other `X-Frameleaf-*` header a browser or app sends is dropped, except `X-Frameleaf-Worker-Session`, the session credential this server gives its render workers. The edge worker must also send `X-Forwarded-For` with the visitor's address; without it every remote visitor shares one rate-limit counter.

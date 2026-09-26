@@ -7,6 +7,20 @@ You can read the [full discussion in Discord](https://discord.com/channels/97911
 Never forward port 2283 directly to the internet without additional configuration. This will expose the web interface via http to the internet, making you susceptible to [man in the middle](https://en.wikipedia.org/wiki/Man-in-the-middle_attack) attacks.
 :::
 
+## Frameleaf Cloud remote access
+
+With a Frameleaf Cloud plan that includes remote access, a linked server can be reached from anywhere without a VPN, a port you open by hand or a certificate you manage. Turn it on in Settings → Frameleaf Cloud → **Remote access**.
+
+- **Its own address.** The server gets a name under Frameleaf's direct domain, such as `https://r.<label>.frameleaf.net`, shown on the Remote access page with a QR code. On the home network the apps use its LAN name, `https://192-168-1-10.<label>.frameleaf.net:2443`, which reaches the server directly over HTTPS.
+- **Its own certificate.** The server obtains and renews a Let's Encrypt certificate for its names itself. Frameleaf Cloud only publishes the DNS challenge values the server gives it; the certificate's private key never leaves your server.
+- **Connection.** **Relay only** carries every remote connection through the Frameleaf relay, which never sees inside the encrypted connection. **Relay and direct** also accepts direct connections on the external port (2443 by default); forward it on your router with **I forward the port myself** if the router does not open it automatically.
+- **Your own domain.** Under **Use your own domain**, enter a subdomain you own, such as `photos.example.com`, add the two CNAME records the page shows at your DNS provider (`photos.example.com` → `r.<label>.frameleaf.net` and `_acme-challenge.photos.example.com` → `_acme-challenge.<label>.frameleaf.net`), then **Check DNS**. Once verified, the server obtains a certificate for your hostname too, and **Use my domain** makes it the address the server publishes.
+- **Who can connect.** Everyone connecting from outside your home signs in with a Frameleaf account linked to their account here. Public shared links still open without signing in. Original downloads and password sign-in stay off over the relay unless you turn them on.
+
+**Test connection** checks the certificate and a request through the HTTPS listener. See [Workers and endpoints](/administration/workers-and-endpoints#the-edge-worker-remote-access) for how the edge worker serves remote access, and [Frameleaf Cloud](/administration/frameleaf-cloud#remote-access-security) for the sign-in and download rules.
+
+The options below work without Frameleaf Cloud.
+
 ## Option 1: VPN to home network
 
 You may use a VPN service to open an encrypted connection to your Frameleaf instance. OpenVPN and Wireguard are two popular VPN solutions. Here is a guide on setting up VPN access to your server - [Pihole documentation](https://docs.pi-hole.net/guides/vpn/wireguard/overview/)
