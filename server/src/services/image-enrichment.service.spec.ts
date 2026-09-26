@@ -2513,6 +2513,16 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
     });
 
+    it('does not claim batches for describe-all while cloud processing is off (review re-check)', async () => {
+      configure(false, { enabled: false });
+      mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));
+
+      await expect(sut.handleQueueImageDescription({ force: false })).resolves.toBe(JobStatus.Success);
+
+      // each photo is then refused with the reason (cloud-turned-off), never described here
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.ImageDescription, data: { id: assetId } }]);
+    });
+
     it('queues no library-wide description jobs while descriptions are routed to Frameleaf Cloud', async () => {
       configure(false);
       mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));

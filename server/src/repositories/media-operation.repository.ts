@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, sql } from 'kysely';
+import { ExpressionBuilder, Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { PostgresError } from 'postgres';
@@ -1376,31 +1376,66 @@ export class MediaOperationRepository {
     return Number(row.spentUsd);
   }
 
-  /** What the wallet holds for admitted description batches of a destination not settled yet. */
-  async sumCloudDescriptionOpenHolds(destinationId: string): Promise<number> {
+  /**
+   * What the wallet holds for a destination's admitted description batches that are not settled yet
+   * (FL-163 re-check P2): unfinished batches, and finished ones admitted since `since` (the budget
+   * window). A hold released but never reported as settled stops counting once it leaves the window.
+   */
+  async sumCloudDescriptionOpenHolds(destinationId: string, since: Date): Promise<number> {
     const row = await this.db
       .selectFrom('media_operation')
       .select(sql<number>`coalesce(sum(("result" -> 'job' ->> 'holdUsd')::double precision), 0)`.as('heldUsd'))
       .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
       .where(sql<string>`"snapshot" ->> 'destinationId'`, '=', destinationId)
-      .where(sql<string>`"result" -> 'job' ->> 'jobId'`, 'is not', null)
-      .where(sql<string>`"result" ->> 'settledUsd'`, 'is', null)
+      .where((eb) => this.unsettledAdmission(eb, since))
       .executeTakeFirstOrThrow();
     return Number(row.heldUsd);
   }
 
-  /** Whether a description batch admitted since `since` still waits for its settlement. */
+  /** Whether an admitted description batch still waits for its settlement, bounded as the holds are. */
   async hasUnsettledCloudDescriptionJobs(since: Date): Promise<boolean> {
     const row = await this.db
       .selectFrom('media_operation')
       .select('id')
       .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
-      .where('remoteJobId', 'is not', null)
-      .where(sql<string>`"result" ->> 'settledUsd'`, 'is', null)
-      .where('createdAt', '>=', since)
+      .where((eb) => this.unsettledAdmission(eb, since))
       .limit(1)
       .executeTakeFirst();
     return !!row;
+  }
+
+  /** Admitted, not settled, and either unfinished or admitted since `since`. */
+  private unsettledAdmission(eb: ExpressionBuilder<DB, 'media_operation'>, since: Date) {
+    return eb.and([
+      eb(sql<string>`"result" -> 'job' ->> 'jobId'`, 'is not', null),
+      eb(sql<string>`"result" ->> 'settledUsd'`, 'is', null),
+      eb.or([
+        eb('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES]),
+        eb(sql<Date>`("result" -> 'job' ->> 'admittedAt')::timestamptz`, '>=', since),
+      ]),
+    ]);
+  }
+
+  /**
+   * Finished description batches whose `POST /v2/jobs` was sent but whose job was never recorded
+   * (FL-163 re-check): the cleanup pass replays their idempotency key, once their estimate expired, to
+   * learn whether a job exists and stop it.
+   */
+  listCloudDescriptionPendingReleases(limit: number): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+        .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .where('remoteJobId', 'is', null)
+        // the saved submission is the pending-release marker: written, with its key, before the POST
+        .where(sql<string>`"result" -> 'submission' ->> 'attemptedAt'`, 'is not', null)
+        .where(sql<string>`"result" -> 'job' ->> 'jobId'`, 'is', null)
+        .orderBy('createdAt', 'asc')
+        .limit(limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
   }
 
   async markRemoteReleased(id: string): Promise<void> {

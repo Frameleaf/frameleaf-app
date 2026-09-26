@@ -1,8 +1,10 @@
+import type { SystemConfig } from 'src/config.js';
 import type { DatabaseRepository } from 'src/repositories/database.repository.js';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import type { CloudCatalogEntry, CloudConsentFeatures, CloudEstimate } from 'src/utils/frameleaf-cloud.js';
 import { DatabaseLock, MlAdmissionRefusal, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
+import { cloudRouteAllows } from 'src/utils/ml-destination.js';
 
 /**
  * Frameleaf Cloud description batches (FL-163, `CLD-203`). The constants are documented for
@@ -164,6 +166,8 @@ export type CloudDescriptionEstimateRecord = {
   photos: number;
   /** The p90 of every batch together, USD: the most the queued batches may be approved at. */
   p90Usd: number;
+  /** The administrator who asked for the estimate (informational). */
+  createdBy: string | null;
   /** The photos the estimate covers, per owner. Emptied once the backfill started. */
   owners: Record<string, string[]>;
   started: { at: string; batches: number; photos: number; operationIds: string[] } | null;
@@ -499,7 +503,12 @@ export class CloudDescriptionQueueWriter {
 export const cloudDescriptionDestination = async (
   repository: Pick<MlDestinationRepository, 'getRoute' | 'getById'>,
   destinationId?: string | null,
+  cloudMl?: Pick<SystemConfig['frameleafCloud']['cloudMl'], 'enabled' | 'routing'>,
 ): Promise<MlDestinationRow | undefined> => {
+  // with the settings given, descriptions only go to Frameleaf Cloud while processing is on for them
+  if (cloudMl && !(cloudMl.enabled && cloudRouteAllows(cloudMl, MlWorkload.Enrichment))) {
+    return;
+  }
   const id = destinationId ?? (await repository.getRoute(MlWorkload.Enrichment))?.destinationId;
   if (!id) {
     return;

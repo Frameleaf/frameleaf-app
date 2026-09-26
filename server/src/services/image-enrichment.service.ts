@@ -703,13 +703,14 @@ export class ImageEnrichmentService extends BaseService {
 
   @OnJob({ name: JobName.ImageDescriptionQueueAll, queue: QueueName.ImageDescription })
   async handleQueueImageDescription({ force }: JobOf<JobName.ImageDescriptionQueueAll>): Promise<JobStatus> {
-    const { machineLearning, libraryCare } = await this.getConfig({ withCache: false });
+    const { machineLearning, libraryCare, frameleafCloud } = await this.getConfig({ withCache: false });
     if (!isImageDescriptionEnabled(machineLearning)) {
       return JobStatus.Skipped;
     }
     // FL-163: describing the whole library on Frameleaf Cloud is a backfill, which shows its estimate
-    // before anything is queued; this job never queues it one photo at a time
-    if (await cloudDescriptionDestination(this.mlDestinationRepository)) {
+    // before anything is queued; this job never queues it one photo at a time. While cloud processing
+    // is off for descriptions, the photos are queued and each is refused with that reason.
+    if (await cloudDescriptionDestination(this.mlDestinationRepository, null, frameleafCloud.cloudMl)) {
       this.logger.log(
         'Descriptions are routed to Frameleaf Cloud; describe the library from Frameleaf Cloud processing, where the estimate is shown first',
       );
