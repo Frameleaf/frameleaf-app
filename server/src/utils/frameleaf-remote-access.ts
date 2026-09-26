@@ -649,9 +649,13 @@ export const sameSubnet = (a: string, b: string): boolean => {
  *   proves nothing, since a client chooses it;
  * - the peer is on the home network (RFC 1918, ULA, loopback or `FRAMELEAF_TRUSTED_LAN_CIDRS`);
  * - the peer shares that address's /24 (IPv4) or /64 (IPv6), or is inside `FRAMELEAF_TRUSTED_LAN_CIDRS`;
- * - the peer is not the container's own gateway (`gateways`): behind Docker's userland proxy,
- *   slirp4netns or a reverse proxy on the home network every visitor arrives from such an address, so
- *   it counts as home only when an administrator listed it in `FRAMELEAF_TRUSTED_LAN_CIDRS`.
+ * - the peer is not the container's own gateway (`gateways`): behind Docker's userland proxy or
+ *   slirp4netns every visitor arrives from that address, so it counts as home only when an
+ *   administrator listed it in `FRAMELEAF_TRUSTED_LAN_CIDRS`.
+ *
+ * A device on the home network that forwards internet traffic with source NAT (a router's port
+ * forward that rewrites the source, a VPN endpoint, a TCP proxy) makes visitors look like neighbours:
+ * such a forwarder must not sit on the advertised /24 (see the edge worker's documentation).
  *
  * A loopback peer is never `lan`: a proxy on the host can make every visitor look like one. Anything
  * else is `wan`. Being wrong in that direction only asks a visitor to sign in with Frameleaf; the

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { isEqual } from 'lodash-es';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -397,7 +398,14 @@ export class EdgeStateService {
     // the direct listener, with the certificates in hand
     const addresses = this.addresses();
     const trustedLanCidrs = this.configRepository.getEnv().frameleafCloud.trustedLanCidrs;
-    const advertised = addresses.lanAddresses.filter((address) => isHomeAddress(address, trustedLanCidrs));
+    // Inside a container, its own interface addresses are on a bridge that other containers (a
+    // reverse proxy passing TLS through, for example) share: those never make an arrival `lan`.
+    // Only the address the administrator named in FRAMELEAF_LOCAL_URL does.
+    const localUrl = this.configRepository.getEnv().frameleafCloud.localUrl;
+    const advertised =
+      this.inContainer() && !localUrl
+        ? []
+        : addresses.lanAddresses.filter((address) => isHomeAddress(address, trustedLanCidrs));
     if (this.stopped) {
       return;
     }
@@ -736,6 +744,9 @@ export class EdgeStateService {
   }
 
   // ------------------------------------------------------------------ state
+
+  /** Whether this worker runs in a container (Docker, Podman). Specs replace it. */
+  inContainer = () => existsSync('/.dockerenv') || existsSync('/run/.containerenv');
 
   /** Whether the listener takes IPv6 connections: bound to `::` or an IPv6 address. */
   private ipv6Listening() {

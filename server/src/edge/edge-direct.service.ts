@@ -153,6 +153,12 @@ export class EdgeDirectService {
     return contexts.custom && name === contexts.custom.host ? contexts.custom.context : contexts.wildcard;
   }
 
+  /** A peer at the listener's own bind address: this host (the self-check with a specific bind). */
+  private isListenAddress(address: string | undefined) {
+    const bind = this.listeningOn?.bind;
+    return !!bind && !!address && address.replace(/^::ffff:/i, '') === bind;
+  }
+
   private onSecureConnection(socket: TLSSocket) {
     const enrollment = this.enrollment;
     if (!enrollment) {
@@ -168,9 +174,10 @@ export class EdgeDirectService {
       advertised: this.advertised,
       gateways: this.gateways,
     });
-    // "Relay only": direct connections from outside the home are not served. A loopback peer (this
-    // server's own self-check) is served, tagged `wan`, so it must still sign in with Frameleaf.
-    if (via === 'wan' && !this.allowWan && !isLoopbackPeer(socket.remoteAddress)) {
+    // "Relay only": direct connections from outside the home are not served. A peer on this host
+    // (loopback or the bind address: the self-check) is served, tagged `wan`, so it still signs in.
+    const self = isLoopbackPeer(socket.remoteAddress) || this.isListenAddress(socket.remoteAddress);
+    if (via === 'wan' && !this.allowWan && !self) {
       socket.destroy();
       return;
     }
