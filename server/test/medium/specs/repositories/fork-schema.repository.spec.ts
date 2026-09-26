@@ -1,5 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
+import { ChecksumAlgorithm } from 'src/enum.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -171,6 +172,126 @@ describe(ForkSchemaRepository.name, () => {
 
       expect(row.rows[0]).toMatchObject({ sha1: recoveredSha1, sha256: recoveredSha256 });
       expect(JSON.parse(row.rows[0]!.evidence)).toEqual({ source: 'recovery' });
+    });
+  });
+
+  describe('recordExternalScanChecksums (FL-69)', () => {
+    const external = async (ctx: ReturnType<typeof setup>['ctx']) => {
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        originalPath: '/external/photos/lake.png',
+        isExternal: true,
+      });
+      return { user, asset };
+    };
+    const read = async (assetId: string) => {
+      const row = await sql<{ sha1: Buffer; sizeInBytes: number; evidence: string; updatedAt: Date }>`
+        SELECT sha1, "sizeInBytes"::int AS "sizeInBytes", evidence::text, "updatedAt"
+        FROM immich_fork.asset_checksum WHERE "assetId" = ${assetId}::uuid
+      `.execute(defaultDatabase);
+      return row.rows[0];
+    };
+
+    it('records and refreshes the digests of a path-checksum original at its own path', async () => {
+      const { ctx, sut } = setup();
+      const { asset } = await external(ctx);
+      const first = { sha1: randomBytes(20), sha256: randomBytes(32), sizeInBytes: 5 };
+      await sut.recordExternalScanChecksums({ assetId: asset.id, ...first, path: asset.originalPath });
+      const recorded = await read(asset.id);
+      expect(recorded).toMatchObject({ sha1: first.sha1, sizeInBytes: 5 });
+      expect(JSON.parse(recorded!.evidence)).toEqual({ source: 'external-scan' });
+
+      // the same bytes again rewrite nothing
+      await sut.recordExternalScanChecksums({ assetId: asset.id, ...first, path: asset.originalPath });
+      expect((await read(asset.id))?.updatedAt).toEqual(recorded?.updatedAt);
+
+      // an original edited in place replaces them
+      const edited = { sha1: randomBytes(20), sha256: randomBytes(32), sizeInBytes: 6 };
+      await sut.recordExternalScanChecksums({ assetId: asset.id, ...edited, path: asset.originalPath });
+      expect(await read(asset.id)).toMatchObject({ sha1: edited.sha1, sizeInBytes: 6 });
+    });
+
+    it('records nothing once the asset has moved or has a file checksum', async () => {
+      const { ctx, sut } = setup();
+      const { asset } = await external(ctx);
+      const digests = { sha1: randomBytes(20), sha256: randomBytes(32), sizeInBytes: 5 };
+
+      await sut.recordExternalScanChecksums({ assetId: asset.id, ...digests, path: '/external/photos/old.png' });
+      expect(await read(asset.id)).toBeUndefined();
+
+      const { user } = await ctx.newUser();
+      const { asset: managed } = await ctx.newAsset({ ownerId: user.id });
+      await sut.recordExternalScanChecksums({ assetId: managed.id, ...digests, path: managed.originalPath });
+      expect(await read(managed.id)).toBeUndefined();
+    });
+
+    it('never answers a duplicate check or a sha1 translation', async () => {
+      const { ctx, sut } = setup();
+      const { user, asset } = await external(ctx);
+      const sha1 = randomBytes(20);
+      const sha256 = randomBytes(32);
+      await sut.recordExternalScanChecksums({
+        assetId: asset.id,
+        sha1,
+        sha256,
+        sizeInBytes: 5,
+        path: asset.originalPath,
+      });
+
+      await expect(sut.hasAssetChecksum(user.id, sha1, sha256)).resolves.toBe(false);
+      await expect(sut.getChecksumTranslations(user.id, [sha1])).resolves.toEqual([]);
+    });
+
+    it('leaves an upload row alone and refreshes a relink recovery row', async () => {
+      const { ctx, sut } = setup();
+      const uploaded = await external(ctx);
+      const relinked = await external(ctx);
+      const seeded = { sha1: randomBytes(20), sha256: randomBytes(32), sizeInBytes: 5 };
+      await sut.recordAssetChecksums({
+        assetId: uploaded.asset.id,
+        ...seeded,
+        path: uploaded.asset.originalPath,
+        source: 'upload',
+      });
+      await sut.recordAssetChecksums({
+        assetId: relinked.asset.id,
+        ...seeded,
+        path: relinked.asset.originalPath,
+        source: 'recovery',
+      });
+
+      const edited = { sha1: randomBytes(20), sha256: randomBytes(32), sizeInBytes: 6 };
+      for (const { asset } of [uploaded, relinked]) {
+        await sut.recordExternalScanChecksums({ assetId: asset.id, ...edited, path: asset.originalPath });
+      }
+
+      const upload = await read(uploaded.asset.id);
+      expect(upload).toMatchObject({ sha1: seeded.sha1, sizeInBytes: 5 });
+      expect(JSON.parse(upload!.evidence)).toEqual({ source: 'upload' });
+      const refreshed = await read(relinked.asset.id);
+      expect(refreshed).toMatchObject({ sha1: edited.sha1, sizeInBytes: 6 });
+      expect(JSON.parse(refreshed!.evidence)).toEqual({ source: 'external-scan' });
+    });
+
+    it('ignores any recorded digest of a path-checksum asset, whoever wrote it', async () => {
+      const { ctx, sut } = setup();
+      const { user, asset } = await external(ctx);
+      const sha1 = randomBytes(20);
+      const sha256 = randomBytes(32);
+      // what a Library Care relink wrote before FL-69 labelled it
+      await sut.recordAssetChecksums({
+        assetId: asset.id,
+        sha1,
+        sha256,
+        sizeInBytes: 5,
+        path: asset.originalPath,
+        source: 'recovery',
+      });
+
+      await expect(sut.hasAssetChecksum(user.id, sha1, sha256)).resolves.toBe(false);
+      await expect(sut.getChecksumTranslations(user.id, [sha1])).resolves.toEqual([]);
     });
   });
 });

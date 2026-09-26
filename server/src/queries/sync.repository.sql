@@ -133,6 +133,8 @@ select
         immich_fork.asset_checksum checksum
       where
         checksum."assetId" = asset.id
+        and asset."checksumAlgorithm" != 'sha1-path'
+        and checksum.evidence ->> 'source' is distinct from 'external-scan'
     ),
     asset.checksum
   ) as "checksum",
@@ -296,6 +298,8 @@ select
         immich_fork.asset_checksum checksum
       where
         checksum."assetId" = asset.id
+        and asset."checksumAlgorithm" != 'sha1-path'
+        and checksum.evidence ->> 'source' is distinct from 'external-scan'
     ),
     asset.checksum
   ) as "checksum",
@@ -461,6 +465,8 @@ select
         immich_fork.asset_checksum checksum
       where
         checksum."assetId" = asset.id
+        and asset."checksumAlgorithm" != 'sha1-path'
+        and checksum.evidence ->> 'source' is distinct from 'external-scan'
     ),
     asset.checksum
   ) as "checksum",
@@ -1363,6 +1369,8 @@ select
         immich_fork.asset_checksum checksum
       where
         checksum."assetId" = asset.id
+        and asset."checksumAlgorithm" != 'sha1-path'
+        and checksum.evidence ->> 'source' is distinct from 'external-scan'
     ),
     asset.checksum
   ) as "checksum",
@@ -2382,6 +2390,8 @@ select
         immich_fork.asset_checksum checksum
       where
         checksum."assetId" = asset.id
+        and asset."checksumAlgorithm" != 'sha1-path'
+        and checksum.evidence ->> 'source' is distinct from 'external-scan'
     ),
     asset.checksum
   ) as "checksum",
@@ -2558,6 +2568,8 @@ select
         immich_fork.asset_checksum checksum
       where
         checksum."assetId" = asset.id
+        and asset."checksumAlgorithm" != 'sha1-path'
+        and checksum.evidence ->> 'source' is distinct from 'external-scan'
     ),
     asset.checksum
   ) as "checksum",

@@ -397,3 +397,11 @@ export const AV1_LEVELS: CodecLevel[] = [
   { maxFrame: 35_651_584, maxRate: 2_139_095_040, token: '17M' }, // 6.1
   { maxFrame: 35_651_584, maxRate: 4_278_190_080, token: '18M' }, // 6.2
 ];
+
+/**
+ * FL-69: `immich_fork.asset_checksum.evidence.source` of an external-library original's digests, read by
+ * a Library Care scan. Bytes on an external mount are not a managed copy, so every reader except Library
+ * Care's copy verification leaves these rows out: duplicate pre-checks, sync, the untracked-file restore,
+ * iCloud recovery matching and the return-to-upstream checks.
+ */
+export const EXTERNAL_SCAN_CHECKSUM = 'external-scan';

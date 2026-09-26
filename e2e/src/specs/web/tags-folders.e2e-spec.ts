@@ -134,7 +134,9 @@ test.describe('Tags and Folders', () => {
     const files = page.locator('.dv-file-grid-host [data-testid="frameleaf-asset-tile"]');
     await expect(files).toHaveCount(1);
     await expect(page.locator('.dv-file-grid-host .fl-grid-caption')).toContainText('lake.png');
-    await expect(page.getByRole('contentinfo')).toContainText('1 file');
+    // The details bar is a <footer> inside the folder's region (Folders.jsx:289), so it has no
+    // contentinfo role; read it by its class.
+    await expect(page.locator('footer.dv-details-bar')).toContainText('1 file');
     const folderUrl = page.url();
 
     await files.first().locator('.fl-tile-open').click();
