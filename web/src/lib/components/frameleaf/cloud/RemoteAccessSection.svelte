@@ -74,10 +74,11 @@
   };
 
   const confirm = async () => {
-    if (confirming && (await save(confirming, true))) {
-      confirmOpen = false;
-      confirming = null;
+    if (!confirming || !(await save(confirming, true))) {
+      return;
     }
+    confirmOpen = false;
+    confirming = null;
   };
 
   const keepOff = () => {

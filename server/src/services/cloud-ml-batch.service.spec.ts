@@ -1197,7 +1197,9 @@ describe(CloudMlBatchService.name, () => {
 
   describe('settlement', () => {
     it('fills ml_workload_accounting from the usage report and writes each photo its share', async () => {
-      const usage = cloudContractFixture<{ items: Array<Record<string, unknown>> }>('ml/usage.json');
+      const usage = cloudContractFixture<{ items: Array<{ jobId: string } & Record<string, unknown>> }>(
+        'ml/usage.json',
+      );
       const item = { ...usage.items[0], clientRef: `batch-${BATCH_ID}` };
       mocks.frameleafCloudMl.getUsage.mockResolvedValue({ items: [item as never], refused: 0 });
       mocks.mediaOperation.getManyForWorker.mockResolvedValue([
