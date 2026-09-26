@@ -1,5 +1,170 @@
+# BEGIN frameleaf-server-base
+# Frameleaf builds its own server base instead of pulling a prebuilt one. The stages between these
+# markers reproduce the base-server-dev image from immich-app/base-images tag 202609151314 (commit
+# 0f4c144d44c0556f8a7fc9143f82a176986369fc, AGPL-3.0). The scripts, version pins and patches it runs
+# are vendored in server/base-image. server/Dockerfile and server/Dockerfile.dev carry identical
+# copies of this block; docker/frameleaf-delivery.test.mjs fails if they drift apart.
+FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590 AS base-server-build
+ARG DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /usr/src/base-image
+
+ENV LD_LIBRARY_PATH=/usr/local/lib \
+  LD_RUN_PATH=/usr/local/lib
+
+COPY server/base-image/configure-apt.sh ./
+
+# Install ca-certificates first, then set up the PostgreSQL client repository
+RUN ./configure-apt.sh && \
+  apt-get update && \
+  apt-get install --no-install-recommends -yqq ca-certificates && \
+  mkdir -p /usr/share/postgresql-common/pgdg
+
+ADD --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+
+RUN . /etc/os-release && \
+  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+  apt-get update && \
+  apt-get install --no-install-recommends -yqq \
+  git \
+  autoconf \
+  automake \
+  libtool \
+  libltdl-dev \
+  build-essential \
+  cmake \
+  jq \
+  libbrotli-dev \
+  # libde265 v1.0.16 includes a fix for HDR images
+  libde265-dev/testing \
+  libexif-dev \
+  libexpat1-dev \
+  libglib2.0-dev \
+  libgsf-1-dev \
+  libmimalloc3 \
+  # libjpeg62-turbo-dev is only for building libvips; the final image uses jpegli (/usr/local/lib/libjpeg.so.62)
+  libjpeg62-turbo-dev \
+  liblcms2-dev \
+  librsvg2-dev \
+  libspng-dev \
+  meson \
+  ninja-build \
+  pkg-config \
+  wget \
+  unzip \
+  zlib1g \
+  postgresql-client-14 \
+  postgresql-client-15 \
+  postgresql-client-16 \
+  postgresql-client-17 \
+  postgresql-client-18 \
+  tini \
+  make \
+  ocl-icd-libopencl1 \
+  libopenmpt0 \
+  libbluray2 \
+  libvpx9 \
+  libzvbi0 \
+  libmp3lame0 \
+  libopus0 \
+  libtheora0 \
+  libvorbis0a \
+  libvorbisenc2 \
+  libx264-164 \
+  libdav1d-dev \
+  libhwy-dev \
+  libwebp-dev \
+  libio-compress-brotli-perl \
+  libaom-dev
+
+FROM base-server-build AS base-server-geodata
+
+ADD https://download.geonames.org/export/dump/cities500.zip /build/geodata/cities500.zip
+ADD --chmod=444 https://download.geonames.org/export/dump/admin1CodesASCII.txt /build/geodata/admin1CodesASCII.txt
+ADD --chmod=444 https://download.geonames.org/export/dump/admin2Codes.txt /build/geodata/admin2Codes.txt
+ADD --chmod=444 https://download.geonames.org/export/dump/countryInfo.txt /build/geodata/countryInfo.txt
+ADD --chmod=444 https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson /build/geodata/ne_10m_admin_0_countries.geojson
+
+RUN umask 0333 && unzip /build/geodata/cities500.zip -d /build/geodata/ && \
+  rm /build/geodata/cities500.zip && date --iso-8601=seconds | tr -d "\n" > /build/geodata/geodata-date.txt
+
+FROM base-server-build AS base-server-jpegli
+
+COPY server/base-image/sources/jpegli.json server/base-image/sources/jpegli.sh ./
+COPY server/base-image/sources/jpegli-patches/ ./jpegli-patches/
+RUN ./jpegli.sh
+
+FROM base-server-build AS base-server-libheif
+
+COPY server/base-image/sources/libheif.json server/base-image/sources/libheif.sh ./
+RUN ./libheif.sh
+
+FROM base-server-build AS base-server-libjxl
+
+COPY server/base-image/sources/libjxl.json server/base-image/sources/libjxl.sh ./
+RUN ./libjxl.sh
+
+FROM base-server-build AS base-server-libraw
+
+COPY server/base-image/sources/libraw.json server/base-image/sources/libraw.sh ./
+RUN ./libraw.sh
+
+FROM base-server-libraw AS base-server-imagemagick
+
+COPY --from=base-server-libheif /usr/local/lib/ /usr/local/lib/libheif/
+COPY --from=base-server-libheif /usr/local/include/libheif/ /usr/local/include/libheif/
+
+COPY --from=base-server-libjxl /usr/local/lib/ /usr/local/lib/libjxl/
+COPY --from=base-server-libjxl /usr/local/include/jxl/ /usr/local/include/jxl/
+
+COPY --from=base-server-jpegli /usr/local/lib/ /usr/local/lib/jpegli/
+COPY --from=base-server-jpegli /usr/local/include/jconfig.h /usr/local/include/jmorecfg.h /usr/local/include/jpeglib.h /usr/local/include/
+
+# COPY resolves symlinks unless copying the enclosing folder, so this is a workaround to get the correct result.
+RUN cp -r /usr/local/lib/libheif/libheif* /usr/local/lib/libjxl/libjxl* /usr/local/lib/jpegli/libjpeg.so* /usr/local/lib && \
+  mv /usr/local/lib/libheif/pkgconfig/* /usr/local/lib/libjxl/pkgconfig/* /usr/local/lib/pkgconfig && \
+  rm -r /usr/local/lib/libheif /usr/local/lib/libjxl /usr/local/lib/jpegli
+
+COPY server/base-image/sources/imagemagick.json server/base-image/sources/imagemagick.sh ./
+RUN ./imagemagick.sh
+
+FROM base-server-imagemagick AS base-server-libvips
+
+COPY server/base-image/sources/libvips.json server/base-image/sources/libvips.sh ./
+COPY server/base-image/sources/libvips-patches/ ./libvips-patches/
+RUN ./libvips.sh
+
+FROM base-server-build AS base-server-dev
+
+COPY server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
+RUN ./ffmpeg.sh
+
+COPY --from=base-server-libvips /usr/local/lib/ /usr/local/lib/
+COPY --from=base-server-libvips /usr/local/bin/vips* /usr/local/bin/
+COPY --from=base-server-libvips /usr/local/include/vips/ /usr/local/include/vips/
+COPY --from=base-server-geodata /build/geodata /build/geodata
+
+ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib
+
+RUN ldconfig /usr/local/lib
+
+# Record the exact source revisions and package versions this base was built from.
+COPY server/base-image/packages/ ./packages/
+COPY server/base-image/sources/ ./sources/
+RUN jq -s '.' packages/*.json > /tmp/packages.json && \
+  jq -s '.' sources/*.json > /tmp/sources.json && \
+  jq -n \
+  --slurpfile sources /tmp/sources.json \
+  --slurpfile packages /tmp/packages.json \
+  '{sources: $sources[0], packages: $packages[0]}' \
+  > /build/build-lock.json && \
+  rm -f /tmp/packages.json /tmp/sources.json
+
+WORKDIR /usr/src/app
+# END frameleaf-server-base
+
 # dev build
-FROM ghcr.io/immich-app/base-server-dev:202609151314@sha256:ba336c43615bf9fe10d27637c3baf84cfc1379482dc712c35e314946e378a076 AS dev
+FROM base-server-dev AS dev
 
 
 COPY --from=ghcr.io/jdx/mise:2026.9.9@sha256:a88f300ef4365494b88f8eefd271bb92ba467d4a41835739a714426207215730 /usr/local/bin/mise /usr/local/bin/mise

@@ -338,11 +338,13 @@ resolve_candidate_commit
 export FORK_ROUNDTRIP_CANDIDATE_SHA="$candidate_commit"
 echo "Candidate commit: $candidate_commit (dirty: $candidate_dirty)"
 
-echo "Pulling official image $OFFICIAL_IMMICH_TAG and pinned database/Redis dependencies"
+echo "Pulling official image $OFFICIAL_IMMICH_TAG and the pinned Redis dependency"
+# The official server is the compatibility target the handoff is certified against, so it is the one
+# upstream image this lane pulls. The database is Frameleaf's own image, built below from docker/postgres.
 # Registries can rate-limit any remote service when parallel CI lanes pull at once.
 pulled=false
 for attempt in 1 2 3 4 5; do
-  if compose pull official-server database redis; then
+  if compose pull official-server redis; then
     pulled=true
     break
   fi
@@ -376,7 +378,7 @@ expected_official_core_digest="$(node -e '
   process.stdout.write(digest);
 ' "$ROOT/server/src/fork-schema/supported-versions.json" "$official_architecture")"
 
-compose build fork-server
+compose build database fork-server
 resolve_candidate_image
 echo "Candidate image: $CANDIDATE_IMAGE $candidate_image_id"
 write_evidence running
