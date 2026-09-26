@@ -44,7 +44,8 @@ export const CLOUD_BACKUP_PRICING = Object.freeze({ includedTb: 1, blockTb: 1, u
 /** The monthly charge for backup beyond what a plan includes: whole blocks over the included TB. */
 export const cloudBackupMonthlyUsd = (storedTb: number) => {
   const { includedTb, blockTb, usdPerTbMonth } = CLOUD_BACKUP_PRICING;
-  const blocks = Math.ceil(Math.max(0, storedTb - includedTb) / blockTb);
+  // a sum like 2.0000000000000004 TB is 2 TB: floating-point noise never starts another block
+  const blocks = Math.max(0, Math.ceil(Math.max(0, storedTb - includedTb) / blockTb - 1e-9));
   return Math.round(blocks * blockTb * usdPerTbMonth * 100) / 100;
 };
 
