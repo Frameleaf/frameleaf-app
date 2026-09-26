@@ -1,6 +1,6 @@
 # System Settings
 
-The admin user can manage settings for the Immich instance here.
+The admin user can manage settings for the Frameleaf instance here.
 
 ## Saving changes
 
@@ -33,7 +33,7 @@ Manage password, OAuth, and other authentication settings
 
 ### OAuth Authentication
 
-Immich supports OAuth Authentication. Read more about this feature and its configuration [here](/administration/oauth).
+Frameleaf supports OAuth Authentication. Read more about this feature and its configuration [here](/administration/oauth).
 
 ### Password Authentication
 
@@ -48,7 +48,7 @@ You can always use the [Server CLI](/administration/server-commands) to re-enabl
 - Thumbnails - Used in the main timeline.
 - Previews - Used in the asset viewer.
 
-By default Immich creates 3 thumbnails for each asset,
+By default Frameleaf creates 3 thumbnails for each asset,
 Blurred (thumbhash) , Small - thumbnails (webp) , and Large - previews (jpeg/webp), using these settings you can change the quality for the thumbnails and previews files that are created.
 
 **Thumbnail format**  
@@ -68,7 +68,7 @@ Allows you to choose the type of format you want for the Preview images, Webp pr
 Used when viewing a single photo and for machine learning. Higher resolutions can preserve more detail but take longer to encode, have larger file sizes, and can reduce app responsiveness.
 
 **Video thumbnail selection**
-For video assets, Immich samples multiple candidate frames before writing the preview, thumbnail, and thumbhash. For longer videos, candidates prefer frames at least 30 seconds into the video. For short videos, Immich uses proportional timestamps and chooses the best frame based on brightness, contrast, and detail while rejecting black, blown-out, or flat frames.
+For video assets, Frameleaf samples multiple candidate frames before writing the preview, thumbnail, and thumbhash. For longer videos, candidates prefer frames at least 30 seconds into the video. For short videos, Frameleaf uses proportional timestamps and chooses the best frame based on brightness, contrast, and detail while rejecting black, blown-out, or flat frames.
 
 **Quality**  
 Image quality from 1-100. Higher is better for quality but produces larger files, this option affects the Preview and Thumbnail images.
@@ -115,11 +115,11 @@ You can set the scanning interval using the preset or cron format. For more info
 
 ## Logging
 
-The default Immich log level is `Log` (commonly known as `Info`). The Immich administrator can choose a higher or lower log level according to personal preference or as requested by the Immich support team.
+The default Frameleaf log level is `Log` (commonly known as `Info`). The Frameleaf administrator can choose a higher or lower log level according to personal preference or as requested by support.
 
 ## Machine Learning Settings
 
-Through this setting, you can manage all the settings related to machine learning in Immich, from the setting of remote machine learning to the model and its parameters
+Through this setting, you can manage all the settings related to machine learning in Frameleaf, from the setting of remote machine learning to the model and its parameters
 You can choose to disable a certain type of machine learning, for example smart search or facial recognition.
 
 ### URL
@@ -132,11 +132,11 @@ If more than one URL is provided, each server will be attempted one-at-a-time un
 
 ### Smart Search
 
-The [smart search](/features/searching) settings allow you to change the [CLIP model](https://openai.com/research/clip). Larger models will typically provide [more accurate search results](https://github.com/immich-app/immich/discussions/11862) but consume more processing power and RAM. When [changing the CLIP model](/FAQ#can-i-use-a-custom-clip-model) it is mandatory to re-run the Smart Search job on all images to fully apply the change.
+The [smart search](/features/searching) settings allow you to change the [CLIP model](https://openai.com/research/clip). Larger models will typically provide more accurate search results but consume more processing power and RAM. When [changing the CLIP model](/FAQ#can-i-use-a-custom-clip-model) it is mandatory to re-run the Smart Search job on all images to fully apply the change.
 
 :::info Internet connection
 Changing models requires a connection to the Internet to download the model.
-After downloading, there is no need for Immich to connect to the network
+After downloading, there is no need for Frameleaf to connect to the network
 Unless version checking has been enabled in the settings.
 :::
 
@@ -148,7 +148,7 @@ This feature is independent from Smart Search. Smart Search uses CLIP embeddings
 
 ### NSFW Detection
 
-The NSFW detection settings allow you to classify image assets with a dedicated safety model. The detection result is stored privately, and Immich can add a visible `nsfw` tag plus specific reason tags when supported by the image content and classifier result.
+The NSFW detection settings allow you to classify image assets with a dedicated safety model. The detection result is stored privately, and Frameleaf can add a visible `nsfw` tag plus specific reason tags when supported by the image content and classifier result.
 
 The private NSFW flag is the source of truth for privacy features. Tags are searchable metadata and should not be treated as a security boundary. If `Hide detected NSFW assets` is enabled, flagged assets are hidden from non-elevated library, shared-link, download, and sync responses until the current session is unlocked with the locked-folder PIN. Album membership is preserved while hidden assets are filtered from non-elevated responses.
 
@@ -190,7 +190,7 @@ The map can be adjusted via [OpenMapTiles](https://openmaptiles.org/styles/) for
 
 ### Reverse Geocoding Settings
 
-Immich supports [Reverse Geocoding](/features/reverse-geocoding) using data from the [GeoNames](https://www.geonames.org/) geographical database.
+Frameleaf supports [Reverse Geocoding](/features/reverse-geocoding) using data from the [GeoNames](https://www.geonames.org/) geographical database.
 
 ## Notification Settings
 
@@ -204,7 +204,7 @@ Override the default notifications text with notification templates. More inform
 
 ### External Domain
 
-Overrides the domain name in shared links and email notifications. The URL should not include a trailing slash.
+Sets the address used in shared links, email notifications and maintenance login links. The URL should not include a trailing slash. Without it, a server linked to Frameleaf Cloud uses its public URL; otherwise emails are sent without links (see [email notifications](./email-notification.mdx#links-in-emails)).
 
 ### Welcome Message
 
@@ -212,7 +212,7 @@ The administrator can set a custom message on the login screen (the message will
 
 ## Storage Template
 
-Immich supports a custom [Storage Template](/administration/storage-template). Learn more about this feature and its configuration [here](/administration/storage-template).
+Frameleaf supports a custom [Storage Template](/administration/storage-template). Learn more about this feature and its configuration [here](/administration/storage-template).
 
 ## Theme Settings
 
@@ -244,7 +244,7 @@ The system administrator can choose to delete users through the administration p
 
 ## Version Check
 
-When this option is enabled the server asks the Frameleaf release feed (`https://api.frameleaf.cloud/v1/releases/latest`) for a new version every hour, and administrators see an announcement that links to the release notes. If the feed cannot answer, the server asks Frameleaf's own GitHub releases (`https://api.github.com/repos/Frameleaf/frameleaf-app/releases`) instead and reads the version from the `frameleaf-v<version>-<n>` release tag. No Immich service is contacted, and no library data or instance identifier is sent to either. The **Update channel** choice picks Stable releases (`stable`) or also release candidates (`beta`). Turn this option off to stop the check.
+When this option is enabled the server asks the Frameleaf release feed (`https://api.frameleaf.cloud/v1/releases/latest`) for a new version every hour, and administrators see an announcement that links to the release notes. If the feed cannot answer, the server asks Frameleaf's own GitHub releases (`https://api.github.com/repos/Frameleaf/frameleaf-app/releases`) instead and reads the version from the `frameleaf-v<version>-<n>` release tag. No upstream service is contacted, and no library data or instance identifier is sent to either. The **Update channel** choice picks Stable releases (`stable`) or also release candidates (`beta`). Turn this option off to stop the check.
 
 Checking never installs anything. An administrator can also check at any time with **Check for updates** in About Frameleaf or on the Versions & compatibility page, even when automatic checks are off. Other accounts see the result of the last check in About Frameleaf.
 

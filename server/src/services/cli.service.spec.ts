@@ -174,7 +174,7 @@ describe(CliService.name, () => {
       });
     });
 
-    const RE_LOGIN_URL = /https:\/\/my.immich.app\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
+    const RE_LOGIN_URL = /(?:^|\s)\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
 
     it('should return a valid login URL', async () => {
       mocks.systemMetadata.get.mockResolvedValue({

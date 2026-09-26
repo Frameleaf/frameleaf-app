@@ -17,7 +17,7 @@ describe('HelpFeedbackDialog (S-3)', () => {
     });
   });
 
-  it('lists the configured help rows, the Immich attribution and third-party notices', () => {
+  it('lists the configured help rows and third-party notices without naming the upstream project', () => {
     render(HelpFeedbackDialog, {
       onClose: vi.fn(),
       info: {
@@ -41,17 +41,16 @@ describe('HelpFeedbackDialog (S-3)', () => {
     );
     // Without a configured community address that row is left out.
     expect(screen.queryByRole('link', { name: /Community chat/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Built on Immich' })).toBeInTheDocument();
-    // FL-135: attribution links only; the Immich community is not offered as help with Frameleaf.
+    // FL-190: the upstream attribution is on the About screen only; this dialog names neither the
+    // upstream project nor its sites, and offers no other project's community.
+    expect(screen.queryByRole('heading', { name: /Built on/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Immich/)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Discord/ })).not.toBeInTheDocument();
-    // The Immich source link sits among many acknowledgement links (fonts called "Source …" too).
-    expect(
-      screen
-        .getAllByRole('link', { name: /Source/ })
-        .some((link) => link.getAttribute('href') === 'https://github.com/immich-app/immich/'),
-    ).toBe(true);
+    for (const link of screen.getAllByRole('link')) {
+      expect(link.getAttribute('href') ?? '').not.toMatch(/immich\.app|github\.com\/immich-app/);
+    }
     expect(screen.getByText('Third-party notices')).toBeInTheDocument();
-    expect(screen.getByText('AGPL-3.0')).toBeInTheDocument();
+    expect(screen.getByText('Node.js')).toBeInTheDocument();
   });
 
   it('acknowledges Freecut with its full licence, loaded from the shipped file (owner decisions 2026-09-25)', async () => {

@@ -105,7 +105,7 @@ export const logError = (error: unknown, message: string) => {
   } else if (isMalformedResponseError(error)) {
     console.error(`${message}: ${error.message}`);
     console.error(
-      'Check that the URL points at the Immich API, and that nothing in front of it (reverse proxy, SSO portal) is answering instead.',
+      'Check that the URL points at the Frameleaf API, and that nothing in front of it (reverse proxy, SSO portal) is answering instead.',
     );
   } else {
     console.error(`${message} - ${error}`);

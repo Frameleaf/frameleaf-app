@@ -19,9 +19,9 @@ ICLOUD_SECRETS_DIR=/srv/immich-icloud/secrets
 ICLOUD_STAGING_DIR=/srv/immich-icloud/staging
 ```
 
-Set the UID/GID to the non-root identity that owns this installation's Immich media files. Both services use that identity. Existing media directories must already be writable by it; this overlay does not recursively change their ownership. Do not set either ID to zero.
+Set the UID/GID to the non-root identity that owns this installation's Frameleaf media files. Both services use that identity. Existing media directories must already be writable by it; this overlay does not recursively change their ownership. Do not set either ID to zero.
 
-Staging must be a private directory disjoint from Immich's upload, library, thumbnail, profile, backup, and every external-library root. Do not place it inside a monitored media tree or expose it through a web server or file share. It holds partial downloads and verified recovery copies. Check available disk space as well as the configured staging byte limit.
+Staging must be a private directory disjoint from Frameleaf's upload, library, thumbnail, profile, backup, and every external-library root. Do not place it inside a monitored media tree or expose it through a web server or file share. It holds partial downloads and verified recovery copies. Check available disk space as well as the configured staging byte limit.
 
 Generate secrets on the deployment host without printing their values:
 
@@ -31,7 +31,7 @@ mkdir -p "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
 openssl rand -hex 32 > "$ICLOUD_SECRETS_DIR/bridge-token"
 openssl rand -base64 32 > "$ICLOUD_SECRETS_DIR/encryption-key"
 openssl req -x509 -newkey rsa:3072 -nodes -days 3650 \
-  -subj '/CN=Immich iCloud private CA' \
+  -subj '/CN=Frameleaf iCloud private CA' \
   -keyout "$ICLOUD_SECRETS_DIR/ca.key" -out "$ICLOUD_SECRETS_DIR/ca.crt"
 openssl req -newkey rsa:3072 -nodes -subj '/CN=icloud-bridge' \
   -keyout "$ICLOUD_SECRETS_DIR/bridge.key" -out "$ICLOUD_SECRETS_DIR/bridge.csr"
@@ -59,7 +59,7 @@ docker compose --env-file /absolute/path/to/immich.env \
   -f "$IMMICH_SOURCE_ROOT/deployment/icloud-sync.compose.yml" up -d --build
 ```
 
-The bridge has no published port or media mount. Its private Docker network permits outbound Apple HTTPS traffic. Do not add host networking or a public reverse-proxy route. The Immich web application itself must be served over HTTPS for account authentication.
+The bridge has no published port or media mount. Its private Docker network permits outbound Apple HTTPS traffic. Do not add host networking or a public reverse-proxy route. The Frameleaf web application itself must be served over HTTPS for account authentication.
 
 The server configuration paths are `IMMICH_ICLOUD_BRIDGE_URL`, `IMMICH_ICLOUD_BRIDGE_TOKEN_FILE`, `IMMICH_ICLOUD_KEY_FILE`, `IMMICH_ICLOUD_CA_FILE`, and `IMMICH_ICLOUD_STAGING_PATH`. They are set by the overlay. For split API/worker deployments, give each process the same transport/key configuration and consistent access to the private staging directory.
 
@@ -111,11 +111,11 @@ A timeout is unresolved validation, not proof of corruption or successful repair
 
 ## Disconnect, backup, and restore
 
-**Disconnect account** removes its saved Apple session and stops new work. Existing imported Immich assets remain. It does not delete the Apple account's photos or turn the connector into a mirror. Do not manually empty staging while a run is active or while it contains the only verified recovery copy.
+**Disconnect account** removes its saved Apple session and stops new work. Existing imported Frameleaf assets remain. It does not delete the Apple account's photos or turn the connector into a mirror. Do not manually empty staging while a run is active or while it contains the only verified recovery copy.
 
-Back up the Immich database, managed media, retained source resources, private staging state, and encryption key as one consistent checkpoint. Restrict backup access as tightly as production secrets. Stop/pause workers before taking an application-consistent snapshot. Keep the bearer token and TLS material separately recoverable; restore permissions before starting services. Restoring a database without its matching encryption key requires Apple reauthentication. Never attach session values, tokens, signed URLs, passwords, or keys to support reports.
+Back up the Frameleaf database, managed media, retained source resources, private staging state, and encryption key as one consistent checkpoint. Restrict backup access as tightly as production secrets. Stop/pause workers before taking an application-consistent snapshot. Keep the bearer token and TLS material separately recoverable; restore permissions before starting services. Restoring a database without its matching encryption key requires Apple reauthentication. Never attach session values, tokens, signed URLs, passwords, or keys to support reports.
 
-All connector tables live in `immich_fork`. During a certified official-Immich handoff they remain dormant. On return, missing public asset/album mappings are archived and cleared, source records remain, and deleted owners' connections are disabled. Follow the existing [fork/official switching procedure](../features/switching-between-fork-and-official.md); deploying an arbitrary official image is not a compatibility check.
+All connector tables live in `immich_fork`. During a certified handoff to the official upstream server they remain dormant. On return, missing public asset/album mappings are archived and cleared, source records remain, and deleted owners' connections are disabled. Follow the existing [switching procedure](../features/switching-between-fork-and-official.md); deploying an arbitrary official image is not a compatibility check.
 
 ## Verify before a large import
 

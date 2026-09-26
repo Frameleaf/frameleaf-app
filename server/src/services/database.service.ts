@@ -23,32 +23,32 @@ const messages = {
     Please run 'DROP EXTENSION IF EXISTS ${extension}' and switch to a release version.
     See https://help.frameleaf.ai/guides/database-queries for how to query the database.`,
   outOfRange: ({ name, version, range }: OutOfRangeArgs) =>
-    `The ${name} extension version is ${version}, but Immich only supports ${range}.
+    `The ${name} extension version is ${version}, but Frameleaf only supports ${range}.
     Please change ${name} to a compatible version in the Postgres instance.`,
   createFailed: ({ name, extension }: CreateFailedArgs) =>
     `Failed to activate ${name} extension.
     Please ensure the Postgres instance has ${name} installed.
 
-    If the Postgres instance already has ${name} installed, Immich may not have the necessary permissions to activate it.
+    If the Postgres instance already has ${name} installed, Frameleaf may not have the necessary permissions to activate it.
     In this case, please run 'CREATE EXTENSION IF NOT EXISTS ${extension} CASCADE' manually as a superuser.
     See https://help.frameleaf.ai/guides/database-queries for how to query the database.`,
   updateFailed: ({ name, extension, availableVersion }: UpdateFailedArgs) =>
     `The ${name} extension can be updated to ${availableVersion}.
-    Immich attempted to update the extension, but failed to do so.
-    This may be because Immich does not have the necessary permissions to update the extension.
+    Frameleaf attempted to update the extension, but failed to do so.
+    This may be because Frameleaf does not have the necessary permissions to update the extension.
 
     Please run 'ALTER EXTENSION ${extension} UPDATE' manually as a superuser.
     See https://help.frameleaf.ai/guides/database-queries for how to query the database.`,
   dropFailed: ({ name, extension }: DropFailedArgs) =>
     `The ${name} extension is no longer needed, but could not be dropped.
-    This may be because Immich does not have the necessary permissions to drop the extension.
+    This may be because Frameleaf does not have the necessary permissions to drop the extension.
 
     Please run 'DROP EXTENSION ${extension};' manually as a superuser.
     See https://help.frameleaf.ai/guides/database-queries for how to query the database.`,
   invalidDowngrade: ({ name, installedVersion, availableVersion }: InvalidDowngradeArgs) =>
     `The database currently has ${name} ${installedVersion} activated, but the Postgres instance only has ${availableVersion} available.
     This most likely means the extension was downgraded.
-    If ${name} ${installedVersion} is compatible with Immich, please ensure the Postgres instance has this available.`,
+    If ${name} ${installedVersion} is compatible with Frameleaf, make sure the Postgres instance has this available.`,
 };
 
 @Injectable()

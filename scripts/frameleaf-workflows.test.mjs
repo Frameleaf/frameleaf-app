@@ -106,6 +106,7 @@ test("standalone script tests install their locked JavaScript dependencies first
   for (const command of [
     "pnpm --filter @immich/scripts test",
     "node --test scripts/frameleaf-workflows.test.mjs",
+    "node --test scripts/frameleaf-branding.test.mjs",
   ]) {
     assert.ok(scripts.findIndex((step) => step.run === command) > install);
   }

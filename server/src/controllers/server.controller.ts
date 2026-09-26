@@ -147,7 +147,7 @@ export class ServerController {
   @Authenticated({ permission: Permission.ServerStatistics, admin: true })
   @Endpoint({
     summary: 'Get statistics',
-    description: 'Retrieve statistics about the entire Immich instance such as asset counts.',
+    description: 'Retrieve statistics about the entire Frameleaf instance such as asset counts.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   getServerStatistics(): Promise<ServerStatsResponseDto> {

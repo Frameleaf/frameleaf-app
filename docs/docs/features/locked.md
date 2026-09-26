@@ -32,7 +32,7 @@ Open **Locked** after unlocking. It lists every locked item, newest first, with 
 
 Select items and choose **Unmark Sensitive** to unlock them. Unlocking also records your review as safe, so running detection again never locks the item again. You can still add locked items to albums, download them, change their date or location, or delete them permanently from Locked.
 
-## Upgrading from an Immich library
+## Upgrading from an upstream library
 
 The upgrade moves everything in the upstream Locked folder into the lock, so nothing that was private becomes visible and nothing disappears:
 
