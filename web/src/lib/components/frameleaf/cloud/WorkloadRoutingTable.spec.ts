@@ -4,6 +4,7 @@ import {
   MlWorkload,
   type AdminConfigDto,
   type CloudMlModelChoiceDto,
+  type CloudMlModelChoicesResponseDto,
   type CloudMlModelDto,
   type CloudMlStatusResponseDto,
 } from '@immich/sdk';
@@ -12,11 +13,13 @@ import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
+import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../../i18n/en.json';
 import WorkloadRoutingTable from './WorkloadRoutingTable.svelte';
 
 const draftRef = vi.hoisted(() => ({ current: undefined as unknown }));
 
+vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { configFile: false } },
 }));
@@ -213,6 +216,8 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       await fireEvent.click(
         within(group).getByRole('button', { name: 'Use the recommended model (Descriptions · Fast)' }),
       );
+      // the button goes away, so focus moves to the recommended model instead of dropping
+      await vi.waitFor(() => expect(within(group).getByRole('radio', { name: /Descriptions · Fast/ })).toHaveFocus());
       await vi.waitFor(() =>
         expect(sdkMock.setCloudMlModelChoice).toHaveBeenLastCalledWith({
           group: CloudMlModelGroup.Descriptions,
@@ -242,6 +247,32 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
         group: CloudMlModelGroup.Descriptions,
         cloudMlModelChoiceUpdateDto: { modelId: 'ms_DESCHUGE' },
       });
+    });
+
+    it('keeps a newer choice made while a failed save was in flight, and saves it next', async () => {
+      useDraft(true, { descriptions: 'cloud' });
+      useCloudModels();
+      let rejectFirst: (error: Error) => void = () => {};
+      sdkMock.setCloudMlModelChoice
+        .mockImplementationOnce(
+          () => new Promise<CloudMlModelChoicesResponseDto>((_resolve, reject) => (rejectFirst = reject)),
+        )
+        .mockResolvedValueOnce({ choices: [choice(CloudMlModelGroup.Descriptions, 'ms_DESCHUGE')] });
+      render(WorkloadRoutingTable);
+
+      const group = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' });
+      await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Best/ }));
+      await vi.waitFor(() => expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledTimes(1));
+      await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Huge/ }));
+      rejectFirst(new Error('offline'));
+
+      await vi.waitFor(() => expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledTimes(2));
+      expect(sdkMock.setCloudMlModelChoice).toHaveBeenLastCalledWith({
+        group: CloudMlModelGroup.Descriptions,
+        cloudMlModelChoiceUpdateDto: { modelId: 'ms_DESCHUGE' },
+      });
+      expect(handleError).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(within(group).getByRole('radio', { name: /Descriptions · Huge/ })).toBeChecked());
     });
 
     it('offers the chosen cloud model for a Both workload whatever its route, restoration per mode', async () => {

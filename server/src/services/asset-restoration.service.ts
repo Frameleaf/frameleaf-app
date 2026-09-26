@@ -26,7 +26,6 @@ import {
   JobName,
   MediaOperationKind,
   MlAdmissionRefusal,
-  MlDestinationHealth,
   MlDestinationKind,
   MlWorkload,
   Permission,
@@ -37,7 +36,7 @@ import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/a
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -48,12 +47,12 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
   MlDestinationRefusedError,
-  evaluateAdmission,
   hasRequiredConsent,
   isCloudDestination,
-  resolveEndpoint,
+  readCloudModelChoices,
   restorationRoleConflict,
   selectMlDestination,
+  storedAdmission,
 } from 'src/utils/ml-destination.js';
 import {
   RESTORATION_PREVIEW_SECONDS,
@@ -189,18 +188,19 @@ export class AssetRestorationService {
     const output = cappedOutputSize(source.width, source.height, upscale);
     const rows = await this.mlDestinationRepository.getAll();
     const since = windowStart(ESTIMATE_WINDOW_DAYS);
+    // FL-186: Frameleaf Cloud is judged with the model an administrator chose for this mode
+    const choices = await readCloudModelChoices(this.mlDestinationRepository, rows);
 
     const destinations: AssetRestorationDestinationDto[] = [];
     for (const row of rows) {
-      let verdict = evaluateAdmission({
+      let verdict = storedAdmission({
         destination: row,
         workload,
-        endpoint: resolveEndpoint(row),
-        probe: this.probeFromRow(row),
         spentUsd:
           row.budgetLimitUsd === null
             ? 0
             : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS)),
+        choices,
       });
       if (verdict.admitted) {
         // FL-72: the rule requestPreview and accept apply before anything is created, so the
@@ -680,21 +680,6 @@ export class AssetRestorationService {
       }
     }
     await selectMlDestination(deps, { workload, destinationId, jobName });
-  }
-
-  /** The persisted probe as an admission input; nothing is probed on a read. */
-  private probeFromRow(row: MlDestinationRow): MlEndpointProbe | null {
-    if (!row.lastProbeAt) {
-      return null;
-    }
-    return {
-      reachable: row.lastProbeHealth === MlDestinationHealth.Healthy,
-      workloads: (row.lastProbeWorkloads ?? []) as MlWorkload[],
-      hardware: null,
-      latencyMs: 0,
-      probedAt: new Date(row.lastProbeAt),
-      error: row.lastProbeHealth === MlDestinationHealth.Healthy ? null : (row.lastProbeSummary ?? 'not probed'),
-    };
   }
 
   private inputBytes(source: RestorationSource, region: AssetRestorationRegion) {

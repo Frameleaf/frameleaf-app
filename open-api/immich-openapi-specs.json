@@ -59982,6 +59982,9 @@
             "maxLength": 200,
             "type": "string"
           },
+          "studioFeature": {
+            "$ref": "#/components/schemas/MlStudioFeature"
+          },
           "workload": {
             "$ref": "#/components/schemas/MlWorkload"
           }
@@ -60607,6 +60610,15 @@
           "workloads"
         ],
         "type": "object"
+      },
+      "MlStudioFeature": {
+        "description": "Studio AI only: the Studio feature, which decides the Frameleaf Cloud model the job uses (speech to text and captions, or speech)",
+        "enum": [
+          "speech-to-text",
+          "captions",
+          "speech"
+        ],
+        "type": "string"
       },
       "MlThroughputEstimateDto": {
         "properties": {
