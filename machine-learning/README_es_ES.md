@@ -1,4 +1,4 @@
-# Immich Machine Learning
+# Frameleaf machine learning
 
 - Clasificación de imágenes
 - Incorporación de CLIP

@@ -30,7 +30,7 @@ The legacy fork migration
 `1778614946174-UpdateWorkflowTables`. During the locked cutover, a current-fork
 database aliases only that ledger name and preserves its timestamp. The
 workflow/plugin schema fingerprint, counts, and row digests must remain exact.
-An original-Immich database already containing `1778614946174` is not aliased.
+An original upstream database already containing `1778614946174` is not aliased.
 
 The command refuses to continue if both markers exist, neither marker exists
 while workflow tables exist, or the marker and exact schema fingerprint
@@ -227,7 +227,7 @@ Return reconciliation archives and removes only orphaned non-workflow
 sidecars, seeds defaults for new upstream IDs, rebuilds derived fork indexes,
 and activates fork reads in the final transaction. It must not mutate
 `plugin`, `plugin_method`, `workflow`, or `workflow_step`. Verify that workflows
-which existed before handoff and workflows created by official Immich are both
+which existed before handoff and workflows created by the official upstream server are both
 still readable and executable as upstream data. A successful return is not
 established by the maintenance worker's ping: maintenance must be false, the
 normal authenticated API and microservices workers must be healthy, and both
