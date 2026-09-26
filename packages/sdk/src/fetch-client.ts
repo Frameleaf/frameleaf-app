@@ -102,13 +102,6 @@ export type CloudBackupStatusResponseDto = {
         objects: number;
     } | null;
 };
-export type CloudBackupCheckResponseDto = {
-    /** What the check found, in plain words */
-    message: string;
-    /** The bucket can be claimed for this server */
-    ok: boolean;
-    state: CloudBackupBucketState;
-};
 export type CloudBackupS3Dto = {
     /** Access key ID */
     accessKeyId: string;
@@ -123,6 +116,13 @@ export type CloudBackupS3Dto = {
 };
 export type CloudBackupCheckDto = {
     s3: CloudBackupS3Dto;
+};
+export type CloudBackupCheckResponseDto = {
+    /** What the check found, in plain words */
+    message: string;
+    /** The bucket can be claimed for this server */
+    ok: boolean;
+    state: CloudBackupBucketState;
 };
 export type CloudBackupGeneratedKeyDto = {
     createdAt: string;
