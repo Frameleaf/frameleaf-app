@@ -1035,19 +1035,19 @@
       "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 75071,
+      "bytes": 80264,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "382f6a3b65011d0292b94450ba05337ea1dc90d02d2aa52e64b19ce7f7a9873e",
+      "sourceSha256": "783914cec9e83854166e3b0bb4c7474280aa13103dd1a2cd39e2fb4745d3a26b",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 7,
-      "sourceBranch": "codex/FL-175-partial-next-key-v2",
-      "sourceCommit": "788453fa9a4a6f3ab2054d1fdf93a4559273a7cd",
-      "sourceState": "committed-fl-175-key-rotation-not-pushed-2026-09-26",
-      "readbackResult": "Markdown read-back of version 7 begins with the header carrying SHA-256 382f6a3b, 75071 bytes, the FL-175 commit 788453fa9a on codex/FL-175-partial-next-key-v2 (local; not pushed, not merged), the source-at-commit backlink, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the new Key rotation (FC-19) entry in section 4, except one normalized space at a nested-backtick boundary.",
-      "readbackAt": "2026-09-26T04:43:30.000Z"
+      "version": 8,
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceCommit": "08c63ed85b2ab7cf493a402eaf9f1b9d06c3072b",
+      "sourceState": "committed-fl-177-as-built-merged-2026-09-26",
+      "readbackResult": "Markdown read-back of version 8 begins with the header carrying SHA-256 783914ce, 80264 bytes, commit 08c63ed85b on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-177 commits aa59f6ffc3 and 8b07a02c5e merged in 9b9824f5f8, the source-at-commit backlink, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the As built in the app (FL-177) entry, the as-built Link contract and the removed sign-in client secret, except one normalized space at a nested-backtick boundary.",
+      "readbackAt": "2026-09-26T05:19:10.000Z"
     }
   ],
   "spaceId": "61374475",
