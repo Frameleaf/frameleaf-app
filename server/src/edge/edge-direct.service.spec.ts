@@ -13,9 +13,9 @@ import { automock } from 'test/utils.js';
 const FIXTURES = join(import.meta.dirname, '../../test/fixtures/frameleaf-edge');
 const fixture = (name: string) => readFile(join(FIXTURES, name), 'utf8');
 
-const enrollment = { label: 'u225vlzhsdlhwh4l', domain: 'frameleaf-direct.net' };
-const LAN_NAME = '192-168-1-10.u225vlzhsdlhwh4l.frameleaf-direct.net';
-const RELAY_NAME = 'r.u225vlzhsdlhwh4l.frameleaf-direct.net';
+const enrollment = { label: 'u225vlzhsdlhwh4l', domain: 'frameleaf.net' };
+const LAN_NAME = '192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net';
+const RELAY_NAME = 'r.u225vlzhsdlhwh4l.frameleaf.net';
 
 describe(EdgeDirectService.name, () => {
   let sut: EdgeDirectService;
@@ -78,7 +78,7 @@ describe(EdgeDirectService.name, () => {
 
   it('serves the wildcard certificate, and a loopback peer (the self-check) as wan even in "Relay only"', async () => {
     const result = await connect(LAN_NAME);
-    expect(result.subject).toBe('u225vlzhsdlhwh4l.frameleaf-direct.net');
+    expect(result.subject).toBe('u225vlzhsdlhwh4l.frameleaf.net');
     expect(proxy.accept).toHaveBeenCalledWith(expect.anything(), {
       via: 'wan',
       clientIp: '127.0.0.1',

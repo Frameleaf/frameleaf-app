@@ -170,7 +170,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
 
   it('sends raising the cap and turning on automatic top-up to the Frameleaf account (FL-177)', async () => {
     useDraft(true);
-    const settingsUrl = 'https://account.frameleaf.cloud/wallet';
+    const settingsUrl = 'https://frameleaf.cloud/wallet';
     sdkMock.getCloudMlStatus.mockResolvedValue(
       status({ enabled: true, consent: consent('2026-10-01'), wallet: { ...wallet, settingsUrl } }),
     );

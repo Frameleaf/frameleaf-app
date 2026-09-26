@@ -376,7 +376,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       models: [{ sku: 'ms_K6WT70CS' }, { sku: 'ms_M7QG26PT' }, { sku: 'ms_54S55W7C' }],
     });
     await expect(ml.getWallet(resolution.gateway)).resolves.toMatchObject({
-      settingsUrl: 'https://account.frameleaf.cloud/wallet',
+      settingsUrl: 'https://frameleaf.cloud/wallet',
     });
     await expect(ml.getUsage(resolution.gateway, new Date('2026-09-01T00:00:00.000Z'))).resolves.toMatchObject({
       items: [{ jobId: '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f', modelSku: 'ms_K6WT70CS' }],

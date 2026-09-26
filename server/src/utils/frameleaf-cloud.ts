@@ -118,7 +118,7 @@ export const cloudDomainOf = (hostname: string): string | null => {
 
 /**
  * Why an address the cloud handed over must not be used, or null: the same rule as discovery (the
- * configured host, a subdomain of it, or a subdomain of its cloud domain, https unless the configured
+ * configured host, a subdomain of it, or its cloud domain or a subdomain of it, https unless the configured
  * address is http, the configured port, no credentials). FL-155/FL-158 also apply it to the addresses
  * in the link response (the sign-in issuer), to the sign-in logout endpoint and to account-app links,
  * so a signed assertion or a person never leaves the cloud.
@@ -144,8 +144,11 @@ export const cloudAddressProblem = (cloudUrl: string, name: string, value: strin
   }
   const candidate = url.hostname.toLowerCase();
   const domain = cloudDomainOf(host);
+  // The cloud domain's apex is the cloud's own site (the account app and store, frameleaf-cloud#57).
   const onCloud =
-    candidate === host || candidate.endsWith(`.${host}`) || (domain !== null && candidate.endsWith(`.${domain}`));
+    candidate === host ||
+    candidate.endsWith(`.${host}`) ||
+    (domain !== null && (candidate === domain || candidate.endsWith(`.${domain}`)));
   if (!onCloud) {
     return `${name} ${value} is not on ${domain ?? host}`;
   }

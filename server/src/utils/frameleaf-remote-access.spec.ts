@@ -74,11 +74,11 @@ describe('frameleaf remote access (FL-165)', () => {
     it('reads the published enrolment answer and takes its direct domain from it', () => {
       const answer = enrollResponseSchema.parse(cloudContractFixture('remote/enroll-response.json'));
       expect(enrollmentProblem(INSTANCE_ID, answer)).toBeNull();
-      expect(answer.domain).toBe('frameleaf-direct.net');
-      expect(directDomainOf(answer, { remote: { directDomain: 'frameleaf.net' } })).toBe('frameleaf-direct.net');
+      expect(answer.domain).toBe('frameleaf.net');
+      expect(directDomainOf(answer, { remote: { directDomain: 'frameleaf.example' } })).toBe('frameleaf.net');
       expect(wildcardNames(answer)).toEqual([
-        '*.u225vlzhsdlhwh4l.frameleaf-direct.net',
-        'u225vlzhsdlhwh4l.frameleaf-direct.net',
+        '*.u225vlzhsdlhwh4l.frameleaf.net',
+        'u225vlzhsdlhwh4l.frameleaf.net',
       ]);
       expect(challengeRecordName(answer)).toBe('_acme-challenge.u225vlzhsdlhwh4l');
     });
@@ -139,7 +139,7 @@ describe('frameleaf remote access (FL-165)', () => {
 
     it('reports a certificate with the facts the contract names, and nothing else', () => {
       const report = certificateReport({
-        names: ['*.u225vlzhsdlhwh4l.frameleaf-direct.net', 'u225vlzhsdlhwh4l.frameleaf-direct.net'],
+        names: ['*.u225vlzhsdlhwh4l.frameleaf.net', 'u225vlzhsdlhwh4l.frameleaf.net'],
         serial: normalizeSerial('04:1f:9a:7c:2e:55:0b:13:77:aa:c0:de:12:34:56:78:9a:bc'),
         issuer: "C=US, O=Let's Encrypt, CN=R11",
         notBefore: '2026-09-25T16:00:00.000Z',
@@ -212,7 +212,7 @@ describe('frameleaf remote access (FL-165)', () => {
       ['192.168.1.10', 'Use a subdomain you own, such as photos.example.com.'],
       ['bad_label.example.com', 'Use a subdomain you own, such as photos.example.com.'],
       ['photos.frameleaf.net', 'Use a domain you own; Frameleaf addresses are already set up.'],
-      ['r.u225vlzhsdlhwh4l.frameleaf-direct.net', 'Use a domain you own; Frameleaf addresses are already set up.'],
+      ['r.u225vlzhsdlhwh4l.frameleaf.net', 'Use a domain you own; Frameleaf addresses are already set up.'],
       ['id.frameleaf.cloud', 'Use a domain you own; Frameleaf addresses are already set up.'],
     ])('refuses %j', (value, message) => {
       expect(validateCustomHostname(value)).toMatchObject({ valid: false, message });
@@ -245,12 +245,12 @@ describe('frameleaf remote access (FL-165)', () => {
     it('publishes the relay name, or the verified custom hostname when chosen', () => {
       const names = enrollment();
       expect(remotePublicUrl(null, settings())).toBeNull();
-      expect(remotePublicUrl(names, settings())).toBe('https://r.u225vlzhsdlhwh4l.frameleaf-direct.net');
+      expect(remotePublicUrl(names, settings())).toBe('https://r.u225vlzhsdlhwh4l.frameleaf.net');
       const pending = settings({
         publicUrl: 'custom',
         customHostname: { host: 'photos.example.com', status: 'pending' },
       });
-      expect(remotePublicUrl(names, pending)).toBe('https://r.u225vlzhsdlhwh4l.frameleaf-direct.net');
+      expect(remotePublicUrl(names, pending)).toBe('https://r.u225vlzhsdlhwh4l.frameleaf.net');
       const verified = settings({
         publicUrl: 'custom',
         customHostname: { host: 'photos.example.com', status: 'verified' },
@@ -270,8 +270,8 @@ describe('frameleaf remote access (FL-165)', () => {
       };
       const relayOnly = buildCandidates({ ...input, settings: settings() });
       expect(relayOnly.map((candidate) => [candidate.kind, candidate.uri])).toEqual([
-        ['local', 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf-direct.net:2443'],
-        ['relay', 'https://r.u225vlzhsdlhwh4l.frameleaf-direct.net'],
+        ['local', 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443'],
+        ['relay', 'https://r.u225vlzhsdlhwh4l.frameleaf.net'],
       ]);
 
       const direct = buildCandidates({
@@ -283,12 +283,12 @@ describe('frameleaf remote access (FL-165)', () => {
         }),
       });
       expect(direct.map((candidate) => [candidate.kind, candidate.uri, candidate.custom])).toEqual([
-        ['local', 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf-direct.net:2443', false],
-        ['wan', 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf-direct.net:4443', false],
+        ['local', 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443', false],
+        ['wan', 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:4443', false],
         // IPv6 has no router mapping: the listener's own port
-        ['ipv6', 'https://2001-db8--1.u225vlzhsdlhwh4l.frameleaf-direct.net:2443', false],
+        ['ipv6', 'https://2001-db8--1.u225vlzhsdlhwh4l.frameleaf.net:2443', false],
         ['wan', 'https://photos.example.com', true],
-        ['relay', 'https://r.u225vlzhsdlhwh4l.frameleaf-direct.net', false],
+        ['relay', 'https://r.u225vlzhsdlhwh4l.frameleaf.net', false],
       ]);
       expect(direct.every((candidate) => candidate.httpsRequired && candidate.protocol === 'https')).toBe(true);
       expect(heartbeatEndpoints(direct).map((endpoint) => endpoint.kind)).toEqual([
@@ -306,12 +306,12 @@ describe('frameleaf remote access (FL-165)', () => {
     const lanName = ipv4Name(names, '192.168.1.10');
 
     it('encodes and decodes the per-server names', () => {
-      expect(lanName).toBe('192-168-1-10.u225vlzhsdlhwh4l.frameleaf-direct.net');
-      expect(ipv6Name(names, '2001:0db8:0000::0001')).toBe('2001-db8--1.u225vlzhsdlhwh4l.frameleaf-direct.net');
+      expect(lanName).toBe('192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net');
+      expect(ipv6Name(names, '2001:0db8:0000::0001')).toBe('2001-db8--1.u225vlzhsdlhwh4l.frameleaf.net');
       expect(addressOfName(names, lanName)).toBe('192.168.1.10');
-      expect(addressOfName(names, '2001-db8--1.u225vlzhsdlhwh4l.frameleaf-direct.net')).toBe('2001:db8::1');
-      expect(addressOfName(names, 'r.u225vlzhsdlhwh4l.frameleaf-direct.net')).toBeNull();
-      expect(addressOfName(names, '192-168-1-10.otherlabel.frameleaf-direct.net')).toBeNull();
+      expect(addressOfName(names, '2001-db8--1.u225vlzhsdlhwh4l.frameleaf.net')).toBe('2001:db8::1');
+      expect(addressOfName(names, 'r.u225vlzhsdlhwh4l.frameleaf.net')).toBeNull();
+      expect(addressOfName(names, '192-168-1-10.otherlabel.frameleaf.net')).toBeNull();
     });
 
     it('tags lan only for an advertised LAN name asked by a peer on its subnet', () => {
@@ -335,11 +335,11 @@ describe('frameleaf remote access (FL-165)', () => {
       // a home peer on another subnet (a proxy, another network) is not lan
       expect(classify('10.0.0.5', lanName)).toBe('wan');
       // the SNI is the client's choice: a name this server never advertised proves nothing
-      expect(classify('192.168.1.20', '192-168-1-99.u225vlzhsdlhwh4l.frameleaf-direct.net')).toBe('wan');
+      expect(classify('192.168.1.20', '192-168-1-99.u225vlzhsdlhwh4l.frameleaf.net')).toBe('wan');
       expect(classify('192.168.1.20', lanName, { advertised: [] })).toBe('wan');
       // the relay name, a public address's name or no name is wan
-      expect(classify('192.168.1.20', 'r.u225vlzhsdlhwh4l.frameleaf-direct.net')).toBe('wan');
-      expect(classify('192.168.1.20', '203-0-113-7.u225vlzhsdlhwh4l.frameleaf-direct.net')).toBe('wan');
+      expect(classify('192.168.1.20', 'r.u225vlzhsdlhwh4l.frameleaf.net')).toBe('wan');
+      expect(classify('192.168.1.20', '203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net')).toBe('wan');
       expect(classify('192.168.1.20', null)).toBe('wan');
       // behind Docker's userland proxy every visitor comes from the gateway: wan unless trusted by name
       expect(classify('192.168.1.1', lanName, { gateways: ['192.168.1.1'] })).toBe('wan');
@@ -352,7 +352,7 @@ describe('frameleaf remote access (FL-165)', () => {
       expect(classify('fd00::20', ulaName, { advertised: ['fd00::10'] })).toBe('lan');
       expect(classify('fd00:1::20', ulaName, { advertised: ['fd00::10'] })).toBe('wan');
       // FRAMELEAF_TRUSTED_LAN_CIDRS trusts peers explicitly (a tailnet)
-      const tailnetName = '100-64-0-1.u225vlzhsdlhwh4l.frameleaf-direct.net';
+      const tailnetName = '100-64-0-1.u225vlzhsdlhwh4l.frameleaf.net';
       expect(classify('100.64.9.5', tailnetName, { advertised: ['100.64.0.1'] })).toBe('wan');
       const tailnet = { advertised: ['100.64.0.1'], trustedLanCidrs: ['100.64.0.0/10'] };
       expect(classify('100.64.9.5', tailnetName, tailnet)).toBe('lan');
