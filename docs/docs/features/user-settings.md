@@ -2,15 +2,12 @@
 
 Frameleaf gives each user the ability to manage their own settings. This includes being able to update their profile, toggle certain feature, generate API keys, manage the logged in devices, a view of account usage statistics, and more.
 
-<img src={require('./img/user-settings-3.webp').default} width="60%" title='User settings lists' />
+To open your settings:
 
-You can access the user settings by clicking on the user icon on the top right corner of the screen and selecting the `Account Settings` option.
+1. Select your avatar in the top right corner of the screen.
+2. Choose **Account settings**.
 
-<img src={require('./img/user-settings-1.webp').default} width="33%" title='User settings location 1' />
-
-<br/>
-
-<img src={require('./img/user-settings-2.webp').default} width="33%" title='User settings location 2' />
+Settings opens on **Your preferences**, which holds your profile, library features and account access.
 
 ---
 

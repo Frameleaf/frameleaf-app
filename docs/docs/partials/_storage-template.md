@@ -12,19 +12,14 @@ Date and time variables in storage templates are rendered in the server's local 
 Year/Year-Month-Day/Filename.Extension
 ```
 
-If you want to change the storage template during the initial setup, first enable the feature.
+If you want to change the storage template during the initial setup:
 
-<img src={require('./img/enable-storage-template.webp').default} width="80%" title="Enable Storage Template Setting" />
-
-Then, customize your storage template.
-
-<img src={require('./img/storage-template.webp').default} width="80%" title="Storage Template Setting" />
+1. In `Administration -> Settings -> Storage Template`, turn on **Enable storage template engine**. Leave hash verification on unless you are certain of the implications.
+2. Choose a preset, or type your own template using the variables listed on the page. The preview shows the resulting path for a sample asset.
+3. Select **Save**.
 
 :::info
-The `Storage Template Migration` job can be run after enabling this feature or changing the template, in order to apply the changes to the existing library.
-
-<img src={require('./img/storage-template-migration-job.webp').default} width="80%" title="Storage Template Setting" />
-
+The `Storage Template Migration` job can be run after enabling this feature or changing the template, in order to apply the changes to the existing library. Start it from the jobs page.
 :::
 
 :::tip

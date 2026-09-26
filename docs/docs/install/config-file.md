@@ -12,12 +12,12 @@ While the config file does not need to include all keys from the below example, 
 
 ### Step 1 - Create a new config file
 
-In JSON format, create a new config file (e.g. `immich-config.json`) and put it in a location mounted in the container that can be accessed by Frameleaf.
+In JSON format, create a new config file (e.g. `frameleaf-config.json`) and put it in a location mounted in the container that can be accessed by Frameleaf.
 YAML-formatted config files are also supported.
 The default configuration looks like this:
 
 <details>
-<summary>immich-config.json</summary>
+<summary>frameleaf-config.json</summary>
 
 ```json
 {
@@ -271,7 +271,7 @@ It is recommended to reuse this variable in your `docker-compose.yml`:
 
 ```yaml
 volumes:
-  - ./immich-config.json:${IMMICH_CONFIG_FILE}
+  - ./frameleaf-config.json:${IMMICH_CONFIG_FILE}
 ```
 
 :::

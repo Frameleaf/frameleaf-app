@@ -43,11 +43,6 @@ Frameleaf provides two ways to restore a database backup: through the web interf
 
 If you have an existing Frameleaf installation:
 
-<img
-src={require('./img/restore-from-settings.webp').default}
-title="Restore from settings"
-/>
-
 1. Go to **Administration > Maintenance**
 2. Expand the **Restore database backup** section
 3. You'll see a list of available backups with their version and creation date
@@ -82,12 +77,6 @@ Assuming your previous `UPLOAD_LOCATION` was `UPLOAD_LOCATION=/my-broken-instanc
 :::
 
 4. Start the Frameleaf services with `docker compose up -d`
-
-<img
-src={require('./img/restore-from-onboarding.webp').default}
-title="Restore from onboarding"
-/>
-
 5. On the welcome screen, click **Restore from backup**
 6. Frameleaf will enter maintenance mode and display integrity checks for your storage folders
 7. Review the folder status to ensure your library files are accessible

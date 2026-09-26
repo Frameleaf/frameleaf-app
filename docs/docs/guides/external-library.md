@@ -31,31 +31,14 @@ External library management requires administrator access and the steps below as
 
 In the Frameleaf web UI:
 
-- click the **Administration** link in the upper right corner.
-  <img src={require('./img/administration-link.webp').default} width="50%" title="Administration link" />
-
-- Select the **External Libraries** tab and click the **Create Library** button
-  <img src={require('./img/create-external-library.webp').default} width="80%" title="Create Library button" />
-
-- In the dialog, select which user should own the new library
-  <img src={require('./img/library-owner.webp').default} width="50%" title="Library owner dialog" />
-
-- You are now entering the library management page.
-  <img src={require('./img/library-management-page.webp').default} width="80%" title="Library management page" />
-
-- Click `Add` in the Folder section to specify a path for scanning and enter **/home/user/photos1** as the path and click Add
-  <img src={require('./img/edit-import-path.webp').default} width="50%" title="Add an import path" />
-
-- Click the three-dots menu and select **Scan New Library Files**
-  <img src={require('./img/scan-new-library-files.webp').default} width="50%" title="Scan New Library Files menu option" />
+1. Select **Settings** in the sidebar to open the Command Center, then open **Libraries**.
+2. Select **Add external library**.
+3. Enter a name for the library and choose its **Owner**. Ownership is fixed after the library is created.
+4. Under **Import folders**, add **/home/user/photos1** as the folder to scan.
+5. Select **Create library**. Saving the library does not start a scan.
+6. Select the new library in the list, then select **Scan library**.
 
 # Confirm stuff is happening
 
-- Click **Administration**
-  <img src={require('./img/administration-link.webp').default} width="50%" title="Administration link" />
-
-- Select the **Jobs** tab
-  <img src={require('./img/jobs-tab.webp').default} width="50%" title="Jobs tab" />
-
-- You should see non-zero Active jobs for
-  Library, Generate Thumbnails, and Extract Metadata.
+1. Select **Settings** in the sidebar to open the Command Center, then open **Compute & jobs**.
+2. You should see active jobs for the library scan, thumbnail generation and metadata extraction.
