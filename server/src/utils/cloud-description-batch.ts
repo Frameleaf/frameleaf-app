@@ -199,7 +199,7 @@ export const parseCloudDescriptionSnapshot = (value: unknown): CloudDescriptionS
     (origin !== 'backfill' && origin !== 'automatic') ||
     typeof destinationId !== 'string' ||
     !Array.isArray(assetIds) ||
-    !assetIds.every((id) => typeof id === 'string') ||
+    assetIds.some((id) => typeof id !== 'string') ||
     typeof modelSku !== 'string' ||
     typeof packKey !== 'string' ||
     (approvedP90Usd !== null && typeof approvedP90Usd !== 'number')
@@ -477,7 +477,7 @@ export class CloudDescriptionQueueWriter {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
-    const items = [...this.pending.values()];
+    const items = this.pending.values().toArray();
     this.pending.clear();
     // a write that failed was already reported to its caller; it never stops the next one
     this.writing = this.writing
