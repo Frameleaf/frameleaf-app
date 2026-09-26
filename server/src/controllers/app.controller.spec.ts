@@ -5,11 +5,10 @@ import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.
 
 describe(AppController.name, () => {
   let ctx: ControllerContext;
+  const service = mockBaseService(SystemConfigService);
 
   beforeAll(async () => {
-    ctx = await controllerSetup(AppController, [
-      { provide: SystemConfigService, useValue: mockBaseService(SystemConfigService) },
-    ]);
+    ctx = await controllerSetup(AppController, [{ provide: SystemConfigService, useValue: service }]);
     return () => ctx.close();
   });
 
@@ -24,13 +23,16 @@ describe(AppController.name, () => {
     });
 
     it('should return a 200 status code', async () => {
+      // FL-161: the Frameleaf apps also find the server's instance id, public address and sign-in here
+      const wellKnown = {
+        api: { endpoint: '/api' },
+        frameleaf: { instanceId: 'instance-1', publicUrl: 'https://r.k3v9.frameleaf-direct.net', signIn: true },
+      };
+      service.getWellKnown.mockResolvedValue(wellKnown);
+
       const { status, body } = await request(ctx.getHttpServer()).get('/.well-known/immich');
       expect(status).toBe(200);
-      expect(body).toEqual({
-        api: {
-          endpoint: '/api',
-        },
-      });
+      expect(body).toEqual(wellKnown);
     });
   });
 

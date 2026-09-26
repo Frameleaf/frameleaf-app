@@ -1236,6 +1236,110 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/ml/descriptions/batches": {
+      "post": {
+        "description": "Queues the estimated backfill as batches, one owner per batch and one cloud job per batch. Refused when the model changed, more photos need a description than were estimated, or the AI Wallet or a budget cannot cover it; nothing is sent to another destination.",
+        "operationId": "startCloudMlDescriptionBackfill",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudMlDescriptionBatchCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlDescriptionBatchesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Describe photos with Frameleaf Cloud",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/descriptions/estimate": {
+      "post": {
+        "description": "What describing every photo still without a description would cost, from the metered GPU time of the chosen model: a p50–p90 range, a per-photo figure, the start fee per batch and the AI Wallet balance. Nothing is queued.",
+        "operationId": "estimateCloudMlDescriptionBackfill",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlDescriptionEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate describing photos with Frameleaf Cloud",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/ml/destination": {
       "post": {
         "description": "The only way the Frameleaf Cloud destination is created. It has no URL or token, is not routed automatically, and refuses all work until consent is recorded.",
@@ -1634,6 +1738,63 @@
           }
         ],
         "summary": "Choose what Frameleaf Cloud may ask this server to do",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/remote-access": {
+      "put": {
+        "description": "Remote visitors always sign in with Frameleaf. This allows original downloads, archives and database backups through the relay, and password sign-in away from home. Turning either on needs a linked server.",
+        "operationId": "updateCloudRemoteAccess",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudRemoteAccessUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose what remote access may carry",
         "tags": [
           "Frameleaf Cloud (admin)"
         ],
@@ -40941,6 +41102,9 @@
           "cloudMl": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudMlDto"
           },
+          "remoteAccess": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafRemoteAccessDto"
+          },
           "signIn": {
             "$ref": "#/components/schemas/AdminConfigFrameleafSignInDto"
           }
@@ -41023,6 +41187,23 @@
           "restoration",
           "studio",
           "upscale"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafRemoteAccessDto": {
+        "properties": {
+          "allowOriginalsOverRelay": {
+            "description": "Allow original downloads, archives and database backups over the Frameleaf relay",
+            "type": "boolean"
+          },
+          "allowPasswordOverRelay": {
+            "description": "Allow password sign-in, and sessions it creates, over remote access",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "allowOriginalsOverRelay",
+          "allowPasswordOverRelay"
         ],
         "type": "object"
       },
@@ -51085,6 +51266,206 @@
         ],
         "type": "object"
       },
+      "CloudMlDescriptionBatchCreateDto": {
+        "properties": {
+          "estimateId": {
+            "description": "The estimate to queue; its model, photos and prices are read from the server, never sent",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "estimateId"
+        ],
+        "type": "object"
+      },
+      "CloudMlDescriptionBatchesResponseDto": {
+        "properties": {
+          "batches": {
+            "description": "Batches queued",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "operationIds": {
+            "description": "The queued batches; each shows in Activity",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "photos": {
+            "description": "Photos in them",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batches",
+          "operationIds",
+          "photos"
+        ],
+        "type": "object"
+      },
+      "CloudMlDescriptionEstimateResponseDto": {
+        "properties": {
+          "availableUsd": {
+            "description": "AI Wallet balance minus holds, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "basis": {
+            "description": "measured: from the model's measured GPU time; modelled: from its expected GPU time",
+            "type": "string"
+          },
+          "batches": {
+            "description": "Batches they would be sent in; each batch is one cloud job",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "dailyCapUsd": {
+            "description": "The daily AI Wallet limit, USD, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "estimateId": {
+            "description": "The estimate the server keeps; queueing the backfill names only this, or null when there is nothing to queue",
+            "nullable": true,
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "Until when the estimate may be queued, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "guidance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlDescriptionGuidanceDto"
+              }
+            ],
+            "description": "Set when the model is of the 72B class and some batches are too small for its start fee to pay off",
+            "nullable": true
+          },
+          "holdUsd": {
+            "description": "What the AI Wallet would hold while the batches run, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "modelId": {
+            "description": "The catalogue model SKU the batches would use",
+            "type": "string"
+          },
+          "modelName": {
+            "description": "Its catalogue name",
+            "type": "string"
+          },
+          "p50Usd": {
+            "description": "Likely cost of every batch together, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "p90Usd": {
+            "description": "Cost at most, in nine cases out of ten, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "perPhotoP50Usd": {
+            "description": "Likely GPU time cost per photo, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "perPhotoP90Usd": {
+            "description": "GPU time cost per photo at most, in nine cases out of ten, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "photos": {
+            "description": "Photos that would be described",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "refusal": {
+            "description": "Why the backfill cannot start now, or null when it can",
+            "nullable": true,
+            "type": "string"
+          },
+          "spentTodayUsd": {
+            "description": "Spent today, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "startupUsd": {
+            "description": "The start fee each batch pays, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "truncated": {
+            "description": "More photos need a description than one backfill covers; run another afterwards for the rest",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "availableUsd",
+          "basis",
+          "batches",
+          "dailyCapUsd",
+          "estimateId",
+          "expiresAt",
+          "guidance",
+          "holdUsd",
+          "modelId",
+          "modelName",
+          "p50Usd",
+          "p90Usd",
+          "perPhotoP50Usd",
+          "perPhotoP90Usd",
+          "photos",
+          "refusal",
+          "spentTodayUsd",
+          "startupUsd",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "CloudMlDescriptionGuidanceDto": {
+        "properties": {
+          "minimumBatch": {
+            "description": "The batch size below which the start fee makes up most of the cost with this model",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "smallBatches": {
+            "description": "How many of the batches are smaller than that",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "suggestedModelId": {
+            "description": "A model of the 27B/35B class the catalogue offers for small batches, when there is one",
+            "nullable": true,
+            "type": "string"
+          },
+          "suggestedModelName": {
+            "description": "Its catalogue name",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "minimumBatch",
+          "smallBatches",
+          "suggestedModelId",
+          "suggestedModelName"
+        ],
+        "type": "object"
+      },
       "CloudMlDestinationCreateDto": {
         "properties": {
           "budgetLimitUsd": {
@@ -51517,6 +51898,19 @@
         },
         "type": "object"
       },
+      "CloudRemoteAccessUpdateDto": {
+        "properties": {
+          "allowOriginalsOverRelay": {
+            "description": "Allow original downloads, archives and database backups through the relay",
+            "type": "boolean"
+          },
+          "allowPasswordOverRelay": {
+            "description": "Allow password sign-in away from home",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "CloudRouteMode": {
         "description": "local: this server or a home-network worker only; both: each job lets the person pick; cloud: Frameleaf Cloud only",
         "enum": [
@@ -51561,6 +51955,14 @@
               "label"
             ],
             "type": "object"
+          },
+          "allowOriginalsOverRelay": {
+            "description": "Originals, archives and database backups may be downloaded through the relay",
+            "type": "boolean"
+          },
+          "allowPasswordOverRelay": {
+            "description": "Password sign-in is allowed away from home",
+            "type": "boolean"
           },
           "cloneSuspected": {
             "description": "Frameleaf Cloud saw this server’s identity start from two places",
@@ -51700,6 +52102,8 @@
         },
         "required": [
           "account",
+          "allowOriginalsOverRelay",
+          "allowPasswordOverRelay",
           "cloneSuspected",
           "cloudHost",
           "configured",
@@ -55782,12 +56186,17 @@
       },
       "ImageDescriptionRequeueResponseDto": {
         "properties": {
+          "cloudBatches": {
+            "description": "Descriptions are routed to Frameleaf Cloud, which describes photos in batches from Frameleaf Cloud processing with an estimate first; nothing was queued here",
+            "type": "boolean"
+          },
           "queued": {
             "description": "Whether the queue-all job was newly enqueued (false = already in-flight)",
             "type": "boolean"
           }
         },
         "required": [
+          "cloudBatches",
           "queued"
         ],
         "type": "object"
@@ -56030,6 +56439,7 @@
           "VersionCheck",
           "FrameleafHeartbeat",
           "FrameleafLicenseRefresh",
+          "CloudMlDescriptionBatch",
           "OcrQueueAll",
           "Ocr",
           "ImageDescriptionQueueAll",
@@ -59327,6 +59737,7 @@
           "preservation_review",
           "preservation_restore",
           "studio_export_publish",
+          "cloud_description_batch",
           "cloud_backup"
         ],
         "type": "string"
@@ -71297,6 +71708,9 @@
             "description": "External domain URL",
             "type": "string"
           },
+          "frameleaf": {
+            "$ref": "#/components/schemas/ServerFrameleafConfigDto"
+          },
           "isInitialized": {
             "description": "Whether the server has been initialized",
             "type": "boolean"
@@ -71360,6 +71774,7 @@
         "required": [
           "defaultImageDescriptionRawPromptTemplate",
           "externalDomain",
+          "frameleaf",
           "isInitialized",
           "isOnboarded",
           "loginPageMessage",
@@ -71509,6 +71924,40 @@
           "smartSearch",
           "supporter",
           "trash"
+        ],
+        "type": "object"
+      },
+      "ServerFrameleafConfigDto": {
+        "description": "Frameleaf remote access and sign-in, for this request",
+        "properties": {
+          "publicUrl": {
+            "description": "The address Frameleaf Cloud published for this server, while it is linked",
+            "nullable": true,
+            "type": "string"
+          },
+          "signInAvailable": {
+            "description": "Whether Sign in with Frameleaf is available (the server is linked)",
+            "type": "boolean"
+          },
+          "signInRequired": {
+            "description": "Whether this request arrived through remote access, where a Frameleaf sign-in is required",
+            "type": "boolean"
+          },
+          "via": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FrameleafVia"
+              }
+            ],
+            "description": "How the request arrived; null when the edge worker did not vouch for it",
+            "nullable": true
+          }
+        },
+        "required": [
+          "publicUrl",
+          "signInAvailable",
+          "signInRequired",
+          "via"
         ],
         "type": "object"
       },
@@ -72099,7 +72548,7 @@
             "description": "Display name of the user who created the link, for \"Shared by\" on the public page"
           },
           "password": {
-            "description": "Has password",
+            "description": "Has password: a fixed mask when the link has one, never the password itself",
             "nullable": true,
             "type": "string"
           },

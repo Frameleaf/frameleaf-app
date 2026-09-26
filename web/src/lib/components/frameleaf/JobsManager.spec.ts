@@ -457,7 +457,7 @@ describe('Enrichment tasks (FL-59, JobsManager.jsx EnrichmentJobDialog)', () => 
   };
 
   it('queues a description regeneration after its review, with the saved estimate', async () => {
-    vi.mocked(triggerImageDescriptionRequeue).mockResolvedValue({ queued: true });
+    vi.mocked(triggerImageDescriptionRequeue).mockResolvedValue({ queued: true, cloudBatches: false });
     const dialog = await openTasks();
 
     expect(within(dialog).getByLabelText('Task')).toHaveValue('descriptions');
@@ -471,6 +471,22 @@ describe('Enrichment tasks (FL-59, JobsManager.jsx EnrichmentJobDialog)', () => 
 
     await waitFor(() => expect(triggerImageDescriptionRequeue).toHaveBeenCalled());
     expect(await screen.findByText('Regenerate descriptions: request sent to the server.')).toBeInTheDocument();
+  });
+
+  it('says descriptions routed to Frameleaf Cloud go through batches instead of being queued (FL-163)', async () => {
+    vi.mocked(triggerImageDescriptionRequeue).mockResolvedValue({ queued: false, cloudBatches: true });
+    const dialog = await openTasks();
+
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Review task' }));
+    const review = screen.getByRole('dialog', { name: 'Regenerate descriptions' });
+    await within(review).findByText(/120 eligible items/);
+    await fireEvent.click(within(review).getByRole('button', { name: 'Regenerate descriptions' }));
+
+    expect(
+      await screen.findByText(
+        'Descriptions go to Frameleaf Cloud, which describes photos in batches. Describe them from Frameleaf Cloud processing, where the estimate comes first.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('keeps a reminder instead of queueing, and offers it again from the page', async () => {

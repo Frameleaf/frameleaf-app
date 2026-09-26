@@ -33,6 +33,7 @@ import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
 import { UserService } from 'src/services/user.service.js';
@@ -168,6 +169,7 @@ export class UserController {
 
   @Put('me/license')
   @Authenticated({ permission: Permission.UserLicenseUpdate })
+  @RateLimited(RATE_LIMITS.licenseActivation)
   @Endpoint({
     summary: 'Activate your supporter key',
     description:

@@ -28,6 +28,10 @@ export enum ImmichHeader {
   HlsPosition = 'x-immich-hls-pos',
   /** The scoped, expiring session credential a render worker was handed at admission (FL-95). */
   RenderWorkerSession = 'x-frameleaf-worker-session',
+  /** FL-161: how the edge worker received a request (`lan`, `wan` or `relay`); counts only with the secret below. */
+  FrameleafVia = 'x-frameleaf-via',
+  /** FL-161: the edge worker's per-boot secret (`FRAMELEAF_EDGE_SECRET`), proving it set the via header. */
+  FrameleafViaAuth = 'x-frameleaf-via-auth',
 }
 
 export enum ImmichQuery {
@@ -536,6 +540,13 @@ export enum SystemMetadataKey {
    * provider, so administrators are told once, in plain language, what changed.
    */
   FrameleafCloudMigrationNotice = 'frameleaf-cloud-migration-notice',
+  /**
+   * FL-163: the photos waiting for an automatic Frameleaf Cloud description batch ("Describe new photos
+   * automatically"), with when automatic batching last ran.
+   */
+  FrameleafCloudDescriptionQueue = 'frameleaf-cloud-description-queue',
+  /** FL-163: the backfill estimates an administrator was shown, which queueing a backfill reads back. */
+  FrameleafCloudDescriptionEstimates = 'frameleaf-cloud-description-estimates',
   IntegrityChecksumCheckpoint = 'integrity-checksum-checkpoint',
   /**
    * FL-34: whether "hide sensitive detections from the library" was on the last time the server
@@ -1301,6 +1312,12 @@ export enum MediaOperationKind {
    */
   StudioExportPublish = 'studio_export_publish',
   /**
+   * FL-163 (`CLD-203`): one Frameleaf Cloud description batch, a frozen set of one owner's photos sent as
+   * one cloud job. The snapshot pins the destination, model, pack key and idempotency key; the result
+   * records the estimate, the cloud job and every photo's input, and the job is polled until it ends.
+   */
+  CloudDescriptionBatch = 'cloud_description_batch',
+  /**
    * A cloud backup run (FL-160): the database dump, then every original, sidecar and profile image by
    * SHA-256 into the claimed bucket (each unique file uploaded once), then the run's manifest. It
    * records its cursor every 25 assets, so it can pause, survive a restart and resume the same manifest.
@@ -1817,6 +1834,16 @@ export enum MetadataKey {
   ApiKeySecurity = 'api_key',
   EventConfig = 'event_config',
   JobConfig = 'job_config',
+  /** FL-161: the `@RateLimited()` rule of a route. */
+  RateLimit = 'rate_limit',
+  /** FL-161: a route that sends originals, archives or database backups, refused over the relay by default. */
+  OriginalTransfer = 'original_transfer',
+  /** FL-161: a route (or controller) for machines on the home network only, refused over remote access. */
+  HomeNetworkOnly = 'home_network_only',
+  /** FL-161: a route counted against the higher remote-access media ceiling (thumbnails and previews). */
+  RemoteMediaCeiling = 'remote_media_ceiling',
+  /** FL-161: a route any valid session may reach through remote access (signing out). */
+  RemoteSignInExempt = 'remote_sign_in_exempt',
 }
 
 export enum RouteKey {
@@ -2170,6 +2197,11 @@ export enum JobName {
   FrameleafHeartbeat = 'FrameleafHeartbeat',
   /** FL-156: the daily Frameleaf licence certificate refresh, with jitter. */
   FrameleafLicenseRefresh = 'FrameleafLicenseRefresh',
+  /**
+   * FL-163: one pass over Frameleaf Cloud description batches: automatic batching of new photos, then
+   * every batch's next step (estimate, submit, poll, cancel, settle).
+   */
+  CloudMlDescriptionBatch = 'CloudMlDescriptionBatch',
 
   // OCR
   OcrQueueAll = 'OcrQueueAll',
@@ -2284,6 +2316,12 @@ export enum DatabaseLock {
   FrameleafMlProbe = 949,
   /** FL-160: one cloud backup run is queued or running across the whole server at a time. */
   FrameleafCloudBackup = 956,
+  /** FL-163: one pass over Frameleaf Cloud description batches runs at a time, across every worker. */
+  FrameleafCloudMlBatch = 960,
+  /** FL-163: adding photos to the automatic description queue is one read-modify-write at a time. */
+  FrameleafCloudMlBatchQueue = 961,
+  /** FL-163: queueing a description backfill is one step at a time, so two requests never both queue. */
+  FrameleafCloudMlBackfill = 962,
 }
 
 export enum MaintenanceAction {

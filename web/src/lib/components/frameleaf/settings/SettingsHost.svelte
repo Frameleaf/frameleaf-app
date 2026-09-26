@@ -275,6 +275,7 @@
     'cloud-account',
     'cloud-plan',
     'cloud-license',
+    'cloud-remote',
     'cloud-backup',
     'frameleaf-signin',
     'deduplication',

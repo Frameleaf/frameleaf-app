@@ -122,11 +122,11 @@ describe('Frameleaf settings areas', () => {
     ]);
   });
 
-  it('places Frameleaf Cloud after Compute & jobs with its account, plan, licence, processing and backup pages (FL-154, FL-160)', () => {
+  it('places Frameleaf Cloud after Compute & jobs with its account, plan, licence, remote access, processing and backup pages (FL-154, FL-160)', () => {
     expect(SETTINGS_AREAS.find((item) => item.id === 'cloud')).toEqual({
       id: 'cloud',
       group: 'server',
-      sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-processing', 'cloud-backup'],
+      sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
       adminOnly: true,
     });
     expect(directoryGroup('cloud', 'cloud-processing')).toBe('cloud_services');
@@ -136,6 +136,8 @@ describe('Frameleaf settings areas', () => {
     expect(directoryGroup('cloud', 'cloud-plan')).toBe('licensing');
     expect(directoryGroup('cloud', 'cloud-license')).toBe('licensing');
     expect(areaForSection('cloud-license')).toBe('cloud');
+    expect(directoryGroup('cloud', 'cloud-remote')).toBe('remote');
+    expect(areaForSection('cloud-remote')).toBe('cloud');
   });
 
   describe(isAreaAvailable.name, () => {

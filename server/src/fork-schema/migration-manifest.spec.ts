@@ -64,6 +64,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000630-AddWorkflowRunStep')).toBe('legacy-fork');
     expect(classifyMigration('2100000000640-AddAssetFilePathIndex')).toBe('legacy-fork');
     expect(classifyMigration('2100000000650-AddMlCloudModelChoice')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000660-HashSharedLinkPasswords')).toBe('legacy-fork');
     expect(classifyMigration('2100000000670-AddCloudBackupTables')).toBe('legacy-fork');
   });
 

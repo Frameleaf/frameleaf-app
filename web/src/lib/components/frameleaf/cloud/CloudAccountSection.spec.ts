@@ -32,6 +32,8 @@ const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusRes
   signInLinkedAccounts: 0,
   signInShowOnLocalLogin: false,
   signInButtonText: 'Sign in with Frameleaf',
+  allowOriginalsOverRelay: false,
+  allowPasswordOverRelay: false,
   ...overrides,
 });
 

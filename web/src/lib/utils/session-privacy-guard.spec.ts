@@ -422,6 +422,43 @@ describe('watchSessionPrivacy', () => {
     expect(revokeSessionView).toHaveBeenCalledExactlyOnceWith('/auth/logout');
   });
 
+  it('signs out when remote access needs a Frameleaf sign-in (FL-161)', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    vi.mocked(getAuthStatus).mockImplementationOnce(() =>
+      sdk.getAuthStatus({
+        fetch: async () =>
+          Response.json(
+            {
+              message: 'Away from home, sign in with your Frameleaf account to use this server',
+              code: 'frameleaf_sign_in_required',
+            },
+            { status: 403 },
+          ),
+      }),
+    );
+    dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revokeSessionView).toHaveBeenCalledExactlyOnceWith('/auth/logout');
+  });
+
+  it('does not sign out on any other refusal', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    vi.mocked(getAuthStatus).mockImplementationOnce(() =>
+      sdk.getAuthStatus({
+        fetch: async () => Response.json({ message: 'Forbidden' }, { status: 403 }),
+      }),
+    );
+    dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revokeSessionView).not.toHaveBeenCalled();
+  });
+
   it('keeps an ordinary offline status error distinct from deleted authentication while locked', async () => {
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
     guard = watchSessionPrivacy(() => true);

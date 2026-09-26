@@ -22,6 +22,7 @@ import { apkLinks } from 'src/utils/app-releases.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { entitlementFlags, isLicensed } from 'src/utils/frameleaf-license.js';
+import { type FrameleafVia, frameleafPublicUrl, isRemoteVia, signInClient } from 'src/utils/frameleaf-sign-in.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   isDuplicateDetectionEnabled,
@@ -193,11 +194,16 @@ export class ServerService extends BaseService {
     };
   }
 
-  async getSystemConfig(): Promise<ServerConfigDto> {
+  async getSystemConfig(via: FrameleafVia | null = null): Promise<ServerConfigDto> {
     const config = await this.getConfig({ withCache: false });
     const isInitialized = !(await this.isSetupAvailable());
     // FL-176: the server counts as onboarded once Frameleaf first-run setup is complete.
     const setup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafSetup);
+    // FL-161: how this request arrived and what that asks of it, for the web app and the apps
+    const { link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
 
     return {
       loginPageMessage: config.server.loginPageMessage,
@@ -215,6 +221,12 @@ export class ServerService extends BaseService {
       maintenanceMode: false,
       defaultImageDescriptionRawPromptTemplate: DEFAULT_RAW_PROMPT_TEMPLATE,
       minFaces: config.machineLearning.facialRecognition.minFaces,
+      frameleaf: {
+        via,
+        signInAvailable: !!signInClient(link, linked),
+        signInRequired: isRemoteVia(via) && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay,
+        publicUrl: linked ? frameleafPublicUrl(link) : null,
+      },
     };
   }
 

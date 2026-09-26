@@ -17,6 +17,7 @@ import {
 import { ApiBody, ApiConsumes, ApiHeader, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { type NextFunction, type Request, type Response } from 'express';
 import type { UploadFiles } from 'src/types.js';
+import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AssetBulkUploadCheckResponseDto,
@@ -35,8 +36,10 @@ import { type AuthDto } from 'src/dtos/auth.dto.js';
 import { VideoEditVersionParamsDto } from 'src/dtos/editing.dto.js';
 import { ApiTag, CacheControl, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor, getFiles } from 'src/middleware/file-upload.interceptor.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type AssetMediaRedirectResponse, AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
@@ -61,8 +64,11 @@ export class AssetMediaController {
     id: string,
     view: 'video' | 'preview' | 'fullsize',
     ordinary: () => Promise<ImmichFileResponse | AssetMediaRedirectResponse>,
+    via: FrameleafVia | null = null,
   ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
-    const choice = await this.restorationService.getPlaybackChoice(auth, id, view);
+    // FL-161: through the relay a full-size restored result is refused like an original
+    const fullSizeAllowed = view === 'fullsize' ? await this.service.fullSizeAllowed(via) : true;
+    const choice = await this.restorationService.getPlaybackChoice(auth, id, view, fullSizeAllowed);
     if (choice.file) {
       return choice.file;
     }
@@ -117,6 +123,8 @@ export class AssetMediaController {
   @Get(':id/edit-versions/:versionId/download')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetDownload })
+  // FL-161: a full-resolution master, as large as an original
+  @OriginalTransfer()
   @Endpoint({
     summary: 'Download a video version master',
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
@@ -133,6 +141,7 @@ export class AssetMediaController {
   @Get(':id/original')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetDownload, sharedLink: true })
+  @OriginalTransfer()
   @Endpoint({
     summary: 'Download original asset',
     description: 'Downloads the original file of the specified asset.',
@@ -151,6 +160,8 @@ export class AssetMediaController {
   @Get(':id/thumbnail')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetView, sharedLink: true })
+  // FL-161: a timeline asks for these by the hundred; they count against the higher media ceiling
+  @RemoteMediaCeiling()
   @Endpoint({
     summary: 'View asset thumbnail',
     description:
@@ -177,9 +188,11 @@ export class AssetMediaController {
 
     const view =
       dto.size === AssetMediaSize.FULLSIZE ? 'fullsize' : dto.size === AssetMediaSize.PREVIEW ? 'preview' : null;
+    // FL-161: through the relay a full-size view falls back to the preview rather than the original
+    const via = requestVia(req);
     const viewThumbnailRes = view
-      ? await this.withPlaybackChoice(auth, id, view, () => this.service.viewThumbnail(auth, id, dto))
-      : await this.service.viewThumbnail(auth, id, dto);
+      ? await this.withPlaybackChoice(auth, id, view, () => this.service.viewThumbnail(auth, id, dto, via), via)
+      : await this.service.viewThumbnail(auth, id, dto, via);
 
     if (viewThumbnailRes instanceof ImmichFileResponse) {
       await sendFile(res, next, () => Promise.resolve(viewThumbnailRes), this.logger);

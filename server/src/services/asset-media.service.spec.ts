@@ -946,6 +946,46 @@ describe(AssetMediaService.name, () => {
       expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
     });
 
+    it('allows full-size files except through the relay while originals are not allowed there (FL-161)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(sut.fullSizeAllowed(null)).resolves.toBe(true);
+      await expect(sut.fullSizeAllowed('lan')).resolves.toBe(true);
+      await expect(sut.fullSizeAllowed('wan')).resolves.toBe(true);
+      await expect(sut.fullSizeAllowed('relay')).resolves.toBe(false);
+    });
+
+    it('serves the preview instead of redirecting to the original through the relay (FL-161)', async () => {
+      const asset = AssetFactory.from({ originalPath: '/data/library/admin/image.jpeg' }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: null });
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE }, 'relay'),
+      ).resolves.toEqual({ targetSize: AssetMediaSize.PREVIEW });
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE }, 'wan'),
+      ).resolves.toEqual({
+        targetSize: 'original',
+      });
+      await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE })).resolves.toEqual({
+        targetSize: 'original',
+      });
+    });
+
+    it('redirects to the original through the relay once an administrator allowed originals there (FL-161)', async () => {
+      const asset = AssetFactory.from({ originalPath: '/data/library/admin/image.jpeg' }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: null });
+      mocks.systemMetadata.get.mockResolvedValue({
+        frameleafCloud: { remoteAccess: { allowOriginalsOverRelay: true, allowPasswordOverRelay: false } },
+      } as never);
+
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE }, 'relay'),
+      ).resolves.toEqual({ targetSize: 'original' });
+    });
+
     it('should fall back to preview if the requested thumbnail file does not exist', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
