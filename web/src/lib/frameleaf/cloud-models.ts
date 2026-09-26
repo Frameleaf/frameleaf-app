@@ -6,7 +6,6 @@
  * AI twice (speech to text and captions, and speech). The catalogue (`GET admin/cloud/ml/catalog`) is
  * the only list of cloud models; this module never names one itself.
  */
-import type { RoutedWorkload } from '$lib/frameleaf/cloud-ml';
 import {
   CloudMlConnection,
   CloudMlModelGroup,
@@ -17,6 +16,7 @@ import {
   type CloudMlModelDto,
   type CloudMlStatusResponseDto,
 } from '@immich/sdk';
+import type { RoutedWorkload } from '$lib/frameleaf/cloud-ml';
 
 export type CloudModelGroupRow = {
   group: CloudMlModelGroup;
