@@ -38,7 +38,7 @@ import {
   PreservationUploadCreateDto,
 } from 'src/dtos/preservation.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, AuthRequest, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, AuthRequest, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { preservationUploadFolder } from 'src/repositories/preservation-files.repository.js';
 import { PreservationService } from 'src/services/preservation.service.js';
 import { asStreamableFile } from 'src/utils/file.js';
@@ -180,6 +180,7 @@ export class PreservationController {
   @FileResponse()
   @Header('Cache-Control', 'private, no-store')
   @Authenticated({ permission: Permission.AssetDownload })
+  @OriginalTransfer()
   @Endpoint({
     summary: 'Download a preservation package',
     description:

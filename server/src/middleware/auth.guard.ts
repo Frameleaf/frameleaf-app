@@ -11,6 +11,7 @@ import { ApiBearerAuth, ApiCookieAuth, ApiExtension, ApiOkResponse, ApiQuery, Ap
 import { Request } from 'express';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ApiCustomExtension, ImmichQuery, MetadataKey, Permission } from 'src/enum.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService, LoginDetails } from 'src/services/auth.service.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
@@ -63,6 +64,13 @@ export const Authenticated = (options: AuthenticatedOptions = {}): MethodDecorat
   return applyDecorators(...decorators);
 };
 
+/**
+ * FL-161: marks a route that sends originals, archive downloads or database backups. Over the Frameleaf
+ * relay it is refused unless `frameleafCloud.remoteAccess.allowOriginalsOverRelay` is on; at home and
+ * over a direct connection it is unchanged.
+ */
+export const OriginalTransfer = (): MethodDecorator => SetMetadata(MetadataKey.OriginalTransfer, true);
+
 export const Auth = createParamDecorator((data, context: ExecutionContext): AuthDto => {
   return context.switchToHttp().getRequest<AuthenticatedRequest>().user;
 });
@@ -82,6 +90,7 @@ export const GetLoginDetails = createParamDecorator((data, context: ExecutionCon
     deviceType,
     deviceOS,
     appVersion,
+    via: requestVia(request),
   };
 });
 
@@ -121,11 +130,16 @@ export class AuthGuard implements CanActivate {
     const refreshElevation = (options as { refreshElevation?: boolean }).refreshElevation !== false;
     const request = context.switchToHttp().getRequest<AuthRequest>();
 
+    const via = requestVia(request);
     request.user = await this.authService.authenticate({
       headers: request.headers,
       queryParams: request.query as Record<string, string>,
-      metadata: { adminRoute, sharedLinkRoute, permission, uri: request.path, refreshElevation },
+      metadata: { adminRoute, sharedLinkRoute, permission, uri: request.path, refreshElevation, via },
     });
+
+    if (this.reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, context.getHandler())) {
+      await this.authService.requireOriginalTransfer(via, request.path);
+    }
 
     return true;
   }

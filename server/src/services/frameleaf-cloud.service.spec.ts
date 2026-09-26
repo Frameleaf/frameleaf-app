@@ -2079,6 +2079,53 @@ describe(FrameleafCloudService.name, () => {
     });
   });
 
+  describe('remote access settings (FL-161)', () => {
+    const remoteAccess = () =>
+      (metadata.get(SystemMetadataKey.SystemConfig) as { frameleafCloud?: { remoteAccess?: Record<string, boolean> } })
+        ?.frameleafCloud?.remoteAccess;
+
+    it('keeps originals and passwords off the relay until an administrator turns them on, once linked', async () => {
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        allowOriginalsOverRelay: false,
+        allowPasswordOverRelay: false,
+      });
+      await expect(sut.updateRemoteAccess(authStub.admin, { allowOriginalsOverRelay: true })).rejects.toThrow(
+        'Link this server first.',
+      );
+      // turning a setting off never needs a link
+      await expect(sut.updateRemoteAccess(authStub.admin, { allowPasswordOverRelay: false })).resolves.toMatchObject({
+        allowPasswordOverRelay: false,
+      });
+
+      await linkNow();
+      await expect(sut.updateRemoteAccess(authStub.admin, { allowOriginalsOverRelay: true })).resolves.toMatchObject({
+        allowOriginalsOverRelay: true,
+        allowPasswordOverRelay: false,
+      });
+      await expect(sut.updateRemoteAccess(authStub.admin, { allowPasswordOverRelay: true })).resolves.toMatchObject({
+        allowOriginalsOverRelay: true,
+        allowPasswordOverRelay: true,
+      });
+      expect(remoteAccess()).toEqual({ allowOriginalsOverRelay: true, allowPasswordOverRelay: true });
+      expect(mocks.event.emit).toHaveBeenCalledWith('ConfigUpdate', expect.anything());
+    });
+
+    it('turns both back off when the server is unlinked', async () => {
+      await linkNow();
+      await sut.updateRemoteAccess(authStub.admin, { allowOriginalsOverRelay: true, allowPasswordOverRelay: true });
+      cloud.on('DELETE /api/v1/instance', () => ({ status: 200, body: {} }));
+
+      await sut.unlink(authStub.admin);
+
+      expect(remoteAccess()?.allowOriginalsOverRelay ?? false).toBe(false);
+      expect(remoteAccess()?.allowPasswordOverRelay ?? false).toBe(false);
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        allowOriginalsOverRelay: false,
+        allowPasswordOverRelay: false,
+      });
+    });
+  });
+
   describe('unlink (FL-155)', () => {
     it('forgets a pending recovery rotation (FL-175)', async () => {
       await linkNow();

@@ -14,7 +14,9 @@ import {
   MediaHealthRecoverDto,
   MediaHealthSummaryQueryDto,
 } from 'src/dtos/media-health.dto.js';
+import { MetadataKey } from 'src/enum.js';
 import { AuthenticatedOptions, getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimitRule } from 'src/middleware/rate-limit.guard.js';
 
 const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
   'GET admin/maintenance/status',
@@ -114,6 +116,36 @@ const SHARED_LINK_ROUTES = new Set([
   'POST shared-links/login',
 ]);
 
+/**
+ * FL-161: the routes that send originals, archives or database backups, refused over the relay unless
+ * an administrator allows them. Thumbnails, previews and playback are deliberately not here.
+ */
+const ORIGINAL_TRANSFER_ROUTES = new Set([
+  'GET assets/:id/original',
+  'POST download/archive',
+  'GET admin/database-backups/:filename',
+  'GET preservation/packages/:id/download',
+]);
+
+/** FL-161: the rate-limited sign-in and Frameleaf Cloud routes, by rule. */
+const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
+  'POST auth/login': RATE_LIMITS.login,
+  'POST oauth/callback': RATE_LIMITS.oauthCallback,
+  'POST oauth/link': RATE_LIMITS.oauthCallback,
+  'POST oauth/frameleaf/authorize': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/callback': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/handoff': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/handoff/redeem': RATE_LIMITS.frameleafSignIn,
+  'GET oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  'DELETE oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
+  'PUT admin/license/activate': RATE_LIMITS.licenseActivation,
+  'PUT admin/license/certificate': RATE_LIMITS.licenseActivation,
+  'PUT users/me/license': RATE_LIMITS.licenseActivation,
+  'POST admin/cloud/link': RATE_LIMITS.linkStart,
+};
+
 const isAdminPermission = (permission: AuthenticatedOptions['permission']) =>
   typeof permission === 'string' && permission.startsWith('admin');
 
@@ -142,6 +174,8 @@ const getRoutes = () => {
         label: `${Controller.name}.${name} (${method} /${path})`,
         path,
         auth: getAuthenticatedOptions(reflector, handler),
+        originalTransfer: reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, handler) === true,
+        rateLimit: reflector.get<RateLimitRule | undefined>(MetadataKey.RateLimit, handler),
       };
     });
   });
@@ -175,6 +209,22 @@ describe('controllers', () => {
       .map((route) => route.id);
 
     expect(new Set(adminRoutes)).toEqual(ADMIN_ROUTES);
+  });
+
+  it('should mark exactly the original, archive and backup downloads as refused over the relay (FL-161)', () => {
+    const marked = routes.filter((route) => route.originalTransfer).map((route) => route.id);
+
+    expect(new Set(marked)).toEqual(ORIGINAL_TRANSFER_ROUTES);
+    expect(marked).not.toContain('GET assets/:id/thumbnail');
+    expect(marked).not.toContain('GET assets/:id/video/playback');
+  });
+
+  it('should rate limit sign-in, licence activation and link start (FL-161)', () => {
+    const limited = Object.fromEntries(
+      routes.filter((route) => route.rateLimit).map((route) => [route.id, route.rateLimit]),
+    );
+
+    expect(limited).toEqual(RATE_LIMITED_ROUTES);
   });
 
   it('should require admin access for routes with an admin permission', () => {

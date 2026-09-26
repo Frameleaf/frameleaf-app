@@ -19,6 +19,7 @@ import {
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
 import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
 import { respondWithCookie, respondWithoutCookie } from 'src/utils/response.js';
 
@@ -34,6 +35,7 @@ export class AuthController {
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.login)
   async login(
     @Res({ passthrough: true }) res: Response,
     @Body() loginCredential: LoginCredentialDto,
