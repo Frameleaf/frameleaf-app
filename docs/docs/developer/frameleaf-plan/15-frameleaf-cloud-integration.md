@@ -539,7 +539,9 @@ fingerprint, entitlements{remoteAccess,cloudMl,cloudBackup,supporter}, refresh, 
   rows the listing lacks; each run re-reads the claim marker; the newest 7 dumps and the one the newest complete manifest names
   (`databaseKey`) are kept; stored key files are written and read back before the claim (rename fallback where hard links fail) and
   removed only when that setup created them and the claim failed; a checksum is trusted only when `verifiedPaths` holds
-  the original's path; restarted workers ask the others for an own-memory key. Not in this slice: schedule, retention,
+  the original's path; restarted workers ask the others for an own-memory key. The Cloud backup page's "What is backed
+  up" card holds the two include switches (thumbnails and previews, transcoded videos; both off by default), saved with
+  the settings bar like other settings; the target, bucket, key mode and credentials change only through setup. Not in this slice: schedule, retention,
   verification, escrow, restore and the Activity progress stages (CLD-302), and the managed grant and key rotation (FC-33).
 - ★ **CLD-302 Cloud backup: schedule, retention, verification, managed storage, escrow and restore**.
   Anchors: `cloud-backup.service.ts`, `server/src/commands/cloud-backup.command.ts` (new),
