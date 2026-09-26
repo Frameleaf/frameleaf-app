@@ -178,7 +178,7 @@ export class MediaRecoveryService {
         candidate,
         outcome,
         proposedPath,
-        ...(!candidate && matchedExternal && { matchedExternalAssetId: matchedExternal.id }),
+        ...(!candidate && matchedExternal ? { matchedExternalAssetId: matchedExternal.id } : {}),
       });
       if (!reservation) {
         return { outcome: 'retry', reason: 'reservation_changed' };
