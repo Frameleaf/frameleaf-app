@@ -6,6 +6,11 @@ import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
 import { CloudBackupKeyModeSchema, CloudBackupTargetSettingSchema } from 'src/dtos/cloud-backup.dto.js';
 import {
+  RemoteAccessModeSchema,
+  RemoteAccessPublicUrlSchema,
+  RemoteHostnameStatusSchema,
+} from 'src/dtos/frameleaf-remote-access.dto.js';
+import {
   AudioCodec,
   AudioCodecSchema,
   CQMode,
@@ -523,9 +528,7 @@ const AdminConfigFrameleafCloudSchema = z
         enabled: configBool.describe(
           'Serve remote access through Frameleaf Cloud (needs a linked server with a remote access plan)',
         ),
-        mode: z
-          .enum(['relay', 'relay-and-direct'])
-          .describe('relay: every remote connection goes through the relay; relay-and-direct: direct connections too'),
+        mode: RemoteAccessModeSchema,
         directPort: z.int().min(1024).max(65_535).describe('External port for direct connections'),
         portMapping: configBool.describe(
           'Ask the router to open the direct port automatically; off when it is forwarded by hand',
@@ -536,9 +539,7 @@ const AdminConfigFrameleafCloudSchema = z
         allowPasswordOverRelay: configBool.describe(
           'Allow password sign-in, and sessions it creates, over remote access',
         ),
-        publicUrl: z
-          .enum(['frameleaf', 'custom'])
-          .describe('The published address: the Frameleaf address, or the verified custom hostname'),
+        publicUrl: RemoteAccessPublicUrlSchema,
         customHostname: z
           .object({
             host: z
@@ -546,9 +547,7 @@ const AdminConfigFrameleafCloudSchema = z
               .max(253)
               .regex(/^$|^(?:[\da-z](?:[\da-z-]{0,61}[\da-z])?\.){2,}[\da-z](?:[\da-z-]{0,61}[\da-z])?$/)
               .describe('A hostname on a domain the administrator owns; empty when none'),
-            status: z
-              .enum(['pending', 'verified'])
-              .describe('pending: waiting for its DNS records; verified: Frameleaf Cloud verified them'),
+            status: RemoteHostnameStatusSchema,
             checkedAt: z.string().nullable().describe('When its DNS records were last checked'),
           })
           .meta({ id: 'AdminConfigFrameleafCustomHostnameDto' }),

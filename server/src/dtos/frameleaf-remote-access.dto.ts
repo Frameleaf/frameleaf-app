@@ -7,11 +7,40 @@ import z from 'zod';
  * no key, secret or token ever appears in a response.
  */
 
+export const RemoteAccessModeSchema = z
+  .enum(['relay', 'relay-and-direct'])
+  .describe('relay: every remote connection goes through the relay; relay-and-direct: direct connections too')
+  .meta({ id: 'RemoteAccessMode' });
+
+export const RemoteAccessPublicUrlSchema = z
+  .enum(['frameleaf', 'custom'])
+  .describe('The published address: the Frameleaf address, or the verified custom hostname')
+  .meta({ id: 'RemoteAccessPublicUrl' });
+
+export const RemoteHostnameStatusSchema = z
+  .enum(['pending', 'verified'])
+  .describe('pending: waiting for its DNS records; verified: Frameleaf Cloud verified them')
+  .meta({ id: 'RemoteHostnameStatus' });
+
+const RemoteAccessStateSchema = z
+  .enum(['off', 'idle', 'starting', 'ready', 'error', 'unknown'])
+  .describe('What the edge worker is doing; unknown when no edge worker reported recently')
+  .meta({ id: 'RemoteAccessState' });
+
+const RemoteConnectionKindSchema = z
+  .enum(['local', 'wan', 'relay', 'ipv6'])
+  .describe('local, wan (a custom hostname too), ipv6 or relay')
+  .meta({ id: 'RemoteConnectionKind' });
+
+const RemoteConnectionProtocolSchema = z.enum(['http', 'https']).meta({ id: 'RemoteConnectionProtocol' });
+
+const RemoteDnsRecordTypeSchema = z.enum(['CNAME']).meta({ id: 'RemoteDnsRecordType' });
+
 export const RemoteConnectionSchema = z
   .object({
-    kind: z.enum(['local', 'wan', 'relay', 'ipv6']).describe('local, wan (a custom hostname too), ipv6 or relay'),
+    kind: RemoteConnectionKindSchema,
     uri: z.string().describe('The address to connect to, https only'),
-    protocol: z.enum(['http', 'https']),
+    protocol: RemoteConnectionProtocolSchema,
     address: z.string().describe('Host name or address, without brackets for IPv6'),
     port: z.int(),
     local: z.boolean(),
@@ -35,7 +64,7 @@ const RemoteConnectionsResponseSchema = z
 
 const RemoteDnsRecordSchema = z
   .object({
-    type: z.literal('CNAME'),
+    type: RemoteDnsRecordTypeSchema,
     name: z.string(),
     value: z.string(),
     purpose: z.string().describe('What the record is for, in plain words'),
@@ -57,13 +86,11 @@ const RemoteAccessStatusResponseSchema = z
       .nullable()
       .describe('Why remote access cannot be turned on (not set up, not linked, no plan); null when it can'),
     enabled: z.boolean().describe('Remote access is switched on'),
-    mode: z.enum(['relay', 'relay-and-direct']),
+    mode: RemoteAccessModeSchema,
     directPort: z.int().describe('External port for direct connections'),
     portMapping: z.boolean().describe('The router is asked to open the direct port automatically'),
-    publicUrlChoice: z.enum(['frameleaf', 'custom']).describe('Which address is published'),
-    status: z
-      .enum(['off', 'idle', 'starting', 'ready', 'error', 'unknown'])
-      .describe('What the edge worker is doing; unknown when no edge worker reported recently'),
+    publicUrlChoice: RemoteAccessPublicUrlSchema,
+    status: RemoteAccessStateSchema,
     reason: z.string().nullable().describe('Why it is off, idle or failing, in plain words'),
     publicUrl: z.string().nullable().describe('The address this server publishes'),
     frameleafAddress: z.string().nullable().describe('https://r.<label>.<direct domain>, once enrolled'),
@@ -75,7 +102,7 @@ const RemoteAccessStatusResponseSchema = z
     directListening: z.boolean(),
     cgnatSuspected: z.boolean(),
     customHostname: z.string().nullable().describe('The custom hostname, when one was added'),
-    customHostnameStatus: z.enum(['pending', 'verified']).nullable(),
+    customHostnameStatus: RemoteHostnameStatusSchema.nullable(),
     customHostnameCheckedAt: z.string().nullable(),
     customHostnameProblem: z.string().nullable().describe('Why the hostname is not verified yet'),
     customHostnameRecords: z
@@ -91,13 +118,10 @@ const RemoteAccessStatusResponseSchema = z
 const RemoteAccessUpdateSchema = z
   .object({
     enabled: z.boolean().optional().describe('Turn remote access on or off'),
-    mode: z.enum(['relay', 'relay-and-direct']).optional(),
+    mode: RemoteAccessModeSchema.optional(),
     directPort: z.int().min(1024).max(65_535).optional().describe('External port for direct connections'),
     portMapping: z.boolean().optional().describe('Ask the router to open the direct port automatically'),
-    publicUrl: z
-      .enum(['frameleaf', 'custom'])
-      .optional()
-      .describe('Publish the Frameleaf address, or the verified custom hostname'),
+    publicUrl: RemoteAccessPublicUrlSchema.optional(),
   })
   .meta({ id: 'RemoteAccessUpdateDto' });
 
