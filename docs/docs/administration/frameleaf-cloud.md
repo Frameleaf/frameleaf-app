@@ -102,7 +102,7 @@ The key is never part of the settings, a database dump, a log or an answer from 
 
 **Back up now** starts a run, which shows in Activity. A run backs up, in this order:
 
-- a fresh database dump, as `db/<file>`; the bucket keeps the seven most recent dumps and every dump a complete backup names;
+- a fresh database dump, as `db/<file>`; the bucket keeps the seven most recent dumps and the dump of the newest complete backup;
 - every original, sidecar and profile image, each unique file once as `o/<sha256>`. Locked and trashed photos are included; files in external libraries are not. Thumbnails, previews and transcoded videos are left out unless you include them in the settings;
 - a manifest of the run, `m/<time>.json.gz`, naming every photo's files by checksum.
 
