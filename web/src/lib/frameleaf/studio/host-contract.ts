@@ -313,7 +313,9 @@ export interface StudioHostServices {
    * for the revision summary. `baseRevision` is the project revision the editor's graph was loaded
    * from, so a draft from an editor still showing an older revision is never judged against a newer
    * head. `graphVersion` is the `StudioProjectHandle.graphVersion` the graph was loaded from (FL-174).
-   * Optional: a host without project storage leaves it out and the editor stays read-only.
+   * The editor frame always sends both; a draft without them is refused as `invalid`, never staged as
+   * the host's own. Optional: a host without project storage leaves it out and the editor stays
+   * read-only.
    */
   stageDraft?(
     graph: unknown,

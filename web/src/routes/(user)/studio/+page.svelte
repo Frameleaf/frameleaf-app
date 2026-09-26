@@ -392,13 +392,17 @@
     if (!decision.stage) {
       return Promise.resolve(decision.result);
     }
+    // An editor draft always says what it was loaded from; without that it is not judged at all, and
+    // it is never staged as the host's own graph (FL-174).
+    if (baseRevision === undefined || graphVersion === undefined) {
+      return Promise.resolve({ status: 'rejected', reason: 'invalid' });
+    }
     // The session keeps `project.graph` on the newest draft (in a conflict too, never the head), so
     // history records this edit against the draft's own previous graph.
     const before = project.graph;
-    const outcome = session.stage(
+    const outcome = session.stageEditor(
       graph,
       commandIds.length > 0 ? commandIds : ['editor.save'],
-      [],
       baseRevision,
       graphVersion,
     );

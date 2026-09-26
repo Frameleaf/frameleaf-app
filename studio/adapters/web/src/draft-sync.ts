@@ -83,6 +83,14 @@ export interface DraftSendState {
    * loaded (FL-174). If the mount is replaced before it can go again, that edit is lost.
    */
   pendingSuperseded: boolean
+  /**
+   * The current mount wrote work that became a draft to send and the host has not taken yet
+   * (FL-174). Set by the frame when it accepts a write; cleared when a send is staged or finds the
+   * host already holds it, and by `beginMount`.
+   */
+  writePending?: boolean
+  /** The mount generation whose lost edits were last reported, so the person is told once per mount. */
+  lostReportedFor?: number
   disposed: boolean
 }
 
@@ -103,6 +111,7 @@ export function beginMount(
   // The edits a refused draft carried belonged to the old instance; there is nothing to resend.
   state.pendingSend = false
   state.pendingSuperseded = false
+  state.writePending = false
   return state.mount
 }
 
@@ -112,6 +121,33 @@ export function beginMount(
  */
 export const supersededEditLost = (state: DraftSendState): boolean =>
   !state.disposed && state.pendingSend && state.pendingSuperseded
+
+/**
+ * Whether replacing the current mount now loses edits the host never took (FL-174). Besides a
+ * refused superseded send: once the mount has loaded, any refused send still waiting, a write whose
+ * draft has not been taken (`writePending`, a send possibly still in flight), and `unsent` work the
+ * frame knows of: a dirty timeline or a draft or settled-save timer the remount cancels. Asked before
+ * `beginMount`.
+ *
+ * The edits are not flushed as a draft first: a remount puts in place a graph the host chose (its own
+ * change, the person's Reload or a restore), and a draft built before it must not replace it; the
+ * host would refuse it as superseded in any case. The person is told instead.
+ */
+export const editsLostOnRemount = (state: DraftSendState, unsent: boolean): boolean =>
+  supersededEditLost(state) ||
+  (!state.disposed &&
+    state.mount.loaded &&
+    (unsent || state.pendingSend || state.writePending === true))
+
+/**
+ * Whether to tell the person that edits of mount `generation` were lost (FL-174): true once per
+ * mount, so a remount and a refusal arriving after it do not both show the notice.
+ */
+export function reportLost(state: DraftSendState, generation: number): boolean {
+  if (state.disposed || state.lostReportedFor === generation) return false
+  state.lostReportedFor = generation
+  return true
+}
 
 /** The mount's timeline finished loading: from now on its writes are drafts. */
 export function markLoaded(state: DraftSendState, mount: EditorMount): void {
@@ -197,20 +233,24 @@ export async function sendEditorDraft(
     return
   }
   const content = io.contentOf(graph)
-  if (content === state.hostContent) return
+  if (content === state.hostContent) {
+    if (state.mount === mount) state.writePending = false
+    return
+  }
   const result: { status: string; reason?: string } = await io
     .stage(graph, base, version)
     .catch(() => ({ status: 'rejected' }))
   // A remount meanwhile owns hostContent and pendingSend now; the host judged this draft on its base.
   if (!acceptsWrite(state, mount)) {
     // The host's own graph replaced this mount before the refused edit could go again (FL-174).
-    if (!state.disposed && isSuperseded(result)) io.lost?.()
+    if (isSuperseded(result) && reportLost(state, mount.generation)) io.lost?.()
     return
   }
   if (result.status === 'staged') {
     state.hostContent = content
     state.pendingSend = false
     state.pendingSuperseded = false
+    state.writePending = false
     io.dirty(false)
   } else if (isSuperseded(result) && mount.graphVersion > version) {
     // The mount took the host's newer graph meanwhile (it already showed it), so what it shows now is
