@@ -66,7 +66,8 @@ export class TimelineMonth {
   flowShownAt: number | undefined = undefined;
   /** Earlier months' tiles laid out at the start of this month's rows, and drawn with this month. */
   flowCarried: FlowItem[] = $state.raw([]);
-  /** The height of this month's rows, under its group header or gap. */
+  /** The size of this month's rows, under its group header or gap. */
+  flowContentWidth = $state(0);
   flowContentHeight = $state(0);
 
   constructor(

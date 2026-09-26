@@ -1565,6 +1565,9 @@ describe('TimelineManager', () => {
       expect(february.flowCarried.map(({ viewerAsset }) => viewerAsset.id)).toEqual([lastTile(march).id]);
       expect(lastTile(march).flowHost).toBe(february);
       expect(december.flowCarried).toHaveLength(3);
+      // The carried tiles are drawn inside the later month's full-width rows.
+      expect(february.flowContentWidth).toBe(timelineManager.justifiedLayoutOptions.rowWidth);
+      expect(february.flowContentHeight).toBe(february.height - february.groupHeaderHeight);
     });
 
     it('runs a Years group on across its months, and starts each year on a row of its own', () => {

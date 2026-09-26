@@ -56,9 +56,11 @@
     /**
      * Years and All (FL-143): this day's tiles that a later month lays out at the start of its rows,
      * where a row runs on across the month boundary. The later month draws them, measured from its
-     * own first row, inside rows `hostedHeight` tall. Without it the day draws its own tiles.
+     * own first row, inside its rows (`hostedWidth` by `hostedHeight`). Without it the day draws its
+     * own tiles.
      */
     hosted?: ViewerAsset[];
+    hostedWidth?: number;
     hostedHeight?: number;
   };
 
@@ -81,6 +83,7 @@
     tileOverlay,
     quickActions,
     hosted,
+    hostedWidth = 0,
     hostedHeight = 0,
   }: Props = $props();
 
@@ -139,7 +142,7 @@
 
   <div
     class="fl-day-rows"
-    style:width="{timelineDay.width}px"
+    style:width="{hosted ? hostedWidth : timelineDay.width}px"
     style:height="{hosted ? hostedHeight : timelineDay.height}px"
   >
     {#each tiles as viewerAsset (viewerAsset.id)}

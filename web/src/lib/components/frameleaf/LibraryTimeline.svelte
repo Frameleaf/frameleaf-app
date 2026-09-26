@@ -1243,6 +1243,7 @@
                 <LibraryDayGroup
                   timelineDay={carried.day}
                   hosted={carried.tiles}
+                  hostedWidth={month.flowContentWidth}
                   hostedHeight={month.flowContentHeight}
                   {selection}
                   {selecting}
