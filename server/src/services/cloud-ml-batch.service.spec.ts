@@ -592,6 +592,21 @@ describe(CloudMlBatchService.name, () => {
         }),
       );
       mocks.mlDestination.getCloudModelChoice.mockResolvedValue('ms_M72B0000');
+      // the admission check (consent first, before the catalogue is read) judges the chosen model
+      // against the last check's facts, so that check must have seen the same catalogue
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        cloud: {
+          ...facts,
+          modelIds: [...facts.modelIds, 'ms_M72B0000', 'ms_M27B0000'],
+          modelWorkloads: {
+            ...facts.modelWorkloads,
+            ms_M72B0000: MlWorkload.Enrichment,
+            ms_M27B0000: MlWorkload.Enrichment,
+          },
+          modelGroups: { ...facts.modelGroups, ms_M72B0000: 'descriptions', ms_M27B0000: 'descriptions' },
+        },
+      });
       addAssets(photos(ownerA, 40));
 
       const estimate = await sut.estimateBackfill(admin, now);
