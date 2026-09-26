@@ -2259,6 +2259,11 @@ export enum DatabaseLock {
    * so two sign-ins at once can never demote the last two administrators.
    */
   FrameleafRoleChange = 948,
+  /**
+   * FL-185: claiming the daily ML token probe while cloud processing is suspended (re-read and rewrite
+   * of the suspension as one step), so no two workers probe at once.
+   */
+  FrameleafMlProbe = 949,
 }
 
 export enum MaintenanceAction {
