@@ -296,6 +296,34 @@ const isReturnBackfillBatchEvidence = (value: unknown): value is ReturnBackfillB
   );
 };
 
+/** FL-161: a bcrypt hash as a PostgreSQL regular expression (see `isBcryptHash`). */
+const BCRYPT_HASH_PATTERN = '^\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}$';
+
+export type SharedLinkPasswordCounts = { hashed: number; plaintext: number };
+
+/**
+ * FL-161: why the official handoff may not go ahead yet, or null. Links whose password is a hash stay
+ * locked on the official server, so they need the operator's acknowledgement; links still holding a
+ * plaintext password keep working there and are only reported.
+ */
+export const sharedLinkPasswordProblem = (
+  { hashed, plaintext }: SharedLinkPasswordCounts,
+  acknowledged: boolean,
+): string | null => {
+  if (hashed === 0 || acknowledged) {
+    return null;
+  }
+  const keepWorking =
+    plaintext > 0
+      ? ` ${plaintext} other link(s) still hold a password the official server can check and keep working.`
+      : '';
+  return (
+    `${hashed} password-protected shared link(s) will stay locked on the official server: their passwords are ` +
+    'stored as hashes it cannot check. After the handoff, set a new password on each of those links in the ' +
+    `official app.${keepWorking} Run prepare-official again with --acknowledge-shared-link-passwords to continue.`
+  );
+};
+
 @Injectable()
 export class ForkHandoffRepository {
   constructor(@InjectKysely() protected readonly db: Kysely<DB>) {}
@@ -553,13 +581,42 @@ export class ForkHandoffRepository {
     };
   }
 
-  async prepareOfficialHandoffCheckpoint(): Promise<OfficialHandoffCheckpoint> {
+  /**
+   * FL-161: shared links protected by a password. `hashed` ones hold a bcrypt hash
+   * (2100000000660-HashSharedLinkPasswords) the official server compares as plaintext, so each stays
+   * locked there until its password is set again on the official server. `plaintext` ones (set on the
+   * official server and not yet used here) keep working there.
+   */
+  async countPasswordProtectedSharedLinks(kysely: Kysely<DB> = this.db): Promise<SharedLinkPasswordCounts> {
+    const { rows } = await sql<SharedLinkPasswordCounts>`
+      SELECT
+        count(*) FILTER (WHERE password ~ ${BCRYPT_HASH_PATTERN})::int AS hashed,
+        count(*) FILTER (WHERE password !~ ${BCRYPT_HASH_PATTERN})::int AS plaintext
+      FROM public.shared_link WHERE password IS NOT NULL AND password <> ''
+    `.execute(kysely);
+    return rows[0] ?? { hashed: 0, plaintext: 0 };
+  }
+
+  /**
+   * The checkpoint is prepared in one read-only transaction; the shared-link count that decides
+   * whether it may go ahead is taken inside it, from the same snapshot.
+   */
+  async prepareOfficialHandoffCheckpoint(
+    options: { acknowledgeSharedLinkPasswords?: boolean } = {},
+  ): Promise<OfficialHandoffCheckpoint> {
     return this.db
       .transaction()
       .setIsolationLevel('repeatable read')
       .setAccessMode('read only')
       .execute(async (transaction) => {
         await this.assertOfficialHandoffReady(transaction);
+        const problem = sharedLinkPasswordProblem(
+          await this.countPasswordProtectedSharedLinks(transaction),
+          options.acknowledgeSharedLinkPasswords === true,
+        );
+        if (problem) {
+          throw new Error(problem);
+        }
         return this.getPreparedOfficialHandoffCheckpoint(transaction);
       });
   }

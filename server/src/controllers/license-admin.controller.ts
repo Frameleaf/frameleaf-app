@@ -10,6 +10,7 @@ import {
 } from 'src/dtos/frameleaf-license.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
 
 /**
@@ -36,6 +37,7 @@ export class LicenseAdminController {
 
   @Put('activate')
   @Authenticated({ permission: Permission.ServerLicenseUpdate, admin: true })
+  @RateLimited(RATE_LIMITS.licenseActivation)
   @Endpoint({
     operationId: 'activateLicense',
     summary: 'Activate a server licence key',
@@ -49,6 +51,7 @@ export class LicenseAdminController {
 
   @Put('certificate')
   @Authenticated({ permission: Permission.ServerLicenseUpdate, admin: true })
+  @RateLimited(RATE_LIMITS.licenseActivation)
   @Endpoint({
     operationId: 'installLicenseCertificate',
     summary: 'Install a licence file',

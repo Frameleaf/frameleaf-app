@@ -11,6 +11,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CloudPermissionsUpdateDto,
+  CloudRemoteAccessUpdateDto,
   CloudSignInUpdateDto,
   CloudStatusResponseDto,
 } from 'src/dtos/frameleaf-cloud.dto.js';
@@ -119,6 +120,8 @@ export class FrameleafCloudService extends BaseService {
       signInLinkedAccounts: await this.frameleafAccountRepository.countLinks(),
       signInShowOnLocalLogin: !!config.frameleafCloud.signIn?.showOnLocalLogin,
       signInButtonText: config.frameleafCloud.signIn?.buttonText ?? '',
+      allowOriginalsOverRelay: !!config.frameleafCloud.remoteAccess?.allowOriginalsOverRelay,
+      allowPasswordOverRelay: !!config.frameleafCloud.remoteAccess?.allowPasswordOverRelay,
     };
   }
 
@@ -127,7 +130,14 @@ export class FrameleafCloudService extends BaseService {
     identity: FrameleafInstanceIdentity | null,
     link: FrameleafCloudLink | null,
     mlSuspended = false,
-  ): Omit<CloudStatusResponseDto, 'signInLinkedAccounts' | 'signInShowOnLocalLogin' | 'signInButtonText'> {
+  ): Omit<
+    CloudStatusResponseDto,
+    | 'signInLinkedAccounts'
+    | 'signInShowOnLocalLogin'
+    | 'signInButtonText'
+    | 'allowOriginalsOverRelay'
+    | 'allowPasswordOverRelay'
+  > {
     const linked = link?.status === 'linked';
     return {
       state: cloudUrl ? (link?.status ?? 'unlinked') : 'not-configured',
@@ -529,6 +539,33 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
+   * `PUT admin/cloud/remote-access` (FL-161): what remote access may carry. Originals, archives and
+   * database backups over the relay, and password sign-in away from home, stay off unless an
+   * administrator turns them on; turning either on needs a linked server. Turning them off always works.
+   */
+  async updateRemoteAccess(auth: AuthDto, dto: CloudRemoteAccessUpdateDto): Promise<CloudStatusResponseDto> {
+    const cloudUrl = this.requireCloudUrl();
+    const link = await this.readLink(cloudUrl);
+    const turningOn = dto.allowOriginalsOverRelay === true || dto.allowPasswordOverRelay === true;
+    if (turningOn && link?.status !== 'linked') {
+      throw new BadRequestException('Link this server first.');
+    }
+    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
+      config.frameleafCloud.remoteAccess = {
+        ...config.frameleafCloud.remoteAccess,
+        ...(dto.allowOriginalsOverRelay !== undefined && { allowOriginalsOverRelay: dto.allowOriginalsOverRelay }),
+        ...(dto.allowPasswordOverRelay !== undefined && { allowPasswordOverRelay: dto.allowPasswordOverRelay }),
+      };
+    });
+    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    const { allowOriginalsOverRelay, allowPasswordOverRelay } = newConfig.frameleafCloud.remoteAccess;
+    this.logger.log(
+      `Remote access settings changed by ${auth.user.id}: originals over the relay ${allowOriginalsOverRelay}, password sign-in away from home ${allowPasswordOverRelay}`,
+    );
+    return this.getStatus();
+  }
+
+  /**
    * Cloud-side revoke or local unlink: clear the credential and cached tokens, mark the link, remove
    * the Frameleaf Cloud plan certificate, and switch remote access, cloud processing and cloud backup
    * off. Supporter key certificates stay (they work without a link); no photo, account or other local
@@ -557,6 +594,8 @@ export class FrameleafCloudService extends BaseService {
     await this.removePlanCertificate();
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
       config.frameleafCloud.cloudMl.enabled = false;
+      // FL-161: what remote access may carry goes back to the safe defaults with the link
+      config.frameleafCloud.remoteAccess = { allowOriginalsOverRelay: false, allowPasswordOverRelay: false };
     });
     if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
       await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });

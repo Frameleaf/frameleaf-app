@@ -5,7 +5,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { DownloadArchiveDto, DownloadInfoDto, DownloadResponseDto } from 'src/dtos/download.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { asStreamableFile } from 'src/utils/file.js';
 
@@ -28,6 +28,7 @@ export class DownloadController {
 
   @Post('archive')
   @Authenticated({ permission: Permission.AssetDownload, sharedLink: true })
+  @OriginalTransfer()
   @FileResponse()
   @HttpCode(HttpStatus.OK)
   @Endpoint({

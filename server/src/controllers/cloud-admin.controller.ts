@@ -4,11 +4,13 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CloudPermissionsUpdateDto,
+  CloudRemoteAccessUpdateDto,
   CloudSignInUpdateDto,
   CloudStatusResponseDto,
 } from 'src/dtos/frameleaf-cloud.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 
 /**
@@ -36,6 +38,7 @@ export class CloudAdminController {
 
   @Post('link')
   @Authenticated({ permission: Permission.AdminCloudLink, admin: true })
+  @RateLimited(RATE_LIMITS.linkStart)
   @Endpoint({
     operationId: 'startCloudLink',
     summary: 'Start linking this server to a Frameleaf account',
@@ -109,6 +112,19 @@ export class CloudAdminController {
   })
   updateSignIn(@Auth() auth: AuthDto, @Body() dto: CloudSignInUpdateDto): Promise<CloudStatusResponseDto> {
     return this.service.updateSignIn(auth, dto);
+  }
+
+  @Put('remote-access')
+  @Authenticated({ permission: Permission.AdminCloudUpdate, admin: true })
+  @Endpoint({
+    operationId: 'updateCloudRemoteAccess',
+    summary: 'Choose what remote access may carry',
+    description:
+      'Remote visitors always sign in with Frameleaf. This allows original downloads, archives and database backups through the relay, and password sign-in away from home. Turning either on needs a linked server.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  updateRemoteAccess(@Auth() auth: AuthDto, @Body() dto: CloudRemoteAccessUpdateDto): Promise<CloudStatusResponseDto> {
+    return this.service.updateRemoteAccess(auth, dto);
   }
 
   @Post('heartbeat')

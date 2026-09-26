@@ -1,5 +1,8 @@
 import { toastManager } from '@immich/ui';
 import { handleError, setUnauthorizedHandler } from '$lib/utils/handle-error';
+import { revokeSessionView } from '$lib/utils/session-privacy';
+
+vi.mock('$lib/utils/session-privacy', () => ({ revokeSessionView: vi.fn() }));
 
 const httpError = (status: number, message = 'Invalid share key') => ({
   name: 'HttpError',
@@ -15,6 +18,7 @@ vi.mock('@immich/sdk', async (original) => ({
 
 describe('handleError', () => {
   beforeEach(() => {
+    vi.mocked(revokeSessionView).mockClear();
     vi.spyOn(toastManager, 'danger').mockImplementation(() => undefined as never);
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -22,6 +26,30 @@ describe('handleError', () => {
   afterEach(() => {
     setUnauthorizedHandler(undefined);
     vi.restoreAllMocks();
+  });
+
+  it('signs out when remote access needs a Frameleaf sign-in (FL-161)', () => {
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+
+    handleError(
+      {
+        ...httpError(403, 'Away from home, sign in with your Frameleaf account'),
+        data: { code: 'frameleaf_sign_in_required' },
+      },
+      'Unable to load',
+    );
+
+    expect(revokeSessionView).toHaveBeenCalledWith('/auth/logout');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(toastManager.danger).not.toHaveBeenCalled();
+  });
+
+  it('keeps an ordinary 403 a toast', () => {
+    handleError(httpError(403, 'Forbidden'), 'Unable to load');
+
+    expect(revokeSessionView).not.toHaveBeenCalled();
+    expect(toastManager.danger).toHaveBeenCalledOnce();
   });
 
   it('hands a refused action to the registered handler instead of toasting (FL-56)', () => {

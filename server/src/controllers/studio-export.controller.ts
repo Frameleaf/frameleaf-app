@@ -11,7 +11,7 @@ import {
   StudioExportVersionDto,
 } from 'src/dtos/studio-export.dto.js';
 import { ApiTag } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -79,6 +79,8 @@ export class StudioExportController {
   @Get('exports/:id/download')
   @FileResponse()
   @Authenticated()
+  // FL-161: a finished full-resolution render
+  @OriginalTransfer()
   @Endpoint({
     summary: 'Download a Studio export kept with its project',
     description:

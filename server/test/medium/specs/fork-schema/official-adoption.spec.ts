@@ -1,3 +1,4 @@
+import { compareSync } from 'bcrypt';
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
@@ -127,6 +128,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   const ownedAlbumId = randomUUID();
   const removedFaceId = randomUUID();
   const lockedFaceId = randomUUID();
+  const passwordLinkId = randomUUID();
 
   beforeAll(async () => {
     db = await getKyselyDB('official_origin_full_adoption');
@@ -151,6 +153,13 @@ describe('official-origin adoption into a full Frameleaf library', () => {
     `.execute(db);
     await sql`
       INSERT INTO public."user" (id, email, name) VALUES (${otherUserId}::uuid, 'other@example.test', 'Other')
+    `.execute(db);
+
+    // FL-161: a password-protected shared link, its password saved in plaintext by the official server.
+    await sql`
+      INSERT INTO public.shared_link (id, "userId", key, type, password)
+      VALUES (${passwordLinkId}::uuid, ${userId}::uuid, ${randomBytes(50)}, 'INDIVIDUAL', 'official-secret'),
+        (${randomUUID()}::uuid, ${userId}::uuid, ${randomBytes(50)}, 'INDIVIDUAL', NULL)
     `.execute(db);
 
     // A stack with one member in the official Locked folder.
@@ -409,6 +418,23 @@ describe('official-origin adoption into a full Frameleaf library', () => {
     expect(steps['1786972746372-AssetOcrSyncReset']).toEqual({
       before: { ocrSyncCheckpoints: 0 },
       after: { ocrSyncCheckpoints: 0 },
+    });
+  });
+
+  it('hashes the official shared-link passwords and records how many links they protect (FL-161)', async () => {
+    await adopt();
+    const link = await sql<{ password: string }>`
+      SELECT password FROM public.shared_link WHERE id = ${passwordLinkId}::uuid
+    `.execute(db);
+    expect(link.rows[0]!.password).toMatch(/^\$2[aby]\$10\$/);
+    expect(compareSync('official-secret', link.rows[0]!.password)).toBe(true);
+
+    const audit = await sql<{ details: { steps: Record<string, unknown> } }>`
+      SELECT details FROM immich_fork.migration_audit WHERE name = ${OFFICIAL_ADOPTION_AUDIT} AND status = 'applied'
+    `.execute(db);
+    expect(audit.rows[0]!.details.steps['2100000000660-HashSharedLinkPasswords']).toEqual({
+      before: { passwordProtectedLinks: 1, plaintextPasswordLinks: 1 },
+      after: { passwordProtectedLinks: 1, plaintextPasswordLinks: 0 },
     });
   });
 
