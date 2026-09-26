@@ -373,6 +373,16 @@ describe(CloudMlJobService.name, () => {
       created = { ...row, id: OPERATION_ID, status: MediaOperationStatus.Queued } as unknown as MediaOperation;
       return Promise.resolve(created);
     });
+    // the transaction of a confirmation: its rows, then the job, then the link, as one
+    mocks.mediaOperation.createWithin.mockImplementation(async (bind, after) => {
+      const { operation, value } = await bind({} as never);
+      const inserted = await mocks.mediaOperation.create(operation);
+      await after({} as never, inserted, value);
+      return { operation: inserted, value };
+    });
+    mocks.mediaOperation.getLatestBySubject.mockResolvedValue([]);
+    mocks.mediaOperation.listUnacknowledgedCloudMlJobs.mockResolvedValue([]);
+    mocks.mediaOperation.getForWorker.mockImplementation(() => Promise.resolve(created));
     mocks.mediaOperation.getForOwner.mockImplementation(() => Promise.resolve(created));
     mocks.mediaOperation.setBulkResult.mockResolvedValue({
       status: MediaOperationStatus.Preparing,
@@ -586,7 +596,109 @@ describe(CloudMlJobService.name, () => {
     });
   });
 
+  describe('estimate of a whole video', () => {
+    const files = new Map<string, Buffer>();
+
+    beforeEach(() => {
+      files.clear();
+      rows.set(RESTORATION_ID, {
+        id: RESTORATION_ID,
+        revision: 1,
+        assetId: source.id,
+        ownerId: source.ownerId,
+        status: AssetRestorationStatus.PreviewReady,
+        mode: AssetRestorationMode.Faithful,
+        upscale: 2,
+        keepGrain: false,
+        previewRegion: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
+        destinationKind: MlDestinationKind.FrameleafCloud,
+        destinationId: cloud.id,
+        provenance: { preview: { modelSku: FAITHFUL, modelRev: FAITHFUL_REV } },
+      } as unknown as AssetRestoration);
+      mocks.storage.createOrOverwriteFile.mockImplementation((file: string, buffer: Buffer) => {
+        files.set(file, buffer);
+        return Promise.resolve();
+      });
+      mocks.storage.readJsonFile.mockImplementation((file: string) =>
+        files.has(file)
+          ? Promise.resolve(JSON.parse(files.get(file)!.toString()))
+          : Promise.reject(new Error('ENOENT')),
+      );
+    });
+
+    const full = () => preview({ stage: 'full', restorationId: RESTORATION_ID });
+    const prepared = () =>
+      Promise.all((sut as unknown as { preparing: Map<string, Promise<void>> }).preparing.values());
+
+    it('prepares the video once, in the background, and reuses the copy for every estimate of it', async () => {
+      await expect(sut.estimate(owner, full(), now)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'input-preparing', retryAfterSeconds: 5 }),
+      });
+      await prepared();
+
+      const first = await sut.estimate(owner, full(), now);
+      await sut.estimate(owner, full(), now);
+
+      // one re-encode for three estimates; the full stage offers only the model its preview ran
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+      expect(first.models.map((model) => model.sku)).toEqual([FAITHFUL]);
+      const [input] = estimates().at(-1)!.inputs;
+      expect(input.path).toContain('cloud_ml_input_');
+      // a stream copy drops the camera's own SEI data too
+      const [, , options] = mocks.media.transcode.mock.calls[0];
+      expect(options.outputOptions).toEqual(expect.arrayContaining(['-bsf:v', 'filter_units=remove_types=6']));
+      expect(stripsVideoMetadata(options.outputOptions)).toBe(true);
+    });
+
+    it('prepares one video per person at a time', async () => {
+      // the first video is still being prepared while the second is asked for
+      let release: () => void = () => {};
+      mocks.media.transcode.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      );
+      await expect(sut.estimate(owner, full(), now)).rejects.toBeInstanceOf(ConflictException);
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...source,
+        id: 'asset-2',
+        checksum: Buffer.alloc(20, 9),
+      } as never);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+      rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, assetId: 'asset-2' });
+
+      await expect(sut.estimate(owner, { ...full(), assetId: 'asset-2' }, now)).rejects.toMatchObject({
+        status: 429,
+      });
+      release();
+      await prepared();
+    });
+  });
+
   describe('create', () => {
+    it('answers with the job a confirmation created even when the estimate did not record it', async () => {
+      const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
+      mocks.mediaOperation.getLatestBySubject.mockResolvedValue([
+        { id: OPERATION_ID, revisionId: RESTORATION_ID } as unknown as MediaOperation,
+      ]);
+
+      await expect(
+        sut.create(
+          owner,
+          { estimateId: estimate.estimateId, consentVersion: estimate.consent.version, acknowledgeDataLeaves: true },
+          now,
+        ),
+      ).resolves.toEqual({ operationId: OPERATION_ID, restorationId: RESTORATION_ID, stage: 'preview' });
+      expect(mocks.mediaOperation.createWithin).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.getLatestBySubject).toHaveBeenCalledWith(
+        MediaOperationKind.CloudMlJob,
+        'estimateId',
+        [estimate.estimateId],
+      );
+      expect(estimates().at(-1)).toMatchObject({ operationId: OPERATION_ID });
+    });
+
     it('confirms a kept estimate with its consent: one new version, one job, the consent stored with it', async () => {
       await estimateAndConfirm();
 
@@ -798,6 +910,43 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
     });
 
+    it('never seals again after estimate-mismatch: that estimate may belong to a job this key created', async () => {
+      mocks.frameleafCloudMl.createJob.mockRejectedValue(
+        new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 409, 'This estimate was used', {
+          code: 'estimate-mismatch',
+          message: 'This estimate was used',
+          retryable: false,
+          refusal: 'request-invalid',
+          detail: null,
+          data: null,
+          requestId: null,
+        }),
+      );
+
+      await sut.step(claimed(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledTimes(1);
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        expect.anything(),
+        expect.objectContaining({ retry: false }),
+      );
+    });
+
+    it('records the cloud job as a failure and stops it when the claim is lost after admission', async () => {
+      mocks.mediaOperation.setRemoteJobId.mockResolvedValue(false);
+      mocks.mediaOperation.recordRemoteJobId.mockResolvedValue(true);
+
+      await sut.step(claimed(), 'claim', now);
+
+      expect(mocks.mlDestination.recordCloudJobAccounting).toHaveBeenCalledWith(
+        expect.objectContaining({ cloudJobId: JOB_ID, outcome: 'failure' }),
+      );
+      expect(mocks.mediaOperation.recordRemoteJobId).toHaveBeenCalledWith(OPERATION_ID, JOB_ID);
+      expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+    });
+
     it('resumes a started job by its cloud job id: read, never submitted again', async () => {
       await sut.step(following(), 'claim', now);
 
@@ -864,7 +1013,7 @@ describe(CloudMlJobService.name, () => {
       expect(written().cost).toMatchObject({ outcome: 'charged', totalUsd: 0.2026 });
     });
 
-    it('keeps nothing and retries once when an output does not match its SHA-256', async () => {
+    it('keeps nothing when an output does not match its SHA-256, and downloads it again later', async () => {
       mocks.frameleafCloudMl.getJobView.mockResolvedValue({
         notModified: false,
         data: completedWithOutputs(),
@@ -875,14 +1024,120 @@ describe(CloudMlJobService.name, () => {
 
       await sut.step(following(), 'claim', now);
 
+      // waited out without spending the job's automatic retry; the cloud keeps the result meanwhile
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(written()).toMatchObject({
+        phase: CloudMlJobPhase.Ending,
+        transientFailures: 1,
+        waiting: expect.objectContaining({ code: 'cloud_ml_output_sha256_mismatch' }),
+      });
+      expect(mocks.mediaOperation.requeue).toHaveBeenLastCalledWith(OPERATION_ID, 'claim', {
+        delayMs: 5000,
+        returnAttempt: true,
+      });
+      expect(mocks.frameleafCloudMl.deleteJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
+    });
+
+    it('acknowledges a job only once its result is published, never before', async () => {
+      const order: string[] = [];
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: completedWithOutputs(),
+        etag: '"e9"',
+        retryAfterSeconds: null,
+      });
+      mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) => {
+        order.push('published');
+        return (await publish({} as never)) ? 'completed' : 'rejected';
+      });
+      mocks.frameleafCloudMl.deleteJob.mockImplementation(() => {
+        order.push('DELETE /v2/jobs');
+        return Promise.resolve();
+      });
+      rendering();
+
+      await sut.step(following(), 'claim', now);
+
+      expect(order).toEqual(['published', 'DELETE /v2/jobs']);
+      expect(mocks.mediaOperation.setFinishedResult).toHaveBeenCalledWith(
+        OPERATION_ID,
+        expect.objectContaining({ acknowledged: true }),
+      );
+    });
+
+    it('keeps the result on Frameleaf Cloud when publishing fails for a moment, and tries again', async () => {
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: completedWithOutputs(),
+        etag: '"e9"',
+        retryAfterSeconds: null,
+      });
+      mocks.mediaOperation.publishValidated.mockRejectedValue(new Error('connection reset'));
+      rendering();
+
+      await sut.step(following(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.deleteJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalledWith(expect.stringContaining('cloud_ml_'), expect.anything());
+      expect(written()).toMatchObject({ phase: CloudMlJobPhase.Ending, transientFailures: 1 });
+    });
+
+    it('waits out a read that fails without spending the automatic retry, honouring Retry-After', async () => {
+      mocks.frameleafCloudMl.getJobView.mockRejectedValue(
+        new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 503, 'Frameleaf Cloud is busy', null, null, 20),
+      );
+
+      await sut.step(following(), 'claim', now);
+      await sut.step(
+        claimed({ phase: CloudMlJobPhase.Started, job: runningRecord(), transientFailures: 1 }),
+        'claim',
+        now,
+      );
+
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      const delays = mocks.mediaOperation.requeue.mock.calls.map(([, , options]) => options.delayMs);
+      // never sooner than Retry-After (20 s), doubling from 5 s otherwise
+      expect(delays).toEqual([20_000, 20_000]);
+      expect(written()).toMatchObject({ phase: CloudMlJobPhase.Started, transientFailures: 2 });
+
+      // a running job keeps being read however long the cloud stays away
+      await sut.step(
+        claimed({ phase: CloudMlJobPhase.Started, job: runningRecord(), transientFailures: 50 }),
+        'claim',
+        now,
+      );
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.requeue).toHaveBeenLastCalledWith(OPERATION_ID, 'claim', {
+        delayMs: 60_000,
+        returnAttempt: true,
+      });
+    });
+
+    it('refuses a video stopped at its hold before every part was done, publishing nothing', async () => {
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: view('job-settled-budget.json', {
+          progress: { done: 2, total: 3, unit: 'segments', etaSeconds: null },
+          result: { ...completedWithOutputs().result!, outputs: [output('v1-s0'), output('v1-s2')] },
+        }),
+        etag: '"e9"',
+        retryAfterSeconds: null,
+      });
+      rendering();
+
+      await sut.step(following(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.downloadOutput).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
       expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
         OPERATION_ID,
         'claim',
-        expect.objectContaining({ errorCode: 'cloud_ml_output_sha256_mismatch' }),
-        { retry: true },
+        expect.objectContaining({ errorCode: 'cloud_ml_budget_reached' }),
+        { retry: false },
       );
-      expect(mocks.frameleafCloudMl.deleteJob).not.toHaveBeenCalled();
-      expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
     });
 
     it('reports a failure on the cloud side with its fixed reason, nothing charged, and acknowledges the job', async () => {
@@ -952,6 +1207,39 @@ describe(CloudMlJobService.name, () => {
       await sut.step(following(), 'claim', now);
       expect(mocks.mediaOperation.resume).toHaveBeenCalledWith(OPERATION_ID, 'owner-1');
       expect(mocks.mediaOperation.settlePause).toHaveBeenCalledTimes(1);
+
+      // an admitted job that is uploading holds the AI Wallet: it carries on to its start
+      await sut.step(
+        claimed({
+          phase: CloudMlJobPhase.Uploading,
+          submission: { ...confirmed().submission!, idempotencyKey: OPERATION_ID, attemptedAt: now.toISOString() },
+          job: { ...runningRecord(), status: 'awaiting_upload' },
+        }),
+        'claim',
+        now,
+      );
+      expect(mocks.mediaOperation.settlePause).toHaveBeenCalledTimes(1);
+    });
+
+    it('puts a full render cancelled before anything was sent back to its reviewed preview', async () => {
+      rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, status: AssetRestorationStatus.Accepted });
+      mocks.mediaOperation.setBulkResult.mockResolvedValue({
+        status: MediaOperationStatus.Cancelling,
+        cancelRequestedAt: now,
+        pauseRequestedAt: null,
+      });
+      const full = claimed();
+      (full as unknown as { snapshot: Record<string, unknown> }).snapshot = { ...created!.snapshot, stage: 'full' };
+
+      await sut.step(full, 'claim', now);
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.PreviewReady,
+        reviewedAt: null,
+        fullOperationId: null,
+      });
+      expect(mocks.storage.unlinkDir).toHaveBeenCalled();
     });
 
     it('stops every job when Frameleaf Cloud processing is turned off, cancelling one already sent', async () => {
@@ -998,6 +1286,26 @@ describe(CloudMlJobService.name, () => {
         expect.objectContaining({ acknowledged: true, cost: expect.objectContaining({ totalUsd: 0.2026 }) }),
       );
       expect(mocks.mlDestination.applySettlements).toHaveBeenCalledTimes(1);
+    });
+
+    it('acknowledges a published job whose acknowledgement did not land, cancelling nothing', async () => {
+      const published = {
+        ...claimed({ phase: CloudMlJobPhase.Ending, job: { ...runningRecord(), status: 'completed' } }),
+        status: MediaOperationStatus.Completed,
+        claimToken: null,
+        remoteJobId: JOB_ID,
+      } as unknown as MediaOperation;
+      mocks.mediaOperation.listUnacknowledgedCloudMlJobs.mockResolvedValue([published]);
+
+      await sut.cleanup(now);
+
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.deleteJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+      expect(mocks.mediaOperation.markRemoteReleased).toHaveBeenCalledWith(OPERATION_ID);
+      expect(mocks.mediaOperation.setFinishedResult).toHaveBeenCalledWith(
+        OPERATION_ID,
+        expect.objectContaining({ acknowledged: true }),
+      );
     });
 
     it('records the cost of a finished job once it is settled', async () => {
@@ -1087,10 +1395,10 @@ describe(CloudMlJobService.name, () => {
       expect(cloudMlJobActivity(bulk)).toBeNull();
     });
 
-    it('offers pausing only until the job was started on Frameleaf Cloud', () => {
+    it('offers pausing only until the job was sent to Frameleaf Cloud', () => {
       const kind = MediaOperationKind.CloudMlJob;
       expect(cloudMlJobCanPause({ kind, result: confirmed() })).toBe(true);
-      expect(cloudMlJobCanPause({ kind, result: { ...confirmed(), phase: CloudMlJobPhase.Uploading } })).toBe(true);
+      expect(cloudMlJobCanPause({ kind, result: { ...confirmed(), phase: CloudMlJobPhase.Uploading } })).toBe(false);
       expect(cloudMlJobCanPause({ kind, result: { ...confirmed(), phase: CloudMlJobPhase.Started } })).toBe(false);
       expect(cloudMlJobCanPause({ kind: MediaOperationKind.Bulk, result: null })).toBe(true);
     });
