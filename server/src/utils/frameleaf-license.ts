@@ -371,7 +371,7 @@ const publishedPricingSchema = z.object({
 });
 
 const versionParts = (version: string) => {
-  const [date, revision] = version.split('.');
+  const [date, revision] = version.split('.', 2);
   return { date, revision: Number(revision) };
 };
 
