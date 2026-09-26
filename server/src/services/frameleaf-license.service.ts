@@ -333,38 +333,48 @@ export class FrameleafLicenseService extends BaseService {
           certificates: [store.key, store.plan].filter(Boolean).map((license) => license!.claims.jti ?? null),
         },
       });
-      let next: FrameleafLicenseStore = { ...store };
-      let receivedPlan = false;
+      // FL-185: the answer is the complete current set (the plan certificate first, then one per usable
+      // key activation on this server), so it replaces everything held here: a certificate it leaves
+      // out is dropped, not kept to age out
+      let plan: FrameleafLicense | null = null;
+      let key: FrameleafLicense | null = null;
       for (const certificate of response.certificates) {
         const license = await this.verifyForStore(certificate, 'account', {}, now);
-        if (license.kind === 'plan') {
-          receivedPlan = true;
-          next = { ...next, plan: { ...license, source: store.plan?.source === 'file' ? 'file' : 'account' } };
-        } else if (license.kind === 'server') {
-          next = {
-            ...next,
-            key: {
-              ...license,
-              source: 'key',
-              keyHint: store.key?.keyHint ?? license.keyHint,
-              activationId: store.key?.activationId,
-            },
-          };
+        switch (license.kind) {
+          case 'plan': {
+            plan ??= { ...license, source: store.plan?.source === 'file' ? 'file' : 'account' };
+            break;
+          }
+          case 'server': {
+            // this server holds one key certificate: the activation of the key it already holds, else the first
+            const sameKey = !!store.key && store.key.claims.lic?.id === license.claims.lic?.id;
+            if (!key || sameKey) {
+              key = {
+                ...license,
+                source: 'key',
+                keyHint: (sameKey ? store.key?.keyHint : undefined) ?? license.keyHint,
+                activationId: sameKey ? store.key?.activationId : undefined,
+              };
+            }
+            break;
+          }
+          case 'individual': {
+            // a personal key is held per person (users/me/license), never as this server's certificate
+            break;
+          }
         }
       }
-      // an account without a plan any more: the plan certificate ages out through grace on its own
-      const stamp = (license: FrameleafLicense | null, renewed: boolean) =>
-        license
-          ? {
-              ...license,
-              refreshedAt: new Date(now).toISOString(),
-              lastRefreshError: undefined,
-              ...(!renewed && { nextRefreshAt: new Date(now + 24 * 60 * 60 * 1000).toISOString() }),
-            }
-          : license;
-      const receivedKey = next.key !== store.key;
-      next = { ...next, key: stamp(next.key, receivedKey), plan: stamp(next.plan, receivedPlan) };
-      await this.writeStore(next);
+      if (store.key && !key) {
+        this.logger.log(
+          'Frameleaf Cloud no longer lists the key activation on this server; its certificate is removed',
+        );
+      }
+      if (store.plan && !plan) {
+        this.logger.log('Frameleaf Cloud sent no plan certificate; the one held here is removed');
+      }
+      const stamp = (license: FrameleafLicense | null) =>
+        license && { ...license, refreshedAt: new Date(now).toISOString(), lastRefreshError: undefined };
+      await this.writeStore({ ...store, key: stamp(key), plan: stamp(plan) });
     } catch (error) {
       const message =
         error instanceof FrameleafCloudError || error instanceof BadRequestException ? error.message : String(error);

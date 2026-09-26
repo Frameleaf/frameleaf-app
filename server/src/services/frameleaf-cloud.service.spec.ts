@@ -20,6 +20,12 @@ import {
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import {
+  CloudConnectionState,
+  CloudMlGatewayDeps,
+  ML_CLONE_SUSPENDED_DETAIL,
+  resolveCloudGateway,
+} from 'src/utils/frameleaf-cloud-gateway.js';
 import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import {
@@ -1738,6 +1744,173 @@ describe(FrameleafCloudService.name, () => {
       expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
     });
 
+    describe('clone_suspected on the ML token (FL-185)', () => {
+      const golden = cloudContractFixture<{ status: number; headers: Record<string, string>; body: unknown }>(
+        'exchanges/token-clone-suspected.json',
+      );
+      const mlResource = () => `${cloud.url}/ml-eu`;
+      const mlTokenRequests = () =>
+        cloud.requests.filter(({ path, form }) => path === '/id/token' && form().get('resource') === mlResource());
+      const apiTokenRequests = () =>
+        cloud.requests.filter(
+          ({ path, form }) => path === '/id/token' && form().get('resource') === `${cloud.url}/api`,
+        );
+      const cloneNotices = () =>
+        mocks.event.emit.mock.calls.filter(
+          ([name, notice]) =>
+            name === 'AdminNotify' &&
+            (notice as { dedupeKey?: string }).dedupeKey === 'frameleaf-cloud:clone-suspected',
+        );
+      /** The token endpoint refuses ML tokens with the golden exchange while `refuseMl` is set. */
+      let refuseMl: boolean;
+      /** What resolving the processing gateway uses; `repository` stands in for a restarted process. */
+      const mlDeps = (
+        repository = (sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository })
+          .frameleafCloudRepository,
+      ): CloudMlGatewayDeps => ({
+        configRepository: mocks.config as never,
+        databaseRepository: mocks.database as never,
+        systemMetadataRepository: mocks.systemMetadata as never,
+        instanceIdentityRepository: identityRepository,
+        frameleafCloudRepository: repository,
+        eventRepository: mocks.event as never,
+        logger: LoggingRepository.create(),
+      });
+      const heartbeatAnswers = (body: Record<string, unknown>) =>
+        cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body }));
+
+      beforeEach(() => {
+        refuseMl = true;
+        cloud.on('POST /id/token', (request) =>
+          refuseMl && request.form().get('resource') === mlResource()
+            ? { status: golden.status, headers: golden.headers, body: golden.body }
+            : tokenAnswer(request),
+        );
+      });
+
+      it('stops ML token requests, raises the notice once and survives a restart; the API and check-ins continue', async () => {
+        await expect(resolveCloudGateway(mlDeps())).resolves.toMatchObject({
+          state: CloudConnectionState.Unavailable,
+          detail: ML_CLONE_SUSPENDED_DETAIL,
+        });
+        expect(mlTokenRequests()).toHaveLength(1);
+        expect(metadata.get(SystemMetadataKey.FrameleafMlSuspension)).toMatchObject({
+          reason: 'clone-suspected',
+          cloudUrl: cloud.url,
+          instanceId: storedLink()!.instanceId,
+        });
+        expect(cloneNotices()).toHaveLength(1);
+        await expect(sut.getStatus()).resolves.toMatchObject({ cloneSuspected: true });
+
+        // no retry and no backoff: the next admission asks nothing, and neither does a restarted process
+        await expect(resolveCloudGateway(mlDeps())).resolves.toMatchObject({
+          state: CloudConnectionState.Unavailable,
+          refusal: 'cloud-unavailable',
+          detail: ML_CLONE_SUSPENDED_DETAIL,
+        });
+        await expect(
+          resolveCloudGateway(mlDeps(new FrameleafCloudRepository(LoggingRepository.create()))),
+        ).resolves.toMatchObject({ state: CloudConnectionState.Unavailable, detail: ML_CLONE_SUSPENDED_DETAIL });
+        expect(mlTokenRequests()).toHaveLength(1);
+
+        // API-audience tokens and the check-in keep working; the check-in that confirms it does not notify again
+        heartbeatAnswers({ cloneSuspected: true });
+        sutForgetTokens();
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        expect(apiTokenRequests().length).toBeGreaterThan(0);
+        expect(cloud.requests.some(({ path }) => path === '/api/v1/instance/heartbeat')).toBe(true);
+        expect(storedLink()?.heartbeat).toMatchObject({ failures: 0, cloneSuspected: true });
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
+        expect(cloneNotices()).toHaveLength(1);
+        expect(mlTokenRequests()).toHaveLength(1);
+      });
+
+      it('resumes ML token requests once a check-in reports cloneSuspected: false', async () => {
+        await resolveCloudGateway(mlDeps());
+        expect(mlTokenRequests()).toHaveLength(1);
+
+        heartbeatAnswers({ cloneSuspected: false });
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
+        await expect(sut.getStatus()).resolves.toMatchObject({ cloneSuspected: false });
+
+        refuseMl = false;
+        await expect(resolveCloudGateway(mlDeps())).resolves.toMatchObject({ state: CloudConnectionState.Ready });
+        expect(mlTokenRequests()).toHaveLength(2);
+      });
+
+      it('stops ML token requests when a check-in first reports cloneSuspected: true', async () => {
+        refuseMl = false;
+        heartbeatAnswers({ cloneSuspected: true });
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        expect(cloneNotices()).toHaveLength(1);
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
+
+        await expect(resolveCloudGateway(mlDeps())).resolves.toMatchObject({ detail: ML_CLONE_SUSPENDED_DETAIL });
+        expect(mlTokenRequests()).toHaveLength(0);
+        // the notice is not sent twice
+        expect(cloneNotices()).toHaveLength(1);
+      });
+
+      it('resumes on servicesChanged once GET /v1/discovery no longer reports ML suspended, and not before', async () => {
+        const discovery = cloudContractFixture<Record<string, any>>('instance/discovery-instance.json');
+        let mlStatus = 'suspended';
+        cloud.on('GET /api/v1/discovery', () => ({
+          status: 200,
+          body: {
+            ...discovery,
+            services: {
+              ...discovery.services,
+              ml: { status: mlStatus, reason: mlStatus === 'suspended' ? 'clone-suspected' : null },
+            },
+            cloneSuspected: true,
+          },
+        }));
+        heartbeatAnswers({ cloneSuspected: true });
+        makeDue();
+        await sut.handleHeartbeat();
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
+
+        heartbeatAnswers({ cloneSuspected: true, servicesChanged: true });
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        const asked = cloud.requests.filter(({ method, path }) => method === 'GET' && path === '/api/v1/discovery');
+        expect(asked).toHaveLength(1);
+        expect(tokenNameOf(asked[0])).toBe('api-token');
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
+
+        mlStatus = 'enabled';
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
+
+        refuseMl = false;
+        await expect(resolveCloudGateway(mlDeps())).resolves.toMatchObject({ state: CloudConnectionState.Ready });
+      });
+
+      it('ignores a suspension recorded for another link, and unlinking clears it', async () => {
+        metadata.set(SystemMetadataKey.FrameleafMlSuspension, {
+          reason: 'clone-suspected',
+          cloudUrl: cloud.url,
+          instanceId: 'another-instance',
+          since: new Date().toISOString(),
+        });
+        refuseMl = false;
+        await expect(resolveCloudGateway(mlDeps())).resolves.toMatchObject({ state: CloudConnectionState.Ready });
+
+        refuseMl = true;
+        sutForgetTokens();
+        await resolveCloudGateway(mlDeps());
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
+        cloud.on('DELETE /api/v1/instance', () => ({ status: 200, body: {} }));
+        await sut.unlink(authStub.admin);
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
+      });
+    });
+
     const sutForgetTokens = () =>
       (sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository }).frameleafCloudRepository.forget();
   });
@@ -1852,7 +2025,7 @@ describe(FrameleafCloudService.name, () => {
 
     it('removes the plan certificate and keeps the supporter key’s (FL-177, as-built decision #12)', async () => {
       await linkNow();
-      cloud.on('DELETE /api/v1/instance', () => ({ status: 204 }));
+      cloud.on('DELETE /api/v1/instance', () => ({ status: 200, body: {} }));
       const key = { kind: 'server', source: 'key', kid: 'key-kid', certificate: 'key.jws' };
       const plan = { kind: 'plan', source: 'account', kid: 'plan-kid', certificate: 'plan.jws' };
       metadata.set(SystemMetadataKey.FrameleafLicense, { key, plan, noticeState: 'active' });

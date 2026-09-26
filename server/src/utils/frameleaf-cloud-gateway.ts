@@ -1,13 +1,15 @@
 import { join } from 'node:path';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import type { DatabaseRepository } from 'src/repositories/database.repository.js';
+import type { EventRepository } from 'src/repositories/event.repository.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import type { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import type { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
+import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
+import type { FrameleafCloudLink, FrameleafInstanceIdentity, FrameleafMlSuspension } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { DatabaseLock, MlAdmissionRefusal, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, MlAdmissionRefusal, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudError, regionalGateway } from 'src/utils/frameleaf-cloud.js';
 
 export type CloudGatewayDeps = {
@@ -17,6 +19,72 @@ export type CloudGatewayDeps = {
   instanceIdentityRepository: InstanceIdentityRepository;
   frameleafCloudRepository: FrameleafCloudRepository;
 };
+
+/**
+ * What resolving the processing gateway needs besides `CloudGatewayDeps` (FL-185): a `clone_suspected`
+ * refusal of the ML token raises the administrators' notice, and a notice that could not be sent is
+ * logged.
+ */
+export type CloudMlGatewayDeps = CloudGatewayDeps & {
+  eventRepository: Pick<EventRepository, 'emit'>;
+  logger: Pick<LoggingRepository, 'warn'>;
+};
+
+/**
+ * The notice administrators get when Frameleaf Cloud suspects a copy of this server, whether a
+ * check-in said `cloneSuspected: true` (FL-155) or the token endpoint refused an ML token with
+ * `clone_suspected` (FL-185). One key, so the two paths never send it twice.
+ */
+export const CLONE_SUSPECTED_NOTICE = Object.freeze({
+  level: NotificationLevel.Warning,
+  title: 'Two servers are using this server’s identity',
+  description:
+    'Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity directory. Cloud backup and cloud processing pause until this is resolved: the account owner can confirm this server in the Frameleaf account, or it clears on its own after 24 hours without a restart.',
+  dedupeKey: 'frameleaf-cloud:clone-suspected',
+  dedupeDays: 1,
+});
+
+/** Why cloud processing is refused while Frameleaf Cloud suspects a copy of this server (FL-185). */
+export const ML_CLONE_SUSPENDED_DETAIL =
+  'Frameleaf Cloud paused cloud processing because this server’s identity is in use in two places. It resumes when Frameleaf Cloud clears this.';
+
+/** The OAuth error the token endpoint answers an ML token request with while it suspects a copy. */
+const CLONE_SUSPECTED_ERROR = 'clone_suspected';
+
+/** The token endpoint refused an ML token because Frameleaf Cloud suspects a copy of this server. */
+export const isCloneSuspectedRefusal = (error: unknown): boolean =>
+  error instanceof FrameleafCloudError && error.status === 400 && error.oauth?.error === CLONE_SUSPECTED_ERROR;
+
+/** The ML suspension recorded for this link, or null (one recorded for another link does not count). */
+export const readMlSuspension = async (
+  deps: Pick<CloudGatewayDeps, 'systemMetadataRepository'>,
+  cloudUrl: string,
+  instanceId: string,
+): Promise<FrameleafMlSuspension | null> => {
+  const suspension = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafMlSuspension);
+  return suspension?.reason === 'clone-suspected' &&
+    suspension.cloudUrl === cloudUrl &&
+    suspension.instanceId === instanceId
+    ? suspension
+    : null;
+};
+
+/** Record that ML tokens are refused for this link until a check-in clears it (FL-185). */
+export const recordMlSuspension = (
+  deps: Pick<CloudGatewayDeps, 'systemMetadataRepository'>,
+  cloudUrl: string,
+  instanceId: string,
+): Promise<void> =>
+  deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafMlSuspension, {
+    reason: 'clone-suspected',
+    cloudUrl,
+    instanceId,
+    since: new Date().toISOString(),
+  });
+
+/** ML tokens may be requested again (FL-185). */
+export const clearMlSuspension = (deps: Pick<CloudGatewayDeps, 'systemMetadataRepository'>): Promise<void> =>
+  deps.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlSuspension);
 
 /** Where this server stands with Frameleaf Cloud, before any processing question is asked. */
 export enum CloudConnectionState {
@@ -91,8 +159,12 @@ export const readCloudLink = async (
  * (`resource` = the regional gateway), DPoP-bound to that key, which signs every call's proof
  * (FL-178). No outbound call happens unless the server is configured and linked; every failure is a
  * refusal of Frameleaf Cloud, never a fallback.
+ *
+ * FL-185: while Frameleaf Cloud suspects a copy of this server, no ML token is requested at all (no
+ * retry, no backoff) and the refusal says why. A `clone_suspected` answer to the token request records
+ * that state, which survives a restart, and tells the administrators; a check-in clears it.
  */
-export const resolveCloudGateway = async (deps: CloudGatewayDeps): Promise<CloudGatewayResolution> => {
+export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<CloudGatewayResolution> => {
   const { cloudUrl, link, linked } = await readCloudLink(deps);
   if (!cloudUrl) {
     return {
@@ -110,6 +182,15 @@ export const resolveCloudGateway = async (deps: CloudGatewayDeps): Promise<Cloud
         link?.status === 'revoked'
           ? 'The link to Frameleaf Cloud was revoked'
           : 'This server is not linked to a Frameleaf account',
+      link,
+    };
+  }
+
+  if (await readMlSuspension(deps, cloudUrl, link.instanceId)) {
+    return {
+      state: CloudConnectionState.Unavailable,
+      refusal: MlAdmissionRefusal.CloudUnavailable,
+      detail: ML_CLONE_SUSPENDED_DETAIL,
       link,
     };
   }
@@ -134,6 +215,27 @@ export const resolveCloudGateway = async (deps: CloudGatewayDeps): Promise<Cloud
     );
     return { state: CloudConnectionState.Ready, gateway: { url: gatewayUrl, token }, region: link.dataRegion, link };
   } catch (error) {
+    if (isCloneSuspectedRefusal(error)) {
+      await recordMlSuspension(deps, cloudUrl, link.instanceId);
+      // a check-in that already reported the suspicion has told the administrators
+      if (!link.heartbeat?.cloneSuspected) {
+        try {
+          await deps.eventRepository.emit('AdminNotify', {
+            type: NotificationType.SystemMessage,
+            ...CLONE_SUSPECTED_NOTICE,
+          });
+        } catch (notifyError) {
+          // the suspension is recorded and the refusal says why; only the notice is missing
+          deps.logger.warn(`Could not notify administrators: ${notifyError}`);
+        }
+      }
+      return {
+        state: CloudConnectionState.Unavailable,
+        refusal: MlAdmissionRefusal.CloudUnavailable,
+        detail: ML_CLONE_SUSPENDED_DETAIL,
+        link,
+      };
+    }
     if (error instanceof FrameleafCloudError) {
       return { state: CloudConnectionState.Unavailable, refusal: error.refusal, detail: error.message, link };
     }

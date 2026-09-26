@@ -29,8 +29,8 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import {
   CloudConnectionState,
-  CloudGatewayDeps,
   CloudGatewayResolution,
+  CloudMlGatewayDeps,
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
@@ -621,13 +621,15 @@ export class CloudMlService extends BaseService {
     return mapMlDestination(row, spentUsd);
   }
 
-  private gatewayDeps(): CloudGatewayDeps {
+  private gatewayDeps(): CloudMlGatewayDeps {
     return {
       configRepository: this.configRepository,
       databaseRepository: this.databaseRepository,
       systemMetadataRepository: this.systemMetadataRepository,
       instanceIdentityRepository: this.instanceIdentityRepository,
       frameleafCloudRepository: this.frameleafCloudRepository,
+      eventRepository: this.eventRepository,
+      logger: this.logger,
     };
   }
 }
