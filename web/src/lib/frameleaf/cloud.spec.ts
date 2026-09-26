@@ -72,8 +72,8 @@ describe('Frameleaf Cloud helpers', () => {
 
     it('does not charge another block for floating-point noise', () => {
       expect(cloudBackupMonthlyUsd(2)).toBe(9.99);
-      expect(cloudBackupMonthlyUsd(2.000_000_000_000_000_4)).toBe(9.99);
-      expect(cloudBackupMonthlyUsd(1.000_000_000_000_000_2)).toBe(0);
+      expect(cloudBackupMonthlyUsd(2 + 2 * Number.EPSILON)).toBe(9.99);
+      expect(cloudBackupMonthlyUsd(1 + Number.EPSILON)).toBe(0);
       expect(cloudBackupMonthlyUsd(2.001)).toBe(19.98);
     });
   });
