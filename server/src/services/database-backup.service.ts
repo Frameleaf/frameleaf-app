@@ -546,6 +546,16 @@ export class DatabaseBackupService {
         await (migrationMode === 'isolated' || migrationMode === 'official-origin'
           ? this.databaseRepository.runOfficialMigrations()
           : this.databaseRepository.runMigrations());
+        if (migrationMode === 'isolated') {
+          // FL-180: as at startup, a restored library past the certified cutover receives the newer
+          // Frameleaf public migrations before the `immich_fork` migrations that may build on them.
+          const { applied } = await this.databaseRepository.withLock(DatabaseLock.Migrations, () =>
+            this.databaseRepository.applyIsolatedFrameleafMigrations('startup'),
+          );
+          for (const name of applied) {
+            this.logger.log(`Frameleaf migration "${name}" succeeded`);
+          }
+        }
         await this.databaseRepository.runForkMigrations();
 
         const hasAdmin = await this.userRepository.hasAdmin();

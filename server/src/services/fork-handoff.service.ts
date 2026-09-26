@@ -30,6 +30,13 @@ export class ForkHandoffService {
     // The certified official provider excludes the post-certified upstream
     // residue, so re-apply it before any fork-side reconciliation writes.
     await this.databaseRepository.reapplyPostCertifiedResidue();
+    // FL-180: Frameleaf public migrations released after this library's cutover never ran on it (the
+    // official ledger no longer lists Frameleaf names). They are applied here, after the residue they
+    // may build on and before the workflow snapshot and every reconciliation read or write, and are
+    // recorded in `immich_fork.migration_audit`, never in the official ledger.
+    await this.databaseRepository.withLock(DatabaseLock.Migrations, () =>
+      this.databaseRepository.applyIsolatedFrameleafMigrations('return'),
+    );
     const workflowSnapshot = await this.databaseRepository.getReturnWorkflowSnapshot();
     const orphanArchive = await this.databaseRepository.archiveAndDeleteOrphans();
     await this.migrationService.reconcileAfterOfficialReturn(options.batchSize);

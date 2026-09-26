@@ -128,13 +128,7 @@ export const assertWorkflowDataPreserved = (before: WorkflowCompatibility, after
  * Returns the number of face decisions carried over.
  */
 export async function applyAdoptionForkFollowUps(db: Kysely<any>): Promise<{ faceDecisions: number }> {
-  await indexMlAccountingJobs(db);
-  await addRenderSessionOutputEvidence(db);
-  await sql`
-    ALTER TABLE public.pet_observation
-      ADD COLUMN IF NOT EXISTS "sourceChecksum" bytea,
-      ADD COLUMN IF NOT EXISTS "staleAt" timestamp with time zone
-  `.execute(db);
+  await applyFrameleafSchemaForkFollowUps(db);
   const faceDecisions = await sql`
     INSERT INTO immich_fork.face_correction
       ("ownerId", "actorId", action, "faceId", "assetId", "assetChecksum", "boxX1", "boxY1", "boxX2", "boxY2",
@@ -152,8 +146,32 @@ export async function applyAdoptionForkFollowUps(db: Kysely<any>): Promise<{ fac
         WHERE recorded."faceId" = face.id AND recorded.action = 'remove'
       )
   `.execute(db);
-  await indexMlAccountingCloudJobs(db);
   return { faceDecisions: Number(faceDecisions.numAffectedRows ?? 0) };
+}
+
+/**
+ * The structural parts of released `immich_fork` migrations that act only on a Frameleaf public
+ * table or column: 0000000000170, 0000000000172 and 0000000000201 as released, and the
+ * `pet_observation` statement of 0000000000176. Each is idempotent and does nothing while its table
+ * is missing. They are repeated wherever Frameleaf public migrations are applied after the
+ * `immich_fork` migrations already ran: adoption (FL-44) and a library past the certified cutover
+ * that receives newer Frameleaf public migrations (FL-180). A fork migration of that kind must be
+ * added here.
+ */
+export async function applyFrameleafSchemaForkFollowUps(db: Kysely<any>): Promise<void> {
+  await indexMlAccountingJobs(db);
+  await addRenderSessionOutputEvidence(db);
+  await sql`
+    DO $$
+    BEGIN
+      IF to_regclass('public.pet_observation') IS NOT NULL THEN
+        ALTER TABLE public.pet_observation ADD COLUMN IF NOT EXISTS "sourceChecksum" bytea;
+        ALTER TABLE public.pet_observation ADD COLUMN IF NOT EXISTS "staleAt" timestamp with time zone;
+      END IF;
+    END
+    $$
+  `.execute(db);
+  await indexMlAccountingCloudJobs(db);
 }
 
 /** A count query; `fallback` counts instead while `relations` do not exist yet. */

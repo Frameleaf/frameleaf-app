@@ -2,6 +2,7 @@ import { FileMigrationProvider, type Migration, type MigrationProvider } from 'k
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  GENERIC_LEGACY_FORK_MIGRATIONS,
   POST_CERTIFIED_UPSTREAM_MIGRATIONS,
   SUPPORTED_UPSTREAM_MIGRATIONS,
   classifyMigration,
@@ -93,6 +94,36 @@ export function createLegacyMigrationProvider(
     ? new Set([LEGACY_WORKFLOW_MIGRATION])
     : new Set<string>();
   return createClassifiedMigrationProvider(migrationFolder, true, excluded);
+}
+
+/**
+ * FL-180: only the Frameleaf public-schema migrations (`GENERIC_LEGACY_FORK_MIGRATIONS`), in name
+ * order. It never yields an upstream migration (certified or post-certified) nor the Frameleaf copy
+ * of the workflow rewrite, whose official original a library past the cutover already records. A
+ * library past the cutover takes its newer Frameleaf public migrations from here and records them in
+ * `immich_fork.migration_audit`, never in `public.kysely_migrations` (see
+ * `isolated-frameleaf-migrations.ts`). An unknown file refuses, like every other provider.
+ */
+export function createFrameleafPublicMigrationProvider(migrationFolder: string): MigrationProvider {
+  const provider = fileProvider(migrationFolder);
+
+  return {
+    async getMigrations(): Promise<Record<string, Migration>> {
+      const migrations = await provider.getMigrations();
+      const frameleafMigrations: Record<string, Migration> = {};
+      for (const [name, migration] of Object.entries(migrations).toSorted(([left], [right]) =>
+        left.localeCompare(right),
+      )) {
+        if (classifyMigration(name) === 'unknown') {
+          throw new Error(`Unknown migration in official migration folder: ${name}`);
+        }
+        if (GENERIC_LEGACY_FORK_MIGRATIONS.has(name)) {
+          frameleafMigrations[name] = migration;
+        }
+      }
+      return frameleafMigrations;
+    },
+  };
 }
 
 export function createForkMigrationProvider(migrationFolder: string): MigrationProvider {
