@@ -5,10 +5,12 @@ import {
   confirmEcho,
   loadFinished,
   markLoaded,
+  reconcileHostGraph,
   saveMayStart,
   sendEditorDraft,
   shouldReloadFromHost,
   shouldResendDraft,
+  supersededEditLost,
   type DraftSendState,
   type EditorMount,
 } from '../src/draft-sync'
@@ -40,8 +42,9 @@ class Frame {
   storedAs = new Map<string, number>([['r3', 3]])
   state: DraftSendState = {
     hostContent: 'r3',
-    mount: { generation: 0, projectId: 'p', revision: 3, loaded: true },
+    mount: { generation: 0, projectId: 'p', revision: 3, graphVersion: 0, loaded: true },
     pendingSend: false,
+    pendingSuperseded: false,
     disposed: false,
   }
   files = new Map<string, string>([['p', 'r3']])
@@ -134,7 +137,7 @@ class Frame {
   reload() {
     this.stored(`t${(this.counter += 1)}`)
     const projectId = this.perMountFiles ? `p-m${this.state.mount.generation + 1}` : 'p'
-    const mount = beginMount(this.state, projectId, this.host.revision)
+    const mount = beginMount(this.state, projectId, this.host.revision, 0)
     this.state.hostContent = this.host.content
     this.files.set(projectId, this.host.content)
     this.seeded.set(mount, this.host.content)
@@ -286,11 +289,12 @@ describe('editor frame draft sync (FL-88)', () => {
   it('never lets a mount that is still loading turn a write into a draft', async () => {
     const state: DraftSendState = {
       hostContent: 'r3',
-      mount: { generation: 0, projectId: 'p', revision: 3, loaded: true },
+      mount: { generation: 0, projectId: 'p', revision: 3, graphVersion: 0, loaded: true },
       pendingSend: false,
+      pendingSuperseded: false,
       disposed: false,
     }
-    const mount = beginMount(state, 'p-m1', 4)
+    const mount = beginMount(state, 'p-m1', 4, 0)
     expect(acceptsWrite(state, mount)).toBe(false)
     let reads = 0
     const io = {
@@ -364,5 +368,319 @@ describe('editor frame draft sync (FL-88)', () => {
     expect(frame.pendingSaves).toEqual([])
     expect(frame.staged).toEqual([])
     expect(loadFinished(frame.state, 'elsewhere', true)).toBe('ignored')
+  })
+})
+
+/** Let every continuation of a settled step run (reads, stage answers, a resend). */
+const settle = async () => {
+  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve()
+}
+
+type StageAnswer = { status: string; reason?: string }
+
+/**
+ * FL-174: the host's own graph (a canonical command or undo, staged as the host's draft) against the
+ * editor's drafts, with every message in flight on its own:
+ *
+ * - The host keeps one draft. A command replaces it with the command's graph, built on the draft, and
+ *   advances `graphVersion`; an editor draft replaces it too, unless it was loaded from an older
+ *   version (`superseded`), which is what the project session does.
+ * - Each change of the host's graph posts an update carrying that graph and version; updates reach
+ *   the frame in order, later than the host made them.
+ * - The editor's drafts reach the host, and the host's answers reach the editor, later still.
+ *
+ * Every content string knows its parent. The one property: the host's graph always descends from
+ * every command issued, so no command's effect is ever replaced by an editor graph that lacks it.
+ */
+class CommandFrame {
+  parent = new Map<string, string>()
+  host = { revision: 3, head: 'r3', draft: null as string | null, graphVersion: 0 }
+  state: DraftSendState = {
+    hostContent: 'r3',
+    mount: { generation: 0, projectId: 'p', revision: 3, graphVersion: 0, loaded: true },
+    pendingSend: false,
+    pendingSuperseded: false,
+    disposed: false,
+  }
+  files = new Map<string, string>([['p', 'r3']])
+  commands: string[] = []
+  updates: Array<{ graph: string; version: number; revision: number }> = []
+  arrivals: Array<{ graph: string; version: number; resolve: (answer: StageAnswer) => void }> = []
+  answers: Array<() => void> = []
+  lost = 0
+  private counter = 0
+
+  get hostGraph() {
+    return this.host.draft ?? this.host.head
+  }
+
+  private posted() {
+    this.updates.push({
+      graph: this.hostGraph,
+      version: this.host.graphVersion,
+      revision: this.host.revision,
+    })
+  }
+
+  /** The person edits; the settled save writes the mount's own file. */
+  edit() {
+    const mount = this.state.mount
+    if (!mount.loaded) return
+    const next = `e${(this.counter += 1)}`
+    this.parent.set(next, this.files.get(mount.projectId) ?? '')
+    this.files.set(mount.projectId, next)
+  }
+
+  /** `watchDrafts` sends what the mount wrote. */
+  send() {
+    void sendEditorDraft(this.state, this.state.mount, {
+      read: (from) => Promise.resolve(JSON.stringify(this.files.get(from.projectId) ?? null)),
+      contentOf: String,
+      stage: (graph, _base, version) =>
+        new Promise<StageAnswer>((resolve) =>
+          this.arrivals.push({ graph: String(graph), version, resolve }),
+        ),
+      dirty: () => undefined,
+      lost: () => {
+        this.lost += 1
+      },
+    })
+  }
+
+  /** The host decides the oldest editor draft as it arrives; the answer travels back later. */
+  arrive() {
+    const arrival = this.arrivals.shift()
+    if (!arrival) return
+    if (arrival.version < this.host.graphVersion) {
+      this.answers.push(() => arrival.resolve({ status: 'rejected', reason: 'superseded' }))
+      return
+    }
+    this.host.draft = arrival.graph
+    this.posted()
+    this.answers.push(() => arrival.resolve({ status: 'staged' }))
+  }
+
+  answer() {
+    this.answers.shift()?.()
+  }
+
+  /** A canonical command (or undo) applied by the host to its graph and staged as its own draft. */
+  command() {
+    const next = `c${(this.counter += 1)}`
+    this.parent.set(next, this.hostGraph)
+    this.host.draft = next
+    this.host.graphVersion += 1
+    this.commands.push(next)
+    this.posted()
+  }
+
+  /** Autosave stores the host's draft. */
+  save() {
+    if (this.host.draft === null) return
+    this.host.head = this.host.draft
+    this.host.draft = null
+    this.host.revision += 1
+    this.posted()
+  }
+
+  /** The oldest update reaches the frame: `update()` in `editor-frame.tsx`. */
+  update() {
+    const update = this.updates.shift()
+    if (!update) return
+    const current = this.files.get(this.state.mount.projectId) ?? ''
+    const outcome = reconcileHostGraph(this.state, {
+      incoming: update.graph,
+      current,
+      draftHeld: false,
+      graphVersion: update.version,
+    })
+    if (outcome === 'remount') {
+      if (supersededEditLost(this.state)) this.lost += 1
+      const projectId = `p-m${this.state.mount.generation + 1}`
+      beginMount(this.state, projectId, update.revision, update.version)
+      this.state.hostContent = update.graph
+      this.files.set(projectId, update.graph)
+    } else if (outcome === 'echo') {
+      this.state.hostContent = update.graph
+      confirmEcho(this.state, update.graph, current, update.revision)
+    }
+    if (shouldResendDraft({ pending: this.state.pendingSend, online: true, hasLease: true }))
+      this.send()
+  }
+
+  hydrate() {
+    const mount = this.state.mount
+    if (!mount.loaded) loadFinished(this.state, mount.projectId, true)
+  }
+
+  descends(content: string, ancestor: string): boolean {
+    for (let at: string | undefined = content; at !== undefined; at = this.parent.get(at)) {
+      if (at === ancestor) return true
+    }
+    return false
+  }
+
+  assertCommandsKept() {
+    for (const command of this.commands) expect(this.descends(this.hostGraph, command)).toBe(true)
+  }
+
+  async drain() {
+    this.hydrate()
+    while (this.updates.length + this.arrivals.length + this.answers.length > 0) {
+      this.update()
+      this.arrive()
+      this.answer()
+      this.hydrate()
+      await settle()
+    }
+  }
+}
+
+describe('host commands and editor drafts (FL-174)', () => {
+  it('refuses an editor draft that reaches the host after a command and before the remount', async () => {
+    const frame = new CommandFrame()
+    frame.edit() // e1, on r3
+    frame.send()
+    await settle()
+    frame.command() // c2, the command applied to r3 and staged by the host; its update is on its way
+    frame.arrive() // e1 arrives: loaded from version 0 while the host is at 1
+    expect(frame.hostGraph).toBe('c2')
+    frame.answer()
+    await settle()
+    expect(frame.state).toMatchObject({ pendingSend: true, pendingSuperseded: true })
+
+    // The update: the editor does not show c2, so it remounts to it. e1 is gone and the person is told.
+    frame.update()
+    expect(frame.state.mount).toMatchObject({ projectId: 'p-m1', graphVersion: 1, loaded: false })
+    expect(frame.lost).toBe(1)
+    expect(frame.state.pendingSend).toBe(false)
+
+    // The new instance's edits are built on the command and are taken.
+    frame.hydrate()
+    frame.edit() // e3, on c2
+    frame.send()
+    await settle()
+    frame.arrive()
+    frame.answer()
+    await settle()
+    expect(frame.hostGraph).toBe('e3')
+    frame.assertCommandsKept()
+  })
+
+  it('tells the person when the refusal arrives after the remount already replaced the editor', async () => {
+    const frame = new CommandFrame()
+    frame.edit()
+    frame.send()
+    await settle()
+    frame.command()
+    frame.arrive()
+    frame.update() // the remount happens before the answer arrives
+    expect(frame.lost).toBe(0)
+    frame.answer()
+    await settle()
+    expect(frame.lost).toBe(1)
+    expect(frame.state.pendingSend).toBe(false)
+    expect(frame.hostGraph).toBe('c2')
+  })
+
+  it('sends again at once when the mount took the host’s newer graph while the refusal travelled', async () => {
+    const state: DraftSendState = {
+      hostContent: 'r3',
+      mount: { generation: 0, projectId: 'p', revision: 3, graphVersion: 0, loaded: true },
+      pendingSend: false,
+      pendingSuperseded: false,
+      disposed: false,
+    }
+    const sent: Array<{ graph: string; version: number }> = []
+    const answer = deferred<StageAnswer>()
+    let file = 'e1'
+    const sending = sendEditorDraft(state, state.mount, {
+      read: async () => JSON.stringify(file),
+      contentOf: String,
+      stage: (graph, _base, version) => {
+        sent.push({ graph: String(graph), version })
+        return sent.length === 1 ? answer.promise : Promise.resolve({ status: 'staged' })
+      },
+      dirty: () => undefined,
+    })
+    await settle()
+    // The host's newer graph is exactly what the editor shows by now (e2): the mount takes version 1.
+    file = 'e2'
+    expect(
+      reconcileHostGraph(state, {
+        incoming: 'e2',
+        current: 'e2',
+        draftHeld: false,
+        graphVersion: 1,
+      }),
+    ).toBe('echo')
+    expect(state.mount.graphVersion).toBe(1)
+    answer.resolve({ status: 'rejected', reason: 'superseded' })
+    await sending
+    expect(sent).toEqual([
+      { graph: 'e1', version: 0 },
+      { graph: 'e2', version: 1 },
+    ])
+    expect(state).toMatchObject({ pendingSend: false, pendingSuperseded: false, hostContent: 'e2' })
+  })
+
+  it('reloads for the host’s own newer graph even while it holds undecided edits', () => {
+    const state: DraftSendState = {
+      hostContent: 'mine',
+      mount: { generation: 0, projectId: 'p', revision: 3, graphVersion: 0, loaded: true },
+      pendingSend: false,
+      pendingSuperseded: false,
+      disposed: false,
+    }
+    const held = { incoming: 'head', current: 'mine', draftHeld: true }
+    expect(reconcileHostGraph(state, { ...held, graphVersion: 0 })).toBe('hold')
+    expect(reconcileHostGraph(state, { ...held, graphVersion: 1 })).toBe('remount')
+    expect(state.mount.graphVersion).toBe(0)
+    expect(reconcileHostGraph(state, { ...held, draftHeld: false, graphVersion: 0 })).toBe(
+      'remount',
+    )
+    expect(
+      reconcileHostGraph(state, {
+        incoming: 'mine',
+        current: 'mine',
+        draftHeld: false,
+        graphVersion: 0,
+      }),
+    ).toBe('echo')
+  })
+
+  it('never lets an editor graph replace a command’s effect, under any interleaving', async () => {
+    let seed = 0x174
+    const random = () => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648
+      return seed / 2_147_483_648
+    }
+    for (let run = 0; run < 200; run += 1) {
+      const frame = new CommandFrame()
+      for (let step = 0; step < 60; step += 1) {
+        const pick = Math.floor(random() * 9)
+        if (pick === 0) frame.edit()
+        else if (pick === 1) frame.send()
+        else if (pick === 2) frame.arrive()
+        else if (pick === 3) frame.answer()
+        else if (pick === 4) frame.command()
+        else if (pick === 5) frame.save()
+        else if (pick === 6) frame.update()
+        else if (pick === 7) frame.hydrate()
+        await settle()
+        frame.assertCommandsKept()
+      }
+      await frame.drain()
+      frame.assertCommandsKept()
+
+      // Once everything has arrived, the editor is on the host's latest graph and its edits are taken.
+      frame.edit()
+      frame.send()
+      await settle()
+      await frame.drain()
+      expect(frame.state.mount.graphVersion).toBe(frame.host.graphVersion)
+      expect(frame.hostGraph).toBe(frame.files.get(frame.state.mount.projectId))
+      frame.assertCommandsKept()
+    }
   })
 })

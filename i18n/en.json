@@ -7973,6 +7973,7 @@
   "frameleaf_studio_conflict_title": "Changed elsewhere",
   "frameleaf_studio_copy_name": "{name} (copy)",
   "frameleaf_studio_copy_saved": "Your changes were saved as a copy.",
+  "frameleaf_studio_edit_superseded": "Your last edit arrived after the project changed, so it was not kept.",
   "frameleaf_studio_editing_as": "Editing as {name}",
   "frameleaf_studio_engine_absent_body": "The Studio editor is not part of this build. The library, the quick editor and project review are unaffected.",
   "frameleaf_studio_engine_failed_body": "The Studio editor could not be loaded.",
