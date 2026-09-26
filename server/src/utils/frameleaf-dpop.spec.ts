@@ -197,8 +197,8 @@ describe('DPoP for Frameleaf Cloud instance tokens (FL-178)', () => {
       ['a backslash', String.raw`back\slash`],
       ['a space', 'has space'],
       ['a tab', 'tab\there'],
-      ['a non-ASCII character', 'caf\u00E9'],
-      ['a DEL', 'del\u007F'],
+      ['a non-ASCII character', 'caf\u{E9}'],
+      ['a DEL', 'del\u{7F}'],
       ['an empty value', ''],
       ['more than 512 characters', 'x'.repeat(513)],
     ])('ignores a nonce with %s', (_reason, nonce) => {

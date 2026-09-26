@@ -199,10 +199,11 @@
   // survive into the editor, face-edit mode or a slideshow just because its neighbour or its
   // in-flight navigation happened to resolve after the person moved on.
   $effect(() => {
-    if (!canNavigateByKey()) {
-      pendingNavigation = undefined;
-      queuedWhileBusy = undefined;
+    if (canNavigateByKey()) {
+      return;
     }
+    pendingNavigation = undefined;
+    queuedWhileBusy = undefined;
   });
 
   let isPlayingOriginalVideo = $state($alwaysLoadOriginalVideo);

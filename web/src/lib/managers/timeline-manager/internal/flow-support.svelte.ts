@@ -437,10 +437,11 @@ function reconcilePass(manager: TimelineManager, dirty: Set<TimelineMonth>) {
 
   // Runs that no longer hold: a month was inserted before this one, or it now starts a group.
   for (const [index, month] of months.entries()) {
-    if (month.flowLinkedTo && (month.flowLinkedTo !== months[index - 1] || !canRunOn(manager, index))) {
-      month.flowLinkedTo = undefined;
-      touched.add(month);
+    if (!month.flowLinkedTo || (month.flowLinkedTo === months[index - 1] && canRunOn(manager, index))) {
+      continue;
     }
+    month.flowLinkedTo = undefined;
+    touched.add(month);
   }
   // A month shown for the first time (or still settling) runs on from the month before it, unless
   // that would move a settled last row on screen.
@@ -520,7 +521,7 @@ export function linkFlows(manager: TimelineManager) {
     return;
   }
   manager.flowReconciling = true;
-  let changed = false;
+  let changed: boolean;
   try {
     changed = linkPending(manager, Date.now());
   } finally {

@@ -41,7 +41,7 @@ export const discoverySchema = z.object({
   store: z
     .url({ protocol: /^https?$/ })
     .optional()
-    .catch(() => undefined),
+    .catch(() => {}),
 });
 export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
 

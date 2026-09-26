@@ -862,9 +862,7 @@ describe(WorkflowExecutionService.name, () => {
 
         expect(mocks.plugin.callMethod).toHaveBeenCalledTimes(4);
         expect(mocks.workflow.log).toHaveBeenCalledWith(expect.objectContaining({ result: WorkflowResult.Completed }));
-        const warnings = mocks.logger.warn.mock.calls.filter(([message]) =>
-          String(message).includes('workflow_run_step'),
-        );
+        const warnings = mocks.logger.warn.mock.calls.filter(([message]) => message.includes('workflow_run_step'));
         expect(warnings).toHaveLength(1);
       });
 
