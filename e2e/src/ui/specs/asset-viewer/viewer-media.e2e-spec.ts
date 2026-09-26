@@ -45,6 +45,36 @@ const enableRatings = async (context: BrowserContext) => {
   );
 };
 
+// "Find similar" searches by the item's smart-search embedding, so the viewer offers it only when the
+// server has smart search (viewer-menu.ts, as the production ViewSimilar action). The base mock has it
+// off; this answers the same flags with it on.
+const enableSmartSearch = async (context: BrowserContext) => {
+  await context.route('**/api/server/features', async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: {
+        smartSearch: true,
+        askSearch: false,
+        facialRecognition: false,
+        duplicateDetection: false,
+        map: true,
+        reverseGeocoding: true,
+        importFaces: false,
+        sidecar: true,
+        search: true,
+        trash: true,
+        oauth: false,
+        oauthAutoLaunch: false,
+        ocr: false,
+        passwordLogin: true,
+        configFile: false,
+        email: false,
+      },
+    }),
+  );
+};
+
 test.describe.configure({ mode: 'parallel' });
 test.describe('viewer media sources', () => {
   const fixture = setupAssetViewerFixture(3517);
@@ -102,7 +132,8 @@ test.describe('viewer media sources', () => {
     await expect(page.getByText('Original file unavailable')).toBeVisible();
   });
 
-  test('the More menu follows the template (V-7, V-11)', async ({ page }) => {
+  test('the More menu follows the template (V-7, V-11)', async ({ context, page }) => {
+    await enableSmartSearch(context);
     await page.goto(`/photos/${fixture.primaryAsset.id}`);
     await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
     await page.getByRole('button', { name: 'More actions' }).click();
@@ -171,7 +202,7 @@ test.describe('viewer media sources', () => {
     await expect(page.getByRole('button', { name: 'More actions' })).toHaveAttribute('aria-expanded', 'false');
     // Closing the menu returns focus to its button, where Space would open it again. The viewer's
     // section is not focusable, so focus is released to the page (MediaViewer.jsx:789: not a button).
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.getByRole('button', { name: 'More actions' }).blur();
     await page.keyboard.press(' ');
     await expect(page.getByTestId('viewer-footer').getByRole('button', { name: 'Pause slideshow' })).toBeVisible();
   });
