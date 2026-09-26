@@ -214,7 +214,31 @@ export type ActivityItem = {
 export type ActivityStage = 'queued' | 'starting' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
 
 /** The unfinished stages, in the order the In progress section groups them. */
-export const ACTIVITY_PROGRESS_STAGES: readonly ActivityStage[] = ['queued', 'starting', 'running', 'paused'];
+/** The stages of the In progress section, in the order jobs move through them. */
+export type ActivityProgressStage = 'queued' | 'starting' | 'running' | 'paused';
+export const ACTIVITY_PROGRESS_STAGES: readonly ActivityProgressStage[] = ['queued', 'starting', 'running', 'paused'];
+
+export const isProgressStage = (stage: ActivityStage): stage is ActivityProgressStage =>
+  (ACTIVITY_PROGRESS_STAGES as readonly ActivityStage[]).includes(stage);
+
+/** Each stage's name, as the chip and the In progress group title show it. */
+export const ACTIVITY_STAGE_KEYS: Readonly<Record<ActivityStage, Translations>> = {
+  queued: 'frameleaf_activity_stage_queued',
+  starting: 'frameleaf_activity_stage_starting',
+  running: 'frameleaf_activity_stage_running',
+  paused: 'frameleaf_activity_stage_paused',
+  done: 'frameleaf_activity_stage_done',
+  failed: 'frameleaf_activity_stage_failed',
+  cancelled: 'frameleaf_activity_stage_cancelled',
+};
+
+/** What each In progress group is doing (prototype `STAGE_HINT`). */
+export const ACTIVITY_STAGE_HINT_KEYS: Readonly<Record<ActivityProgressStage, Translations>> = {
+  queued: 'frameleaf_activity_stage_hint_queued',
+  starting: 'frameleaf_activity_stage_hint_starting',
+  running: 'frameleaf_activity_stage_hint_running',
+  paused: 'frameleaf_activity_stage_hint_paused',
+};
 
 const STAGE_TONE: Record<ActivityStage, ActivityTone> = {
   queued: 'neutral',
@@ -332,7 +356,7 @@ const fromCloudMlJob = (
       cloudJob.purpose === CloudMlJobPurpose.SmoothMotion
         ? 'frameleaf_activity_kind_cloud_smooth_motion'
         : 'frameleaf_activity_kind_cloud_restoration',
-    statusKey: `frameleaf_activity_stage_${stage}`,
+    statusKey: ACTIVITY_STAGE_KEYS[stage],
     tone: STAGE_TONE[stage],
     // queued and starting have no honest percentage yet: a cold start is shown as indeterminate
     progress: stage === 'done' ? 100 : measured ? clampPercent(operation.progress) : null,
