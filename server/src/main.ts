@@ -121,9 +121,14 @@ class Workers {
     let anyWorker: Worker | ChildProcess;
     let kill: (signal?: NodeJS.Signals) => Promise<void> | void;
 
-    if (name === ImmichWorker.Api) {
+    // FL-165: the edge worker is a process of its own like the API: it holds the remote access
+    // certificate keys and every remote socket, apart from the workers that run jobs
+    if (name === ImmichWorker.Api || name === ImmichWorker.Edge) {
+      const inspectPort = name === ImmichWorker.Api ? 9231 : 9232;
       const worker = fork(workerFile, [], {
-        execArgv: process.execArgv.map((arg) => (arg.startsWith('--inspect') ? '--inspect=0.0.0.0:9231' : arg)),
+        execArgv: process.execArgv.map((arg) =>
+          arg.startsWith('--inspect') ? `--inspect=0.0.0.0:${inspectPort}` : arg,
+        ),
       });
 
       kill = (signal) => void worker.kill(signal);

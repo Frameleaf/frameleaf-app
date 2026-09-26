@@ -370,6 +370,8 @@ export enum Permission {
   AdminCloudUpdate = 'adminCloud.update',
   /** FL-155: link this server to a Frameleaf account, or unlink it. */
   AdminCloudLink = 'adminCloud.link',
+  /** FL-165: turn remote access on or off, choose its connection, port and public address. */
+  AdminRemoteAccessUpdate = 'adminRemoteAccess.update',
   /** FL-158: read your own Frameleaf account link. */
   FrameleafAccountRead = 'frameleafAccount.read',
   /** FL-158: link or unlink your own Frameleaf account. */
@@ -533,6 +535,12 @@ export enum SystemMetadataKey {
    * key), and the last run. The key itself is a 0600 file under the identity directory, or in memory.
    */
   FrameleafCloudBackup = 'frameleaf-cloud-backup',
+  /**
+   * FL-165: what the edge worker is doing for remote access: the enrolment, the certificates (facts
+   * only; the keys are 0600 files under the identity directory), the listener and the connection
+   * candidates. Written by the edge worker, read by the API.
+   */
+  FrameleafRemoteAccess = 'frameleaf-remote-access',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
   HardwareCheck = 'hardware-check',
   /**
@@ -1872,6 +1880,12 @@ export enum ImmichWorker {
   Api = 'api',
   Maintenance = 'maintenance',
   Microservices = 'microservices',
+  /**
+   * FL-165: the edge worker. Serves remote access (the direct HTTPS listener, later the relay tunnel)
+   * and proxies it to the API over loopback with the via contract. Idle until the server is linked,
+   * entitled and remote access is on.
+   */
+  Edge = 'edge',
 }
 
 export enum ImmichTelemetry {
@@ -2322,6 +2336,11 @@ export enum DatabaseLock {
   FrameleafCloudMlBatchQueue = 961,
   /** FL-163: queueing a description backfill is one step at a time, so two requests never both queue. */
   FrameleafCloudMlBackfill = 962,
+  /**
+   * FL-165: held for as long as an edge worker serves remote access, so exactly one edge worker
+   * enrols, issues certificates and listens, however many containers run one.
+   */
+  FrameleafEdge = 963,
 }
 
 export enum MaintenanceAction {
