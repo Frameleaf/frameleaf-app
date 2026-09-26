@@ -241,6 +241,64 @@ export const groupingUtils = {
   },
 };
 
+/**
+ * Years and All justify a whole group as one flow (prototype `TimelineLibrary.jsx` justifiedRows over
+ * `group.assets`, FL-143), read from the rendered geometry.
+ */
+export const flowUtils = {
+  /**
+   * The rows of tiles wholly inside the scroll area, top to bottom and each left to right. A row is
+   * the tiles that share a top edge.
+   */
+  async rowsOnScreen(page: Page) {
+    return await timelineUtils.locator(page).evaluate((scroller, tile) => {
+      const box = scroller.getBoundingClientRect();
+      const rows = new Map<number, { id: string; left: number; right: number }[]>();
+      for (const element of scroller.querySelectorAll<HTMLElement>(tile)) {
+        const rect = element.getBoundingClientRect();
+        if (rect.height === 0 || rect.top < box.top || rect.bottom > box.bottom) {
+          continue;
+        }
+        const top = Math.round(rect.top);
+        const row = rows.get(top) ?? [];
+        row.push({ id: element.dataset.assetId!, left: rect.left, right: rect.right });
+        rows.set(top, row);
+      }
+      return [...rows.entries()]
+        .toSorted(([a], [b]) => a - b)
+        .map(([, row]) => row.toSorted((a, b) => a.left - b.left));
+    }, TILE);
+  },
+  /** Where each tile wholly inside the scroll area sits, relative to the scroll area. */
+  async placesOnScreen(page: Page) {
+    return await timelineUtils.locator(page).evaluate((scroller, tile) => {
+      const box = scroller.getBoundingClientRect();
+      const places: Record<string, { top: number; left: number; width: number }> = {};
+      for (const element of scroller.querySelectorAll<HTMLElement>(tile)) {
+        const rect = element.getBoundingClientRect();
+        if (rect.height > 0 && rect.top >= box.top && rect.bottom <= box.bottom) {
+          places[element.dataset.assetId!] = { top: rect.top - box.top, left: rect.left, width: rect.width };
+        }
+      }
+      return places;
+    }, TILE);
+  },
+  /**
+   * Month placeholders still showing in the scroll area or just past its edges. A month's last row
+   * only runs on into the next month once that month has loaded, so rows at an edge are read after
+   * the neighbour beyond it has loaded too.
+   */
+  async skeletonsOnScreen(page: Page) {
+    return await timelineUtils.locator(page).evaluate((scroller) => {
+      const box = scroller.getBoundingClientRect();
+      return [...scroller.querySelectorAll<HTMLElement>('[data-skeleton]')].filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.height > 0 && rect.bottom >= box.top - 50 && rect.top <= box.bottom + 50;
+      }).length;
+    });
+  },
+};
+
 export const scrubberUtils = {
   slider(page: Page) {
     return page.getByRole('slider', { name: 'Jump to a month' });
