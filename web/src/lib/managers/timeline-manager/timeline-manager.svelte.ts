@@ -101,12 +101,16 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   /**
-   * Years and All over justified rows (FL-143): a group's rows run on from one month bucket into the
-   * next, as the prototype justifies a whole group as one flow (`TimelineLibrary.jsx` justifiedRows
-   * over `group.assets`). Month and day groups, and the Browse and Work cell grids, stay per month.
+   * FL-143: a group's rows run on from one month bucket into the next, as the prototype lays it out.
+   * Years and All over justified rows are one flow per group (`TimelineLibrary.jsx` justifiedRows
+   * over `group.assets`); the Browse and Work cell grids are one grid over the whole library
+   * (`App.jsx` `.media-grid`). Timeline month and day groups stay per month and per day.
    */
   get continuousGroups(): boolean {
-    return !this.cells && this.fillRowWidth && (this.#grouping === 'years' || this.#grouping === 'all');
+    if (this.cells) {
+      return true;
+    }
+    return this.fillRowWidth && (this.#grouping === 'years' || this.#grouping === 'all');
   }
 
   /** Flow bookkeeping for `internal/flow-support.svelte.ts` (FL-143). */

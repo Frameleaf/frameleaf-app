@@ -337,7 +337,7 @@ export class TimelineMonth {
     if (manager.grouping === 'days' || this.startsGroup) {
       return manager.headerHeight;
     }
-    return manager.continuousGroups ? manager.justifiedLayoutOptions.spacing : manager.gap;
+    return manager.continuousGroups && !manager.cells ? manager.justifiedLayoutOptions.spacing : manager.gap;
   }
 
   get top(): number {
