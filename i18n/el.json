@@ -236,7 +236,7 @@
     "map_enable_description": "Ενεργοποίηση λειτουργιών χάρτη",
     "map_gps_settings": "Ρυθμίσεις Χάρτη & GPS",
     "map_gps_settings_description": "Διαχείριση Ρυθμίσεων Χάρτη & GPS (Αντίστροφη γεωκωδικοποίηση)",
-    "map_implications": "Η λειτουργία χάρτη βασίζεται σε εξωτερικές υπηρεσίες για τα πλακίδια (tiles.immich.cloud)",
+    "map_implications": "Η λειτουργία χάρτη βασίζεται σε εξωτερικές υπηρεσίες για τα πλακίδια (tiles.frameleaf.cloud)",
     "map_light_style": "Φωτεινό Θέμα",
     "map_manage_reverse_geocoding_settings": "Διαχείριση ρυθμίσεων <link>Αντίστροφης Γεωκωδικοποίησης</link>",
     "map_reverse_geocoding": "Αντίστροφη Γεωκωδικοποίηση",

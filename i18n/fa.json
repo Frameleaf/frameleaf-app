@@ -239,7 +239,7 @@
     "map_enable_description": "فعال‌سازی ویژگی‌های نقشه",
     "map_gps_settings": "تنظیمات نقشه و GPS",
     "map_gps_settings_description": "مدیریت تنظیمات نقشه و GPS (تبدیل مختصات به نام مکان)",
-    "map_implications": "ویژگی نقشه به یک سرویس tile خارجی متکی است (tiles.immich.cloud)",
+    "map_implications": "ویژگی نقشه به یک سرویس tile خارجی متکی است (tiles.frameleaf.cloud)",
     "map_light_style": "حالت روشن",
     "map_manage_reverse_geocoding_settings": "مدیریت تنظیمات <link>تبدیل مختصات به نام مکان</link>",
     "map_reverse_geocoding": "تبدیل مختصات به نام مکان",
