@@ -38,10 +38,12 @@
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { isIntersecting } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
+  import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
   import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import type { TimelineMonth } from '$lib/managers/timeline-manager/timeline-month.svelte';
   import type { TimelineAsset, TimelineGrouping, ViewportTopMonth } from '$lib/managers/timeline-manager/types';
   import { filterIsInOrNearViewport } from '$lib/managers/timeline-manager/utils.svelte';
+  import type { ViewerAsset } from '$lib/managers/timeline-manager/viewer-asset.svelte';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { isAssetViewerRoute } from '$lib/utils/navigation';
   import { hasRouterStarted } from '$lib/utils/router-started';
@@ -526,14 +528,31 @@
     };
   });
 
+  /**
+   * The earlier months' tiles a month lays out at the start of its rows (Years and All, FL-143),
+   * gathered by the day that owns them.
+   */
+  const carriedDays = (month: TimelineMonth) => {
+    const days: { key: string; day: TimelineDay; tiles: ViewerAsset[] }[] = [];
+    for (const { viewerAsset, day } of month.flowCarried) {
+      const current = days.at(-1);
+      if (current?.day === day) {
+        current.tiles.push(viewerAsset);
+      } else {
+        days.push({ key: `${day.timelineMonth.viewId}-${day.day}`, day, tiles: [viewerAsset] });
+      }
+    }
+    return days;
+  };
+
   const monthIds = (month: TimelineMonth) =>
     month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id));
 
   /**
    * A month, year or "all" group: the months it covers, in display order. Prototype
    * `explore-timeline.mjs` `timelineGroups` keys a group by the capture month, year or "all"; the
-   * manager lays each month out as one flow and reserves the header's space above the group's
-   * first month (`TimelineMonth.startsGroup`).
+   * manager lays the group out as one flow that runs on across its months (FL-143) and reserves the
+   * header's space above the group's first month (`TimelineMonth.startsGroup`).
    */
   type DisplayGroup = { key: string; title: string; months: TimelineMonth[] };
 
@@ -1216,6 +1235,32 @@
                 }
               }}
             >
+              <!--
+                Years and All (FL-143): a row that runs on from the months before this one starts with
+                their tiles; this month lays them out and draws them, ahead of its own in reading order.
+              -->
+              {#each carriedDays(month) as carried (carried.key)}
+                <LibraryDayGroup
+                  timelineDay={carried.day}
+                  hosted={carried.tiles}
+                  hostedHeight={month.flowContentHeight}
+                  {selection}
+                  {selecting}
+                  {ratingFor}
+                  layout={tileLayout}
+                  captionHeight={rowCaptionHeight}
+                  captionBelow
+                  {showFileNames}
+                  showHeader={false}
+                  grouped
+                  headerHeight={month.groupHeaderHeight}
+                  onOpen={handleOpen}
+                  {onToggleSelect}
+                  onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
+                  {tileOverlay}
+                  {quickActions}
+                />
+              {/each}
               {#each filterIsInOrNearViewport(month.timelineDays) as timelineDay (timelineDay.day)}
                 <LibraryDayGroup
                   {timelineDay}

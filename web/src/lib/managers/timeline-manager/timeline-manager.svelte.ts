@@ -14,6 +14,7 @@ import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/Virtual
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { GroupInsertionCache } from '$lib/managers/timeline-manager/group-insertion-cache.svelte';
+import { batchFlow, linkFlows } from '$lib/managers/timeline-manager/internal/flow-support.svelte';
 import { updateTimelineMonthViewportProximity } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
 import {
@@ -98,6 +99,22 @@ export class TimelineManager extends VirtualScrollManager {
     this.#grouping = value;
     this.refreshLayout();
   }
+
+  /**
+   * Years and All over justified rows (FL-143): a group's rows run on from one month bucket into the
+   * next, as the prototype justifies a whole group as one flow (`TimelineLibrary.jsx` justifiedRows
+   * over `group.assets`). Month and day groups, and the Browse and Work cell grids, stay per month.
+   */
+  get continuousGroups(): boolean {
+    return !this.cells && this.fillRowWidth && (this.#grouping === 'years' || this.#grouping === 'all');
+  }
+
+  /** Flow bookkeeping for `internal/flow-support.svelte.ts` (FL-143). */
+  flowDirty = new Set<TimelineMonth>();
+  flowBatchDepth = 0;
+  flowReconciling = false;
+  /** While set, a month's new height leaves the scroll position alone; the flow compensates itself. */
+  flowHoldsScroll = false;
   albumAssets: Set<string> = new SvelteSet();
   // Assets hidden in this view because they were just marked NSFW. The server
   // hides NSFW assets via a query-time filter (not the `visibility` enum), so a
@@ -307,6 +324,9 @@ export class TimelineManager extends VirtualScrollManager {
     };
 
     this.#updatingViewportProximities = false;
+    // A row that could not run on across a month boundary while that part of the timeline was on
+    // screen runs on once it has scrolled away (FL-143).
+    linkFlows(this);
   }
 
   clearDeferredLayout(month: TimelineMonth) {
@@ -455,9 +475,11 @@ export class TimelineManager extends VirtualScrollManager {
     if (!this.isInitialized || this.hasEmptyViewport) {
       return;
     }
-    for (const month of this.months) {
-      updateGeometry(this, month, { invalidateHeight: changedWidth });
-    }
+    batchFlow(this, () => {
+      for (const month of this.months) {
+        updateGeometry(this, month, { invalidateHeight: changedWidth });
+      }
+    });
     this.updateViewportProximities();
     if (changedWidth) {
       this.#createScrubberMonths();
@@ -749,9 +771,11 @@ export class TimelineManager extends VirtualScrollManager {
     }
     this.addAssetsUpsertSegments(assetsToAdd);
     const changedGeometry = changedTimelineMonths.size > 0;
-    for (const month of changedTimelineMonths) {
-      updateGeometry(this, month, { invalidateHeight: true });
-    }
+    batchFlow(this, () => {
+      for (const month of changedTimelineMonths) {
+        updateGeometry(this, month, { invalidateHeight: true });
+      }
+    });
     if (changedGeometry) {
       this.updateViewportProximities();
     }
@@ -759,9 +783,11 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   override refreshLayout() {
-    for (const month of this.months) {
-      updateGeometry(this, month, { invalidateHeight: true });
-    }
+    batchFlow(this, () => {
+      for (const month of this.months) {
+        updateGeometry(this, month, { invalidateHeight: true });
+      }
+    });
     this.updateViewportProximities();
   }
 
@@ -895,10 +921,12 @@ export class TimelineManager extends VirtualScrollManager {
       timelineMonth.sortTimelineDays();
     }
 
-    for (const month of context.updatedBuckets) {
-      month.sortTimelineDays();
-      updateGeometry(this, month, { invalidateHeight: true });
-    }
+    batchFlow(this, () => {
+      for (const month of context.updatedBuckets) {
+        month.sortTimelineDays();
+        updateGeometry(this, month, { invalidateHeight: true });
+      }
+    });
     this.updateViewportProximities();
   }
 }
