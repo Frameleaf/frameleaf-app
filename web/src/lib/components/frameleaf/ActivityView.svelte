@@ -5,6 +5,7 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import {
     ACTIVITY_FILTERS,
+    ACTIVITY_PROGRESS_STAGES,
     activityCompletion,
     activityCounts,
     activityStatusText,
@@ -82,6 +83,9 @@
   );
   const counts = $derived(activityCounts(items));
   const visible = $derived(items.filter((item) => matchesActivityFilter(item, filter)));
+  /* FL-162, prototype Activity.jsx: In progress, grouped by stage in the order jobs run, then Recent. */
+  const inProgress = $derived(visible.filter((item) => ACTIVITY_PROGRESS_STAGES.includes(item.stage)));
+  const recent = $derived(visible.filter((item) => !ACTIVITY_PROGRESS_STAGES.includes(item.stage)));
   const hasFinished = $derived(items.some((item) => item.source === 'job' && item.finished));
   /** The prototype's summary: only the counts that are not zero, or "nothing" when idle. */
   const summary = $derived(
@@ -355,178 +359,214 @@
     </div>
   {/if}
 
-  <div class="fla-list">
-    {#each visible as item, index (item.id)}
-      {@const thumbnail = thumbnailOf(item)}
-      <article
-        class="fla-job"
-        class:is-info={item.tone === 'info'}
-        class:is-success={item.tone === 'success'}
-        class:is-warning={item.tone === 'warning'}
-        class:is-danger={item.tone === 'danger'}
-        class:is-neutral={item.tone === 'neutral'}
-        aria-labelledby="{rowIdPrefix}-job-{index}"
-      >
-        <div class="fla-thumb">
-          {#if thumbnail}
-            <img src={thumbnail} alt="" />
-          {:else}
-            <Icon icon={kindIcon(item)} size="1.375rem" aria-hidden={true} />
-          {/if}
+  {#snippet card(item: ActivityItem, index: number)}
+    {@const thumbnail = thumbnailOf(item)}
+    <article
+      class="fla-job"
+      class:is-info={item.tone === 'info'}
+      class:is-success={item.tone === 'success'}
+      class:is-warning={item.tone === 'warning'}
+      class:is-danger={item.tone === 'danger'}
+      class:is-neutral={item.tone === 'neutral'}
+      aria-labelledby="{rowIdPrefix}-job-{index}"
+    >
+      <div class="fla-thumb">
+        {#if thumbnail}
+          <img src={thumbnail} alt="" />
+        {:else}
+          <Icon icon={kindIcon(item)} size="1.375rem" aria-hidden={true} />
+        {/if}
+      </div>
+
+      <div class="fla-body">
+        <div class="fla-row">
+          <h4 id="{rowIdPrefix}-job-{index}">{nameOf(item)}</h4>
+          <span
+            class="fla-chip"
+            class:fla-chip--info={item.tone === 'info'}
+            class:fla-chip--success={item.tone === 'success'}
+            class:fla-chip--warning={item.tone === 'warning'}
+            class:fla-chip--danger={item.tone === 'danger'}
+          >
+            {#if item.running && !activitySession.unreachable}<i class="fla-dot" aria-hidden="true"></i>{/if}
+            {$t(item.statusKey)}
+          </span>
         </div>
 
-        <div class="fla-body">
-          <div class="fla-row">
-            <h3 id="{rowIdPrefix}-job-{index}">{nameOf(item)}</h3>
-            <span
-              class="fla-chip"
-              class:fla-chip--info={item.tone === 'info'}
-              class:fla-chip--success={item.tone === 'success'}
-              class:fla-chip--warning={item.tone === 'warning'}
-              class:fla-chip--danger={item.tone === 'danger'}
-            >
-              {#if item.running && !activitySession.unreachable}<i class="fla-dot" aria-hidden="true"></i>{/if}
-              {$t(item.statusKey)}
-            </span>
+        <p class="fla-meta">
+          {[
+            $t(item.kindKey),
+            item.destinationKey ? $t(item.destinationKey) : null,
+            ...item.details,
+            item.browserLocal ? $t('frameleaf_activity_this_tab_only') : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+
+        {#if item.cloud}
+          <!-- FL-162: a Frameleaf Cloud job's model and cost (prototype CloudCost). -->
+          <dl class="fla-cost" aria-label={$t('frameleaf_activity_cloud_cost')}>
+            {#each cloudCostFacts(item.cloud, item.stage) as fact (fact.labelKey)}
+              <div>
+                <dt>{$t(fact.labelKey)}</dt>
+                <dd>{fact.valueKey ? $t(fact.valueKey) : fact.value}</dd>
+              </div>
+            {/each}
+          </dl>
+        {/if}
+
+        {#if item.running || item.paused || item.progress !== null}
+          <div
+            class="fla-progress"
+            class:is-indeterminate={item.progress === null}
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={item.progress === null ? undefined : Math.round(item.progress)}
+            aria-label={$t('frameleaf_activity_progress_for', { values: { name: nameOf(item) } })}
+          >
+            <span style:width={item.progress === null ? undefined : `${item.progress}%`}></span>
           </div>
+        {/if}
 
-          <p class="fla-meta">
-            {[
-              $t(item.kindKey),
-              item.destinationKey ? $t(item.destinationKey) : null,
-              ...item.details,
-              item.browserLocal ? $t('frameleaf_activity_this_tab_only') : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
-
-          {#if item.cloud}
-            <!-- FL-162: a Frameleaf Cloud job's model and cost (prototype CloudCost). -->
-            <dl class="fla-cost" aria-label={$t('frameleaf_activity_cloud_cost')}>
-              {#each cloudCostFacts(item.cloud, item.stage) as fact (fact.labelKey)}
-                <div>
-                  <dt>{$t(fact.labelKey)}</dt>
-                  <dd>{fact.valueKey ? $t(fact.valueKey) : fact.value}</dd>
-                </div>
-              {/each}
-            </dl>
+        <p class="fla-status">
+          {#if item.bulk}
+            <!-- Counts only: a refused item is never named or shown here, Locked or not. -->
+            {$t('frameleaf_activity_bulk_counts', { values: item.bulk })}
+          {:else}
+            {statusLine(item)}
           {/if}
-
-          {#if item.running || item.paused || item.progress !== null}
-            <div
-              class="fla-progress"
-              class:is-indeterminate={item.progress === null}
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={item.progress === null ? undefined : Math.round(item.progress)}
-              aria-label={$t('frameleaf_activity_progress_for', { values: { name: nameOf(item) } })}
-            >
-              <span style:width={item.progress === null ? undefined : `${item.progress}%`}></span>
-            </div>
+          {#if (item.failed || item.statusKey === 'frameleaf_activity_status_retrying') && item.error}
+            · <span class="fla-error">{item.error}</span>
           {/if}
-
+        </p>
+        {#if item.cloud && item.stage === 'starting'}
           <p class="fla-status">
-            {#if item.bulk}
-              <!-- Counts only: a refused item is never named or shown here, Locked or not. -->
-              {$t('frameleaf_activity_bulk_counts', { values: item.bulk })}
-            {:else}
-              {statusLine(item)}
-            {/if}
-            {#if (item.failed || item.statusKey === 'frameleaf_activity_status_retrying') && item.error}
-              · <span class="fla-error">{item.error}</span>
-            {/if}
+            {$t('frameleaf_activity_cloud_start_note', { values: { workers: item.cloud.plannedWorkers } })}
           </p>
-          {#if item.cloud && item.stage === 'starting'}
-            <p class="fla-status">
-              {$t('frameleaf_activity_cloud_start_note', { values: { workers: item.cloud.plannedWorkers } })}
-            </p>
-          {/if}
-          {#if item.bulk && item.bulk.retried > 0}
-            <p class="fla-status">{$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}</p>
-          {/if}
-        </div>
+        {/if}
+        {#if item.bulk && item.bulk.retried > 0}
+          <p class="fla-status">{$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}</p>
+        {/if}
+      </div>
 
-        <div class="fla-actions">
-          {#if item.canPause && item.source === 'job'}
-            <Button
-              disabled={busyId === item.id}
-              label={$t('frameleaf_running_pause', { values: { name: nameOf(item) } })}
-              onclick={() => pause(item)}
-            >
-              <Icon icon={mdiPause} size="1.125rem" aria-hidden={true} />{$t('pause')}
-            </Button>
-          {:else if item.canResume && item.source === 'job'}
-            <Button
-              disabled={busyId === item.id}
-              label={$t('frameleaf_running_resume', { values: { name: nameOf(item) } })}
-              onclick={() => resume(item)}
-            >
-              <Icon icon={mdiPlay} size="1.125rem" aria-hidden={true} />{$t('resume')}
-            </Button>
-          {:else if item.pauseBlockedKey && item.source === 'job'}
-            <!-- Shown disabled with its reason rather than hidden, like the notifications panel's
-                 Running now rows (RunningJobsSection); focusable so the reason can be read aloud. -->
-            <button
-              type="button"
-              class="fla-disabled"
-              aria-disabled="true"
-              aria-label={$t('frameleaf_running_pause', { values: { name: nameOf(item) } })}
-              aria-describedby="{rowIdPrefix}-pause-{index}"
-              title={$t(item.pauseBlockedKey)}
-            >
-              <Icon icon={mdiPause} size="1.125rem" aria-hidden={true} />{$t('pause')}
-            </button>
-            <span id="{rowIdPrefix}-pause-{index}" class="sr-only">{$t(item.pauseBlockedKey)}</span>
-          {/if}
-          {#if item.canCancel && item.source === 'job'}
-            <Button disabled={busyId === item.id} onclick={() => cancel(item)}>
-              <Icon icon={mdiCancel} size="1.125rem" aria-hidden={true} />{$t('cancel')}
-            </Button>
-          {/if}
-          {#if item.canRetry}
-            <Button disabled={busyId === item.id} onclick={() => retry(item)}>
-              <Icon icon={mdiRefresh} size="1.125rem" aria-hidden={true} />{$t('retry')}
-            </Button>
-          {/if}
-          {#if item.finished && !item.failed && item.studioBundle === 'export'}
-            <Button variant="primary" onclick={() => void downloadBundle(item)}>
-              <Icon icon={mdiDownloadOutline} size="1.125rem" aria-hidden={true} />{$t(
-                'frameleaf_studio_bundle_download',
-              )}
-            </Button>
-          {:else if item.finished && !item.failed && item.studioBundle === 'import'}
-            <Button variant="primary" onclick={() => void openImportedProject(item)}>
-              <Icon icon={mdiOpenInApp} size="1.125rem" aria-hidden={true} />{$t('frameleaf_studio_library_open')}
-            </Button>
-          {/if}
-          {#if item.projectId}
-            <Button onclick={() => openInStudio(item)}>
-              <Icon icon={mdiMovieEditOutline} size="1.125rem" aria-hidden={true} />{$t(
-                'frameleaf_activity_open_in_studio',
-              )}
-            </Button>
-          {/if}
-          {#if item.finished && !item.failed && item.assetId}
-            <Button variant="primary" onclick={() => openResult(item)}>
-              <Icon icon={mdiOpenInApp} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_open_result')}
-            </Button>
-          {/if}
-          {#if item.canDismiss}
-            <IconButton
-              variant="default"
-              disabled={busyId === item.id}
-              label={$t('frameleaf_activity_clear_one', { values: { name: nameOf(item) } })}
-              onclick={() => dismiss(item)}
-            >
-              <Icon icon={mdiClose} size="1.125rem" />
-            </IconButton>
-          {/if}
-        </div>
-      </article>
-    {/each}
-  </div>
+      <div class="fla-actions">
+        {#if item.canPause && item.source === 'job'}
+          <Button
+            disabled={busyId === item.id}
+            label={$t('frameleaf_running_pause', { values: { name: nameOf(item) } })}
+            onclick={() => pause(item)}
+          >
+            <Icon icon={mdiPause} size="1.125rem" aria-hidden={true} />{$t('pause')}
+          </Button>
+        {:else if item.canResume && item.source === 'job'}
+          <Button
+            disabled={busyId === item.id}
+            label={$t('frameleaf_running_resume', { values: { name: nameOf(item) } })}
+            onclick={() => resume(item)}
+          >
+            <Icon icon={mdiPlay} size="1.125rem" aria-hidden={true} />{$t('resume')}
+          </Button>
+        {:else if item.pauseBlockedKey && item.source === 'job'}
+          <!-- Shown disabled with its reason rather than hidden, like the notifications panel's
+               Running now rows (RunningJobsSection); focusable so the reason can be read aloud. -->
+          <button
+            type="button"
+            class="fla-disabled"
+            aria-disabled="true"
+            aria-label={$t('frameleaf_running_pause', { values: { name: nameOf(item) } })}
+            aria-describedby="{rowIdPrefix}-pause-{index}"
+            title={$t(item.pauseBlockedKey)}
+          >
+            <Icon icon={mdiPause} size="1.125rem" aria-hidden={true} />{$t('pause')}
+          </button>
+          <span id="{rowIdPrefix}-pause-{index}" class="sr-only">{$t(item.pauseBlockedKey)}</span>
+        {/if}
+        {#if item.canCancel && item.source === 'job'}
+          <Button disabled={busyId === item.id} onclick={() => cancel(item)}>
+            <Icon icon={mdiCancel} size="1.125rem" aria-hidden={true} />{$t('cancel')}
+          </Button>
+        {/if}
+        {#if item.canRetry}
+          <Button disabled={busyId === item.id} onclick={() => retry(item)}>
+            <Icon icon={mdiRefresh} size="1.125rem" aria-hidden={true} />{$t('retry')}
+          </Button>
+        {/if}
+        {#if item.finished && !item.failed && item.studioBundle === 'export'}
+          <Button variant="primary" onclick={() => void downloadBundle(item)}>
+            <Icon icon={mdiDownloadOutline} size="1.125rem" aria-hidden={true} />{$t(
+              'frameleaf_studio_bundle_download',
+            )}
+          </Button>
+        {:else if item.finished && !item.failed && item.studioBundle === 'import'}
+          <Button variant="primary" onclick={() => void openImportedProject(item)}>
+            <Icon icon={mdiOpenInApp} size="1.125rem" aria-hidden={true} />{$t('frameleaf_studio_library_open')}
+          </Button>
+        {/if}
+        {#if item.projectId}
+          <Button onclick={() => openInStudio(item)}>
+            <Icon icon={mdiMovieEditOutline} size="1.125rem" aria-hidden={true} />{$t(
+              'frameleaf_activity_open_in_studio',
+            )}
+          </Button>
+        {/if}
+        {#if item.finished && !item.failed && item.assetId}
+          <Button variant="primary" onclick={() => openResult(item)}>
+            <Icon icon={mdiOpenInApp} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_open_result')}
+          </Button>
+        {/if}
+        {#if item.canDismiss}
+          <IconButton
+            variant="default"
+            disabled={busyId === item.id}
+            label={$t('frameleaf_activity_clear_one', { values: { name: nameOf(item) } })}
+            onclick={() => dismiss(item)}
+          >
+            <Icon icon={mdiClose} size="1.125rem" />
+          </IconButton>
+        {/if}
+      </div>
+    </article>
+  {/snippet}
+
+  {#if inProgress.length > 0}
+    <section class="fla-section" aria-labelledby="{rowIdPrefix}-in-progress">
+      <h2 id="{rowIdPrefix}-in-progress" class="fla-section-title">
+        {$t('frameleaf_activity_section_in_progress')} <span class="fla-count">{inProgress.length}</span>
+      </h2>
+      {#each ACTIVITY_PROGRESS_STAGES as stage (stage)}
+        {@const group = inProgress.filter((item) => item.stage === stage)}
+        {#if group.length > 0}
+          <div class="fla-group" role="group" aria-labelledby="{rowIdPrefix}-stage-{stage}">
+            <h3 id="{rowIdPrefix}-stage-{stage}" class="fla-group-title">
+              {$t(`frameleaf_activity_stage_${stage}`)}
+              <span class="fla-count">{group.length}</span>
+              <span class="fla-group-hint">{$t(`frameleaf_activity_stage_hint_${stage}`)}</span>
+            </h3>
+            <div class="fla-list">
+              {#each group as item (item.id)}
+                {@render card(item, visible.indexOf(item))}
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {/each}
+    </section>
+  {/if}
+
+  {#if recent.length > 0}
+    <section class="fla-section" aria-labelledby="{rowIdPrefix}-recent">
+      <h2 id="{rowIdPrefix}-recent" class="fla-section-title">
+        {$t('frameleaf_activity_section_recent')} <span class="fla-count">{recent.length}</span>
+      </h2>
+      <div class="fla-list">
+        {#each recent as item (item.id)}
+          {@render card(item, visible.indexOf(item))}
+        {/each}
+      </div>
+    </section>
+  {/if}
 
   <footer class="fla-footer">
     <span class="muted">{$t('frameleaf_activity_footnote')}</span>
@@ -633,6 +673,49 @@
   .grow {
     flex: 1;
   }
+  /* activity.css: the In progress and Recent sections, and a stage's group inside In progress. */
+  .fla-section {
+    max-width: 900px;
+    margin-bottom: 28px;
+  }
+  .fla-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+  }
+  .fla-count {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--fl-muted);
+    background: var(--fl-raised);
+    padding: 0 7px;
+    border-radius: var(--fl-radius-pill);
+    line-height: 1.7;
+    font-variant-numeric: tabular-nums;
+  }
+  .fla-group {
+    margin: 0 0 16px;
+  }
+  .fla-group-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--fl-muted);
+    margin: 0 0 8px;
+  }
+  .fla-group-hint {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+  }
   .fla-list {
     display: flex;
     flex-direction: column;
@@ -681,7 +764,7 @@
     gap: 10px;
     min-width: 0;
   }
-  h3 {
+  h4 {
     margin: 0;
     font-size: 14px;
     font-weight: 600;

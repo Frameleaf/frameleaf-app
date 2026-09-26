@@ -8,6 +8,7 @@ import {
   estimateLive,
   estimateRange,
   isEndedStage,
+  preparingRetryMs,
   runHeadKey,
 } from '$lib/frameleaf/cloud-jobs';
 
@@ -34,8 +35,8 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   isHttpError: (error: unknown) => error instanceof Error && 'status' in error,
 }));
 
-const httpError = (status: number, code?: string) =>
-  Object.assign(new Error('refused'), { status, data: code ? { code } : {} });
+const httpError = (status: number, code?: string, data: Record<string, unknown> = {}) =>
+  Object.assign(new Error('refused'), { status, data: code ? { code, ...data } : data });
 
 describe('Frameleaf Cloud job helpers (FL-162)', () => {
   it('shows an estimate as a range, never a single price', () => {
@@ -63,6 +64,14 @@ describe('Frameleaf Cloud job helpers (FL-162)', () => {
     expect(cloudJobRefusal(httpError(402))).toBe('money');
     expect(cloudJobRefusal(httpError(500))).toBe('other');
     expect(cloudJobRefusal(new Error('offline'))).toBe('other');
+  });
+
+  it('asks again for an estimate whose video is still being prepared, when the server says to', () => {
+    const preparing = httpError(409, 'input-preparing', { retryAfterSeconds: 5 });
+    expect(cloudJobRefusal(preparing)).toBe('preparing');
+    expect(preparingRetryMs(preparing)).toBe(5000);
+    expect(preparingRetryMs(httpError(409, 'input-preparing'))).toBe(5000);
+    expect(preparingRetryMs(httpError(409, 'input-preparing', { retryAfterSeconds: 600 }))).toBe(60_000);
   });
 
   it('names the run heading for each stage and knows the ended ones', () => {
