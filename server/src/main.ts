@@ -203,7 +203,7 @@ async function main() {
 
   if (immichApp === 'immich' || immichApp === 'microservices') {
     console.error(
-      `Using "start.sh ${immichApp}" has been deprecated. See https://github.com/immich-app/immich/releases/tag/v1.118.0 for more information.`,
+      `Using "start.sh ${immichApp}" has been deprecated. Start the container without a command; the server runs every worker by default.`,
     );
     process.exit(1);
   }

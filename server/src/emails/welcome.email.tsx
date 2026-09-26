@@ -62,9 +62,9 @@ export const WelcomeEmail = ({ baseUrl, displayName, username, password, customT
 };
 
 WelcomeEmail.PreviewProps = {
-  baseUrl: 'https://demo.immich.app/auth/login',
+  baseUrl: 'https://photos.example.com/auth/login',
   displayName: 'Alan Turing',
-  username: 'alanturing@immich.app',
+  username: 'alanturing@example.com',
   password: 'mysuperpassword',
 } as WelcomeEmailProps;
 
