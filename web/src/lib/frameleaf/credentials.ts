@@ -1,6 +1,8 @@
 /**
- * Write-only server credentials (FL-67): the SMTP password and the OAuth client secret. Sign in with
- * Frameleaf has no client secret (FL-177): it authenticates with this server's key.
+ * Write-only server credentials (FL-67): the SMTP password and the OAuth client secret, and the secret
+ * access key of your own cloud backup bucket (FL-160). Sign in with Frameleaf has no client secret
+ * (FL-177): it authenticates with this server's key. The cloud backup bucket key is not a credential
+ * here: it is never part of the configuration.
  *
  * The server never returns these values, only whether each one is stored (`...Configured`).
  * They are replaced or cleared one at a time through `/admin/config/credentials/:name` from a
@@ -31,6 +33,11 @@ export const CREDENTIALS: Record<ConfigCredential, CredentialDefinition> = {
     labelKey: 'frameleaf_credentials_oauth_client_secret',
     helpKey: 'frameleaf_credentials_oauth_client_secret_help',
   },
+  [ConfigCredential.CloudBackupS3SecretKey]: {
+    name: ConfigCredential.CloudBackupS3SecretKey,
+    labelKey: 'frameleaf_credentials_cloud_backup_s3_secret',
+    helpKey: 'frameleaf_credentials_cloud_backup_s3_secret_help',
+  },
 };
 
 /** The same limit the server applies. */
@@ -51,6 +58,9 @@ export const isCredentialConfigured = (config: PartialConfig, name: ConfigCreden
     case ConfigCredential.OauthClientSecret: {
       return !!config.oauth?.clientSecretConfigured;
     }
+    case ConfigCredential.CloudBackupS3SecretKey: {
+      return !!config.frameleafCloud?.cloudBackup?.s3.secretAccessKeyConfigured;
+    }
   }
 };
 
@@ -67,6 +77,9 @@ export const withoutCredentialValues = <T extends PartialConfig>(config: T): T =
   if (copy.oauth) {
     copy.oauth.clientSecret = '';
   }
+  if (copy.frameleafCloud?.cloudBackup) {
+    copy.frameleafCloud.cloudBackup.s3.secretAccessKey = '';
+  }
   return copy;
 };
 
@@ -79,12 +92,17 @@ export const forConfigSave = <T extends PartialConfig>(config: T): T => {
   const copy = withoutCredentialValues(config);
   delete copy.notifications?.smtp?.transport?.passwordConfigured;
   delete copy.oauth?.clientSecretConfigured;
+  delete copy.frameleafCloud?.cloudBackup?.s3.secretAccessKeyConfigured;
   return copy;
 };
 
 /** Whether a configuration (for example an imported file) carries any credential value. */
 export const hasCredentialValues = (config: PartialConfig): boolean =>
-  !!(config.notifications?.smtp?.transport?.password || config.oauth?.clientSecret);
+  !!(
+    config.notifications?.smtp?.transport?.password ||
+    config.oauth?.clientSecret ||
+    config.frameleafCloud?.cloudBackup?.s3.secretAccessKey
+  );
 
 /**
  * The configuration after a credential change, for the shared settings state: the flag follows
@@ -103,6 +121,12 @@ export const withCredentialState = (
     }
     case ConfigCredential.OauthClientSecret: {
       next.oauth.clientSecretConfigured = configured;
+      break;
+    }
+    case ConfigCredential.CloudBackupS3SecretKey: {
+      if (next.frameleafCloud?.cloudBackup) {
+        next.frameleafCloud.cloudBackup.s3.secretAccessKeyConfigured = configured;
+      }
       break;
     }
   }

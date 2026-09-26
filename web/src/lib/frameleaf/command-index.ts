@@ -47,6 +47,7 @@ import {
   mdiWrench,
   mdiCertificateOutline,
   mdiCloudOutline,
+  mdiCloudUploadOutline,
   mdiEarth,
   mdiShieldAccountOutline,
   mdiCreditCardOutline,
@@ -317,6 +318,13 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_cloud_remote',
     descriptionKey: 'frameleaf_cc_section_cloud_remote_description',
     icon: mdiEarth,
+  },
+  // FL-160: Frameleaf Cloud → Cloud backup.
+  {
+    key: 'cloud-backup',
+    titleKey: 'frameleaf_cc_section_cloud_backup',
+    descriptionKey: 'frameleaf_cc_section_cloud_backup_description',
+    icon: mdiCloudUploadOutline,
   },
   // FL-158: Access & security → Sign in with Frameleaf (settings-catalog.mjs:1801-1813).
   {

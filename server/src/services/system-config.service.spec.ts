@@ -433,6 +433,13 @@ const updatedConfig = Object.freeze<SystemConfig>({
       autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
       faces: { enabled: false },
     },
+    cloudBackup: {
+      enabled: false,
+      target: 'off',
+      s3: { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '' },
+      keyMode: 'server',
+      include: { thumbs: false, encodedVideo: false },
+    },
   },
   libraryCare: {
     healthScan: true,
@@ -1005,6 +1012,7 @@ describe(SystemConfigService.name, () => {
     type PersistedSecrets = {
       notifications?: { smtp?: { transport?: { password?: string } } };
       oauth?: { clientSecret?: string };
+      frameleafCloud?: { cloudBackup?: { s3?: { secretAccessKey?: string } } };
     };
     const lastPersisted = () => mocks.forkSchema.persistConfig.mock.calls.at(-1)?.[0] as PersistedSecrets | undefined;
     const storedSecrets = {
@@ -1066,6 +1074,57 @@ describe(SystemConfigService.name, () => {
       expect(newConfig.oauth.clientSecret).toBe('');
     });
 
+    describe('the cloud backup secret access key (FL-160)', () => {
+      const s3 = {
+        endpoint: 'https://s3.eu-central-2.wasabisys.com',
+        region: '',
+        bucket: 'family-backup',
+        accessKeyId: 'AKIAEXAMPLE',
+        secretAccessKey: 's3-secret',
+      };
+      const storedS3 = { frameleafCloud: { cloudBackup: { s3 } } };
+
+      it('is never returned, only that it is stored', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(storedS3);
+
+        const config = await sut.getAdminConfig();
+
+        expect(config.frameleafCloud.cloudBackup.s3).toMatchObject({
+          secretAccessKey: '',
+          secretAccessKeyConfigured: true,
+        });
+        expect(JSON.stringify(config)).not.toContain('s3-secret');
+      });
+
+      it('is kept when a redacted configuration comes back for the same bucket and access key', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(storedS3);
+        const redacted = await sut.getAdminConfig();
+
+        await sut.updateAdminConfig({ ...redacted, trash: { ...redacted.trash, days: 12 } });
+
+        expect(lastPersisted()?.frameleafCloud?.cloudBackup?.s3?.secretAccessKey).toBe('s3-secret');
+        expect(JSON.stringify(lastPersisted())).not.toContain('secretAccessKeyConfigured');
+      });
+
+      it('is never sent to another bucket or access key', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(storedS3);
+        const redacted = await sut.getAdminConfig();
+
+        await sut.updateAdminConfig({
+          ...redacted,
+          frameleafCloud: {
+            ...redacted.frameleafCloud,
+            cloudBackup: {
+              ...redacted.frameleafCloud.cloudBackup,
+              s3: { ...redacted.frameleafCloud.cloudBackup.s3, bucket: 'someone-elses-bucket' },
+            },
+          },
+        });
+
+        expect(lastPersisted()?.frameleafCloud?.cloudBackup?.s3?.secretAccessKey).toBeUndefined();
+      });
+    });
+
     it('should not treat the read-only configured flags as a change or store them', async () => {
       mocks.systemMetadata.get.mockResolvedValue(storedSecrets);
       const redacted = await sut.getAdminConfig();
@@ -1085,6 +1144,7 @@ describe(SystemConfigService.name, () => {
       await expect(sut.getCredentials()).resolves.toEqual([
         { name: ConfigCredential.SmtpPassword, configured: true },
         { name: ConfigCredential.OAuthClientSecret, configured: true },
+        { name: ConfigCredential.CloudBackupS3SecretKey, configured: false },
       ]);
     });
 

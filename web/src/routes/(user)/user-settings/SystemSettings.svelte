@@ -63,6 +63,7 @@
     mdiAutoFix,
     mdiCertificateOutline,
     mdiCloudSyncOutline,
+    mdiCloudUploadOutline,
     mdiCreditCardOutline,
     mdiEarth,
     mdiExpansionCard,
@@ -357,6 +358,8 @@
         ['cloud-license', 'frameleaf_cc_section_cloud_license', mdiCertificateOutline],
         // FL-161: Frameleaf Cloud → Remote access, who can connect and what the relay carries.
         ['cloud-remote', 'frameleaf_cc_section_cloud_remote', mdiEarth],
+        // FL-160: Frameleaf Cloud → Cloud backup.
+        ['cloud-backup', 'frameleaf_cc_section_cloud_backup', mdiCloudUploadOutline],
         // FL-158: Access & security → Sign in with Frameleaf, beside the own-provider form.
         ['frameleaf-signin', 'frameleaf_cc_section_frameleaf_signin', mdiShieldAccountOutline],
         ['mode', 'frameleaf_cc_section_mode', mdiWrench],

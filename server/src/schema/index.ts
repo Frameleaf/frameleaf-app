@@ -63,6 +63,11 @@ import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-dup
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
+import {
+  CloudBackupManifestEntryTable,
+  CloudBackupManifestTable,
+  CloudBackupObjectTable,
+} from 'src/schema/tables/cloud-backup.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
@@ -212,6 +217,9 @@ export class ImmichDatabase {
     AssetVideoDuplicateFrameTable,
     ClassificationRuleTable,
     ClassificationMatchTable,
+    CloudBackupObjectTable,
+    CloudBackupManifestTable,
+    CloudBackupManifestEntryTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
     DuplicateDecisionTable,
@@ -434,6 +442,9 @@ export interface DB {
 
   classification_match: ClassificationMatchTable;
   classification_rule: ClassificationRuleTable;
+  cloud_backup_manifest: CloudBackupManifestTable;
+  cloud_backup_manifest_entry: CloudBackupManifestEntryTable;
+  cloud_backup_object: CloudBackupObjectTable;
   cluster_group: ClusterGroupTable;
   cluster_group_request: ClusterGroupRequestTable;
 

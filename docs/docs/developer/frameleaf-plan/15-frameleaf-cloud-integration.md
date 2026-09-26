@@ -514,6 +514,33 @@ fingerprint, entitlements{remoteAccess,cloudMl,cloudBackup,supporter}, refresh, 
   ETag/MD5), index spec, dedup spec (duplicate assets, changed file → new hash, unchanged → skipped), medium spec +
   catalog/ledger counts, ui spec. Risks: a lost own-memory key means unrecoverable backups — the UI says so before
   choosing it. Deps: CLD-002, CLD-003.
+  **As built (FL-160, 2026-09-26; not yet qualified):** your own bucket (`byo-s3`) end to end; Frameleaf-managed storage
+  is refused with "not available yet" (`managedAvailable: false`) because the backup grant contract (FC-33,
+  Frameleaf/frameleaf-cloud#16) is not on the cloud's `main` and publishes no fixtures. The S3 client is AWS Signature
+  Version 4 over Node `fetch`/`crypto` (`cloud-backup-store.repository.ts`, verified against the published S3 signing
+  example) instead of `@aws-sdk/client-s3`/`lib-storage`: no lockfile change, no extra binaries, path-style addressing;
+  SSE-C headers on every PUT/GET/HEAD/UploadPart/Create/CompleteMultipartUpload, `Content-MD5` and a signed SHA-256 on
+  every body, 8 MiB parts, the file hashed while it uploads and the multipart upload aborted unless it matches its
+  `o/<sha256>` name (SSE-C ETags are not plaintext MD5s, so ETags are required and recorded, not compared). Migration
+  `2100000000670-AddCloudBackupTables` (public schema, registered in `ORDER`, the migration manifest and
+  `fork-v2-catalog.json`) adds `cloud_backup_object` (PK bucket address + sha256), `cloud_backup_manifest` and
+  `cloud_backup_manifest_entry` (a running manifest's files, deleted once the manifest is in the bucket). The bucket key
+  is never configuration: a 0600 `cloud-backup-<fingerprint>.key` file under the identity directory (server, own-stored;
+  written with an exclusive link, never overwritten) or memory only (own-memory, handed between workers over the
+  server event bus, `CloudBackupKeyShare`/`CloudBackupKeyRequest`); only the bucket's secret access key is a write-only
+  configuration credential (`ConfigCredential.CloudBackupS3SecretKey`). Fingerprints are the prototype's FNV-1a
+  `XXXX-XXXX`; the recovery kit carries the key as a Crockford base32 `FLRK-…` code. API `admin/cloud/backup` (status,
+  `check`, `key`, `setup`, `key/unlock`, `DELETE` to turn off, `runs`, `runs/:id/pause|resume|cancel`) with
+  `adminCloudBackup.read|update|run`; `MediaOperationKind.CloudBackup` is pausable and resumable and retried once, a run
+  with no own-memory key waits (requeued every minute, admins told once a day) instead of failing, a final failure
+  notifies admins once a day. Runs read internal assets only (`isExternal = false`, active and trashed, Locked
+  included). Review fixes: the manifest is streamed (paged entries → gzip → multipart) and never rewritten once complete
+  (the `done` checkpoint precedes deleting its entries); a new claim clears the bucket's index and every reconcile drops
+  rows the listing lacks; each run re-reads the claim marker; the newest 7 dumps and the one the newest complete manifest names
+  (`databaseKey`) are kept; stored key files are written and read back before the claim (rename fallback where hard links fail) and
+  removed only when that setup created them and the claim failed; a checksum is trusted only when `verifiedPaths` holds
+  the original's path; restarted workers ask the others for an own-memory key. Not in this slice: schedule, retention,
+  verification, escrow, restore and the Activity progress stages (CLD-302), and the managed grant and key rotation (FC-33).
 - ★ **CLD-302 Cloud backup: schedule, retention, verification, managed storage, escrow and restore**.
   Anchors: `cloud-backup.service.ts`, `server/src/commands/cloud-backup.command.ts` (new),
   `web/src/lib/components/frameleaf/cloud/CloudBackupRestoreDialog.svelte` (new). AC: cron under

@@ -371,10 +371,12 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     // A Library Care scan or search is started again from Library Care, not copied (FL-69); a
     // deduplication plan is reviewed again on its page and applied as a new plan (FL-73).
     // A library scan is started again from Libraries, which checks its folders and owner first (FL-78).
+    // A cloud backup run is started again with "Back up now", which checks the claim and key (FL-160).
     // An edit that could not be cancelled was never cancelled by its owner, so only a failure retries.
     canRetry:
       operation.kind !== MediaOperationKind.MediaHealth &&
       operation.kind !== MediaOperationKind.LibraryScan &&
+      operation.kind !== MediaOperationKind.CloudBackup &&
       !dedup &&
       (status === MediaOperationStatus.Failed ||
         (status === MediaOperationStatus.Cancelled && (!edit || CANCELLABLE_EDITS.has(edit)))),
