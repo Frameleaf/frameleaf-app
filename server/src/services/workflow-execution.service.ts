@@ -532,17 +532,66 @@ export class WorkflowExecutionService extends BaseService {
    * under the job's `executionId`, outside the job data, and a replay skips the recorded steps (and
    * stops where a recorded step stopped the run). An automatic or manual retry is a newly queued job
    * with its own `executionId`: a manual retry from run history runs every step again.
+   *
+   * FL-179: a failed job is not kept (JOBS_NOT_RETRIED), so a run that fails before its first step
+   * is recorded in run history as an error, where Retry runs it again.
    */
   private async execute<T extends WorkflowType>(
     job: JobOf<JobName.WorkflowAssetTrigger>,
     assetIds: string[],
     getHandler: (type: T) => ExecuteOptions<T> | undefined,
   ): Promise<JobStatus | undefined> {
+    const run = { ...job, runId: job.runId ?? crypto.randomUUID() };
+    // what is known of the workflow when the run fails
+    const known: { logging?: boolean; definition?: unknown } = {};
+    try {
+      return await this.executeRun(run, assetIds, getHandler, known);
+    } catch (error) {
+      // Once a step has run nothing throws (FL-169), so this failed before the first step.
+      await this.recordRunFailure(run, error, known);
+      throw error;
+    }
+  }
+
+  private async recordRunFailure(
+    job: JobOf<JobName.WorkflowAssetTrigger> & { runId: string },
+    error: unknown,
+    known: { logging?: boolean; definition?: unknown },
+  ) {
+    if (known.logging === false) {
+      return;
+    }
+    try {
+      await this.workflowRepository.log({
+        workflowId: job.workflowId,
+        runId: job.runId,
+        attempt: job.attempt ?? 0,
+        triggerDataId: job.assetId,
+        result: WorkflowResult.Error,
+        errorCode: null,
+        // every step's parameters and every extra field can hold a credential
+        error: redactRunError(error instanceof Error ? error.message : String(error), known.definition ?? null),
+      });
+    } catch (logError: any) {
+      this.logger.error(
+        `Unable to record the failure of workflow ${job.workflowId} run ${job.runId}: ${logError}`,
+        logError?.stack,
+      );
+    }
+  }
+
+  private async executeRun<T extends WorkflowType>(
+    job: JobOf<JobName.WorkflowAssetTrigger> & { runId: string },
+    assetIds: string[],
+    getHandler: (type: T) => ExecuteOptions<T> | undefined,
+    known: { logging?: boolean; definition?: unknown },
+  ): Promise<JobStatus | undefined> {
     const { workflowId, assetId } = job;
     const workflow = await this.workflowRepository.getForWorkflowRun(workflowId);
     if (!workflow) {
       return;
     }
+    known.logging = workflow.logging;
 
     const { machineLearning } = await this.getConfig({ withCache: true });
     // Match `onAssetMetadataExtracted` — either NSFW OR description can flag NSFW.
@@ -553,7 +602,7 @@ export class WorkflowExecutionService extends BaseService {
       }
     }
 
-    const runId = job.runId ?? crypto.randomUUID();
+    const { runId } = job;
     const attempt = job.attempt ?? 0;
     type RunLogEntry = Omit<WorkflowRunLog, 'workflowId' | 'runId' | 'attempt' | 'triggerDataId'>;
     const log = async (entry: RunLogEntry) => {
@@ -586,6 +635,7 @@ export class WorkflowExecutionService extends BaseService {
     // Track only configuration this run successfully persisted. Reloading the latest definition here
     // would also trust an owner's intervening edit and could skip a newly restrictive filter.
     const expectedDefinition = structuredClone(definitionOf(workflow));
+    known.definition = expectedDefinition;
     let steps = workflow.steps;
     if (job.fromStepId) {
       if (!job.definitionSha256 || job.definitionSha256 !== definitionSha256(expectedDefinition)) {

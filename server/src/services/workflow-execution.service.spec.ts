@@ -806,6 +806,48 @@ describe(WorkflowExecutionService.name, () => {
       });
     });
 
+    describe('a run that fails before its first step (FL-179)', () => {
+      it('is recorded in run history, where Retry can run it again', async () => {
+        setup();
+        mocks.workflow.getForAssetV1.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).rejects.toThrow('database unavailable');
+
+        expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+        expect(mocks.workflow.log).toHaveBeenCalledExactlyOnceWith({
+          workflowId,
+          runId: expect.any(String),
+          attempt: 0,
+          triggerDataId: assetId,
+          result: WorkflowResult.Error,
+          errorCode: null,
+          error: 'database unavailable',
+        });
+      });
+
+      it('keeps the run id it was queued with and hides credentials from the definition', async () => {
+        const workflow = setup();
+        (workflow.definition as { extra: Record<string, unknown> }).extra = { apiKey: 'workflow-extra-key' };
+        const runId = newUuid();
+        mocks.workflow.getForAssetV1.mockRejectedValue(new Error('refused workflow-extra-key'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, attempt: 2 })).rejects.toThrow();
+
+        const [entry] = mocks.workflow.log.mock.calls[0]!;
+        expect(entry).toMatchObject({ runId, attempt: 2, result: WorkflowResult.Error });
+        expect(entry.error).not.toContain('workflow-extra-key');
+      });
+
+      it('records nothing when run history is off', async () => {
+        setup({ logging: false });
+        mocks.workflow.getForAssetV1.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).rejects.toThrow('database unavailable');
+
+        expect(mocks.workflow.log).not.toHaveBeenCalled();
+      });
+    });
+
     describe('a stalled job replayed with the same data (FL-179)', () => {
       const runId = newUuid();
       const executionId = newUuid();
