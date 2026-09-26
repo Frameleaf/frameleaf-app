@@ -5,7 +5,7 @@ import { canonicalCutoverJson } from 'src/services/fork-schema-cutover.service.j
 type PrepareForkOptions = { batchSize?: number };
 type PrepareOfficialOptions = { acknowledgeSharedLinkPasswords?: boolean };
 
-@SubCommand({ name: 'prepare-official', description: 'Prepare a certified checkpoint for the official Immich image' })
+@SubCommand({ name: 'prepare-official', description: 'Prepare a certified checkpoint for the official upstream image' })
 export class ForkHandoffPrepareOfficialCommand extends CommandRunner {
   constructor(private readonly handoff: ForkHandoffService) {
     super();
@@ -73,7 +73,7 @@ export class ForkHandoffPrepareForkCommand extends CommandRunner {
 
 @Command({
   name: 'fork-handoff',
-  description: 'Prepare certified transitions between fork and official Immich images',
+  description: 'Prepare certified transitions between Frameleaf and the official upstream images',
   subCommands: [ForkHandoffPrepareOfficialCommand, ForkHandoffPrepareForkCommand],
 })
 export class ForkHandoffCommand extends CommandRunner {

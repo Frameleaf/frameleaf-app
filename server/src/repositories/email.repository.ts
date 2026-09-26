@@ -42,7 +42,11 @@ export enum EmailTemplate {
 }
 
 interface BaseEmailProps {
-  baseUrl: string;
+  /**
+   * FL-190: this server's public address. Absent when the server has none; the email then carries
+   * no link and asks the recipient to open Frameleaf on their server.
+   */
+  baseUrl?: string;
   customTemplate?: string;
 }
 

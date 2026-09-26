@@ -108,7 +108,7 @@ start_fork_normal() {
   id="$(compose ps -q fork-server)"
   for _ in {1..120}; do
     logs="$(docker logs --since 5m "$id" 2>&1)"
-    grep -Fq 'Immich Microservices is running' <<<"$logs" && return 0
+    grep -Fq 'Frameleaf Microservices is running' <<<"$logs" && return 0
     sleep 1
   done
   docker logs "$id" >&2

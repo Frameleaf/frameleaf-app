@@ -6,14 +6,13 @@
     children?: Snippet;
     withHeader?: boolean;
     hero?: 'summit' | 'cabin';
-    attribution?: boolean;
     keypad?: 'auto' | 'always' | 'never';
   }
 
   // Legacy public/maintenance callers stay on the single pane; auth routes opt into prototype hero art.
-  let { title, children, withHeader = true, hero, attribution = false, keypad = 'auto' }: Props = $props();
+  let { title, children, withHeader = true, hero, keypad = 'auto' }: Props = $props();
 </script>
 
-<AuthShell {title} {withHeader} {hero} {attribution} {keypad}>
+<AuthShell {title} {withHeader} {hero} {keypad}>
   {@render children?.()}
 </AuthShell>

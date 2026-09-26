@@ -273,7 +273,7 @@ _auth_state = (
     else "DISABLED (no token; /predict open to anything that can reach this port)"
 )
 log.info("=" * 64)
-log.info("Immich ML auth: %s", _auth_state)
+log.info("Frameleaf ML auth: %s", _auth_state)
 log.info("  IMMICH_ML_AUTH_TOKEN set = %s", "yes" if _expected_token else "no")
 log.info("=" * 64)
 if not _expected_token:
@@ -288,7 +288,7 @@ app.add_middleware(BearerAuthMiddleware, expected_token=_expected_token)
 
 @app.get("/")
 async def root() -> ORJSONResponse:
-    return ORJSONResponse({"message": "Immich ML"})
+    return ORJSONResponse({"message": "Frameleaf ML"})
 
 
 @app.get("/ping")
