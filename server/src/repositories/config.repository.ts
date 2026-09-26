@@ -23,7 +23,7 @@ import {
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
-import { FRAMELEAF_RELEASE_FEED, FRAMELEAF_RELEASES_API } from 'src/utils/frameleaf-release.js';
+import { FRAMELEAF_RELEASES_API, FRAMELEAF_RELEASE_FEED } from 'src/utils/frameleaf-release.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
 

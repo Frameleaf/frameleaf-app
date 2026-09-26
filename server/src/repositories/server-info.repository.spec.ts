@@ -83,7 +83,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       await repository.getLatestRelease(ReleaseChannel.Stable);
 
       const [url, init] = fetch.mock.calls[0];
-      expect([...new URL(url).searchParams.keys()]).toEqual(['channel']);
+      expect(new URL(url).searchParams.keys().toArray()).toEqual(['channel']);
       expect(init.headers).toEqual({ Accept: 'application/json', 'User-Agent': 'Frameleaf-Server' });
       expect(init.credentials).toBeUndefined();
       expect(init.body).toBeUndefined();
