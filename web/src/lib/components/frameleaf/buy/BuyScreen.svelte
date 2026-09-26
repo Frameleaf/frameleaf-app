@@ -238,7 +238,11 @@
             description={plan.id === 'cloud-annual'
               ? $t('frameleaf_buy_plan_annual_description')
               : $t('frameleaf_buy_plan_monthly_description')}
-            features={[$t('frameleaf_plan_feature_remote'), $t('frameleaf_plan_feature_servers')]}
+            features={[
+              $t('frameleaf_plan_feature_remote'),
+              $t('frameleaf_plan_feature_backup', { values: { size: CLOUD_BACKUP_PRICING.includedTb } }),
+              $t('frameleaf_plan_feature_servers'),
+            ]}
             recommended={plan.id === 'cloud-annual'}
           >
             {#snippet action()}
@@ -258,8 +262,12 @@
         {/each}
       </div>
       <p class="buy-note">
-        {$t('frameleaf_plan_backup_separate', {
-          values: { price: formatUsd(CLOUD_BACKUP_PRICING.usdPerTbMonth), minimum: CLOUD_BACKUP_PRICING.minimumTb },
+        {$t('frameleaf_plan_backup_extra', {
+          values: {
+            included: CLOUD_BACKUP_PRICING.includedTb,
+            price: formatUsd(CLOUD_BACKUP_PRICING.usdPerTbMonth * CLOUD_BACKUP_PRICING.blockTb),
+            block: CLOUD_BACKUP_PRICING.blockTb,
+          },
         })}
         {#if discount === 'server'}
           {$t('frameleaf_buy_licensed_discount')}

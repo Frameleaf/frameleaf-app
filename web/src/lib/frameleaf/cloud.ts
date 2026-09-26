@@ -35,15 +35,18 @@ export const cloudPlanPrice = (price: number, licensed: boolean) =>
   licensed ? Math.round(price * (1 - LICENSED_DISCOUNT) * 100) / 100 : price;
 
 /**
- * Cloud backup pricing (owner decision on FL-146, 2026-09-25): usage based at this rate per TB per
- * month, nothing included in a plan, with a one-TB minimum and proration. Kept in this one constant
- * so a price change is a one-line edit.
+ * Cloud backup pricing, matching the prices Frameleaf Cloud records (owner decision, 2026-09-25):
+ * every plan includes 1 TB, and more storage is sold in 1 TB blocks at this rate per TB a month. Kept
+ * in this one constant so a price change is a one-line edit.
  */
-export const CLOUD_BACKUP_PRICING = Object.freeze({ usdPerTbMonth: 7.99, minimumTb: 1 });
+export const CLOUD_BACKUP_PRICING = Object.freeze({ includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 });
 
-/** The monthly backup charge for `storedTb` terabytes: rate × max(minimum, stored). */
-export const cloudBackupMonthlyUsd = (storedTb: number) =>
-  Math.round(CLOUD_BACKUP_PRICING.usdPerTbMonth * Math.max(CLOUD_BACKUP_PRICING.minimumTb, storedTb) * 100) / 100;
+/** The monthly charge for backup beyond what a plan includes: whole blocks over the included TB. */
+export const cloudBackupMonthlyUsd = (storedTb: number) => {
+  const { includedTb, blockTb, usdPerTbMonth } = CLOUD_BACKUP_PRICING;
+  const blocks = Math.ceil(Math.max(0, storedTb - includedTb) / blockTb);
+  return Math.round(blocks * blockTb * usdPerTbMonth * 100) / 100;
+};
 
 // ------------------------------------------------------------------ licence keys (FL-171)
 
