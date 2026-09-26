@@ -66,6 +66,7 @@ describe(EdgeDirectService.name, () => {
       },
       enrollment,
       allowWan: false,
+      advertised: ['192.168.1.10'],
     });
     await sut.start();
     port = ((sut as unknown as { server: tls.Server }).server.address() as AddressInfo).port;
@@ -75,12 +76,28 @@ describe(EdgeDirectService.name, () => {
     await sut.stop();
   });
 
-  it('serves the wildcard certificate and tags a home peer on a LAN name as lan', async () => {
+  it('serves the wildcard certificate, and a loopback peer (the self-check) as wan even in "Relay only"', async () => {
     const result = await connect(LAN_NAME);
     expect(result.subject).toBe('u225vlzhsdlhwh4l.frameleaf-direct.net');
     expect(proxy.accept).toHaveBeenCalledWith(expect.anything(), {
-      via: 'lan',
+      via: 'wan',
       clientIp: '127.0.0.1',
+      host: LAN_NAME,
+    });
+  });
+
+  /** A decrypted connection as the listener sees it, from any address. */
+  const arrive = (remoteAddress: string, servername: string) => {
+    const socket = { remoteAddress, servername, destroy: vi.fn() };
+    (sut as unknown as { onSecureConnection: (socket: unknown) => void }).onSecureConnection(socket);
+    return socket;
+  };
+
+  it('tags a peer on the advertised LAN address\'s subnet as lan', () => {
+    arrive('192.168.1.20', LAN_NAME);
+    expect(proxy.accept).toHaveBeenCalledWith(expect.anything(), {
+      via: 'lan',
+      clientIp: '192.168.1.20',
       host: LAN_NAME,
     });
   });
@@ -90,9 +107,12 @@ describe(EdgeDirectService.name, () => {
     expect(result.subject).toBe('photos.example.com');
   });
 
-  it('closes connections from outside the home in "Relay only" mode', async () => {
-    const result = await connect(RELAY_NAME);
-    expect(result.closedByServer).toBe(true);
+  it('closes connections from outside the home in "Relay only" mode', () => {
+    const outside = arrive('203.0.113.9', LAN_NAME);
+    expect(outside.destroy).toHaveBeenCalled();
+    // a home peer that did not ask for an advertised LAN name counts as outside too
+    const unnamed = arrive('192.168.1.20', RELAY_NAME);
+    expect(unnamed.destroy).toHaveBeenCalled();
     expect(proxy.accept).not.toHaveBeenCalled();
   });
 
@@ -103,8 +123,9 @@ describe(EdgeDirectService.name, () => {
       },
       enrollment,
       allowWan: true,
+      advertised: ['192.168.1.10'],
     });
-    await connect(RELAY_NAME);
+    arrive('203.0.113.9', RELAY_NAME);
     expect(proxy.accept).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ via: 'wan' }));
   });
 

@@ -152,6 +152,8 @@ export class EdgeProxyService {
     this.sockets.add(socket);
     this.perAddress.set(address, count + 1);
     this.arrivals.set(socket, arrival);
+    // a visitor's connection failing (reset, TLS error) closes it; it never reaches the process
+    socket.on('error', () => socket.destroy());
     socket.once('close', () => {
       this.sockets.delete(socket);
       const left = (this.perAddress.get(address) ?? 1) - 1;
