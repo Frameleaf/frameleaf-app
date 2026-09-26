@@ -17,7 +17,8 @@ import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 @Table('asset_file')
 @Unique({ columns: ['assetId', 'type', 'isEdited'] })
 // FL-179 (migration 2100000000640): storage moves and FileDelete look file rows up by path
-@Index({ columns: ['path'] })
+// a Frameleaf name, so an index upstream adds with the default name cannot collide with it
+@Index({ name: 'asset_file_path_frameleaf_idx', columns: ['path'] })
 @UpdatedAtTrigger('asset_file_updatedAt')
 export class AssetFileTable {
   @PrimaryGeneratedColumn()
