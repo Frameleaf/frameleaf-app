@@ -543,6 +543,28 @@ export const edgeStateCurrent = (state: Pick<FrameleafRemoteAccess, 'updatedAt'>
 // ------------------------------------------------------------------ arrivals
 
 /**
+ * The address a visitor's connections are counted by: IPv4 as it is (an IPv4-mapped IPv6 address as
+ * IPv4), IPv6 by its /64, since one household usually holds a whole /64.
+ */
+export const addressBucket = (address: string | undefined | null): string => {
+  const value = (address ?? '').trim().replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, '');
+  if (isIP(value) === 4) {
+    return value;
+  }
+  const compressed = compressIpv6(value.split('%', 1)[0]);
+  if (!compressed) {
+    return 'unknown';
+  }
+  const [head, tail = ''] = compressed.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups = compressed.includes('::')
+    ? [...left, ...Array.from({ length: 8 - left.length - right.length }, () => '0'), ...right]
+    : left;
+  return `${groups.slice(0, 4).join(':')}::/64`;
+};
+
+/**
  * How a direct connection arrived (instance contract "Via-header contract"): `lan` only when the peer
  * is on the home network (RFC 1918, ULA, loopback or `FRAMELEAF_TRUSTED_LAN_CIDRS`) *and* it asked
  * for one of this server's LAN names (SNI) whose address is itself on the home network. Anything else
