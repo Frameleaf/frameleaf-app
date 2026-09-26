@@ -34,7 +34,7 @@ vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   serverConfigManager: { value: { isOnboarded: true } },
 }));
 vi.mock('$lib/managers/event-manager.svelte', () => ({
-  eventManager: { emit: vi.fn() },
+  eventManager: { emit: vi.fn(), on: vi.fn() },
 }));
 
 const frameleafOff = {
