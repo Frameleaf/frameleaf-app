@@ -26,6 +26,13 @@ import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
+/** The identity key's signer (FL-178): the key the ML token is bound to and every proof is signed with. */
+const identitySigner = {
+  kid: 'kid-1',
+  publicJwk: { kty: 'OKP' as const, crv: 'Ed25519' as const, x: 'x' },
+  sign: () => 'header.payload.signature',
+};
+
 describe(MlDestinationService.name, () => {
   let sut: MlDestinationService;
   let mocks: ServiceMocks;
@@ -315,7 +322,8 @@ describe(MlDestinationService.name, () => {
         api: 'https://api.cloud.test',
         ml: { eu: 'https://ml.eu.cloud.test' },
       });
-      mocks.frameleafCloud.accessToken.mockResolvedValue('instance-token');
+      mocks.instanceIdentity.currentSigner.mockReturnValue(identitySigner);
+      mocks.frameleafCloud.accessToken.mockResolvedValue({ accessToken: 'instance-token', signer: identitySigner });
       mocks.frameleafCloudMl.getConsent.mockResolvedValue({
         requiredVersion: '2026-09-25',
         recordedVersion: null,
@@ -340,12 +348,15 @@ describe(MlDestinationService.name, () => {
         features: { identityNames: false, medicalSignals: true, ocrAddon: false },
       });
 
-      const gateway = { url: 'https://ml.eu.cloud.test', bearer: 'instance-token' };
+      const gateway = {
+        url: 'https://ml.eu.cloud.test',
+        token: { accessToken: 'instance-token', signer: identitySigner },
+      };
       expect(mocks.frameleafCloud.accessToken).toHaveBeenCalledWith(
         expect.objectContaining({ issuer: 'https://id.cloud.test' }),
         'instance-1',
         'https://ml.eu.cloud.test',
-        expect.any(Function),
+        identitySigner,
       );
       expect(mocks.frameleafCloudMl.recordConsent).toHaveBeenCalledWith(gateway, {
         version: '2026-09-25',
@@ -424,7 +435,7 @@ describe(MlDestinationService.name, () => {
       );
       expect(mocks.frameleafCloudMl.revokeConsent).toHaveBeenCalledWith({
         url: 'https://ml.eu.cloud.test',
-        bearer: 'instance-token',
+        token: { accessToken: 'instance-token', signer: identitySigner },
       });
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });

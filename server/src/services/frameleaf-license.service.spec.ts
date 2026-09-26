@@ -8,7 +8,7 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
-import { FakeCloud, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
+import { FakeCloud, startFakeCloud, tokenAnswer, tokenNameOf } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { makeLicenseSigner, signLicenseCertificate } from 'test/fixtures/frameleaf-license.fixture.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -40,8 +40,7 @@ describe(FrameleafLicenseService.name, () => {
       accountId: 'account-1',
     });
 
-  const serveToken = () =>
-    cloud.on('POST /id/token', () => ({ status: 200, body: { access_token: 'api-token', expires_in: 600 } }));
+  const serveToken = () => cloud.on('POST /id/token', (request) => tokenAnswer(request));
 
   beforeEach(async () => {
     cloud = await startFakeCloud();
@@ -129,6 +128,7 @@ describe(FrameleafLicenseService.name, () => {
 
       const request = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!;
       expect(request.headers.authorization).toBeUndefined();
+      expect(request.headers.dpop).toBeUndefined();
       expect(request.json()).toMatchObject({
         key: SERVER_KEY,
         fingerprint: { instanceId: instanceId(), jkt: expect.any(String) },
@@ -158,7 +158,11 @@ describe(FrameleafLicenseService.name, () => {
       }));
       await sut.activate(authStub.admin, { key: SERVER_KEY });
       const request = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!;
-      expect(request.headers.authorization).toBe('Bearer api-token');
+      // FL-178: a DPoP-bound instance token and a proof by the identity key (checked by the fake cloud)
+      expect(tokenNameOf(request)).toBe('api-token');
+      expect(request.dpop).toMatchObject({
+        claims: { htm: 'POST', htu: `${cloud.url}/api/v1/licenses/activate`, ath: expect.any(String) },
+      });
     });
 
     it('refuses a certificate for another server or signed by an unknown key', async () => {
@@ -271,9 +275,9 @@ describe(FrameleafLicenseService.name, () => {
         body: { certificates: [certificate({ jti: 'jti-2' })] },
       }));
       const status = await sut.refreshNow();
-      expect(cloud.requests.find(({ path }) => path === '/api/v1/licenses/refresh')?.headers.authorization).toBe(
-        'Bearer api-token',
-      );
+      const refresh = cloud.requests.find(({ path }) => path === '/api/v1/licenses/refresh')!;
+      expect(tokenNameOf(refresh)).toBe('api-token');
+      expect(refresh.dpop?.claims.ath).toEqual(expect.any(String));
       expect(status).toMatchObject({ state: 'active', plan: { source: 'account' }, refresh: { lastError: null } });
       expect(store()?.plan?.claims.jti).toBe('jti-2');
     });
