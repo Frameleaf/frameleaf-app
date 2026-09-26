@@ -1079,8 +1079,10 @@ export class CloudBackupService {
     yield `${JSON.stringify(header).slice(0, -1)},"assets":{`;
 
     const profiles: string[] = [];
-    let asset: { id: string; owner: string | null; files: CloudBackupManifestFile[] } | null = null;
-    const assetJson = (current: { id: string; owner: string | null; files: CloudBackupManifestFile[] }) => {
+    type ManifestAsset = { id: string; owner: string | null; files: CloudBackupManifestFile[] };
+    // held in an object: the asset in hand changes inside the loop, which narrowing a local cannot follow
+    const pending: { asset: ManifestAsset | null } = { asset: null };
+    const assetJson = (current: ManifestAsset) => {
       const body = JSON.stringify({ owner: current.owner, files: current.files });
       const text = `${counts.assets > 0 ? ',' : ''}${JSON.stringify(current.id)}:${body}`;
       counts.assets += 1;
@@ -1107,19 +1109,21 @@ export class CloudBackupService {
           }
           continue;
         }
+        let asset = pending.asset;
         if (asset?.id !== entry.assetId) {
           if (asset) {
             yield assetJson(asset);
           }
           asset = { id: entry.assetId, owner: entry.ownerId, files: [] };
+          pending.asset = asset;
         }
         asset.files.push(file);
       }
       more = page.length === CLOUD_BACKUP_MANIFEST_PAGE;
       after = page.at(-1)?.fileKey ?? after;
     }
-    if (asset) {
-      yield assetJson(asset);
+    if (pending.asset) {
+      yield assetJson(pending.asset);
     }
     yield `},"profiles":{${profiles.join(',')}}}`;
   }
