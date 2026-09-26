@@ -173,6 +173,7 @@ describe('/server', () => {
         mapDarkStyleUrl: 'https://tiles.immich.cloud/v1/style/dark.json',
         mapLightStyleUrl: 'https://tiles.immich.cloud/v1/style/light.json',
         minFaces: 3,
+        frameleaf: { via: null, signInAvailable: false, signInRequired: false, publicUrl: null },
       });
       expect(defaultImageDescriptionRawPromptTemplate).toEqual(expect.any(String));
       expect(defaultImageDescriptionRawPromptTemplate).toContain('{schema}');

@@ -87,6 +87,18 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'cloudMl.startWith',
   },
   {
+    pattern: 'frameleafCloud.remoteAccess.allowOriginalsOverRelay',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    evidence: "change('allowOriginalsOverRelay', value)",
+  },
+  {
+    pattern: 'frameleafCloud.remoteAccess.allowPasswordOverRelay',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    evidence: "change('allowPasswordOverRelay', value)",
+  },
+  {
     pattern: 'frameleafCloud.signIn.buttonText',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/FrameleafSignInSection.svelte',

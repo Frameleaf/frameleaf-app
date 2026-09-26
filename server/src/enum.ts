@@ -28,6 +28,10 @@ export enum ImmichHeader {
   HlsPosition = 'x-immich-hls-pos',
   /** The scoped, expiring session credential a render worker was handed at admission (FL-95). */
   RenderWorkerSession = 'x-frameleaf-worker-session',
+  /** FL-161: how the edge worker received a request (`lan`, `wan` or `relay`); counts only with the secret below. */
+  FrameleafVia = 'x-frameleaf-via',
+  /** FL-161: the edge worker's per-boot secret (`FRAMELEAF_EDGE_SECRET`), proving it set the via header. */
+  FrameleafViaAuth = 'x-frameleaf-via-auth',
 }
 
 export enum ImmichQuery {
@@ -1799,6 +1803,16 @@ export enum MetadataKey {
   ApiKeySecurity = 'api_key',
   EventConfig = 'event_config',
   JobConfig = 'job_config',
+  /** FL-161: the `@RateLimited()` rule of a route. */
+  RateLimit = 'rate_limit',
+  /** FL-161: a route that sends originals, archives or database backups, refused over the relay by default. */
+  OriginalTransfer = 'original_transfer',
+  /** FL-161: a route (or controller) for machines on the home network only, refused over remote access. */
+  HomeNetworkOnly = 'home_network_only',
+  /** FL-161: a route counted against the higher remote-access media ceiling (thumbnails and previews). */
+  RemoteMediaCeiling = 'remote_media_ceiling',
+  /** FL-161: a route any valid session may reach through remote access (signing out). */
+  RemoteSignInExempt = 'remote_sign_in_exempt',
 }
 
 export enum RouteKey {

@@ -29,6 +29,7 @@ import {
 } from 'src/dtos/shared-link.dto.js';
 import { ApiTag, ImmichCookie, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { respondWithCookie } from 'src/utils/response.js';
@@ -68,6 +69,7 @@ export class SharedLinkController {
 
   @Post('login')
   @Authenticated({ sharedLink: true })
+  @RateLimited(RATE_LIMITS.sharedLinkLogin)
   @Endpoint({
     summary: 'Shared link login',
     description: 'Login to a password protected shared link',

@@ -1,5 +1,6 @@
-import { Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
 import { ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   ReleaseEventV1,
@@ -18,6 +19,7 @@ import {
 import { VersionCheckStateResponseDto } from 'src/dtos/system-metadata.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
 import { VersionService } from 'src/services/version.service.js';
@@ -137,8 +139,8 @@ export class ServerController {
       .stable('v2')
       .deprecated('v3.2.0', { replacementId: 'getPublicConfig' }),
   })
-  getServerConfig(): Promise<ServerConfigDto> {
-    return this.service.getSystemConfig();
+  getServerConfig(@Req() request: Request): Promise<ServerConfigDto> {
+    return this.service.getSystemConfig(requestVia(request));
   }
 
   @Get('statistics')
