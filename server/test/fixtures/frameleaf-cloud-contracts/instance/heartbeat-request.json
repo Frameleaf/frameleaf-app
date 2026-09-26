@@ -1,0 +1,13 @@
+{
+  "version": "3.1.0",
+  "bootId": "5f0c7a52-3a1e-4c89-9a3e-0f2d8b6c1a44",
+  "uptimeSec": 86412,
+  "health": { "database": "ok", "storage": "ok", "jobs": "ok" },
+  "endpoints": [
+    { "kind": "local", "url": "http://192.168.1.20:2283" },
+    { "kind": "wan", "url": "https://203.0.113.7:2283" }
+  ],
+  "remoteAccess": { "enabled": false, "relayConnected": false, "direct": false },
+  "permissions": { "allowRemoteEnable": false, "allowBackupTrigger": true, "allowEntitlementRefresh": true },
+  "licenseKid": null
+}

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaults } from 'src/config.js';
 import {
@@ -10,7 +10,7 @@ import {
   NotificationType,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { CloudMlService } from 'src/services/cloud-ml.service.js';
+import { CloudMlService, WALLET_STEP_UP_MESSAGE } from 'src/services/cloud-ml.service.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -154,6 +154,7 @@ describe(CloudMlService.name, () => {
       spentTodayUsd: 0,
       topUpUrl: 'https://account.cloud.test/wallet',
       autoTopUp: false,
+      settingsUrl: null,
     });
     mocks.frameleafCloudMl.getConsent.mockResolvedValue({
       requiredVersion: '2026-10-01',
@@ -394,7 +395,8 @@ describe(CloudMlService.name, () => {
             settledUsd: 0.42,
             credits: 42,
             settledAt: '2026-09-25T10:00:00Z',
-            modelId: 'qwen3.5-9b@1',
+            modelSku: 'ms_01J8ZK3M4N5P6Q7R',
+            computeSku: 'cs_01J8ZK3M4N5P6Q7R',
             gpuSeconds: 312,
             workers: 1,
             estimateUsd: 0.5,
@@ -420,6 +422,7 @@ describe(CloudMlService.name, () => {
         spentTodayUsd: 0,
         topUpUrl: null,
         autoTopUp: true,
+        settingsUrl: null,
       });
 
       await expect(sut.updateWallet({ dailyCapUsd: 40, autoTopUp: true })).resolves.toMatchObject({
@@ -439,6 +442,81 @@ describe(CloudMlService.name, () => {
       await expect(sut.updateWallet({})).rejects.toBeInstanceOf(BadRequestException);
       metadata.clear();
       await expect(sut.updateWallet({ autoTopUp: true })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    describe('an increase the account owner has to confirm (FL-177, as-built decision #22)', () => {
+      const stepUp = (url: string) =>
+        new FrameleafCloudError(MlAdmissionRefusal.ConsentMissing, 403, 'Confirm this in your account.', {
+          code: 'step-up-required',
+          message: 'Confirm this in your account.',
+          retryable: false,
+          refusal: null,
+          detail: null,
+          data: { url },
+          requestId: 'req_01J8ZK3M4N5P6Q7R',
+        });
+
+      it('answers 403 and keeps the account-app page the cloud named for the wallet links', async () => {
+        link();
+        await sut.getWallet();
+        mocks.frameleafCloudMl.updateWallet.mockRejectedValue(stepUp('https://account.cloud.test/wallet/settings'));
+
+        await expect(sut.updateWallet({ dailyCapUsd: 200 })).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(sut.updateWallet({ autoTopUp: true })).rejects.toThrow(WALLET_STEP_UP_MESSAGE);
+        await expect(sut.updateWallet({ autoTopUp: true })).rejects.toMatchObject({
+          response: { code: 'step-up-required', statusCode: 403 },
+        });
+        expect(metadata.get(SystemMetadataKey.FrameleafMlWallet)).toMatchObject({
+          settingsUrl: 'https://account.cloud.test/wallet/settings',
+        });
+        // a later read without the address keeps it
+        await expect(sut.getWallet()).resolves.toMatchObject({
+          settingsUrl: 'https://account.cloud.test/wallet/settings',
+        });
+      });
+
+      it('never keeps an account address outside the configured cloud', async () => {
+        link();
+        await sut.getWallet();
+        mocks.frameleafCloudMl.updateWallet.mockRejectedValue(stepUp('https://account.attacker.example/wallet'));
+        await expect(sut.updateWallet({ dailyCapUsd: 200 })).rejects.toBeInstanceOf(ForbiddenException);
+        expect(metadata.get(SystemMetadataKey.FrameleafMlWallet)).toMatchObject({ settingsUrl: null });
+
+        mocks.frameleafCloudMl.getWallet.mockResolvedValue({
+          balanceUsd: 12,
+          heldUsd: 2,
+          dailyCapUsd: null,
+          spentTodayUsd: 0,
+          topUpUrl: null,
+          autoTopUp: false,
+          settingsUrl: 'https://account.attacker.example/wallet',
+        });
+        await expect(sut.getWallet()).resolves.toMatchObject({ settingsUrl: null });
+      });
+
+      it('reads the account-app page from the wallet when the cloud names it there', async () => {
+        link();
+        mocks.frameleafCloudMl.getWallet.mockResolvedValue({
+          balanceUsd: 12,
+          heldUsd: 2,
+          dailyCapUsd: 20,
+          spentTodayUsd: 0,
+          topUpUrl: null,
+          autoTopUp: false,
+          settingsUrl: 'https://account.cloud.test/wallet/settings',
+        });
+        await expect(sut.getWallet()).resolves.toMatchObject({
+          settingsUrl: 'https://account.cloud.test/wallet/settings',
+        });
+      });
+
+      it('passes any other refusal on as before', async () => {
+        link();
+        mocks.frameleafCloudMl.updateWallet.mockRejectedValue(
+          new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 503, 'Frameleaf Cloud did not answer'),
+        );
+        await expect(sut.updateWallet({ dailyCapUsd: 5 })).rejects.toBeInstanceOf(BadRequestException);
+      });
     });
   });
 
@@ -473,7 +551,8 @@ describe(CloudMlService.name, () => {
             costUsd: 0.42,
             credits: 42,
             finishedAt: '2026-09-25T10:00:00.000Z',
-            modelId: null,
+            modelSku: null,
+            computeSku: null,
             gpuSeconds: null,
             workers: null,
             estimateUsd: null,
@@ -493,7 +572,8 @@ describe(CloudMlService.name, () => {
             settledUsd: 0.42,
             credits: 42,
             settledAt: '2026-09-25T10:00:00Z',
-            modelId: 'qwen3.5-9b@1',
+            modelSku: 'ms_01J8ZK3M4N5P6Q7R',
+            computeSku: 'cs_01J8ZK3M4N5P6Q7R',
             gpuSeconds: 312,
             workers: 1,
             estimateUsd: 0.5,
@@ -501,7 +581,16 @@ describe(CloudMlService.name, () => {
         ],
       });
       await expect(sut.getSettlements()).resolves.toMatchObject({
-        items: [{ cloudJobId: 'job-1', modelId: 'qwen3.5-9b@1', gpuSeconds: 312, workers: 1, estimateUsd: 0.5 }],
+        items: [
+          {
+            cloudJobId: 'job-1',
+            modelSku: 'ms_01J8ZK3M4N5P6Q7R',
+            computeSku: 'cs_01J8ZK3M4N5P6Q7R',
+            gpuSeconds: 312,
+            workers: 1,
+            estimateUsd: 0.5,
+          },
+        ],
       });
     });
   });

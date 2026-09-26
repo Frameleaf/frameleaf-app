@@ -1,0 +1,6 @@
+{
+  "code": "nonce_invalid",
+  "message": "The rotation nonce is unknown, used or expired. Ask for a new one.",
+  "retryable": true,
+  "requestId": "req_01J8ZK3M4N5P6Q7V"
+}

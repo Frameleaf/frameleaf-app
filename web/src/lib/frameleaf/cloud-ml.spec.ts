@@ -45,6 +45,7 @@ const wallet = {
   dailyCapUsd: 20 as number | null,
   autoTopUp: false,
   topUpUrl: null,
+  settingsUrl: null,
   updatedAt: '2026-09-25T00:00:00.000Z',
 };
 
@@ -231,5 +232,16 @@ describe('where each job runs (FL-159 §3.2)', () => {
     const benchmark = benchmarkFor(check)!;
     expect(benchmark.factors['qwen3.5-9b@1']).toBe(2);
     expect(Object.keys(benchmark.factors).some((id) => id.startsWith('render-'))).toBe(false);
+  });
+});
+
+describe('canLowerCap (FL-177)', () => {
+  it('lets this server only reduce spend: a lower cap, or a first cap', async () => {
+    const { canLowerCap } = await import('$lib/frameleaf/cloud-ml');
+    expect(canLowerCap(20, 15)).toBe(true);
+    expect(canLowerCap(null, 40)).toBe(true);
+    expect(canLowerCap(undefined, 40)).toBe(true);
+    expect(canLowerCap(20, 20)).toBe(false);
+    expect(canLowerCap(20, 30)).toBe(false);
   });
 });
