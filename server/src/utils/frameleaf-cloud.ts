@@ -244,6 +244,12 @@ export const catalogSchema = z.object({
           .nullable()
           .default(null),
         retired: z.boolean().default(false),
+        /**
+         * FL-181 (pending cloud confirmation of the field name): which app workload a `restoration`
+         * catalog entry serves. `null` (or absent) for a model this server cannot place, and for
+         * every other workload, which never splits by mode.
+         */
+        mode: z.enum(['faithful', 'creative']).nullable().default(null),
       }),
     )
     .max(500),
@@ -537,9 +543,121 @@ export const cloudFactsFromCapabilities = (capabilities: CloudCapabilities, mode
   refusal: null,
 });
 
-/** The server-known workloads in a cloud `workloads[]` list; anything else is ignored. */
-export const knownWorkloads = (values: readonly string[]): MlWorkload[] =>
-  values.filter((value): value is MlWorkload => (Object.values(MlWorkload) as string[]).includes(value));
+/**
+ * The workload IDs Frameleaf Cloud uses on the wire (FC-66, FL-181; canonical set in
+ * `instance-contract.md` §FC-34, confirmed 2026-09-25): `descriptions`, `upscale`, `restoration`,
+ * `transcription`, `tts`, `interpolation`. These IDs are never reused and are not the same strings
+ * as `MlWorkload`: this server's workloads are finer-grained than the cloud's (restoration has a
+ * faithful and a creative mode; Studio AI covers more than one kind of cloud work), so every place
+ * that reads or sends a workload string on the cloud boundary (capabilities, catalogue, estimates,
+ * jobs, usage) goes through the mapping below rather than comparing strings directly. An ID this
+ * server does not recognise is always ignored, never guessed at.
+ */
+export const CLOUD_WORKLOAD_IDS = [
+  'descriptions',
+  'upscale',
+  'restoration',
+  'transcription',
+  'tts',
+  'interpolation',
+] as const;
+export type CloudWorkloadId = (typeof CLOUD_WORKLOAD_IDS)[number];
+
+export const cloudWorkloadIdSchema = z.enum(CLOUD_WORKLOAD_IDS);
+
+/**
+ * The app workload(s) a cloud workload ID admits (FL-181). `restoration` admits both restoration
+ * workloads at the capability level: a specific job still needs the catalog to say which mode a
+ * model runs (`workloadForCatalogEntry`). `transcription` and `tts` both admit Studio AI, since a
+ * cloud that offers either one can run some Studio AI work; which ID a specific job needs is decided
+ * by the Studio feature being run (`studioAiCloudWorkloadId`), not by this capability check. An ID
+ * this server does not know (or one of the workloads this server never sends: face, clip, ocr,
+ * pet-recognition, studio-render) admits nothing.
+ */
+export const appWorkloadsForCloudId = (id: string): MlWorkload[] => {
+  switch (id) {
+    case 'descriptions': {
+      return [MlWorkload.Enrichment];
+    }
+    case 'upscale': {
+      return [MlWorkload.Upscale];
+    }
+    case 'restoration': {
+      return [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative];
+    }
+    case 'transcription':
+    case 'tts': {
+      return [MlWorkload.StudioAi];
+    }
+    case 'interpolation': {
+      return [MlWorkload.Interpolation];
+    }
+    default: {
+      return [];
+    }
+  }
+};
+
+/** The server-known app workloads a cloud `workloads[]` list admits; an unknown ID is ignored. */
+export const knownWorkloads = (values: readonly string[]): MlWorkload[] => [
+  ...new Set(values.flatMap((value) => appWorkloadsForCloudId(value))),
+];
+
+/**
+ * The cloud ID a job for `workload` is sent under (FL-181). `null` for a workload the cloud never
+ * serves this way: Studio AI needs `studioAiCloudWorkloadId` instead, since one app workload covers
+ * two cloud IDs and a specific job needs its own; face, clip, ocr, pet-recognition and studio-render
+ * are never sent to the cloud at all.
+ */
+export const cloudWorkloadIdFor = (workload: MlWorkload): CloudWorkloadId | null => {
+  switch (workload) {
+    case MlWorkload.Enrichment: {
+      return 'descriptions';
+    }
+    case MlWorkload.Upscale: {
+      return 'upscale';
+    }
+    case MlWorkload.RestorationFaithful:
+    case MlWorkload.RestorationCreative: {
+      return 'restoration';
+    }
+    case MlWorkload.Interpolation: {
+      return 'interpolation';
+    }
+    default: {
+      return null;
+    }
+  }
+};
+
+/**
+ * The Studio feature a Studio AI cloud job runs. Music is not a cloud workload in v1 (FL-181,
+ * cloud-confirmed 2026-09-25): a music job is refused for the cloud by the existing Studio AI
+ * refusal and is never mapped here or silently moved to a different workload.
+ */
+export type StudioAiCloudFeature = 'speech-to-text' | 'captions' | 'speech';
+
+/**
+ * The cloud ID a Studio AI job for `feature` is sent under (FL-181, cloud-confirmed 2026-09-25):
+ * `transcription` covers speech-to-text and captions; `speech` uses `tts`.
+ */
+export const studioAiCloudWorkloadId = (feature: StudioAiCloudFeature): CloudWorkloadId =>
+  feature === 'speech' ? 'tts' : 'transcription';
+
+/**
+ * The app workload a catalog entry serves (FL-181). Every workload but `restoration` maps to
+ * exactly one app workload; a `restoration` entry needs its own `mode` (faithful or creative, read
+ * from the catalog entry) to say which one, and `null` when the catalog does not say.
+ */
+export const workloadForCatalogEntry = (workload: string, mode: 'faithful' | 'creative' | null): MlWorkload | null => {
+  if (workload === 'restoration') {
+    if (mode === 'creative') {
+      return MlWorkload.RestorationCreative;
+    }
+    return mode === 'faithful' ? MlWorkload.RestorationFaithful : null;
+  }
+  return appWorkloadsForCloudId(workload)[0] ?? null;
+};
 
 export const base64url = (input: Buffer | string): string => Buffer.from(input).toString('base64url');
 
