@@ -834,6 +834,11 @@ describe(FrameleafCloudService.name, () => {
       await sut.handleHeartbeat();
       expect(acks[0]).toEqual({ id: 'c1', body: { result: 'done', detail: null } });
       expect(storedLink()?.desired?.remoteAccess).toBe(true);
+      // FL-165: the command flips the same switch the edge worker follows
+      const stored = metadata.get(SystemMetadataKey.SystemConfig) as {
+        frameleafCloud?: { remoteAccess?: { enabled?: boolean } };
+      };
+      expect(stored?.frameleafCloud?.remoteAccess?.enabled).toBe(true);
     });
 
     it('refreshes the licence when entitlements changed and the toggle allows it', async () => {

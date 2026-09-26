@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
+import { RemoteConnectionsResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
 import {
   ServerAboutResponseDto,
   ServerApkLinksDto,
@@ -22,7 +23,7 @@ import { apkLinks } from 'src/utils/app-releases.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { entitlementFlags, isLicensed } from 'src/utils/frameleaf-license.js';
-import { type FrameleafVia, frameleafPublicUrl, isRemoteVia, signInClient } from 'src/utils/frameleaf-sign-in.js';
+import { type FrameleafVia, isRemoteVia, signInClient } from 'src/utils/frameleaf-sign-in.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   isDuplicateDetectionEnabled,
@@ -33,6 +34,7 @@ import {
   isOcrEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
+import { remoteAccessPublication } from 'src/utils/public-url.js';
 
 @Injectable()
 export class ServerService extends BaseService {
@@ -200,10 +202,10 @@ export class ServerService extends BaseService {
     // FL-176: the server counts as onboarded once Frameleaf first-run setup is complete.
     const setup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafSetup);
     // FL-161: how this request arrived and what that asks of it, for the web app and the apps
-    const { link, linked } = await readCloudLink({
-      configRepository: this.configRepository,
-      systemMetadataRepository: this.systemMetadataRepository,
-    });
+    const deps = { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
+    const { link, linked } = await readCloudLink(deps);
+    // FL-165: the address remote access publishes (the Frameleaf address, or the verified custom hostname)
+    const { publicUrl } = await remoteAccessPublication(config.frameleafCloud.remoteAccess, deps);
 
     return {
       loginPageMessage: config.server.loginPageMessage,
@@ -225,9 +227,22 @@ export class ServerService extends BaseService {
         via,
         signInAvailable: !!signInClient(link, linked),
         signInRequired: isRemoteVia(via) && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay,
-        publicUrl: linked ? frameleafPublicUrl(link) : null,
+        publicUrl,
       },
     };
+  }
+
+  /**
+   * FL-165: `GET server/connections`: the ways to reach this server, in the order apps should try them
+   * (local, wan, ipv6, the custom hostname, then the relay; the cloud's `connections[]` shape), and the
+   * address it publishes. Empty unless the server is linked and remote access is on.
+   */
+  async getConnections(): Promise<RemoteConnectionsResponseDto> {
+    const config = await this.getConfig({ withCache: false });
+    return remoteAccessPublication(config.frameleafCloud.remoteAccess, {
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
   }
 
   async getStatistics(): Promise<ServerStatsResponseDto> {
