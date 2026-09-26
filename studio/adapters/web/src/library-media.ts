@@ -19,10 +19,12 @@ import {
   associateMediaWithProject,
   createMedia,
   getMedia,
+  getProjectMediaIds,
+  removeMediaFromProject,
   saveThumbnail,
   updateMedia,
 } from '@/infrastructure/storage'
-import { mediaDir } from '@/infrastructure/storage/workspace-fs/paths'
+import { mediaDir, projectMediaLinksPath } from '@/infrastructure/storage/workspace-fs/paths'
 import type { StudioAssetRef } from '@frameleaf/host/host-contract'
 import type { VirtualWorkspace } from './virtual-workspace'
 
@@ -139,8 +141,18 @@ async function fetchBlob(url: string, signal?: AbortSignal): Promise<Blob> {
 export interface LibraryMediaSeeder {
   /** Make these assets available to the project; already-seeded ids are left alone. */
   seed(assets: readonly StudioAssetRef[]): Promise<void>
-  /** Link every seeded asset to another project (a remounted editor has its own project id). */
-  associate(projectId: string): Promise<void>
+  /**
+   * Link the bin to another project (a remounted editor has its own project id): every seeded
+   * library asset and, with `from`, every media that project held, which includes what the person
+   * imported inside the editor (FL-174). Without it an imported file leaves the bin on a remount.
+   */
+  associate(projectId: string, from?: string): Promise<void>
+  /** The person removed this media from the bin (FL-174): no remount or late import links it again. */
+  forget(mediaId: string): void
+  /** The media is in the current bin again (imported again, or linked again by Freecut). */
+  remember(mediaId: string): void
+  /** What this seeder linked to `projectId`: the bin it put there, before anyone else changed it. */
+  linked(projectId: string): ReadonlySet<string>
   /** Stop probing and release every registered URL. */
   dispose(): void
 }
@@ -154,6 +166,23 @@ export function createLibraryMediaSeeder(options: {
 }): LibraryMediaSeeder {
   const { workspace, projectId, onChange } = options
   const seeded = new Set<string>()
+  /** Removed from the bin by the person; never carried to another mount. */
+  const removed = new Set<string>()
+  /** What was linked to each recent mount's project here (the last few mounts only). */
+  const linkedTo = new Map<string, Set<string>>()
+  const link = async (target: string, id: string) => {
+    await associateMediaWithProject(target, id)
+    let ids = linkedTo.get(target)
+    if (!ids) {
+      ids = new Set()
+      linkedTo.set(target, ids)
+      for (const key of linkedTo.keys()) {
+        if (linkedTo.size <= 4) break
+        linkedTo.delete(key)
+      }
+    }
+    ids.add(id)
+  }
   const controller = new AbortController()
   let probing: Promise<void> = Promise.resolve()
 
@@ -209,7 +238,7 @@ export function createLibraryMediaSeeder(options: {
           record.mimeType,
         )
         blobUrlManager.registerUrl(asset.id, sourceUrlOf(asset))
-        await associateMediaWithProject(projectId(), asset.id)
+        await link(projectId(), asset.id)
       }
       if (fresh.length > 0) onChange()
       // Probe one at a time in the background, handoff order first: it is the starting cut.
@@ -218,9 +247,32 @@ export function createLibraryMediaSeeder(options: {
       })
       await probing
     },
-    async associate(target) {
-      for (const id of seeded) await associateMediaWithProject(target, id)
+    async associate(target, from) {
+      const ids = new Set(seeded)
+      if (from && from !== target) {
+        for (const id of await getProjectMediaIds(from)) ids.add(id)
+      }
+      const linked: string[] = []
+      for (const id of ids) {
+        if (removed.has(id)) continue
+        await link(target, id)
+        linked.push(id)
+      }
+      // Removed from the bin while this ran (Freecut's removal of the current mount): not linked
+      // after all, so the removal stands.
+      for (const id of linked) {
+        if (removed.has(id)) await removeMediaFromProject(target, id)
+      }
       onChange()
+    },
+    forget(mediaId) {
+      removed.add(mediaId)
+    },
+    remember(mediaId) {
+      removed.delete(mediaId)
+    },
+    linked(projectId) {
+      return linkedTo.get(projectId) ?? new Set()
     },
     dispose() {
       controller.abort()
@@ -228,4 +280,115 @@ export function createLibraryMediaSeeder(options: {
       seeded.clear()
     },
   }
+}
+
+/** How many replaced mounts are followed for late imports (FL-174); older ones are let go. */
+export const RETIRED_MOUNTS_FOLLOWED = 3
+
+/** Record a replaced mount's project id, keeping only the most recent `RETIRED_MOUNTS_FOLLOWED`. */
+export function retireProject(
+  retired: Set<string>,
+  projectId: string,
+  keep = RETIRED_MOUNTS_FOLLOWED,
+): void {
+  retired.delete(projectId)
+  retired.add(projectId)
+  for (const oldest of retired) {
+    if (retired.size <= keep) break
+    retired.delete(oldest)
+  }
+}
+
+/**
+ * Keep the bin of the current editor mount whole across remounts (FL-174).
+ *
+ * - **Late imports.** Media the person imports inside the editor is linked to the current mount's
+ *   project. An import still running in a replaced instance links it to that instance's project
+ *   after the remount carried the links over; this carries it again, so the bin and Freecut's
+ *   orphaned-clip check of the current mount see it. Bursts of writes to one replaced project run
+ *   one association at a time, with at most one more after it.
+ * - **Removals.** When the person removes media from the current bin, it is forgotten (no remount or
+ *   late import links it again) and unlinked from every followed replaced project through `release`,
+ *   Freecut's own removal, which frees the record once no project links it. Otherwise the replaced
+ *   projects' links would keep it alive and bring it back.
+ *
+ * Writes to the current mount's links are never carried anywhere. Returns the unsubscribe.
+ */
+export function followRetiredImports(options: {
+  workspace: VirtualWorkspace
+  media: LibraryMediaSeeder
+  /** Project ids of replaced editor mounts (bounded by `retireProject`). */
+  retired: ReadonlySet<string>
+  current: () => string
+  /** Unlink `mediaId` from `projectId` and free the record once nothing links it. */
+  release: (projectId: string, mediaId: string) => Promise<void>
+  onError: (error: unknown) => void
+}): () => void {
+  const { workspace, media, retired, current, release, onError } = options
+  const pathOf = (projectId: string) => projectMediaLinksPath(projectId).join('/')
+
+  const running = new Set<string>()
+  const again = new Set<string>()
+  const carry = (projectId: string) => {
+    if (running.has(projectId)) {
+      again.add(projectId)
+      return
+    }
+    running.add(projectId)
+    void (async () => {
+      do {
+        again.delete(projectId)
+        const target = current()
+        if (target !== projectId && retired.has(projectId)) await media.associate(target, projectId)
+      } while (again.has(projectId))
+    })()
+      .catch(onError)
+      .finally(() => running.delete(projectId))
+  }
+
+  /** The current mount's links as last read, per mount project, to tell a removal from an addition. */
+  const known = new Map<string, Set<string>>()
+  const reconcile = async (projectId: string) => {
+    // Before the first read of this mount's links, what the seeder had put there when this read began
+    // is the baseline, so a removal that lands before that read still counts.
+    const seededBefore = new Set(media.linked(projectId))
+    const now = new Set(await getProjectMediaIds(projectId))
+    const before = known.get(projectId) ?? seededBefore
+    // Only the current mount's links are compared; a replaced mount's are let go.
+    known.clear()
+    known.set(projectId, now)
+    for (const id of now) {
+      if (!before.has(id)) media.remember(id)
+    }
+    for (const id of before) {
+      if (now.has(id)) continue
+      media.forget(id)
+      for (const retiredId of [...retired]) {
+        if (!(await getProjectMediaIds(retiredId)).includes(id)) continue
+        // Already freed, or freed by Freecut meanwhile: nothing left to release.
+        await release(retiredId, id).catch(() => undefined)
+      }
+    }
+  }
+  // Reads run in order, so each compares with the one before it.
+  let reconciling: Promise<void> = Promise.resolve()
+  const track = (projectId: string) => {
+    reconciling = reconciling.then(() => reconcile(projectId)).catch(onError)
+  }
+  track(current())
+
+  return workspace.onWrite((path) => {
+    const written = path.join('/')
+    const target = current()
+    if (written === pathOf(target)) {
+      track(target)
+      return
+    }
+    for (const projectId of retired) {
+      if (written === pathOf(projectId)) {
+        carry(projectId)
+        return
+      }
+    }
+  })
 }
