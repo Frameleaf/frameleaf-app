@@ -1,4 +1,5 @@
-import { importJWK, jwtVerify } from 'jose';
+import { ConflictException } from '@nestjs/common';
+import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +9,8 @@ import { AdminAuditAction, JobStatus, NotificationLevel, SystemMetadataKey, User
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
+import { FrameleafLicenseService, IDENTITY_KEY_MISMATCH_MESSAGE } from 'src/services/frameleaf-license.service.js';
+import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { FakeCloud, FakeCloudRequest, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { makeLicenseSigner, signLicenseCertificate } from 'test/fixtures/frameleaf-license.fixture.js';
@@ -52,12 +54,16 @@ describe(FrameleafLicenseService.name, () => {
       kid: string;
       publicJwk: Record<string, string>;
     };
-    const { payload, protectedHeader } = await jwtVerify(
-      request.body,
-      await importJWK({ ...identity.publicJwk }, 'EdDSA'),
-      { audience: `${cloud.url}/api/v1/licenses/activate` },
-    );
+    // verified the way the cloud does for a server it holds no key for: with the header's own key
+    const header = decodeProtectedHeader(request.body) as { jwk?: Record<string, string>; kid?: string };
+    expect(Object.keys(header.jwk ?? {}).sort()).toEqual(['crv', 'kty', 'x']);
+    expect(header.jwk).toEqual(identity.publicJwk);
+    expect(ed25519Thumbprint(header.jwk as { crv: string; kty: string; x: string })).toBe(header.kid);
+    const { payload, protectedHeader } = await jwtVerify(request.body, await importJWK(header.jwk!, 'EdDSA'), {
+      audience: `${cloud.url}/api/v1/licenses/activate`,
+    });
     expect(protectedHeader).toMatchObject({ alg: 'EdDSA', kid: identity.kid });
+    expect((payload.fingerprint as { jkt: string }).jkt).toBe(header.kid);
     expect(payload.exp! - payload.iat!).toBeLessThanOrEqual(120);
     expect(payload.jti).toEqual(expect.any(String));
     return payload as Record<string, any>;
@@ -223,6 +229,17 @@ describe(FrameleafLicenseService.name, () => {
         body: { code: 'unknown-key', message: 'This key was not found.' },
       }));
       await expect(sut.activate(authStub.admin, { key: SERVER_KEY })).rejects.toThrow('This key was not found.');
+    });
+
+    it('explains an activation refused because this server’s ID is registered with another key (FL-177)', async () => {
+      cloud.on('POST /api/v1/licenses/activate', () => ({
+        status: 409,
+        body: { code: 'instance-id-taken', message: 'refused', retryable: false, requestId: 'req_01J8ZK3M4N5P6Q7R' },
+      }));
+      await expect(sut.activate(authStub.admin, { key: SERVER_KEY })).rejects.toThrow(IDENTITY_KEY_MISMATCH_MESSAGE);
+      await expect(sut.activate(authStub.admin, { key: SERVER_KEY })).rejects.toBeInstanceOf(ConflictException);
+      expect(IDENTITY_KEY_MISMATCH_MESSAGE).not.toMatch(/please|successfully|simply/i);
+      expect(store()).toBeUndefined();
     });
 
     it('says to use a file when Frameleaf Cloud is not set up', async () => {

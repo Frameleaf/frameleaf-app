@@ -419,7 +419,7 @@ describe(FrameleafCloudService.name, () => {
     it.each([
       [402, 'instance-limit', 'instance-limit', /no room for another server/],
       [403, 'instance_revoked', 'server-refused', /removed from your Frameleaf account, or the account is suspended/],
-      [409, 'instance-id-taken', 'instance-id-taken', /already registered with this server’s ID/],
+      [409, 'instance-id-taken', 'instance-id-taken', /or another one with its ID, is still registered/],
       [409, 'jwk_already_bound', 'key-already-linked', /identity directory was copied/],
     ])('explains a %s %s refusal of the registration and ends the attempt', async (status, code, refusal, message) => {
       serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
@@ -626,6 +626,27 @@ describe(FrameleafCloudService.name, () => {
       expect(mocks.adminAudit.create).not.toHaveBeenCalledWith([
         expect.objectContaining({ action: AdminAuditAction.CloudRevoked }),
       ]);
+    });
+
+    it('does not warn again or try the candidate once a new link is already asked for (FL-177 review)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 401,
+        body: cloudContractFixture('errors/key-retired.json'),
+      }));
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.heartbeat?.relinkRequested).toBe(true);
+      mocks.event.emit.mockClear();
+      const candidate = vi.spyOn(sut as unknown as { tryCandidateKey: () => Promise<boolean> }, 'tryCandidateKey');
+
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
+      expect(storedLink()?.heartbeat?.failures).toBe(2);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:relink' }),
+      );
+      expect(candidate).not.toHaveBeenCalled();
     });
 
     it('closes an open key recovery (FL-175) when a check-in answers key_retired, with its own notice', async () => {
@@ -1360,6 +1381,7 @@ describe(FrameleafCloudService.name, () => {
   describe('no sign-in client secret (FL-177, as-built decision #10)', () => {
     it('removes a client secret an earlier version saved when the server starts', async () => {
       metadata.set(SystemMetadataKey.SystemConfig, {
+        oauth: { issuerUrl: 'https://login.example.test', clientSecret: 'upstream' },
         frameleafCloud: { signIn: { buttonText: 'Use Frameleaf', clientSecret: 'old-secret' } },
       });
       clearConfigCache();
@@ -1368,6 +1390,8 @@ describe(FrameleafCloudService.name, () => {
       const stored = metadata.get(SystemMetadataKey.SystemConfig);
       expect(JSON.stringify(stored)).not.toContain('old-secret');
       expect(stored).toMatchObject({ frameleafCloud: { signIn: { buttonText: 'Use Frameleaf' } } });
+      // the administrator's own provider keeps its secret (FL-177 review)
+      expect(stored).toMatchObject({ oauth: { issuerUrl: 'https://login.example.test', clientSecret: 'upstream' } });
     });
 
     it('leaves the settings alone when there is no secret to remove', async () => {

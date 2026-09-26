@@ -332,6 +332,7 @@
           <dd>{status.dataRegion.toUpperCase()}</dd>
         {/if}
       </dl>
+      <p class="fc-muted">{$t('frameleaf_cloud_signin_role_notice')}</p>
       <div class="fc-actions">
         <Button
           disabled={busy}

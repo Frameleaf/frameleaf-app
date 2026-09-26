@@ -285,7 +285,7 @@ export const LINK_REFUSAL_MESSAGES: Record<FrameleafCloudLinkRefusal, string> = 
   'server-refused':
     'Frameleaf Cloud refused this server: it was removed from your Frameleaf account, or the account is suspended. Check Servers in your Frameleaf account.',
   'instance-id-taken':
-    'Another server is already registered with this server’s ID. Remove the old entry under Servers in your Frameleaf account, then link again.',
+    'This server, or another one with its ID, is still registered with Frameleaf Cloud, for example after an unlink made while it was offline. Remove it under Servers in your Frameleaf account, then link again.',
   'key-already-linked':
     'This server’s key is already linked, usually because its identity directory was copied from another server. Give this server its own identity directory, or unlink the other one under Servers in your Frameleaf account.',
 };

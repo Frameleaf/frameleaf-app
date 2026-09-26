@@ -732,8 +732,28 @@ export class InstanceIdentityRepository {
     return this.signWith(this.cached.privateKey, kid, payload, type);
   }
 
-  private signWith(privateKey: KeyObject, kid: string, payload: Record<string, unknown>, type = 'JWT') {
-    const header = base64url(JSON.stringify({ alg: 'EdDSA', typ: type, kid }));
+  /**
+   * FL-177: a compact EdDSA JWS that carries its own public key in the header (`jwk`, RFC 7515
+   * section 4.1.3) beside `kid`, its RFC 7638 thumbprint, for a receiver that holds no key for this
+   * server yet (a licence activation from a server that was never linked). The header key is derived
+   * from the loaded private key, so it always matches the signature.
+   */
+  signJwsWithPublicKey(payload: Record<string, unknown>, type = 'JWT'): string {
+    if (!this.cached) {
+      throw new Error('The Frameleaf identity key is not loaded');
+    }
+    const jwk = publicJwkOf(this.cached.privateKey);
+    return this.signWith(this.cached.privateKey, ed25519Thumbprint(jwk), payload, type, jwk);
+  }
+
+  private signWith(
+    privateKey: KeyObject,
+    kid: string,
+    payload: Record<string, unknown>,
+    type = 'JWT',
+    jwk?: Ed25519PublicJwk,
+  ) {
+    const header = base64url(JSON.stringify({ alg: 'EdDSA', typ: type, kid, ...(jwk && { jwk }) }));
     const body = base64url(JSON.stringify(payload));
     const signature = sign(null, Buffer.from(`${header}.${body}`), privateKey);
     return `${header}.${body}.${base64url(signature)}`;

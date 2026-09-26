@@ -12,7 +12,7 @@ import {
   FrameleafHandoffResponseDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, ImmichCookie } from 'src/enum.js';
+import { AdminAuditAction, DatabaseLock, ImmichCookie } from 'src/enum.js';
 import { type LoginDetails, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
@@ -303,16 +303,23 @@ export class FrameleafAuthService extends BaseService {
    * change is logged for the administrators to settle by hand.
    */
   private async applyRole(user: UserAdmin, role: 'admin' | 'user'): Promise<UserAdmin> {
-    if (role === 'user') {
-      const admins = await this.userRepository.getAdmins();
-      if (admins.every((admin) => admin.id === user.id)) {
-        this.logger.warn(
-          `Frameleaf asked for ${user.email} to stop administering this server, but they are its only administrator; they stay one`,
-        );
-        return user;
+    // counting the other active administrators and demoting are one step (FL-177 review): two
+    // sign-ins at once can never both see the other and leave the server without an administrator
+    const updated = await this.databaseRepository.withLock(DatabaseLock.FrameleafRoleChange, async () => {
+      if (role === 'user') {
+        const admins = await this.userRepository.getAdmins();
+        if (!admins.some((admin) => admin.id !== user.id)) {
+          this.logger.warn(
+            `Frameleaf asked for ${user.email} to stop administering this server, but they are its only administrator; they stay one`,
+          );
+          return null;
+        }
       }
+      return this.userRepository.update(user.id, { isAdmin: role === 'admin' });
+    });
+    if (!updated) {
+      return user;
     }
-    const updated = await this.userRepository.update(user.id, { isAdmin: role === 'admin' });
     // the change comes from Frameleaf Cloud, not from a person on this server
     await this.recordAdminEvents([
       {

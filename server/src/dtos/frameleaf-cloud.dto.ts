@@ -23,7 +23,7 @@ export const CloudLinkResultSchema = z
 export const CloudLinkRefusalSchema = z
   .enum(['instance-limit', 'server-refused', 'instance-id-taken', 'key-already-linked'])
   .describe(
-    'Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: another server is registered with this server’s ID; key-already-linked: this server’s key is already linked (a copied identity directory)',
+    'Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: this server, or another one with its ID, is still registered; key-already-linked: this server’s key is already linked (a copied identity directory)',
   )
   .meta({ id: 'CloudLinkRefusal' });
 

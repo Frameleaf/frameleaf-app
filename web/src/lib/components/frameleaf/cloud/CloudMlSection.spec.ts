@@ -10,6 +10,7 @@ import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
+import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../../i18n/en.json';
 import CloudMlSection from './CloudMlSection.svelte';
 
@@ -196,6 +197,23 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(screen.getByRole('switch', { name: 'Top up automatically' })).toBeDisabled();
   });
 
+  it('treats any other 403 as a failure, not as a step-up (FL-177 review)', async () => {
+    useDraft(true);
+    sdkMock.getCloudMlStatus.mockResolvedValue(
+      status({ enabled: true, consent: consent('2026-10-01'), wallet: { ...wallet, dailyCapUsd: null } }),
+    );
+    sdkMock.isHttpError.mockReturnValueOnce(true);
+    sdkMock.updateCloudMlWallet.mockRejectedValueOnce({ status: 403, data: { message: 'Forbidden' } });
+    render(CloudMlSection);
+
+    const cap = await screen.findByLabelText('Daily spending cap');
+    await fireEvent.input(cap, { target: { value: '40' } });
+    await fireEvent.change(cap);
+    await vi.waitFor(() => expect(handleError).toHaveBeenCalled());
+    expect(screen.queryByText(/happen in your Frameleaf account/)).toBeNull();
+    expect(sdkMock.getCloudMlWallet).not.toHaveBeenCalled();
+  });
+
   it('turns automatic top-up off from this server', async () => {
     useDraft(true);
     sdkMock.getCloudMlStatus.mockResolvedValue(
@@ -216,7 +234,10 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
       status({ enabled: true, consent: consent('2026-10-01'), wallet: { ...wallet, dailyCapUsd: null } }),
     );
     sdkMock.isHttpError.mockReturnValueOnce(true);
-    sdkMock.updateCloudMlWallet.mockRejectedValueOnce({ status: 403, data: { message: 'step-up' } });
+    sdkMock.updateCloudMlWallet.mockRejectedValueOnce({
+      status: 403,
+      data: { message: 'step-up', code: 'step-up-required' },
+    });
     sdkMock.getCloudMlWallet.mockResolvedValue({ ...wallet, dailyCapUsd: null });
     render(CloudMlSection);
 

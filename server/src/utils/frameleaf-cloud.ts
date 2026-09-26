@@ -77,48 +77,24 @@ export const discoveryProblem = (cloudUrl: string, document: FrameleafDiscoveryD
   return null;
 };
 
-/** Second-level labels country registries sell names under (`co.uk`, `com.au`, `ne.jp`, …). */
-const REGISTRY_SECOND_LEVELS: ReadonlySet<string> = new Set([
-  'ac',
-  'co',
-  'com',
-  'edu',
-  'go',
-  'gob',
-  'gov',
-  'ltd',
-  'me',
-  'ne',
-  'net',
-  'nic',
-  'or',
-  'org',
-  'plc',
-]);
+/**
+ * The registrable domains Frameleaf Cloud runs on (FL-177 review). Only these widen the address rule
+ * to sibling subdomains. Any other configured host (a hosting provider's shared domain such as
+ * `herokuapp.com`, `github.io` or `compute.amazonaws.com`, a registry domain such as `id.au`, a
+ * development cloud) accepts only itself and its own subdomains.
+ */
+export const FRAMELEAF_CLOUD_REGISTRABLE_DOMAINS: readonly string[] = ['frameleaf.cloud'];
 
 /**
  * The cloud domain whose sibling subdomains an address may use (FL-177, as-built decision #1), or
  * null. Frameleaf Cloud serves discovery on `api.frameleaf.cloud` and its issuer on
  * `id.frameleaf.cloud`, so with `FRAMELEAF_CLOUD_URL=https://api.frameleaf.cloud` the cloud domain is
- * `frameleaf.cloud`. Only a configured host of at least three labels has one (its first label
- * removed): an apex such as `frameleaf.cloud` already covers its subdomains, and dropping a label
- * from a two-label host would reach a public suffix. The same holds for a country's registry
- * domain (`frameleaf.co.uk` never widens to `co.uk`). An IP address never has one.
+ * `frameleaf.cloud`. Only a configured host under an allowlisted registrable domain
+ * (`FRAMELEAF_CLOUD_REGISTRABLE_DOMAINS`) has one; the apex itself already covers its subdomains.
  */
 export const cloudDomainOf = (hostname: string): string | null => {
   const host = hostname.toLowerCase().replace(/\.$/, '');
-  if (isIP(host.replaceAll(/^\[|\]$/g, ''))) {
-    return null;
-  }
-  const labels = host.split('.');
-  if (labels.length < 3 || labels.some((label) => !label)) {
-    return null;
-  }
-  const domain = labels.slice(1);
-  if (domain.length === 2 && domain[1].length === 2 && REGISTRY_SECOND_LEVELS.has(domain[0])) {
-    return null;
-  }
-  return domain.join('.');
+  return FRAMELEAF_CLOUD_REGISTRABLE_DOMAINS.find((domain) => host.endsWith(`.${domain}`)) ?? null;
 };
 
 /**

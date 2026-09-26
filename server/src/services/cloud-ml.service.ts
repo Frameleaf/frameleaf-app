@@ -244,7 +244,13 @@ export class CloudMlService extends BaseService {
         if (settingsUrl) {
           await this.rememberSettingsUrl(settingsUrl);
         }
-        throw new ForbiddenException(WALLET_STEP_UP_MESSAGE);
+        // the code lets the web app tell this refusal from any other 403
+        throw new ForbiddenException({
+          message: WALLET_STEP_UP_MESSAGE,
+          error: 'Forbidden',
+          statusCode: 403,
+          code: 'step-up-required',
+        });
       }
       if (error instanceof FrameleafCloudError) {
         throw new BadRequestException(error.message);
