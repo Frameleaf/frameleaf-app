@@ -23,7 +23,13 @@ import {
   MlUsage,
 } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
-import { cloudModelFor, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
+import {
+  type StudioAiCloudFeature,
+  cloudModelFor,
+  cloudModelGroupFor,
+  isLocalOnlyModel,
+  normalizeCloudProbeFacts,
+} from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Explicit destination selection (FL-110).
@@ -70,6 +76,11 @@ export type MlSelectionRequest = {
   jobName?: string | null;
   /** FL-159: the AI Wallet hold a time-priced Frameleaf Cloud job needs, when it is known. */
   holdUsd?: number | null;
+  /**
+   * FL-186: the Studio feature a Studio AI job runs, which decides its Frameleaf Cloud model group
+   * (`transcription` or `tts`). A Studio AI cloud job without it has no model and is refused.
+   */
+  studioFeature?: StudioAiCloudFeature | null;
 };
 
 export type MlSelectionDeps = {
@@ -287,8 +298,79 @@ export const storedProbe = (
     latencyMs: 0,
     probedAt: new Date(row.lastProbeAt),
     error: healthy ? null : (row.lastProbeSummary ?? 'not probed'),
-    cloud: row.lastProbeCloud,
+    // FL-186: in today's shape, whatever version recorded it
+    cloud: normalizeCloudProbeFacts(row.lastProbeCloud),
   };
+};
+
+/** FL-186: the chosen Frameleaf Cloud model SKU of each model group, as `getCloudModelChoices` lists them. */
+export type CloudModelChoices = Partial<Record<string, string>>;
+
+export const cloudModelChoicesOf = (rows: ReadonlyArray<{ modelGroup: string; modelId: string }>): CloudModelChoices =>
+  Object.fromEntries(rows.map((row) => [row.modelGroup, row.modelId]));
+
+/**
+ * The chosen Frameleaf Cloud models (FL-186), read only when one of `rows` is the Frameleaf Cloud
+ * destination: no other destination names a cloud model.
+ */
+export const readCloudModelChoices = async (
+  mlDestinationRepository: Pick<MlDestinationRepository, 'getCloudModelChoices'>,
+  rows: ReadonlyArray<Pick<MlDestinationRow, 'kind'>>,
+): Promise<CloudModelChoices> =>
+  rows.some((row) => row.kind === MlDestinationKind.FrameleafCloud)
+    ? cloudModelChoicesOf(await mlDestinationRepository.getCloudModelChoices())
+    : {};
+
+/**
+ * The verdict a read-only view shows for `workload` on `destination` (FL-186): the stored check,
+ * never a new one, with the Frameleaf Cloud model an administrator chose for the job's model group,
+ * exactly as a job would name it. Enrichment plans, restoration options, the worker inventory and the
+ * capability flags all use it, so they agree with what admission answers.
+ *
+ * Studio AI without a named feature is available on Frameleaf Cloud only when both of its groups,
+ * speech to text and captions (`transcription`) and speech (`tts`), have a model; the refusal names the
+ * one still missing. A stored check from before FL-186 cannot place a model in a group and is not
+ * held against the destination: it counts as unknown until the next check.
+ */
+export const storedAdmission = ({
+  destination,
+  workload,
+  spentUsd,
+  choices,
+  studioFeature,
+}: {
+  destination: MlDestinationRow;
+  workload: MlWorkload;
+  spentUsd: number;
+  choices: CloudModelChoices;
+  studioFeature?: StudioAiCloudFeature | null;
+}): MlAdmissionVerdict => {
+  const endpoint = resolveEndpoint(destination);
+  const probe = storedProbe(destination);
+  const isCloud = destination.kind === MlDestinationKind.FrameleafCloud;
+  const verdictFor = (feature: StudioAiCloudFeature | null | undefined) => {
+    const group = isCloud ? cloudModelGroupFor(workload, feature) : null;
+    return evaluateAdmission({
+      destination,
+      workload,
+      endpoint,
+      probe,
+      spentUsd,
+      modelId: group ? (choices[group] ?? null) : null,
+      studioFeature: feature,
+      fromStoredCheck: true,
+    });
+  };
+  if (!isCloud || workload !== MlWorkload.StudioAi || studioFeature) {
+    return verdictFor(studioFeature);
+  }
+  for (const feature of ['speech-to-text', 'speech'] as const) {
+    const verdict = verdictFor(feature);
+    if (!verdict.admitted) {
+      return verdict;
+    }
+  }
+  return { admitted: true };
 };
 
 /**
@@ -331,6 +413,14 @@ export type MlAdmissionInput = {
   modelId?: string | null;
   /** FL-159: the hold a time-priced Frameleaf Cloud job needs from the AI Wallet, in USD. */
   holdUsd?: number | null;
+  /** FL-186: the Studio feature of a Studio AI job, which names its model group. */
+  studioFeature?: StudioAiCloudFeature | null;
+  /**
+   * FL-186: the probe is a stored check read for a view, not a live one. A check from before FL-186
+   * cannot place a model in a group, so its model rules are skipped (unknown until the next check)
+   * rather than refused; a live admission always checks again first.
+   */
+  fromStoredCheck?: boolean;
 };
 
 export type MlAdmissionVerdict = { admitted: true } | { admitted: false; refusal: MlAdmissionRefusal; detail: string };
@@ -350,6 +440,8 @@ const evaluateCloudAdmission = (
   probe: MlEndpointProbe | null,
   modelId: string | null | undefined,
   holdUsd: number | null | undefined,
+  studioFeature?: StudioAiCloudFeature | null,
+  fromStoredCheck = false,
 ): Refused | null => {
   const facts = probe?.cloud ?? null;
   if (!probe || !probe.reachable || !facts) {
@@ -382,20 +474,25 @@ const evaluateCloudAdmission = (
       `${destination.name}: the model ${modelId} runs on this server only and is never sent to Frameleaf Cloud`,
     );
   }
-  // FL-183 (FC-34): the routed model, else the catalogue's marked default for this work's group
+  // FL-186: a stored check from before model groups cannot place a model; a view shows it as waiting
+  // for the next check (below) rather than refusing the model, and the live admission checks again
+  const modelsKnown = !fromStoredCheck || facts.modelGroups !== undefined;
+  // FL-183 (FC-34): the chosen model, else the catalogue's marked default for this work's group
   const model = cloudModelFor(workload, modelId, facts);
-  if (model && !facts.modelIds.includes(model)) {
+  const group = cloudModelGroupFor(workload, studioFeature);
+  if (modelsKnown && model && !facts.modelIds.includes(model)) {
     return refuse(
       MlAdmissionRefusal.ModelMismatch,
       `${destination.name}: the model ${model} is not in the Frameleaf Cloud catalogue any more`,
     );
   }
-  // FL-181 (P1): `restoration` is one wire workload for both modes, so a model in the catalogue is
-  // not proof it serves the mode asked for; the catalogue's own mode for that model must match.
-  if (model && isRestorationWorkload(workload) && facts.modelWorkloads[model] !== workload) {
+  // FL-181 (P1), FL-186: a model in the catalogue is not proof it serves this job. Its catalogue group
+  // (cloud workload, and mode for restoration) must be the job's own, so a faithful model never runs
+  // creative work and a TTS model is never sent for speech to text.
+  if (modelsKnown && model && (group === null || facts.modelGroups?.[model] !== group)) {
     return refuse(
       MlAdmissionRefusal.ModelMismatch,
-      `${destination.name}: the model ${model} does not run ${workload} in the Frameleaf Cloud catalogue`,
+      `${destination.name}: the model ${model} does not run ${group ?? workload} in the Frameleaf Cloud catalogue`,
     );
   }
   const available = facts.balanceUsd - facts.heldUsd;
@@ -420,15 +517,38 @@ const evaluateCloudAdmission = (
       `${destination.name}: Frameleaf Cloud does not offer ${workload} to this account right now`,
     );
   }
-  // FL-183 (FC-34): with no routed model and no default marked for this region and licence, the
-  // administrator picks one; no other model is ever chosen in its place
-  if (!model) {
+  // FL-186: a stored check from before model groups cannot say whether this work has a model to send;
+  // a view shows it as waiting (a transient refusal) and the live admission checks again first
+  if (!modelsKnown) {
     return refuse(
-      MlAdmissionRefusal.ModelMismatch,
-      `${destination.name}: Frameleaf Cloud recommends no model for ${workload} in this region; choose one in Where each job runs`,
+      MlAdmissionRefusal.DestinationUnhealthy,
+      `${destination.name}: checked before model groups; waiting for the next check`,
     );
   }
-  return null;
+  if (model) {
+    return null;
+  }
+  return refuse(
+    MlAdmissionRefusal.ModelMismatch,
+    `${destination.name}: ${missingModelDetail(workload, studioFeature)}`,
+  );
+};
+
+/**
+ * Why a Frameleaf Cloud job has no model to send (FL-183, FL-186): no model is chosen and the catalogue
+ * marks no default for this region and licence, so the administrator picks one; no other model is
+ * ever put in its place. Studio AI never takes a catalogue default, so it always asks for its own
+ * choice per feature, and a Studio AI job that names no feature has no model group at all.
+ */
+const missingModelDetail = (workload: MlWorkload, studioFeature: StudioAiCloudFeature | null | undefined): string => {
+  if (workload !== MlWorkload.StudioAi) {
+    return `Frameleaf Cloud recommends no model for ${workload} in this region; choose one in Where each job runs`;
+  }
+  if (!studioFeature) {
+    return 'a Studio AI job must name its Studio feature (speech to text, captions or speech) before Frameleaf Cloud can choose its model';
+  }
+  const feature = studioFeature === 'speech' ? 'speech' : 'speech to text and captions';
+  return `choose a Frameleaf Cloud model for Studio AI ${feature} in Where each job runs`;
 };
 
 /**
@@ -444,6 +564,8 @@ export const evaluateAdmission = ({
   spentUsd,
   modelId,
   holdUsd,
+  studioFeature,
+  fromStoredCheck,
 }: MlAdmissionInput): MlAdmissionVerdict => {
   if (!destination) {
     return refuse(MlAdmissionRefusal.DestinationMissing, 'the destination does not exist');
@@ -488,7 +610,11 @@ export const evaluateAdmission = ({
     if (probe === null) {
       return refuse(MlAdmissionRefusal.DestinationUnhealthy, `${destination.name} has not been checked yet`);
     }
-    return evaluateCloudAdmission(destination, workload, probe, modelId, holdUsd) ?? { admitted: true };
+    return (
+      evaluateCloudAdmission(destination, workload, probe, modelId, holdUsd, studioFeature, fromStoredCheck) ?? {
+        admitted: true,
+      }
+    );
   }
   if (!endpoint) {
     return refuse(MlAdmissionRefusal.EndpointUnresolved, `${destination.name} has no URL`);
@@ -547,13 +673,6 @@ export const selectMlDestination = async (
   }
 
   const endpoint = resolveEndpoint(destination);
-  // FL-159: a catalogue model is chosen per workload for Frameleaf Cloud only; other destinations never
-  // consult the routes here, so a pinned plan keeps going to exactly the destination it pinned.
-  const route =
-    destination.kind === MlDestinationKind.FrameleafCloud
-      ? await mlDestinationRepository.getRoute(request.workload)
-      : undefined;
-  const modelId = route?.destinationId === destination.id ? route.modelId : null;
   const spentUsd =
     destination.budgetLimitUsd === null
       ? 0
@@ -567,8 +686,8 @@ export const selectMlDestination = async (
     endpoint,
     probe: null,
     spentUsd,
-    modelId,
     holdUsd: request.holdUsd,
+    studioFeature: request.studioFeature,
   });
   if (!preflight.admitted && preflight.refusal !== MlAdmissionRefusal.DestinationUnhealthy) {
     throw new MlDestinationRefusedError(preflight.refusal, request.workload, destination.id, preflight.detail);
@@ -583,6 +702,15 @@ export const selectMlDestination = async (
     ...(probe.cloud !== undefined && { cloud: probe.cloud }),
   });
 
+  // FL-186: the Frameleaf Cloud model an administrator chose for this job's model group, whatever the
+  // workload's route points at, so a "Both" workload routed to this server still sends its chosen model
+  // when a job goes to the cloud. Other destinations never read it.
+  const group =
+    destination.kind === MlDestinationKind.FrameleafCloud
+      ? cloudModelGroupFor(request.workload, request.studioFeature)
+      : null;
+  const modelId = group ? await mlDestinationRepository.getCloudModelChoice(group) : null;
+
   const verdict = evaluateAdmission({
     destination,
     workload: request.workload,
@@ -591,6 +719,7 @@ export const selectMlDestination = async (
     spentUsd,
     modelId,
     holdUsd: request.holdUsd,
+    studioFeature: request.studioFeature,
   });
   if (!verdict.admitted) {
     throw new MlDestinationRefusedError(verdict.refusal, request.workload, destination.id, verdict.detail);

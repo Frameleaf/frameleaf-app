@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
 import { hardwareSchema } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import {
+  CLOUD_MODEL_GROUPS,
   CLOUD_WORKLOAD_IDS,
   CONSENT_VERSION_PATTERN,
   CloudErrorCode,
@@ -11,6 +12,7 @@ import {
   capabilitiesSchema,
   catalogDefaults,
   catalogEntrySchema,
+  catalogGroupKey,
   catalogSchema,
   cloudAddressProblem,
   cloudDefaultGroupFor,
@@ -18,6 +20,7 @@ import {
   cloudErrorCode,
   cloudFactsFromCapabilities,
   cloudModelFor,
+  cloudModelGroupFor,
   cloudRequestBody,
   cloudWorkloadIdFor,
   consentCurrentSchema,
@@ -860,14 +863,14 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         expect(catalog.models.map((model) => model.default)).toEqual([false, true, false, true, true]);
         expect(catalogDefaults(catalog.models)).toEqual({
           descriptions: 'ms_K6WT70CS',
-          'restoration:faithful': 'ms_YS60DAXB',
-          'restoration:creative': 'ms_F1SSRED6',
+          'restoration-faithful': 'ms_YS60DAXB',
+          'restoration-creative': 'ms_F1SSRED6',
         });
       });
 
       it('names no default for a group the cloud marks none in (not available to this region or licence)', () => {
         const catalog = parse([light, { ...standard, default: false }, faithful, { ...creative, default: false }]);
-        expect(catalogDefaults(catalog.models)).toEqual({ 'restoration:faithful': 'ms_YS60DAXB' });
+        expect(catalogDefaults(catalog.models)).toEqual({ 'restoration-faithful': 'ms_YS60DAXB' });
       });
 
       it('refuses two defaults in one group: the group keeps its models, has no default, and counts once', () => {
@@ -882,7 +885,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         expect(catalog.models).toHaveLength(6);
         expect(catalogDefaults(catalog.models)).toEqual({
           upscale: 'ms_54S55W7C',
-          'restoration:faithful': 'ms_YS60DAXB',
+          'restoration-faithful': 'ms_YS60DAXB',
         });
       });
 
@@ -901,10 +904,10 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
 
       it('takes a workload default from its own group only', () => {
         const facts = {
-          defaultModels: { descriptions: 'ms_K6WT70CS', 'restoration:faithful': 'ms_YS60DAXB', tts: 'ms_TTS00000' },
+          defaultModels: { descriptions: 'ms_K6WT70CS', 'restoration-faithful': 'ms_YS60DAXB', tts: 'ms_TTS00000' },
         };
         expect(cloudDefaultGroupFor(MlWorkload.Enrichment)).toBe('descriptions');
-        expect(cloudDefaultGroupFor(MlWorkload.RestorationCreative)).toBe('restoration:creative');
+        expect(cloudDefaultGroupFor(MlWorkload.RestorationCreative)).toBe('restoration-creative');
         expect(cloudDefaultGroupFor(MlWorkload.StudioAi)).toBeNull();
         expect(cloudDefaultGroupFor(MlWorkload.Face)).toBeNull();
         expect(cloudModelFor(MlWorkload.Enrichment, null, facts)).toBe('ms_K6WT70CS');
@@ -913,6 +916,28 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         expect(cloudModelFor(MlWorkload.StudioAi, null, facts)).toBeNull();
         expect(cloudModelFor(MlWorkload.Upscale, 'ms_54S55W7C', facts)).toBe('ms_54S55W7C');
         expect(cloudModelFor(MlWorkload.Enrichment, null, {})).toBeNull();
+      });
+
+      it('reads a chosen model per model group, Studio AI per feature (FL-186)', () => {
+        expect(CLOUD_MODEL_GROUPS).toEqual([
+          'descriptions',
+          'upscale',
+          'restoration-faithful',
+          'restoration-creative',
+          'interpolation',
+          'transcription',
+          'tts',
+        ]);
+        expect(catalogGroupKey('restoration', 'creative')).toBe('restoration-creative');
+        expect(catalogGroupKey('tts', null)).toBe('tts');
+        expect(cloudModelGroupFor(MlWorkload.Enrichment)).toBe('descriptions');
+        expect(cloudModelGroupFor(MlWorkload.RestorationFaithful)).toBe('restoration-faithful');
+        expect(cloudModelGroupFor(MlWorkload.StudioAi, 'speech-to-text')).toBe('transcription');
+        expect(cloudModelGroupFor(MlWorkload.StudioAi, 'captions')).toBe('transcription');
+        expect(cloudModelGroupFor(MlWorkload.StudioAi, 'speech')).toBe('tts');
+        // a Studio AI job that names no feature has no model to send
+        expect(cloudModelGroupFor(MlWorkload.StudioAi)).toBeNull();
+        expect(cloudModelGroupFor(MlWorkload.Face)).toBeNull();
       });
     });
   });

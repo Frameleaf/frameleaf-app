@@ -1,10 +1,13 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
   CloudMlDestinationCreateDto,
+  CloudMlModelChoiceUpdateDto,
+  CloudMlModelChoicesResponseDto,
+  CloudMlModelGroupParamDto,
   CloudMlSettlementsResponseDto,
   CloudMlStatusResponseDto,
   CloudMlWalletDto,
@@ -18,6 +21,7 @@ import { CloudMlService } from 'src/services/cloud-ml.service.js';
 /**
  * Frameleaf Cloud processing administration (FL-159). Consent for the destination is recorded with
  * the existing `PUT /ml-destinations/:id/consent`; routes use `PUT /ml-destinations/routes/:workload`.
+ * The Frameleaf Cloud model per model group (FL-186) is chosen here, apart from the routes.
  */
 @ApiTags(ApiTag.FrameleafCloudMl)
 @Controller('admin/cloud/ml')
@@ -85,6 +89,35 @@ export class CloudMlAdminController {
   })
   getCatalog(): Promise<CloudMlCatalogResponseDto> {
     return this.service.getCatalog();
+  }
+
+  @Get('models')
+  @Authenticated({ permission: Permission.AdminCloudMlRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudMlModelChoices',
+    summary: 'List the chosen Frameleaf Cloud models',
+    description:
+      'The Frameleaf Cloud model chosen for each model group, or null where the group uses the model the catalogue recommends. A cloud job reads its group whatever its workload is routed to.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getModelChoices(): Promise<CloudMlModelChoicesResponseDto> {
+    return this.service.getModelChoices();
+  }
+
+  @Put('models/:group')
+  @Authenticated({ permission: Permission.AdminCloudMlUpdate, admin: true })
+  @Endpoint({
+    operationId: 'setCloudMlModelChoice',
+    summary: 'Choose the Frameleaf Cloud model of a model group',
+    description:
+      'Choose a catalogue model for one model group, checked against the catalogue for exactly that group, or null to use the model the catalogue recommends.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  setModelChoice(
+    @Param() { group }: CloudMlModelGroupParamDto,
+    @Body() dto: CloudMlModelChoiceUpdateDto,
+  ): Promise<CloudMlModelChoicesResponseDto> {
+    return this.service.setModelChoice(group, dto);
   }
 
   @Get('consent')
