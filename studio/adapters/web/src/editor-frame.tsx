@@ -54,10 +54,12 @@ import { VirtualWorkspace } from './virtual-workspace'
 import {
   acceptsWrite,
   beginMount,
+  cancelMountTimer,
   confirmEcho,
   editsLostOnRemount,
   loadFinished,
   reconcileHostGraph,
+  releaseMountTimers,
   reportLost,
   saveMayStart,
   sendEditorDraft,
@@ -323,8 +325,18 @@ function watchDrafts(state: Session) {
       if (!acceptsWrite(state, mount)) return
       // Work the host has not taken yet; a remount before it is taken reports it lost (FL-174).
       state.writePending = true
-      if (pending) clearTimeout(pending)
-      pending = mountTimer(state, () => void sendDraft(state, mount), 250)
+      // A burst of writes debounces into one send; the timer a later write supersedes is dropped
+      // from `mountTimers` too, not only cleared, so it does not sit there for the rest of the
+      // mount's life (FL-187).
+      cancelMountTimer(state.mountTimers, pending)
+      pending = mountTimer(
+        state,
+        () => {
+          pending = null
+          void sendDraft(state, mount)
+        },
+        250,
+      )
     }),
   )
 }
@@ -347,8 +359,13 @@ function sendDraft(state: Session, mount: EditorMount): Promise<void> {
   })
 }
 
-/** Tell the person edits the host never took were not kept when the editor was replaced (FL-174). */
+/**
+ * Tell the person edits the host never took were not kept when the editor was replaced (FL-174).
+ * Dropped once this document is disposed (FL-187): a notice arriving after the whole engine has torn
+ * down would name a project the person is no longer looking at, on a channel nothing reads any more.
+ */
 function notifySuperseded(state: Session) {
+  if (state.disposed) return
   const message = state.context.strings?.editSuperseded
   if (message) post({ type: 'notify', message, tone: 'error' })
 }
@@ -368,12 +385,15 @@ function watchImports(state: Session) {
         const { mediaLibraryService } = await importMediaLibraryService()
         await mediaLibraryService.deleteMediaFromProject(projectId, mediaId)
       },
-      onError: (error) =>
+      onError: (error) => {
+        // Dropped once disposed (FL-187), for the same reason as `notifySuperseded`.
+        if (state.disposed) return
         post({
           type: 'notify',
           message: error instanceof Error ? error.message : String(error),
           tone: 'error',
-        }),
+        })
+      },
     }),
   )
 }
@@ -390,10 +410,13 @@ function watchDirty(state: Session) {
       post({ type: 'dirty', dirty: settings.isDirty })
       const mount = state.mount
       if (!settings.isDirty || settings.isTimelineLoading || !acceptsWrite(state, mount)) return
-      if (timer) clearTimeout(timer)
+      // Same debounce-supersede rule as `watchDrafts`: drop the superseded timer, don't just clear it
+      // (FL-187).
+      cancelMountTimer(state.mountTimers, timer)
       timer = mountTimer(
         state,
         () => {
+          timer = null
           if (acceptsWrite(state, mount) && useTimelineSettingsStore.getState().isDirty) {
             void saveTimeline(mount.projectId).catch((error: unknown) =>
               post({
@@ -444,8 +467,7 @@ async function remount(state: Session, context: StudioHostContext, incoming: str
     state,
     state.mountTimers.size > 0 || useTimelineSettingsStore.getState().isDirty,
   )
-  for (const timer of state.mountTimers) clearTimeout(timer)
-  state.mountTimers.clear()
+  releaseMountTimers(state.mountTimers)
   const mount = beginMount(
     state,
     `${state.engineProjectId}-m${replaced.generation + 1}`,
@@ -633,8 +655,7 @@ async function dispose(): Promise<void> {
   if (!state || state.disposed) return
   state.disposed = true
   setPersistenceGate({ mayStartSave: () => false, loadFinished: () => undefined })
-  for (const timer of state.mountTimers) clearTimeout(timer)
-  state.mountTimers.clear()
+  releaseMountTimers(state.mountTimers)
   for (const stop of state.unsubscribe.splice(0)) stop()
   usePlaybackStore.getState().pause()
   state.root.unmount()
