@@ -19,6 +19,7 @@
   import { getAssetInfo } from '@immich/sdk';
   import Portal from '$lib/elements/Portal.svelte';
   import type { PageData } from './$types';
+  import type { Snapshot } from '@sveltejs/kit';
 
   interface Props {
     data: PageData;
@@ -75,11 +76,35 @@
       recents.find((asset) => asset.id === id) ?? (await getAssetInfo({ ...authManager.params, id })),
     );
   };
+
+  /**
+   * FL-50: Explore → a card's results → Back returns to the same place on the page. The page scrolls
+   * inside the layout's content area, not the window, so SvelteKit's own scroll restoration never
+   * sees it; the snapshot keeps that area's offset in the history entry instead.
+   */
+  let scroller: HTMLElement | undefined;
+  const captureScroller = (node: HTMLElement) => {
+    scroller = node;
+    return {
+      destroy() {
+        if (scroller === node) {
+          scroller = undefined;
+        }
+      },
+    };
+  };
+
+  export const snapshot: Snapshot<number> = {
+    capture: () => scroller?.scrollTop ?? 0,
+    restore: (top) => {
+      requestAnimationFrame(() => scroller?.scrollTo({ top, behavior: 'instant' }));
+    },
+  };
 </script>
 
 <OnEvents {onPersonThumbnailReady} />
 
-<UserPageLayout title={data.meta.title}>
+<UserPageLayout title={data.meta.title} use={[captureScroller]}>
   <ExplorePanel
     people={peopleCards}
     places={data.places}
