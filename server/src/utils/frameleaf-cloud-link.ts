@@ -264,6 +264,8 @@ export const heartbeatResponseSchema = z.object({
   nextHeartbeatSec: z.number().int().positive().max(86_400).optional(),
   cloneSuspected: z.boolean().default(false),
   notices: z.array(noticeSchema).max(20).default([]),
+  // validated on its own by acceptPublishedPricing, so a bad value never fails the check-in
+  pricing: z.unknown().optional(),
 });
 export type HeartbeatResponse = z.infer<typeof heartbeatResponseSchema>;
 

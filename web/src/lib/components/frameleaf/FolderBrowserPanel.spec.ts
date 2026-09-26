@@ -7,7 +7,7 @@ import { buildFolderTree } from '$lib/frameleaf/folder-tree';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import FolderBrowserPanel from './FolderBrowserPanel.svelte';
 
-const navigation = vi.hoisted(() => ({ goto: vi.fn(), invalidateAll: vi.fn() }));
+const navigation = vi.hoisted(() => ({ afterNavigate: vi.fn(), goto: vi.fn(), invalidateAll: vi.fn() }));
 vi.mock('$app/navigation', () => navigation);
 const assetUtils = vi.hoisted(() => ({ navigateToAsset: vi.fn() }));
 vi.mock('$lib/utils/asset-utils', async (importOriginal) => ({

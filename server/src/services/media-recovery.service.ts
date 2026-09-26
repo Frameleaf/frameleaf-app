@@ -52,7 +52,9 @@ export class MediaRecoveryService {
       if (candidate.deletedAt || candidate.status !== AssetStatus.Active) {
         return { outcome: 'preserve-trashed', assetId: candidate.id, reason: 'destination_not_active' };
       }
-      if (candidate.isOffline || candidate.damaged) {
+      // An external original is never reused (owner decision, FL-69): the transfer goes on to import the
+      // item as a managed copy, so the server keeps it if the external drive goes away.
+      if (candidate.isOffline || candidate.damaged || candidate.isExternal) {
         return;
       }
       const validate = () =>
@@ -120,7 +122,11 @@ export class MediaRecoveryService {
       if (candidates.some(({ identityConflict }) => identityConflict)) {
         return { outcome: 'needs-review', reason: 'saved_checksum_conflict' };
       }
-      const exact = candidates.filter(({ matchesContent }) => matchesContent);
+      // FL-69 (owner decision): recovery always stores a managed copy. An external original with the same
+      // content is evidence only: it is never reused, repaired or converted, and the item is imported as a
+      // new managed asset beside it.
+      const exact = candidates.filter(({ matchesContent, isExternal }) => matchesContent && !isExternal);
+      const matchedExternal = candidates.find(({ matchesContent, isExternal }) => matchesContent && isExternal);
       const mapped = exact.find(({ id }) => id === resource.assetId);
       if (exact.length > 1 && !mapped) {
         return { outcome: 'needs-review', reason: 'multiple_content_matches' };
@@ -148,13 +154,6 @@ export class MediaRecoveryService {
         if (['timeout', 'transient', 'unsupported'].includes(current.status)) {
           return { outcome: current.status === 'unsupported' ? 'needs-review' : 'retry', reason: current.reason };
         }
-        if (
-          candidate.isExternal &&
-          (current.status !== 'healthy' || candidate.isOffline) &&
-          !input.recoverExternalAsManaged
-        ) {
-          return { outcome: 'needs-review', reason: 'external_conversion_requires_consent' };
-        }
         outcome =
           current.status === 'healthy' && !candidate.isOffline
             ? 'reused'
@@ -179,6 +178,7 @@ export class MediaRecoveryService {
         candidate,
         outcome,
         proposedPath,
+        ...(!candidate && matchedExternal && { matchedExternalAssetId: matchedExternal.id }),
       });
       if (!reservation) {
         return { outcome: 'retry', reason: 'reservation_changed' };
