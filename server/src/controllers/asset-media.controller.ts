@@ -35,7 +35,7 @@ import { type AuthDto } from 'src/dtos/auth.dto.js';
 import { VideoEditVersionParamsDto } from 'src/dtos/editing.dto.js';
 import { ApiTag, CacheControl, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor, getFiles } from 'src/middleware/file-upload.interceptor.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type AssetMediaRedirectResponse, AssetMediaService } from 'src/services/asset-media.service.js';
@@ -133,6 +133,7 @@ export class AssetMediaController {
   @Get(':id/original')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetDownload, sharedLink: true })
+  @OriginalTransfer()
   @Endpoint({
     summary: 'Download original asset',
     description: 'Downloads the original file of the specified asset.',

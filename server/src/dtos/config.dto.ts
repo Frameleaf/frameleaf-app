@@ -179,6 +179,10 @@ const frameleafCloudDefaults = {
   // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it. The client
   // authenticates with this server's key only (private_key_jwt); there is no client secret (FL-177).
   signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
+  // FL-161: what remote access may carry. Remote visitors always sign in with Frameleaf; originals,
+  // archives and database backups stay off the relay, and passwords are refused away from home,
+  // unless an administrator turns these on.
+  remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: false },
   cloudMl: {
     enabled: false,
     // Where each kind of work may run (§3.2): this server only until an administrator chooses.
@@ -490,6 +494,17 @@ const AdminConfigFrameleafCloudSchema = z
       })
       .default(frameleafCloudDefaults.signIn)
       .meta({ id: 'AdminConfigFrameleafSignInDto' }),
+    remoteAccess: z
+      .object({
+        allowOriginalsOverRelay: configBool.describe(
+          'Allow original downloads, archives and database backups over the Frameleaf relay',
+        ),
+        allowPasswordOverRelay: configBool.describe(
+          'Allow password sign-in, and sessions it creates, over remote access',
+        ),
+      })
+      .default(frameleafCloudDefaults.remoteAccess)
+      .meta({ id: 'AdminConfigFrameleafRemoteAccessDto' }),
     cloudMl: z
       .object({
         enabled: configBool.describe(
@@ -1105,6 +1120,12 @@ const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
 
 export const AdminConfigSchema = applyVisibility(Admin)! as z.ZodType<SystemConfig>;
 const UserConfigSchema = applyVisibility(User)! as z.ZodType<DeepPartial<SystemConfig>>;
+/** FL-158, FL-161: how a request reached this server, as the edge worker vouched for it. */
+export const FrameleafViaSchema = z
+  .enum(['lan', 'wan', 'relay'])
+  .describe('How the request arrived, as vouched for by the edge worker')
+  .meta({ id: 'FrameleafVia' });
+
 /**
  * FL-158: how Sign in with Frameleaf applies to this visitor, worked out per request (not stored
  * configuration): whether it is available, whether it is the only way in (arrival through remote
@@ -1116,12 +1137,9 @@ const FrameleafPublicConfigSchema = z
     signInRequired: z
       .boolean()
       .describe('Whether this visitor arrived through remote access, where only Sign in with Frameleaf is offered'),
-    via: z
-      .enum(['lan', 'wan', 'relay'])
-      .describe('How the request arrived, as vouched for by the edge worker')
-      .meta({ id: 'FrameleafVia' })
-      .nullable()
-      .describe('How the request arrived; null when the edge worker did not vouch for it'),
+    via: FrameleafViaSchema.nullable().describe(
+      'How the request arrived; null when the edge worker did not vouch for it',
+    ),
     relayHost: z.string().nullable().describe('The remote-access host shown on the login page, when known'),
     localUrl: z
       .string()

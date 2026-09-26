@@ -19,6 +19,7 @@ import { ErrorInterceptor } from 'src/middleware/error.interceptor.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { LoggingInterceptor } from 'src/middleware/logging.interceptor.js';
+import { RateLimitGuard } from 'src/middleware/rate-limit.guard.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -27,6 +28,7 @@ import { repositories } from 'src/repositories/index.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
+import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -50,7 +52,14 @@ const commonMiddleware = [
   { provide: APP_INTERCEPTOR, useClass: ErrorInterceptor },
 ];
 
-const apiMiddleware = [FileUploadInterceptor, ...commonMiddleware, { provide: APP_GUARD, useClass: AuthGuard }];
+// FL-161: the rate limits run before authentication, so failed sign-ins and bad credentials count too.
+const apiMiddleware = [
+  FileUploadInterceptor,
+  RateLimitRepository,
+  ...commonMiddleware,
+  { provide: APP_GUARD, useClass: RateLimitGuard },
+  { provide: APP_GUARD, useClass: AuthGuard },
+];
 
 const configRepository = new ConfigRepository();
 const { bull, cls, database } = configRepository.getEnv();
@@ -77,13 +86,13 @@ export class BaseModule implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     this.queueService.setServices(services);
 
-    this.websocketRepository.setAuthFn(async (client) =>
-      this.authService.authenticate({
-        headers: client.request.headers,
-        queryParams: {},
-        metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/socket.io' },
-      }),
-    );
+    // FL-161: the handshake's origin is checked and its arrival (`frameleafVia`) read before the
+    // session is, so remote access follows the same sign-in rule as every other request.
+    this.websocketRepository.setAuthFn(async (client) => {
+      const { auth, via } = await this.authService.authenticateWebsocket(client.request.headers);
+      client.data.frameleafVia = via;
+      return auth;
+    });
 
     this.eventRepository.setup({ services });
     await this.eventRepository.emit('AppBootstrap');

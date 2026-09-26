@@ -62,6 +62,8 @@ export const cloudStatus = (mock: CloudMockState) => {
     signInLinkedAccounts: linked ? 1 : 0,
     signInShowOnLocalLogin: false,
     signInButtonText: 'Sign in with Frameleaf',
+    allowOriginalsOverRelay: false,
+    allowPasswordOverRelay: false,
   };
 };
 

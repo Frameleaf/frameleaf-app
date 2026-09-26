@@ -418,6 +418,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   frameleafCloud: {
     signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
+    remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: false },
     cloudMl: {
       enabled: false,
       routing: {
@@ -459,7 +460,6 @@ describe(SystemConfigService.name, () => {
 
   describe('getPublicConfig (FL-158)', () => {
     const secret = 'edge-secret-0123456789';
-    const relay = { 'x-frameleaf-via': 'relay', 'x-frameleaf-via-auth': secret };
 
     beforeEach(() => {
       const env = mockEnvData({});
@@ -488,7 +488,7 @@ describe(SystemConfigService.name, () => {
     });
 
     it('offers only Sign in with Frameleaf to a visitor arriving through remote access', async () => {
-      await expect(sut.getPublicConfig({ headers: relay, clientIp: '203.0.113.9' })).resolves.toMatchObject({
+      await expect(sut.getPublicConfig({ via: 'relay', clientIp: '203.0.113.9' })).resolves.toMatchObject({
         frameleaf: {
           signInAvailable: true,
           signInRequired: true,
@@ -501,20 +501,45 @@ describe(SystemConfigService.name, () => {
     });
 
     it('offers the local address to a remote-access visitor on the home network', async () => {
-      await expect(sut.getPublicConfig({ headers: relay, clientIp: '192.168.1.44' })).resolves.toMatchObject({
+      await expect(sut.getPublicConfig({ via: 'relay', clientIp: '192.168.1.44' })).resolves.toMatchObject({
         frameleaf: { signInRequired: true, sameNetwork: true, localUrl: 'http://192.168.1.10:2283' },
       });
     });
 
-    it('ignores a via header without the edge secret, and is unavailable when not linked', async () => {
-      await expect(
-        sut.getPublicConfig({ headers: { 'x-frameleaf-via': 'relay' }, clientIp: '203.0.113.9' }),
-      ).resolves.toMatchObject({
+    it('treats an arrival the edge worker did not vouch for as home, and is unavailable when not linked', async () => {
+      // FL-161: the via middleware already dropped any client-supplied header; what reaches here is its verdict
+      await expect(sut.getPublicConfig({ via: null, clientIp: '203.0.113.9' })).resolves.toMatchObject({
         frameleaf: { signInRequired: false, via: null, signInAvailable: true, localUrl: null },
       });
       mocks.systemMetadata.get.mockResolvedValue(null as never);
       await expect(sut.getPublicConfig()).resolves.toMatchObject({
         frameleaf: { signInAvailable: false, signInRequired: false },
+      });
+    });
+
+    it('offers the password form away from home once an administrator allowed it (FL-161)', async () => {
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.SystemConfig
+            ? { frameleafCloud: { remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: true } } }
+            : null) as never,
+        ),
+      );
+      await expect(sut.getPublicConfig({ via: 'wan', clientIp: '203.0.113.9' })).resolves.toMatchObject({
+        frameleaf: { signInRequired: false, via: 'wan' },
+      });
+    });
+
+    it('publishes the instance id, public address and sign-in in /.well-known/immich while linked (FL-161)', async () => {
+      await expect(sut.getWellKnown()).resolves.toEqual({
+        api: { endpoint: '/api' },
+        frameleaf: { instanceId: 'instance-1', publicUrl: 'https://r.label.frameleaf-direct.test', signIn: true },
+      });
+
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(sut.getWellKnown()).resolves.toEqual({
+        api: { endpoint: '/api' },
+        frameleaf: { instanceId: null, publicUrl: null, signIn: false },
       });
     });
   });

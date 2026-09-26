@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AssetIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { mapSharedLink } from 'src/dtos/shared-link.dto.js';
+import { SHARED_LINK_PASSWORD_MASK, mapSharedLink } from 'src/dtos/shared-link.dto.js';
 import { SharedLinkType } from 'src/enum.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
@@ -625,6 +625,112 @@ describe(SharedLinkService.name, () => {
         slug: null,
         assetIds: [plain.id],
       });
+    });
+  });
+
+  describe('passwords (FL-161)', () => {
+    const hash = `$2b$10$${'a'.repeat(53)}`;
+    const tokenFor = (id: string, stored: string) => Buffer.from(`${id}-${stored} (hashed)`).toString('base64');
+
+    it('unlocks a link by its bcrypt hash and derives the token from the hash', async () => {
+      const sharedLink = SharedLinkFactory.create({ password: hash });
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.crypto.compareBcrypt.mockReturnValue(true);
+
+      const result = await sut.login(authStub.adminSharedLink, { password: 'secret' });
+
+      expect(mocks.crypto.compareBcrypt).toHaveBeenCalledWith('secret', hash);
+      expect(result.token).toBe(tokenFor(sharedLink.id, hash));
+      expect(result.sharedLink.password).toBe(SHARED_LINK_PASSWORD_MASK);
+      expect(JSON.stringify(result.sharedLink)).not.toContain(hash);
+      expect(mocks.sharedLink.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a wrong password', async () => {
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(SharedLinkFactory.create({ password: hash })));
+      mocks.crypto.compareBcrypt.mockReturnValue(false);
+
+      await expect(sut.login(authStub.adminSharedLink, { password: 'wrong' })).rejects.toThrow('Invalid password');
+    });
+
+    it('opens a link whose password is still plaintext, and hashes it on that first correct use', async () => {
+      const sharedLink = SharedLinkFactory.create({ password: 'secret' });
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+
+      const result = await sut.login(authStub.adminSharedLink, { password: 'secret' });
+
+      expect(mocks.crypto.compareBcrypt).not.toHaveBeenCalled();
+      expect(mocks.crypto.hashBcrypt).toHaveBeenCalledWith('secret', 10);
+      expect(mocks.sharedLink.update).toHaveBeenCalledWith({ id: sharedLink.id, password: 'secret (hashed)' });
+      expect(result.token).toBe(tokenFor(sharedLink.id, 'secret (hashed)'));
+    });
+
+    it('refuses a wrong plaintext password without touching the link', async () => {
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(SharedLinkFactory.create({ password: 'secret' })));
+
+      await expect(sut.login(authStub.adminSharedLink, { password: 'secreT' })).rejects.toThrow('Invalid password');
+      await expect(sut.login(authStub.adminSharedLink, { password: 'secret-and-more' })).rejects.toThrow(
+        'Invalid password',
+      );
+      expect(mocks.sharedLink.update).not.toHaveBeenCalled();
+      expect(mocks.crypto.hashBcrypt).not.toHaveBeenCalled();
+    });
+
+    it('accepts only the token of the current password', async () => {
+      const sharedLink = SharedLinkFactory.create({ password: hash });
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await expect(
+        sut.getMine(authStub.adminSharedLink, ['other', tokenFor(sharedLink.id, hash)]),
+      ).resolves.toBeDefined();
+      await expect(sut.getMine(authStub.adminSharedLink, [tokenFor(sharedLink.id, 'secret')])).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      await expect(sut.getMine(authStub.adminSharedLink, [''])).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('stores a new link’s password as a hash, and an empty one as none', async () => {
+      const album = AlbumFactory.from().asset().build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.sharedLink.create.mockResolvedValue(getForSharedLink(SharedLinkFactory.from().album(album).build()));
+
+      await sut.create(authStub.admin, { type: SharedLinkType.Album, albumId: album.id, password: 'secret' });
+      expect(mocks.sharedLink.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ password: 'secret (hashed)' }),
+      );
+
+      await sut.create(authStub.admin, { type: SharedLinkType.Album, albumId: album.id, password: '' });
+      expect(mocks.sharedLink.create).toHaveBeenLastCalledWith(expect.objectContaining({ password: null }));
+    });
+
+    it('hashes a changed password, keeps it for the mask and removes it for null', async () => {
+      const sharedLink = SharedLinkFactory.create({ password: hash });
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.update(authStub.user1, sharedLink.id, { password: 'new-secret' });
+      expect(mocks.sharedLink.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ password: 'new-secret (hashed)' }),
+      );
+
+      await sut.update(authStub.user1, sharedLink.id, { password: SHARED_LINK_PASSWORD_MASK, description: 'x' });
+      expect(mocks.sharedLink.update.mock.lastCall?.[0].password).toBeUndefined();
+
+      await sut.update(authStub.user1, sharedLink.id, { password: null });
+      expect(mocks.sharedLink.update).toHaveBeenLastCalledWith(expect.objectContaining({ password: null }));
+    });
+
+    it('never returns the stored password', () => {
+      const withPassword = mapSharedLink(getForSharedLink(SharedLinkFactory.create({ password: hash })), {
+        stripAssetMetadata: false,
+      });
+      const without = mapSharedLink(getForSharedLink(SharedLinkFactory.create({ password: null })), {
+        stripAssetMetadata: false,
+      });
+
+      expect(withPassword.password).toBe(SHARED_LINK_PASSWORD_MASK);
+      expect(without.password).toBeNull();
     });
   });
 });
