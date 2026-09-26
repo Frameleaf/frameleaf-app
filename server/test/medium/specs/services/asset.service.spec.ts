@@ -516,12 +516,13 @@ describe(AssetService.name, () => {
         // no row is counted as referencing a develop output, so only the removed asset can keep it
         const developPath = await addDevelopRevision(asset.id, user.id);
         let queued: { files: Array<string | null | undefined>; removedAssetId?: string } | undefined;
-        ctx.getMock(JobRepository).queue.mockImplementation(async (job) => {
-          if (job.name === JobName.FileDelete) {
-            // the job reached the queue, then the removal's transaction failed and rolled back
-            queued = job.data;
-            throw new Error('commit failed');
+        ctx.getMock(JobRepository).queue.mockImplementation((job) => {
+          if (job.name !== JobName.FileDelete) {
+            return Promise.resolve();
           }
+          // the job reached the queue, then the removal's transaction failed and rolled back
+          queued = job.data;
+          return Promise.reject(new Error('commit failed'));
         });
 
         await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow('commit failed');
