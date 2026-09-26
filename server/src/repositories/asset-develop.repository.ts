@@ -7,6 +7,7 @@ import {
   AssetDevelopRevisionStatus,
 } from 'src/dtos/asset-develop.dto.js';
 import { canWriteFork } from 'src/repositories/fork-write-guard.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 
 export type AssetDevelopRevision = {
@@ -226,12 +227,14 @@ export class AssetDevelopRepository {
 
   /** Every rendered file path for an asset, used when the asset itself is deleted. */
   /**
-   * Deletes the revisions of assets that no longer exist (of `assetId` only, when given) and returns
-   * their rendered files for deletion. The revisions have no foreign key to the asset. FL-179: nothing
-   * is deleted while fork writes are refused (a disabled phase, or a handoff or return reconciliation
-   * running), as the asset's removal does; the nightly sweep releases those revisions later.
+   * Deletes the revisions of assets that no longer exist (of `assetId` only, when given) and queues
+   * the deletion of their rendered files in the same transaction, holding those files' path locks
+   * (FL-169): a failure to queue keeps the rows for the next attempt, and FileDelete cannot act before
+   * the rows are gone. The revisions have no foreign key to the asset. FL-179: nothing is deleted while
+   * fork writes are refused (a disabled phase, or a handoff or return reconciliation running), as the
+   * asset's removal does; the nightly sweep releases those revisions later. Returns the released files.
    */
-  async releaseRemovedAssetRevisions(assetId?: string): Promise<string[]> {
+  async releaseRemovedAssetRevisions(queue: (files: string[]) => Promise<void>, assetId?: string): Promise<string[]> {
     return this.db.transaction().execute(async (tx) => {
       if (!(await canWriteFork(tx))) {
         return [];
@@ -242,7 +245,16 @@ export class AssetDevelopRepository {
         ${assetId ? sql`AND revision."assetId" = ${assetId}::uuid` : sql``}
         RETURNING revision."masterPath", revision."previewPath"
       `.execute(tx);
-      return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
+      const files = [
+        ...new Set(rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path)),
+      ];
+      if (files.length > 0) {
+        for (const path of files.toSorted()) {
+          await lockFilePath(tx, path);
+        }
+        await queue(files);
+      }
+      return files;
     });
   }
 }

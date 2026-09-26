@@ -595,23 +595,21 @@ export class AssetDevelopService {
    */
   @OnEvent({ name: 'AssetDelete' })
   async onAssetDelete({ assetId }: ArgOf<'AssetDelete'>) {
-    await this.queueFileDelete(await this.assetDevelopRepository.releaseRemovedAssetRevisions(assetId));
+    await this.assetDevelopRepository.releaseRemovedAssetRevisions((files) => this.queueFileDelete(files), assetId);
   }
 
   /** FL-179: revisions of removed assets that were left while fork writes were refused. */
   @OnEvent({ name: 'NightlyDatabaseCleanup' })
   async onNightlyDatabaseCleanup() {
     try {
-      await this.queueFileDelete(await this.assetDevelopRepository.releaseRemovedAssetRevisions());
+      await this.assetDevelopRepository.releaseRemovedAssetRevisions((files) => this.queueFileDelete(files));
     } catch (error: any) {
       this.logger.warn(`Develop revision cleanup deferred: ${error}`);
     }
   }
 
   private async queueFileDelete(files: string[]) {
-    if (files.length > 0) {
-      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
-    }
+    await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
   }
 
   private async queueRender(revision: AssetDevelopRevision, label: string): Promise<AssetDevelopRevisionResponseDto> {

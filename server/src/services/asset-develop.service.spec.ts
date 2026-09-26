@@ -502,25 +502,49 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('onAssetDelete', () => {
+    /** The repository releases the files and queues their deletion inside its transaction, as it does. */
+    const releasing = (files: string[]) =>
+      developRepository.releaseRemovedAssetRevisions.mockImplementation(
+        async (queue: (files: string[]) => Promise<void>) => {
+          if (files.length > 0) {
+            await queue(files);
+          }
+          return files;
+        },
+      );
+
     it('removes the revisions and queues their rendered files for deletion', async () => {
-      developRepository.releaseRemovedAssetRevisions.mockResolvedValue(['/m1', '/p1']);
+      releasing(['/m1', '/p1']);
       await sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId });
-      expect(developRepository.releaseRemovedAssetRevisions).toHaveBeenCalledWith(asset.id);
+      expect(developRepository.releaseRemovedAssetRevisions).toHaveBeenCalledWith(expect.any(Function), asset.id);
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/m1', '/p1'] } });
     });
 
     it('queues nothing when the revisions are left for later, as during a handoff (FL-179)', async () => {
-      developRepository.releaseRemovedAssetRevisions.mockResolvedValue([]);
+      releasing([]);
       await sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId });
       expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('fails, keeping the revisions for the nightly sweep, when the cleanup cannot be queued (FL-179)', async () => {
+      releasing(['/m1']);
+      mocks.job.queue.mockRejectedValue(new Error('redis unavailable'));
+      await expect(sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId })).rejects.toThrow(
+        'redis unavailable',
+      );
     });
   });
 
   describe('onNightlyDatabaseCleanup (FL-179)', () => {
     it('releases the revisions of removed assets left earlier', async () => {
-      developRepository.releaseRemovedAssetRevisions.mockResolvedValue(['/m2']);
+      developRepository.releaseRemovedAssetRevisions.mockImplementation(
+        async (queue: (files: string[]) => Promise<void>) => {
+          await queue(['/m2']);
+          return ['/m2'];
+        },
+      );
       await sut.onNightlyDatabaseCleanup();
-      expect(developRepository.releaseRemovedAssetRevisions).toHaveBeenCalledWith();
+      expect(developRepository.releaseRemovedAssetRevisions).toHaveBeenCalledWith(expect.any(Function));
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/m2'] } });
     });
 
