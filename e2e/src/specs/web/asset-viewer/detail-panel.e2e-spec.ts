@@ -252,13 +252,15 @@ test.describe('Detail Panel', () => {
 
       await page.getByRole('button', { name: 'Information', exact: true }).click();
       await page.getByTestId('detail-panel-edit-date-button').click();
-      await page.waitForSelector('[role="dialog"]');
 
-      // V-23: the template's "Edit date and time" dialog: date, time, and a time zone that keeps the current one
+      // V-23: the template's "Edit date and time" dialog: date, time, and a time zone that keeps the current one.
+      // It is a native <dialog> opened with showModal() (frameleaf/Dialog.svelte), so it has no role attribute.
       const dialog = page.getByRole('dialog', { name: 'Edit date and time' });
+      await expect(dialog).toBeVisible();
       await expect(dialog.getByLabel('Date', { exact: true })).toHaveValue(test.expected.date);
       await expect(dialog.getByLabel('Time', { exact: true })).toHaveValue(test.expected.time);
-      const timeZone = dialog.getByLabel('Time zone', { exact: true });
+      // The <label> wraps the <select>, so the label's text also carries every option; match by role and name.
+      const timeZone = dialog.getByRole('combobox', { name: 'Time zone' });
       await expect(timeZone).toHaveValue('');
       await expect(timeZone.locator('option').first()).toHaveText('Keep the current time zone');
       await expect(timeZone.locator(`option[value="${test.expected.timeZone}"]`)).toHaveCount(1);
@@ -276,7 +278,7 @@ test.describe('Detail Panel', () => {
       const dialog = page.getByRole('dialog', { name: 'Edit date and time' });
       await dialog.getByLabel('Date', { exact: true }).fill('2024-03-05');
       await dialog.getByLabel('Time', { exact: true }).fill('09:15');
-      await dialog.getByLabel('Time zone', { exact: true }).selectOption('UTC');
+      await dialog.getByRole('combobox', { name: 'Time zone' }).selectOption('UTC');
       await dialog.getByRole('button', { name: 'Save' }).click();
       await expect(dialog).toHaveCount(0);
 

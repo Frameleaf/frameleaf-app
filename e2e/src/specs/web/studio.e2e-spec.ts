@@ -42,7 +42,13 @@ test.describe('Studio', () => {
     await name.press('Enter');
     await expect(name).toHaveValue('Lake trip');
 
-    await page.getByRole('button', { name: 'Library' }).first().click();
+    // The header's back button (Studio.jsx:2793-2796); the top bar's "Search your library" also
+    // contains "Library", so the click is scoped to Studio and matched exactly.
+    await page
+      .getByRole('region', { name: 'Studio' })
+      .getByRole('button', { name: 'Library', exact: true })
+      .first()
+      .click();
     await expect(page).toHaveURL(/\/photos/);
   });
 
