@@ -6,8 +6,8 @@ type PublicUrlDeps = Pick<CloudGatewayDeps, 'configRepository' | 'systemMetadata
 
 /**
  * FL-190: the address this server can be reached at, for links in emails and login URLs: the
- * configured external domain, else the public URL (a verified custom hostname) Frameleaf Cloud
- * published for a linked server. Never the relay origin: remote access through the relay refuses
+ * configured external domain, else the `publicUrl` Frameleaf Cloud published for a linked server
+ * (https only; FL-161 describes it as the server's custom hostname). Never the relay origin: remote access through the relay refuses
  * password sign-in by default, and maintenance mode is not served there. `undefined` when the server
  * knows neither; callers then leave the link out rather than pointing at another project's host.
  */
