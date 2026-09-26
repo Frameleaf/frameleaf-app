@@ -67,6 +67,10 @@ tested against what the cloud publishes (FL-177).
   takes the domain from the enrolment answer (or discovery's `remote.directDomain`) and only documents
   `frameleaf.net` as the default. The relay fixtures (`remote/relay-*.json`, `remote/wan-probe-*.json`,
   `remote/remote-usage.json`) belong to CLD-103/CLD-104 and are not copied yet.
+- FL-165: `instance/discovery.json` and `instance/discovery-instance.json` are byte-identical to
+  `daa22f68296bc5a897b40b3af34b750fd6586e2f` (the `frameleaf.net` rename): both gained the optional
+  `remote: { directDomain }` (contract `packages/contracts/src/instance/discovery.ts`), which
+  `server/src/utils/frameleaf-cloud.ts` reads and remote access uses as the direct domain before enrolment.
 
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
 above.
