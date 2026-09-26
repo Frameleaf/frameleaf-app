@@ -115,6 +115,22 @@ export const describeAdminEvent = (
     case AdminAuditAction.CloudPermissionsChanged: {
       return $t('frameleaf_account_history_cloud_permissions_changed');
     }
+    case AdminAuditAction.CloudKeyRecoveryRotation: {
+      switch (detail) {
+        case 'rotated': {
+          return $t('frameleaf_account_history_cloud_key_recovery_rotated');
+        }
+        case 'retrying': {
+          return $t('frameleaf_account_history_cloud_key_recovery_retrying');
+        }
+        case 'window-closed': {
+          return $t('frameleaf_account_history_cloud_key_recovery_window_closed');
+        }
+        default: {
+          return $t('frameleaf_account_history_cloud_key_recovery_rotation');
+        }
+      }
+    }
     case AdminAuditAction.LicenseActivated: {
       return detail === 'file' || !detail
         ? $t('frameleaf_account_history_license_file_installed')
