@@ -16,7 +16,6 @@ import {
   generateMaintenanceSecret,
   signMaintenanceJwt,
 } from 'src/utils/maintenance.js';
-import { getExternalDomain } from 'src/utils/misc.js';
 
 /**
  * This service is available outside of maintenance mode to manage maintenance mode
@@ -77,7 +76,7 @@ export class MaintenanceService extends BaseService {
 
   async createLoginUrl(auth: MaintenanceAuthDto, secret?: string): Promise<string> {
     const { server } = await this.getConfig({ withCache: true });
-    const baseUrl = getExternalDomain(server);
+    const baseUrl = await this.getPublicUrl(server);
 
     if (!secret) {
       const state = await this.getMaintenanceMode();

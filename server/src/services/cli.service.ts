@@ -7,7 +7,6 @@ import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { createMaintenanceLoginUrl, generateMaintenanceSecret } from 'src/utils/maintenance.js';
-import { getExternalDomain } from 'src/utils/misc.js';
 
 export type SchemaReport = {
   migrations: MigrationStatus[];
@@ -114,7 +113,7 @@ export class CliService extends BaseService {
 
   async enableMaintenanceMode(): Promise<{ authUrl: string; alreadyEnabled: boolean }> {
     const { server } = await this.getConfig({ withCache: true });
-    const baseUrl = getExternalDomain(server);
+    const baseUrl = await this.getPublicUrl(server);
 
     const payload: MaintenanceAuthDto = {
       username: 'cli-admin',

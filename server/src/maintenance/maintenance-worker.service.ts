@@ -30,8 +30,8 @@ import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { type ServerService as _ServerService } from 'src/services/server.service.js';
 import { type VersionService as _VersionService } from 'src/services/version.service.js';
 import { getConfig } from 'src/utils/config.js';
-import { createMaintenanceLoginUrl, detectPriorInstall } from 'src/utils/maintenance.js';
-import { getExternalDomain } from 'src/utils/misc.js';
+import { createMaintenanceLoginUrl, detectPriorInstall, maintenanceLoginHint } from 'src/utils/maintenance.js';
+import { resolvePublicUrl } from 'src/utils/public-url.js';
 
 /**
  * This service is available inside of maintenance mode to manage maintenance mode
@@ -246,7 +246,10 @@ export class MaintenanceWorkerService {
   async logSecret(): Promise<void> {
     const { server } = await this.getConfig({ withCache: true });
 
-    const baseUrl = getExternalDomain(server);
+    const baseUrl = await resolvePublicUrl(server, {
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
     const url = await createMaintenanceLoginUrl(
       baseUrl,
       {
@@ -255,7 +258,7 @@ export class MaintenanceWorkerService {
       this.secret,
     );
 
-    this.logger.log(`\n\n🚧 Frameleaf is in maintenance mode, you can log in using the following URL:\n${url}\n`);
+    this.logger.log(`\n\n🚧 Frameleaf is in maintenance mode. ${maintenanceLoginHint(url)}:\n${url}\n`);
   }
 
   async authenticate(headers: IncomingHttpHeaders): Promise<MaintenanceAuthDto> {

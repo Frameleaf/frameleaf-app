@@ -535,9 +535,9 @@ describe(SharedLinkService.name, () => {
         .build();
       mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
 
-      await expect(sut.getMetadataTags(authStub.adminSharedLink)).resolves.toEqual({
+      await expect(sut.getMetadataTags(authStub.adminSharedLink, 'https://photos.example.com')).resolves.toEqual({
         description: '1 shared photos & videos',
-        imageUrl: `https://my.immich.app/api/assets/${sharedLink.assets[0].id}/thumbnail?key=${sharedLink.key.toString('base64url')}`,
+        imageUrl: `https://photos.example.com/api/assets/${sharedLink.assets[0].id}/thumbnail?key=${sharedLink.key.toString('base64url')}`,
         title: 'Public Share',
       });
 
@@ -546,13 +546,22 @@ describe(SharedLinkService.name, () => {
 
     it('should return metadata tags with a default image path if the asset id is not set', async () => {
       mocks.sharedLink.get.mockResolvedValue({ ...sharedLinkStub.individual, album: null, assets: [] });
-      await expect(sut.getMetadataTags(authStub.adminSharedLink)).resolves.toEqual({
+      await expect(sut.getMetadataTags(authStub.adminSharedLink, 'https://photos.example.com')).resolves.toEqual({
         description: '0 shared photos & videos',
-        imageUrl: `https://my.immich.app/feature-panel.png`,
+        imageUrl: `https://photos.example.com/feature-panel.png`,
         title: 'Public Share',
       });
 
       expect(mocks.sharedLink.get).toHaveBeenCalled();
+    });
+
+    it('should leave the image out when the server has no address to give it (FL-190)', async () => {
+      mocks.sharedLink.get.mockResolvedValue({ ...sharedLinkStub.individual, album: null, assets: [] });
+      await expect(sut.getMetadataTags(authStub.adminSharedLink)).resolves.toEqual({
+        description: '0 shared photos & videos',
+        imageUrl: undefined,
+        title: 'Public Share',
+      });
     });
   });
 
