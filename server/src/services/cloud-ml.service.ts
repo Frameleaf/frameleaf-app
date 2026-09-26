@@ -45,6 +45,7 @@ import {
   isLocalOnlyModel,
   knownWorkloads,
   stepUpUrl,
+  workloadForCatalogEntry,
 } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination } from 'src/utils/ml-destination-dto.js';
 import { ML_BUDGET_WINDOW_DAYS, workloadPolicyProblem } from 'src/utils/ml-destination.js';
@@ -287,7 +288,7 @@ export class CloudMlService extends BaseService {
         .filter((model) => !model.retired && !isLocalOnlyModel(model.id))
         .map((model) => ({
           id: model.id,
-          workload: knownWorkloads([model.workload])[0] ?? null,
+          workload: workloadForCatalogEntry(model.workload, model.mode),
           name: model.name,
           description: model.description,
           fingerprint: model.fingerprint,

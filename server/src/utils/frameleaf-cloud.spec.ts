@@ -1,20 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { MlAdmissionRefusal } from 'src/enum.js';
+import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
 import {
+  CLOUD_WORKLOAD_IDS,
   CloudErrorCode,
   FrameleafCloudError,
   type FrameleafDiscoveryDocument,
+  appWorkloadsForCloudId,
   cloudAddressProblem,
   cloudDomainOf,
   cloudErrorCode,
+  cloudWorkloadIdFor,
   discoveryProblem,
   discoverySchema,
   errorEnvelopeSchema,
+  knownWorkloads,
   refusalFromCloudError,
   stepUpUrl,
   storeAddress,
+  studioAiCloudWorkloadId,
   usageSchema,
   walletResponseSchema,
+  workloadForCatalogEntry,
 } from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
@@ -331,5 +337,166 @@ describe('gateway amounts and usage (FL-177, as-built decisions #21, #22 and #24
     });
     expect(usage.items[0]).toMatchObject({ modelSku: 'ms_01J8ZK3M4N5P6Q7R', computeSku: 'cs_01J8ZK3M4N5P6Q7R' });
     expect(usage.items[0]).not.toHaveProperty('modelId');
+  });
+});
+
+/**
+ * FL-181: the one boundary mapping between the cloud's six wire workload IDs (FC-66) and this
+ * server's finer-grained `MlWorkload` values. `restoration` admits both restoration workloads;
+ * `transcription` and `tts` both admit Studio AI; every other ID and every app workload not sent to
+ * the cloud (face, clip, ocr, pet-recognition, studio-render) map to nothing.
+ */
+describe('cloud workload ID mapping (FL-181)', () => {
+  it('names the six canonical IDs, in the order the cloud documents them', () => {
+    expect(CLOUD_WORKLOAD_IDS).toEqual([
+      'descriptions',
+      'upscale',
+      'restoration',
+      'transcription',
+      'tts',
+      'interpolation',
+    ]);
+  });
+
+  it('admits the app workload(s) a known cloud ID names', () => {
+    expect(appWorkloadsForCloudId('descriptions')).toEqual([MlWorkload.Enrichment]);
+    expect(appWorkloadsForCloudId('upscale')).toEqual([MlWorkload.Upscale]);
+    expect(appWorkloadsForCloudId('restoration')).toEqual([
+      MlWorkload.RestorationFaithful,
+      MlWorkload.RestorationCreative,
+    ]);
+    expect(appWorkloadsForCloudId('transcription')).toEqual([MlWorkload.StudioAi]);
+    expect(appWorkloadsForCloudId('tts')).toEqual([MlWorkload.StudioAi]);
+    expect(appWorkloadsForCloudId('interpolation')).toEqual([MlWorkload.Interpolation]);
+  });
+
+  it('admits nothing for an ID it does not know, never guessing', () => {
+    for (const unknown of ['face', 'clip', 'ocr', 'pet-recognition', 'studio-render', 'music', 'captioning', '']) {
+      expect(appWorkloadsForCloudId(unknown), unknown).toEqual([]);
+    }
+  });
+
+  it('folds a capabilities `workloads[]` list into the app workloads it admits, dropping unknown IDs and duplicates', () => {
+    expect(knownWorkloads(['descriptions', 'restoration', 'transcription', 'tts', 'face', 'teleportation'])).toEqual([
+      MlWorkload.Enrichment,
+      MlWorkload.RestorationFaithful,
+      MlWorkload.RestorationCreative,
+      MlWorkload.StudioAi,
+    ]);
+    expect(knownWorkloads([])).toEqual([]);
+  });
+
+  it('sends the cloud ID a job for an app workload belongs under', () => {
+    expect(cloudWorkloadIdFor(MlWorkload.Enrichment)).toBe('descriptions');
+    expect(cloudWorkloadIdFor(MlWorkload.Upscale)).toBe('upscale');
+    expect(cloudWorkloadIdFor(MlWorkload.RestorationFaithful)).toBe('restoration');
+    expect(cloudWorkloadIdFor(MlWorkload.RestorationCreative)).toBe('restoration');
+    expect(cloudWorkloadIdFor(MlWorkload.Interpolation)).toBe('interpolation');
+  });
+
+  it('never names a cloud ID for a workload the cloud never serves this way', () => {
+    // Studio AI needs studioAiCloudWorkloadId (one app workload, two cloud IDs); the rest are never sent at all.
+    for (const workload of [
+      MlWorkload.StudioAi,
+      MlWorkload.Face,
+      MlWorkload.Clip,
+      MlWorkload.Ocr,
+      MlWorkload.PetRecognition,
+      MlWorkload.StudioRender,
+    ]) {
+      expect(cloudWorkloadIdFor(workload), workload).toBeNull();
+    }
+  });
+
+  it('picks transcription for speech-to-text and captions, tts for speech; music is never mapped here', () => {
+    expect(studioAiCloudWorkloadId('speech-to-text')).toBe('transcription');
+    expect(studioAiCloudWorkloadId('captions')).toBe('transcription');
+    expect(studioAiCloudWorkloadId('speech')).toBe('tts');
+  });
+
+  it('assigns a restoration catalog entry to the app workload its own mode names', () => {
+    expect(workloadForCatalogEntry('restoration', 'faithful')).toBe(MlWorkload.RestorationFaithful);
+    expect(workloadForCatalogEntry('restoration', 'creative')).toBe(MlWorkload.RestorationCreative);
+    // Pending cloud confirmation of the mode field (FL-181): a restoration entry that does not say is
+    // left unassigned rather than guessed.
+    expect(workloadForCatalogEntry('restoration', null)).toBeNull();
+  });
+
+  it('assigns every other catalog entry from its cloud ID alone, mode ignored', () => {
+    expect(workloadForCatalogEntry('descriptions', null)).toBe(MlWorkload.Enrichment);
+    expect(workloadForCatalogEntry('upscale', null)).toBe(MlWorkload.Upscale);
+    expect(workloadForCatalogEntry('interpolation', null)).toBe(MlWorkload.Interpolation);
+    expect(workloadForCatalogEntry('transcription', null)).toBe(MlWorkload.StudioAi);
+    expect(workloadForCatalogEntry('unknown-future-workload', null)).toBeNull();
+  });
+});
+
+/**
+ * FL-181, FC-66 (Frameleaf/frameleaf-cloud#19, `codex/FC-66-api-protection` at
+ * `44311b822d94c8cd9a2cc95cd4bcde79e54902b4`): the cloud's own `ml/` and `ml/rejected/` fixtures
+ * drive the workload mapping specs, per `test/fixtures/frameleaf-cloud-contracts/SOURCE.md`. These
+ * fixtures use the FC-66 wire shape (`sku`, `computeSku`, `rev`, `rate`, …), which this server's
+ * `catalogSchema`/`usageSchema` do not parse field-for-field yet (tracked in SOURCE.md), so these
+ * specs read each fixture's own `workload` (and `mode`, where present) rather than the whole body.
+ */
+describe('Frameleaf Cloud ml contract fixtures (FC-66, FL-181)', () => {
+  it('admits every catalog model the cloud publishes today', () => {
+    const catalog = cloudContractFixture<{ models: { workload: string }[] }>('ml/catalog.json');
+    expect(catalog.models.length).toBeGreaterThan(0);
+    for (const model of catalog.models) {
+      expect(CLOUD_WORKLOAD_IDS, model.workload).toContain(model.workload);
+      expect(appWorkloadsForCloudId(model.workload), model.workload).not.toEqual([]);
+    }
+  });
+
+  it('round-trips an estimate request workload: the app workload it admits sends the same cloud ID back', () => {
+    const estimate = cloudContractFixture<{ workload: string }>('ml/estimate-request.json');
+    const [workload] = appWorkloadsForCloudId(estimate.workload);
+    expect(cloudWorkloadIdFor(workload)).toBe(estimate.workload);
+  });
+
+  it('round-trips a job request workload the same way', () => {
+    const job = cloudContractFixture<{ workload: string; clientRef: string }>('ml/job-request.json');
+    const [workload] = appWorkloadsForCloudId(job.workload);
+    expect(cloudWorkloadIdFor(workload)).toBe(job.workload);
+  });
+
+  it('links a settled usage item back to the job that created it, by id, never by workload', () => {
+    const job = cloudContractFixture<{ clientRef: string }>('ml/job-request.json');
+    const usage = cloudContractFixture<{ items: { clientRef: string | null }[] }>('ml/usage.json');
+    expect(usage.items.map((item) => item.clientRef)).toContain(job.clientRef);
+  });
+
+  it('leaves every rejected catalog entry’s own workload ID valid: the cloud refuses these for leaking an identifier, not for their workload', () => {
+    for (const name of [
+      'catalog-entry-gpu-class.json',
+      'catalog-entry-model-id.json',
+      'catalog-entry-name-as-compute-sku.json',
+      'catalog-entry-name-as-rev.json',
+    ]) {
+      const entry = cloudContractFixture<{ workload: string }>(`ml/rejected/${name}`);
+      expect(appWorkloadsForCloudId(entry.workload), name).not.toEqual([]);
+    }
+  });
+
+  it('leaves every rejected estimate and job request’s own workload ID valid, for the same reason', () => {
+    for (const name of [
+      'estimate-display-as-input.json',
+      'estimate-gpu-class.json',
+      'estimate-model-id.json',
+      'estimate-name-as-sku.json',
+      'estimate-unknown-request-key.json',
+      'job-model-fingerprint.json',
+      'job-model-id.json',
+    ]) {
+      const body = cloudContractFixture<{ workload: string }>(`ml/rejected/${name}`);
+      expect(appWorkloadsForCloudId(body.workload), name).not.toEqual([]);
+    }
+  });
+
+  it('refuses a body whose workload is not one of the six canonical IDs, exactly as an unknown capability is', () => {
+    const job = cloudContractFixture<{ workload: string }>('ml/job-request.json');
+    const tampered = { ...job, workload: 'legacy-caption' };
+    expect(appWorkloadsForCloudId(tampered.workload)).toEqual([]);
   });
 });
