@@ -79,7 +79,7 @@ export class CloudBackupFileChangedError extends Error {
 
 /** What an administrator reads when the provider refuses customer-provided keys on a bucket it lists. */
 export const SSE_C_REFUSED_MESSAGE =
-  'This bucket refuses customer-provided encryption keys (SSE-C), which Frameleaf backups need. Amazon S3 turns SSE-C off by default on new buckets: allow it in the bucket’s default encryption settings (remove SSE-C from the blocked encryption types), then check the bucket again.';
+  'The storage provider refused an encrypted test write: the bucket may block customer-provided encryption keys (SSE-C), or these credentials can’t write to it. Amazon S3 turns SSE-C off by default on new buckets: allow it in the bucket’s default encryption settings (remove SSE-C from the blocked encryption types), check that the access key may write to the bucket, then check the bucket again.';
 
 const EMPTY_SHA256 = createHash('sha256').update('').digest('hex');
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -129,7 +129,7 @@ export const describeProviderError = (status: number, code: string | null, actio
   if (code === 'RequestTimeTooSkewed') {
     return 'The storage provider refused the request because this server’s clock is off. Correct the server’s time (for example with NTP) and try again.';
   }
-  if (status === 301 || code === 'PermanentRedirect') {
+  if (status === 301 || status === 307 || code === 'PermanentRedirect' || code === 'TemporaryRedirect') {
     return 'The bucket is in another region. Use the bucket’s regional endpoint as the storage address, for example https://s3.eu-central-1.amazonaws.com.';
   }
   if (code === 'NoSuchBucket') {

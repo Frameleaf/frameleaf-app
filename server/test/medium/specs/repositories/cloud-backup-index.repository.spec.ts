@@ -125,16 +125,21 @@ describe(CloudBackupIndexRepository.name, () => {
     await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
   });
 
-  it('lists the dumps complete manifests name', async () => {
+  it('names the dump of the newest complete manifest', async () => {
     const { sut } = setup();
     const bucket = `https://s3.example.test/${randomUUID()}`;
-    const complete = await sut.createManifest({ bucket, key: 'm/1.json.gz', operationId: randomUUID() });
-    const running = await sut.createManifest({ bucket, key: 'm/2.json.gz', operationId: randomUUID() });
-    await sut.setManifestDatabase(complete.id, 'db/one.sql.gz');
-    await sut.setManifestDatabase(running.id, 'db/two.sql.gz');
-    await sut.finishManifest(complete.id, { status: 'complete' });
+    await expect(sut.getLatestManifestDatabaseKey(bucket)).resolves.toBeNull();
 
-    await expect(sut.listManifestDatabaseKeys(bucket)).resolves.toEqual(new Set(['db/one.sql.gz']));
+    const older = await sut.createManifest({ bucket, key: 'm/1.json.gz', operationId: randomUUID() });
+    await sut.setManifestDatabase(older.id, 'db/one.sql.gz');
+    await sut.finishManifest(older.id, { status: 'complete' });
+    const newer = await sut.createManifest({ bucket, key: 'm/2.json.gz', operationId: randomUUID() });
+    await sut.setManifestDatabase(newer.id, 'db/two.sql.gz');
+    await sut.finishManifest(newer.id, { status: 'complete' });
+    const running = await sut.createManifest({ bucket, key: 'm/3.json.gz', operationId: randomUUID() });
+    await sut.setManifestDatabase(running.id, 'db/three.sql.gz');
+
+    await expect(sut.getLatestManifestDatabaseKey(bucket)).resolves.toBe('db/two.sql.gz');
   });
 
   it('ends the running manifests whose run is over or gone, with their files, and keeps the others', async () => {

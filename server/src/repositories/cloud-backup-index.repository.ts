@@ -188,17 +188,19 @@ export class CloudBackupIndexRepository {
     await this.db.updateTable('cloud_backup_manifest').set({ databaseKey }).where('id', '=', id).execute();
   }
 
-  /** The database dumps complete manifests of this bucket name. */
+  /** The database dump the newest complete manifest of this bucket names, if any. */
   @GenerateSql({ params: [DummyValue.STRING] })
-  async listManifestDatabaseKeys(bucket: string): Promise<Set<string>> {
-    const rows = await this.db
+  async getLatestManifestDatabaseKey(bucket: string): Promise<string | null> {
+    const row = await this.db
       .selectFrom('cloud_backup_manifest')
       .select('databaseKey')
       .where('bucket', '=', bucket)
       .where('status', '=', 'complete')
       .where('databaseKey', 'is not', null)
-      .execute();
-    return new Set(rows.flatMap(({ databaseKey }) => (databaseKey ? [databaseKey] : [])));
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    return row?.databaseKey ?? null;
   }
 
   /**
@@ -320,7 +322,7 @@ export class CloudBackupIndexRepository {
   @GenerateSql({
     params: [
       {
-        afterId: DummyValue.UUID,
+        afterId: 'ffffffff-ffff-4fff-bfff-ffffffffffff',
         limit: DummyValue.NUMBER,
         includeThumbs: DummyValue.BOOLEAN,
         includeEncodedVideo: DummyValue.BOOLEAN,
