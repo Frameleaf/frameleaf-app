@@ -41,7 +41,8 @@ export const discoverySchema = z.object({
   store: z
     .url({ protocol: /^https?$/ })
     .optional()
-    .catch(() => {}),
+    // eslint-disable-next-line unicorn/no-useless-undefined -- a bad store address is dropped, keeping the optional type
+    .catch(() => undefined),
 });
 export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
 
