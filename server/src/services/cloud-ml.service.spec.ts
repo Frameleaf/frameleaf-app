@@ -491,7 +491,7 @@ describe(CloudMlService.name, () => {
         description: 'Qwen2.5-VL-72B AWQ, H200-class, 141 GB. Start fee 0.1 USD per worker. Built with Qwen',
         fingerprint: 'mr_68JDMAM8444M',
         pricingUnit: 'second',
-        priceUsd: 0.004_583,
+        priceUsd: 0.004583,
         rank: 5,
         isDefault: false,
       });
