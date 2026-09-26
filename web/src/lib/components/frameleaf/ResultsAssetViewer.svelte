@@ -19,7 +19,7 @@
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import type { AlbumResponseDto, AssetResponseDto } from '@immich/sdk';
-  import { goto } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -58,6 +58,26 @@
         )
       : null,
   );
+
+  /**
+   * How many history entries the viewer has added since it opened over this list (FL-50). Closing
+   * goes back that many, so the list's own entry is where the viewer leaves off and Back from the
+   * list returns to the page that opened it (Explore → results → viewer → close → Back → Explore).
+   * A viewer reached by a link or a reload added nothing, so it closes by replacing its entry.
+   */
+  let viewerDepth = 0;
+  afterNavigate((navigation) => {
+    const { from, to, type } = navigation;
+    if (!to?.params?.assetId) {
+      viewerDepth = 0;
+    } else if (navigation.type === 'popstate') {
+      viewerDepth = Math.max(0, viewerDepth + (navigation.delta ?? 0));
+    } else if ((type === 'goto' || type === 'link') && from?.route.id === to.route.id) {
+      viewerDepth += 1;
+    } else {
+      viewerDepth = 0;
+    }
+  });
 
   const cursor = $derived<AssetCursor>({
     current: assetViewerManager.asset!,
@@ -130,7 +150,14 @@
         }}
         onClose={() => {
           assetViewerManager.showAssetViewer(false);
-          handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
+          // Closing the viewer is not a new place to go back to (FL-50): return to the list's own
+          // entry, or replace the viewer's entry when it was the first one.
+          if (viewerDepth > 0) {
+            history.go(-viewerDepth);
+            viewerDepth = 0;
+            return;
+          }
+          handlePromiseError(navigate({ targetRoute: 'current', assetId: null }, { replaceState: true }));
         }}
         {filmstripAssets}
         {position}

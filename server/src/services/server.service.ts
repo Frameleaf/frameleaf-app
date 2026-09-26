@@ -42,6 +42,17 @@ export class ServerService extends BaseService {
       await this.systemMetadataRepository.set(SystemMetadataKey.AdminOnboarding, {
         isOnboarded: true,
       });
+      // FL-176: a configuration file owns the settings setup would change, so setup never runs.
+      const setup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafSetup);
+      if (!setup?.completed) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafSetup, {
+          completed: true,
+          completedAt: new Date().toISOString(),
+          flow: setup?.flow ?? null,
+          progress: null,
+          updatedAt: new Date().toISOString(),
+        });
+      }
     }
     this.logger.log(`Feature Flags: ${JSON.stringify(await this.getFeatures(), null, 2)}`);
   }
@@ -185,7 +196,8 @@ export class ServerService extends BaseService {
   async getSystemConfig(): Promise<ServerConfigDto> {
     const config = await this.getConfig({ withCache: false });
     const isInitialized = !(await this.isSetupAvailable());
-    const onboarding = await this.systemMetadataRepository.get(SystemMetadataKey.AdminOnboarding);
+    // FL-176: the server counts as onboarded once Frameleaf first-run setup is complete.
+    const setup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafSetup);
 
     return {
       loginPageMessage: config.server.loginPageMessage,
@@ -195,7 +207,7 @@ export class ServerService extends BaseService {
       oauthButtonText: config.oauth.buttonText,
       oauthAccountManagementUrl: config.oauth.accountManagementUrl,
       isInitialized,
-      isOnboarded: onboarding?.isOnboarded || false,
+      isOnboarded: setup?.completed === true,
       externalDomain: config.server.externalDomain,
       publicUsers: config.server.publicUsers,
       mapDarkStyleUrl: config.map.darkStyle,

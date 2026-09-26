@@ -3,8 +3,10 @@ import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
+import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import {
   AssetFileType,
   AssetStatus,
@@ -540,14 +542,25 @@ export class MediaHealthRepository {
   }
 
   private async lockHealthPhase(trx: Kysely<DB>) {
-    const phase = await getForkSchemaPhase(trx);
-    if (phase === 'legacy') {
-      return phase;
+    return (await this.lockForkState(trx)).phase;
+  }
+
+  /**
+   * The fork phase, share-locked for the rest of the transaction whenever `immich_fork.state` exists, in
+   * every phase: a phase change (`transitionPhase` locks the row for update) waits for the write. Without
+   * the table there is no fork schema yet, and the phase reads as legacy.
+   */
+  private async lockForkState(trx: Kysely<DB>): Promise<{ phase: ForkSchemaPhase; hasState: boolean }> {
+    const schema = await sql<{ stateTable: string | null }>`
+      SELECT to_regclass('immich_fork.state')::text AS "stateTable"
+    `.execute(trx);
+    if (!schema.rows[0]?.stateTable) {
+      return { phase: 'legacy', hasState: false };
     }
     const result = await sql<{
-      phase: typeof phase;
+      phase: ForkSchemaPhase;
     }>`SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE`.execute(trx);
-    return result.rows[0]?.phase ?? phase;
+    return { phase: result.rows[0]?.phase ?? 'inactive', hasState: true };
   }
 
   async markResolvedForAssets(
@@ -1100,9 +1113,22 @@ export class MediaHealthRepository {
     const recoveredPath = path.normalize(input.originalPath);
     const external = 'expectedLibraryId' in input;
     return this.db.transaction().execute(async (trx) => {
-      const phase = await this.lockHealthPhase(trx);
-      if (!writesForkSidecar(phase)) {
+      const { phase, hasState } = await this.lockForkState(trx);
+      // A relink writes whichever schemas the locked phase keeps: the legacy tables before the fork
+      // backfill (a new install stays in the legacy phase until it runs), the fork sidecar once it does.
+      // With neither (inactive or failed), or no fork schema at all, nothing may be written.
+      const forkWrites = writesForkSidecar(phase);
+      if (!hasState || (!writesLegacy(phase) && !forkWrites)) {
         return false;
+      }
+      if (!forkWrites) {
+        // A paused storage or checksum backfill resumes past its cursor, so a relink in the legacy phase
+        // after one has started would leave the fork's physical mapping pointing at the old path.
+        const started = await sql`SELECT 1 FROM immich_fork.backfill_progress
+          WHERE kind IN ('storage', 'checksum') LIMIT 1`.execute(trx);
+        if (started.rows.length > 0) {
+          return false;
+        }
       }
       const migrating = await sql`SELECT 1 FROM immich_fork.migration_audit
         WHERE status = 'running' AND name IN ('fork-return-reconciliation', 'official-handoff-preparation') LIMIT 1`.execute(
@@ -1324,17 +1350,20 @@ export class MediaHealthRepository {
           return false;
         }
         const forkId = forkPhysical?.id ?? legacyId ?? randomUUID();
-        if (!forkPhysical) {
+        // the fork's physical mapping is kept only while its writes are on; the backfill rebuilds it
+        if (forkWrites && !forkPhysical) {
           await sql`INSERT INTO immich_fork.physical_file (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt")
             VALUES (${forkId}::uuid, ${canonical}::uuid, 'original', ${input.sha256}, ${input.sizeInBytes}, ${recoveredPath}, now(), now())`.execute(
             trx,
           );
         }
-        await sql`INSERT INTO immich_fork.asset_physical_file ("assetId", "physicalFileId", "upstreamPath", "verifiedAt", "updatedAt")
-          VALUES (${asset.id}::uuid, ${forkId}::uuid, ${recoveredPath}, now(), now()) ON CONFLICT ("assetId") DO UPDATE SET
-          "physicalFileId" = EXCLUDED."physicalFileId", "upstreamPath" = EXCLUDED."upstreamPath", "verifiedAt" = now(), "updatedAt" = now()`.execute(
-          trx,
-        );
+        if (forkWrites) {
+          await sql`INSERT INTO immich_fork.asset_physical_file ("assetId", "physicalFileId", "upstreamPath", "verifiedAt", "updatedAt")
+            VALUES (${asset.id}::uuid, ${forkId}::uuid, ${recoveredPath}, now(), now()) ON CONFLICT ("assetId") DO UPDATE SET
+            "physicalFileId" = EXCLUDED."physicalFileId", "upstreamPath" = EXCLUDED."upstreamPath", "verifiedAt" = now(), "updatedAt" = now()`.execute(
+            trx,
+          );
+        }
         const column = await sql<{
           present: boolean;
         }>`SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.asset'::regclass AND attname = 'physicalOriginalFileId' AND NOT attisdropped) AS present`.execute(
@@ -1358,13 +1387,16 @@ export class MediaHealthRepository {
             WHERE id = ${asset.physicalOriginalFileId}::uuid AND "canonicalAssetId" = ${asset.id}::uuid`.execute(trx);
         }
         const previousForkId = oldMapping.rows[0]?.physicalFileId;
-        if (previousForkId) {
+        if (forkWrites && previousForkId) {
           await sql`UPDATE immich_fork.physical_file SET "canonicalAssetId" = (SELECT "assetId" FROM immich_fork.asset_physical_file WHERE "physicalFileId" = ${previousForkId}::uuid ORDER BY "assetId" LIMIT 1)
             WHERE id = ${previousForkId}::uuid AND "canonicalAssetId" = ${asset.id}::uuid`.execute(trx);
         }
       }
+      // FL-69: an external original keeps its path checksum, so its digests stay Library Care's own (an
+      // external scan's), never a managed copy that sync, upload checks or restores could count
+      const evidenceSource = external ? EXTERNAL_SCAN_CHECKSUM : 'recovery';
       await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
-        VALUES (${asset.id}::uuid, ${input.sha1}, ${input.sha256}, ${input.sizeInBytes}, ARRAY[${recoveredPath}]::text[], 1, '{"source":"recovery"}'::jsonb, now(), now())
+        VALUES (${asset.id}::uuid, ${input.sha1}, ${input.sha256}, ${input.sizeInBytes}, ARRAY[${recoveredPath}]::text[], 1, jsonb_build_object('source', ${evidenceSource}::text), now(), now())
         ON CONFLICT ("assetId") DO UPDATE SET sha1=EXCLUDED.sha1, sha256=EXCLUDED.sha256, "sizeInBytes"=EXCLUDED."sizeInBytes",
           "verifiedPaths"=EXCLUDED."verifiedPaths", evidence=EXCLUDED.evidence, "verifiedAt"=now(), "updatedAt"=now()`.execute(
         trx,

@@ -5,6 +5,7 @@ import {
   MediaHealthCategory,
   MediaHealthStatus,
   reopen,
+  startMissingScan,
 } from '@immich/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { asBearerAuth, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
@@ -69,6 +70,19 @@ test.describe('Library Care', () => {
     utils.createImageFile(`${folder}/Cabin.png`);
     const library = await utils.createLibrary(admin.accessToken, { ownerId: admin.userId, importPaths: [internal] });
     await utils.scan(admin.accessToken, library.id);
+
+    // An external original's own checksum is its path; Library Care records the digests of its bytes the
+    // first time a scan reads it intact, which is what a search later matches a moved copy against.
+    await startMissingScan({ headers: asBearerAuth(admin.accessToken) });
+    await expect
+      .poll(
+        async () => {
+          const { runs } = await getSummary({}, { headers: asBearerAuth(admin.accessToken) });
+          return runs.missing?.status;
+        },
+        { timeout: 60_000 },
+      )
+      .toBe('completed');
   });
 
   test.afterAll(() => {
@@ -96,7 +110,8 @@ test.describe('Library Care', () => {
     const locate = page.getByRole('dialog', { name: 'Choose candidate originals' });
     await locate.getByRole('checkbox').first().check();
     await locate.getByRole('button', { name: 'Search selected locations' }).click();
-    await expect(locate).toContainText('exact match', { timeout: 60_000 });
+    // The dialog's intro already says "exact match"; wait for a candidate's own evidence line.
+    await expect(locate.getByText(/Checksum: exact match/)).toBeVisible({ timeout: 60_000 });
     await locate.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByRole('row', { name: /Lake\.png/ })).toContainText('Verified copy ready to relink', {
       timeout: 30_000,
@@ -160,7 +175,8 @@ test.describe('Library Care', () => {
     const locate = page.getByRole('dialog', { name: 'Choose candidate originals' });
     await locate.getByRole('checkbox').first().check();
     await locate.getByRole('button', { name: 'Search selected locations' }).click();
-    await expect(locate).toContainText('exact match', { timeout: 60_000 });
+    // The dialog's intro already says "exact match"; wait for a candidate's own evidence line.
+    await expect(locate.getByText(/Checksum: exact match/)).toBeVisible({ timeout: 60_000 });
     await locate.getByRole('button', { name: 'Cancel' }).click();
 
     // the verified copy disappears between review and repair
@@ -206,7 +222,9 @@ test.describe('Library Care', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openMissingMedia(page);
 
-    const account = page.getByRole('combobox', { name: 'Account' });
+    // Exact: the Command Center's "Account or library scope" select (CommandCenter.jsx:680) also
+    // contains the word.
+    const account = page.getByRole('combobox', { name: 'Account', exact: true });
     await expect(account.getByRole('option')).toHaveText(['All accounts', 'Immich Admin', 'Jamie']);
     await expect(account).toHaveValue('all');
 

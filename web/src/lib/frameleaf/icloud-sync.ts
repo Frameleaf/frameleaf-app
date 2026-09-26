@@ -231,7 +231,6 @@ export type ICloudDraft = {
   albums: string[];
   includeEdits: boolean;
   includeHidden: boolean;
-  recoverExternalAsManaged: boolean;
   intervalHours: string;
   concurrency: string;
   stagingGiB: string;
@@ -247,7 +246,6 @@ export const icloudDraft = (connection: Pick<ICloudConnectionResponseDto, 'label
   albums: [...connection.config.albums],
   includeEdits: connection.config.includeEdits,
   includeHidden: connection.config.includeHidden,
-  recoverExternalAsManaged: connection.config.recoverExternalAsManaged,
   intervalHours: String(connection.config.intervalHours),
   concurrency: String(connection.config.concurrency),
   stagingGiB: formatGiB(connection.config.stagingBytes),
@@ -261,7 +259,6 @@ export const icloudBlankDraft = (): ICloudDraft => ({
   albums: [],
   includeEdits: true,
   includeHidden: false,
-  recoverExternalAsManaged: false,
   intervalHours: '24',
   concurrency: '1',
   stagingGiB: '20',
@@ -321,13 +318,16 @@ export const icloudDraftProblems = (draft: ICloudDraft): ICloudDraftProblem[] =>
   return problems;
 };
 
-/** What saving would newly allow; the design asks for explicit consent to each before saving. */
+/**
+ * What saving would newly allow; the design asks for explicit consent to each before saving. A match
+ * in an external library needs none: the item is always imported as a managed copy beside it, and the
+ * external file is only evidence (owner decision, FL-69).
+ */
 export const icloudConsentNeeded = (
   draft: ICloudDraft,
   connection: Pick<ICloudConnectionResponseDto, 'config'>,
-): { hidden: boolean; external: boolean } => ({
+): { hidden: boolean } => ({
   hidden: draft.includeHidden && !connection.config.includeHidden,
-  external: draft.recoverExternalAsManaged && !connection.config.recoverExternalAsManaged,
 });
 
 /**
@@ -358,7 +358,6 @@ export const icloudDraftUpdate = (
       albums,
       includeEdits: draft.includeEdits,
       includeHidden: draft.includeHidden,
-      recoverExternalAsManaged: draft.recoverExternalAsManaged,
       intervalHours: Number(draft.intervalHours),
       concurrency: Number(draft.concurrency),
       stagingBytes,

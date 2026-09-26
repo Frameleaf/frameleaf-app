@@ -16,7 +16,7 @@
 <br/>
 
 <a href="https://immich.app">
-  <img src="../design/immich-screenshots.png" title="ภาพหน้าจอหลัก">
+  <img src="../design/frameleaf/references/desktop-dark.jpg" title="ภาพหน้าจอหลัก">
 </a>
 <br/>
 

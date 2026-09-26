@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   NOTIFICATIONS_KEY,
-  ONBOARDING_KEY,
   SUPPORTER_KEY,
   UPLOAD_ERROR_REASONS,
   aboutInfo,
@@ -15,7 +14,6 @@ import {
   checkForUpdates,
   createDownload,
   createMaintenance,
-  createOnboarding,
   createSupporter,
   createUploads,
   dismissNotification,
@@ -24,17 +22,13 @@ import {
   formatBytes,
   formatPrice,
   loadNotifications,
-  loadOnboarding,
   loadSupporter,
   maintenanceSummary,
   markAllRead,
   markRead,
   normalizeProductKey,
   notificationTypes,
-  onboardingStepIndex,
-  onboardingSteps,
   parseNotifications,
-  parseOnboarding,
   parseSupporter,
   passwordStrength,
   relativeTime,
@@ -43,7 +37,6 @@ import {
   retryUploads,
   sampleNotifications,
   saveNotifications,
-  saveOnboarding,
   saveSupporter,
   setSupporterBadgeHidden,
   sortNotifications,
@@ -241,61 +234,6 @@ test("downloads prepare, become ready and can be cancelled", () => {
   assert.equal(formatBytes(512), "512 B");
   assert.equal(formatBytes(-1), "0 B");
   assert.equal(formatBytes(3 * 1024 ** 3), "3.0 GB");
-});
-
-// onboarding
-
-test("onboarding has eleven ordered steps and persists validated progress", () => {
-  assert.equal(onboardingSteps.length, 11);
-  assert.equal(onboardingSteps[0].id, "hello");
-  assert.equal(onboardingSteps.at(-1).id, "done");
-  assert.equal(onboardingStepIndex("theme"), 2);
-  assert.equal(onboardingStepIndex("missing"), 0);
-  const state = createOnboarding();
-  const storage = memoryStorage();
-  saveOnboarding({ ...state, step: 4, choices: { ...state.choices, theme: "dark" } }, storage);
-  assert.ok(storage.map.has(ONBOARDING_KEY));
-  const loaded = loadOnboarding(storage);
-  assert.equal(loaded.step, 4);
-  assert.equal(loaded.choices.theme, "dark");
-  assert.equal(loaded.choices.server.map, true);
-  const hostile = parseOnboarding(
-    JSON.stringify({
-      version: 1,
-      step: 99,
-      completed: "yes",
-      choices: {
-        language: "xx",
-        theme: "neon",
-        server: { map: "no" },
-        storageTemplate: { pattern: "" },
-      },
-    }),
-  );
-  assert.equal(hostile.step, 10);
-  assert.equal(hostile.completed, false);
-  assert.equal(hostile.choices.language, "en");
-  assert.equal(hostile.choices.theme, "system");
-  assert.equal(hostile.choices.server.map, true);
-  assert.equal(hostile.choices.storageTemplate.pattern, state.choices.storageTemplate.pattern);
-  assert.equal(parseOnboarding("[]"), null);
-  assert.deepEqual(loadOnboarding(memoryStorage()), createOnboarding());
-});
-
-test("the Frameleaf account and plan steps are optional, follow storage and default to self-hosted", () => {
-  const ids = onboardingSteps.map((step) => step.id);
-  assert.deepEqual(ids.slice(5, 8), ["storage-template", "frameleaf-account", "plan"]);
-  assert.equal(onboardingSteps[6].optional, true);
-  assert.equal(onboardingSteps[7].optional, true);
-  assert.deepEqual(createOnboarding().choices.cloud, { account: "skip", plan: "self-hosted" });
-  const linked = parseOnboarding(
-    JSON.stringify({ version: 1, step: 7, choices: { cloud: { account: "linked", plan: "cloud-annual" } } }),
-  );
-  assert.deepEqual(linked.choices.cloud, { account: "linked", plan: "cloud-annual" });
-  const hostile = parseOnboarding(
-    JSON.stringify({ version: 1, step: 7, choices: { cloud: { account: "admin", plan: "free-forever" } } }),
-  );
-  assert.deepEqual(hostile.choices.cloud, { account: "skip", plan: "self-hosted" });
 });
 
 test("storage template preview expands known tokens and flags unknown ones", () => {

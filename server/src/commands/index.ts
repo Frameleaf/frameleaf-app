@@ -1,6 +1,10 @@
 import { forkHandoffCommands } from 'src/commands/fork-handoff.command.js';
 import { forkSchemaCutoverCommands } from 'src/commands/fork-schema-cutover.command.js';
-import { ConfirmForkSchemaStartQuestion, forkSchemaCommands } from 'src/commands/fork-schema.command.js';
+import {
+  ConfirmForkSchemaAdoptQuestion,
+  ConfirmForkSchemaStartQuestion,
+  forkSchemaCommands,
+} from 'src/commands/fork-schema.command.js';
 import { GrantAdminCommand, PromptEmailQuestion, RevokeAdminCommand } from 'src/commands/grant-admin.js';
 import { ListUsersCommand } from 'src/commands/list-users.command.js';
 import { DisableMaintenanceModeCommand, EnableMaintenanceModeCommand } from 'src/commands/maintenance-mode.js';
@@ -21,6 +25,7 @@ export const commandsAndQuestions = [
   ...forkSchemaCutoverCommands,
   ...forkSchemaCommands,
   ConfirmForkSchemaStartQuestion,
+  ConfirmForkSchemaAdoptQuestion,
   ResetAdminPasswordCommand,
   PromptPasswordResetQuestions,
   PromptEmailQuestion,

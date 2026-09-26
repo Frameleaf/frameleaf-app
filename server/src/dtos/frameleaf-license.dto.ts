@@ -52,7 +52,11 @@ const LicenseStatusResponseSchema = z
       .object({ instanceId: z.string().nullable(), jkt: z.string().nullable() })
       .describe('What a licence is bound to: this server’s instance ID and key thumbprint'),
     entitlements: LicenseEntitlementsSchema,
-    licensed: z.boolean().describe('A supporter key or plan is active or in grace; plans then cost 20% less'),
+    licensed: z
+      .boolean()
+      .describe(
+        'A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products',
+      ),
     refresh: z
       .object({
         refreshedAt: z.string().nullable(),
@@ -97,7 +101,15 @@ const LicenseProductSchema = z
 const LicenseProductsResponseSchema = z
   .object({
     currency: z.literal('USD'),
-    licensedDiscount: z.number().meta({ format: 'double' }).describe('Share taken off plans on a licensed server'),
+    licensedDiscount: z
+      .number()
+      .meta({ format: 'double' })
+      .describe(
+        'Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup',
+      ),
+    pricesVersion: z
+      .string()
+      .describe('Version of the plan prices in force: published by Frameleaf Cloud, else the bundled snapshot'),
     storeUrl: z.string().nullable().describe('The store this server was deployed with; null when there is none'),
     products: z.array(LicenseProductSchema),
     credit: z
@@ -108,10 +120,11 @@ const LicenseProductsResponseSchema = z
       .describe('AI credit top-ups the store accepts; credit is never discounted'),
     backup: z
       .object({
+        includedTb: z.number().meta({ format: 'double' }),
+        blockTb: z.number().meta({ format: 'double' }),
         usdPerTbMonth: z.number().meta({ format: 'double' }),
-        minimumTb: z.number().meta({ format: 'double' }),
       })
-      .describe('Cloud backup is usage based, not part of a plan'),
+      .describe('Cloud backup a plan includes, and the blocks and monthly rate for more'),
   })
   .meta({ id: 'LicenseProductsResponseDto' });
 

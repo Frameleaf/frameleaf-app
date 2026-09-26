@@ -52,6 +52,7 @@ import {
   redirectUris,
 } from 'src/utils/frameleaf-cloud-link.js';
 import { FrameleafCloudError, FrameleafDiscoveryDocument, cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
+import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /** One process start: the cloud's clone rule compares these between check-ins. */
@@ -727,12 +728,30 @@ export class FrameleafCloudService extends BaseService {
     for (const command of response.commands) {
       next = await this.runCommand(cloudUrl, document, next, command);
     }
+    await this.keepPublishedPricing(response.pricing);
     if (response.entitlementsChanged && permissionsOf(next).allowEntitlementRefresh) {
       await this.jobRepository.queue({ name: JobName.FrameleafLicenseRefresh, data: { force: true } });
     }
     await this.removeRetiredKey();
     await this.saveLink(next, 'link');
     return JobStatus.Success;
+  }
+
+  /**
+   * Keep the plan pricing a heartbeat published (`acceptPublishedPricing`). A storage failure only
+   * logs a warning: the check-in, whose commands have already run, still succeeds, and the last good
+   * pricing stays.
+   */
+  private async keepPublishedPricing(raw: unknown) {
+    try {
+      const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafPricing);
+      const next = acceptPublishedPricing(raw, stored);
+      if (!isEqual(next, stored ?? { current: null })) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafPricing, next);
+      }
+    } catch (error) {
+      this.logger.warn(`Could not keep the plan pricing Frameleaf Cloud published: ${error}`);
+    }
   }
 
   private async recordHeartbeatFailure(link: FrameleafCloudLink, error: unknown) {

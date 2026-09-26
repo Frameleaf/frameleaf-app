@@ -122,7 +122,7 @@ export const withCredentialState = (
       break;
     }
     case ConfigCredential.FrameleafOidcClientSecret: {
-      if (next.frameleafCloud.signIn) {
+      if (next.frameleafCloud?.signIn) {
         next.frameleafCloud.signIn.clientSecretConfigured = configured;
       }
       break;

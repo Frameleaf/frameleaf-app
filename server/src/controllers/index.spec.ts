@@ -65,6 +65,10 @@ const ADMIN_ROUTES = new Set([
   'GET system-config/defaults',
   'GET system-config/storage-template-options',
   'GET system-metadata/admin-onboarding',
+  // FL-176: first-run setup for an existing library, owned by the administrator.
+  'GET system-metadata/frameleaf-setup',
+  'GET system-metadata/frameleaf-setup/library',
+  'GET system-metadata/frameleaf-setup/storage',
   'GET system-metadata/reverse-geocoding-state',
   'GET system-metadata/version-check-state',
   // Lists the server's permitted import folders; only an administrator may point an import at one.
@@ -78,10 +82,12 @@ const ADMIN_ROUTES = new Set([
   // FL-71: the Job manager's Retry failed.
   'POST queues/:name/jobs/retry-failed',
   'POST system-metadata/admin-onboarding',
+  'POST system-metadata/frameleaf-setup/finish',
   'PUT jobs/:name',
   'PUT libraries/:id',
   'PUT queues/:name',
   'PUT system-config',
+  'PUT system-metadata/frameleaf-setup',
 ]);
 
 /** Routes a shared link (`?key=`) is allowed to reach, i.e. `@Authenticated({ sharedLink: true })` */

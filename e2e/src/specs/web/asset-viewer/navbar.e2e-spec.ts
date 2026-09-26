@@ -132,10 +132,10 @@ test.describe('Asset Viewer Navbar', () => {
       await page.getByTestId('viewer-rating-button').click();
       await page.getByRole('group', { name: 'Rate this item' }).getByRole('button', { name: 'Rate 4 stars' }).click();
       await expect
-        .poll(
-          async () =>
-            (await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) })).exifInfo?.rating,
-        )
+        .poll(async () => {
+          const info = await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) });
+          return info.exifInfo?.rating;
+        })
         .toBe(4);
       await expect(page.getByTestId('viewer-rating-button')).toHaveAccessibleName('Rating · 4 stars');
     });
@@ -150,9 +150,10 @@ test.describe('Asset Viewer Navbar', () => {
 
       await toolbar.getByRole('button', { name: 'Restore', exact: true }).click();
       await expect
-        .poll(
-          async () => (await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) })).isTrashed,
-        )
+        .poll(async () => {
+          const info = await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) });
+          return info.isTrashed;
+        })
         .toBe(false);
     });
 

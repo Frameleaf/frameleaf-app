@@ -1,5 +1,5 @@
-import { LoginResponseDto, updatePerson } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { AssetMediaResponseDto, LoginResponseDto, updateAsset, updatePerson } from '@immich/sdk';
+import { expect, Locator, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 
 /**
@@ -7,15 +7,29 @@ import { asBearerAuth, utils } from 'src/utils.js';
  * search they open, "Things in your photos" lists the account's tags, and "Recent captures" names
  * each item and its capture day. Hidden people and archived items never appear.
  */
+/** The offset of the element that scrolls the page: the layout's content area, not `main` or the window. */
+const scrollOffset = (inside: Locator) =>
+  inside.evaluate((element) => {
+    for (let node = element.parentElement; node; node = node.parentElement) {
+      const { overflowY } = getComputedStyle(node);
+      if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+        return node.scrollTop;
+      }
+    }
+    const root = element.ownerDocument.scrollingElement;
+    return root ? root.scrollTop : 0;
+  });
+
 test.describe('Explore', () => {
   let admin: LoginResponseDto;
+  let first: AssetMediaResponseDto;
 
   test.beforeAll(async () => {
     utils.initSdk();
     await utils.resetDatabase();
     admin = await utils.adminSetup();
 
-    const first = await utils.createAsset(admin.accessToken, {
+    first = await utils.createAsset(admin.accessToken, {
       assetData: { filename: 'sunset.png' },
       fileCreatedAt: '2026-08-02T18:00:00.000Z',
     });
@@ -82,10 +96,7 @@ test.describe('Explore', () => {
 
     const things = page.getByRole('region', { name: 'Things in your photos' });
     await things.scrollIntoViewIfNeeded();
-    const scrolled = await page.evaluate(() => {
-      const scroller = document.querySelector('main') ?? document.scrollingElement;
-      return scroller?.scrollTop ?? 0;
-    });
+    const scrolled = await scrollOffset(things);
 
     await things.getByRole('link', { name: /beach/ }).click();
     await page.waitForURL(/\/search\?query=.*tagIds/);
@@ -99,14 +110,35 @@ test.describe('Explore', () => {
     await page.goBack();
     await page.waitForURL(/\/explore/);
     await expect(things).toBeVisible();
-    const restored = await page.evaluate(() => {
-      const scroller = document.querySelector('main') ?? document.scrollingElement;
-      return scroller?.scrollTop ?? 0;
-    });
+    const restored = await scrollOffset(things);
     expect(Math.abs(restored - scrolled)).toBeLessThan(80);
   });
 
   test('Best Photos without quality scores says so instead of ranking by stars (FL-50)', async ({ context, page }) => {
+    // Uploads are scored locally in the background (BestPhotosScore follows thumbnail generation and
+    // face detection), so this library already has scores. Give one item five stars, let every job
+    // that could score it finish, then clear the scores: a rated library with nothing scored.
+    await updateAsset({ id: first.id, updateAssetDto: { rating: 5 } }, { headers: asBearerAuth(admin.accessToken) });
+    for (const queue of [
+      'sidecar',
+      'metadataExtraction',
+      'thumbnailGeneration',
+      'faceDetection',
+      'backgroundTask',
+    ] as const) {
+      await utils.waitForQueueFinish(admin.accessToken, queue);
+    }
+    const client = await utils.connectDatabase();
+    await client.query(`DO $$
+      BEGIN
+        IF to_regclass('public.asset_best_photo_score') IS NOT NULL THEN
+          DELETE FROM public.asset_best_photo_score;
+        END IF;
+        IF to_regclass('immich_fork.asset_best_photo_score') IS NOT NULL THEN
+          DELETE FROM immich_fork.asset_best_photo_score;
+        END IF;
+      END $$;`);
+
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/best-photos');
     await expect(page.getByText('No best photos have been scored yet.')).toBeVisible();
