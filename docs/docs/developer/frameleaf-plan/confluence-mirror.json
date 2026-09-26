@@ -73,19 +73,19 @@
       "version": 4
     },
     {
-      "bytes": 21086,
+      "bytes": 30901,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-26T16:53:30.000Z",
-      "readbackResult": "FL-190: markdown read-back of version 4 begins with the header carrying SHA-256 00eef960, 21086 bytes, commit a3a4012815 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-190/FL-191 note, the source-at-commit backlink and FL-190/FL-191 links, keeping the earlier FL-160, FL-161, FL-156 and FL-170 history; compared with version 3, the only body difference is the FL-190 rebrand edit from commit 20289e0cf8 in the shared-link password paragraph ('The official upstream server cannot check these hashes'); verify.py shows only the same-page Remote access security link that the markdown export drops (the HTML keeps #remote-access-security); no user additions.",
+      "readbackAt": "2026-09-26T23:05:50.743Z",
+      "readbackResult": "FL-164/FL-165: markdown read-back of version 5 begins with the header carrying SHA-256 334985d9, 30901 bytes, the FL-164 commits 005602a75b and deb8d86c62 and the FL-165 commit a181f68ca8, brought together in the local merge 0d93fc873f, committed locally on codex/FL-44-merge (not pushed), on top of the FL-190/FL-191 revision at a3a4012815 (kept as the source-at-commit backlink, since these commits are not pushed), the added FL-164/FL-165 Jira links and the rest of the existing FL-190/FL-191/FL-160/FL-161/FL-156/FL-170 chain unchanged; the live version 4 was unchanged since its FL-190 read-back. Body matches the posted HEAD source exactly: 'Remote access security' opens with the new Workers-and-endpoints paragraph, and 'Cloud backup' carries the new Schedule and retention, Checking the backups, Frameleaf-managed storage, Key escrow, Restoring and Disaster recovery subsections plus the reworded run/status-card text, except that the markdown export drops the same-page anchor link markup (text kept) for 'Remote access security', 'Frameleaf-managed storage', 'Key escrow', 'Plan and licence' and 'Unlinking', the same known round-trip limitation as prior read-backs; no user-authored additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
-      "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
-      "sourceSha256": "00eef960d1a777936ea1d1517f21d8e75469c84f79bc76b09563cc18bb4538ab",
-      "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
+      "sourceBranch": "codex/FL-44-merge",
+      "sourceCommit": "72d1b7d622554c36d731f4360584c1e9638412cc",
+      "sourceSha256": "334985d9073faca521d7c884b6b4cd561b1ce76c361e3139780868b4f7392eb6",
+      "sourceState": "committed-fl-164-fl-165-cloud-backup-and-remote-access-2026-09-26",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 4
+      "version": 5
     },
     {
       "bytes": 12350,
