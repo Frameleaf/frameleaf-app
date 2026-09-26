@@ -374,6 +374,19 @@ describe(DatabaseService.name, () => {
       expect(mocks.database.runForkMigrations).toHaveBeenCalledOnce();
     });
 
+    it('says a ready library needs activation before its newer Frameleaf migrations run (FL-180)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+      mocks.database.applyIsolatedFrameleafMigrations.mockResolvedValue({
+        applied: [],
+        pending: ['2100000000610-AddClassificationRule'],
+        skipped: 'awaiting-activation',
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('ready to active'));
+    });
+
     it('fails startup before the fork migrations when a Frameleaf migration fails (FL-180)', async () => {
       mocks.database.detectMigrationMode.mockResolvedValue('isolated');
       mocks.database.applyIsolatedFrameleafMigrations.mockRejectedValue(new Error('synthetic Frameleaf failure'));

@@ -173,6 +173,10 @@ export class DatabaseService extends BaseService {
       this.logger.log(
         `${pending.length} newer Frameleaf migration(s) wait for the return from the official server (immich-admin fork-handoff prepare-fork)`,
       );
+    } else if (skipped === 'awaiting-activation') {
+      this.logger.warn(
+        `${pending.length} newer Frameleaf migration(s) wait until the library is activated (ready to active); until then the next cutover's catalog check will not pass`,
+      );
     } else if (skipped === 'unexpected-phase') {
       this.logger.warn(
         `${pending.length} newer Frameleaf migration(s) were not applied because the library is in an unexpected handoff phase; check immich-admin fork-schema status`,
