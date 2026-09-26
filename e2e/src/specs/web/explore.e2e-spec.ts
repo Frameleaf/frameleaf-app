@@ -16,7 +16,8 @@ const scrollOffset = (inside: Locator) =>
         return node.scrollTop;
       }
     }
-    return document.scrollingElement?.scrollTop ?? 0;
+    const root = element.ownerDocument.scrollingElement;
+    return root ? root.scrollTop : 0;
   });
 
 test.describe('Explore', () => {
