@@ -378,11 +378,11 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       sdkMock.getCloudMlCatalog.mockRejectedValue(new Error('unavailable'));
       render(WorkloadRoutingTable);
 
-      expect(
-        await screen.findByText(
-          'The Frameleaf Cloud model list could not be read. Check the connection in Cloud processing.',
-        ),
-      ).toBeInTheDocument();
+      // FL-189: each picker with a cloud side says so, so the notice may appear more than once
+      const notices = await screen.findAllByText(
+        'The Frameleaf Cloud model list could not be read. Check the connection in Cloud processing.',
+      );
+      expect(notices.length).toBeGreaterThan(0);
       expect(screen.queryByRole('radiogroup', { name: /Frameleaf Cloud model for/ })).toBeNull();
     });
   });
