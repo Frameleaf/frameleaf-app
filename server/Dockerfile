@@ -13,10 +13,12 @@ ENV LD_LIBRARY_PATH=/usr/local/lib \
   LD_RUN_PATH=/usr/local/lib
 
 COPY server/base-image/configure-apt.sh ./
+# apt-update-strict fails the build when any package index cannot be fetched, instead of apt's warning.
+COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-update-strict
 
-# Install ca-certificates first, then set up the PostgreSQL client repository
+# Install ca-certificates first, then set up the PostgreSQL client repository over HTTPS
 RUN ./configure-apt.sh && \
-  apt-get update && \
+  apt-update-strict && \
   apt-get install --no-install-recommends -yqq ca-certificates && \
   mkdir -p /usr/share/postgresql-common/pgdg
 
@@ -25,7 +27,7 @@ ADD --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce81994099120394156
 
 RUN . /etc/os-release && \
   echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
-  apt-get update && \
+  apt-update-strict && \
   apt-get install --no-install-recommends -yqq \
   git \
   autoconf \
@@ -187,9 +189,10 @@ ARG GMMLIB_VERSION=22.10.0
 WORKDIR /build
 
 COPY server/base-image/configure-apt.sh server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
+COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-update-strict
 
 RUN ./configure-apt.sh && \
-  apt-get update && \
+  apt-update-strict && \
   apt-get install curl ca-certificates --no-install-recommends -yqq && \
   mkdir -p /usr/share/postgresql-common/pgdg
 
@@ -198,7 +201,7 @@ ADD --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce81994099120394156
 
 RUN . /etc/os-release && \
   echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
-  apt-get update && \
+  apt-update-strict && \
   apt-get install --no-install-recommends -yqq \
   jq \
   libde265-0/testing \
@@ -264,7 +267,9 @@ RUN . /etc/os-release && \
   (cd /usr/lib/jellyfin-ffmpeg/lib && \
   rm -f libdav1d.so* libfontconfig.so* libfreetype.so* libfribidi.so* libharfbuzz.so* libigdgmm.so* libz.so*) && \
   apt-get install -t testing --no-install-recommends -yqq libmimalloc3 && \
-  apt-get remove -yqq jq wget ca-certificates && \
+  # ca-certificates stays installed (upstream removed it): the PostgreSQL source above is HTTPS, and
+  # without CA certificates any later index update in this image cannot fetch it.
+  apt-get remove -yqq jq wget && \
   apt-get autoremove -yqq && \
   apt-get clean && \
   rm -rf \
@@ -422,7 +427,7 @@ ENV NODE_ENV=production \
   NVIDIA_DRIVER_CAPABILITIES=all \
   NVIDIA_VISIBLE_DEVICES=all
 
-RUN apt-get update --allow-releaseinfo-change && \
+RUN apt-update-strict --allow-releaseinfo-change && \
   apt-get install -y --no-install-recommends libraw-bin && \
   rm -rf /var/lib/apt/lists/*
 

@@ -13,10 +13,12 @@ ENV LD_LIBRARY_PATH=/usr/local/lib \
   LD_RUN_PATH=/usr/local/lib
 
 COPY server/base-image/configure-apt.sh ./
+# apt-update-strict fails the build when any package index cannot be fetched, instead of apt's warning.
+COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-update-strict
 
-# Install ca-certificates first, then set up the PostgreSQL client repository
+# Install ca-certificates first, then set up the PostgreSQL client repository over HTTPS
 RUN ./configure-apt.sh && \
-  apt-get update && \
+  apt-update-strict && \
   apt-get install --no-install-recommends -yqq ca-certificates && \
   mkdir -p /usr/share/postgresql-common/pgdg
 
@@ -25,7 +27,7 @@ ADD --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce81994099120394156
 
 RUN . /etc/os-release && \
   echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
-  apt-get update && \
+  apt-update-strict && \
   apt-get install --no-install-recommends -yqq \
   git \
   autoconf \
@@ -201,7 +203,7 @@ ENTRYPOINT ["tini", "--", "/bin/bash", "-c"]
 
 FROM dev AS dev-container-server
 
-RUN apt-get update --allow-releaseinfo-change && \
+RUN apt-update-strict --allow-releaseinfo-change && \
   apt-get install inetutils-ping openjdk-21-jre-headless libraw-bin \
   vim nano curl \
   -y --no-install-recommends --fix-missing

@@ -601,6 +601,15 @@ test("the server base is built in-repo and identical in the production and devel
     "every Intel driver package has a checksum",
   );
   assert.match(server, /sha256sum --strict -c intel-drivers\.sha256/);
+  // An unreachable package index fails the build instead of warning, and the HTTPS PostgreSQL source
+  // keeps the CA certificates it needs in the runtime image.
+  assert.doesNotMatch(server, /apt-get update/);
+  assert.match(server, /^RUN apt-update-strict --allow-releaseinfo-change/m);
+  assert.match(
+    read("server/base-image/apt-update-strict.sh"),
+    /apt-get update -o APT::Update::Error-Mode=any/,
+  );
+  assert.doesNotMatch(server, /apt-get remove[^\n]*ca-certificates/);
   // The vendored build pins every compiled library to an exact revision.
   for (const name of [
     "imagemagick",
