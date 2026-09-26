@@ -409,13 +409,32 @@ describe(FrameleafLicenseService.name, () => {
         expect(store()?.plan?.claims.jti).toBe('plan-2');
       });
 
-      it('drops the plan certificate too when the answer holds none', async () => {
+      it.each([
+        ['an empty answer', (): string[] => [], 'does not understand'],
+        [
+          'an answer without a plan certificate',
+          (): string[] => [keyCertificate({ jti: 'key-2' })],
+          'without a plan certificate',
+        ],
+      ])('keeps both certificates and records the error for %s, retrying in an hour', async (_, answer, error) => {
         await holdPlanAndKey();
-        cloud.on('POST /api/v1/licenses/refresh', () => ({ status: 200, body: { certificates: [] } }));
+        cloud.on('POST /api/v1/licenses/refresh', () => ({ status: 200, body: { certificates: answer() } }));
 
-        await sut.refreshNow();
+        await expect(sut.handleRefresh({ force: true })).resolves.toBe(JobStatus.Success);
 
-        expect(store()).toMatchObject({ key: null, plan: null });
+        const held = store()!;
+        expect(held.plan).toMatchObject({
+          claims: { jti: 'plan-1' },
+          lastRefreshError: expect.stringContaining(error),
+        });
+        expect(held.key).toMatchObject({
+          claims: { jti: 'key-1' },
+          activationId: 'activation-1',
+          lastRefreshError: expect.stringContaining(error),
+        });
+        const retryIn = Date.parse(held.plan!.nextRefreshAt!) - Date.now();
+        expect(retryIn).toBeGreaterThan(55 * 60 * 1000);
+        expect(retryIn).toBeLessThanOrEqual(60 * 60 * 1000);
       });
     });
 

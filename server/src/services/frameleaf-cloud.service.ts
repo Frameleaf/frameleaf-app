@@ -445,6 +445,8 @@ export class FrameleafCloudService extends BaseService {
     this.frameleafCloudRepository.forget();
     await this.saveLink(link, 'link');
     await this.clearKeyRecovery();
+    // FL-185: a new link starts without a cloud processing suspension; the cloud says again if it holds one
+    await this.forgetMlSuspension();
 
     const actor = 'actorId' in source ? source.actorId : undefined;
     await this.audit(AdminAuditAction.CloudLinked, link.accountLabel ?? null, actor);
@@ -551,7 +553,7 @@ export class FrameleafCloudService extends BaseService {
     await this.saveLink(next, 'link');
     await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlWallet);
     // FL-185: an ML suspension belongs to the link that ended
-    await clearMlSuspension(this.gatewayDeps());
+    await this.forgetMlSuspension();
     await this.removePlanCertificate();
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
       config.frameleafCloud.cloudMl.enabled = false;
@@ -900,9 +902,11 @@ export class FrameleafCloudService extends BaseService {
   /**
    * FL-185: what a check-in says about a suspected copy of this server, for cloud processing. A new
    * `cloneSuspected: true` stops ML token requests like a `clone_suspected` token answer does and tells
-   * the administrators (once, whichever path noticed first). `cloneSuspected: false` resumes them, and
-   * so does `servicesChanged` when `GET /v1/discovery` no longer reports ML `suspended`. A failure here
-   * never fails the check-in; the suspension then stays until the next one.
+   * the administrators (the notice's dedupe key keeps repeats out). `cloneSuspected: false` resumes
+   * them. While a suspension is recorded and check-ins still report `cloneSuspected: true`, every
+   * check-in asks `GET /v1/discovery` and resumes once it no longer reports ML `suspended` (or reports
+   * `cloneSuspected: false`), so one failed or missed answer never leaves it stuck. A failure here never
+   * fails the check-in; the suspension then stays until the next one (or the gateway's daily probe).
    */
   private async followCloneSuspicion(
     cloudUrl: string,
@@ -911,8 +915,9 @@ export class FrameleafCloudService extends BaseService {
     response: HeartbeatResponse,
   ) {
     const instanceId = link.instanceId!;
+    let suspended: boolean;
     try {
-      const suspended = !!(await readMlSuspension(this.gatewayDeps(), cloudUrl, instanceId));
+      suspended = !!(await readMlSuspension(this.gatewayDeps(), cloudUrl, instanceId));
       if (!response.cloneSuspected) {
         if (suspended) {
           await clearMlSuspension(this.gatewayDeps());
@@ -921,23 +926,33 @@ export class FrameleafCloudService extends BaseService {
         return;
       }
       if (!link.heartbeat?.cloneSuspected) {
-        // a new suspicion; one the token endpoint reported first has already told the administrators
+        this.notify({ ...CLONE_SUSPECTED_NOTICE });
         if (!suspended) {
           await recordMlSuspension(this.gatewayDeps(), cloudUrl, instanceId);
-          this.notify({ ...CLONE_SUSPECTED_NOTICE });
+          suspended = true;
         }
-        return;
       }
-      if (suspended && response.servicesChanged && !(await this.mlStillSuspended(cloudUrl, document, link))) {
+    } catch (error) {
+      this.logger.warn(`Could not update the cloud processing suspension: ${error}`);
+      return;
+    }
+    if (!suspended) {
+      return;
+    }
+    try {
+      if (!(await this.mlStillSuspended(cloudUrl, document, link))) {
         await clearMlSuspension(this.gatewayDeps());
         this.logger.log('Frameleaf Cloud no longer suspends cloud processing for this server; it resumes');
       }
     } catch (error) {
-      this.logger.warn(`Could not update the cloud processing suspension: ${error}`);
+      this.logger.warn(`Could not ask Frameleaf Cloud whether cloud processing is still paused: ${error}`);
     }
   }
 
-  /** Whether `GET /v1/discovery` still reports this server's ML service `suspended` (FL-185). */
+  /**
+   * Whether `GET /v1/discovery` still reports this server's ML service `suspended` (FL-185). A
+   * top-level `cloneSuspected: false` there means it is not, whatever the service status says.
+   */
   private async mlStillSuspended(cloudUrl: string, document: FrameleafDiscoveryDocument, link: FrameleafCloudLink) {
     const { token } = await this.apiToken(cloudUrl, link);
     const answer = await this.frameleafCloudRepository.requestJson(instanceServicesSchema, {
@@ -945,7 +960,16 @@ export class FrameleafCloudService extends BaseService {
       url: linkEndpoints(document).instanceDiscovery,
       dpop: token,
     });
-    return answer.services.ml?.status === 'suspended';
+    return answer.cloneSuspected !== false && answer.services.ml?.status === 'suspended';
+  }
+
+  /** FL-185: drop the cloud processing suspension; a failure is logged and never stops the caller. */
+  private async forgetMlSuspension() {
+    try {
+      await clearMlSuspension(this.gatewayDeps());
+    } catch (error) {
+      this.logger.warn(`Could not clear the cloud processing suspension: ${error}`);
+    }
   }
 
   /**

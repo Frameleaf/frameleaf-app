@@ -24,6 +24,7 @@ import {
   CloudConnectionState,
   CloudMlGatewayDeps,
   ML_CLONE_SUSPENDED_DETAIL,
+  ML_SUSPENSION_PROBE_AFTER_MS,
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
@@ -1813,7 +1814,8 @@ describe(FrameleafCloudService.name, () => {
         ).resolves.toMatchObject({ state: CloudConnectionState.Unavailable, detail: ML_CLONE_SUSPENDED_DETAIL });
         expect(mlTokenRequests()).toHaveLength(1);
 
-        // API-audience tokens and the check-in keep working; the check-in that confirms it does not notify again
+        // API-audience tokens and the check-in keep working. The check-in's new suspicion notifies with the
+        // same dedupe key, which the notification service keeps to one notice a day
         heartbeatAnswers({ cloneSuspected: true });
         sutForgetTokens();
         makeDue();
@@ -1822,7 +1824,8 @@ describe(FrameleafCloudService.name, () => {
         expect(cloud.requests.some(({ path }) => path === '/api/v1/instance/heartbeat')).toBe(true);
         expect(storedLink()?.heartbeat).toMatchObject({ failures: 0, cloneSuspected: true });
         expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
-        expect(cloneNotices()).toHaveLength(1);
+        expect(cloneNotices()).toHaveLength(2);
+        expect(new Set(cloneNotices().map(([, notice]) => (notice as { dedupeKey: string }).dedupeKey)).size).toBe(1);
         expect(mlTokenRequests()).toHaveLength(1);
       });
 
@@ -1855,40 +1858,110 @@ describe(FrameleafCloudService.name, () => {
         expect(cloneNotices()).toHaveLength(1);
       });
 
-      it('resumes on servicesChanged once GET /v1/discovery no longer reports ML suspended, and not before', async () => {
+      /** `GET /v1/discovery` answers from the golden fixture with this ML status, or fails. */
+      const serveDiscovery = () => {
         const discovery = cloudContractFixture<Record<string, any>>('instance/discovery-instance.json');
-        let mlStatus = 'suspended';
-        cloud.on('GET /api/v1/discovery', () => ({
-          status: 200,
-          body: {
-            ...discovery,
-            services: {
-              ...discovery.services,
-              ml: { status: mlStatus, reason: mlStatus === 'suspended' ? 'clone-suspected' : null },
-            },
-            cloneSuspected: true,
-          },
-        }));
+        const state = { ml: 'suspended' as 'suspended' | 'enabled' | 'fail', cloneSuspected: true };
+        cloud.on('GET /api/v1/discovery', () =>
+          state.ml === 'fail'
+            ? { status: 503, body: { code: 'unavailable', message: 'down' } }
+            : {
+                status: 200,
+                body: {
+                  ...discovery,
+                  services: {
+                    ...discovery.services,
+                    ml: { status: state.ml, reason: state.ml === 'suspended' ? 'clone-suspected' : null },
+                  },
+                  cloneSuspected: state.cloneSuspected,
+                },
+              },
+        );
+        return state;
+      };
+      const discoveryAsked = () =>
+        cloud.requests.filter(({ method, path }) => method === 'GET' && path === '/api/v1/discovery');
+
+      it('asks GET /v1/discovery on every check-in while suspended, so a failed answer never leaves it stuck', async () => {
+        const discovery = serveDiscovery();
+        heartbeatAnswers({ cloneSuspected: true });
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        expect(discoveryAsked()).toHaveLength(1);
+        expect(tokenNameOf(discoveryAsked()[0])).toBe('api-token');
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
+
+        // the discovery answer fails: the check-in still succeeds and the suspension stays for now
+        discovery.ml = 'fail';
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        expect(storedLink()?.heartbeat?.failures).toBe(0);
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
+
+        // a later ordinary check-in (no servicesChanged) learns ML is no longer suspended and resumes
+        discovery.ml = 'enabled';
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        expect(discoveryAsked()).toHaveLength(3);
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
+
+        refuseMl = false;
+        await expect(resolveCloudGateway(mlDeps())).resolves.toMatchObject({ state: CloudConnectionState.Ready });
+      });
+
+      it('resumes when servicesChanged comes with the first report and discovery no longer suspends ML', async () => {
+        const discovery = serveDiscovery();
+        discovery.ml = 'enabled';
+        heartbeatAnswers({ cloneSuspected: true, servicesChanged: true });
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        expect(cloneNotices()).toHaveLength(1);
+        expect(discoveryAsked()).toHaveLength(1);
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
+      });
+
+      it('resumes when discovery reports cloneSuspected: false, whatever the service status says', async () => {
+        const discovery = serveDiscovery();
         heartbeatAnswers({ cloneSuspected: true });
         makeDue();
         await sut.handleHeartbeat();
         expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
 
-        heartbeatAnswers({ cloneSuspected: true, servicesChanged: true });
+        discovery.cloneSuspected = false;
         makeDue();
-        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
-        const asked = cloud.requests.filter(({ method, path }) => method === 'GET' && path === '/api/v1/discovery');
-        expect(asked).toHaveLength(1);
-        expect(tokenNameOf(asked[0])).toBe('api-token');
-        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(true);
-
-        mlStatus = 'enabled';
-        makeDue();
-        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+        await sut.handleHeartbeat();
         expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
+      });
 
+      it('allows one ML token probe 24 hours after the suspension, recording it again when refused', async () => {
+        const dayAgo = new Date(Date.now() - ML_SUSPENSION_PROBE_AFTER_MS - 60_000).toISOString();
+        const suspend = (since: string) =>
+          metadata.set(SystemMetadataKey.FrameleafMlSuspension, {
+            reason: 'clone-suspected',
+            cloudUrl: cloud.url,
+            instanceId: storedLink()!.instanceId,
+            since,
+          });
+        suspend(new Date().toISOString());
+        await resolveCloudGateway(mlDeps());
+        expect(mlTokenRequests()).toHaveLength(0);
+
+        suspend(dayAgo);
+        await expect(resolveCloudGateway(mlDeps())).resolves.toMatchObject({ detail: ML_CLONE_SUSPENDED_DETAIL });
+        expect(mlTokenRequests()).toHaveLength(1);
+        const renewed = metadata.get(SystemMetadataKey.FrameleafMlSuspension) as { since: string };
+        expect(Date.now() - Date.parse(renewed.since)).toBeLessThan(60_000);
+        // a refused probe is not a new suspicion
+        expect(cloneNotices()).toHaveLength(0);
+        // the renewed suspension blocks again: one probe, not one per admission
+        await resolveCloudGateway(mlDeps());
+        expect(mlTokenRequests()).toHaveLength(1);
+
+        suspend(dayAgo);
         refuseMl = false;
         await expect(resolveCloudGateway(mlDeps())).resolves.toMatchObject({ state: CloudConnectionState.Ready });
+        expect(mlTokenRequests()).toHaveLength(2);
+        expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
       });
 
       it('ignores a suspension recorded for another link, and unlinking clears it', async () => {
