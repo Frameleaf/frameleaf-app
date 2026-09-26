@@ -98,7 +98,9 @@ const DEPENDENCY_IMAGES = Object.freeze([
 const REQUIRED_TOOL_IMAGES = Object.freeze([
   "ghcr.io/frameleaf/frameleaf-cli:latest",
 ]);
-const RELEASE_MANAGED_IMAGE = /\$\{IMMICH_VERSION/;
+// Only the server and ML variants follow the release version; their candidates are verified above.
+const RELEASE_MANAGED_IMAGE =
+  /^ghcr\.io\/frameleaf\/(?:frameleaf-server|frameleaf-machine-learning):\$\{IMMICH_VERSION/;
 const OWNED_IMAGE =
   /^ghcr\.io\/frameleaf\/([a-z0-9-]+)(?::([A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?(?:@(sha256:[a-f0-9]{64}))?$/;
 const hash = (bytes) =>
@@ -119,10 +121,14 @@ async function verifyDependencyImages(registry, root) {
       references.add(reference);
   const resolved = new Map();
   for (const reference of references) {
-    if (RELEASE_MANAGED_IMAGE.test(reference)) continue;
     assert(
       !/immich-app/.test(reference),
       `${reference}: installations must not pull upstream images`,
+    );
+    if (RELEASE_MANAGED_IMAGE.test(reference)) continue;
+    assert(
+      !reference.includes("${"),
+      `${reference}: only the Frameleaf server and ML images may follow the release version`,
     );
     const owned = reference.match(OWNED_IMAGE);
     if (!owned) {
@@ -141,13 +147,24 @@ async function verifyDependencyImages(registry, root) {
     assert(tag || pinned, `${reference}: needs a tag or digest`);
     let found;
     try {
-      found = await registry.read(image, tag ?? pinned);
+      // Anonymous, as an installation pulls it: the job token could also read a private package.
+      found = await registry.read(image, tag ?? pinned, "manifests", {
+        anonymous: true,
+      });
     } catch (error) {
-      if ([401, 403, 404].includes(error.status))
+      if ([401, 403].includes(error.status))
         throw new Error(
-          `${reference} is not published (registry status ${error.status}). Publish it with its workflow's manual dispatch before promoting a release.`,
+          `${reference} is not public (anonymous registry status ${error.status}). Make the package public before promoting a release.`,
         );
-      throw error;
+      if (error.status === 404)
+        throw new Error(
+          `${reference} is not published (registry status 404). Publish it with its workflow's manual dispatch before promoting a release.`,
+        );
+      // Integrity failures (digest mismatches) are not transient; report them as they are.
+      if (error.code === "ERR_ASSERTION") throw error;
+      throw new Error(
+        `Transient registry failure reading ${reference} (${error.status ? `status ${error.status}` : error.message}); promotion stopped, retry the release job.`,
+      );
     }
     if (pinned)
       assert.equal(
@@ -353,34 +370,35 @@ class Registry {
     this.env = env;
     this.tokens = new Map();
   }
-  async token(image) {
+  async token(image, anonymous = false) {
     assert(
       VARIANTS.some((v) => v.image === image) ||
         DEPENDENCY_IMAGES.includes(image),
       "Unknown registry image",
     );
-    if (!this.tokens.has(image)) {
-      assert(this.env.GITHUB_TOKEN, "GITHUB_TOKEN is required");
-      const auth = Buffer.from(
-        `${this.env.GITHUB_ACTOR || "frameleaf"}:${this.env.GITHUB_TOKEN}`,
-      ).toString("base64");
+    const key = anonymous ? `anonymous:${image}` : image;
+    if (!this.tokens.has(key)) {
+      const headers = {};
+      if (!anonymous) {
+        assert(this.env.GITHUB_TOKEN, "GITHUB_TOKEN is required");
+        headers.Authorization = `Basic ${Buffer.from(
+          `${this.env.GITHUB_ACTOR || "frameleaf"}:${this.env.GITHUB_TOKEN}`,
+        ).toString("base64")}`;
+      }
       const response = await fetch(
         `https://ghcr.io/token?service=ghcr.io&scope=repository:frameleaf/${image}:pull`,
-        {
-          headers: { Authorization: `Basic ${auth}` },
-          signal: AbortSignal.timeout(60_000),
-        },
+        { headers, signal: AbortSignal.timeout(60_000) },
       );
       const body = JSON.parse(await checkedResponse(response, 1024 * 1024));
       assert(
         typeof body.token === "string" && body.token.length > 0,
         "Missing registry token",
       );
-      this.tokens.set(image, body.token);
+      this.tokens.set(key, body.token);
     }
-    return this.tokens.get(image);
+    return this.tokens.get(key);
   }
-  async read(image, reference, kind = "manifests") {
+  async read(image, reference, kind = "manifests", { anonymous = false } = {}) {
     assert(
       DIGEST.test(reference) ||
         /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(reference),
@@ -391,7 +409,7 @@ class Registry {
       `https://ghcr.io/v2/frameleaf/${image}/${kind}/${reference}`,
       {
         headers: {
-          Authorization: `Bearer ${await this.token(image)}`,
+          Authorization: `Bearer ${await this.token(image, anonymous)}`,
           Accept: [...INDEX_TYPES, ...IMAGE_TYPES].join(","),
         },
         signal: AbortSignal.timeout(60_000),
