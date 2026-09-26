@@ -226,6 +226,96 @@ describe('AssetViewer', () => {
     });
   });
 
+  describe('ArrowRight/ArrowLeft races the neighbour lookup (FL-148)', () => {
+    const buildAssets = () => {
+      const user = userAdminFactory.build();
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const current = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+      const nextAsset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+      return { current, nextAsset };
+    };
+
+    it('queues an ArrowRight press made before the caller resolves the next asset, and replays it once it does', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      // The caller's async neighbour lookup (TimelineAssetViewer's loadCloseAssets) has not resolved
+      // yet - there is no on-screen "next" button - but a real ArrowRight keypress must not be lost.
+      const view = renderWithTooltips(AssetViewer, {
+        cursor: { current },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      await Promise.resolve();
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+
+      // The lookup settles for the same asset.
+      await view.rerender({
+        componentProps: { cursor: { current, nextAsset }, showNavigation: true, onNavigateToAsset },
+      });
+
+      await waitFor(() => expect(onNavigateToAsset).toHaveBeenCalledWith(nextAsset));
+    });
+
+    it('drops a queued press if the displayed asset changes for another reason first', async () => {
+      const { current, nextAsset } = buildAssets();
+      const anotherAsset = assetFactory.build({ ownerId: current.ownerId, type: AssetTypeEnum.Image });
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      const view = renderWithTooltips(AssetViewer, {
+        cursor: { current },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      await Promise.resolve();
+
+      // The viewer moved to a different asset before the original lookup resolved (e.g. the user
+      // clicked a thumbnail elsewhere); the stale queued intent must not fire once that new asset's
+      // own neighbours resolve.
+      await view.rerender({
+        componentProps: { cursor: { current: anotherAsset, nextAsset }, showNavigation: true, onNavigateToAsset },
+      });
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
+
+    it('replays the latest ArrowRight press made while a navigation is still in flight', async () => {
+      const { current, nextAsset } = buildAssets();
+
+      let resolveFirst!: () => void;
+      const onNavigateToAsset = vi.fn().mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      );
+
+      renderWithTooltips(AssetViewer, {
+        cursor: { current, nextAsset },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      await waitFor(() => expect(onNavigateToAsset).toHaveBeenCalledTimes(1));
+
+      // The first navigation is still in flight (`tracker.isActive()`); this press must be queued,
+      // not dropped.
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      await Promise.resolve();
+      expect(onNavigateToAsset).toHaveBeenCalledTimes(1);
+
+      resolveFirst();
+      await waitFor(() => expect(onNavigateToAsset).toHaveBeenCalledTimes(2));
+    });
+  });
+
   it('puts the Live badge on a Live Photo (V-16)', () => {
     const user = userAdminFactory.build();
     authManager.setUser(user);
