@@ -44,6 +44,13 @@ import {
   createOfficialMigrationProvider,
 } from 'src/fork-schema/migration-provider.js';
 import {
+  OFFICIAL_ADOPTION_AUDIT,
+  OfficialAdoptionResult,
+  applyAdoptionForkFollowUps,
+  assertWorkflowDataPreserved,
+  planOfficialAdoption,
+} from 'src/fork-schema/official-adoption.js';
+import {
   REVERSIBLE_POST_CERTIFIED_MIGRATIONS,
   irreversiblePostCertifiedMigrations,
 } from 'src/fork-schema/post-certified-residue.js';
@@ -624,9 +631,10 @@ export class DatabaseRepository extends ForkHandoffRepository {
     const ledger = ledgerTable.rows[0]?.present
       ? await sql<{ name: string }>`SELECT name FROM public.kysely_migrations`.execute(this.db)
       : { rows: [] };
+    const appliedNames = ledger.rows.map(({ name }) => name);
     const provider = createCertifiedLedgerMigrationProvider(
-      createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations')),
-      ledger.rows.map(({ name }) => name),
+      createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations'), appliedNames),
+      appliedNames,
     );
     const migrator = this.createMigrator(provider);
 
@@ -1216,6 +1224,125 @@ export class DatabaseRepository extends ForkHandoffRepository {
     // ledger machinery aliases markers instead. Only a database with no
     // ledgered migrations at all is a truly fresh install.
     return officialLedgerRows > 0 ? 'official-origin' : 'fresh';
+  }
+
+  /**
+   * An official-origin library the first Frameleaf boot set up (`inactive`, schema version 1) and that
+   * has not been adopted yet. Startup reports it; `immich-admin fork-schema adopt` completes it.
+   */
+  async isAwaitingOfficialAdoption(): Promise<boolean> {
+    const relation = await sql<{ present: boolean }>`
+      SELECT to_regclass('immich_fork.state') IS NOT NULL AS present
+    `.execute(this.db);
+    if (!relation.rows[0]?.present) {
+      return false;
+    }
+    const state = await sql<{ active: boolean; phase: string; schemaVersion: string }>`
+      SELECT active, phase, "schemaVersion" FROM immich_fork.state WHERE id = 1
+    `.execute(this.db);
+    const row = state.rows[0];
+    return !!row && !row.active && row.phase === 'inactive' && row.schemaVersion === '1';
+  }
+
+  /**
+   * FL-44: make an official-origin library a full Frameleaf library (see
+   * `src/fork-schema/official-adoption.ts`). One transaction: a failure leaves the library exactly as
+   * the official server can still read it, and a re-run starts over. A re-run after success changes
+   * nothing. Callers hold `DatabaseLock.Migrations`, so no server boot migrates concurrently.
+   */
+  async adoptOfficialOrigin(): Promise<OfficialAdoptionResult> {
+    return this.db.transaction().execute(async (transaction) => {
+      const relation = await sql<{ present: boolean }>`
+        SELECT to_regclass('immich_fork.state') IS NOT NULL AS present
+      `.execute(transaction);
+      if (!relation.rows[0]?.present) {
+        throw new Error('Start the server once on this library before adopting it');
+      }
+      const stateResult = await sql<{ active: boolean; phase: string; schemaVersion: string }>`
+        SELECT active, phase, "schemaVersion" FROM immich_fork.state WHERE id = 1 FOR UPDATE
+      `.execute(transaction);
+      const completed = await sql<{ details: { applied?: string[] } | null }>`
+        SELECT details FROM immich_fork.migration_audit
+        WHERE name = ${OFFICIAL_ADOPTION_AUDIT} AND status = 'applied'
+        ORDER BY id DESC LIMIT 1
+      `.execute(transaction);
+      const previous = completed.rows[0];
+      if (previous) {
+        return { adopted: false, applied: previous.details?.applied ?? [] };
+      }
+      const state = stateResult.rows[0];
+      if (!state || state.active || state.phase !== 'inactive' || state.schemaVersion !== '1') {
+        throw new Error('Only a library created by the official server, and not handed over since, can be adopted');
+      }
+      const frameleafTables = await sql<{ present: boolean }>`
+        SELECT to_regclass('public.physical_file') IS NOT NULL AS present
+      `.execute(transaction);
+      if (frameleafTables.rows[0]?.present) {
+        throw new Error('Library already holds Frameleaf tables');
+      }
+
+      const ledgerResult = await sql<{ name: string }>`
+        SELECT name FROM public.kysely_migrations ORDER BY timestamp, name
+      `.execute(transaction);
+      const ledger = ledgerResult.rows.map(({ name }) => name);
+      const migrations = await createLegacyMigrationProvider(
+        join(import.meta.dirname, '..', 'schema/migrations'),
+        ledger,
+      ).getMigrations();
+      const pending = planOfficialAdoption(ledger, Object.keys(migrations));
+      const workflowBefore = classifyWorkflowCompatibility(await getWorkflowCompatibilityEvidence(transaction));
+
+      // A fresh Frameleaf install runs these migrations with the legacy tables authoritative (no
+      // `immich_fork.state` yet reads as `legacy`); the Locked-cover repairs read that phase.
+      await sql`
+        UPDATE immich_fork.state SET phase = 'legacy', "updatedAt" = now()
+        WHERE id = 1 AND phase = 'inactive' AND "schemaVersion" = '1' AND active = false
+      `.execute(transaction);
+
+      for (const name of pending) {
+        if (POST_CERTIFIED_UPSTREAM_MIGRATIONS.has(name)) {
+          const registered = REVERSIBLE_POST_CERTIFIED_MIGRATIONS.get(name);
+          if (!registered) {
+            throw new Error(`No registered application for post-certified migration ${name}`);
+          }
+          await registered.apply(transaction);
+        } else {
+          await migrations[name]!.up(transaction);
+        }
+        await sql`
+          INSERT INTO public.kysely_migrations (name, timestamp)
+          VALUES (${name}, ${new Date().toISOString()})
+        `.execute(transaction);
+        await this.afterOfficialAdoptionStep(transaction, name);
+        this.logger.log(`Adoption migration "${name}" succeeded`);
+      }
+      await applyAdoptionForkFollowUps(transaction);
+
+      const workflowAfter = classifyWorkflowCompatibility(await getWorkflowCompatibilityEvidence(transaction));
+      assertWorkflowDataPreserved(workflowBefore, workflowAfter);
+
+      await sql`
+        INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
+        VALUES (
+          ${OFFICIAL_ADOPTION_AUDIT},
+          'adoption',
+          'applied',
+          jsonb_build_object(
+            'applied', ${JSON.stringify(pending)}::jsonb,
+            'officialLedger', ${JSON.stringify(ledger)}::jsonb,
+            'workflowSchemaDigestBefore', ${workflowBefore.schemaDigest}::text,
+            'workflowSchemaDigestAfter', ${workflowAfter.schemaDigest}::text
+          ),
+          now()
+        )
+      `.execute(transaction);
+      return { adopted: true, applied: pending };
+    });
+  }
+
+  /** Test seam: runs inside the adoption transaction after each applied migration. */
+  protected afterOfficialAdoptionStep(_transaction: Kysely<DB>, _name: string): Promise<void> {
+    return Promise.resolve();
   }
 
   async migrateFilePaths(sourceFolder: string, targetFolder: string): Promise<void> {
