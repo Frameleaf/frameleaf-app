@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { PendingAssetMove } from 'src/repositories/move.repository.js';
 import type { JobOf, StorageAsset } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -214,8 +215,11 @@ export class StorageTemplateService extends BaseService {
 
   /**
    * FL-179: storage moves that are still recorded (deferred during a handoff or a normalization, or
-   * interrupted) are queued again as part of the nightly database cleanup; each finds its record and
-   * finishes, or drops it once the asset is gone or uses another file.
+   * interrupted) are queued again as part of the nightly database cleanup, and each finds its record
+   * and finishes. A record that can never finish is dropped: its asset is gone, the asset already uses
+   * the new path, the move does not apply to the asset (an external or motion part), or the file is at
+   * neither path. One that is only blocked for now (a disabled template, a handoff, a mismatched
+   * mapping) is kept and tried again.
    */
   @OnEvent({ name: 'NightlyDatabaseCleanup' })
   async onNightlyDatabaseCleanup() {
@@ -223,9 +227,18 @@ export class StorageTemplateService extends BaseService {
       const pending = await this.moveRepository.getPendingAssetMoves();
       const originals = new Set<string>();
       const generated = new Set<string>();
-      for (const { entityId, pathType } of pending) {
-        const isTemplateMove = pathType === AssetPathType.Original || pathType === AssetFileType.Sidecar;
-        (isTemplateMove ? originals : generated).add(entityId);
+      const finished: string[] = [];
+      for (const move of pending) {
+        const isTemplateMove = move.pathType === AssetPathType.Original || move.pathType === AssetFileType.Sidecar;
+        if (await this.isMoveFinished(move, isTemplateMove)) {
+          finished.push(move.id);
+          continue;
+        }
+        (isTemplateMove ? originals : generated).add(move.entityId);
+      }
+      if (finished.length > 0) {
+        this.logger.log(`Forgetting ${finished.length} recorded storage moves that cannot finish`);
+        await this.moveRepository.deleteMoves(finished);
       }
       await this.jobRepository.queueAll([
         ...[...originals].map((id) => ({ name: JobName.StorageTemplateMigrationSingle as const, data: { id } })),
@@ -234,6 +247,23 @@ export class StorageTemplateService extends BaseService {
     } catch (error: any) {
       this.logger.warn(`Pending storage moves deferred: ${error}`);
     }
+  }
+
+  private async isMoveFinished(move: PendingAssetMove, isTemplateMove: boolean): Promise<boolean> {
+    if (!move.assetExists || move.currentPath === move.newPath) {
+      return true;
+    }
+    if (
+      isTemplateMove &&
+      (move.isExternal || (move.originalPath !== null && StorageCore.isAndroidMotionPath(move.originalPath)))
+    ) {
+      return true;
+    }
+    const [atOld, atNew] = await Promise.all([
+      this.storageRepository.checkFileExists(move.oldPath),
+      this.storageRepository.checkFileExists(move.newPath),
+    ]);
+    return !atOld && !atNew;
   }
 
   @OnEvent({ name: 'AssetDelete' })
