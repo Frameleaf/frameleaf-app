@@ -51,13 +51,13 @@
 ## Посилання
 
 - [Документація](https://docs.immich.app)
-- [Про проєкт](https://docs.immich.app/overview/introduction)
-- [Встановлення](https://docs.immich.app/install/requirements)
+- [Про проєкт](https://help.frameleaf.ai/overview/quick-start)
+- [Встановлення](https://help.frameleaf.ai/install/requirements)
 - [Дорожня карта](https://immich.app/roadmap)
 - [Демо](#демо)
 - [Функції](#функції)
-- [Переклади](https://docs.immich.app/developer/translations)
-- [Гід для розробки проєкту](https://docs.immich.app/overview/support-the-project)
+- [Переклади](https://help.frameleaf.ai/developer/translations)
+- [Гід для розробки проєкту](https://help.frameleaf.ai/overview/support-the-project)
 
 ## Демо
 
@@ -106,7 +106,7 @@
 
 ## Переклади
 
-Більше про переклади [тут](https://docs.immich.app/developer/translations).
+Більше про переклади [тут](https://help.frameleaf.ai/developer/translations).
 
 <a href="https://hosted.weblate.org/engage/immich/">
 <img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="Статус перекладів" />
