@@ -126,11 +126,14 @@ export class EdgeDirectService {
       return;
     }
     const closed = new Promise<void>((resolve) => server.close(() => resolve()));
-    const force = setTimeout(() => {
-      for (const socket of this.raw) {
-        socket.destroy();
-      }
-    }, Math.max(0, timeoutMs - 250));
+    const force = setTimeout(
+      () => {
+        for (const socket of this.raw) {
+          socket.destroy();
+        }
+      },
+      Math.max(0, timeoutMs - 250),
+    );
     force.unref();
     await this.proxy.closeAll(timeoutMs);
     for (const socket of this.raw) {

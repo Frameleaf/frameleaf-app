@@ -841,8 +841,7 @@ describe(SystemConfigService.name, () => {
         },
       });
       const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1)?.[0] as
-        | { frameleafCloud?: { remoteAccess?: Record<string, unknown> } }
-        | undefined;
+        { frameleafCloud?: { remoteAccess?: Record<string, unknown> } } | undefined;
       // every value stayed the stored default, so nothing of remote access was written
       expect(persisted?.frameleafCloud?.remoteAccess).toBeUndefined();
     });

@@ -228,7 +228,8 @@ class Workers {
       }
     }
     // FL-165: the edge worker is a process of its own; it must not outlive the server and keep the port
-    if (Object.hasOwn(this.workers, ImmichWorker.Edge) && name !== ImmichWorker.Edge) {
+    // (an ending edge worker returned above, so the worker ending here is never the edge)
+    if (Object.hasOwn(this.workers, ImmichWorker.Edge)) {
       this.edgeStopRequested = true;
       void this.workers[ImmichWorker.Edge]!.kill('SIGTERM');
     }
