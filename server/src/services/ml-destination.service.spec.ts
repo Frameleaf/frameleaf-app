@@ -20,9 +20,10 @@ import {
 } from 'src/enum.js';
 import { FRAMELEAF_CLOUD_ENDPOINT } from 'src/repositories/machine-learning.repository.js';
 import { ML_URL_REMOVED_SUMMARY, MlDestinationService } from 'src/services/ml-destination.service.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -327,12 +328,15 @@ describe(MlDestinationService.name, () => {
       mocks.frameleafCloudMl.getConsent.mockResolvedValue({
         requiredVersion: '2026-09-25',
         recordedVersion: null,
+        recordedAt: null,
         features: { identityNames: false, medicalSignals: false, ocrAddon: false },
         summary: '',
+        textSha256: null,
         documentUrl: null,
       });
       mocks.frameleafCloudMl.recordConsent.mockResolvedValue({
         recordedVersion: '2026-09-25',
+        recordedAt: '2026-09-25T04:00:00.000Z',
         features: { identityNames: false, medicalSignals: false, ocrAddon: false },
       });
       mocks.frameleafConsent.record.mockResolvedValue({} as never);
@@ -351,6 +355,7 @@ describe(MlDestinationService.name, () => {
       const gateway = {
         url: 'https://ml.eu.cloud.test',
         token: { accessToken: 'instance-token', signer: identitySigner },
+        onCloneSuspected: expect.any(Function),
       };
       expect(mocks.frameleafCloud.accessToken).toHaveBeenCalledWith(
         expect.objectContaining({ issuer: 'https://id.cloud.test' }),
@@ -388,6 +393,24 @@ describe(MlDestinationService.name, () => {
         }),
       ).rejects.toThrow(/now asks for consent version 2026-09-25/);
       expect(mocks.frameleafCloudMl.recordConsent).not.toHaveBeenCalled();
+      expect(mocks.frameleafConsent.record).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
+    });
+
+    it('names the version now required when the disclosure changed before the cloud recorded it, and records nothing (FL-183)', async () => {
+      linkCloud();
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
+      const envelope = errorEnvelopeSchema.parse(cloudContractFixture('errors/consent-version-outdated.json'));
+      mocks.frameleafCloudMl.recordConsent.mockRejectedValue(
+        new FrameleafCloudError(MlAdmissionRefusal.ConsentVersionOutdated, 403, envelope.message, envelope),
+      );
+
+      await expect(
+        sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
+          acknowledgeMediaLeavesNetwork: true,
+          version: '2026-09-25',
+        }),
+      ).rejects.toThrow('Frameleaf Cloud now asks for consent version 2026-09-26.1; review it and accept again');
       expect(mocks.frameleafConsent.record).not.toHaveBeenCalled();
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
@@ -436,6 +459,7 @@ describe(MlDestinationService.name, () => {
       expect(mocks.frameleafCloudMl.revokeConsent).toHaveBeenCalledWith({
         url: 'https://ml.eu.cloud.test',
         token: { accessToken: 'instance-token', signer: identitySigner },
+        onCloneSuspected: expect.any(Function),
       });
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
