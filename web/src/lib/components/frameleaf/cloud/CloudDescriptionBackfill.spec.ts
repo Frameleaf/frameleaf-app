@@ -29,6 +29,8 @@ const estimate = (
   spentTodayUsd: 0,
   guidance: null,
   refusal: null,
+  estimateId: '5f0c6f8e-2b1a-4c3d-9e8f-1a2b3c4d5e6f',
+  expiresAt: '2026-09-26T05:00:00.000Z',
   ...overrides,
 });
 
@@ -62,7 +64,7 @@ describe('CloudDescriptionBackfill (FL-163)', () => {
     expect(sdkMock.startCloudMlDescriptionBackfill).not.toHaveBeenCalled();
   });
 
-  it('queues the batches with what the estimate showed', async () => {
+  it('queues the batches by the estimate the server kept, sending no prices', async () => {
     sdkMock.estimateCloudMlDescriptionBackfill.mockResolvedValue(estimate());
     sdkMock.startCloudMlDescriptionBackfill.mockResolvedValue({ batches: 2, photos: 250, operationIds: ['a', 'b'] });
     render(CloudDescriptionBackfill, { available: true });
@@ -71,12 +73,7 @@ describe('CloudDescriptionBackfill (FL-163)', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Describe 250 photos' }));
 
     expect(sdkMock.startCloudMlDescriptionBackfill).toHaveBeenCalledWith({
-      cloudMlDescriptionBatchCreateDto: {
-        modelId: 'ms_K6WT70CS',
-        perPhotoP90Usd: 0.0024,
-        startupUsd: 0.02,
-        maxTotalUsd: 0.64,
-      },
+      cloudMlDescriptionBatchCreateDto: { estimateId: '5f0c6f8e-2b1a-4c3d-9e8f-1a2b3c4d5e6f' },
     });
     expect(await screen.findByText('2 batches queued. Follow them in Activity.')).toBeInTheDocument();
   });

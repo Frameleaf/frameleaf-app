@@ -44,18 +44,14 @@
   };
 
   const describe = async () => {
-    if (!estimate || estimate.photos === 0 || estimate.refusal) {
+    if (!estimate?.estimateId || estimate.photos === 0 || estimate.refusal) {
       return;
     }
     busy = true;
     try {
+      // only the estimate's id is sent: the server queues from the estimate it kept
       const result = await startCloudMlDescriptionBackfill({
-        cloudMlDescriptionBatchCreateDto: {
-          modelId: estimate.modelId,
-          perPhotoP90Usd: estimate.perPhotoP90Usd,
-          startupUsd: estimate.startupUsd,
-          maxTotalUsd: estimate.p90Usd,
-        },
+        cloudMlDescriptionBatchCreateDto: { estimateId: estimate.estimateId },
       });
       queued = $t('admin.frameleaf_cloud_ml_backfill_queued', { values: { batches: result.batches } });
       estimate = null;
