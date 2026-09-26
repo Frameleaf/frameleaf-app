@@ -105,16 +105,14 @@ describe(CloudAdminController.name, () => {
       }
       expect(remote.update).not.toHaveBeenCalled();
 
-      const ok = await request(ctx.getHttpServer())
-        .put('/admin/cloud/remote')
-        .send({
-          enabled: true,
-          mode: 'relay-and-direct',
-          directPort: 4443,
-          portMapping: false,
-          publicUrl: 'custom',
-          label: 'x',
-        });
+      const ok = await request(ctx.getHttpServer()).put('/admin/cloud/remote').send({
+        enabled: true,
+        mode: 'relay-and-direct',
+        directPort: 4443,
+        portMapping: false,
+        publicUrl: 'custom',
+        label: 'x',
+      });
       expect(ok.status).toBe(200);
       expect(remote.update.mock.calls[0][1]).toEqual({
         enabled: true,

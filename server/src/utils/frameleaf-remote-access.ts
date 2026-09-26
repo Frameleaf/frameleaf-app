@@ -470,9 +470,7 @@ type RemoteSettings = {
 
 /** The verified custom hostname, or null. */
 export const verifiedCustomHost = (settings: Pick<RemoteSettings, 'customHostname'>): string | null =>
-  settings.customHostname.status === 'verified' && settings.customHostname.host
-    ? settings.customHostname.host
-    : null;
+  settings.customHostname.status === 'verified' && settings.customHostname.host ? settings.customHostname.host : null;
 
 /**
  * The address this server publishes for remote access: the verified custom hostname when "Use my
@@ -723,7 +721,7 @@ export const classifyArrival = (input: {
   if ((input.gateways ?? []).some((gateway) => normalizeAddress(gateway) === peer) && !explicitlyTrusted) {
     return 'wan';
   }
-  if (!input.advertised.some((address) => normalizeAddress(address) === named)) {
+  if (input.advertised.every((address) => normalizeAddress(address) !== named)) {
     return 'wan';
   }
   return sameSubnet(peer, named) || explicitlyTrusted ? 'lan' : 'wan';

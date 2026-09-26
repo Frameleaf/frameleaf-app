@@ -515,7 +515,7 @@
             {#each BACKUP_SCHEDULES as schedule (schedule.cron)}
               <option value={schedule.cron}>{$t(schedule.labelKey)}</option>
             {/each}
-            {#if !BACKUP_SCHEDULES.some((schedule) => schedule.cron === backupDraft.schedule.cronExpression)}
+            {#if BACKUP_SCHEDULES.every((schedule) => schedule.cron !== backupDraft.schedule.cronExpression)}
               <option value={backupDraft.schedule.cronExpression}>{backupDraft.schedule.cronExpression}</option>
             {/if}
           </select>
