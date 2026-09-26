@@ -58,34 +58,34 @@
       "version": 1
     },
     {
-      "bytes": 13281,
+      "bytes": 14849,
       "category": "reference",
       "id": "64815115",
-      "readbackAt": "2026-09-26T05:46:40.000Z",
-      "readbackResult": "Markdown read-back of version 2 begins with the header carrying SHA-256 c6096b8a, 13281 bytes, the FL-180 commit 4b1ac98854 on codex/FL-180-isolated-frameleaf-migrations (local; not pushed, not merged), the source-at-commit backlink, FL-180, FL-44 and the implementation-plan link; body matches the posted source including the new Frameleaf schema changes released after the cutover section, except list continuation lines losing their two-space indent.",
+      "readbackAt": "2026-09-26T13:12:40.000Z",
+      "readbackResult": "Markdown read-back of version 3 begins with the header carrying SHA-256 6e53e0f8, 14849 bytes, commit 7bb864f80a on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-161 commits 7265ee15db and 1ddae5df45 merged in dd2b8cf0e4 (the FL-163 merge 7bb864f80a is the head and does not change this source), the source-at-commit backlink, FL-161, FL-180, FL-44 and the implementation-plan link; body matches the posted source including the shared-link password hashing step and the prepare-official shared-link password acknowledgement, except list continuation lines losing their two-space indent.",
       "source": "docs/docs/administration/upstream-handoff.md",
-      "sourceBranch": "codex/FL-180-isolated-frameleaf-migrations",
-      "sourceCommit": "4b1ac98854e3b256b64076bb37238199bca95505",
-      "sourceSha256": "c6096b8aa18d010a8c55f665353aaaf073fe91a0c65d0409498059caad47e34f",
-      "sourceState": "committed-fl-180-isolated-migrations-not-pushed-2026-09-26",
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceCommit": "7bb864f80ad48207b4e4109f7da71949d56ef936",
+      "sourceSha256": "6e53e0f808b09744d56b84e892d709deef89f86084c5a0e7929a0bfd495614fb",
+      "sourceState": "committed-fl-161-fl-163-merged-2026-09-26",
       "title": "Administration Reference — Certified upstream handoff and library adoption",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64815115/Administration+Reference+Certified+upstream+handoff+and+library+adoption",
-      "version": 2
+      "version": 3
     },
     {
-      "bytes": 8955,
+      "bytes": 16272,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-26T03:52:30.000Z",
-      "readbackResult": "Markdown read-back of version 1 begins with the header carrying SHA-256 47575a59, 8955 bytes, the committed-on-master/frameleaf-implementation status at 8cb97c4bb8, the source-at-commit backlink, FL-156, FL-170 and the implementation-plan link; body matches the posted source (including the Plan and licence pricing with the published licensed discount) except table separator alignment markers normalized.",
+      "readbackAt": "2026-09-26T13:13:30.000Z",
+      "readbackResult": "Markdown read-back of version 2 begins with the header carrying SHA-256 4276d6bd, 16272 bytes, commit 7bb864f80a on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-161 commits cc4e2cfc9b, dcb7355a40, 1ddae5df45 and 861723b86b merged in dd2b8cf0e4 (the FL-163 merge 7bb864f80a is the head and does not change this source), the source-at-commit backlink, FL-161, FL-156, FL-170 and the implementation-plan link; body matches the posted source including the new Remote access security section and its rate-limit table, except table separator alignment markers normalized.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "8cb97c4bb89682eacadf1e4791fbfb3a097e9071",
-      "sourceSha256": "47575a598c50eb14764a47bab6fda1ec0a333c7ca6937c9baf74a616be229fa9",
-      "sourceState": "committed-pushed-not-merged-to-default-branch",
+      "sourceCommit": "7bb864f80ad48207b4e4109f7da71949d56ef936",
+      "sourceSha256": "4276d6bd7120d889959aa8534b707407075a38c9f57b1af23cad8a4e3f10bdb5",
+      "sourceState": "committed-fl-161-fl-163-merged-2026-09-26",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 1
+      "version": 2
     },
     {
       "bytes": 12350,
@@ -1035,19 +1035,19 @@
       "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 105525,
+      "bytes": 128048,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "17c03a494296c6f831aefd1d7afbdb7023df7de22d968b0f7fa56883fcb94942",
+      "sourceSha256": "3e6f15fa8cf4f978372ae0e70df3c2e5e0b316e580bc043035ad0c2514868d6e",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 14,
+      "version": 15,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "4139e3357a71f07ff03af15d832e855105331f50",
-      "sourceState": "committed-fl-186-model-choice-per-group-merged-2026-09-26",
-      "readbackResult": "Markdown read-back of version 14 begins with the header carrying SHA-256 17c03a49, 105525 bytes, commit 4139e3357a on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-186 commits fda80f5c6a, 6ea5c35d9b, ce698529f8 and abf0ca2dca merged in 76248f2f65 and the FL-183 fixture re-sync commit 4139e3357a, the source-at-commit backlink, FL-186, FL-183, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the Model choice per model group (FL-186) entry, the FL-186 notes in Default model and Model identity, the as-built slider note under CLD-201 and the frameleaf-cloud main 5e51087d92 fixture sentence, except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
-      "readbackAt": "2026-09-26T10:53:50.000Z"
+      "sourceCommit": "7bb864f80ad48207b4e4109f7da71949d56ef936",
+      "sourceState": "committed-fl-161-fl-163-merged-2026-09-26",
+      "readbackResult": "Markdown read-back of version 15 begins with the header carrying SHA-256 3e6f15fa, 128048 bytes, commit 7bb864f80a on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-161 commits cc4e2cfc9b, dcb7355a40 and 1ddae5df45 merged in dd2b8cf0e4 and the FL-163 commits 0fca2c7e6f, 93efdd1a34 and ef9350bf3b merged in 7bb864f80a, the source-at-commit backlink, FL-163, FL-161, FL-186, FL-183, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the Cloud description batches (FL-163) entry and its review fixes, the As built (FL-161, CLD-101) entry and migration 660 in A2, A3, slice 6 and CLD-101, except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
+      "readbackAt": "2026-09-26T13:20:20.000Z"
     }
   ],
   "spaceId": "61374475",
