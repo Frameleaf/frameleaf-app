@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# shellcheck source=docker/postgres/set-env.sh
+# set-env.sh is installed beside this script in the image (/usr/local/bin); CI lints without -x.
+# shellcheck source=/dev/null
 . /usr/local/bin/set-env.sh
 
 pg_isready --dbname="${POSTGRES_DB}" --username="${POSTGRES_USER}" || exit $?;
