@@ -9,7 +9,7 @@
 
   // `map` is accepted only so `bind:map` on the real `<MapLibre>` keeps compiling against this stub;
   // no test needs its value.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line no-useless-assignment
   let { map = $bindable(undefined), onload, onerror }: Props = $props();
 
   // Recorded as soon as this stands in for `<MapLibre>`, mirroring the real component attaching
