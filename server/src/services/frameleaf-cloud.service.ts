@@ -738,14 +738,19 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
-   * Keep the plan pricing a heartbeat published when it is valid and newer: in force now, or pending
-   * until its effective time. The last good pricing stays otherwise.
+   * Keep the plan pricing a heartbeat published (`acceptPublishedPricing`). A storage failure only
+   * logs a warning: the check-in, whose commands have already run, still succeeds, and the last good
+   * pricing stays.
    */
   private async keepPublishedPricing(raw: unknown) {
-    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafPricing);
-    const next = acceptPublishedPricing(raw, stored);
-    if (!isEqual(next, stored ?? { current: null })) {
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafPricing, next);
+    try {
+      const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafPricing);
+      const next = acceptPublishedPricing(raw, stored);
+      if (!isEqual(next, stored ?? { current: null })) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafPricing, next);
+      }
+    } catch (error) {
+      this.logger.warn(`Could not keep the plan pricing Frameleaf Cloud published: ${error}`);
     }
   }
 
