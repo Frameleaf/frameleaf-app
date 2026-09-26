@@ -4,7 +4,13 @@
  * (server/src/utils/cloud-backup.ts) and the prototype (frameleaf-cloud-data.mjs:840-920): a key file
  * made here restores on any server, and a fingerprint here matches the one the server shows.
  */
-import { CloudBackupKeyMode } from '@immich/sdk';
+import {
+  CloudBackupKeyMode,
+  CloudBackupRestoreScope,
+  CloudBackupRunState,
+  CloudBackupTask,
+  type CloudBackupStatusResponseDto,
+} from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
 
 /** The marker that claims a bucket for one server. */
@@ -156,4 +162,160 @@ export const endpointHost = (endpoint: string | null | undefined) => {
   } catch {
     return endpoint;
   }
+};
+
+/** FL-164: the schedule choices of the prototype's Schedule & retention card, in the server's time zone. */
+export const BACKUP_SCHEDULES: ReadonlyArray<{ cron: string; labelKey: Translations }> = [
+  { cron: '0 3 * * *', labelKey: 'frameleaf_cloud_backup_schedule_nightly' },
+  { cron: '0 */6 * * *', labelKey: 'frameleaf_cloud_backup_schedule_six_hours' },
+  { cron: '0 3 * * 0', labelKey: 'frameleaf_cloud_backup_schedule_sundays' },
+];
+
+export type RetentionField = 'keepDaily' | 'keepWeekly' | 'keepMonthly';
+
+/** FL-164: the retention inputs, with the bounds the server accepts. */
+export const RETENTION_FIELDS: ReadonlyArray<{
+  field: RetentionField;
+  labelKey: Translations;
+  unitKey: Translations;
+  min: number;
+  max: number;
+}> = [
+  {
+    field: 'keepDaily',
+    labelKey: 'frameleaf_cloud_backup_keep_daily',
+    unitKey: 'frameleaf_cloud_backup_unit_days',
+    min: 1,
+    max: 90,
+  },
+  {
+    field: 'keepWeekly',
+    labelKey: 'frameleaf_cloud_backup_keep_weekly',
+    unitKey: 'frameleaf_cloud_backup_unit_weeks',
+    min: 0,
+    max: 52,
+  },
+  {
+    field: 'keepMonthly',
+    labelKey: 'frameleaf_cloud_backup_keep_monthly',
+    unitKey: 'frameleaf_cloud_backup_unit_months',
+    min: 0,
+    max: 120,
+  },
+];
+
+/** A retention value typed into its input, or null while it is not a whole number within its bounds. */
+export const retentionValue = (field: RetentionField, typed: string): number | null => {
+  const bounds = RETENTION_FIELDS.find((entry) => entry.field === field)!;
+  const value = Number(typed);
+  return typed.trim() !== '' && Number.isInteger(value) && value >= bounds.min && value <= bounds.max ? value : null;
+};
+
+/** FL-164: the bucket Frameleaf Cloud makes for this server, `fl-<region>-<instanceId>`. */
+export const managedBucketName = (dataRegion: string | null | undefined, instanceId: string) =>
+  `fl-${dataRegion || 'eu'}-${instanceId}`;
+
+/** FL-164: the shortest escrow passphrase the server accepts. */
+export const ESCROW_MIN_PASSPHRASE = 12;
+
+/** FL-164: an escrow passphrase typed twice, long enough and the same both times. */
+export const isEscrowPassphraseValid = (first: string, second: string) =>
+  first.length >= ESCROW_MIN_PASSPHRASE && first === second;
+
+/** What the prototype's restore confirmation asks the administrator to type (FrameleafCloud.jsx). */
+export const WHOLE_LIBRARY_CONFIRMATION = 'RESTORE';
+
+/** The steps of a whole-library restore, in the order the prototype lists them (`libraryRestoreSteps`). */
+export const LIBRARY_RESTORE_STEPS: ReadonlyArray<{ titleKey: Translations; detailKey: Translations }> = [
+  { titleKey: 'frameleaf_cloud_restore_step_database', detailKey: 'frameleaf_cloud_restore_step_database_detail' },
+  { titleKey: 'frameleaf_cloud_restore_step_files', detailKey: 'frameleaf_cloud_restore_step_files_detail' },
+  { titleKey: 'frameleaf_cloud_restore_step_verify', detailKey: 'frameleaf_cloud_restore_step_verify_detail' },
+  { titleKey: 'frameleaf_cloud_restore_step_thumbnails', detailKey: 'frameleaf_cloud_restore_step_thumbnails_detail' },
+];
+
+/** The prototype's stage model (activity-feed.mjs): what a person sees a job as. */
+export type CloudWorkStage = 'queued' | 'starting' | 'running' | 'paused';
+
+/** One read-only row of Activity's background work: a cloud backup operation or restore in progress. */
+export type CloudWorkRow = {
+  id: string;
+  operationId: string;
+  titleKey: Translations;
+  stage: CloudWorkStage;
+  /** Percent, or null while nothing has been counted. */
+  progress: number | null;
+  /** Files done and in total, when the operation counts them. */
+  files: { done: number; total: number | null } | null;
+  /** Bytes uploaded or restored so far. */
+  bytes: number | null;
+};
+
+const stageOf = (state: CloudBackupRunState, progress: number): CloudWorkStage => {
+  switch (state) {
+    case CloudBackupRunState.Queued: {
+      return 'queued';
+    }
+    case CloudBackupRunState.Paused: {
+      return 'paused';
+    }
+    case CloudBackupRunState.Running:
+    case CloudBackupRunState.Pausing:
+    case CloudBackupRunState.Cancelling: {
+      // a worker holds it but has counted nothing yet: it is still getting the bucket and key ready
+      return progress > 0 ? 'running' : 'starting';
+    }
+  }
+};
+
+const TASK_TITLE: Record<CloudBackupTask, Translations> = {
+  [CloudBackupTask.Backup]: 'frameleaf_cloud_work_backup',
+  [CloudBackupTask.Verify]: 'frameleaf_cloud_work_verify',
+  [CloudBackupTask.Prune]: 'frameleaf_cloud_work_prune',
+};
+
+const RESTORE_TITLE: Record<CloudBackupRestoreScope, Translations> = {
+  [CloudBackupRestoreScope.Files]: 'frameleaf_cloud_work_restore_files',
+  [CloudBackupRestoreScope.Asset]: 'frameleaf_cloud_work_restore_asset',
+  [CloudBackupRestoreScope.Database]: 'frameleaf_cloud_work_restore_database',
+  [CloudBackupRestoreScope.Library]: 'frameleaf_cloud_work_restore_library',
+};
+
+/**
+ * FL-164: the cloud backup operation and restore in progress, as Activity's read-only background work
+ * rows (the prototype's `summariseCloudWork`): queued, starting, running or paused, with files and bytes.
+ */
+export const cloudWorkRows = (status: CloudBackupStatusResponseDto | null): CloudWorkRow[] => {
+  const rows: CloudWorkRow[] = [];
+  const run = status?.activeRun;
+  if (run) {
+    const stage = stageOf(run.state, run.progress);
+    rows.push({
+      id: 'cloud-backup-run',
+      operationId: run.operationId,
+      titleKey: TASK_TITLE[run.task],
+      stage,
+      progress: stage === 'queued' ? null : Math.round(run.progress),
+      files:
+        run.task === CloudBackupTask.Backup
+          ? { done: run.uploaded, total: null }
+          : run.task === CloudBackupTask.Verify
+            ? { done: run.checked, total: null }
+            : null,
+      bytes: run.task === CloudBackupTask.Backup ? run.bytesUploaded : null,
+    });
+  }
+  const restore = status?.activeRestore;
+  if (restore) {
+    const stage = stageOf(restore.state, restore.progress);
+    rows.push({
+      id: 'cloud-restore-run',
+      operationId: restore.operationId,
+      titleKey: RESTORE_TITLE[restore.scope],
+      stage,
+      progress: stage === 'queued' ? null : Math.round(restore.progress),
+      files: { done: restore.files, total: restore.filesTotal || null },
+      bytes: restore.bytes,
+    });
+  }
+  return rows;
 };

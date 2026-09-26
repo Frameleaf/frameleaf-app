@@ -54,14 +54,61 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type CloudBackupActiveRestoreDto = {
+    bytes: number;
+    bytesTotal: number;
+    files: number;
+    filesTotal: number;
+    operationId: string;
+    /** 0 to 100 */
+    progress: number;
+    scope: CloudBackupRestoreScope;
+    state: CloudBackupRunState;
+};
 export type CloudBackupActiveRunDto = {
+    bytesUploaded: number;
+    /** verify: files checked so far */
+    checked: number;
     operationId: string;
     phase: CloudBackupRunPhase;
     /** 0 to 100 */
     progress: number;
     skipped: number;
     state: CloudBackupRunState;
+    task: CloudBackupTask;
     uploaded: number;
+};
+export type CloudBackupEscrowStatusDto = {
+    /** Server key mode and a linked server: escrow can be turned on */
+    available: boolean;
+    stored: boolean;
+    storedAt: string | null;
+};
+export type CloudBackupLastPruneDto = {
+    at: string;
+    bytesRemoved: number;
+    dryRun: boolean;
+    dumpsRemoved: number;
+    manifestsKept: number;
+    manifestsRemoved: number;
+    objectsRemoved: number;
+    operationId: string;
+};
+export type CloudBackupLastRestoreDto = {
+    at: string;
+    bytes: number;
+    /** The restored dump, listed by the maintenance restore */
+    databaseFile: string | null;
+    /** The folder a files restore wrote to */
+    destination: string | null;
+    error: string | null;
+    files: number;
+    manifestKey: string;
+    operationId: string;
+    replaced: number;
+    scope: CloudBackupRestoreScope;
+    skipped: number;
+    status: CloudBackupRestoreStatus;
 };
 export type CloudBackupLastRunDto = {
     bytesUploaded: number;
@@ -77,22 +124,54 @@ export type CloudBackupLastRunDto = {
     /** New or changed files uploaded */
     uploaded: number;
 };
+export type CloudBackupLastVerifyDto = {
+    at: string;
+    checked: number;
+    degradedManifests: number;
+    depth: CloudBackupVerifyDepth;
+    error: string | null;
+    mismatched: number;
+    missing: number;
+    operationId: string;
+    status: CloudBackupVerifyStatus;
+};
+export type CloudBackupManagedDto = {
+    allowanceBytes: number | null;
+    extraBlocks: number | null;
+    measuredAt: string | null;
+    objects: number | null;
+    /** Storage included with the plan; more is added in 1 TB blocks */
+    quotaBytes: number;
+    /** Uploads are stopped; restores keep working */
+    readOnly: boolean;
+    readOnlyReason: string | null;
+    /** Why Frameleaf Cloud last refused backup storage */
+    refusal: string | null;
+    usedBytes: number | null;
+};
 export type CloudBackupStatusResponseDto = {
+    activeRestore: (CloudBackupActiveRestoreDto) | null;
     activeRun: (CloudBackupActiveRunDto) | null;
     bucket: string | null;
     claimedAt: string | null;
     /** A bucket is claimed and cloud backup is on */
     configured: boolean;
     endpoint: string | null;
+    escrow: CloudBackupEscrowStatusDto;
     instanceId: string | null;
     keyFingerprint: string | null;
     /** The key is available to this server; false in own-memory mode until unlocked */
     keyLoaded: boolean;
     keyMode: (CloudBackupKeyMode) | null;
     lastManifestKey: string | null;
+    lastPrune: (CloudBackupLastPruneDto) | null;
+    lastRestore: (CloudBackupLastRestoreDto) | null;
     lastRun: (CloudBackupLastRunDto) | null;
     lastSuccessAt: string | null;
-    /** Frameleaf-managed storage can be chosen; false until Frameleaf Cloud offers backup storage */
+    lastVerify: (CloudBackupLastVerifyDto) | null;
+    /** Frameleaf-managed storage only */
+    managed: (CloudBackupManagedDto) | null;
+    /** Frameleaf-managed storage can be chosen: this server is linked to Frameleaf Cloud */
     managedAvailable: boolean;
     region: string | null;
     target: CloudBackupTargetSetting;
@@ -124,6 +203,10 @@ export type CloudBackupCheckResponseDto = {
     ok: boolean;
     state: CloudBackupBucketState;
 };
+export type CloudBackupEscrowDto = {
+    /** Wraps the bucket key before it is sent; never stored and never sent to Frameleaf Cloud */
+    passphrase: string;
+};
 export type CloudBackupGeneratedKeyDto = {
     createdAt: string;
     /** The key fingerprint that matches a key file to its bucket */
@@ -132,6 +215,61 @@ export type CloudBackupGeneratedKeyDto = {
     key: string;
     /** The key as the recovery kit writes it */
     recoveryCode: string;
+};
+export type CloudBackupManifestDto = {
+    assets: number;
+    bytes: number;
+    createdAt: string;
+    /** The database dump this backup pairs with */
+    databaseKey: string | null;
+    files: number;
+    finishedAt: string | null;
+    key: string;
+    status: CloudBackupManifestStatus;
+};
+export type CloudBackupManifestsResponseDto = {
+    /** Kept backups, newest first */
+    manifests: CloudBackupManifestDto[];
+};
+export type CloudBackupManifestItemsDto = {
+    filter?: CloudBackupItemFilter;
+    /** Items to return; 100 when absent */
+    limit?: number;
+    /** The backup run’s manifest in the bucket */
+    manifestKey: string;
+    /** Part of a file name */
+    query?: string;
+};
+export type CloudBackupManifestItemDto = {
+    assetId: string;
+    bytes: number;
+    files: number;
+    /** A Locked item: never named in this list */
+    locked: boolean;
+    /** When the original was last written before the backup */
+    modifiedAt: string | null;
+    /** The original’s file name when it was backed up; empty for a Locked item */
+    name: string;
+    ownerId: string | null;
+    ownerName: string | null;
+    state: CloudBackupItemState;
+};
+export type CloudBackupManifestItemsResponseDto = {
+    items: CloudBackupManifestItemDto[];
+    manifestKey: string;
+    /** Items that match, of which at most `limit` are listed */
+    total: number;
+};
+export type CloudBackupPruneDto = {
+    /** Count what the clean-up would remove without removing anything; a clean-up needs a dry run first */
+    dryRun: boolean;
+};
+export type CloudBackupRestoreDto = {
+    /** files: the items to restore (every item when absent); asset: exactly one item */
+    assetIds?: string[];
+    /** The backup run’s manifest in the bucket */
+    manifestKey: string;
+    scope: CloudBackupRestoreScope;
 };
 export type CloudBackupUnlockDto = {
     /** The key file, the base64 key or the recovery code. Kept in memory only */
@@ -145,6 +283,9 @@ export type CloudBackupSetupDto = {
     keyMode: CloudBackupKeyMode;
     s3?: CloudBackupS3Dto;
     target: CloudBackupTarget;
+};
+export type CloudBackupVerifyDto = {
+    depth: CloudBackupVerifyDepth;
 };
 export type CloudLinkPendingDto = {
     expiresAt: string;
@@ -600,13 +741,31 @@ export type AdminConfigFrameleafCloudBackupS3Dto = {
     /** Read-only indicator that a secret access key is stored. Set by the server; ignored on write. */
     secretAccessKeyConfigured?: boolean;
 };
+export type AdminConfigFrameleafCloudBackupRetentionDto = {
+    /** Daily runs kept, in days */
+    keepDaily: number;
+    /** Monthly runs kept, in months */
+    keepMonthly: number;
+    /** Weekly runs kept, in weeks */
+    keepWeekly: number;
+};
+export type AdminConfigFrameleafCloudBackupScheduleDto = {
+    /** When scheduled backup runs start */
+    cronExpression: string;
+};
 export type AdminConfigFrameleafCloudBackupDto = {
     /** Back up to the claimed bucket (set up from Settings › Frameleaf Cloud › Cloud backup) */
     enabled: boolean;
+    /** Keep a passphrase-wrapped copy of the bucket key with Frameleaf Cloud (server key mode only) */
+    escrow: boolean;
     include: AdminConfigFrameleafCloudBackupIncludeDto;
     keyMode: CloudBackupKeyMode;
+    retention: AdminConfigFrameleafCloudBackupRetentionDto;
     s3: AdminConfigFrameleafCloudBackupS3Dto;
+    schedule: AdminConfigFrameleafCloudBackupScheduleDto;
     target: CloudBackupTargetSetting;
+    /** Check a sample of the backed-up files every week, and every referenced file every month */
+    verifyWeekly: boolean;
 };
 export type AdminConfigFrameleafCloudAutoDescribeDto = {
     /** Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap */
@@ -10590,6 +10749,33 @@ export function checkCloudBackupBucket({ cloudBackupCheckDto }: {
     })));
 }
 /**
+ * Remove the key copy from Frameleaf Cloud
+ */
+export function removeCloudBackupEscrow(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/escrow", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Keep a key copy with Frameleaf Cloud
+ */
+export function storeCloudBackupEscrow({ cloudBackupEscrowDto }: {
+    cloudBackupEscrowDto: CloudBackupEscrowDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/escrow", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudBackupEscrowDto
+    })));
+}
+/**
  * Generate a bucket key
  */
 export function generateCloudBackupKey(opts?: Oazapfts.RequestOpts) {
@@ -10614,6 +10800,62 @@ export function unlockCloudBackupKey({ cloudBackupUnlockDto }: {
         ...opts,
         method: "POST",
         body: cloudBackupUnlockDto
+    })));
+}
+/**
+ * List the kept backups
+ */
+export function getCloudBackupManifests(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupManifestsResponseDto;
+    }>("/admin/cloud/backup/manifests", {
+        ...opts
+    }));
+}
+/**
+ * Search the items in a backup
+ */
+export function searchCloudBackupManifestItems({ cloudBackupManifestItemsDto }: {
+    cloudBackupManifestItemsDto: CloudBackupManifestItemsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupManifestItemsResponseDto;
+    }>("/admin/cloud/backup/manifests/items", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupManifestItemsDto
+    })));
+}
+/**
+ * Clean up backups past retention
+ */
+export function pruneCloudBackup({ cloudBackupPruneDto }: {
+    cloudBackupPruneDto: CloudBackupPruneDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/prune", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupPruneDto
+    })));
+}
+/**
+ * Restore from a backup
+ */
+export function restoreCloudBackup({ cloudBackupRestoreDto }: {
+    cloudBackupRestoreDto: CloudBackupRestoreDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/restore", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupRestoreDto
     })));
 }
 /**
@@ -10683,6 +10925,21 @@ export function setupCloudBackup({ cloudBackupSetupDto }: {
         ...opts,
         method: "POST",
         body: cloudBackupSetupDto
+    })));
+}
+/**
+ * Check the backed-up files
+ */
+export function verifyCloudBackup({ cloudBackupVerifyDto }: {
+    cloudBackupVerifyDto: CloudBackupVerifyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/verify", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupVerifyDto
     })));
 }
 /**
@@ -19908,6 +20165,31 @@ export enum UserAvatarColor {
     Gray = "gray",
     Amber = "amber"
 }
+export enum CloudBackupRestoreScope {
+    Files = "files",
+    Asset = "asset",
+    Database = "database",
+    Library = "library"
+}
+export enum CloudBackupRestoreStatus {
+    Completed = "completed",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum CloudBackupTask {
+    Backup = "backup",
+    Verify = "verify",
+    Prune = "prune"
+}
+export enum CloudBackupVerifyDepth {
+    Sample = "sample",
+    Full = "full"
+}
+export enum CloudBackupVerifyStatus {
+    Passed = "passed",
+    Degraded = "degraded",
+    Failed = "failed"
+}
 export enum CloudBackupRunPhase {
     Database = "database",
     Reconcile = "reconcile",
@@ -19948,6 +20230,20 @@ export enum CloudBackupBucketState {
 export enum CloudBackupTarget {
     Managed = "managed",
     ByoS3 = "byo-s3"
+}
+export enum CloudBackupManifestStatus {
+    Complete = "complete",
+    Degraded = "degraded"
+}
+export enum CloudBackupItemFilter {
+    All = "all",
+    Deleted = "deleted",
+    InLibrary = "in-library"
+}
+export enum CloudBackupItemState {
+    Active = "active",
+    Trashed = "trashed",
+    Deleted = "deleted"
 }
 export enum CloudHeartbeatField {
     Version = "version",
@@ -20299,7 +20595,8 @@ export enum MediaOperationKind {
     PreservationRestore = "preservation_restore",
     StudioExportPublish = "studio_export_publish",
     CloudDescriptionBatch = "cloud_description_batch",
-    CloudBackup = "cloud_backup"
+    CloudBackup = "cloud_backup",
+    CloudRestore = "cloud_restore"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -21568,6 +21865,8 @@ export enum JobName {
     FrameleafHeartbeat = "FrameleafHeartbeat",
     FrameleafLicenseRefresh = "FrameleafLicenseRefresh",
     CloudMlDescriptionBatch = "CloudMlDescriptionBatch",
+    CloudBackupSchedule = "CloudBackupSchedule",
+    CloudBackupVerify = "CloudBackupVerify",
     OcrQueueAll = "OcrQueueAll",
     Ocr = "Ocr",
     ImageDescriptionQueueAll = "ImageDescriptionQueueAll",

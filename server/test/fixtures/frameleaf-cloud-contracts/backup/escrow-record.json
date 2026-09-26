@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "kdf": {
+    "name": "scrypt",
+    "N": 131072,
+    "r": 8,
+    "p": 1,
+    "salt": "AQIDBAUGBwgJCgsMDQ4PEA=="
+  },
+  "cipher": "aes-256-gcm",
+  "nonce": "FBUWFxgZGhscHR4f",
+  "ciphertext": "KCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZX",
+  "updatedAt": "2026-09-25T12:00:00.000Z"
+}

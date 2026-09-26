@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -493,5 +493,58 @@ describe(CloudBackupStoreRepository.name, () => {
 
     expect(error.message).not.toContain(bucketKey.toString('base64'));
     expect(error.message).not.toContain(connection.secretAccessKey);
+  });
+
+  describe('FL-164', () => {
+    it('downloads an object with the bucket key and moves it into place only when it matches its name', async () => {
+      const body = randomBytes(1000);
+      const name = sha256(body);
+      s3.objects.set(`o/${name}`, { body, keyMd5: createHash('md5').update(bucketKey).digest('base64') });
+      const target = join(directory, 'restored.jpg');
+
+      await expect(sut.download(connection, `o/${name}`, bucketKey, target, name)).resolves.toEqual({
+        size: 1000,
+        sha256: name,
+      });
+      expect((await readFile(target)).equals(body)).toBe(true);
+      s3.expectSseCOnEveryObjectCall();
+    });
+
+    it('refuses a download that does not match its name, and leaves nothing behind', async () => {
+      const body = randomBytes(100);
+      s3.objects.set('o/wrong', { body, keyMd5: createHash('md5').update(bucketKey).digest('base64') });
+      const target = join(directory, 'restored.jpg');
+
+      await expect(sut.download(connection, 'o/wrong', bucketKey, target, sha256(randomBytes(8)))).rejects.toThrow(
+        'does not match its checksum',
+      );
+      expect(await readdir(directory)).toEqual([]);
+    });
+
+    it('hashes an object without keeping it', async () => {
+      const body = randomBytes(500);
+      s3.objects.set('o/any', { body, keyMd5: createHash('md5').update(bucketKey).digest('base64') });
+
+      await expect(sut.hashObject(connection, 'o/any', bucketKey)).resolves.toEqual({
+        size: 500,
+        sha256: sha256(body),
+      });
+      expect(await readdir(directory)).toEqual([]);
+    });
+
+    it('waits for a freshly rotated managed key to become valid, and only for a while', async () => {
+      sut.freshKeyRetryMs = 0;
+      s3.failures = [
+        { status: 403, code: 'InvalidAccessKeyId' },
+        { status: 403, code: 'InvalidAccessKeyId' },
+      ];
+
+      await expect(sut.list({ ...connection, freshKeyUntil: Date.now() + 30_000 }, '')).resolves.toMatchObject({
+        objects: [],
+      });
+
+      s3.failures = [{ status: 403, code: 'InvalidAccessKeyId' }];
+      await expect(sut.list(connection, '')).rejects.toThrow('refused these credentials');
+    });
   });
 });

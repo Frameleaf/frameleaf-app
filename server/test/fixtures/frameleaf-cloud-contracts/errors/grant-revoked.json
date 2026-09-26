@@ -1,0 +1,7 @@
+{
+  "code": "grant-revoked",
+  "message": "This server's managed backup storage was withdrawn because the server was unlinked from Frameleaf Cloud.",
+  "retryable": false,
+  "data": { "reason": "unlinked" },
+  "requestId": "req_01J8ZK3M4N5P6Q7W"
+}

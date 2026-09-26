@@ -118,15 +118,15 @@ Anyone can activate their own `FL-I…` key under **Your preferences → Support
 
 ## Cloud backup
 
-**Settings › Frameleaf Cloud › Cloud backup** backs up this server's originals and database to a bucket that only this server uses. Setup needs a linked server with cloud backup in its plan. Frameleaf-managed storage is not available yet; for now use your own bucket on any S3-compatible provider that supports customer-provided encryption keys (SSE-C), such as Wasabi. The storage address must use HTTPS. Frameleaf addresses the bucket by path (`<storage address>/<bucket>`), so on Amazon S3 use the bucket's regional endpoint, for example `https://s3.eu-central-1.amazonaws.com`; a bucket in another region is refused with a message saying so. Amazon S3 turns SSE-C off by default on new buckets: allow it in the bucket's default encryption settings (remove SSE-C from the blocked encryption types) before you check the bucket. A server clock that is off is refused by the provider too; keep the server's time synchronised.
+**Settings › Frameleaf Cloud › Cloud backup** backs up this server's originals and database to a bucket that only this server uses. Setup needs a linked server with cloud backup in its plan. Choose **Frameleaf-managed storage** (see [Frameleaf-managed storage](#frameleaf-managed-storage)) or your own bucket on any S3-compatible provider that supports customer-provided encryption keys (SSE-C), such as Wasabi. The storage address must use HTTPS. Frameleaf addresses the bucket by path (`<storage address>/<bucket>`), so on Amazon S3 use the bucket's regional endpoint, for example `https://s3.eu-central-1.amazonaws.com`; a bucket in another region is refused with a message saying so. Amazon S3 turns SSE-C off by default on new buckets: allow it in the bucket's default encryption settings (remove SSE-C from the blocked encryption types) before you check the bucket. A server clock that is off is refused by the provider too; keep the server's time synchronised.
 
 Setup has four steps:
 
-1. **Destination.** Enter the storage address, an empty bucket, and an access key for it. **Check bucket** lists the bucket and writes, reads back and deletes a test file encrypted with a throwaway key, so a provider that does not apply SSE-C is refused before anything is claimed. The secret access key is stored on this server as a write-only setting and is never shown again.
+1. **Destination.** Frameleaf-managed storage needs nothing more: Frameleaf Cloud makes the bucket when the server claims it. For your own bucket, enter the storage address, an empty bucket, and an access key for it. **Check bucket** lists the bucket and writes, reads back and deletes a test file encrypted with a throwaway key, so a provider that does not apply SSE-C is refused before anything is claimed. The secret access key is stored on this server as a write-only setting and is never shown again.
 2. **Encryption key.** Every file is encrypted by the provider with a key for this bucket; the provider keeps only a check value, never the key.
    - **Generate a key for me:** this server creates the key and keeps it next to its identity, in a file only the server can read (`cloud-backup-<fingerprint>.key` in the identity folder).
    - **I'll maintain my own key:** the key is created in your browser. Download the key file and confirm it is saved somewhere other than this server before you continue. With **Keep a copy on this server** on, the server keeps a copy in the same kind of file and backups run unattended. With it off, the key is never saved: after every restart backups wait until someone loads the key again (**Unlock**), and you type "I understand" first, because a lost key makes every backup in the bucket permanently unreadable.
-3. **Recovery kit** (generated keys only). The kit holds the key as a recovery code and is shown once. Download or print it and keep it offline; the server never shows the key again.
+3. **Recovery kit** (generated keys only). The kit holds the key as a recovery code and is shown once. Download or print it and keep it offline; the server never shows the key again. You can also keep an encrypted copy with Frameleaf here: see [Key escrow](#key-escrow).
 4. **Claim bucket.** The server writes `frameleaf-backup.json` holding its instance ID, encrypted like everything else. A bucket that holds another server's claim, a claim made with a different key, or any other files is refused. Setting up again with the same bucket and key keeps its backups.
 
 The key is never part of the settings, a database dump, a log or an answer from the server, and it is never sent to Frameleaf Cloud.
@@ -135,12 +135,71 @@ The key is never part of the settings, a database dump, a log or an answer from 
 
 **Back up now** starts a run, which shows in Activity. A run backs up, in this order:
 
-- a fresh database dump, as `db/<file>`; the bucket keeps the seven most recent dumps and the dump of the newest complete backup;
+- a fresh database dump, as `db/<file>`; the clean-up keeps the seven most recent dumps and the dump of every backup retention keeps;
 - every original, sidecar and profile image, each unique file once as `o/<sha256>`. Locked and trashed photos are included; files in external libraries are not. Thumbnails, previews and transcoded videos are left out unless you include them in the settings;
 - a manifest of the run, `m/<time>.json.gz`, naming every photo's files by checksum.
 
 Only new or changed files upload: a photo you have twice is stored once, a second run with nothing changed uploads no files, and a file that changed is uploaded under its new checksum. A checksum on record is trusted only while the file is unchanged at the path it was verified at; anything else is hashed again. A file is read once while it uploads and must match the checksum it is stored under, or it is left for the next run. The manifest is written as the run's last step, streamed from what the run recorded, and never written twice. Each run checks the bucket's claim first: a bucket that was emptied, recreated or claimed by another server is refused until cloud backup is set up again, and setting up an emptied or recreated bucket again starts from its new listing. Nothing on this server is changed or removed by a run, except its own temporary database dump once it is in the bucket.
 
-A run records where it is every 25 photos. The administrator who started it can pause, resume or cancel it in Activity, and a run interrupted by a restart carries on with the same manifest. A run that fails is retried once; if it fails again, administrators are told once a day. The status card shows the last run, the last complete backup and the storage used.
+A run records where it is every 25 photos. The administrator who started it can pause, resume or cancel it, and a run interrupted by a restart carries on with the same manifest. A run that fails is retried once; if it fails again, administrators are told once a day. The status card shows the last run, the last complete backup, the last check and the storage used.
+
+Every backup run, check, clean-up and restore shows in **Activity** under **Background work** for administrators while it is queued, starting, running or paused, with the files and bytes done so far. Those rows are read-only: pausing, resuming and cancelling live on the Cloud backup page and in **Settings › Background work**. Finished ones stay in the list like any other job.
+
+Only one backup operation uses the bucket at a time: a run, a check, a clean-up or a restore waits for the one in progress, and a scheduled run is never queued beside one that is still unfinished. A scheduled run that finds a check, a clean-up or a restore in progress starts as soon as it has ended, and no check starts in the hour before a scheduled run. A backup this server has no record of (a bucket claimed again, or a database restored from before later runs) is picked up by the next run from the bucket's own manifests.
+
+### Schedule and retention
+
+**Schedule & retention** is saved with the other settings. **Run** starts a backup every night at 03:00 (the default), every 6 hours, or on Sundays at 03:00, in the server's time zone (`frameleafCloud.cloudBackup.schedule.cronExpression` in a configuration file takes any cron expression). One server runs the schedule; the others follow it. Scheduled runs belong to the first administrator and show in their Activity.
+
+After each scheduled run, runs past retention are cleaned up. Retention keeps the newest run, then the newest run of each of the last **Keep daily runs** days (7), **Keep weekly runs** weeks (4) and **Keep monthly runs** months (12), in UTC. The clean-up reads every kept run's manifest from the bucket first and removes only the files and database dumps that no kept run names; if any kept manifest cannot be read, nothing is removed. Each removed file is forgotten by the server before it is deleted, so an interrupted clean-up can at worst upload a file again. The API offers a clean-up by hand (`POST /api/admin/cloud/backup/prune`), which must be a dry run first: it reports how many runs, files and bytes would go, and the clean-up itself is accepted within a day of that dry run while no backup has run since.
+
+### Checking the backups
+
+The server checks the bucket on its own while cloud backup is on (`frameleafCloud.cloudBackup.verifyWeekly`, on by default):
+
+- **Weekly**, it fetches the week's share of the backed-up files (1/52 of them, so every file once a year) and checks each against its checksum. **Verify** on the Cloud backup page runs this check now.
+- **Monthly**, it checks that every file and database dump a kept run names is still in the bucket, with the size it was backed up at.
+
+A check that fails is tried again the next day. A file that is missing or damaged is uploaded again by the next run when this server still has it, and every run that names it is marked incomplete. Administrators are told what was found, and the Cloud backup page shows the last check.
+
+### Frameleaf-managed storage
+
+With a Frameleaf Cloud plan, Frameleaf Cloud keeps a bucket for this server (`fl-<region>-<instance ID>`, in your account's data region) with versioning on, so an overwritten or deleted file can be recovered for 30 days, and an access policy that lets this server neither delete old versions nor remove the bucket. The server asks for a new bucket-scoped access key at the start of every backup, check, clean-up and restore; the key is kept in memory for that operation only and never stored. Frameleaf Cloud can list file names and sizes to measure storage, never read contents: files are encrypted with your bucket key, which Frameleaf Cloud never receives.
+
+The plan includes 1 TB. Storage never stops for size: each further 1 TB block is added automatically and billed with the plan (see [Plan and licence](#plan-and-licence)); the Cloud backup page shows the storage used against the current allowance. Frameleaf Cloud makes the bucket read-only while a deletion of it is on hold or after the plan has lapsed: uploads and clean-ups stop, nothing on this server changes, and restores and checks keep working. When the server is unlinked or suspended, or Frameleaf Cloud suspects a copy of this server (see [Unlinking](#unlinking)), managed backups stop with the reason on the Cloud backup page; a busy Frameleaf Cloud or a region without storage is waited out and tried again.
+
+### Key escrow
+
+With a key this server generated, you can keep an encrypted copy of it with Frameleaf, in the setup's recovery kit step. The server wraps the key under a passphrase of at least 12 characters (scrypt with N = 2^17, then AES-256-GCM) and sends only the wrapped copy; the passphrase is never stored or sent, and Frameleaf Cloud cannot unwrap the copy. It helps if you lose this server and the recovery kit but still remember the passphrase: download the copy from your Frameleaf account and restore with it (see [Disaster recovery](#disaster-recovery)). Escrow is never offered for your own key, and removing it (`DELETE /api/admin/cloud/backup/escrow`) deletes the copy from Frameleaf Cloud.
+
+### Restoring
+
+The **Restore** section on the Cloud backup page restores from any kept backup. It shows the newest backup, the database backup it pairs with, and how far back deleted items can come from.
+
+- **Items.** Search the chosen backup by file name and see whether each item is still in the library, in the trash, or gone. A Locked item is listed as a Locked item, never by name, and a search by name does not find it. **Restore…** on an item still in the library opens the restore dialog: choose the backup to restore from, and the item's files go back where the library expects them. A file already there that is not the backed-up one is moved to `<media>/frameleaf/restore/replaced/<restore>` and never deleted; a file already there with the backed-up content is left alone. **Restore** on a deleted item brings its files back into `<media>/frameleaf/restore/<restore>`, where Library Care's search for missing originals finds them. Thumbnails and previews of items restored in place are made again.
+- **Whole library.** Type RESTORE to start. Every file goes back in place as above, and the paired database backup is written to `<media>/backups` as `cloud-restore-<file>`. Restore it from **Maintenance** (the existing database restore), which signs everyone out until it finishes; the library then goes back to that backup's time.
+
+Every file is fetched with the bucket key and checked against its checksum before it is written; a missing or mismatched file stops the restore and names the file, and everything restored before it stays in place. A restore runs on the server as a job (`cloud_restore`) with its progress in Activity; it can be paused, resumed and cancelled like a backup run, and a restore interrupted by a restart carries on from the next file. In own-memory key mode, load the key first. With Frameleaf-managed storage, the items in a backup can be browsed only while no backup operation is running, because reading them uses a fresh key.
+
+### Disaster recovery
+
+`immich-admin cloud-backup restore` restores a server from its bucket without the web app, for example on new hardware after a loss. Run it in the server container with the media folder mounted:
+
+```bash
+export FRAMELEAF_BACKUP_SECRET_ACCESS_KEY='…'
+immich-admin cloud-backup restore \
+  --bucket family-backup \
+  --endpoint https://s3.eu-central-2.wasabisys.com \
+  --access-key-id AKIA… \
+  --key-file /path/to/frameleaf-backup-key-XXXX-XXXX.json \
+  --restore-database
+```
+
+- `--key-file` takes the key file or a text file holding the recovery code. Instead, `--escrow-file` takes an escrow copy downloaded from your Frameleaf account, with its passphrase in `FRAMELEAF_BACKUP_ESCROW_PASSPHRASE`. Secrets are read from the environment only, never from the command line.
+- `--region` names the region when the storage address does not; `--manifest m/<time>.json.gz` restores an older backup than the newest.
+- `--scope library` (the default) restores every file in place and the database dump; `files` restores into `<media>/frameleaf/restore/command-<time>`; `database` restores the dump only.
+- `--restore-database` also restores the database from the dump, as the maintenance restore does, replacing the database the server has now. Without it, the command says where the dump is.
+
+The command takes none of the server's locks: stop the server first, or at least make sure no backup operation is running. Files whose backed-up place is outside the media folder are restored into `<media>/frameleaf/restore/command-<time>` instead. The key must open the bucket's claim, or nothing is restored. Every file is checked against its checksum as it is written. Afterwards, start the server and set cloud backup up again with the same bucket and key: the bucket's claim and backups are kept. A Frameleaf-managed bucket's access keys are issued to the linked server only, so recover a managed bucket by restoring the database first (from a local backup, or with a key you were given for it) and then restoring from the Cloud backup page once the server is linked again.
 
 **Turn off backup…** stops backing up. The bucket, its backups and the key are kept, so the backups stay readable with the key file or recovery kit.

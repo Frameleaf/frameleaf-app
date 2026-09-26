@@ -1,14 +1,21 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CloudBackupCheckDto,
   CloudBackupCheckResponseDto,
+  CloudBackupEscrowDto,
   CloudBackupGeneratedKeyDto,
+  CloudBackupManifestItemsDto,
+  CloudBackupManifestItemsResponseDto,
+  CloudBackupManifestsResponseDto,
+  CloudBackupPruneDto,
+  CloudBackupRestoreDto,
   CloudBackupSetupDto,
   CloudBackupStatusResponseDto,
   CloudBackupUnlockDto,
+  CloudBackupVerifyDto,
 } from 'src/dtos/cloud-backup.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -17,7 +24,8 @@ import { UUIDv7ParamDto } from 'src/validation.js';
 
 /**
  * Cloud backup administration (FL-160): the bucket claim, the bucket key and the runs. The bucket key is
- * returned once, by `POST key`, for the recovery kit; never after that.
+ * returned once, by `POST key`, for the recovery kit; never after that. FL-164: verification, clean-up,
+ * the kept backups and restore from them, and key escrow with Frameleaf Cloud.
  */
 @ApiTags(ApiTag.FrameleafCloudBackup)
 @Controller('admin/cloud/backup')
@@ -155,5 +163,98 @@ export class CloudBackupAdminController {
   })
   cancelRun(@Param() { id }: UUIDv7ParamDto): Promise<CloudBackupStatusResponseDto> {
     return this.service.cancelRun(id);
+  }
+
+  @Post('verify')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudBackupRun, admin: true })
+  @Endpoint({
+    operationId: 'verifyCloudBackup',
+    summary: 'Check the backed-up files',
+    description:
+      'Queues a check of the bucket: sample fetches this week’s 1/52 of the files and checks each against its SHA-256; full checks every file a kept backup names is there. Missing or damaged files are uploaded again by the next run.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  verify(@Auth() auth: AuthDto, @Body() dto: CloudBackupVerifyDto): Promise<CloudBackupStatusResponseDto> {
+    return this.service.startVerify(auth, dto);
+  }
+
+  @Post('prune')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudBackupRun, admin: true })
+  @Endpoint({
+    operationId: 'pruneCloudBackup',
+    summary: 'Clean up backups past retention',
+    description:
+      'Queues a clean-up of runs past the retention settings. Only files no kept backup names are removed. A dry run counts what would go; the clean-up itself needs a dry run from the last day first.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  prune(@Auth() auth: AuthDto, @Body() dto: CloudBackupPruneDto): Promise<CloudBackupStatusResponseDto> {
+    return this.service.startPrune(auth, dto);
+  }
+
+  @Get('manifests')
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudBackupManifests',
+    summary: 'List the kept backups',
+    description: 'The backups retention keeps, newest first, with their size and the database dump each pairs with.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getManifests(): Promise<CloudBackupManifestsResponseDto> {
+    return this.service.listManifests();
+  }
+
+  @Post('manifests/items')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'searchCloudBackupManifestItems',
+    summary: 'Search the items in a backup',
+    description:
+      'The items one kept backup holds, found by file name, and whether each is still in the library. Reads the backup’s manifest from the bucket.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  searchManifestItems(@Body() dto: CloudBackupManifestItemsDto): Promise<CloudBackupManifestItemsResponseDto> {
+    return this.service.listManifestItems(dto);
+  }
+
+  @Post('restore')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudBackupUpdate, admin: true })
+  @Endpoint({
+    operationId: 'restoreCloudBackup',
+    summary: 'Restore from a backup',
+    description:
+      'Queues a restore from a kept backup: files into a restore folder for Library Care, one item back in place, the database dump for the maintenance restore, or the whole library. Every file is checked against its SHA-256 before it is written; a file in the way is moved aside, never deleted.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  restore(@Auth() auth: AuthDto, @Body() dto: CloudBackupRestoreDto): Promise<CloudBackupStatusResponseDto> {
+    return this.service.startRestore(auth, dto);
+  }
+
+  @Put('escrow')
+  @Authenticated({ permission: Permission.AdminCloudBackupUpdate, admin: true })
+  @Endpoint({
+    operationId: 'storeCloudBackupEscrow',
+    summary: 'Keep a key copy with Frameleaf Cloud',
+    description:
+      'Server key mode only: wraps the bucket key under the passphrase (scrypt, then AES-256-GCM) and stores the result with Frameleaf Cloud, which cannot unwrap it. The passphrase is never stored or sent.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  storeEscrow(@Auth() auth: AuthDto, @Body() dto: CloudBackupEscrowDto): Promise<CloudBackupStatusResponseDto> {
+    return this.service.storeEscrow(auth, dto);
+  }
+
+  @Delete('escrow')
+  @Authenticated({ permission: Permission.AdminCloudBackupUpdate, admin: true })
+  @Endpoint({
+    operationId: 'removeCloudBackupEscrow',
+    summary: 'Remove the key copy from Frameleaf Cloud',
+    description: 'Deletes the wrapped key Frameleaf Cloud keeps for this server.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  removeEscrow(@Auth() auth: AuthDto): Promise<CloudBackupStatusResponseDto> {
+    return this.service.removeEscrow(auth);
   }
 }

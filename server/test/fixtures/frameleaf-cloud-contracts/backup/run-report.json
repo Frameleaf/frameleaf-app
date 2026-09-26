@@ -1,0 +1,11 @@
+{
+  "runId": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+  "status": "succeeded",
+  "startedAt": "2026-09-25T02:00:00.000Z",
+  "finishedAt": "2026-09-25T02:41:17.000Z",
+  "bytesUploaded": 1843200000,
+  "objectsUploaded": 412,
+  "objectsSkipped": 183821,
+  "manifestKey": "m/2026-09-25T02:41:17.000Z.json.gz",
+  "errorCode": null
+}

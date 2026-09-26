@@ -10,7 +10,59 @@ export type CloudBackupMockState = {
   configured: boolean;
   keyMode: 'server' | 'own-stored' | 'own-memory' | null;
   requests: Array<{ method: string; path: string; body?: unknown }>;
+  /** FL-164: a restore queued through `POST admin/cloud/backup/restore`, shown as the active restore. */
+  restoring?: { scope: string } | null;
 };
+
+/** FL-164: the kept backups the Restore section lists, newest first. */
+export const MANIFESTS = [
+  {
+    key: 'm/20260926T030000Z.json.gz',
+    status: 'complete',
+    createdAt: '2026-09-26T03:00:00.000Z',
+    finishedAt: '2026-09-26T03:41:00.000Z',
+    assets: 3,
+    files: 4,
+    bytes: 32_000_000,
+    databaseKey: 'db/cloud-backup-immich-db-backup-20260926T030000-v3.2.0-pg16.4.sql.gz',
+  },
+  {
+    key: 'm/20260925T030000Z.json.gz',
+    status: 'complete',
+    createdAt: '2026-09-25T03:00:00.000Z',
+    finishedAt: '2026-09-25T03:40:00.000Z',
+    assets: 3,
+    files: 4,
+    bytes: 31_000_000,
+    databaseKey: 'db/cloud-backup-immich-db-backup-20260925T030000-v3.2.0-pg16.4.sql.gz',
+  },
+];
+
+/** FL-164: what the newest backup holds, and whether each item is still in the library. */
+export const MANIFEST_ITEMS = [
+  {
+    assetId: '8c5c3a24-2f65-4a8e-b3d4-3f1c3cb0c3e1',
+    name: 'Elk.jpg',
+    locked: false,
+    ownerId: 'owner-1',
+    ownerName: 'Taylor',
+    files: 2,
+    bytes: 5_100_000,
+    modifiedAt: '2026-08-14T09:12:00.000Z',
+    state: 'active',
+  },
+  {
+    assetId: '1d7c9e02-5b1a-4c3e-9f7d-2a6b8c0d1e2f',
+    name: 'IMG_2041.HEIC',
+    locked: false,
+    ownerId: 'owner-1',
+    ownerName: 'Taylor',
+    files: 1,
+    bytes: 3_200_000,
+    modifiedAt: '2026-08-14T09:12:00.000Z',
+    state: 'deleted',
+  },
+];
 
 export const GENERATED_KEY = {
   key: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
@@ -36,6 +88,23 @@ export const cloudBackupStatus = (mock: CloudBackupMockState) => ({
   lastManifestKey: null,
   usage: mock.configured ? { objects: 0, bytes: 0 } : null,
   activeRun: null,
+  activeRestore: mock.restoring
+    ? {
+        operationId: '0195e2a0-0000-7000-8000-00000000abcd',
+        state: 'queued',
+        scope: mock.restoring.scope,
+        progress: 0,
+        files: 0,
+        filesTotal: 0,
+        bytes: 0,
+        bytesTotal: 0,
+      }
+    : null,
+  lastRestore: null,
+  lastVerify: null,
+  lastPrune: null,
+  managed: null,
+  escrow: { available: false, stored: false, storedAt: null },
 });
 
 const license = {
@@ -75,6 +144,21 @@ export const setupCloudBackupMockApiRoutes = async (context: BrowserContext, moc
     }
     if (method === 'POST' && path === 'admin/cloud/backup/key') {
       return route.fulfill({ status: 201, json: GENERATED_KEY });
+    }
+    if (method === 'GET' && path === 'admin/cloud/backup/manifests') {
+      return route.fulfill({ status: 200, json: { manifests: mock.configured ? MANIFESTS : [] } });
+    }
+    if (method === 'POST' && path === 'admin/cloud/backup/manifests/items') {
+      const { query = '', filter = 'all' } = body as { query?: string; filter?: string };
+      const items = MANIFEST_ITEMS.filter(
+        (item) =>
+          item.name.toLowerCase().includes(query.toLowerCase()) &&
+          (filter === 'all' || (filter === 'deleted' ? item.state === 'deleted' : item.state !== 'deleted')),
+      );
+      return route.fulfill({ status: 200, json: { manifestKey: MANIFESTS[0].key, total: items.length, items } });
+    }
+    if (method === 'POST' && path === 'admin/cloud/backup/restore') {
+      mock.restoring = { scope: (body as { scope: string }).scope };
     }
     if (method === 'POST' && path === 'admin/cloud/backup/setup') {
       mock.configured = true;

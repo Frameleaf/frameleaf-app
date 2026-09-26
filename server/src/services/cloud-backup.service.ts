@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { CronTime } from 'cron';
 import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -6,28 +7,45 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { CloudBackupKeyMode, FrameleafCloudBackup, FrameleafCloudBackupRun } from 'src/types.js';
+import type {
+  CloudBackupKeyMode,
+  FrameleafCloudBackup,
+  FrameleafCloudBackupRestore,
+  FrameleafCloudBackupRun,
+} from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { OnEvent } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CloudBackupCheckDto,
   CloudBackupCheckResponseDto,
+  CloudBackupEscrowDto,
   CloudBackupGeneratedKeyDto,
+  CloudBackupManifestItem,
+  CloudBackupManifestItemsDto,
+  CloudBackupManifestItemsResponseDto,
+  CloudBackupManifestsResponseDto,
+  CloudBackupPruneDto,
+  CloudBackupRestoreDto,
   CloudBackupRunState,
   CloudBackupS3,
   CloudBackupSetupDto,
   CloudBackupStatusResponseDto,
   CloudBackupUnlockDto,
+  CloudBackupVerifyDto,
 } from 'src/dtos/cloud-backup.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
   DatabaseLock,
   ImmichWorker,
+  JobName,
+  JobStatus,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  MlAdmissionRefusal,
   NotificationLevel,
   NotificationType,
+  QueueName,
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
@@ -35,9 +53,11 @@ import {
   CloudBackupAsset,
   CloudBackupEntry,
   CloudBackupIndexRepository,
+  CloudBackupLibraryAsset,
 } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import {
+  CLOUD_BACKUP_FRESH_KEY_MS,
   CloudBackupClaimError,
   CloudBackupConnection,
   CloudBackupFileChangedError,
@@ -45,12 +65,18 @@ import {
   CloudBackupStoreRepository,
 } from 'src/repositories/cloud-backup-store.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import {
+  FrameleafCloudBackupRepository,
+  ManagedBackupApi,
+} from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -59,19 +85,40 @@ import {
 } from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import {
+  CloudBackupBucket,
+  CloudBackupMaintenance,
+  CloudBackupVerifyResult,
+  emptyPruneResult,
+  emptyVerifyResult,
+} from 'src/services/cloud-backup-maintenance.js';
+import {
+  CloudBackupRestoreResult,
+  CloudBackupRestoreScope,
+  CloudBackupRestoreSnapshot,
+  CloudBackupRestorer,
+  RESTORE_REPLACED_FOLDER,
+  emptyRestoreResult,
+  restorePlan,
+} from 'src/services/cloud-backup-restore.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
+import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
 import {
   CLOUD_BACKUP_BATCH,
-  CLOUD_BACKUP_DB_DUMPS_KEPT,
   CLOUD_BACKUP_DB_PREFIX,
   CLOUD_BACKUP_MANIFEST_FORMAT,
+  CLOUD_BACKUP_MANIFEST_PREFIX,
   CLOUD_BACKUP_OBJECT_PREFIX,
   CLOUD_BACKUP_OWN_MEMORY_ACKNOWLEDGEMENT,
+  CloudBackupManifest,
   CloudBackupManifestFile,
   CloudBackupRunResult,
   backupKeyFile,
   bucketRef,
+  compactIso,
   emptyRunResult,
   isSha256Hex,
   keyFingerprint,
@@ -87,9 +134,24 @@ import {
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
 import { CLOUD_BACKUP_DUMP_PREFIX, isCloudBackupDumpName } from 'src/utils/database-backups.js';
-import { identityDirectory, loadInstanceIdentity } from 'src/utils/frameleaf-cloud-gateway.js';
+import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
+import {
+  BackupGrantResponse,
+  backupGrantProblem,
+  managedBackupRefusal,
+} from 'src/utils/frameleaf-cloud-backup.js';
+import {
+  CLONE_SUSPECTED_NOTICE,
+  identityDirectory,
+  loadInstanceIdentity,
+  readCloudLink,
+} from 'src/utils/frameleaf-cloud-gateway.js';
+import { handlePromiseError } from 'src/utils/misc.js';
 
 const KIND = MediaOperationKind.CloudBackup;
+/** FL-164: a restore uses the bucket too, so it never runs beside a backup operation, nor they beside it. */
+const RESTORE_KIND = MediaOperationKind.CloudRestore;
+const BUCKET_KINDS = [KIND, RESTORE_KIND];
 
 /** How often the worker looks for a queued run. */
 export const CLOUD_BACKUP_TICK_MS = 5000;
@@ -103,10 +165,64 @@ export const CLOUD_BACKUP_MANIFEST_PAGE = 1000;
 const ABANDONED_SWEEP_INTERVAL_MS = 60_000;
 /** A worker asks the others for an own-memory key at most this often. */
 const KEY_ASK_INTERVAL_MS = 10_000;
+/** FL-164: the cron jobs of the one server holding `DatabaseLock.FrameleafCloudBackupCheck`. */
+export const CLOUD_BACKUP_SCHEDULE_CRON = 'cloudBackupSchedule';
+export const CLOUD_BACKUP_VERIFY_CRON = 'cloudBackupVerify';
+/** FL-164: whether a verification is due is looked at hourly; it runs when nothing else holds the bucket. */
+const VERIFY_CHECK_EXPRESSION = '23 * * * *';
+/** FL-164: a retryable refusal of managed storage waits this long when Frameleaf Cloud names no time. */
+const MANAGED_RETRY_MS = 15 * 60_000;
+/** FL-164: while this server is not linked, a managed operation waits this long before it looks again. */
+const MANAGED_UNLINKED_RETRY_MS = 60 * 60_000;
+/** FL-164: the usage a status read shows is asked for again after this long. */
+const MANAGED_USAGE_REFRESH_MS = 10 * 60_000;
+/** FL-164: a check that failed is not tried again by the schedule for this long. */
+const VERIFY_FAILED_BACKOFF_MS = 24 * 60 * 60_000;
+/** FL-164: no check starts this close before the scheduled backup. */
+const VERIFY_QUIET_MS = 60 * 60_000;
+/** FL-164: a clean-up needs a dry run from the last day, with no backup since. */
+const PRUNE_PREVIEW_VALID_MS = 24 * 60 * 60_000;
+/** FL-164: items a restore list reads the library state of per query. */
+const LIBRARY_STATE_BATCH = 5000;
 
-/** Frameleaf-managed storage waits for Frameleaf Cloud backup grants (FC-33), which are not published yet. */
-export const MANAGED_STORAGE_UNAVAILABLE =
-  'Frameleaf-managed storage is not available yet. Use your own S3-compatible bucket.';
+/** FL-164: what `immich-admin cloud-backup restore` restores from, and how much of it. */
+export type CloudBackupBareMetalRestore = {
+  s3: CloudBackupS3;
+  /** The key file's content, the base64 key, or the recovery code. Never logged. */
+  key: string;
+  manifestKey?: string;
+  scope: Extract<CloudBackupRestoreScope, 'files' | 'database' | 'library'>;
+  restoreDatabase: boolean;
+};
+
+/** FL-164: what a `cloud_backup` operation does; a row from before FL-164 has no task and is a backup run. */
+type BackupTask = 'backup' | 'verify' | 'prune';
+
+const taskOf = (operation: Pick<MediaOperation, 'snapshot'>): BackupTask => {
+  const task = (operation.snapshot as { task?: unknown } | null)?.task;
+  return task === 'verify' || task === 'prune' ? task : 'backup';
+};
+
+const TASK_LABEL: Record<BackupTask, string> = {
+  backup: 'Cloud backup',
+  verify: 'Cloud backup check',
+  prune: 'Cloud backup clean-up',
+};
+
+/**
+ * FL-164: a refusal of Frameleaf-managed storage that this server decides itself (not linked, a copy
+ * suspected) rather than one Frameleaf Cloud answered.
+ */
+class ManagedStorageRefusal extends Error {
+  constructor(
+    message: string,
+    readonly retryAfterMs: number | null,
+    readonly cloneSuspected = false,
+  ) {
+    super(message);
+    this.name = 'ManagedStorageRefusal';
+  }
+}
 
 /** An unfinished run's state as the status card shows it. */
 const runState = (status: MediaOperationStatus, pauseRequested: boolean): CloudBackupRunState => {
@@ -165,6 +281,25 @@ type HashedFile = FileToBackUp & { sha256: string; size: number; mtime: Date };
  *   honoured there, and a claim after a restart finishes the same manifest. Nothing on this server is
  *   ever deleted or changed by a run except its own temporary database dump; Locked media is backed up
  *   like any other (backend work reaches it), and nothing a run reads is shown to anybody.
+ *
+ * FL-164 (CLD-302) completes it:
+ *
+ * - **Schedule.** The one server holding `DatabaseLock.FrameleafCloudBackupCheck` runs the schedule's cron
+ *   (`frameleafCloud.cloudBackup.schedule.cronExpression`) and the hourly verification check. Every
+ *   operation on the bucket is created under `DatabaseLock.FrameleafCloudBackup` and refused while another
+ *   `cloud_backup` or `cloud_restore` operation is unfinished, so a scheduled run never duplicates one in
+ *   progress and nothing ever uses the bucket beside anything else.
+ * - **Retention** (`prune`) after every scheduled run, or by hand after a dry run: see
+ *   `CloudBackupMaintenance`. **Verification** (`verify`): a weekly sample and a monthly full pass.
+ * - **Frameleaf-managed storage.** Setup asks Frameleaf Cloud for this server's bucket
+ *   (`POST /v1/backup/grant`); every operation rotates the bucket-scoped key first
+ *   (`POST /v1/backup/grant/rotate`) and holds it in memory for that operation only, never persisted. A
+ *   read-only grant stops uploads and clean-ups without touching this server's files; restores and
+ *   verifications keep working. A suspected copy of this server, a withdrawn grant or a missing plan stops
+ *   with its reason; a rate limit or an unreachable cloud waits and tries again.
+ * - **Escrow** (server key mode only): the key wrapped under a passphrase with scrypt and stored with
+ *   Frameleaf Cloud, which cannot unwrap it.
+ * - **Restore** by manifest as a `cloud_restore` operation: see `CloudBackupRestorer`.
  */
 @Injectable()
 export class CloudBackupService {
@@ -179,6 +314,12 @@ export class CloudBackupService {
   private active?: Promise<void>;
   private stopping = false;
   private readonly workerId = `cloud-backup-${randomUUID()}`;
+  /** FL-164: this process holds the schedule (`DatabaseLock.FrameleafCloudBackupCheck`). */
+  private scheduleLock = false;
+  /** FL-164: the last manifest a restore list read, so paging through it reads the bucket once. */
+  private manifestCache?: { bucketRef: string; key: string; manifest: CloudBackupManifest };
+  private readonly maintenance: CloudBackupMaintenance;
+  private readonly restorer: CloudBackupRestorer;
 
   constructor(
     private logger: LoggingRepository,
@@ -197,8 +338,14 @@ export class CloudBackupService {
     private index: CloudBackupIndexRepository,
     private keys: CloudBackupKeyRepository,
     private databaseBackup: DatabaseBackupService,
+    private cloudBackup: FrameleafCloudBackupRepository,
+    private userRepository: UserRepository,
+    private cronRepository: CronRepository,
+    private jobRepository: JobRepository,
   ) {
     this.logger.setContext(CloudBackupService.name);
+    this.maintenance = new CloudBackupMaintenance(store, index, logger);
+    this.restorer = new CloudBackupRestorer(store, storageRepository, cryptoRepository, logger);
   }
 
   /* ------------------------------------------------------------------ */
@@ -206,19 +353,24 @@ export class CloudBackupService {
   /* ------------------------------------------------------------------ */
 
   async getStatus(): Promise<CloudBackupStatusResponseDto> {
-    const [config, metadata, active] = await Promise.all([
+    const [config, stored, active, activeRestore, link] = await Promise.all([
       this.readSettings(),
       this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup),
       this.operations.getActiveOfKind(KIND),
+      this.operations.getActiveOfKind(RESTORE_KIND),
+      readCloudLink(this.gatewayDeps()),
     ]);
     const settings = config.frameleafCloud.cloudBackup;
+    const metadata = stored?.target === 'managed' ? await this.refreshManagedUsage(stored, link.linked) : stored;
     const configured = !!metadata && settings.enabled && settings.target !== 'off';
     const activeRow = active ? await this.operations.getOfKind(active.id, KIND) : undefined;
+    const restoreRow = activeRestore ? await this.operations.getOfKind(activeRestore.id, RESTORE_KIND) : undefined;
+    const usage = metadata?.managed?.usage;
 
     return {
       configured,
       target: settings.enabled ? settings.target : 'off',
-      managedAvailable: false,
+      managedAvailable: link.linked,
       endpoint: metadata?.endpoint ?? null,
       region: metadata?.region ?? null,
       bucket: metadata?.bucket ?? null,
@@ -230,9 +382,69 @@ export class CloudBackupService {
       lastRun: metadata?.lastRun ? this.mapLastRun(metadata.lastRun) : null,
       lastSuccessAt: metadata?.lastSuccessAt ?? null,
       lastManifestKey: metadata?.lastManifestKey ?? null,
-      usage: metadata ? await this.index.getUsage(metadata.bucketRef) : null,
+      usage: usage
+        ? { objects: usage.objects, bytes: usage.bytesCurrent }
+        : metadata
+          ? await this.index.getUsage(metadata.bucketRef)
+          : null,
       activeRun: activeRow ? this.mapActiveRun(activeRow) : null,
+      activeRestore: restoreRow ? this.mapActiveRestore(restoreRow) : null,
+      lastRestore: metadata?.lastRestore ? this.mapLastRestore(metadata.lastRestore) : null,
+      lastVerify: metadata?.lastVerify ? { ...metadata.lastVerify, error: metadata.lastVerify.error ?? null } : null,
+      lastPrune: metadata?.lastPrune ?? null,
+      managed: metadata?.managed
+        ? {
+            readOnly: metadata.managed.readOnly,
+            readOnlyReason: metadata.managed.readOnlyReason,
+            quotaBytes: metadata.managed.quotaBytes,
+            usedBytes: usage?.bytesCurrent ?? null,
+            objects: usage?.objects ?? null,
+            allowanceBytes: usage?.allowanceBytes ?? null,
+            extraBlocks: usage?.extraBlocks ?? null,
+            measuredAt: usage?.measuredAt ?? null,
+            refusal: metadata.managed.refusal ?? null,
+          }
+        : null,
+      escrow: {
+        available: metadata?.keyMode === 'server' && link.linked,
+        stored: !!metadata?.escrow,
+        storedAt: metadata?.escrow?.storedAt ?? null,
+      },
     };
+  }
+
+  /**
+   * FL-164: Frameleaf-managed storage's usage and read-only state, asked for again when the last answer is
+   * older than ten minutes. `GET /v1/backup/usage` issues no key, so it never disturbs a running
+   * operation. A failure keeps what was last known.
+   */
+  private async refreshManagedUsage(metadata: FrameleafCloudBackup, linked: boolean): Promise<FrameleafCloudBackup> {
+    const measured = metadata.managed?.usage ? Date.parse(metadata.managed.checkedAt) : Number.NaN;
+    if (!linked || Date.now() - measured < MANAGED_USAGE_REFRESH_MS) {
+      return metadata;
+    }
+    try {
+      const usage = await this.cloudBackup.usage(await this.managedApi());
+      const managed = {
+        ...metadata.managed,
+        quotaBytes: usage.includedBytes,
+        readOnly: usage.readOnly,
+        readOnlyReason: usage.readOnlyReason,
+        usage: {
+          measuredAt: usage.measuredAt,
+          bytesCurrent: usage.bytesCurrent,
+          objects: usage.objects,
+          allowanceBytes: usage.allowanceBytes,
+          extraBlocks: usage.extraBlocks,
+        },
+        checkedAt: new Date().toISOString(),
+      };
+      await this.updateMetadata((current) => ({ ...current, managed }));
+      return { ...metadata, managed };
+    } catch (error) {
+      this.logger.warn(`Could not read the managed backup usage: ${errorMessage(error)}`);
+      return metadata;
+    }
   }
 
   /**
@@ -289,20 +501,25 @@ export class CloudBackupService {
   }
 
   /**
-   * Claim the bucket with the chosen key and turn cloud backup on. Refused while a run is active, for
-   * Frameleaf-managed storage (not available yet), without the typed acknowledgement in own-memory mode,
-   * and for any bucket the claim refuses. The key is stored only in the stored key modes, in its 0600
-   * file; the secret access key goes into the configuration as a write-only credential.
+   * Claim the bucket with the chosen key and turn cloud backup on. Refused while an operation is active,
+   * without the typed acknowledgement in own-memory mode, and for any bucket the claim refuses. The key is
+   * stored only in the stored key modes, in its 0600 file; your own bucket's secret access key goes into
+   * the configuration as a write-only credential. FL-164: Frameleaf-managed storage asks Frameleaf Cloud for
+   * this server's bucket and a key for it, used for the claim and then forgotten.
    */
   async setup(auth: AuthDto, dto: CloudBackupSetupDto): Promise<CloudBackupStatusResponseDto> {
     this.requireEditableConfig();
-    if (await this.operations.getActiveOfKind(KIND)) {
+    // the check that nothing holds the bucket, the managed key and the claim happen under the bucket lock,
+    // so no operation starts (or rotates the key) in between
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, () => this.setupLocked(auth, dto));
+    return this.getStatus();
+  }
+
+  private async setupLocked(auth: AuthDto, dto: CloudBackupSetupDto): Promise<void> {
+    if (await this.activeBucketOperation()) {
       throw new ConflictException('Wait for the running backup to finish, or cancel it, before changing the setup.');
     }
-    if (dto.target === 'managed') {
-      throw new ConflictException(MANAGED_STORAGE_UNAVAILABLE);
-    }
-    if (!dto.s3) {
+    if (dto.target === 'byo-s3' && !dto.s3) {
       throw new BadRequestException('Enter your bucket’s storage address, name and access key.');
     }
     if (
@@ -316,14 +533,9 @@ export class CloudBackupService {
 
     const key = this.parseKey(dto.key);
     const fingerprint = keyFingerprint(key);
-    const connection = await this.connectionFor(dto.s3);
-    const identity = await loadInstanceIdentity({
-      configRepository: this.configRepository,
-      databaseRepository: this.databaseRepository,
-      systemMetadataRepository: this.systemMetadataRepository,
-      instanceIdentityRepository: this.instanceIdentityRepository,
-      frameleafCloudRepository: this.frameleafCloudRepository,
-    });
+    const managed = dto.target === 'managed' ? await this.managedGrantForSetup() : null;
+    const connection = managed ? managed.connection : await this.connectionFor(dto.s3!);
+    const identity = await loadInstanceIdentity(this.gatewayDeps());
 
     // The stored key modes write and read back the key file first, so a bucket is never claimed with a
     // key this server could not keep; a claim that then fails takes away only a file this setup created.
@@ -354,15 +566,20 @@ export class CloudBackupService {
         next.frameleafCloud.cloudBackup = {
           ...current.frameleafCloud.cloudBackup,
           enabled: true,
-          target: 'byo-s3',
-          s3: {
-            endpoint: connection.endpoint,
-            region: dto.s3?.region?.trim() ?? '',
-            bucket: connection.bucket,
-            accessKeyId: connection.accessKeyId,
-            secretAccessKey: connection.secretAccessKey,
-          },
+          target: dto.target,
+          // managed storage's key is issued per operation and never kept; your own bucket's is
+          s3: managed
+            ? current.frameleafCloud.cloudBackup.s3
+            : {
+                endpoint: connection.endpoint,
+                region: dto.s3?.region?.trim() ?? '',
+                bucket: connection.bucket,
+                accessKeyId: connection.accessKeyId,
+                secretAccessKey: connection.secretAccessKey,
+              },
           keyMode: dto.keyMode,
+          // escrow belongs to one server-generated key; a new setup starts without it
+          escrow: false,
         };
         return { oldConfig: current, newConfig: await updateConfig(this.configRepos(), next) };
       },
@@ -378,7 +595,7 @@ export class CloudBackupService {
     }
     const sameBucket = claim.existing && previous?.bucketRef === ref && previous.keyFingerprint === fingerprint;
     await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudBackup, {
-      target: 'byo-s3',
+      target: dto.target,
       bucketRef: ref,
       endpoint: connection.endpoint,
       region: connection.region,
@@ -388,11 +605,16 @@ export class CloudBackupService {
       keyMode: dto.keyMode,
       keyFingerprint: fingerprint,
       lastCheckAt: new Date().toISOString(),
+      ...(managed && { managed: managed.state }),
       ...(sameBucket && {
         reconciledAt: previous.reconciledAt,
         lastRun: previous.lastRun,
         lastSuccessAt: previous.lastSuccessAt,
         lastManifestKey: previous.lastManifestKey,
+        lastVerify: previous.lastVerify,
+        lastFullVerifyAt: previous.lastFullVerifyAt,
+        lastPrune: previous.lastPrune,
+        lastRestore: previous.lastRestore,
       }),
     });
 
@@ -401,11 +623,69 @@ export class CloudBackupService {
       this.memoryKey = { fingerprint, key };
       this.websocketRepository.serverSend('CloudBackupKeyShare', { key: key.toString('base64') });
     }
+    // Frameleaf Cloud keeps escrow for the server key mode only, and warns when a schedule stops running
+    await this.reportAgentSettings(dto.keyMode, true);
+    // a copy of another key would only mislead a recovery: it goes when the key changes
+    if (previous?.keyFingerprint !== fingerprint) {
+      await this.deleteStaleEscrow();
+    }
 
     this.logger.log(
-      `Cloud backup set up by ${auth.user.id}: bucket ${connection.bucket} ${claim.existing ? 'reclaimed' : 'claimed'}, key ${fingerprint} (${dto.keyMode})`,
+      `Cloud backup set up by ${auth.user.id}: ${dto.target === 'managed' ? 'Frameleaf-managed' : 'own'} bucket ${connection.bucket} ${claim.existing ? 'reclaimed' : 'claimed'}, key ${fingerprint} (${dto.keyMode})`,
     );
-    return this.getStatus();
+  }
+
+  /** FL-164: remove a key copy Frameleaf Cloud may hold for an earlier key; a failure is only logged. */
+  private async deleteStaleEscrow() {
+    const { linked } = await readCloudLink(this.gatewayDeps());
+    if (!linked) {
+      return;
+    }
+    try {
+      await this.cloudBackup.deleteEscrow(await this.managedApi());
+    } catch (error) {
+      if (!(error instanceof FrameleafCloudError && error.status === 404)) {
+        this.logger.warn(
+          `Could not remove the key copy of an earlier key from Frameleaf Cloud: ${errorMessage(error)}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * FL-164: this server's managed bucket and a key for the claim. A first grant answers with a key; a repeated
+   * one does not, and is followed by a rotation. Refusals are answered with what they mean.
+   */
+  private async managedGrantForSetup(): Promise<{
+    connection: CloudBackupConnection;
+    state: NonNullable<FrameleafCloudBackup['managed']>;
+  }> {
+    let issued: BackupGrantResponse;
+    try {
+      const api = await this.managedApi();
+      const grant = await this.cloudBackup.grant(api);
+      issued = 'credentials' in grant ? grant : await this.cloudBackup.rotate(api);
+    } catch (error) {
+      throw new ConflictException(this.refusalOf(error).message);
+    }
+    const problem = backupGrantProblem(issued);
+    if (problem) {
+      throw new ConflictException(problem);
+    }
+    if (issued.readOnly) {
+      throw new ConflictException(
+        'Frameleaf-managed storage is read-only for this server right now, so it cannot be set up. Check your plan on your Frameleaf account.',
+      );
+    }
+    return {
+      connection: this.managedConnection(issued),
+      state: {
+        readOnly: false,
+        readOnlyReason: null,
+        quotaBytes: issued.quotaBytes,
+        checkedAt: new Date().toISOString(),
+      },
+    };
   }
 
   /** Own-memory mode: load the key after a restart. It is held in memory by every worker, never saved. */
@@ -430,7 +710,7 @@ export class CloudBackupService {
    */
   async turnOff(auth: AuthDto): Promise<CloudBackupStatusResponseDto> {
     this.requireEditableConfig();
-    if (await this.operations.getActiveOfKind(KIND)) {
+    if (await this.activeBucketOperation()) {
       throw new ConflictException('Cancel the running backup before turning cloud backup off.');
     }
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
@@ -443,6 +723,10 @@ export class CloudBackupService {
       },
     );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (metadata) {
+      await this.reportAgentSettings(metadata.keyMode, false);
+    }
     this.logger.log(`Cloud backup turned off by ${auth.user.id}; the bucket and its backups are kept`);
     return this.getStatus();
   }
@@ -457,34 +741,56 @@ export class CloudBackupService {
     if (metadata.keyMode === 'own-memory' && !(await this.loadKeyOrAsk(metadata))) {
       throw new ConflictException('Load the backup key to back up. This server does not keep it.');
     }
+    const created = await this.createOperation(auth.user.id, metadata, 'backup', {});
+    // a run already queued or running is the answer; a check, a clean-up or a restore holds the bucket
+    if (!created.created && created.activeTask !== 'backup') {
+      throw new ConflictException(
+        'A cloud backup check, clean-up or restore is running. Back up again when it has finished.',
+      );
+    }
+    return this.getStatus();
+  }
 
-    await this.operations.createExclusive(
-      {
-        ownerId: auth.user.id,
-        kind: KIND,
-        // Uploaded by this server's own workers, straight to the claimed bucket.
-        destination: MediaOperationDestination.Local,
-        destinationDetail: null,
-        label: 'Cloud backup',
-        assetId: null,
-        resultAssetId: null,
-        retryOfId: null,
-        projectId: null,
-        revisionId: null,
-        snapshot: { version: 1, bucketRef: metadata.bucketRef, keyFingerprint: metadata.keyFingerprint },
-        settings: { bucket: metadata.bucket },
-        estimate: null,
-        result: emptyRunResult() as unknown as Record<string, unknown>,
-        totalUnits: null,
-      },
-      DatabaseLock.FrameleafCloudBackup,
-    );
+  /**
+   * FL-164: check the backed-up files now: `sample` fetches this week's 1/52 of them and checks each
+   * against its SHA-256; `full` checks every file every kept backup names is there.
+   */
+  async startVerify(auth: AuthDto, dto: CloudBackupVerifyDto): Promise<CloudBackupStatusResponseDto> {
+    const metadata = await this.requireClaim();
+    await this.requireKeyForRequest(metadata);
+    const created = await this.createOperation(auth.user.id, metadata, 'verify', { depth: dto.depth });
+    if (!created.created) {
+      throw new ConflictException('Another cloud backup operation is running. Check the backup when it has finished.');
+    }
+    return this.getStatus();
+  }
+
+  /**
+   * FL-164: clean up runs past retention by hand. The first request must be a dry run, which counts what
+   * would go; the clean-up itself is accepted only after a dry run from the last day with no backup since,
+   * and plans again from the bucket as it is then.
+   */
+  async startPrune(auth: AuthDto, dto: CloudBackupPruneDto): Promise<CloudBackupStatusResponseDto> {
+    const metadata = await this.requireClaim();
+    await this.requireKeyForRequest(metadata);
+    if (!dto.dryRun) {
+      const preview = metadata.lastPrune;
+      const previewAt = preview?.dryRun ? Date.parse(preview.at) : Number.NaN;
+      const backedUpSince = !!metadata.lastSuccessAt && Date.parse(metadata.lastSuccessAt) > previewAt;
+      if (Number.isNaN(previewAt) || Date.now() - previewAt > PRUNE_PREVIEW_VALID_MS || backedUpSince) {
+        throw new ConflictException('Preview the clean-up first, then remove what it found.');
+      }
+    }
+    const created = await this.createOperation(auth.user.id, metadata, 'prune', { dryRun: dto.dryRun });
+    if (!created.created) {
+      throw new ConflictException('Another cloud backup operation is running. Clean up when it has finished.');
+    }
     return this.getStatus();
   }
 
   async pauseRun(id: string): Promise<CloudBackupStatusResponseDto> {
     const operation = await this.requireRun(id);
-    await this.operations.requestPause(id, operation.ownerId, [KIND]);
+    await this.operations.requestPause(id, operation.ownerId, BUCKET_KINDS);
     return this.getStatus();
   }
 
@@ -500,10 +806,16 @@ export class CloudBackupService {
     return this.getStatus();
   }
 
-  /** Your own bucket needs a storage address and a bucket whenever cloud backup is on. */
+  /**
+   * Your own bucket needs a storage address and a bucket whenever cloud backup is on. FL-164: escrow is for
+   * a key this server generated, and nothing else.
+   */
   @OnEvent({ name: 'ConfigValidate' })
   onConfigValidate({ newConfig }: ArgOf<'ConfigValidate'>) {
     const backup = newConfig.frameleafCloud.cloudBackup;
+    if (backup.escrow && backup.keyMode !== 'server') {
+      throw new Error('Key escrow is only available when this server generates its own backup key.');
+    }
     if (!backup.enabled || backup.target !== 'byo-s3') {
       return;
     }
@@ -513,6 +825,217 @@ export class CloudBackupService {
     if (!backup.s3.endpoint.startsWith('https://')) {
       throw new Error('Encrypted uploads with your key (SSE-C) need an HTTPS storage address.');
     }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* FL-164: the schedule and the verification check                      */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * One server holds the schedule, as Library Care's does: the one that takes
+   * `DatabaseLock.FrameleafCloudBackupCheck` runs the cron that queues scheduled runs and the hourly check
+   * that queues a verification when one is due.
+   */
+  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    this.scheduleLock = await this.databaseRepository.tryLock(DatabaseLock.FrameleafCloudBackupCheck);
+    if (!this.scheduleLock) {
+      return;
+    }
+    const backup = newConfig.frameleafCloud.cloudBackup;
+    this.cronRepository.create({
+      name: CLOUD_BACKUP_SCHEDULE_CRON,
+      expression: backup.schedule.cronExpression,
+      onTick: () =>
+        handlePromiseError(this.jobRepository.queue({ name: JobName.CloudBackupSchedule, data: {} }), this.logger),
+      start: backup.enabled && backup.target !== 'off',
+    });
+    this.cronRepository.create({
+      name: CLOUD_BACKUP_VERIFY_CRON,
+      expression: VERIFY_CHECK_EXPRESSION,
+      onTick: () =>
+        handlePromiseError(this.jobRepository.queue({ name: JobName.CloudBackupVerify, data: {} }), this.logger),
+      start: backup.enabled && backup.target !== 'off' && backup.verifyWeekly,
+    });
+  }
+
+  @OnEvent({ name: 'ConfigUpdate', server: true })
+  onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
+    if (!this.scheduleLock) {
+      return;
+    }
+    const backup = newConfig.frameleafCloud.cloudBackup;
+    this.cronRepository.update({
+      name: CLOUD_BACKUP_SCHEDULE_CRON,
+      expression: backup.schedule.cronExpression,
+      start: backup.enabled && backup.target !== 'off',
+    });
+    this.cronRepository.update({
+      name: CLOUD_BACKUP_VERIFY_CRON,
+      expression: VERIFY_CHECK_EXPRESSION,
+      start: backup.enabled && backup.target !== 'off' && backup.verifyWeekly,
+    });
+  }
+
+  /**
+   * The schedule's tick: queue a backup run, owned by the first administrator so it shows in their
+   * Activity. An operation already queued or running is never duplicated: the run is created under
+   * `DatabaseLock.FrameleafCloudBackup` only when no backup operation or restore is unfinished.
+   */
+  @OnJob({ name: JobName.CloudBackupSchedule, queue: QueueName.BackgroundTask })
+  async handleSchedule(): Promise<JobStatus> {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    const { frameleafCloud } = await this.readSettings();
+    const settings = frameleafCloud.cloudBackup;
+    if (!metadata || !settings.enabled || settings.target === 'off') {
+      return JobStatus.Skipped;
+    }
+    const owner = await this.userRepository.getAdmin();
+    if (!owner) {
+      return JobStatus.Skipped;
+    }
+    const created = await this.createOperation(owner.id, metadata, 'backup', { scheduled: true });
+    if (!created.created) {
+      if (created.activeTask !== 'backup') {
+        // a check, a clean-up or a restore holds the bucket: the run starts as soon as it has finished
+        await this.updateMetadata((current) => ({ ...current, scheduledRunDueAt: new Date().toISOString() }));
+        this.logger.log('Scheduled cloud backup waits for the cloud backup operation in progress');
+        return JobStatus.Success;
+      }
+      this.logger.log('Scheduled cloud backup skipped: a backup run is still unfinished');
+      return JobStatus.Skipped;
+    }
+    await this.clearScheduledRunDue();
+    return JobStatus.Success;
+  }
+
+  /**
+   * FL-164: a scheduled run that found the bucket busy starts once the operation holding it has ended,
+   * whichever way it ended.
+   */
+  private async startDueScheduledRun() {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (!metadata?.scheduledRunDueAt) {
+      return;
+    }
+    const { frameleafCloud } = await this.readSettings();
+    const owner = await this.userRepository.getAdmin();
+    if (!owner || !frameleafCloud.cloudBackup.enabled || frameleafCloud.cloudBackup.target === 'off') {
+      await this.clearScheduledRunDue();
+      return;
+    }
+    // The operation that held the bucket may only have paused, waited or be retrying: then it still holds
+    // it and the run stays due for the next ending. A backup run holding it is the run that was due.
+    const created = await this.createOperation(owner.id, metadata, 'backup', { scheduled: true });
+    if (created.created || created.activeTask === 'backup') {
+      await this.clearScheduledRunDue();
+    }
+  }
+
+  private async clearScheduledRunDue() {
+    await this.updateMetadata(({ scheduledRunDueAt: _due, ...current }) => current);
+  }
+
+  /** FL-164: whether the scheduled backup starts within the next hour, when a check would hold it up. */
+  private backupStartsSoon(cronExpression: string, now: Date) {
+    try {
+      const next = new CronTime(cronExpression).sendAt().toMillis();
+      return next - now.getTime() < VERIFY_QUIET_MS;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * The hourly verification check: the monthly full pass when a month has gone by since the last one,
+   * else the weekly sample when a week has. It waits while anything else holds the bucket.
+   */
+  @OnJob({ name: JobName.CloudBackupVerify, queue: QueueName.BackgroundTask })
+  async handleVerifyCheck(): Promise<JobStatus> {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    const { frameleafCloud } = await this.readSettings();
+    const settings = frameleafCloud.cloudBackup;
+    if (!metadata || !settings.enabled || settings.target === 'off') {
+      return JobStatus.Skipped;
+    }
+    const now = new Date();
+    // a check that failed waits a day before the next try, whichever kind it was
+    const lastVerify = metadata.lastVerify;
+    if (lastVerify?.status === 'failed' && now.getTime() - Date.parse(lastVerify.at) < VERIFY_FAILED_BACKOFF_MS) {
+      return JobStatus.Skipped;
+    }
+    // and none starts in the hour before the scheduled backup, which it would hold up
+    if (this.backupStartsSoon(settings.schedule.cronExpression, now)) {
+      return JobStatus.Skipped;
+    }
+    const depth = verificationDue(
+      {
+        verifyWeekly: settings.verifyWeekly,
+        lastFullAt: metadata.lastFullVerifyAt,
+        lastSampleAt: lastVerify?.status === 'failed' ? null : lastVerify?.at,
+      },
+      now,
+    );
+    const owner = depth ? await this.userRepository.getAdmin() : undefined;
+    if (!depth || !owner) {
+      return JobStatus.Skipped;
+    }
+    const created = await this.createOperation(owner.id, metadata, 'verify', { depth, scheduled: true });
+    return created.created ? JobStatus.Success : JobStatus.Skipped;
+  }
+
+  /**
+   * Create a `cloud_backup` operation, unless a backup operation or a restore is unfinished. Answers which
+   * kind holds the bucket when it was not created.
+   */
+  private async createOperation(
+    ownerId: string,
+    metadata: FrameleafCloudBackup,
+    task: BackupTask,
+    options: { scheduled?: boolean; depth?: 'sample' | 'full'; dryRun?: boolean },
+  ): Promise<{ created: true } | { created: false; activeTask: BackupTask | 'restore' }> {
+    const label = task === 'prune' && options.dryRun ? `${TASK_LABEL.prune} preview` : TASK_LABEL[task];
+    const result =
+      task === 'backup'
+        ? emptyRunResult()
+        : task === 'verify'
+          ? emptyVerifyResult(options.depth ?? 'sample', new Date())
+          : emptyPruneResult(!!options.dryRun);
+    const outcome = await this.operations.createExclusive(
+      {
+        ownerId,
+        kind: KIND,
+        // Done by this server's own workers, straight against the claimed bucket.
+        destination: MediaOperationDestination.Local,
+        destinationDetail: null,
+        label,
+        assetId: null,
+        resultAssetId: null,
+        retryOfId: null,
+        projectId: null,
+        revisionId: null,
+        snapshot: {
+          version: 1,
+          bucketRef: metadata.bucketRef,
+          keyFingerprint: metadata.keyFingerprint,
+          task,
+          scheduled: !!options.scheduled,
+          ...(options.depth && { depth: options.depth }),
+          ...(task === 'prune' && { dryRun: !!options.dryRun }),
+        },
+        settings: { bucket: metadata.bucket },
+        estimate: null,
+        result: result as unknown as Record<string, unknown>,
+        totalUnits: null,
+      },
+      DatabaseLock.FrameleafCloudBackup,
+      { alsoKinds: [RESTORE_KIND] },
+    );
+    if ('created' in outcome) {
+      return { created: true };
+    }
+    const active = await this.operations.getOfKind(outcome.active.id, KIND);
+    return { created: false, activeTask: active ? taskOf(active) : 'restore' };
   }
 
   /** Another worker loaded the own-memory key: keep it in memory here too, if it is this bucket's. */
@@ -595,7 +1118,7 @@ export class CloudBackupService {
     }
     while (!this.stopping) {
       const claim = await this.operations.claimNext({
-        kinds: [KIND],
+        kinds: BUCKET_KINDS,
         workerId: this.workerId,
         leaseMs: CLOUD_BACKUP_LEASE_MS,
       });
@@ -610,6 +1133,36 @@ export class CloudBackupService {
     const keepAlive = setInterval(() => {
       this.operations.heartbeat(operation.id, claimToken, CLOUD_BACKUP_LEASE_MS).catch(() => false);
     }, CLOUD_BACKUP_LEASE_MS / 4);
+    try {
+      if (operation.kind === RESTORE_KIND) {
+        await this.runRestore(operation, claimToken);
+      } else {
+        switch (taskOf(operation)) {
+          case 'verify': {
+            await this.runVerify(operation, claimToken);
+            break;
+          }
+          case 'prune': {
+            await this.runPrune(operation, claimToken);
+            break;
+          }
+          case 'backup': {
+            await this.runBackup(operation, claimToken);
+            break;
+          }
+        }
+      }
+    } finally {
+      clearInterval(keepAlive);
+    }
+    if (operation.kind === RESTORE_KIND || taskOf(operation) !== 'backup') {
+      await this.startDueScheduledRun().catch((error: unknown) =>
+        this.logger.warn(`Could not start the scheduled cloud backup: ${errorMessage(error)}`),
+      );
+    }
+  }
+
+  private async runBackup(operation: MediaOperation, claimToken: string): Promise<void> {
     const progress = { result: parseRunResult(operation.result) };
     try {
       await this.process(operation, claimToken, progress);
@@ -631,8 +1184,6 @@ export class CloudBackupService {
           dedupeDays: 1,
         });
       }
-    } finally {
-      clearInterval(keepAlive);
     }
   }
 
@@ -643,56 +1194,18 @@ export class CloudBackupService {
    */
   private async process(operation: MediaOperation, claimToken: string, progress: { result: CloudBackupRunResult }) {
     const { id } = operation;
-    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-    const snapshot = operation.snapshot as { bucketRef?: string; keyFingerprint?: string };
-    if (!metadata || metadata.bucketRef !== snapshot.bucketRef || metadata.keyFingerprint !== snapshot.keyFingerprint) {
-      throw new Error('The backup bucket changed since this run was queued. Start a new backup.');
-    }
-    const { frameleafCloud } = await this.readSettings();
-    const settings = frameleafCloud.cloudBackup;
-    if (!settings.enabled || settings.target !== 'byo-s3') {
-      throw new Error('Cloud backup is off.');
-    }
-    if (bucketRef(settings.s3.endpoint, settings.s3.bucket) !== metadata.bucketRef) {
-      throw new Error('The bucket in the settings is not the one this server claimed. Set up cloud backup again.');
-    }
-    if (!settings.s3.secretAccessKey) {
-      throw new Error('The bucket’s secret access key is not stored on this server.');
-    }
-
-    const bucketKey = await this.loadKey(metadata);
-    if (!bucketKey) {
-      if (metadata.keyMode !== 'own-memory') {
-        throw new Error(
-          'The backup key file is missing from this server. Restore it from the key file or recovery kit.',
-        );
-      }
-      // Own-memory key not loaded here: ask the other workers, and wait without failing the run.
-      this.websocketRepository.serverSend('CloudBackupKeyRequest');
-      await this.recordRun(operation, progress.result, 'waiting-for-key');
-      this.notify({
-        level: NotificationLevel.Warning,
-        title: 'Cloud backup is waiting for its key',
-        description: 'This server does not keep the backup key. Load it in Settings › Frameleaf Cloud › Cloud backup.',
-        dedupeKey: 'cloud-backup:key-locked',
-        dedupeDays: 1,
-      });
-      await this.operations.requeue(id, claimToken, { delayMs: CLOUD_BACKUP_KEY_WAIT_MS, returnAttempt: true });
+    const opened = await this.openBucket(operation, claimToken, () =>
+      this.recordRun(operation, progress.result, 'waiting-for-key'),
+    );
+    if (!opened) {
       return;
     }
-
-    const connection: CloudBackupConnection = {
-      endpoint: settings.s3.endpoint,
-      region: signingRegion(settings.s3.endpoint, settings.s3.region),
-      bucket: settings.s3.bucket,
-      accessKeyId: settings.s3.accessKeyId,
-      secretAccessKey: settings.s3.secretAccessKey,
-    };
-    // The claim is read again on every run: a bucket another server claimed since, or one emptied or
-    // recreated (its index would no longer match it), is refused rather than backed up into.
-    const marker = await this.store.readMarker(connection, bucketKey);
-    if (marker.instanceId !== metadata.instanceId) {
-      throw new Error('This bucket is now claimed by another Frameleaf server. Set up cloud backup again.');
+    const { metadata, settings, connection, bucketKey } = opened;
+    if (opened.readOnly) {
+      // Nothing is uploaded and nothing on this server is touched; restores keep working.
+      throw new Error(
+        `Frameleaf-managed storage is read-only for this server${readOnlyReason(metadata)}, so backups are paused. Your library is untouched and restores keep working.`,
+      );
     }
     const run: Run = { id, claimToken, operation, metadata, connection, bucketKey, progress, uploadedNow: new Set() };
 
@@ -731,6 +1244,255 @@ export class CloudBackupService {
     await this.finish(run);
   }
 
+  /**
+   * FL-164: open the claimed bucket for one operation: the claim and the key checked, the connection made
+   * (for Frameleaf-managed storage, with a key rotated for this operation only) and the bucket's claim read
+   * again. Answers null when the operation was handed back to wait (an own-memory key not loaded here, or
+   * managed storage asking to wait); `waiting` records why, for a backup run.
+   */
+  private async openBucket(
+    operation: MediaOperation,
+    claimToken: string,
+    waiting: () => Promise<void>,
+  ): Promise<OpenedBucket | null> {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    const snapshot = operation.snapshot as { bucketRef?: string; keyFingerprint?: string };
+    if (!metadata || metadata.bucketRef !== snapshot.bucketRef || metadata.keyFingerprint !== snapshot.keyFingerprint) {
+      throw new Error('The backup bucket changed since this was queued. Start again.');
+    }
+    const { frameleafCloud } = await this.readSettings();
+    const settings = frameleafCloud.cloudBackup;
+    // turning cloud backup off stops runs, checks and clean-ups; the bucket stays readable for a restore
+    if (operation.kind === KIND && (!settings.enabled || settings.target === 'off')) {
+      throw new Error('Cloud backup is off.');
+    }
+
+    const bucketKey = await this.loadKey(metadata);
+    if (!bucketKey) {
+      if (metadata.keyMode !== 'own-memory') {
+        throw new Error(
+          'The backup key file is missing from this server. Restore it from the key file or recovery kit.',
+        );
+      }
+      // Own-memory key not loaded here: ask the other workers, and wait without failing.
+      this.websocketRepository.serverSend('CloudBackupKeyRequest');
+      await waiting();
+      this.notify({
+        level: NotificationLevel.Warning,
+        title: 'Cloud backup is waiting for its key',
+        description: 'This server does not keep the backup key. Load it in Settings › Frameleaf Cloud › Cloud backup.',
+        dedupeKey: 'cloud-backup:key-locked',
+        dedupeDays: 1,
+      });
+      await this.operations.requeue(operation.id, claimToken, {
+        delayMs: CLOUD_BACKUP_KEY_WAIT_MS,
+        returnAttempt: true,
+      });
+      return null;
+    }
+
+    let connection: CloudBackupConnection;
+    let readOnly = false;
+    if (metadata.target === 'managed') {
+      const managed = await this.openManaged(metadata, operation, claimToken);
+      if (!managed) {
+        return null;
+      }
+      ({ connection, readOnly } = managed);
+    } else {
+      connection = this.ownBucketConnection(metadata, settings);
+    }
+
+    // The claim is read again on every operation: a bucket another server claimed since, or one emptied or
+    // recreated (its index would no longer match it), is refused rather than used.
+    const marker = await this.store.readMarker(connection, bucketKey);
+    if (marker.instanceId !== metadata.instanceId) {
+      throw new Error('This bucket is now claimed by another Frameleaf server. Set up cloud backup again.');
+    }
+    return { metadata, settings, connection, bucketKey, readOnly };
+  }
+
+  /** Your own bucket, as the settings name it; it must still be the bucket this server claimed. */
+  private ownBucketConnection(
+    metadata: FrameleafCloudBackup,
+    settings: SystemConfig['frameleafCloud']['cloudBackup'],
+  ): CloudBackupConnection {
+    if (settings.target !== 'byo-s3') {
+      throw new Error('The bucket in the settings is not the one this server claimed. Set up cloud backup again.');
+    }
+    if (bucketRef(settings.s3.endpoint, settings.s3.bucket) !== metadata.bucketRef) {
+      throw new Error('The bucket in the settings is not the one this server claimed. Set up cloud backup again.');
+    }
+    if (!settings.s3.secretAccessKey) {
+      throw new Error('The bucket’s secret access key is not stored on this server.');
+    }
+    return {
+      endpoint: settings.s3.endpoint,
+      region: signingRegion(settings.s3.endpoint, settings.s3.region),
+      bucket: settings.s3.bucket,
+      accessKeyId: settings.s3.accessKeyId,
+      secretAccessKey: settings.s3.secretAccessKey,
+    };
+  }
+
+  /**
+   * FL-164: Frameleaf-managed storage for one operation: a key rotated now and kept in memory for this
+   * operation only. A refusal Frameleaf Cloud asks to wait out (a rate limit, a region without storage, an
+   * unreachable cloud, an unlinked server) hands the operation back to wait; any other stops it with its
+   * reason, and a suspected copy of this server also tells the administrators.
+   */
+  private async openManaged(
+    metadata: FrameleafCloudBackup,
+    operation: MediaOperation,
+    claimToken: string,
+  ): Promise<{ connection: CloudBackupConnection; readOnly: boolean } | null> {
+    let grant: BackupGrantResponse;
+    try {
+      // under the bucket lock, so a request reading the bucket never has its key revoked mid-read
+      grant = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () =>
+        this.cloudBackup.rotate(await this.managedApi()),
+      );
+    } catch (error) {
+      const refusal = this.refusalOf(error);
+      await this.updateMetadata((current) => ({
+        ...current,
+        managed: {
+          readOnly: current.managed?.readOnly ?? false,
+          readOnlyReason: current.managed?.readOnlyReason ?? null,
+          quotaBytes: current.managed?.quotaBytes ?? 0,
+          ...current.managed,
+          checkedAt: new Date().toISOString(),
+          refusal: refusal.message,
+        },
+      }));
+      if (refusal.cloneSuspected) {
+        this.notify({ ...CLONE_SUSPECTED_NOTICE, type: NotificationType.SystemMessage });
+      }
+      if (refusal.retryAfterMs === null) {
+        throw new Error(refusal.message);
+      }
+      this.logger.warn(`Cloud backup operation ${operation.id} waits for managed storage: ${refusal.message}`);
+      await this.operations.requeue(operation.id, claimToken, { delayMs: refusal.retryAfterMs, returnAttempt: true });
+      return null;
+    }
+    if (grant.bucket !== metadata.bucket || bucketRef(grant.endpoint, grant.bucket) !== metadata.bucketRef) {
+      throw new Error(
+        'Frameleaf Cloud offered a different bucket than the one this server claimed. Set up cloud backup again.',
+      );
+    }
+    const problem = backupGrantProblem(grant);
+    if (problem) {
+      throw new Error(problem);
+    }
+    await this.updateMetadata((current) => ({
+      ...current,
+      managed: {
+        ...current.managed,
+        readOnly: grant.readOnly,
+        readOnlyReason: grant.readOnly ? (current.managed?.readOnlyReason ?? null) : null,
+        quotaBytes: grant.quotaBytes,
+        checkedAt: new Date().toISOString(),
+        refusal: undefined,
+      },
+    }));
+    return { connection: this.managedConnection(grant), readOnly: grant.readOnly };
+  }
+
+  /** The connection a managed grant's key opens, waited on for a few seconds while the new key goes live. */
+  private managedConnection(grant: BackupGrantResponse): CloudBackupConnection {
+    return {
+      endpoint: grant.endpoint.replace(/\/+$/, ''),
+      region: grant.region,
+      bucket: grant.bucket,
+      accessKeyId: grant.credentials.accessKeyId,
+      secretAccessKey: grant.credentials.secretAccessKey,
+      freshKeyUntil: Date.now() + CLOUD_BACKUP_FRESH_KEY_MS,
+    };
+  }
+
+  /**
+   * FL-164: Frameleaf Cloud's API and an instance token for it, for the backup routes. Refused without a
+   * link, and while Frameleaf Cloud suspects a copy of this server (a check-in said so): backup storage is
+   * not asked for at all until that is resolved.
+   */
+  private async managedApi(): Promise<ManagedBackupApi> {
+    const { cloudUrl, link, linked } = await readCloudLink(this.gatewayDeps());
+    if (!cloudUrl || !linked || !link?.instanceId) {
+      throw new ManagedStorageRefusal(
+        'This server is not linked to Frameleaf Cloud, so managed backups are paused until it is linked again.',
+        MANAGED_UNLINKED_RETRY_MS,
+      );
+    }
+    if (link.heartbeat?.cloneSuspected) {
+      throw new ManagedStorageRefusal(managedBackupRefusal(cloneSuspectedError()).message, null, true);
+    }
+    const document = await this.frameleafCloudRepository.discovery(cloudUrl);
+    await loadInstanceIdentity(this.gatewayDeps());
+    const token = await this.frameleafCloudRepository.accessToken(
+      document,
+      link.instanceId,
+      document.api,
+      this.instanceIdentityRepository.currentSigner(),
+    );
+    return { api: document.api, token };
+  }
+
+  /** What a refusal of managed storage means, and how long to wait before asking again (null: don't). */
+  private refusalOf(error: unknown): { message: string; retryAfterMs: number | null; cloneSuspected: boolean } {
+    if (error instanceof ManagedStorageRefusal) {
+      return { message: error.message, retryAfterMs: error.retryAfterMs, cloneSuspected: error.cloneSuspected };
+    }
+    if (!(error instanceof FrameleafCloudError)) {
+      throw error;
+    }
+    const refusal = managedBackupRefusal(error);
+    const retryAfterMs = refusal.retry
+      ? Math.max(60_000, (refusal.retryAfterSeconds ?? MANAGED_RETRY_MS / 1000) * 1000)
+      : null;
+    return { message: refusal.message, retryAfterMs, cloneSuspected: refusal.cloneSuspected };
+  }
+
+  /** FL-164: tell Frameleaf Cloud the key mode and whether a schedule is on; a failure never stops the caller. */
+  private async reportAgentSettings(keyMode: CloudBackupKeyMode, scheduleEnabled: boolean) {
+    const { linked } = await readCloudLink(this.gatewayDeps());
+    if (!linked) {
+      return;
+    }
+    try {
+      await this.cloudBackup.putSettings(await this.managedApi(), { keyMode, scheduleEnabled });
+    } catch (error) {
+      this.logger.warn(`Could not tell Frameleaf Cloud about the cloud backup settings: ${errorMessage(error)}`);
+    }
+  }
+
+  /** FL-164: a managed run's telemetry (counts, bytes, times), never a path; a failure is only logged. */
+  private async reportManagedRun(
+    operation: MediaOperation,
+    result: CloudBackupRunResult,
+    status: 'succeeded' | 'failed' | 'cancelled',
+  ) {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (metadata?.target !== 'managed') {
+      return;
+    }
+    try {
+      await this.cloudBackup.reportRun(await this.managedApi(), {
+        runId: operation.id,
+        status,
+        startedAt: asIso(operation.createdAt) ?? new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        bytesUploaded: result.bytesUploaded,
+        objectsUploaded: result.uploaded,
+        objectsSkipped: result.skipped,
+        // the contract takes `m/<extended ISO>.json.gz`; this server names manifests in the basic format
+        manifestKey: null,
+        errorCode: status === 'failed' ? 'cloud_backup_failed' : null,
+      });
+    } catch (error) {
+      this.logger.warn(`Could not report the cloud backup run to Frameleaf Cloud: ${errorMessage(error)}`);
+    }
+  }
+
   /** The run's manifest row, created on its first claim; a later claim carries on with the same one. */
   private async openManifest(run: Run) {
     const { result } = run.progress;
@@ -745,7 +1507,10 @@ export class CloudBackupService {
     run.progress.result = { ...result, manifestId: manifest.id, manifestKey: manifest.key };
   }
 
-  /** The database first: a fresh dump to `db/<file>`, the oldest dumps beyond the last seven removed. */
+  /**
+   * The database first: a fresh dump to `db/<file>`. FL-164: old dumps are removed only by the clean-up,
+   * which reads the kept manifests in the bucket itself, never by a run from this server's index.
+   */
   private async backUpDatabase(run: Run): Promise<boolean> {
     await this.removeLeftoverDumps();
     const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX);
@@ -759,7 +1524,6 @@ export class CloudBackupService {
         bytesUploaded: run.progress.result.bytesUploaded + size,
       };
       await this.index.setManifestDatabase(run.progress.result.manifestId!, key);
-      await this.pruneDatabaseDumps(run, key);
     } finally {
       // Only the dump this run made is removed; it is in the bucket now, or the run failed.
       await this.storageRepository.unlink(path);
@@ -778,30 +1542,6 @@ export class CloudBackupService {
     for (const name of names) {
       if (isCloudBackupDumpName(name)) {
         await this.storageRepository.unlink(join(folder, name));
-      }
-    }
-  }
-
-  /**
-   * Keep the newest seven dumps and the dump the newest complete manifest names (so the latest complete
-   * backup always has its database); remove the rest. Only dumps (`db/`) are ever removed here.
-   */
-  private async pruneDatabaseDumps(run: Run, current: string) {
-    const dumps: string[] = [];
-    await this.store.listAll(run.connection, CLOUD_BACKUP_DB_PREFIX, (objects) => {
-      dumps.push(...objects.map(({ key }) => key));
-      return Promise.resolve();
-    });
-    const latest = await this.index.getLatestManifestDatabaseKey(run.metadata.bucketRef);
-    const newest = new Set(
-      [current, ...dumps.filter((key) => key !== current).toSorted((a, b) => compareCodeUnits(b, a))].slice(
-        0,
-        CLOUD_BACKUP_DB_DUMPS_KEPT,
-      ),
-    );
-    for (const key of dumps) {
-      if (!newest.has(key) && key !== latest) {
-        await this.store.delete(run.connection, key);
       }
     }
   }
@@ -828,8 +1568,47 @@ export class CloudBackupService {
       await this.updateMetadata((current) => ({ ...current, reconciledAt, lastCheckAt: reconciledAt }));
       this.logger.log(`Cloud backup run ${run.id}: ${found} objects already in the bucket`);
     }
+    await this.adoptManifests(run);
     run.progress.result = { ...run.progress.result, phase: 'assets', total: await this.index.countAssets() };
     return this.checkpoint(run);
+  }
+
+  /**
+   * FL-164: every manifest in the bucket that this server has no record of (a bucket claimed again, or a
+   * database restored from before later runs) is read and recorded as a kept backup, so it can be listed
+   * and restored from. A manifest that cannot be read is left out and logged; the clean-up still keeps it.
+   */
+  private async adoptManifests(run: Run) {
+    const listed: string[] = [];
+    await this.store.listAll(run.connection, CLOUD_BACKUP_MANIFEST_PREFIX, (objects) => {
+      listed.push(...objects.map(({ key }) => key).filter((key) => manifestTime(key)));
+      return Promise.resolve();
+    });
+    const known = await this.index.getManifestKeys(run.metadata.bucketRef, listed);
+    const adopted = [];
+    for (const key of listed.filter((name) => !known.has(name) && name !== run.progress.result.manifestKey)) {
+      try {
+        const manifest = readManifest(await this.store.get(run.connection, key, run.bucketKey));
+        const files = [
+          ...Object.values(manifest.assets).flatMap((asset) => asset.files),
+          ...Object.values(manifest.profiles),
+        ];
+        adopted.push({
+          key,
+          createdAt: manifestTime(key)!,
+          databaseKey: manifest.database?.key ?? null,
+          assetCount: Object.keys(manifest.assets).length,
+          fileCount: files.length,
+          bytes: files.reduce((total, file) => total + file.size, 0),
+        });
+      } catch (error) {
+        this.logger.warn(`Cloud backup run ${run.id}: manifest ${key} could not be read: ${errorMessage(error)}`);
+      }
+    }
+    if (adopted.length > 0) {
+      await this.index.adoptManifests(run.metadata.bucketRef, adopted);
+      this.logger.log(`Cloud backup run ${run.id}: recorded ${adopted.length} earlier backups found in the bucket`);
+    }
   }
 
   /** The next 25 assets from the cursor: their originals, sidecars and any files asked for. */
@@ -1155,6 +1934,11 @@ export class CloudBackupService {
     this.logger.log(
       `Cloud backup run ${id} finished: ${result.uploaded} uploaded, ${result.skipped} already backed up, ${result.missing} missing`,
     );
+    await this.reportManagedRun(operation, result, 'succeeded');
+    // FL-164: a scheduled run is followed by the clean-up of runs past retention, once it has finished
+    if ((operation.snapshot as { scheduled?: boolean }).scheduled) {
+      await this.createOperation(operation.ownerId, run.metadata, 'prune', { scheduled: true, dryRun: false });
+    }
   }
 
   /** Write the cursor and counts; answer whether to carry on (no on a lost claim, a cancel or a pause). */
@@ -1186,6 +1970,7 @@ export class CloudBackupService {
       await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       await this.endManifest(result, 'cancelled');
       await this.recordRun(operation, result, 'cancelled');
+      await this.reportManagedRun(operation, result, 'cancelled');
       this.logger.log(`Cloud backup run ${id} cancelled`);
       return false;
     }
@@ -1234,6 +2019,711 @@ export class CloudBackupService {
     }));
   }
 
+  /* ------------------------------------------------------------------ */
+  /* FL-164: verification, clean-up and restore                          */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * A checkpoint for a verification, a clean-up or a restore: the result and counts written, then whether
+   * to carry on. A cancel is settled here; a pause hands the operation back, to carry on from its cursor.
+   */
+  private async checkpointTask(
+    operation: MediaOperation,
+    claimToken: string,
+    result: object,
+    units: { processed: number; total: number; progress: number },
+  ): Promise<TaskCheckpoint> {
+    const written = await this.operations.setBulkResult(operation.id, claimToken, {
+      result: result as Record<string, unknown>,
+      processedUnits: units.processed,
+      totalUnits: units.total,
+      progress: Math.min(100, Math.max(0, Math.floor(units.progress))),
+      leaseMs: CLOUD_BACKUP_LEASE_MS,
+    });
+    if (!written) {
+      this.logger.warn(`Cloud backup operation ${operation.id}: claim lost, stopping`);
+      return 'stopped';
+    }
+    if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
+      await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
+      this.logger.log(`Cloud backup operation ${operation.id} cancelled`);
+      return 'cancelled';
+    }
+    if (written.pauseRequestedAt && (await this.operations.settlePause(operation.id, claimToken))) {
+      this.logger.log(`Cloud backup operation ${operation.id} paused`);
+      return 'stopped';
+    }
+    return 'continue';
+  }
+
+  /** Mark a verification, a clean-up or a restore running; answers false when it was cancelled meanwhile. */
+  private async startTask(operation: MediaOperation, claimToken: string): Promise<boolean> {
+    const running = await this.operations.reportProgress(operation.id, claimToken, {
+      status: MediaOperationStatus.Rendering,
+      processedUnits: Number(operation.processedUnits ?? 0),
+      totalUnits: operation.totalUnits === null ? null : Number(operation.totalUnits),
+      progress: Number(operation.progress ?? 0),
+    });
+    if (!running) {
+      await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
+    }
+    return !!running;
+  }
+
+  /** Complete an operation whose work is done; a cancel that arrived at the very end is settled instead. */
+  private async completeTask(operation: MediaOperation, claimToken: string): Promise<boolean> {
+    const completed =
+      (await this.operations.beginValidation(operation.id, claimToken)) &&
+      (await this.operations.complete(operation.id, claimToken, { resultAssetId: null }));
+    if (!completed) {
+      await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
+    }
+    return completed;
+  }
+
+  /** A verification, a clean-up or a restore failed: after its automatic retry, the administrators hear why. */
+  private async failTask(operation: MediaOperation, claimToken: string, error: unknown, what: string) {
+    // a file system error names its path: shown to administrators, it names it below the media folder only
+    const message = maskMediaPath(errorMessage(error));
+    this.logger.error(`${what} ${operation.id} failed: ${message}`);
+    const outcome = await this.operations.fail(operation.id, claimToken, {
+      error: message,
+      errorCode: operation.kind === RESTORE_KIND ? 'cloud_restore_failed' : `cloud_backup_${taskOf(operation)}_failed`,
+    });
+    if (outcome === 'failed') {
+      this.notify({
+        level: NotificationLevel.Error,
+        title: `${what} failed`,
+        description: message,
+        dedupeKey: `cloud-backup:${operation.kind === RESTORE_KIND ? 'restore' : taskOf(operation)}-failed`,
+        dedupeDays: 1,
+      });
+    }
+    return outcome === 'failed';
+  }
+
+  private async runVerify(operation: MediaOperation, claimToken: string): Promise<void> {
+    const snapshot = operation.snapshot as { depth?: 'sample' | 'full' };
+    const depth = snapshot.depth === 'full' ? 'full' : 'sample';
+    const stored = operation.result as Partial<CloudBackupVerifyResult> | null;
+    const fresh = emptyVerifyResult(depth, new Date());
+    const start: CloudBackupVerifyResult = stored?.task === 'verify' ? { ...fresh, ...stored } : fresh;
+    try {
+      const opened = await this.openBucket(operation, claimToken, () => Promise.resolve());
+      if (!opened || !(await this.startTask(operation, claimToken))) {
+        return;
+      }
+      const result = await this.maintenance.verify(
+        opened,
+        start,
+        async (current) =>
+          (await this.checkpointTask(operation, claimToken, current, {
+            processed: current.checked,
+            total: current.total,
+            progress: current.total > 0 ? (current.checked / current.total) * 100 : 0,
+          })) === 'continue',
+      );
+      if (!result) {
+        return;
+      }
+      const final = await this.checkpointTask(operation, claimToken, result, {
+        processed: result.checked,
+        total: result.total,
+        progress: 100,
+      });
+      if (final !== 'continue') {
+        return;
+      }
+      const at = new Date().toISOString();
+      const degraded = result.missing + result.mismatched > 0;
+      await this.updateMetadata((current) => ({
+        ...current,
+        lastVerify: {
+          operationId: operation.id,
+          depth,
+          at,
+          status: degraded ? 'degraded' : 'passed',
+          checked: result.checked,
+          missing: result.missing,
+          mismatched: result.mismatched,
+          degradedManifests: result.degradedManifests,
+        },
+        ...(depth === 'full' && { lastFullVerifyAt: at }),
+      }));
+      await this.completeTask(operation, claimToken);
+      this.logger.log(
+        `Cloud backup check ${operation.id} (${depth}): ${result.checked} checked, ${result.missing} missing, ${result.mismatched} damaged`,
+      );
+      if (degraded) {
+        this.notify({
+          level: NotificationLevel.Warning,
+          title: 'Cloud backup check found problems',
+          description: [
+            `${result.missing} backed-up files are missing and ${result.mismatched} are damaged.`,
+            'The next backup uploads them again from this server;',
+            `${result.degradedManifests} earlier backups are marked incomplete.`,
+          ].join(' '),
+          dedupeKey: `cloud-backup:verify:${operation.id}`,
+          dedupeDays: 7,
+        });
+      }
+    } catch (error) {
+      if (await this.failTask(operation, claimToken, error, 'Cloud backup check')) {
+        await this.updateMetadata((current) => ({
+          ...current,
+          lastVerify: {
+            operationId: operation.id,
+            depth,
+            at: new Date().toISOString(),
+            status: 'failed',
+            checked: start.checked,
+            missing: start.missing,
+            mismatched: start.mismatched,
+            degradedManifests: start.degradedManifests,
+            error: errorMessage(error),
+          },
+        }));
+      }
+    }
+  }
+
+  private async runPrune(operation: MediaOperation, claimToken: string): Promise<void> {
+    const snapshot = operation.snapshot as { dryRun?: boolean };
+    const dryRun = snapshot.dryRun !== false;
+    try {
+      const opened = await this.openBucket(operation, claimToken, () => Promise.resolve());
+      if (!opened) {
+        return;
+      }
+      if (opened.readOnly && !dryRun) {
+        throw new Error(
+          `Frameleaf-managed storage is read-only for this server${readOnlyReason(opened.metadata)}, so nothing can be cleaned up.`,
+        );
+      }
+      if (!(await this.startTask(operation, claimToken))) {
+        return;
+      }
+      const result = await this.maintenance.prune(
+        opened,
+        opened.settings.retention,
+        dryRun,
+        async (current) =>
+          (await this.checkpointTask(operation, claimToken, current, {
+            processed: current.deleted,
+            total: current.objectsRemoved,
+            progress: current.objectsRemoved > 0 ? (current.deleted / current.objectsRemoved) * 100 : 0,
+          })) === 'continue',
+      );
+      if (!result) {
+        return;
+      }
+      // a dry run that was cancelled or paused at its end records nothing, so it never unlocks a clean-up
+      const final = await this.checkpointTask(operation, claimToken, result, {
+        processed: result.deleted,
+        total: result.objectsRemoved,
+        progress: 100,
+      });
+      if (final !== 'continue') {
+        return;
+      }
+      await this.updateMetadata((current) => ({
+        ...current,
+        lastPrune: {
+          operationId: operation.id,
+          dryRun,
+          at: new Date().toISOString(),
+          manifestsKept: result.manifestsKept,
+          manifestsRemoved: result.manifestsRemoved,
+          objectsRemoved: result.objectsRemoved,
+          bytesRemoved: result.bytesRemoved,
+          dumpsRemoved: result.dumpsRemoved,
+        },
+      }));
+      await this.completeTask(operation, claimToken);
+    } catch (error) {
+      await this.failTask(operation, claimToken, error, 'Cloud backup clean-up');
+    }
+  }
+
+  private async runRestore(operation: MediaOperation, claimToken: string): Promise<void> {
+    const snapshot = operation.snapshot as CloudBackupRestoreSnapshot;
+    const stored = operation.result as Partial<CloudBackupRestoreResult> | null;
+    let result: CloudBackupRestoreResult =
+      stored?.task === 'restore' ? { ...emptyRestoreResult(), ...stored } : emptyRestoreResult();
+    let stop: TaskCheckpoint = 'continue';
+    try {
+      const opened = await this.openBucket(operation, claimToken, () => Promise.resolve());
+      if (!opened || !(await this.startTask(operation, claimToken))) {
+        return;
+      }
+      const manifest = readManifest(await this.store.get(opened.connection, snapshot.manifestKey, opened.bucketKey));
+      const inPlace = snapshot.scope === 'asset' || snapshot.scope === 'library';
+      const library = inPlace
+        ? await this.libraryState(snapshot.assetIds ?? Object.keys(manifest.assets))
+        : new Map<string, CloudBackupLibraryAsset>();
+      const currentOriginals = new Map(
+        [...library].filter(([, asset]) => !asset.isExternal).map(([id, asset]) => [id, asset.originalPath]),
+      );
+      const mediaLocation = StorageCore.getMediaLocation();
+      const plan = restorePlan({
+        manifest,
+        scope: snapshot.scope,
+        assetIds: snapshot.assetIds,
+        operationId: operation.id,
+        mediaLocation,
+        currentOriginals,
+      });
+      if (snapshot.assetIds && plan.files.length === 0) {
+        throw new Error('This backup does not hold the chosen items.');
+      }
+      const done = await this.restorer.restore({
+        bucket: opened,
+        manifest,
+        scope: snapshot.scope,
+        files: plan.files,
+        destination: plan.destination,
+        mediaLocation,
+        backupsFolder: StorageCore.getBaseFolder(StorageFolder.Backups),
+        operationId: operation.id,
+        start: result,
+        checkpoint: async (current) => {
+          result = current;
+          stop = await this.checkpointTask(operation, claimToken, current, restoreUnits(current));
+          return stop === 'continue';
+        },
+      });
+      if (done) {
+        result = done;
+        stop = await this.checkpointTask(operation, claimToken, done, { ...restoreUnits(done), progress: 100 });
+      }
+      if (!done || stop !== 'continue') {
+        if (stop === 'cancelled') {
+          await this.recordRestore(operation, snapshot, result, 'cancelled');
+        }
+        return;
+      }
+      // what went back in place gets its thumbnails and previews again
+      const regenerate = done.restoredAssetIds.filter((assetId) => library.has(assetId));
+      if (regenerate.length > 0) {
+        await this.jobRepository.queueAll(
+          regenerate.map((assetId) => ({ name: JobName.AssetGenerateThumbnails, data: { id: assetId } })),
+        );
+      }
+      await this.recordRestore(operation, snapshot, done, 'completed');
+      await this.completeTask(operation, claimToken);
+      this.logger.log(
+        `Cloud backup restore ${operation.id} (${snapshot.scope}) finished: ${done.files} files, ${done.skipped} already in place, ${done.replaced} moved aside`,
+      );
+    } catch (error) {
+      if (await this.failTask(operation, claimToken, error, 'Restore from cloud backup')) {
+        const message = maskMediaPath(errorMessage(error));
+        await this.recordRestore(operation, snapshot, result, 'failed', message);
+      }
+    }
+  }
+
+  /** The library's current state of these assets (every one the library still has, trashed or not). */
+  private async libraryState(assetIds: string[]) {
+    const state = new Map<string, CloudBackupLibraryAsset>();
+    for (let at = 0; at < assetIds.length; at += LIBRARY_STATE_BATCH) {
+      for (const [id, asset] of await this.index.getLibraryState(assetIds.slice(at, at + LIBRARY_STATE_BATCH))) {
+        state.set(id, asset);
+      }
+    }
+    return state;
+  }
+
+  private async recordRestore(
+    operation: MediaOperation,
+    snapshot: CloudBackupRestoreSnapshot,
+    result: CloudBackupRestoreResult,
+    status: FrameleafCloudBackupRestore['status'],
+    error?: string,
+  ) {
+    await this.updateMetadata((current) => ({
+      ...current,
+      lastRestore: {
+        operationId: operation.id,
+        scope: snapshot.scope,
+        manifestKey: snapshot.manifestKey,
+        status,
+        at: new Date().toISOString(),
+        files: result.files,
+        bytes: result.bytes,
+        skipped: result.skipped,
+        replaced: result.replaced,
+        ...(result.destination && { destination: result.destination }),
+        ...(result.databaseFile && { databaseFile: result.databaseFile }),
+        ...(error && { error }),
+      },
+    }));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* FL-164: restore requests                                            */
+  /* ------------------------------------------------------------------ */
+
+  /** The kept backups a restore can be made from, newest first. */
+  async listManifests(): Promise<CloudBackupManifestsResponseDto> {
+    const metadata = await this.requireClaim();
+    const manifests = await this.index.listKeptManifests(metadata.bucketRef);
+    return {
+      manifests: manifests.map((manifest) => ({
+        key: manifest.key,
+        status: manifest.status,
+        createdAt: manifest.createdAt.toISOString(),
+        finishedAt: asIso(manifest.finishedAt),
+        assets: manifest.assetCount,
+        files: manifest.fileCount,
+        bytes: manifest.bytes,
+        databaseKey: manifest.databaseKey,
+      })),
+    };
+  }
+
+  /**
+   * The items one kept backup holds, found by file name, with whether each is in the library now. The
+   * manifest is read from the bucket (with Frameleaf-managed storage, only while no other operation holds
+   * the bucket: reading it rotates the key).
+   */
+  async listManifestItems(dto: CloudBackupManifestItemsDto): Promise<CloudBackupManifestItemsResponseDto> {
+    const metadata = await this.requireClaim();
+    const manifest = await this.readManifestForRequest(metadata, dto.manifestKey);
+    const query = dto.query?.trim().toLowerCase() ?? '';
+    const filter = dto.filter ?? 'all';
+    const limit = dto.limit ?? 100;
+
+    const candidates = Object.entries(manifest.assets).flatMap(([assetId, asset]) => {
+      const original = asset.files.find((file) => file.role === 'original') ?? asset.files[0];
+      if (!original) {
+        return [];
+      }
+      const name = basename(original.path);
+      return [{ assetId, asset, original, name }];
+    });
+    const library = await this.libraryState(candidates.map(({ assetId }) => assetId));
+    // a search by name never finds a Locked item, so its name cannot be guessed at
+    const named = candidates.filter(
+      ({ assetId, name }) => !query || (!library.get(assetId)?.locked && name.toLowerCase().includes(query)),
+    );
+    const stateOf = (assetId: string) => library.get(assetId)?.status ?? 'deleted';
+    const byName = (a: { name: string }, b: { name: string }) =>
+      compareCodeUnits(a.name.toLowerCase(), b.name.toLowerCase());
+    const matching = named
+      .filter(({ assetId }) => {
+        const state = stateOf(assetId);
+        return filter === 'all' || (filter === 'deleted' ? state === 'deleted' : state !== 'deleted');
+      })
+      .toSorted(
+        (a, b) =>
+          Number(!!library.get(a.assetId)?.locked) - Number(!!library.get(b.assetId)?.locked) ||
+          (library.get(a.assetId)?.locked ? 0 : byName(a, b)) ||
+          compareCodeUnits(a.assetId, b.assetId),
+      );
+    const page = matching.slice(0, limit);
+    const owners = await this.index.getOwnerNames(
+      page.map(({ asset }) => asset.owner).filter((owner): owner is string => !!owner),
+    );
+    const items: CloudBackupManifestItem[] = page.map(({ assetId, asset, original, name }) => ({
+      assetId,
+      // a Locked item is never named here, whoever looks; it can still be restored
+      name: library.get(assetId)?.locked ? '' : name,
+      locked: !!library.get(assetId)?.locked,
+      ownerId: asset.owner,
+      ownerName: asset.owner ? (owners.get(asset.owner) ?? null) : null,
+      files: asset.files.length,
+      bytes: asset.files.reduce((total, file) => total + file.size, 0),
+      modifiedAt: original.mtime,
+      state: stateOf(assetId),
+    }));
+    return { manifestKey: dto.manifestKey, total: matching.length, items };
+  }
+
+  /**
+   * Queue a restore from a kept backup. Refused while any other backup operation or restore is unfinished,
+   * and in own-memory mode until the key is loaded.
+   */
+  async startRestore(auth: AuthDto, dto: CloudBackupRestoreDto): Promise<CloudBackupStatusResponseDto> {
+    const metadata = await this.requireClaim();
+    const kept = await this.index.listKeptManifests(metadata.bucketRef);
+    const manifest = kept.find(({ key }) => key === dto.manifestKey);
+    if (!manifest) {
+      throw new NotFoundException('This backup is not one of the kept backups.');
+    }
+    if (dto.scope === 'asset' && dto.assetIds?.length !== 1) {
+      throw new BadRequestException('Choose exactly one item to restore in place.');
+    }
+    if ((dto.scope === 'database' || dto.scope === 'library') && dto.assetIds?.length) {
+      throw new BadRequestException('A database or whole-library restore does not take items.');
+    }
+    if ((dto.scope === 'database' || dto.scope === 'library') && !manifest.databaseKey) {
+      throw new BadRequestException('This backup has no database dump to restore.');
+    }
+    await this.requireKeyForRequest(metadata);
+
+    const snapshot: CloudBackupRestoreSnapshot = {
+      version: 1,
+      bucketRef: metadata.bucketRef,
+      keyFingerprint: metadata.keyFingerprint,
+      manifestKey: dto.manifestKey,
+      scope: dto.scope,
+      assetIds: dto.scope === 'files' || dto.scope === 'asset' ? (dto.assetIds ?? null) : null,
+    };
+    const outcome = await this.operations.createExclusive(
+      {
+        ownerId: auth.user.id,
+        kind: RESTORE_KIND,
+        destination: MediaOperationDestination.Local,
+        destinationDetail: null,
+        // never an item's name: a Locked item must not be named in Activity
+        label: RESTORE_LABEL[dto.scope],
+        assetId: null,
+        resultAssetId: null,
+        retryOfId: null,
+        projectId: null,
+        revisionId: null,
+        snapshot: snapshot as unknown as Record<string, unknown>,
+        settings: { bucket: metadata.bucket },
+        estimate: null,
+        result: emptyRestoreResult() as unknown as Record<string, unknown>,
+        totalUnits: null,
+      },
+      DatabaseLock.FrameleafCloudBackup,
+      { alsoKinds: [KIND] },
+    );
+    if (!('created' in outcome)) {
+      throw new ConflictException(
+        'Another cloud backup operation or restore is running. Restore when it has finished.',
+      );
+    }
+    this.logger.log(`Restore ${outcome.created.id} (${dto.scope}) from ${dto.manifestKey} queued by ${auth.user.id}`);
+    return this.getStatus();
+  }
+
+  /** A manifest for a request: from the bucket, once; managed storage only while nothing else holds it. */
+  private async readManifestForRequest(metadata: FrameleafCloudBackup, key: string): Promise<CloudBackupManifest> {
+    if (this.manifestCache?.bucketRef === metadata.bucketRef && this.manifestCache.key === key) {
+      return this.manifestCache.manifest;
+    }
+    const kept = await this.index.listKeptManifests(metadata.bucketRef);
+    if (!kept.some((manifest) => manifest.key === key)) {
+      throw new NotFoundException('This backup is not one of the kept backups.');
+    }
+    const bucketKey = await this.requireKeyForRequest(metadata);
+    const read = async (connection: CloudBackupConnection) => {
+      try {
+        return readManifest(await this.store.get(connection, key, bucketKey));
+      } catch (error) {
+        throw this.asRequestError(error);
+      }
+    };
+    let manifest: CloudBackupManifest;
+    if (metadata.target === 'managed') {
+      // A new key revokes the one a running operation holds: under the bucket lock, which every operation
+      // is created under and every rotation takes, nothing else can hold the bucket while this reads.
+      manifest = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () => {
+        if (await this.activeBucketOperation()) {
+          throw new ConflictException(
+            'Wait for the running cloud backup operation to finish before browsing a backup.',
+          );
+        }
+        let connection: CloudBackupConnection;
+        try {
+          connection = this.managedConnection(await this.cloudBackup.rotate(await this.managedApi()));
+        } catch (error) {
+          throw new ConflictException(this.refusalOf(error).message);
+        }
+        return read(connection);
+      });
+    } else {
+      const { frameleafCloud } = await this.readSettings();
+      let connection: CloudBackupConnection;
+      try {
+        connection = this.ownBucketConnection(metadata, frameleafCloud.cloudBackup);
+      } catch (error) {
+        throw new ConflictException(errorMessage(error));
+      }
+      manifest = await read(connection);
+    }
+    this.manifestCache = { bucketRef: metadata.bucketRef, key, manifest };
+    return manifest;
+  }
+
+  /**
+   * FL-164: `immich-admin cloud-backup restore`, for disaster recovery on a server whose web app is not
+   * running (or whose database is empty): everything comes from the bucket and the key alone. The key
+   * must open the bucket's claim; the newest manifest (or the one named) is read, its files are
+   * restored in place under the media folder and its database dump into `<media>/backups`, each checked
+   * against its SHA-256. With `restoreDatabase` the dump is then restored through the maintenance
+   * restore's own procedure. Nothing is recorded as a cloud backup claim: set cloud backup up again
+   * afterwards, which reclaims the same bucket.
+   */
+  async restoreFromBucket(
+    options: CloudBackupBareMetalRestore,
+    report: (line: string) => void,
+  ): Promise<CloudBackupRestoreResult & { manifestKey: string; databaseRestored: boolean }> {
+    const key = parseBackupKey(options.key);
+    const connection = await this.connectionFor(options.s3);
+    const marker = await this.store.readMarker(connection, key);
+    report(`The key opens bucket ${connection.bucket}, claimed by server ${marker.instanceId} on ${marker.claimedAt}.`);
+
+    const listed: string[] = [];
+    await this.store.listAll(connection, CLOUD_BACKUP_MANIFEST_PREFIX, (page) => {
+      listed.push(...page.map(({ key: name }) => name).filter((name) => manifestTime(name)));
+      return Promise.resolve();
+    });
+    const manifestKey = options.manifestKey ?? listed.toSorted((a, b) => compareCodeUnits(b, a))[0];
+    if (!manifestKey || !listed.includes(manifestKey)) {
+      throw new Error(
+        manifestKey ? `This bucket holds no backup named ${manifestKey}.` : 'This bucket holds no complete backup yet.',
+      );
+    }
+    const manifest = readManifest(await this.store.get(connection, manifestKey, key));
+    report(
+      `Restoring ${manifestKey}: ${Object.keys(manifest.assets).length} items${manifest.database ? ' and the database' : ''}.`,
+    );
+
+    const operationId = `command-${compactIso(new Date())}`;
+    const mediaLocation = StorageCore.getMediaLocation();
+    const plan = restorePlan({
+      manifest,
+      scope: options.scope,
+      assetIds: null,
+      operationId,
+      mediaLocation,
+      currentOriginals: new Map(),
+    });
+    let reportedAt = 0;
+    const result = await this.restorer.restore({
+      bucket: { bucketRef: bucketRef(connection.endpoint, connection.bucket), connection, bucketKey: key },
+      manifest,
+      scope: options.scope,
+      files: plan.files,
+      destination: plan.destination,
+      mediaLocation,
+      backupsFolder: StorageCore.getBaseFolder(StorageFolder.Backups),
+      operationId,
+      start: emptyRestoreResult(),
+      checkpoint: (current) => {
+        if (Date.now() - reportedAt >= 5000) {
+          reportedAt = Date.now();
+          report(`${current.files} of ${current.filesTotal} files restored and checked.`);
+        }
+        return Promise.resolve(true);
+      },
+    });
+    if (!result) {
+      throw new Error('The restore stopped before it finished.');
+    }
+    report(
+      `${result.files} files restored and checked: ${result.skipped} were already in place, ${result.replaced} were moved aside to ${join(mediaLocation, RESTORE_REPLACED_FOLDER, operationId)}.`,
+    );
+
+    let databaseRestored = false;
+    if (options.restoreDatabase && result.databaseFile) {
+      report(`Restoring the database from ${result.databaseFile}…`);
+      await this.databaseBackup.restoreDatabaseBackup(result.databaseFile, (action, progress) =>
+        report(`Database ${action}: ${Math.round(progress * 100)}%`),
+      );
+      databaseRestored = true;
+    }
+    return { ...result, manifestKey, databaseRestored };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* FL-164: key escrow                                                  */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Keep a copy of the bucket key with Frameleaf Cloud, wrapped under a passphrase with scrypt (server key
+   * mode only). The copy is checked to open with the passphrase before it is sent; the passphrase itself
+   * is never stored or sent.
+   */
+  async storeEscrow(auth: AuthDto, dto: CloudBackupEscrowDto): Promise<CloudBackupStatusResponseDto> {
+    this.requireEditableConfig();
+    const metadata = await this.requireClaim();
+    if (metadata.keyMode !== 'server') {
+      throw new BadRequestException('Key escrow is only available when this server generates its own backup key.');
+    }
+    const problem = escrowPassphraseProblem(dto.passphrase);
+    if (problem) {
+      throw new BadRequestException(problem);
+    }
+    const key = await this.loadKey(metadata);
+    if (!key) {
+      throw new ConflictException(
+        'The backup key file is missing from this server. Restore it from the key file or recovery kit first.',
+      );
+    }
+    const blob = await wrapBucketKey(key, dto.passphrase);
+    if (!(await unwrapBucketKey(blob, dto.passphrase)).equals(key)) {
+      throw new ConflictException('The key copy could not be checked, so it was not sent.');
+    }
+    const { frameleafCloud } = await this.readSettings();
+    try {
+      const api = await this.managedApi();
+      await this.cloudBackup.putSettings(api, {
+        keyMode: 'server',
+        scheduleEnabled: frameleafCloud.cloudBackup.enabled,
+      });
+      await this.cloudBackup.putEscrow(api, blob);
+    } catch (error) {
+      throw new ConflictException(this.refusalOf(error).message);
+    }
+    await this.setEscrowConfig(true);
+    await this.updateMetadata((current) => ({ ...current, escrow: { storedAt: new Date().toISOString() } }));
+    this.logger.log(`Cloud backup key escrow stored with Frameleaf Cloud by ${auth.user.id}`);
+    return this.getStatus();
+  }
+
+  /** Remove the key copy from Frameleaf Cloud. A copy that is already gone counts as removed. */
+  async removeEscrow(auth: AuthDto): Promise<CloudBackupStatusResponseDto> {
+    this.requireEditableConfig();
+    await this.requireClaim();
+    try {
+      await this.cloudBackup.deleteEscrow(await this.managedApi());
+    } catch (error) {
+      if (!(error instanceof FrameleafCloudError && error.status === 404)) {
+        throw new ConflictException(this.refusalOf(error).message);
+      }
+    }
+    await this.setEscrowConfig(false);
+    await this.updateMetadata(({ escrow: _escrow, ...current }) => current);
+    this.logger.log(`Cloud backup key escrow removed from Frameleaf Cloud by ${auth.user.id}`);
+    return this.getStatus();
+  }
+
+  private async setEscrowConfig(escrow: boolean) {
+    const { oldConfig, newConfig } = await this.databaseRepository.withLock(
+      DatabaseLock.SystemConfigUpdate,
+      async () => {
+        const current = await readConfig(this.configRepos());
+        const next = structuredClone(current);
+        next.frameleafCloud.cloudBackup.escrow = escrow;
+        return { oldConfig: current, newConfig: await updateConfig(this.configRepos(), next) };
+      },
+    );
+    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+  }
+
+  /** A backup operation or restore that is unfinished, of either kind. */
+  private async activeBucketOperation() {
+    return (await this.operations.getActiveOfKind(KIND)) ?? (await this.operations.getActiveOfKind(RESTORE_KIND));
+  }
+
+  /** The bucket key for a request, or a refusal that says to load it (own-memory) or restore it. */
+  private async requireKeyForRequest(metadata: FrameleafCloudBackup): Promise<Buffer> {
+    const key = await this.loadKeyOrAsk(metadata);
+    if (key) {
+      return key;
+    }
+    throw new ConflictException(
+      metadata.keyMode === 'own-memory'
+        ? 'Load the backup key first. This server does not keep it.'
+        : 'The backup key file is missing from this server. Restore it from the key file or recovery kit.',
+    );
+  }
+
   private async updateMetadata(change: (current: FrameleafCloudBackup) => FrameleafCloudBackup) {
     const current = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
     if (current) {
@@ -1247,6 +2737,7 @@ export class CloudBackupService {
     description: string;
     dedupeKey: string;
     dedupeDays?: number;
+    type?: NotificationType;
   }) {
     this.eventRepository
       .emit('AdminNotify', { type: NotificationType.BackupFailed, ...notice })
@@ -1385,8 +2876,10 @@ export class CloudBackupService {
     return metadata;
   }
 
+  /** A backup operation or (FL-164) a restore, for pause, resume and cancel. */
   private async requireRun(id: string): Promise<MediaOperation> {
-    const operation = await this.operations.getOfKind(id, KIND);
+    const operation =
+      (await this.operations.getOfKind(id, KIND)) ?? (await this.operations.getOfKind(id, RESTORE_KIND));
     if (!operation) {
       throw new NotFoundException('Backup run not found');
     }
@@ -1408,14 +2901,53 @@ export class CloudBackupService {
   }
 
   private mapActiveRun(operation: MediaOperation) {
+    const task = taskOf(operation);
     const result = parseRunResult(operation.result);
+    const checked = (operation.result as { checked?: unknown } | null)?.checked;
     return {
       operationId: operation.id,
+      task,
       state: runState(operation.status as MediaOperationStatus, !!operation.pauseRequestedAt),
       phase: result.phase,
       progress: Number(operation.progress ?? 0),
-      uploaded: result.uploaded,
-      skipped: result.skipped,
+      uploaded: task === 'backup' ? result.uploaded : 0,
+      skipped: task === 'backup' ? result.skipped : 0,
+      bytesUploaded: task === 'backup' ? result.bytesUploaded : 0,
+      checked: task === 'verify' && typeof checked === 'number' ? checked : 0,
+    };
+  }
+
+  private mapActiveRestore(operation: MediaOperation) {
+    const snapshot = operation.snapshot as Partial<CloudBackupRestoreSnapshot>;
+    const result = { ...emptyRestoreResult(), ...(operation.result as Partial<CloudBackupRestoreResult> | null) };
+    return {
+      operationId: operation.id,
+      state: runState(operation.status as MediaOperationStatus, !!operation.pauseRequestedAt),
+      scope: snapshot.scope ?? 'files',
+      progress: Number(operation.progress ?? 0),
+      files: result.files,
+      filesTotal: result.filesTotal,
+      bytes: result.bytes,
+      bytesTotal: result.bytesTotal,
+    };
+  }
+
+  private mapLastRestore(restore: FrameleafCloudBackupRestore) {
+    return {
+      ...restore,
+      destination: restore.destination ?? null,
+      databaseFile: restore.databaseFile ?? null,
+      error: restore.error ?? null,
+    };
+  }
+
+  private gatewayDeps() {
+    return {
+      configRepository: this.configRepository,
+      databaseRepository: this.databaseRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+      instanceIdentityRepository: this.instanceIdentityRepository,
+      frameleafCloudRepository: this.frameleafCloudRepository,
     };
   }
 
@@ -1432,6 +2964,62 @@ export class CloudBackupService {
     return getConfig(this.configRepos(), { withCache: false });
   }
 }
+
+/** FL-164: a message with the media folder as a path prefix written `<media>`, never a longer name. */
+const maskMediaPath = (message: string) => {
+  const media = StorageCore.getMediaLocation().replace(/\/+$/, '');
+  if (!media) {
+    return message;
+  }
+  const escaped = media.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
+  return message.replaceAll(new RegExp(`${escaped}(?=/|$|[\\s'",:;)])`, 'g'), '<media>');
+};
+
+/** FL-164: what a checkpoint of a verification, a clean-up or a restore decided. */
+type TaskCheckpoint = 'continue' | 'cancelled' | 'stopped';
+
+/** FL-164: the claimed bucket opened for one operation. */
+type OpenedBucket = CloudBackupBucket & {
+  metadata: FrameleafCloudBackup;
+  settings: SystemConfig['frameleafCloud']['cloudBackup'];
+  readOnly: boolean;
+};
+
+/** FL-164: what a restore's Activity row counts: files, and progress by bytes. */
+const restoreUnits = (result: CloudBackupRestoreResult) => ({
+  processed: result.files,
+  total: result.filesTotal,
+  progress: result.bytesTotal > 0 ? (result.bytes / result.bytesTotal) * 100 : 0,
+});
+
+/** FL-164: a restore's Activity label. Never an item's name, which a Locked item must not show. */
+const RESTORE_LABEL: Record<CloudBackupRestoreSnapshot['scope'], string> = {
+  files: 'Restore from cloud backup',
+  asset: 'Restore an item from cloud backup',
+  database: 'Restore the database from cloud backup',
+  library: 'Restore the whole library from cloud backup',
+};
+
+const READ_ONLY_REASONS: Record<string, string> = {
+  purge_hold: ' while its deletion is on hold',
+  entitlement: ' because the Frameleaf Cloud plan has lapsed',
+  unlinked: ' because it was unlinked',
+  suspended: ' because it is suspended',
+  purging: ' because its backups are being deleted',
+};
+
+/** FL-164: why managed storage is read-only, as a phrase, when Frameleaf Cloud said. */
+const readOnlyReason = (metadata: FrameleafCloudBackup) =>
+  READ_ONLY_REASONS[metadata.managed?.readOnlyReason ?? ''] ?? '';
+
+/** FL-164: the refusal a check-in's suspicion stands for, worded as Frameleaf Cloud's own answer is. */
+const cloneSuspectedError = () =>
+  new FrameleafCloudError(
+    MlAdmissionRefusal.CloudUnavailable,
+    409,
+    'clone suspected',
+    errorEnvelopeSchema.parse({ code: 'clone_suspected' }),
+  );
 
 type Run = {
   id: string;
