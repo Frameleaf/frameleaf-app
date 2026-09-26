@@ -115,6 +115,9 @@ export const describeAdminEvent = (
     case AdminAuditAction.CloudPermissionsChanged: {
       return $t('frameleaf_account_history_cloud_permissions_changed');
     }
+    case AdminAuditAction.CloudKeyRecoveryRotation: {
+      return $t('frameleaf_account_history_cloud_key_recovery_rotation');
+    }
     case AdminAuditAction.LicenseActivated: {
       return detail === 'file' || !detail
         ? $t('frameleaf_account_history_license_file_installed')

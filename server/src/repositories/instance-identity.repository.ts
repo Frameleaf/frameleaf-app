@@ -40,9 +40,10 @@ export const CANDIDATE_HOURS = 24;
 /** The rotation that retired the current retiring key: `{rotationId, kid, until}`. */
 export const RETIRING_META_FILE = 'instance-key.retiring.json';
 /**
- * Written when the key the cloud accepted in a rotation could not be read (FL-175): `{since}`. The
- * next check-in rotates again while the cloud still accepts the current key; a finished rotation
- * removes it. See `FrameleafInstanceIdentity.rotationNeeded`.
+ * Written when the key the cloud accepted in a rotation could not be read (FL-175): `{since, until}`.
+ * The next check-in rotates again while the cloud still accepts the current key, which it does only
+ * until the original rotation's retire deadline (never extended; at most `until`). A finished
+ * rotation removes it. See `FrameleafInstanceIdentity.rotationNeeded`.
  */
 export const ROTATION_NEEDED_FILE = 'instance-key.rotate-needed.json';
 /** A key file that does not parse is renamed to `<file>.corrupt-<time>-<random>` (FL-175). */
@@ -54,7 +55,7 @@ const NO_HARD_LINK = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV']);
 /** File flush failures that only mean the mount cannot flush (some FUSE file systems). */
 const FILE_SYNC_UNSUPPORTED = new Set(['EINVAL', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP']);
 /** Directory open or flush failures that only mean the platform or mount cannot flush a directory. */
-const DIRECTORY_SYNC_UNSUPPORTED = new Set([...FILE_SYNC_UNSUPPORTED, 'EISDIR', 'EPERM', 'EACCES']);
+const DIRECTORY_SYNC_UNSUPPORTED = new Set([...FILE_SYNC_UNSUPPORTED, 'EISDIR', 'EPERM', 'EACCES', 'EBADF']);
 
 const exists = (path: string) =>
   access(path)
@@ -66,6 +67,8 @@ const ignore = (codes: string[]) => (error: NodeJS.ErrnoException) => {
     throw error;
   }
 };
+
+const isDateString = (value: unknown): value is string => typeof value === 'string' && !Number.isNaN(Date.parse(value));
 
 const readJson = <T>(file: string): Promise<T | null> =>
   readFile(file, 'utf8')
@@ -136,7 +139,7 @@ export class InstanceIdentityRepository {
     const publicJwk = publicJwkOf(privateKey);
     const retiring = created ? undefined : await this.retiringOf(dir, now);
     const candidate = created ? undefined : await this.candidateOf(dir, now);
-    const rotationNeeded = created ? undefined : await this.rotationNeededOf(dir);
+    const rotationNeeded = created ? undefined : await this.rotationNeededOf(dir, now);
     return {
       instanceId: !created && existing ? existing.instanceId : uuidv7(),
       kid: ed25519Thumbprint(publicJwk),
@@ -219,7 +222,7 @@ export class InstanceIdentityRepository {
    */
   private async writeKeyExclusive(file: string, pem: string | Buffer) {
     const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    let written = false;
+    let failure: unknown;
     try {
       await handle.writeFile(pem);
       await handle.sync().catch((error: NodeJS.ErrnoException) => {
@@ -228,12 +231,18 @@ export class InstanceIdentityRepository {
         }
         this.flushWasSkipped(file, error.code ?? '');
       });
-      written = true;
-    } finally {
+    } catch (error) {
+      failure = error;
+    }
+    try {
       await handle.close();
-      if (!written) {
-        await rm(file, { force: true });
-      }
+    } catch (error) {
+      // a close that fails may not have written everything; the first error is the one reported
+      failure ??= error;
+    }
+    if (failure !== undefined) {
+      await rm(file, { force: true });
+      throw failure;
     }
   }
 
@@ -276,7 +285,10 @@ export class InstanceIdentityRepository {
   private async recoverRotation(dir: string, now: number) {
     const provenFile = join(dir, PROVEN_KEY_FILE);
     if (await exists(provenFile)) {
-      const proven = await this.kidOrSetAside(provenFile);
+      // the marker is written and flushed before the key is set aside, so a crash in between still
+      // leaves a rotation asked for (and the earliest marker stands: a recovery never extends the
+      // original retire deadline)
+      const proven = await this.kidOrSetAside(provenFile, undefined, () => this.markRotationNeeded(dir, now));
       if (proven.kid) {
         await this.finishRotation(dir, {
           rotationId: randomUUID(),
@@ -285,7 +297,6 @@ export class InstanceIdentityRepository {
       } else if (proven.setAside) {
         // FL-175: the cloud accepted this key, so it is never swapped in unreadable; the current key keeps
         // working until the cloud stops accepting it, and the next check-in rotates again before then
-        await this.writeSidecar(join(dir, ROTATION_NEEDED_FILE), { since: new Date(now).toISOString() });
         this.logger.error(
           `The identity key Frameleaf Cloud accepted in the last rotation cannot be read; it was set aside as ${proven.setAside}. This server keeps its previous key and rotates again at the next check-in.`,
         );
@@ -305,7 +316,7 @@ export class InstanceIdentityRepository {
    * Only ever called with a proven key that parses. A current key that does not parse (or is missing)
    * is then set aside rather than kept as retiring: the cloud already accepted its successor (FL-175).
    */
-  private async finishRotation(dir: string, rotation: { rotationId: string; until: string }) {
+  private async finishRotation(dir: string, rotation: { rotationId: string; until: string }): Promise<boolean> {
     const keyFile = join(dir, INSTANCE_KEY_FILE);
     const retiringFile = join(dir, RETIRING_KEY_FILE);
     const pem = await readFile(keyFile).catch((error: NodeJS.ErrnoException) => {
@@ -322,7 +333,11 @@ export class InstanceIdentityRepository {
         await this.setAside(keyFile, error);
       }
     }
-    if (currentKid) {
+    if (!currentKid) {
+      // nothing to retire: an older rotation's retiring key and sidecar must not pass for this one's
+      await rm(retiringFile, { force: true });
+      await rm(join(dir, RETIRING_META_FILE), { force: true });
+    } else {
       const sidecar = join(dir, RETIRING_META_FILE);
       await this.writeSidecar(sidecar, { ...rotation, kid: currentKid });
       await rm(retiringFile, { force: true });
@@ -337,7 +352,11 @@ export class InstanceIdentityRepository {
     }
     await rename(join(dir, PROVEN_KEY_FILE), keyFile).catch(ignore(['ENOENT']));
     await rm(join(dir, ROTATION_NEEDED_FILE), { force: true });
-    await this.syncDirectory(dir);
+    // the swap is done and the cloud holds the new key: a flush failing now does not undo the rotation
+    await this.syncDirectory(dir).catch((error: unknown) => {
+      this.logger.warn(`Could not flush ${dir} after replacing the identity key: ${error}`);
+    });
+    return !!currentKid;
   }
 
   /** Make a key file owner-only; a mount that refuses chmod (SMB/CIFS, FUSE) only gets a warning. */
@@ -436,13 +455,55 @@ export class InstanceIdentityRepository {
     return { kid, keyFile, since: new Date(since).toISOString() };
   }
 
-  /** Whether a rotation must be repeated because its accepted key was set aside (FL-175). */
-  private async rotationNeededOf(dir: string) {
-    const marker = await readJson<{ since?: unknown }>(join(dir, ROTATION_NEEDED_FILE));
-    if (!marker) {
+  /**
+   * Ask for a rotation to be repeated (FL-175): written and flushed, and never replacing an existing
+   * marker, whose earlier `since` stands.
+   */
+  private async markRotationNeeded(dir: string, now: number) {
+    const file = join(dir, ROTATION_NEEDED_FILE);
+    if (await exists(file)) {
       return;
     }
-    return { since: typeof marker.since === 'string' ? marker.since : new Date(0).toISOString() };
+    await this.writeMarker(file, now);
+  }
+
+  private async writeMarker(file: string, now: number) {
+    const staging = `${file}.tmp`;
+    await rm(staging, { force: true });
+    await this.writeKeyExclusive(
+      staging,
+      JSON.stringify({ since: new Date(now).toISOString(), until: this.hoursFrom(now, RECOVERED_RETIRE_HOURS) }),
+    );
+    await rename(staging, file);
+    await this.syncDirectory(dirname(file));
+  }
+
+  /**
+   * Whether a rotation must be repeated because its accepted key was set aside (FL-175). A marker that
+   * exists but cannot be understood still asks for one; it is rewritten with its window starting now.
+   */
+  private async rotationNeededOf(dir: string, now: number) {
+    const file = join(dir, ROTATION_NEEDED_FILE);
+    if (!(await exists(file))) {
+      return;
+    }
+    const marker = await readJson<{ since?: unknown; until?: unknown }>(file);
+    if (!marker || !isDateString(marker.since)) {
+      await this.writeMarker(file, now);
+      return { since: new Date(now).toISOString(), until: this.hoursFrom(now, RECOVERED_RETIRE_HOURS) };
+    }
+    const until = isDateString(marker.until)
+      ? marker.until
+      : this.hoursFrom(Date.parse(marker.since), RECOVERED_RETIRE_HOURS);
+    return { since: marker.since, until };
+  }
+
+  /**
+   * Forget a repeat rotation that is no longer possible or needed (FL-175): after linking again (the
+   * cloud registered the current key) or unlinking, or once the previous key's window has closed.
+   */
+  async clearRotationNeeded(dir: string) {
+    await rm(join(dir, ROTATION_NEEDED_FILE), { force: true });
   }
 
   /**
@@ -454,7 +515,11 @@ export class InstanceIdentityRepository {
    * key the cloud knows and the cause is for an operator to fix. The current key never comes through
    * here (see `currentKeyOf`).
    */
-  private async kidOrSetAside(keyFile: string, sidecar?: string): Promise<{ kid?: string; setAside?: string }> {
+  private async kidOrSetAside(
+    keyFile: string,
+    sidecar?: string,
+    beforeSetAside?: () => Promise<void>,
+  ): Promise<{ kid?: string; setAside?: string }> {
     const pem = await readFile(keyFile).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') {
         throw error;
@@ -467,6 +532,7 @@ export class InstanceIdentityRepository {
     try {
       return { kid: ed25519Thumbprint(publicJwkOf(createPrivateKey(pem))) };
     } catch (error) {
+      await beforeSetAside?.();
       const setAside = await this.setAside(keyFile, error);
       if (sidecar) {
         await rm(sidecar, { force: true });
@@ -622,15 +688,15 @@ export class InstanceIdentityRepository {
   ): Promise<FrameleafInstanceIdentity> {
     const dir = dirname(identity.keyFile);
     const rotation = { rotationId: randomUUID(), until: this.hoursFrom(now, retireHours) };
-    await this.finishRotation(dir, rotation);
+    const retired = await this.finishRotation(dir, rotation);
     this.cached = { keyFile: identity.keyFile, privateKey };
     const publicJwk = publicJwkOf(privateKey);
-    const { candidate: _candidate, rotationNeeded: _rotationNeeded, ...rest } = identity;
+    const { candidate: _candidate, rotationNeeded: _rotationNeeded, retiring: _retiring, ...rest } = identity;
     return {
       ...rest,
       kid: ed25519Thumbprint(publicJwk),
       publicJwk,
-      retiring: { kid: identity.kid, keyFile: join(dir, RETIRING_KEY_FILE), ...rotation },
+      ...(retired && { retiring: { kid: identity.kid, keyFile: join(dir, RETIRING_KEY_FILE), ...rotation } }),
     };
   }
 
