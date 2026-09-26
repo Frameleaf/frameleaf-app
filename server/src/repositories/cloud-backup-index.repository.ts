@@ -43,6 +43,30 @@ export type CloudBackupAsset = {
 
 const MANIFEST_COLUMNS = ['id', 'bucket', 'key', 'operationId', 'status', 'createdAt'] as const;
 const ENTRY_COLUMNS = ['fileKey', 'assetId', 'ownerId', 'role', 'path', 'sha256', 'size', 'mtime'] as const;
+/** FL-164: manifests that are in the bucket and kept: complete ones, and ones a verification marked degraded. */
+const KEPT_MANIFEST_STATUSES = ['complete', 'degraded'] as const;
+
+/** FL-164: an asset a manifest names, as the library holds it now. */
+export type CloudBackupLibraryAsset = {
+  status: 'active' | 'trashed';
+  originalFileName: string;
+  originalPath: string;
+  ownerId: string;
+  isExternal: boolean;
+};
+
+/** FL-164: a kept manifest as the restore picker and retention read it. */
+export type CloudBackupKeptManifest = {
+  key: string;
+  status: 'complete' | 'degraded';
+  databaseKey: string | null;
+  createdAt: Date;
+  finishedAt: Date | null;
+  assetCount: number;
+  fileCount: number;
+  bytes: number;
+};
+
 const FINISHED_OPERATIONS = [
   MediaOperationStatus.Completed,
   MediaOperationStatus.Cancelled,
@@ -205,6 +229,124 @@ export class CloudBackupIndexRepository {
       .limit(1)
       .executeTakeFirst();
     return row?.databaseKey ?? null;
+  }
+
+  /**
+   * FL-164: the database dumps named by this bucket's manifests that are still kept (complete, or complete
+   * and degraded by a verification), so no kept manifest ever loses its dump to pruning.
+   */
+  @GenerateSql({ params: [DummyValue.STRING] })
+  async getKeptDatabaseKeys(bucket: string): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('cloud_backup_manifest')
+      .select('databaseKey')
+      .where('bucket', '=', bucket)
+      .where('status', 'in', [...KEPT_MANIFEST_STATUSES])
+      .where('databaseKey', 'is not', null)
+      .execute();
+    return new Set(rows.map(({ databaseKey }) => databaseKey!));
+  }
+
+  /** FL-164: this bucket's kept manifests, newest first: what a restore can be made from. */
+  @GenerateSql({ params: [DummyValue.STRING] })
+  async listKeptManifests(bucket: string): Promise<CloudBackupKeptManifest[]> {
+    const rows = await this.db
+      .selectFrom('cloud_backup_manifest')
+      .select(['key', 'status', 'databaseKey', 'createdAt', 'finishedAt', 'assetCount', 'fileCount', 'bytes'])
+      .where('bucket', '=', bucket)
+      .where('status', 'in', [...KEPT_MANIFEST_STATUSES])
+      .orderBy('createdAt', 'desc')
+      .execute();
+    return rows.map((row) => ({
+      key: row.key,
+      status: row.status as CloudBackupKeptManifest['status'],
+      databaseKey: row.databaseKey,
+      createdAt: new Date(row.createdAt as unknown as string),
+      finishedAt: row.finishedAt ? new Date(row.finishedAt as unknown as string) : null,
+      assetCount: row.assetCount,
+      fileCount: row.fileCount,
+      bytes: Number(row.bytes),
+    }));
+  }
+
+  /**
+   * FL-164: mark manifests by their bucket key: `pruned` once retention removed them from the bucket,
+   * `degraded` when a verification found an object they name missing or damaged. A pruned manifest stays
+   * pruned whatever a later verification says.
+   */
+  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING], 'degraded'] })
+  async markManifests(bucket: string, keys: string[], status: 'pruned' | 'degraded'): Promise<number> {
+    if (keys.length === 0) {
+      return 0;
+    }
+    const result = await this.db
+      .updateTable('cloud_backup_manifest')
+      .set({ status })
+      .where('bucket', '=', bucket)
+      .where('key', 'in', [...new Set(keys)])
+      .where('status', 'in', [...KEPT_MANIFEST_STATUSES])
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows);
+  }
+
+  /**
+   * FL-164: forget objects that are no longer in the bucket (removed by retention, or found missing or
+   * damaged by a verification), so the next run uploads them again from this server's files. Forgetting
+   * one that is still there costs one upload of the same bytes; remembering one that is gone would skip it.
+   */
+  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
+  async forget(bucket: string, hashes: string[]): Promise<void> {
+    if (hashes.length === 0) {
+      return;
+    }
+    await this.db
+      .deleteFrom('cloud_backup_object')
+      .where('bucket', '=', bucket)
+      .where('sha256', 'in', [...new Set(hashes)])
+      .execute();
+  }
+
+  /**
+   * FL-164: which of these assets are in the library now, for the restore list: active, trashed, or gone.
+   * Backend work that sees Locked assets too; the caller is an administrator's restore of the whole server.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getLibraryState(assetIds: string[]): Promise<Map<string, CloudBackupLibraryAsset>> {
+    if (assetIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .select(['id', 'status', 'deletedAt', 'originalFileName', 'originalPath', 'ownerId', 'isExternal'])
+      .where('id', '=', sql<string>`any(${[...new Set(assetIds)]}::uuid[])`)
+      .where('status', 'in', [AssetStatus.Active, AssetStatus.Trashed])
+      .execute();
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          status: row.status === AssetStatus.Active && !row.deletedAt ? ('active' as const) : ('trashed' as const),
+          originalFileName: row.originalFileName,
+          originalPath: row.originalPath,
+          ownerId: row.ownerId,
+          isExternal: row.isExternal,
+        },
+      ]),
+    );
+  }
+
+  /** FL-164: the names of these accounts, for the restore list's owner column. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getOwnerNames(userIds: string[]): Promise<Map<string, string>> {
+    if (userIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('user')
+      .select(['id', 'name'])
+      .where('id', 'in', [...new Set(userIds)])
+      .execute();
+    return new Map(rows.map(({ id, name }) => [id, name]));
   }
 
   /**

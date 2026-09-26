@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { type FileHandle, open } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { type FileHandle, open, rename, rm } from 'node:fs/promises';
+import { Readable, Transform, Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CLOUD_BACKUP_MARKER,
@@ -39,6 +43,11 @@ export type CloudBackupConnection = {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+  /**
+   * FL-164, Frameleaf-managed storage: a key rotated moments ago can take a few seconds to become valid, so
+   * until this time (epoch ms) a `403 InvalidAccessKeyId` is waited out and retried rather than reported.
+   */
+  freshKeyUntil?: number;
 };
 
 export type CloudBackupObjectInfo = { key: string; size: number; etag: string | null };
@@ -84,6 +93,10 @@ export const SSE_C_REFUSED_MESSAGE =
 const EMPTY_SHA256 = createHash('sha256').update('').digest('hex');
 const REQUEST_TIMEOUT_MS = 120_000;
 const PART_TIMEOUT_MS = 10 * 60_000;
+/** A restore or verification reads a whole object in one request; a large video can take a while. */
+const DOWNLOAD_TIMEOUT_MS = 4 * 60 * 60_000;
+/** How long a freshly rotated managed key may take to become valid (Frameleaf Cloud FC-33). */
+export const CLOUD_BACKUP_FRESH_KEY_MS = 30_000;
 const LIST_PAGE = 1000;
 
 const sha256Hex = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
@@ -207,6 +220,8 @@ type Part = { partNumber: number; etag: string };
 export class CloudBackupStoreRepository {
   /** Waits before the second and third attempt of a request that failed for a transient reason. */
   retryDelaysMs = [1000, 4000];
+  /** FL-164: the wait between attempts while a freshly rotated managed key becomes valid. */
+  freshKeyRetryMs = 3000;
 
   constructor(private logger: LoggingRepository) {
     this.logger.setContext(CloudBackupStoreRepository.name);
@@ -298,6 +313,81 @@ export class CloudBackupStoreRepository {
     return body;
   }
 
+  /**
+   * FL-164: an object streamed to `destination`, hashed as it arrives. It is written to a partial file
+   * beside the destination and moved into place only when it hashes to `expectedSha256` (every `o/<sha256>`
+   * object and every dump a manifest names); otherwise the partial file is removed and the read refused
+   * (`ChecksumMismatch`). The destination's folder must exist; nothing already at `destination` is read.
+   */
+  async download(
+    connection: CloudBackupConnection,
+    key: string,
+    bucketKey: Buffer,
+    destination: string,
+    expectedSha256: string | null,
+  ): Promise<{ size: number; sha256: string }> {
+    const response = await this.send(connection, {
+      method: 'GET',
+      key,
+      headers: sseCustomerHeaders(bucketKey),
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+    });
+    const partial = `${destination}.part-${randomUUID().slice(0, 8)}`;
+    try {
+      const { size, sha256 } = await this.hashBody(response, createWriteStream(partial, { flags: 'wx' }));
+      if (expectedSha256 && sha256 !== expectedSha256) {
+        throw new CloudBackupStoreError(
+          `The backup copy of ${key} does not match its checksum`,
+          null,
+          'ChecksumMismatch',
+        );
+      }
+      await rename(partial, destination);
+      return { size, sha256 };
+    } catch (error) {
+      await rm(partial, { force: true });
+      throw error;
+    }
+  }
+
+  /** FL-164: an object read in full and hashed, never kept: what weekly verification checks. */
+  async hashObject(
+    connection: CloudBackupConnection,
+    key: string,
+    bucketKey: Buffer,
+  ): Promise<{ size: number; sha256: string }> {
+    const response = await this.send(connection, {
+      method: 'GET',
+      key,
+      headers: sseCustomerHeaders(bucketKey),
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+    });
+    return this.hashBody(response, null);
+  }
+
+  private async hashBody(response: Response, sink: Writable | null) {
+    const digest = createHash('sha256');
+    let size = 0;
+    const body = response.body
+      ? Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>)
+      : Readable.from([]);
+    const hasher = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        digest.update(chunk);
+        size += chunk.length;
+        callback(null, chunk);
+      },
+    });
+    // without a sink the bytes are only hashed, and dropped as they arrive
+    const discard = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+    await pipeline(body, hasher, sink ?? discard);
+    return { size, sha256: digest.digest('hex') };
+  }
+
   /** One object in one request. Answers the provider's ETag and whether it confirmed SSE-C. */
   async put(
     connection: CloudBackupConnection,
@@ -326,7 +416,10 @@ export class CloudBackupStoreRepository {
     };
   }
 
-  /** Remove one object. Only ever used on what the agent itself wrote: probes and old database dumps. */
+  /**
+   * Remove one object. Only ever used on what the agent itself wrote: probes, old database dumps and (FL-164)
+   * manifests past retention with the objects no kept manifest names.
+   */
   async delete(connection: CloudBackupConnection, key: string): Promise<void> {
     await this.send(connection, { method: 'DELETE', key });
   }
@@ -726,8 +819,31 @@ export class CloudBackupStoreRepository {
     }
   }
 
-  /** Sign and send one request, retrying twice on a network failure, 429 or 5xx. */
+  /**
+   * Sign and send one request, retrying twice on a network failure, 429 or 5xx. FL-164: with a freshly
+   * rotated managed key, a `403 InvalidAccessKeyId` is retried every few seconds until the key is valid or
+   * `freshKeyUntil` passes.
+   */
   private async send(connection: CloudBackupConnection, request: SignedRequest): Promise<Response> {
+    while (true) {
+      try {
+        return await this.sendWithRetries(connection, request);
+      } catch (error) {
+        const waiting =
+          error instanceof CloudBackupStoreError &&
+          error.status === 403 &&
+          error.code === 'InvalidAccessKeyId' &&
+          !!connection.freshKeyUntil &&
+          Date.now() + this.freshKeyRetryMs <= connection.freshKeyUntil;
+        if (!waiting) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, this.freshKeyRetryMs));
+      }
+    }
+  }
+
+  private async sendWithRetries(connection: CloudBackupConnection, request: SignedRequest): Promise<Response> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt++) {
       if (attempt > 0) {
