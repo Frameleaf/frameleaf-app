@@ -340,6 +340,10 @@ export class StorageCore {
         }
         break;
       }
+      case 'moved':
+      case 'failed': {
+        break;
+      }
     }
     return result === 'moved';
   }
