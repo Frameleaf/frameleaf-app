@@ -58,34 +58,34 @@
       "version": 1
     },
     {
-      "bytes": 14849,
+      "bytes": 14864,
       "category": "reference",
       "id": "64815115",
-      "readbackAt": "2026-09-26T13:12:40.000Z",
-      "readbackResult": "Markdown read-back of version 3 begins with the header carrying SHA-256 6e53e0f8, 14849 bytes, commit 7bb864f80a on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-161 commits 7265ee15db and 1ddae5df45 merged in dd2b8cf0e4 (the FL-163 merge 7bb864f80a is the head and does not change this source), the source-at-commit backlink, FL-161, FL-180, FL-44 and the implementation-plan link; body matches the posted source including the shared-link password hashing step and the prepare-official shared-link password acknowledgement, except list continuation lines losing their two-space indent.",
+      "readbackAt": "2026-09-26T16:52:00.000Z",
+      "readbackResult": "FL-190: markdown read-back of version 4 begins with the header carrying SHA-256 53e8d53c, 14864 bytes, commit a3a4012815 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-190/FL-191 note, the source-at-commit backlink and FL-190/FL-191 links, keeping the note that the title differs from the source heading and the earlier FL-161/FL-180/FL-44 history; compared with version 3, the only body differences are the FL-190 rebrand edits from commit 20289e0cf8 ('original upstream database', 'the official upstream server'); verify.py shows only the known bold-around-code rendering in the adoption list; no user additions.",
       "source": "docs/docs/administration/upstream-handoff.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "7bb864f80ad48207b4e4109f7da71949d56ef936",
-      "sourceSha256": "6e53e0f808b09744d56b84e892d709deef89f86084c5a0e7929a0bfd495614fb",
-      "sourceState": "committed-fl-161-fl-163-merged-2026-09-26",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceSha256": "53e8d53c630c73ca8b2590d58b3f3d127ba5b60a2de1469492a6180c3ea6d639",
+      "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
       "title": "Administration Reference — Certified upstream handoff and library adoption",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64815115/Administration+Reference+Certified+upstream+handoff+and+library+adoption",
-      "version": 3
+      "version": 4
     },
     {
-      "bytes": 21084,
+      "bytes": 21086,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-26T13:38:30.000Z",
-      "readbackResult": "Markdown read-back of version 3 begins with the header carrying SHA-256 553257ef, 21084 bytes, commit 8d0d0ad30a on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-160 commits 73f428e821, f1e1b396ea and 4cf3664243 merged in 8d0d0ad30a, the source-at-commit backlink, FL-160, FL-161, FL-156, FL-170 and the implementation-plan link; body matches the posted source including the new Cloud backup section (setup steps, what a run backs up, turning backup off), except table separator alignment markers normalized and the nested setup bullets indented four spaces instead of three.",
+      "readbackAt": "2026-09-26T16:53:30.000Z",
+      "readbackResult": "FL-190: markdown read-back of version 4 begins with the header carrying SHA-256 00eef960, 21086 bytes, commit a3a4012815 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-190/FL-191 note, the source-at-commit backlink and FL-190/FL-191 links, keeping the earlier FL-160, FL-161, FL-156 and FL-170 history; compared with version 3, the only body difference is the FL-190 rebrand edit from commit 20289e0cf8 in the shared-link password paragraph ('The official upstream server cannot check these hashes'); verify.py shows only the same-page Remote access security link that the markdown export drops (the HTML keeps #remote-access-security); no user additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "8d0d0ad30a45c5517f6087181be15278fd29e028",
-      "sourceSha256": "553257efbd32e16ad835ad9324d1f136e26a7babba2cc2a5a0bd5d015b4684d7",
-      "sourceState": "committed-fl-160-cloud-backup-merged-2026-09-26",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceSha256": "00eef960d1a777936ea1d1517f21d8e75469c84f79bc76b09563cc18bb4538ab",
+      "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 3
+      "version": 4
     },
     {
       "bytes": 12350,
@@ -374,17 +374,18 @@
       "version": 2
     },
     {
-      "bytes": 54857,
+      "bytes": 54875,
       "category": "features",
       "id": "61538534",
       "source": "docs/docs/features/descriptions-and-smart-albums.md",
-      "sourceSha256": "e67febdd8ef68a55b277353a3c8a34ca016c394af8619c0f38a8516023f24c3d",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceSha256": "a066e184b0fef5185370306b3e4ef0139b5a9ba9cf2fdac8bd3c3bd0901e2bc8",
       "title": "Feature Reference \u2014 Descriptions And Smart Albums",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538534/Feature+Reference+Descriptions+And+Smart+Albums",
-      "version": 3,
+      "version": 4,
       "verified": true,
-      "verification": "Version 3 updated the committed descriptions and smart albums source; full page read back after update, source SHA marker and all 68 headings verified. Confluence normalized inline Markdown.",
-      "verifiedAt": "2026-09-23T14:10:24.000Z"
+      "verification": "FL-190 Confluence page read back at version 4 with source hash a066e184, 54875 bytes and commit a3a4012815 on master/frameleaf-implementation in the header; compared with version 3, the only differences are the header (committed-at-commit statement, backlink and FL-190 link replacing the local-working-tree note) and the six FL-190 wording changes from commit 20289e0cf8 naming Frameleaf in the identity-injection text, the advanced-template text, the video-grid trade-off line and the related-reading Tags entry; the legacy-content extension and the in-page anchor links (dropped only by the markdown export) are kept; no user additions.",
+      "verifiedAt": "2026-09-26T16:53:55.000Z"
     },
     {
       "bytes": 2788,
@@ -397,14 +398,19 @@
       "version": 2
     },
     {
-      "bytes": 2825,
+      "bytes": 2835,
       "category": "features",
       "id": "61538555",
       "source": "docs/docs/features/duplicates-utility.md",
-      "sourceSha256": "f02ae75889c7e3f789282aa24ac73e3137d8939ebc817f68ee7c53b57f328689",
+      "sourceSha256": "8f8d253e636cb55292c761914bd073b7a7ce615c2e598c51a44a2e6b5a227e92",
       "title": "Feature Reference \u2014 Duplicates Utility",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538555/Feature+Reference+Duplicates+Utility",
-      "version": 2
+      "version": 3,
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
+      "readbackResult": "FL-190: read back at version 3 with source hash 8f8d253e, 2835 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (committed-at-commit statement, Source bytes line, backlink and FL-190/FL-191 links replacing the working-tree note); compared with version 2, the only differences are the header and the FL-190 rebrand edits from commit 20289e0cf8 (Frameleaf twice, and the upstream demo-site link replaced by Utilities > Review duplicates in the web app); the Current implementation plan link is kept; no user additions.",
+      "readbackAt": "2026-09-26T16:53:40.000Z"
     },
     {
       "bytes": 4638,
@@ -427,18 +433,18 @@
       "version": 2
     },
     {
-      "bytes": 16189,
+      "bytes": 16235,
       "category": "features",
       "id": "61440280",
       "source": "docs/docs/features/fork-privacy-suite.md",
-      "sourceCommit": "4c696b02046a16548eba610d410a1d0a9ccba386",
-      "sourceSha256": "b0f7b51742f49526404eb084e748d43753e81d4c765d98879cd7897d33045787",
-      "title": "Feature Reference \u2014 Fork Privacy Suite",
-      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Fork+Privacy+Suite",
-      "verification": "FL-192 Confluence page read back at version 6 with source hash b0f7b517, 16189 bytes and commit 4c696b0204 on master/frameleaf-implementation in the header, with the source-at-commit backlink and FL-192 and FL-159 links; the live version 5 was unchanged since its FL-159 read-back, and compared with it the only differences are the header, the version-check line (off by default, Frameleaf's release feed only) and the new list of where each download comes from under Telemetry and Automatic Reporting; the Confluence links are kept.",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceSha256": "3c197936472bbd4a2b61ea625dcb8f78c0a54919520aa52af0db35556ad53a39",
+      "title": "Feature Reference \u2014 Frameleaf privacy suite",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Frameleaf+privacy+suite",
+      "verification": "FL-190 Confluence page read back at version 7, retitled Feature Reference — Frameleaf privacy suite to match the new H1, with source hash 3c197936, 16235 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (FL-190 commits 20289e0cf8 and 6c1477322f; FL-192 and FL-159 history kept); compared with version 6, the only differences are the header and the FL-190 rebrand wording (new H1, 'Who Frameleaf is for', Frameleaf or the upstream project or official upstream server in the introduction, telemetry, deduplication, rollout and safe operating sections, and the renamed switching-guide link); the Confluence page links and the Physical deduplication GitHub link are kept; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-26T16:22:10.000Z",
-      "version": 6
+      "verifiedAt": "2026-09-26T16:51:35.000Z",
+      "version": 7
     },
     {
       "bytes": 3750,
@@ -454,18 +460,18 @@
       "verifiedAt": "2026-09-23T14:10:06.000Z"
     },
     {
-      "bytes": 15667,
+      "bytes": 15685,
       "category": "features",
       "id": "61374970",
       "source": "docs/docs/features/image-enrichment.md",
-      "sourceCommit": "92e00e4ef466fe0d8d3e92dc7d1d45a972b15672",
-      "sourceSha256": "f4988f89936e8cda74e06e1ba3b506da2fe7136289913bdf73151412b9dc358a",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceSha256": "9c6a74dc644e882f2a724b74ed3324053a7e1d7a06f49365629e44749c2cd0fd",
       "title": "Feature Reference \u2014 Image Enrichment",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374970/Feature+Reference+Image+Enrichment",
-      "verification": "FL-189 Confluence page read back at version 6 with source hash f4988f89, 15667 bytes and commit 92e00e4ef4 on master/frameleaf-implementation in the header, with the source-at-commit backlink and FL-189 and FL-159 links; compared with version 5 (source 73970170), the only differences are the header and the new paragraph after the OpenVINO note in Hardware and Model Notes, on the descriptions slider's white and green stops, whose Hardware acceleration link reads back as a GitHub link to ml-hardware-acceleration.md#model-licences-and-frameleaf-cloud; the Confluence implementation-plan link is kept.",
+      "verification": "FL-190 Confluence page read back at version 7 with source hash 9c6a74dc, 15685 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (FL-190 commit 20289e0cf8; FL-189 and FL-159 history kept); compared with version 6, the only differences are the header and the FL-190 rebrand of seven sentences in Descriptions and Tags, NSFW Detection, Running Both Jobs and Fallback model behavior that now name Frameleaf as the actor; the GitHub link conversions and the Confluence implementation-plan link are kept; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-26T16:04:30.000Z",
-      "version": 6
+      "verifiedAt": "2026-09-26T16:53:20.000Z",
+      "version": 7
     },
     {
       "bytes": 3873,
@@ -561,24 +567,34 @@
       "version": 2
     },
     {
-      "bytes": 824,
+      "bytes": 825,
       "category": "features",
       "id": "61440396",
       "source": "docs/docs/features/switching-between-fork-and-official.md",
-      "sourceSha256": "dd9fb1160783cff514ac1b7232d089eaf49af7f821a500ccbbd439364959d238",
-      "title": "Feature Reference \u2014 Switching Between Fork And Official",
-      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440396/Feature+Reference+Switching+Between+Fork+And+Official",
-      "version": 2
+      "sourceSha256": "d68d3e482b2557c50f9aded61483c134dd50c892316f13b78ca91a4b440cb7cb",
+      "title": "Feature Reference \u2014 Switching between Frameleaf and the upstream server",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440396/Feature+Reference+Switching+between+Frameleaf+and+the+upstream+server",
+      "version": 3,
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
+      "readbackResult": "FL-190: read back at version 3, retitled Feature Reference — Switching between Frameleaf and the upstream server to match the new H1, with source hash d68d3e48, 825 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (committed-at-commit statement, Source bytes line and backlink replacing the working-tree note); compared with version 2, the only differences are the header and the FL-190 wording from commits 20289e0cf8 and 6c1477322f (Frameleaf 3.0 and the official upstream release, the handoff and return runbook, and the renamed Reverting to the upstream server link); Confluence page links kept; no user additions.",
+      "readbackAt": "2026-09-26T16:52:20.000Z"
     },
     {
-      "bytes": 3464,
+      "bytes": 3564,
       "category": "features",
       "id": "61538631",
       "source": "docs/docs/features/revert-to-upstream.md",
-      "sourceSha256": "1e76c46e9a56042353fd1dd51a749af2fe182dcb7aee22b95a1a37a24584b83d",
-      "title": "Feature Reference \u2014 Revert To Upstream",
-      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538631/Feature+Reference+Revert+To+Upstream",
-      "version": 2
+      "sourceSha256": "2af55d9fc5135ef5656929d2c94f74619e380d33bf551ed0b1f1cb9d2f9ed85a",
+      "title": "Feature Reference \u2014 Reverting to the upstream server",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538631/Feature+Reference+Reverting+to+the+upstream+server",
+      "version": 3,
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
+      "readbackResult": "FL-190: read back at version 3, retitled Feature Reference — Reverting to the upstream server to match the new H1, with source hash 2af55d9f, 3564 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (committed-at-commit statement replacing the working-tree note); compared with version 2, the only differences are the header and the FL-190 wording from commits 20289e0cf8 and 6c1477322f (Frameleaf releases and the official upstream server or image, the handoff and return runbook, Pre-compatibility Frameleaf releases, and an unconverted database from an early Frameleaf release); database identifiers and the certified image reference are unchanged; no user additions.",
+      "readbackAt": "2026-09-26T16:52:20.000Z"
     },
     {
       "bytes": 18501,
@@ -620,30 +636,32 @@
       "version": 3
     },
     {
-      "bytes": 30120,
+      "bytes": 30133,
       "category": "plan",
       "id": "61538653",
       "source": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "sourceSha256": "12f7d86ea3c69bc6d979dcf06a5ad93388828079da0843cad25d3dc4bd13efbb",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceSha256": "fb5f30d35ddda282e1b7ae69d1b70544cdba04ba8d45a48f4803e682d4c32f2b",
       "title": "Native Applications and Release Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538653/Native+Applications+and+Release+Implementation",
-      "verification": "source path, hash, byte count, uncommitted-candidate status and terminal content read back after update",
+      "verification": "FL-190 Confluence page read back at version 5 with source hash fb5f30d3, 30133 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (committed-at-commit statement replacing the uncommitted candidate status, backlink and FL-190 link); compared with version 4, the only differences are the header and the three FL-190 changes from commit 20289e0cf8 ('existing upstream clients' twice and 'Keep the upstream-project attribution' in REL-103), plus removal of stale mirror wording that called the now-committed native ownership map uncommitted; relative links remain shown as code paths; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-20T10:10:08.576Z",
-      "version": 4
+      "verifiedAt": "2026-09-26T16:57:25.000Z",
+      "version": 5
     },
     {
-      "bytes": 13483,
+      "bytes": 13482,
       "category": "plan",
       "id": "61407537",
       "source": "docs/docs/developer/frameleaf-plan/06-brand-assets.md",
-      "sourceSha256": "1e8805cd460436d7433af9d006bbdbe673f680dc922ca939192ddf7cff1d3066",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceSha256": "0252bb9965a6b162069e19f764497b41ebd634833fa86d0cd323338f4d2bee00",
       "title": "Frameleaf SVG Brand Kit",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407537/Frameleaf+SVG+Brand+Kit",
-      "verification": "source path, SHA-256, byte count, open PR #119/uncommitted-update status and terminal content read back after update",
+      "verification": "FL-190 Confluence page read back at version 5 with source hash 0252bb99, 13482 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (replacing the uncommitted Docs Build candidate status; PR #119 kept as FL-25 history; FL-190 linked); compared with version 4, the only differences are the header and the FL-190 change to REL-103 ('keep the upstream-project attribution and required notices separate'); existing relative source links kept as the page had them; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-20T10:54:47.505Z",
-      "version": 4
+      "verifiedAt": "2026-09-26T16:51:06.000Z",
+      "version": 5
     },
     {
       "bytes": 42239,
@@ -721,17 +739,18 @@
       "version": 2
     },
     {
-      "bytes": 20812,
+      "bytes": 20813,
       "category": "plan",
       "id": "61538319",
       "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
-      "sourceSha256": "1d0934ad4ec3f5511a94980c03f3bcc5f59c2e73820f9beddf5e50dae32ddf3e",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceSha256": "f7a25fac9a1d371134a5dbe91e5cc8e9c4a2b73b0952eb973c5e77a762d92d2a",
       "title": "Frameleaf Implementation Plan",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
-      "verification": "Confluence page version 12 published as HTML from local branch codex/CLD-000-frameleaf-cloud-workstream (uncommitted candidate, based on master/frameleaf-implementation c2488e3a59). The remote page was read before the write; the previous mirror matched committed source d9ee05d8, so the delta is the header and the new Frameleaf Cloud workstream section (guide link resolved to page 63864877). Read back as markdown: header carries the source path, SHA-256 1d0934ad and 20812 bytes; body matches the current source.",
+      "verification": "FL-190 Confluence page read back at version 13 with source hash f7a25fac, 20813 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (FL-153 history kept, FL-190 linked); compared with version 12, the only differences are the header and the FL-190 rebrand wording from commit 20289e0cf8 ('Existing upstream and fork capabilities' and 'Retain the upstream-project attribution in README/About'); all Confluence page links and the page hierarchy kept; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-25T08:51:20.863Z",
-      "version": 12
+      "verifiedAt": "2026-09-26T16:52:30.000Z",
+      "version": 13
     },
     {
       "bytes": 11216,
@@ -799,17 +818,18 @@
       "version": 2
     },
     {
-      "bytes": 27536,
+      "bytes": 30615,
       "category": "development",
       "id": "61407844",
       "source": "docs/docs/developer/frameleaf-development.md",
-      "sourceSha256": "d31b9970cecad9d978e8df3031ddb560f120c81bbb983e4d769efa04e6fa2868",
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceSha256": "853c7c9d51c1ebf1cc0712a6cc74433ec246655cbe6b06fbef32d96e17a451b4",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "FL-159 Confluence page read back at version 12 with source hash d31b9970 and 27536 bytes in the header; compared with version 11 (which matched source 1e855050), the only differences are the header status paragraph, the ML hardware suffix paragraph, the Frameleaf Cloud processing paragraph (Workers and Endpoints cited by repository path because the care branch is not pushed) and the valid-targets sentence; the preserved historical delivery checkpoints are unchanged and no RunPod reference remains. Not publication or runtime qualification.",
+      "verification": "FL-191 Confluence page read back at version 13 with source hash 853c7c9d, 30615 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (FL-191 commits 88122cf79b, a6c1c8709a and 8e099a682f named, FL-159 history kept, FL-191 linked); compared with version 12, the only differences are the header and the FL-191 changes under Container names and compatibility (the PostgreSQL image row, the paragraphs on Frameleaf-owned images, manual Postgres and CLI publication with the anonymous release check, the compatibility-target exception, and the revised CLI and Compose paragraphs); the page-only historical sections Earlier infrastructure checkpoint, Agent workflow update and PR 112 delivery checkpoint are kept.",
       "verified": true,
-      "verifiedAt": "2026-09-25T16:33:29.967Z",
-      "version": 12
+      "verifiedAt": "2026-09-26T16:54:20.000Z",
+      "version": 13
     },
     {
       "bytes": 411,
@@ -1037,19 +1057,19 @@
       "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 133370,
+      "bytes": 133398,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "45ba8a479940e1f7ec4a597f9d9e35c7d408cf1594ad72098fb49a842124dbf3",
+      "sourceSha256": "9e79fcd966e6e3b6fbc87f97c9a2050f7b34d3f1870d00aae058a8eebcb480b4",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 18,
+      "version": 19,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "92e00e4ef466fe0d8d3e92dc7d1d45a972b15672",
-      "sourceState": "committed-fl-189-model-sliders-merged-2026-09-26",
-      "readbackResult": "Markdown read-back of version 18 begins with the header carrying SHA-256 45ba8a47, 133370 bytes, commit 92e00e4ef4 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-189 commits 8e1cd53c96 and e5a69d880e merged in 92e00e4ef4 on top of the FL-160 revision, the source-at-commit backlink, FL-189, FL-160, FL-163, FL-161, FL-186, FL-183, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; the live version 17 was unchanged since its read-back, so no user additions were lost; body matches the posted source including the FL-189 local stops in Model choice per model group and the FL-186, FL-189 as-built note under CLD-201, except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
-      "readbackAt": "2026-09-26T16:13:10.000Z"
+      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
+      "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
+      "readbackResult": "FL-190: markdown read-back of version 19 begins with the header carrying SHA-256 9e79fcd9, 133398 bytes, commit a3a4012815 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-190 commit 20289e0cf8 merged in 50b35ceb63 on top of the FL-189 revision, the source-at-commit backlink, FL-190 and the existing Jira, implementation-plan and agent-guide links; the live version 18 was unchanged since its read-back; body matches the posted HEAD source including the FL-190 wording that names the upstream project, its product key and its site generically (CLD-003 title, the licence email link, CLD-004 key removal, the copy rules, slice 15 and CLD-006 acceptance), except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
+      "readbackAt": "2026-09-26T16:57:09.000Z"
     }
   ],
   "spaceId": "61374475",
