@@ -851,7 +851,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
       const twoDefaults = cloudContractFixture<{ models: Record<string, unknown>[] }>(
         'ml/rejected/catalog-two-defaults.json',
       ).models;
-      const [, , upscale] = catalogModels;
+      const upscale = catalogModels[2];
       const parse = (models: unknown[]) => catalogSchema.parse({ etag: '"cat-test"', models });
 
       it('reads one default per group, with restoration grouped by mode', () => {
