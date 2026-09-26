@@ -3668,6 +3668,8 @@
   "frameleaf_cloud_backup_verify_degraded": "{count, plural, one {# file is} other {# files are}} missing or damaged; the next backup uploads {count, plural, one {it} other {them}} again",
   "frameleaf_cloud_backup_verify_failed": "the check stopped",
   "frameleaf_cloud_backup_verify_queued": "Check queued. Follow it here or in Activity.",
+  "frameleaf_cloud_backup_verify_weekly": "Check the backups",
+  "frameleaf_cloud_backup_verify_weekly_description": "Every week a sample of the backed-up files is fetched and checked, and every month each file is confirmed to be there. Anything missing or damaged is uploaded again.",
   "frameleaf_cloud_backup_verifying": "Verifying…",
   "frameleaf_cloud_backup_where": "Where backups are stored",
   "frameleaf_cloud_benefit_apps_body": "from anywhere. Sign in with your Frameleaf account and this server appears on your phone automatically.",

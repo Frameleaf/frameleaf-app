@@ -540,6 +540,14 @@
             </span>
           </label>
         {/each}
+        <SettingToggle
+          title={$t('frameleaf_cloud_backup_verify_weekly')}
+          subtitle={$t('frameleaf_cloud_backup_verify_weekly_description')}
+          checked={backupDraft.verifyWeekly}
+          disabled={configDisabled}
+          isEdited={backupDraft.verifyWeekly !== settingsDraft?.baseline.frameleafCloud?.cloudBackup?.verifyWeekly}
+          onToggle={(value) => (backupDraft.verifyWeekly = value)}
+        />
       </CloudCard>
     {/if}
 
