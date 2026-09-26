@@ -2,6 +2,7 @@ import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
 import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
+import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
@@ -573,6 +574,8 @@ export type JobItem =
   // Frameleaf Cloud (FL-155, FL-156)
   | { name: JobName.FrameleafHeartbeat; data: IBaseJob }
   | { name: JobName.FrameleafLicenseRefresh; data: IBaseJob }
+  // FL-163: one pass over Frameleaf Cloud description batches
+  | { name: JobName.CloudMlDescriptionBatch; data: IBaseJob }
 
   // OCR
   | { name: JobName.OcrQueueAll; data: IBaseJob }
@@ -997,6 +1000,15 @@ export type FrameleafCloudMigrationNotice = {
   createdAt: string;
 };
 
+/**
+ * FL-163: photos whose description job reached the Frameleaf Cloud route while "Describe new photos
+ * automatically" collects them, oldest first, and when each owner's last automatic batch was made.
+ */
+export type FrameleafCloudDescriptionQueue = {
+  items: Array<{ assetId: string; ownerId: string; queuedAt: string }>;
+  lastBatchAt: Record<string, string>;
+};
+
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
@@ -1018,6 +1030,8 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafMlSuspension]: FrameleafMlSuspension;
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
+  [SystemMetadataKey.FrameleafCloudDescriptionQueue]: FrameleafCloudDescriptionQueue;
+  [SystemMetadataKey.FrameleafCloudDescriptionEstimates]: { records: CloudDescriptionEstimateRecord[] };
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;

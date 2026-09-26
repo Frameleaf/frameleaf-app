@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, sql } from 'kysely';
+import { ExpressionBuilder, Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { PostgresError } from 'postgres';
@@ -776,6 +776,27 @@ export class MediaOperationRepository {
     return row ? { operation: row as unknown as MediaOperation, claimToken } : undefined;
   }
 
+  /**
+   * FL-163: record the remote job a claimed operation started (a Frameleaf Cloud job id), so a cancel or
+   * failure that happens while nobody holds the claim still leaves the remote job to be released by the
+   * cleanup pass (`getUnreleasedRemoteOperations`). Guarded by the claim, and never overwrites a remote
+   * job already recorded: one operation is one remote job.
+   */
+  async setRemoteJobId(id: string, claimToken: string, remoteJobId: string): Promise<boolean> {
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ remoteJobId })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .where((eb) => eb.or([eb('remoteJobId', 'is', null), eb('remoteJobId', '=', remoteJobId)]))
+        .executeTakeFirst(),
+    );
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
   /** Extend the lease. Returns false when the claim has already been taken away. */
   async heartbeat(id: string, claimToken: string, leaseMs: number): Promise<boolean> {
     const result = await this.write((db) =>
@@ -1264,21 +1285,157 @@ export class MediaOperationRepository {
    * These survive owner dismissal on purpose: a cloud job nobody is watching still costs money
    * and still holds data, so the record is kept until the remote says it is gone.
    */
-  getUnreleasedRemoteOperations(limit: number): Promise<MediaOperation[]> {
-    return this.db
+  getUnreleasedRemoteOperations(limit: number, kinds?: readonly MediaOperationKind[]): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('remoteJobId', 'is not', null)
+        .where('remoteReleasedAt', 'is', null)
+        // FL-163: a cleanup pass for one kind filters before the limit, so other kinds never crowd it out
+        .$if(kinds !== undefined, (qb) => qb.where('kind', 'in', [...kinds!]))
+        .where((eb) =>
+          eb.or([
+            eb('status', 'in', [MediaOperationStatus.Cancelling, MediaOperationStatus.Cancelled]),
+            eb('status', '=', MediaOperationStatus.Failed),
+          ]),
+        )
+        .orderBy('createdAt', 'asc')
+        .limit(limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
+  }
+
+  /**
+   * FL-163 review P2: record the remote job an operation started when its claim is already gone, so the
+   * job is never left without a row that names it. Only fills an empty handle (or confirms the same
+   * one); the cleanup pass and the next claim find the job by it.
+   */
+  async recordRemoteJobId(id: string, remoteJobId: string): Promise<boolean> {
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ remoteJobId })
+        .where('id', '=', id)
+        .where((eb) => eb.or([eb('remoteJobId', 'is', null), eb('remoteJobId', '=', remoteJobId)]))
+        .executeTakeFirst(),
+    );
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /** Several jobs for a worker at once, not scoped to an owner (FL-163 settlement). */
+  async getManyForWorker(ids: readonly string[]): Promise<MediaOperation[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    return (await this.db
       .selectFrom('media_operation')
       .selectAll()
-      .where('remoteJobId', 'is not', null)
-      .where('remoteReleasedAt', 'is', null)
-      .where((eb) =>
-        eb.or([
-          eb('status', 'in', [MediaOperationStatus.Cancelling, MediaOperationStatus.Cancelled]),
-          eb('status', '=', MediaOperationStatus.Failed),
-        ]),
+      .where('id', 'in', [...ids])
+      .execute()) as unknown as MediaOperation[];
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Frameleaf Cloud description batches (FL-163)                        */
+  /* ------------------------------------------------------------------ */
+
+  /** Every photo in an unfinished description batch, whoever owns it. */
+  async getOpenCloudDescriptionAssetIds(): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select(sql<string>`jsonb_array_elements_text("snapshot" -> 'assetIds')`.as('assetId'))
+      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .execute();
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+
+  /**
+   * What description batches admitted in [from, to) cost: each batch's settled charge once known, else
+   * what the wallet holds for it. With `origin`, only batches made that way (the automatic budget).
+   */
+  async sumCloudDescriptionSpend(options: {
+    from: Date;
+    to: Date;
+    origin?: 'automatic' | 'backfill';
+  }): Promise<number> {
+    const admittedAt = sql<Date>`("result" -> 'job' ->> 'admittedAt')::timestamptz`;
+    const row = await this.db
+      .selectFrom('media_operation')
+      .select(
+        sql<number>`coalesce(sum(coalesce(("result" ->> 'settledUsd')::double precision, ("result" -> 'job' ->> 'holdUsd')::double precision)), 0)`.as(
+          'spentUsd',
+        ),
       )
-      .orderBy('createdAt', 'asc')
-      .limit(limit)
-      .execute() as unknown as Promise<MediaOperation[]>;
+      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where(sql<string>`"result" -> 'job' ->> 'jobId'`, 'is not', null)
+      .where(admittedAt, '>=', options.from)
+      .where(admittedAt, '<', options.to)
+      .$if(options.origin !== undefined, (qb) => qb.where(sql<string>`"snapshot" ->> 'origin'`, '=', options.origin!))
+      .executeTakeFirstOrThrow();
+    return Number(row.spentUsd);
+  }
+
+  /**
+   * What the wallet holds for a destination's admitted description batches that are not settled yet
+   * (FL-163 re-check P2): unfinished batches, and finished ones admitted since `since` (the budget
+   * window). A hold released but never reported as settled stops counting once it leaves the window.
+   */
+  async sumCloudDescriptionOpenHolds(destinationId: string, since: Date): Promise<number> {
+    const row = await this.db
+      .selectFrom('media_operation')
+      .select(sql<number>`coalesce(sum(("result" -> 'job' ->> 'holdUsd')::double precision), 0)`.as('heldUsd'))
+      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where(sql<string>`"snapshot" ->> 'destinationId'`, '=', destinationId)
+      .where((eb) => this.unsettledAdmission(eb, since))
+      .executeTakeFirstOrThrow();
+    return Number(row.heldUsd);
+  }
+
+  /** Whether an admitted description batch still waits for its settlement, bounded as the holds are. */
+  async hasUnsettledCloudDescriptionJobs(since: Date): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('media_operation')
+      .select('id')
+      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where((eb) => this.unsettledAdmission(eb, since))
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** Admitted, not settled, and either unfinished or admitted since `since`. */
+  private unsettledAdmission(eb: ExpressionBuilder<DB, 'media_operation'>, since: Date) {
+    return eb.and([
+      eb(sql<string>`"result" -> 'job' ->> 'jobId'`, 'is not', null),
+      eb(sql<string>`"result" ->> 'settledUsd'`, 'is', null),
+      eb.or([
+        eb('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES]),
+        eb(sql<Date>`("result" -> 'job' ->> 'admittedAt')::timestamptz`, '>=', since),
+      ]),
+    ]);
+  }
+
+  /**
+   * Finished description batches whose `POST /v2/jobs` was sent but whose job was never recorded
+   * (FL-163 re-check): the cleanup pass replays their idempotency key, once their estimate expired, to
+   * learn whether a job exists and stop it.
+   */
+  listCloudDescriptionPendingReleases(limit: number): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+        .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .where('remoteJobId', 'is', null)
+        // the saved submission is the pending-release marker: written, with its key, before the POST
+        .where(sql<string>`"result" -> 'submission' ->> 'attemptedAt'`, 'is not', null)
+        .where(sql<string>`"result" -> 'job' ->> 'jobId'`, 'is', null)
+        .orderBy('createdAt', 'asc')
+        .limit(limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
   }
 
   async markRemoteReleased(id: string): Promise<void> {
