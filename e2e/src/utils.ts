@@ -152,10 +152,12 @@ const onEvent = ({ event, id }: { event: EventType; id: string }) => {
 
   set.add(id);
 
-  const idCallback = idCallbacks[id];
+  // keyed by event and id: an unrelated event naming the same id must not resolve the wait (FL-169)
+  const key = `${event}:${id}`;
+  const idCallback = idCallbacks[key];
   if (idCallback) {
     idCallback();
-    delete idCallbacks[id];
+    delete idCallbacks[key];
   }
 
   const item = countCallbacks[event];
@@ -370,7 +372,7 @@ export const utils = {
       }
 
       if (id) {
-        idCallbacks[id] = onId;
+        idCallbacks[`${event}:${id}`] = onId;
       }
 
       if (count) {
