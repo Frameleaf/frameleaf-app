@@ -3433,7 +3433,7 @@
   "frameleaf_cloud_check_in": "Check in now",
   "frameleaf_cloud_checked_in": "Checked in with Frameleaf Cloud.",
   "frameleaf_cloud_checkin_failing": "{count, plural, one {The last check-in failed} other {The last # check-ins failed}}",
-  "frameleaf_cloud_clone_body": "Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity folder. Cloud backup pauses until this is resolved.",
+  "frameleaf_cloud_clone_body": "Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity folder. Cloud backup and cloud processing pause until this is resolved: the account owner can confirm this server in the Frameleaf account, or it clears on its own after 24 hours without a restart.",
   "frameleaf_cloud_clone_title": "Two servers are using this server’s identity",
   "frameleaf_cloud_code_expired": "Code expired",
   "frameleaf_cloud_data_region": "Data region",

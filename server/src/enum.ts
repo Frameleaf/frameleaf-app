@@ -512,6 +512,11 @@ export enum SystemMetadataKey {
    * every worker, so registration, "Check in now" and scheduled check-ins all send the same `bootId`.
    */
   FrameleafBoot = 'frameleaf-boot',
+  /**
+   * FL-185: Frameleaf Cloud refused ML-audience tokens because it suspects a copy of this server
+   * (`clone_suspected`). While it is set no ML token is requested; a check-in clears it.
+   */
+  FrameleafMlSuspension = 'frameleaf-ml-suspension',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
   HardwareCheck = 'hardware-check',
   /**
@@ -2254,6 +2259,11 @@ export enum DatabaseLock {
    * so two sign-ins at once can never demote the last two administrators.
    */
   FrameleafRoleChange = 948,
+  /**
+   * FL-185: claiming the daily ML token probe while cloud processing is suspended (re-read and rewrite
+   * of the suspension as one step), so no two workers probe at once.
+   */
+  FrameleafMlProbe = 949,
 }
 
 export enum MaintenanceAction {
