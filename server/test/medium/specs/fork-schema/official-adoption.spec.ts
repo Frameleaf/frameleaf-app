@@ -115,6 +115,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   const ownerlessAlbumId = randomUUID();
   const ownedAlbumId = randomUUID();
   const removedFaceId = randomUUID();
+  const lockedFaceId = randomUUID();
 
   beforeAll(async () => {
     db = await getKyselyDB('official_origin_full_adoption');
@@ -172,6 +173,13 @@ describe('official-origin adoption into a full Frameleaf library', () => {
       INSERT INTO public.album_user ("albumId", "userId", role)
       VALUES (${ownedAlbumId}::uuid, ${userId}::uuid, 'owner')
     `.execute(db);
+
+    // The person's featured face is on the Locked photo.
+    await sql`
+      INSERT INTO public.asset_face (id, "assetId", "personId", "imageWidth", "imageHeight")
+      VALUES (${lockedFaceId}::uuid, ${lockedAssetId}::uuid, ${personId}::uuid, 100, 100)
+    `.execute(db);
+    await sql`UPDATE public.person SET "faceAssetId" = ${lockedFaceId}::uuid WHERE id = ${personId}::uuid`.execute(db);
 
     // A face the owner removed from their person.
     await sql`
@@ -341,9 +349,32 @@ describe('official-origin adoption into a full Frameleaf library', () => {
       before: { people: 1, personGroups: null, clusterGroups: null },
       after: { people: 1, personGroups: 1, clusterGroups: 2 },
     });
+    // The featured face on the Locked photo is released; the person's only other face was removed.
+    expect(steps['2100000000300-ClearLockedCoverReferences']).toMatchObject({
+      before: { lockedFaceThumbnails: 1, lockedAlbumCovers: 0, lockedSharedSpaceCovers: 0, lockedPetCovers: 0 },
+      after: { lockedFaceThumbnails: 0, lockedAlbumCovers: 0, lockedSharedSpaceCovers: 0, lockedPetCovers: 0 },
+    });
+    const featured = await sql<{ faceAssetId: string | null }>`
+      SELECT "faceAssetId"::text AS "faceAssetId" FROM public.person WHERE id = ${personId}::uuid
+    `.execute(db);
+    expect(featured.rows).toEqual([{ faceAssetId: null }]);
     expect(steps['2100000000320-AddAssetLock']).toMatchObject({
-      before: { lockedFolderAssets: 1, assetLocks: null },
-      after: { lockedFolderAssets: 0, assetLocks: 2 },
+      before: {
+        lockedFolderAssets: 1,
+        assetLocks: null,
+        lockedFaceThumbnails: null,
+        lockedAlbumCovers: null,
+        lockedSharedSpaceCovers: null,
+        lockedPetCovers: null,
+      },
+      after: {
+        lockedFolderAssets: 0,
+        assetLocks: 2,
+        lockedFaceThumbnails: 0,
+        lockedAlbumCovers: 0,
+        lockedSharedSpaceCovers: 0,
+        lockedPetCovers: 0,
+      },
     });
     expect(steps['1786972746372-AssetOcrSyncReset']).toEqual({
       before: { ocrSyncCheckpoints: 0 },
