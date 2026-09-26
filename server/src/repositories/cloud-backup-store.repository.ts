@@ -98,7 +98,7 @@ const encodeRfc3986 = (value: string) => encodeURIComponent(value).replaceAll(/[
 const decodeXml = (value: string) =>
   value
     .replaceAll(/&#x([\da-f]+);/gi, (_, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replaceAll(/&#(\d+);/g, (_, decimal: string) => String.fromCodePoint(Number.parseInt(decimal, 10)))
+    .replaceAll(/&#(\d+);/g, (_, decimal: string) => String.fromCodePoint(Number(decimal)))
     .replaceAll('&quot;', '"')
     .replaceAll('&apos;', "'")
     .replaceAll('&lt;', '<')
@@ -106,7 +106,10 @@ const decodeXml = (value: string) =>
     .replaceAll('&amp;', '&');
 
 const xmlValues = (xml: string, tag: string) =>
-  [...xml.matchAll(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'g'))].map((match) => decodeXml(match[1]));
+  xml
+    .matchAll(new RegExp(String.raw`<${tag}>([\s\S]*?)</${tag}>`, 'g'))
+    .map((match) => decodeXml(match[1]))
+    .toArray();
 
 const xmlValue = (xml: string, tag: string) => xmlValues(xml, tag)[0] ?? null;
 
