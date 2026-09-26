@@ -235,6 +235,12 @@
       "cloud"
     ]
   },
+  "frameleafCloud.remoteAccess.allowOriginalsOverRelay": {
+    "type": "boolean"
+  },
+  "frameleafCloud.remoteAccess.allowPasswordOverRelay": {
+    "type": "boolean"
+  },
   "frameleafCloud.signIn.buttonText": {
     "type": "string"
   },

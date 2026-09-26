@@ -8,6 +8,16 @@ import { revokeSessionView } from '$lib/utils/session-privacy';
 export type SessionPrivacyStatus = 'pending' | 'ready' | 'error';
 
 /**
+ * Whether the server says this sign-in no longer counts: a 401, or (FL-161) a 403
+ * `frameleaf_sign_in_required` for a session that is not a Frameleaf sign-in, reached through remote
+ * access. Either way the person has to sign in again, and the login page offers what works here.
+ */
+const isAuthenticationGone = (error: unknown) =>
+  isHttpError(error) &&
+  (error.status === 401 ||
+    (error.status === 403 && (error.data as { code?: unknown } | undefined)?.code === 'frameleaf_sign_in_required'));
+
+/**
  * What re-checking the preloaded route data found: `'replaced'` means the caller already left the
  * page (for example the asset in the URL is no longer the caller's to see), so nothing is released.
  */
@@ -210,7 +220,7 @@ export const watchSessionPrivacy = (
       verified = true;
       onInitialStatus('ready');
     } catch (error) {
-      if (!stopped && request === generation && isHttpError(error) && error.status === 401) {
+      if (!stopped && request === generation && isAuthenticationGone(error)) {
         revokeAuthentication(true);
       } else if (!stopped && request === generation && (elevated || elevationRequested)) {
         revoke();
