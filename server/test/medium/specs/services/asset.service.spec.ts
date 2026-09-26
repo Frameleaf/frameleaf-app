@@ -420,8 +420,8 @@ describe(AssetService.name, () => {
         const { user } = await ctx.newUser();
         const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
         const seenWhenAnnounced: unknown[] = [];
-        ctx.getMock(EventRepository).emit.mockImplementation(async (event) => {
-          if (event === 'AssetDelete') {
+        ctx.getMock(EventRepository).emit.mockImplementation(async (...args) => {
+          if (args[0] === 'AssetDelete') {
             // read on another connection: only a committed removal is visible here
             seenWhenAnnounced.push(
               await forkDatabase.selectFrom('asset').select('id').where('id', '=', asset.id).executeTakeFirst(),
