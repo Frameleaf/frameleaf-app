@@ -8,12 +8,14 @@
    * and cloud processing is on.
    *
    * Where work runs is a setting (`frameleafCloud.cloudMl.routing`, `startWith`) saved with the settings
-   * bar like every other setting. Each kind of work allowed on Frameleaf Cloud has the Frameleaf Cloud
-   * model pickers (FL-186): the models come from the cloud's catalogue and a choice is saved per model
-   * group, apart from the workload's route, which is what admission reads for every cloud job.
+   * bar like every other setting. Each kind of work allowed on Frameleaf Cloud has its model sliders
+   * (FL-186, FL-189): this server's model where the work has a local model setting (white and green
+   * stops, saved with the settings bar), and the Frameleaf Cloud model from the cloud's catalogue once
+   * cloud processing is on (blue stops, saved per model group at once, apart from the workload's route,
+   * which is what admission reads for every cloud job).
    */
   import './frameleaf-cloud.css';
-  import CloudRouteModels from '$lib/components/frameleaf/cloud/CloudRouteModels.svelte';
+  import WorkloadModelPickers from '$lib/components/frameleaf/cloud/WorkloadModelPickers.svelte';
   import {
     isRoutedWorkload,
     localCapability,
@@ -29,6 +31,7 @@
   } from '$lib/frameleaf/cloud-ml';
   import { choicesByGroup, loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
   import type { RouteMode } from '$lib/frameleaf/gpu-model-catalog';
+  import { localModelsFor } from '$lib/frameleaf/local-models';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
@@ -190,12 +193,14 @@
             {$t(workloadWhyKey(row.id))}
           {/if}
         </p>
-        {#if showModels && cloudOn && isRoutedWorkload(row.id) && route !== 'local'}
+        {#if showModels && isRoutedWorkload(row.id) && (cloudOn || localModelsFor(row.id).length > 0)}
           <div class="fc-routing-models">
-            <CloudRouteModels
+            <WorkloadModelPickers
               row={row.id}
-              catalog={models.catalog}
-              catalogFailed={models.catalogFailed}
+              {route}
+              {hardware}
+              catalog={cloudOn ? models.catalog : null}
+              catalogFailed={cloudOn && models.catalogFailed}
               choices={models.choices}
               onSaved={(choices, message) => {
                 models = { ...models, choices: choicesByGroup(choices) };
