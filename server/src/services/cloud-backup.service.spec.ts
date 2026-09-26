@@ -150,7 +150,7 @@ describe(CloudBackupService.name, () => {
   beforeEach(() => {
     mocks = getMocks();
     metadata = {};
-    mocks.systemMetadata.get.mockImplementation((name: string) => Promise.resolve(metadata[name]));
+    mocks.systemMetadata.get.mockImplementation((name) => Promise.resolve(metadata[name] as never));
     mocks.systemMetadata.set.mockImplementation((name: string, value: unknown) => {
       metadata[name] = value;
       return Promise.resolve();
