@@ -1,0 +1,19 @@
+{
+  "estimate": "est1.Zr9mQ2x7VbN4kP1sT8yH3dLw6cJ0aF5gR2uE9iO4nM7qX1zB8vC3tY6hW0pK5sD2fG9jL4",
+  "expiresAt": "2026-09-26T04:15:00.000Z",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "computeSku": "cs_KGECTVQ0",
+  "cost": {
+    "p50": 0.021,
+    "p90": 0.024,
+    "startup": 0.02,
+    "hold": 0.05,
+    "minimum": 0.02
+  },
+  "seconds": {
+    "coldStart": 18,
+    "run": 1.1
+  },
+  "basis": "measured"
+}

@@ -100,6 +100,8 @@ export const mlDestinationStub = {
       limits: {},
       catalogEtag: 'catalog-1',
       modelIds: ['describe-large', 'restore-faithful'],
+      // FL-181: this catalogue offers only a faithful restoration model, none creative.
+      modelWorkloads: { 'describe-large': MlWorkload.Enrichment, 'restore-faithful': MlWorkload.RestorationFaithful },
       refusal: null,
     },
   }),
