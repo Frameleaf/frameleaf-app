@@ -541,6 +541,8 @@ export enum SystemMetadataKey {
    * candidates. Written by the edge worker, read by the API.
    */
   FrameleafRemoteAccess = 'frameleaf-remote-access',
+  /** FL-165: the last remote access self-check an administrator ran (written by the API only). */
+  FrameleafRemoteAccessTest = 'frameleaf-remote-access-test',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
   HardwareCheck = 'hardware-check',
   /**

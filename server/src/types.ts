@@ -1145,8 +1145,6 @@ export type FrameleafRemoteAccess = {
     cgnatSuspected: boolean;
   };
   candidates: FrameleafRemoteConnection[];
-  /** Written by the API; the edge worker keeps it across its own writes. */
-  lastTest?: FrameleafRemoteAccessTest;
 };
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
@@ -1170,6 +1168,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafMlSuspension]: FrameleafMlSuspension;
   [SystemMetadataKey.FrameleafCloudBackup]: FrameleafCloudBackup;
   [SystemMetadataKey.FrameleafRemoteAccess]: FrameleafRemoteAccess;
+  [SystemMetadataKey.FrameleafRemoteAccessTest]: FrameleafRemoteAccessTest;
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.FrameleafCloudDescriptionQueue]: FrameleafCloudDescriptionQueue;

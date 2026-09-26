@@ -7,6 +7,7 @@ import {
   addressOfName,
   buildCandidates,
   certificateFacts,
+  certificateMatchesKey,
   certificateReport,
   challengeRecordName,
   classifyArrival,
@@ -264,6 +265,7 @@ describe('frameleaf remote access (FL-165)', () => {
         lanAddresses: ['192.168.1.10', '8.8.8.8'],
         ipv6Addresses: ['2001:db8::1', 'fd00::5', 'fe80::1'],
         publicIpv4: '203.0.113.7',
+        ipv6Listening: true,
       };
       const relayOnly = buildCandidates({ ...input, settings: settings() });
       expect(relayOnly.map((candidate) => [candidate.kind, candidate.uri])).toEqual([
@@ -282,7 +284,8 @@ describe('frameleaf remote access (FL-165)', () => {
       expect(direct.map((candidate) => [candidate.kind, candidate.uri, candidate.custom])).toEqual([
         ['local', 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf-direct.net:2443', false],
         ['wan', 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf-direct.net:4443', false],
-        ['ipv6', 'https://2001-db8--1.u225vlzhsdlhwh4l.frameleaf-direct.net:4443', false],
+        // IPv6 has no router mapping: the listener's own port
+        ['ipv6', 'https://2001-db8--1.u225vlzhsdlhwh4l.frameleaf-direct.net:2443', false],
         ['wan', 'https://photos.example.com', true],
         ['relay', 'https://r.u225vlzhsdlhwh4l.frameleaf-direct.net', false],
       ]);
@@ -310,22 +313,57 @@ describe('frameleaf remote access (FL-165)', () => {
       expect(addressOfName(names, '192-168-1-10.otherlabel.frameleaf-direct.net')).toBeNull();
     });
 
-    it('tags a home peer asking for a home LAN name as lan, everything else as wan', () => {
-      const classify = (peer: string, servername: string | null, trustedLanCidrs: string[] = []) =>
-        classifyArrival({ peer, servername, enrollment: names, trustedLanCidrs });
+    it('tags lan only for an advertised LAN name asked by a peer on its subnet', () => {
+      const classify = (
+        peer: string,
+        servername: string | null,
+        options: { trustedLanCidrs?: string[]; advertised?: string[]; gateways?: string[] } = {},
+      ) =>
+        classifyArrival({
+          peer,
+          servername,
+          enrollment: names,
+          trustedLanCidrs: options.trustedLanCidrs ?? [],
+          advertised: options.advertised ?? ['192.168.1.10'],
+          gateways: options.gateways ?? [],
+        });
       expect(classify('192.168.1.20', lanName)).toBe('lan');
       expect(classify('::ffff:192.168.1.20', lanName)).toBe('lan');
-      expect(classify('fd00::20', lanName)).toBe('lan');
       // a public peer is never lan, whatever name it asks for
       expect(classify('203.0.113.9', lanName)).toBe('wan');
-      // a home peer asking for the relay name, a public address's name or no name is wan
+      // a home peer on another subnet (a proxy, another network) is not lan
+      expect(classify('10.0.0.5', lanName)).toBe('wan');
+      // the SNI is the client's choice: a name this server never advertised proves nothing
+      expect(classify('192.168.1.20', '192-168-1-99.u225vlzhsdlhwh4l.frameleaf-direct.net')).toBe('wan');
+      expect(classify('192.168.1.20', lanName, { advertised: [] })).toBe('wan');
+      // the relay name, a public address's name or no name is wan
       expect(classify('192.168.1.20', 'r.u225vlzhsdlhwh4l.frameleaf-direct.net')).toBe('wan');
       expect(classify('192.168.1.20', '203-0-113-7.u225vlzhsdlhwh4l.frameleaf-direct.net')).toBe('wan');
       expect(classify('192.168.1.20', null)).toBe('wan');
-      // FRAMELEAF_TRUSTED_LAN_CIDRS widens both the peer and the name
-      expect(classify('100.64.0.5', '100-64-0-1.u225vlzhsdlhwh4l.frameleaf-direct.net')).toBe('wan');
+      // behind Docker's userland proxy every visitor comes from the gateway: wan unless trusted by name
+      expect(classify('192.168.1.1', lanName, { gateways: ['192.168.1.1'] })).toBe('wan');
+      const trustedGateway = { gateways: ['192.168.1.1'], trustedLanCidrs: ['192.168.1.1/32'] };
+      expect(classify('192.168.1.1', lanName, trustedGateway)).toBe('lan');
+      // a loopback peer is never lan
+      expect(classify('127.0.0.1', ipv4Name(names, '127.0.0.1'), { advertised: ['127.0.0.1'] })).toBe('wan');
+      // IPv6: the same /64
+      const ulaName = ipv6Name(names, 'fd00::10');
+      expect(classify('fd00::20', ulaName, { advertised: ['fd00::10'] })).toBe('lan');
+      expect(classify('fd00:1::20', ulaName, { advertised: ['fd00::10'] })).toBe('wan');
+      // FRAMELEAF_TRUSTED_LAN_CIDRS trusts peers explicitly (a tailnet)
       const tailnetName = '100-64-0-1.u225vlzhsdlhwh4l.frameleaf-direct.net';
-      expect(classify('100.64.0.5', tailnetName, ['100.64.0.0/10'])).toBe('lan');
+      expect(classify('100.64.9.5', tailnetName, { advertised: ['100.64.0.1'] })).toBe('wan');
+      const tailnet = { advertised: ['100.64.0.1'], trustedLanCidrs: ['100.64.0.0/10'] };
+      expect(classify('100.64.9.5', tailnetName, tailnet)).toBe('lan');
+    });
+
+    it('checks that a certificate and its key belong together', () => {
+      const dir = join(import.meta.dirname, '../../test/fixtures/frameleaf-edge');
+      const wildcardKey = readFileSync(join(dir, 'wildcard.key.pem'), 'utf8');
+      const customKey = readFileSync(join(dir, 'custom.key.pem'), 'utf8');
+      expect(certificateMatchesKey(testCertificate('wildcard'), wildcardKey)).toBe(true);
+      expect(certificateMatchesKey(testCertificate('wildcard'), customKey)).toBe(false);
+      expect(certificateMatchesKey(testCertificate('wildcard'), 'not a key')).toBe(false);
     });
   });
 });

@@ -191,7 +191,12 @@ const getEnv = (): EnvData => {
     ImmichWorker.Edge,
   ]);
   const excludedWorkers = asSet(dto.IMMICH_WORKERS_EXCLUDE, []);
-  const workers = [...setDifference(includedWorkers, excludedWorkers)];
+  let workers = [...setDifference(includedWorkers, excludedWorkers)];
+  // FL-165: by default the edge worker runs where the API does; a container without the API (for
+  // example one that only runs jobs) runs it only when IMMICH_WORKERS_INCLUDE names it
+  if (!dto.IMMICH_WORKERS_INCLUDE && !workers.includes(ImmichWorker.Api)) {
+    workers = workers.filter((worker) => worker !== ImmichWorker.Edge);
+  }
   for (const worker of workers) {
     if (!WORKER_TYPES.has(worker)) {
       throw new Error(`Invalid worker(s) found: ${workers.join(',')}`);

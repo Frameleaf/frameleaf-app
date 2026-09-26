@@ -258,8 +258,8 @@ describe(FrameleafRemoteAccessService.name, () => {
         ['api', true],
         ['relay', false],
       ]);
-      const saved = metadata.get(SystemMetadataKey.FrameleafRemoteAccess) as FrameleafRemoteAccess;
-      expect(saved.lastTest?.ok).toBe(true);
+      // kept under its own key, which the edge worker never writes
+      expect(metadata.get(SystemMetadataKey.FrameleafRemoteAccessTest)).toMatchObject({ ok: true });
     });
 
     it('fails without a certificate or a listener, without trying the request', async () => {

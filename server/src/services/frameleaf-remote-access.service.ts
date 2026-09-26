@@ -70,7 +70,7 @@ export class FrameleafRemoteAccessService extends BaseService {
     const discovery = cloudUrl ? this.frameleafCloudRepository.peekDiscovery(cloudUrl) : null;
     const domain = directDomainOf(names, discovery);
     const host = settings.customHostname.host || null;
-    const lastTest = state?.lastTest ?? null;
+    const lastTest = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccessTest);
 
     return {
       unavailableReason,
@@ -169,9 +169,6 @@ export class FrameleafRemoteAccessService extends BaseService {
 
     const config = await this.getConfig({ withCache: false });
     const previous = config.frameleafCloud.remoteAccess.customHostname.host;
-    if (previous && previous !== check.host) {
-      await this.removeAtCloud(cloudUrl, link, previous);
-    }
     const answer = await this.cloudCall(async () => {
       const { token } = await this.session(cloudUrl, link);
       return this.frameleafCloudRepository.requestJson(remoteHostnameSchema, {
@@ -182,6 +179,12 @@ export class FrameleafRemoteAccessService extends BaseService {
       });
     });
     await this.saveHostname(answer, previous !== check.host);
+    // the new hostname is in place before the old one goes, so a failure never leaves neither
+    if (previous && previous !== check.host) {
+      await this.removeAtCloud(cloudUrl, link, previous).catch((error: unknown) => {
+        this.logger.warn(`The previous custom hostname ${previous} could not be removed: ${error}`);
+      });
+    }
     this.logger.log(`Custom hostname ${check.host} added by ${auth.user.id}: ${answer.state}`);
     return this.getStatus(Date.now(), hostnameProblem(answer));
   }
@@ -348,17 +351,9 @@ export class FrameleafRemoteAccessService extends BaseService {
       ok: certificateOk && listening && probe.ok,
       checks,
     };
-    const latest = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
-    if (latest) {
-      const saved = { ...latest, lastTest: result };
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafRemoteAccess, saved);
-    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafRemoteAccessTest, result);
     this.logger.log(`Remote access self-check by ${auth.user.id}: ${result.ok ? 'passed' : 'failed'}`);
-    const status = await this.getStatus(now);
-    // an edge worker that never wrote a state has nowhere to keep the result; it is still shown once
-    return latest
-      ? status
-      : { ...status, lastTestAt: result.at, lastTestOk: result.ok, lastTestChecks: result.checks };
+    return this.getStatus(now);
   }
 
   /** One request through the direct listener, as a device on the home network would make it. */
