@@ -281,7 +281,10 @@ export class CloudBackupIndexRepository {
     ],
   })
   async adoptManifests(bucket: string, manifests: CloudBackupAdoptedManifest[]): Promise<number> {
-    const known = await this.getManifestKeys(bucket, manifests.map(({ key }) => key));
+    const known = await this.getManifestKeys(
+      bucket,
+      manifests.map(({ key }) => key),
+    );
     const fresh = manifests.filter(({ key }) => !known.has(key));
     if (fresh.length === 0) {
       return 0;

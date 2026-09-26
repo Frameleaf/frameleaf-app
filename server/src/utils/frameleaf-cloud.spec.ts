@@ -150,9 +150,7 @@ describe(discoveryProblem.name, () => {
         // FL-165: the direct domain remote access names live under, as the cloud publishes it
         expect(document.remote).toEqual(cloudContractFixture(name).remote);
         // FC-19 final (383f815): the account site's store, a sibling too (as-built decision #29)
-        expect(storeAddress('https://api.frameleaf.cloud', document.store)).toBe(
-          'https://frameleaf.cloud/store',
-        );
+        expect(storeAddress('https://api.frameleaf.cloud', document.store)).toBe('https://frameleaf.cloud/store');
         expect(storeAddress('https://api.frameleaf.example', document.store)).toBeNull();
         // the same document under another configured cloud is refused as a whole
         expect(discoveryProblem('https://api.frameleaf.example', document)).toMatch(

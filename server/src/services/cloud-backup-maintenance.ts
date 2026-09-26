@@ -164,10 +164,7 @@ export class CloudBackupMaintenance {
       }
     }
 
-    const objects = unreferencedObjects(
-      await listAll(this.store, bucket, CLOUD_BACKUP_OBJECT_PREFIX),
-      referenced,
-    );
+    const objects = unreferencedObjects(await listAll(this.store, bucket, CLOUD_BACKUP_OBJECT_PREFIX), referenced);
     // the newest dumps are kept whatever names them, as a run keeps them
     const dumps = await listAll(this.store, bucket, CLOUD_BACKUP_DB_PREFIX);
     const newestDumps = new Set(
@@ -261,7 +258,9 @@ export class CloudBackupMaintenance {
       }
     }
 
-    const hashes = [...named.keys()]
+    const hashes = named
+      .keys()
+      .toArray()
       .filter((sha256) => start.depth === 'full' || inVerifySlice(sha256, start.slice))
       .toSorted(compareCodeUnits);
     let result: CloudBackupVerifyResult = {

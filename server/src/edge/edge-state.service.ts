@@ -20,8 +20,8 @@ import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { DatabaseLock, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository, type HeldLock } from 'src/repositories/database.repository.js';
-import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
@@ -666,8 +666,7 @@ export class EdgeStateService {
     const endpoints = remoteEndpoints(document);
     const name = challengeRecordName(enrollment);
     let accountPinned: string | null = null;
-    const directoryUrl =
-      this.configRepository.getEnv().frameleafCloud.edge.acmeDirectoryUrl ?? LETS_ENCRYPT_DIRECTORY;
+    const directoryUrl = this.configRepository.getEnv().frameleafCloud.edge.acmeDirectoryUrl ?? LETS_ENCRYPT_DIRECTORY;
 
     const result = await this.certificates.issue(input.identityDir, {
       directoryUrl,
