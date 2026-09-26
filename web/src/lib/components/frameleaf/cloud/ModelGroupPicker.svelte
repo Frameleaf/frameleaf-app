@@ -11,7 +11,7 @@
    *
    * - A local stop writes the model setting of the work (descriptions:
    *   `machineLearning.imageDescription.modelName`) into the settings draft, saved with the settings
-   *   bar like every other setting. The ML container downloads the model from Hugging Face the first
+   *   bar like every other setting. The ML container downloads the model the first
    *   time a job uses it.
    * - A blue stop is a model from Frameleaf Cloud's catalogue for exactly this group, saved on its
    *   own at once, apart from the workload's route: every cloud job of the group names it whatever the
@@ -242,10 +242,15 @@
 <fieldset class="ms" data-group={group} aria-busy={saving} bind:this={fieldset}>
   <legend class="ms-legend">{legend}</legend>
   {#if stopCount > 0}
-    <div class="ms-track" style:--ms-count={stopCount}>
+    <div class="ms-track is-split">
       {#if local && localStops.length > 0}
         {@const side = local}
-        <div class="ms-side" role="radiogroup" aria-label={$t('admin.frameleaf_model_local_for', { values: { name } })}>
+        <div
+          class="ms-side"
+          role="radiogroup"
+          aria-label={$t('admin.frameleaf_model_local_for', { values: { name } })}
+          style:--ms-count={localStops.length}
+        >
           {#each localStops as stop (stop.model.value)}
             {@const checked = stop.model.value === side.value}
             {@const off = side.disabled || stop.reason !== null}
@@ -281,7 +286,12 @@
         </div>
       {/if}
       {#if cloudModels.length > 0}
-        <div class="ms-side" role="radiogroup" aria-label={$t('admin.frameleaf_cloud_model_for', { values: { name } })}>
+        <div
+          class="ms-side"
+          role="radiogroup"
+          aria-label={$t('admin.frameleaf_cloud_model_for', { values: { name } })}
+          style:--ms-count={cloudModels.length}
+        >
           {#each cloudModels as model (model.id)}
             {@const checked = model.id === selectedId}
             <label

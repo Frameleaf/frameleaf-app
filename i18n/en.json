@@ -567,7 +567,7 @@
     "frameleaf_ml_workload_upscale": "Upscaling",
     "frameleaf_model_for": "Model for {name}",
     "frameleaf_model_local_custom": "This server uses {model}, set in Machine learning settings.",
-    "frameleaf_model_local_download": "A model this server doesn't have yet downloads from Hugging Face the first time a job uses it, which can take several minutes.",
+    "frameleaf_model_local_download": "A model this server doesn't have yet downloads the first time a job uses it, which can take several minutes.",
     "frameleaf_model_local_for": "This server's model for {name}",
     "frameleaf_model_local_label_cpu": "CPU · slow",
     "frameleaf_model_local_label_gpu": "Your GPU · about {gb} GB",

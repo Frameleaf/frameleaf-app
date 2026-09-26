@@ -217,9 +217,19 @@
   flex: none;
   margin-top: 1px;
 }
-/* FL-189: this server's stops and the Frameleaf Cloud stops are two radio groups on one track. */
+/*
+ * FL-189: this server's stops and the Frameleaf Cloud stops are two radio groups on one track. Each
+ * group is its own grid (a real node for assistive technology), and the track shares the width out
+ * by stop count, so every stop is as wide as in one grid and the bands meet without a gap.
+ */
+.ms-track.is-split {
+  display: flex;
+}
 .ms-side {
-  display: contents;
+  display: grid;
+  grid-template-columns: repeat(var(--ms-count, 1), minmax(0, 1fr));
+  flex: var(--ms-count, 1) 1 0;
+  min-width: 0;
 }
 .ms-side:has(+ .ms-side) .ms-stop:last-child .ms-band,
 .ms-side + .ms-side .ms-stop:first-child .ms-band {
