@@ -215,7 +215,7 @@ export class FrameleafRemoteAccessService extends BaseService {
         body: { hostname: host },
       });
     });
-    await this.saveHostname(answer, false, host);
+    await this.saveHostname(answer, false, host, true);
     this.logger.log(`Custom hostname ${host} checked by ${auth.user.id}: ${answer.state}`);
     return this.getStatus(Date.now(), hostnameProblem(answer));
   }
@@ -266,13 +266,17 @@ export class FrameleafRemoteAccessService extends BaseService {
   }
 
   /** Keep what Frameleaf Cloud said about the hostname; "Use my domain" falls back while it is not verified. */
-  private async saveHostname(answer: RemoteHostname, changed: boolean, host: string) {
+  private async saveHostname(answer: RemoteHostname, changed: boolean, host: string, onlyIfStored = false) {
     if (answer.hostname !== host) {
       throw new ServiceUnavailableException('Frameleaf Cloud answered for another hostname. Try again.');
     }
     const status = hostnameStatus(answer.state);
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
       const remote = config.frameleafCloud.remoteAccess;
+      // a check never writes back a hostname that was removed while it ran
+      if (onlyIfStored && remote.customHostname.host !== host) {
+        return;
+      }
       config.frameleafCloud.remoteAccess = {
         ...remote,
         publicUrl: status === 'verified' && !changed ? remote.publicUrl : 'frameleaf',

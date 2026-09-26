@@ -1492,9 +1492,8 @@ export class DatabaseRepository extends ForkHandoffRepository {
           },
         });
         await done;
-        if (!lost) {
-          await this.releaseLock(lock, connection).catch(() => {});
-        }
+        // always: a failed check on a live session must not leave the lock on a pooled connection
+        await this.releaseLock(lock, connection).catch(() => {});
       })
       .catch((error: unknown) => {
         this.logger.warn(`A held database lock ended: ${error}`);

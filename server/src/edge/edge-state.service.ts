@@ -236,9 +236,14 @@ export class EdgeStateService {
     // the lock lives on a connection of its own; it is checked on every pass, and a lost connection
     // (the lock went with it) stops serving at once, before another edge worker can take over
     if (this.lock && !(await this.lock.verify())) {
-      this.logger.warn('This edge worker lost the edge lock; it stops serving remote access');
-      this.lock = null;
-      await this.stopServing();
+      // the connection went (the pool retires connections too): take the lock again at once, and
+      // stop serving only when another edge worker got it meanwhile
+      this.lock = await this.databaseRepository.holdLock(DatabaseLock.FrameleafEdge);
+      if (!this.lock) {
+        this.logger.warn('This edge worker lost the edge lock; it stops serving remote access');
+        await this.stopServing();
+        return;
+      }
     }
     if (!this.lock) {
       this.lock = await this.databaseRepository.holdLock(DatabaseLock.FrameleafEdge);
