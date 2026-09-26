@@ -44,6 +44,28 @@ test.describe('Map', () => {
     await expect(list.getByRole('button', { name: /^Centre map on/ })).toHaveCount(1);
   });
 
+  test('shows the offline state when the map style fails at startup, and recovers once it loads (FL-193)', async ({
+    context,
+    page,
+  }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await utils.mockMapStyle(context, 500);
+    await page.goto('/map');
+
+    // The style request fails before the map ever finishes loading, so this only shows up if the
+    // error handling is attached before that first load rather than inside its callback.
+    await expect(page.getByRole('status').filter({ hasText: 'The map can’t load' })).toBeVisible();
+    await expect(page.getByText('Your located items are still listed under In view.')).toBeVisible();
+    // The located items stay reachable through the list; the failed tiles do not hide them.
+    await expect(page.getByText('1 item in view')).toBeVisible();
+
+    await context.unroute(/\/v1\/style\/(light|dark)\.json(\?.*)?$/);
+    await utils.mockMapStyle(context);
+    await page.getByRole('button', { name: 'Try again' }).click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'The map can’t load' })).toHaveCount(0);
+  });
+
   test('searches the visible area in the Library', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/map');

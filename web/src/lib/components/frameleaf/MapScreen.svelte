@@ -406,6 +406,15 @@
       diffStyleUpdates={true}
       minZoom={MIN_ZOOM}
       maxZoom={MAX_ZOOM}
+      onerror={(event) => {
+        // FL-193: attached here, not inside onload, so a style or tile fetch that fails before the
+        // map's first "load" (offline at startup, or the tile server unreachable) still shows the
+        // offline state instead of leaving the map blank. onload only fires once the style has
+        // loaded, so an error handler registered there would never see a startup failure.
+        if ((event as { sourceId?: string }).sourceId !== 'geojson') {
+          tilesFailed = true;
+        }
+      }}
       onload={(instance: Map) => {
         // MapView.jsx:230-240: place names start past their dot and clear of the bubbles, on every style.
         const layoutLabels = () => applyClusterLabelLayout(instance, 'geojson');
@@ -420,13 +429,6 @@
             changed = true;
           }
           updateInView();
-        });
-        // FL-51: a style or tile that cannot be fetched (offline, or the tile server is unreachable)
-        // shows the offline state instead of a silently blank map
-        instance.on('error', (event) => {
-          if ((event as { sourceId?: string }).sourceId !== 'geojson') {
-            tilesFailed = true;
-          }
         });
       }}
       bind:map
