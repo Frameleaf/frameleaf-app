@@ -114,7 +114,7 @@
   const progress = $derived(icloudRunProgress(run));
   const problems = $derived(icloudDraftProblems(draft));
   const summary = $derived(icloudSummary(selected?.counts ?? {}));
-  const consent = $derived(selected ? icloudConsentNeeded(draft, selected) : { hidden: false, external: false });
+  const consent = $derived(selected ? icloudConsentNeeded(draft, selected) : { hidden: false });
   const libraryIds = $derived(inventory?.libraries.map(({ id }) => id) ?? []);
   const visibleAlbums = $derived(
     (inventory?.albums ?? [])
@@ -388,7 +388,7 @@
     if (!selected || problems.length > 0) {
       return;
     }
-    if ((consent.hidden || consent.external) && !consentGiven) {
+    if (consent.hidden && !consentGiven) {
       consentOpen = true;
       return;
     }
@@ -591,10 +591,7 @@
           <input type="checkbox" bind:checked={draft.includeHidden} disabled={busy} />
           {$t('frameleaf_icloud_include_hidden')}
         </label>
-        <label class="ic-check">
-          <input type="checkbox" bind:checked={draft.recoverExternalAsManaged} disabled={busy} />
-          {$t('frameleaf_icloud_include_external')}
-        </label>
+        <p class="ic-hint">{$t('frameleaf_icloud_external_managed')}</p>
       </section>
 
       <section>
@@ -732,9 +729,6 @@
   <div class="ic-dialog">
     {#if consent.hidden}
       <p>{$t('frameleaf_icloud_consent_hidden')}</p>
-    {/if}
-    {#if consent.external}
-      <p>{$t('frameleaf_icloud_consent_external')}</p>
     {/if}
     <div class="ic-dialog-actions">
       <Button onclick={() => (consentOpen = false)}>{$t('cancel')}</Button>

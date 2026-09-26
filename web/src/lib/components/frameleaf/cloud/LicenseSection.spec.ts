@@ -1,4 +1,15 @@
-import { CloudHeartbeatField, CloudLinkState, LicenseState, type LicenseStatusResponseDto } from '@immich/sdk';
+import {
+  CloudHeartbeatField,
+  CloudLinkState,
+  Currency,
+  Kind3,
+  LicenseKind,
+  LicenseState,
+  Period,
+  Source,
+  type LicenseProductsResponseDto,
+  type LicenseStatusResponseDto,
+} from '@immich/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,8 +46,8 @@ const license = (overrides: Partial<LicenseStatusResponseDto> = {}): LicenseStat
 
 const keySlot = {
   state: LicenseState.Active,
-  kind: 'server' as const,
-  source: 'key' as const,
+  kind: LicenseKind.Server,
+  source: Source.Key,
   keyHint: 'J58U',
   activatedAt: '2026-09-25T09:00:00.000Z',
   expiresAt: null,
@@ -46,8 +57,8 @@ const keySlot = {
 
 const planSlot = {
   state: LicenseState.Active,
-  kind: 'plan' as const,
-  source: 'account' as const,
+  kind: LicenseKind.Plan,
+  source: Source.Account,
   keyHint: null,
   activatedAt: '2026-09-25T09:00:00.000Z',
   expiresAt: '2026-10-25T09:00:00.000Z',
@@ -55,31 +66,33 @@ const planSlot = {
   refreshedAt: '2026-09-25T09:00:00.000Z',
 };
 
-const products = (storeUrl: string | null = 'https://frameleaf.cloud.test/store') => ({
-  currency: 'USD' as const,
+const products = (storeUrl: string | null = 'https://frameleaf.cloud.test/store'): LicenseProductsResponseDto => ({
+  currency: Currency.Usd,
+  credit: { minimumUsd: 20, maximumUsd: 500 },
   licensedDiscount: 0.2,
+  pricesVersion: '2026-09-25.1',
   storeUrl,
-  backup: { usdPerTbMonth: 7.99, minimumTb: 1 },
+  backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
   products: [
     {
       id: 'cloud-monthly',
-      kind: 'plan' as const,
-      period: 'month' as const,
-      priceUsd: 6,
+      kind: Kind3.Plan,
+      period: Period.Month,
+      priceUsd: 9.99,
       storeUrl: storeUrl && `${storeUrl}?product=cloud-monthly`,
     },
     {
       id: 'cloud-annual',
-      kind: 'plan' as const,
-      period: 'year' as const,
-      priceUsd: 60,
+      kind: Kind3.Plan,
+      period: Period.Year,
+      priceUsd: 99.9,
       storeUrl: storeUrl && `${storeUrl}?product=cloud-annual`,
     },
-    { id: 'supporter-server', kind: 'supporter' as const, period: 'one-time' as const, priceUsd: 100, storeUrl: null },
+    { id: 'supporter-server', kind: Kind3.Supporter, period: Period.OneTime, priceUsd: 100, storeUrl: null },
     {
       id: 'supporter-individual',
-      kind: 'supporter' as const,
-      period: 'one-time' as const,
+      kind: Kind3.Supporter,
+      period: Period.OneTime,
       priceUsd: 25,
       storeUrl: null,
     },
@@ -203,7 +216,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
         license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T09:00:00.000Z' },
       } as never);
       sdkMock.getLicenseStatus.mockResolvedValue(license());
-      sdkMock.deleteUserLicense.mockResolvedValue();
+      sdkMock.deleteUserLicense.mockResolvedValue(undefined as never);
       sdkMock.getMyUser.mockResolvedValue({ id: 'admin-1', isAdmin: true, license: null } as never);
       render(LicenseSection);
 
@@ -236,7 +249,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
         license({ state: LicenseState.Expired, key: { ...keySlot, state: LicenseState.Expired }, keyHint: 'J58U' }),
       );
       sdkMock.removeLicenseKey.mockResolvedValue(license());
-      sdkMock.deleteUserLicense.mockResolvedValue();
+      sdkMock.deleteUserLicense.mockResolvedValue(undefined as never);
       sdkMock.getMyUser.mockResolvedValue({ id: 'admin-1', isAdmin: true, license: null } as never);
       render(LicenseSection);
 
@@ -300,15 +313,15 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
   });
 
   describe('PlanSection', () => {
-    it('shows plan cards with the store link and backup as its own usage price', async () => {
+    it('shows plan cards with the store link, 1 TB of backup included and the price of more', async () => {
       sdkMock.getLicenseStatus.mockResolvedValue(license());
       render(PlanSection);
 
       expect(await screen.findByText('No plan on this server')).toBeInTheDocument();
-      expect(screen.getByText('$6')).toBeInTheDocument();
-      expect(screen.getByText('$60')).toBeInTheDocument();
-      expect(screen.queryByText(/1 TB encrypted/)).not.toBeInTheDocument();
-      expect(screen.getByText(/from \$7.99\/month per TB, 1 TB minimum/)).toBeInTheDocument();
+      expect(screen.getByText('$9.99')).toBeInTheDocument();
+      expect(screen.getByText('$99.90')).toBeInTheDocument();
+      expect(screen.getAllByText('1 TB encrypted cloud backup')).toHaveLength(2);
+      expect(screen.getByText(/More storage is \$9\.99\/month for each extra 1 TB/)).toBeInTheDocument();
       expect(screen.getAllByRole('button', { name: 'Continue to checkout' })).toHaveLength(2);
     });
 
@@ -318,11 +331,22 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       );
       render(PlanSection);
 
-      expect(await screen.findByText(/\$4.80/)).toBeInTheDocument();
-      expect(screen.getByText('$6').tagName).toBe('S');
-      expect(screen.getByText(/\$4.80/)).toBeInTheDocument();
-      expect(screen.getByText(/\$48/)).toBeInTheDocument();
+      expect(await screen.findByText(/\$7\.99/)).toBeInTheDocument();
+      expect(screen.getByText('$9.99').tagName).toBe('S');
+      expect(screen.getByText(/\$79\.92/)).toBeInTheDocument();
       expect(screen.getByText(/AI credit is priced the same for everyone/)).toBeInTheDocument();
+    });
+
+    it('follows the discount Frameleaf Cloud published', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(
+        license({ licensed: true, key: keySlot, entitlements: { ...entitlements, supporter: true } }),
+      );
+      sdkMock.getLicenseProducts.mockResolvedValue({ ...products(), licensedDiscount: 0.25 });
+      render(PlanSection);
+
+      expect(await screen.findByText(/\$7\.49/)).toBeInTheDocument();
+      expect(screen.getByText(/\$74\.93/)).toBeInTheDocument();
+      expect(screen.getByText(/plans cost 25% less/)).toBeInTheDocument();
     });
 
     it('says purchasing is not available yet when no store is configured', async () => {

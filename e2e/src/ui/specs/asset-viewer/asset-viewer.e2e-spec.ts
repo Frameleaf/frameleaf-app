@@ -33,7 +33,10 @@ test.describe('asset-viewer', () => {
     assetFavorites: [],
   };
 
-  const trashedAssets = () => assets.filter((asset) => changes.assetDeletions.includes(asset.id));
+  /** Items a test deleted permanently from the trash viewer; they leave the trash as on the server. */
+  const purged = new Set<string>();
+  const trashedAssets = () =>
+    assets.filter((asset) => changes.assetDeletions.includes(asset.id) && !purged.has(asset.id));
 
   test.beforeAll(async () => {
     utils.initSdk();
@@ -226,6 +229,22 @@ test.describe('asset-viewer', () => {
     test.beforeEach(async ({ context }) => {
       await setupTrashMockApiRoutes(context, trashedAssets, (ids) => {
         changes.assetDeletions = changes.assetDeletions.filter((id) => !ids.includes(id));
+      });
+      // A permanent delete takes the item out of the trash list, as the server does. The section
+      // reloads its list shortly after a delete (TrashManager scheduleRefresh), so a mock that kept
+      // listing the item would hand it back to the viewer as the next neighbour.
+      purged.clear();
+      await context.route('**/api/assets', async (route, request) => {
+        if (request.method() !== 'DELETE') {
+          return route.fallback();
+        }
+        const { ids = [], force } = request.postDataJSON() as { ids?: string[]; force?: boolean };
+        if (force) {
+          for (const id of ids) {
+            purged.add(id);
+          }
+        }
+        return route.fulfill({ status: 204 });
       });
     });
     test('Delete trashed photo advances to next', async ({ page }) => {

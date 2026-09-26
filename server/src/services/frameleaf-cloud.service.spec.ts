@@ -389,6 +389,56 @@ describe(FrameleafCloudService.name, () => {
       expect(nextAt - Date.now()).toBeLessThan(151_000);
     });
 
+    it('keeps the plan pricing a check-in publishes, holds a future one, and keeps the last good one through a bad value', async () => {
+      // in effect already (newer than the bundled 2026-09-25.1), and one far in the future
+      const pricing = {
+        pricesVersion: '2026-09-25.2',
+        licensedDiscountPercent: 25,
+        effectiveFrom: '2026-09-25T00:00:00Z',
+      };
+      const future = {
+        pricesVersion: '2999-01-01.1',
+        licensedDiscountPercent: 30,
+        effectiveFrom: '2999-01-01T00:00:00Z',
+      };
+      let body: Record<string, unknown> = { nextHeartbeatSec: 120, pricing };
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(metadata.get(SystemMetadataKey.FrameleafPricing)).toEqual({ current: pricing });
+
+      body = { nextHeartbeatSec: 120, pricing: future };
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(metadata.get(SystemMetadataKey.FrameleafPricing)).toEqual({ current: pricing, pending: future });
+
+      body = {
+        nextHeartbeatSec: 120,
+        pricing: { ...future, pricesVersion: '2999-01-01.2', licensedDiscountPercent: 80 },
+      };
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(metadata.get(SystemMetadataKey.FrameleafPricing)).toEqual({ current: pricing, pending: future });
+    });
+
+    it('still completes the check-in when the published pricing cannot be stored', async () => {
+      const pricing = {
+        pricesVersion: '2026-09-25.2',
+        licensedDiscountPercent: 25,
+        effectiveFrom: '2026-09-25T00:00:00Z',
+      };
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: { nextHeartbeatSec: 120, pricing } }));
+      makeDue();
+      const set = mocks.systemMetadata.set.getMockImplementation()!;
+      mocks.systemMetadata.set.mockImplementation((key, value) =>
+        key === SystemMetadataKey.FrameleafPricing ? Promise.reject(new Error('database is down')) : set(key, value),
+      );
+
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(metadata.has(SystemMetadataKey.FrameleafPricing)).toBe(false);
+      expect(storedLink()!.heartbeat!.failures).toBe(0);
+    });
+
     it('waits for the next check-in time', async () => {
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Skipped);
       expect(cloud.requests).toHaveLength(0);

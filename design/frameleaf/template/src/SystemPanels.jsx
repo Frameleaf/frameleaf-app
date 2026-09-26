@@ -646,6 +646,8 @@ export function AccountMenu({
   onLock,
   onOpenLocked,
   onAccountSettings,
+  onAccountSetup,
+  accountSetupDone,
   onAdministration,
   onEditAvatar,
   onSupport,
@@ -765,6 +767,12 @@ export function AccountMenu({
             <Icon name="mdiCogOutline" size={18} />
             <div>Account settings</div>
           </button>
+          {onAccountSetup && (
+            <button type="button" role="menuitem" className="fl-menu-item" onClick={run(onAccountSetup)}>
+              <Icon name="mdiAccountCheckOutline" size={18} />
+              <div>{accountSetupDone ? "Account setup" : "Finish setting up your account"}</div>
+            </button>
+          )}
           {user?.isAdmin && (
             <button type="button" role="menuitem" className="fl-menu-item" onClick={run(onAdministration)}>
               <Icon name="mdiShieldAccountOutline" size={18} />

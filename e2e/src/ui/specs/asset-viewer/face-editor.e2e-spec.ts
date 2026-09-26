@@ -261,7 +261,10 @@ test.describe('face tagger', () => {
 
       await expect(dialog.getByText('Face tags changed in another view.')).toBeVisible();
       await expect(dialog.getByRole('button', { name: 'Save face tags' })).toBeDisabled();
-      await expect(dialog.getByRole('button', { name: mockPeople[2].name, pressed: true })).toBeVisible();
+      // The kept draft names the person on the face box, its row and the people list; the list's
+      // choice is the one that stays pressed.
+      await expect(dialog.getByRole('button', { name: mockPeople[2].name, exact: true, pressed: true })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: `Face 1: ${mockPeople[2].name}` })).toBeVisible();
 
       faceState.faces = [{ ...createMockDetectedFace(mockPeople[3]), revision: 'detected-face-1-rev-9' }];
       const reads = faceState.faceReads;

@@ -1,5 +1,5 @@
 // Pure state for the surfaces outside the library: notifications, upload and
-// download simulation, onboarding, supporter keys, maintenance, password rules
+// download simulation, setup lists, supporter keys, maintenance, password rules
 // and the About information. No DOM access; storage is injected for tests.
 
 const record = (value) =>
@@ -487,22 +487,9 @@ export function downloadSummary(list) {
   return { total: items.length, preparing, ready, active: preparing > 0 };
 }
 
-// ------------------------------------------------------------------- onboarding
+// ------------------------------------------------------------- setup choices
+// First-run setup state lives in first-run-setup.mjs; these are the shared lists.
 
-export const ONBOARDING_KEY = "frameleaf:onboarding:v1";
-export const onboardingSteps = Object.freeze([
-  { id: "hello", title: "Welcome", short: "Welcome" },
-  { id: "language", title: "Choose your language", short: "Language" },
-  { id: "theme", title: "Pick a theme", short: "Theme" },
-  { id: "server-privacy", title: "Server privacy", short: "Server privacy" },
-  { id: "user-privacy", title: "Your privacy", short: "Your privacy" },
-  { id: "storage-template", title: "Storage template", short: "Storage" },
-  { id: "frameleaf-account", title: "Frameleaf account", short: "Account", optional: true },
-  { id: "plan", title: "Plan & licence", short: "Plan", optional: true },
-  { id: "backup", title: "Back up your phone", short: "Backup" },
-  { id: "mobile", title: "Get the mobile app", short: "Mobile app" },
-  { id: "done", title: "You're all set", short: "Done" },
-]);
 export const languages = Object.freeze([
   { code: "en", label: "English" },
   { code: "en-GB", label: "English (UK)" },
@@ -574,89 +561,6 @@ export function renderStorageTemplate(pattern, sample = storageSample) {
     valid,
   };
 }
-export function createOnboarding() {
-  return {
-    version: 1,
-    step: 0,
-    completed: false,
-    choices: {
-      language: "en",
-      theme: "system",
-      server: { versionCheck: true, map: true, cast: true },
-      user: { mapLocations: true, memories: true, sharedInTimeline: true },
-      storageTemplate: { enabled: true, pattern: DEFAULT_STORAGE_TEMPLATE },
-      cloud: { account: "skip", plan: "self-hosted" },
-    },
-  };
-}
-/** Plan choices offered during setup; paid plans are finished on frameleaf.cloud. */
-export const onboardingPlanChoices = Object.freeze([
-  "self-hosted",
-  "cloud-monthly",
-  "cloud-annual",
-  "supporter-key",
-]);
-const bool = (value, fallback) => (typeof value === "boolean" ? value : fallback);
-export function parseOnboarding(raw) {
-  const source = parseJson(raw);
-  const base = createOnboarding();
-  if (!record(source) || source.version !== 1) return null;
-  const step = Number.isInteger(source.step)
-    ? clamp(source.step, 0, onboardingSteps.length - 1)
-    : 0;
-  const choices = record(source.choices) ? source.choices : {};
-  const server = record(choices.server) ? choices.server : {};
-  const user = record(choices.user) ? choices.user : {};
-  const template = record(choices.storageTemplate) ? choices.storageTemplate : {};
-  const cloud = record(choices.cloud) ? choices.cloud : {};
-  return {
-    version: 1,
-    step,
-    completed: bool(source.completed, false),
-    choices: {
-      language: languages.some((entry) => entry.code === choices.language)
-        ? choices.language
-        : base.choices.language,
-      theme: ["light", "dark", "system"].includes(choices.theme)
-        ? choices.theme
-        : base.choices.theme,
-      server: {
-        versionCheck: bool(server.versionCheck, true),
-        map: bool(server.map, true),
-        cast: bool(server.cast, true),
-      },
-      user: {
-        mapLocations: bool(user.mapLocations, true),
-        memories: bool(user.memories, true),
-        sharedInTimeline: bool(user.sharedInTimeline, true),
-      },
-      storageTemplate: {
-        enabled: bool(template.enabled, true),
-        pattern:
-          text(template.pattern, 200) && template.pattern.trim()
-            ? template.pattern
-            : DEFAULT_STORAGE_TEMPLATE,
-      },
-      cloud: {
-        account: cloud.account === "linked" ? "linked" : "skip",
-        plan: onboardingPlanChoices.includes(cloud.plan) ? cloud.plan : "self-hosted",
-      },
-    },
-  };
-}
-export function loadOnboarding(storage) {
-  return parseOnboarding(readStorage(ONBOARDING_KEY, storage)) ?? createOnboarding();
-}
-export function saveOnboarding(state, storage) {
-  return writeStorage(ONBOARDING_KEY, state, storage);
-}
-export function onboardingStepIndex(id) {
-  return Math.max(
-    0,
-    onboardingSteps.findIndex((step) => step.id === id),
-  );
-}
-
 // -------------------------------------------------------------------- supporter
 
 export const SUPPORTER_KEY = "frameleaf:supporter:v1";

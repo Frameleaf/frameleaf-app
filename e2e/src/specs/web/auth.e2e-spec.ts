@@ -17,45 +17,30 @@ test.describe('Registration', () => {
     await page.goto('/');
     await page.getByRole('link', { name: 'Getting Started' }).click();
 
-    // register (FL-80 prototype screen; the strength meter is advisory, the server decides)
-    await expect(page).toHaveTitle(/Admin Registration/);
+    // FL-176: a new server's first-run setup on the always-dark stage
+    await expect(page).toHaveURL('/auth/register');
+    await expect(page).toHaveTitle(/Set up Frameleaf/);
+    await expect(page.locator('section.frs-root')).toHaveAttribute('data-theme', 'dark');
+    await page.getByRole('button', { name: 'Continue setup' }).click();
+
+    await expect(page.getByRole('heading', { name: "How you'll sign in" })).toBeVisible();
+    await page.getByText('Local account only').click();
+    await page.getByRole('button', { name: /^(Continue|Use recommended)$/ }).click();
+
     await expect(page.getByRole('heading', { name: 'Create the admin account' })).toBeVisible();
-    await page.getByLabel('Name', { exact: true }).fill('Immich Admin');
+    await page.getByLabel('Name', { exact: true }).fill('Frameleaf Admin');
     await page.getByLabel('Email', { exact: true }).fill('admin@immich.app');
-    await page.getByLabel('Password', { exact: true }).fill('password');
-    await page.getByLabel('Confirm password', { exact: true }).fill('password');
-    await page.getByRole('button', { name: 'Create account' }).click();
+    await page.getByLabel('Password', { exact: true }).fill('Frameleaf-Admin-2026');
+    await page.getByLabel('Confirm password', { exact: true }).fill('Frameleaf-Admin-2026');
+    await page.getByRole('button', { name: /^(Continue|Use recommended)$/ }).click();
 
-    // login
-    await expect(page).toHaveTitle(/Login/);
-    await page.goto('/auth/login?autoLaunch=0');
-    await page.getByLabel('Email', { exact: true }).fill('admin@immich.app');
-    await page.getByLabel('Password', { exact: true }).fill('password');
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-
-    // onboarding
-    // FL-80 ON-1: the prototype's onboarding — a step rail, Next through every step, then the
-    // summary's "Open Frameleaf". The server's first administrator sees all eleven steps, including
-    // the optional Frameleaf account (FL-158, "Skip" until linked) and Plan & licence (FL-157) steps.
-    await expect(page).toHaveURL('/auth/onboarding');
-    await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
-    for (const title of [
-      'Choose your language',
-      'Pick a theme',
-      'Server Privacy',
-      'Your privacy',
-      'Storage template',
-      'Frameleaf account',
-      'Plan & licence',
-      'Back up your phone',
-      'Get the mobile app',
-      "You're all set",
-    ]) {
-      await page.getByRole('button', { name: /^(Next|Skip)$/ }).click();
-      await expect(page.getByRole('heading', { name: title })).toBeVisible();
+    // The admin now exists and is signed in; every later step has a recommended choice.
+    await expect(page.getByRole('heading', { name: 'Where your library lives' })).toBeVisible();
+    await expect(page.getByText(/^Writable, .* free$/)).toBeVisible();
+    for (const title of ['Processing', 'Protection', 'Privacy', 'Bring everything together', "You're ready"]) {
+      await page.getByRole('button', { name: /^(Continue|Use recommended)$/ }).click();
+      await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
     }
-    // The rail's compact progress line is visual only (aria-hidden); the panel announces the step.
-    await expect(page.getByRole('paragraph').filter({ hasText: 'Step 11 of 11' })).toBeAttached();
     await page.getByRole('button', { name: 'Open Frameleaf' }).click();
 
     // success
@@ -102,22 +87,11 @@ test.describe('Registration', () => {
     await page.getByLabel('Password', { exact: true }).fill('new-password');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
-    // onboarding
-    // FL-80 ON-1: an account on an onboarded server skips the server steps.
+    // FL-176: other accounts get the one-time "Set up your account" page, never setup
     await expect(page).toHaveURL('/auth/onboarding');
-    for (const title of [
-      'Choose your language',
-      'Pick a theme',
-      'Your privacy',
-      'Back up your phone',
-      'Get the mobile app',
-      "You're all set",
-    ]) {
-      await page.getByRole('button', { name: 'Next', exact: true }).click();
-      await expect(page.getByRole('heading', { name: title })).toBeVisible();
-    }
-    await expect(page.getByRole('button', { name: 'Storage' })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Open Frameleaf' }).click();
+    await expect(page.getByRole('heading', { name: 'Set up your account', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Link your Frameleaf account' })).toBeVisible();
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
 
     // success
     await expect(page).toHaveURL(/\/photos/);
@@ -259,39 +233,25 @@ test.describe('Sign-in lifecycle', () => {
     expect(session.shouldChangePassword).toBe(false);
   });
 
-  test('moves focus to each onboarding step and advances with Alt+Arrow keys', async ({ context, page }) => {
-    // FL-80 ON-1/O-5: each step's heading takes focus; Alt+ArrowRight / Alt+ArrowLeft and Next move
-    // between steps, and Alt+ArrowRight on the summary finishes onboarding.
-    const user = await createUser('onboarding', { onboarded: false });
-    const session = await login({ loginCredentialDto: { email: user.email, password: user.password } });
-    await utils.setAuthCookies(context, session.accessToken);
-    await page.goto('/auth/onboarding');
+  test('sends an existing library admin through setup once, moving focus to each step', async ({ context, page }) => {
+    // FL-176: an administrator whose server hasn't finished Frameleaf setup is sent to it from any
+    // page; each step's heading takes focus, and Alt+ArrowLeft goes back. A second account makes
+    // this an existing library: one account with nothing uploaded reads as a new server.
+    await utils.resetDatabase();
+    admin = await utils.adminSetup({ onboarding: false });
+    await createUser('existing-library');
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/photos');
+    await expect(page).toHaveURL('/auth/onboarding');
+    await expect(page.getByText('Welcome to Frameleaf. Your library is safe.')).toBeVisible();
+    await page.getByRole('button', { name: 'Continue setup' }).click();
 
     const heading = (name: string) => page.getByRole('heading', { name, level: 1 });
-    await expect(heading('Welcome')).toBeFocused();
-
-    await page.keyboard.press('Alt+ArrowRight');
-    await expect(heading('Choose your language')).toBeFocused();
-
+    await expect(heading('Your account')).toBeFocused();
+    await page.getByRole('button', { name: /^(Continue|Use recommended)$/ }).click();
+    await expect(heading('Library check')).toBeFocused();
     await page.keyboard.press('Alt+ArrowLeft');
-    await expect(heading('Welcome')).toBeFocused();
-
-    await page.getByRole('button', { name: 'Next', exact: true }).click();
-    await expect(heading('Choose your language')).toBeFocused();
-
-    for (const title of [
-      'Pick a theme',
-      'Your privacy',
-      'Back up your phone',
-      'Get the mobile app',
-      "You're all set",
-    ]) {
-      await page.keyboard.press('Alt+ArrowRight');
-      await expect(heading(title)).toBeFocused();
-    }
-
-    await page.keyboard.press('Alt+ArrowRight');
-    await expect(page).toHaveURL(/\/photos(\?|$)/);
+    await expect(heading('Your account')).toBeFocused();
   });
 
   test('clears private browser state on sign out', async ({ context, page }) => {

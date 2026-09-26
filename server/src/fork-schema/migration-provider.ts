@@ -6,6 +6,7 @@ import {
   SUPPORTED_UPSTREAM_MIGRATIONS,
   classifyMigration,
 } from 'src/fork-schema/migration-manifest.js';
+import { LEGACY_WORKFLOW_MIGRATION, OFFICIAL_WORKFLOW_MIGRATION } from 'src/fork-schema/workflow-compatibility.js';
 
 const fileProvider = (migrationFolder: string) =>
   new FileMigrationProvider({
@@ -14,7 +15,11 @@ const fileProvider = (migrationFolder: string) =>
     migrationFolder,
   });
 
-function createClassifiedMigrationProvider(migrationFolder: string, includeLegacyFork: boolean): MigrationProvider {
+function createClassifiedMigrationProvider(
+  migrationFolder: string,
+  includeLegacyFork: boolean,
+  excluded: ReadonlySet<string> = new Set(),
+): MigrationProvider {
   const provider = fileProvider(migrationFolder);
 
   return {
@@ -33,6 +38,9 @@ function createClassifiedMigrationProvider(migrationFolder: string, includeLegac
         // reverts them. They run on fresh/legacy installs through the combined
         // legacy provider and are re-applied by the fork return reconciliation.
         if (owner === 'upstream' && !includeLegacyFork && POST_CERTIFIED_UPSTREAM_MIGRATIONS.has(name)) {
+          continue;
+        }
+        if (excluded.has(name)) {
           continue;
         }
         if (owner === 'upstream' || (includeLegacyFork && owner === 'legacy-fork')) {
@@ -71,8 +79,20 @@ export function createCertifiedLedgerMigrationProvider(
   };
 }
 
-export function createLegacyMigrationProvider(migrationFolder: string): MigrationProvider {
-  return createClassifiedMigrationProvider(migrationFolder, true);
+/**
+ * The combined provider for fresh and legacy databases. `appliedNames` is the official ledger: a
+ * library adopted from the official server (FL-44) already ran the official workflow rewrite
+ * `1778614946174`, so the Frameleaf copy of it (`1779400000000`) is left out there. Running it would
+ * rewrite the workflow tables a second time, and the two markers must never both be ledgered.
+ */
+export function createLegacyMigrationProvider(
+  migrationFolder: string,
+  appliedNames: readonly string[] = [],
+): MigrationProvider {
+  const excluded = appliedNames.includes(OFFICIAL_WORKFLOW_MIGRATION)
+    ? new Set([LEGACY_WORKFLOW_MIGRATION])
+    : new Set<string>();
+  return createClassifiedMigrationProvider(migrationFolder, true, excluded);
 }
 
 export function createForkMigrationProvider(migrationFolder: string): MigrationProvider {

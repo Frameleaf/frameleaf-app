@@ -14,7 +14,7 @@
 <h3 align="center">Frameleaf - Solució de còpia de seguretat d'alta rendiment per a fotos i vídeos auto-allotjada</h3>
 <br/>
 <a href="https://immich.app">
-<img src="../design/immich-screenshots.png" title="Captura de pantalla principal">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="Captura de pantalla principal">
 </a>
 <br/>
 <p align="center">

@@ -7,7 +7,7 @@ import { memoryManager } from '$lib/managers/memory-manager.svelte';
 import en from '../../../../../i18n/en.json';
 import MemoryPlayerPanel from './MemoryPlayerPanel.svelte';
 
-vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('$app/navigation', () => ({ afterNavigate: vi.fn(), goto: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('$app/state', () => ({
   page: {
     params: { id: 'memory-1' },

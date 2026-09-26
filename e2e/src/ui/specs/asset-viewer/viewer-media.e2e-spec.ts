@@ -20,12 +20,59 @@ const serveAsset = async (context: BrowserContext, dto: AssetResponseDto) => {
   });
 };
 
+// The mocked network has no server behind it, so the preferences are answered here in full (as in
+// base-network.ts) with ratings on, rather than fetched and patched.
 const enableRatings = async (context: BrowserContext) => {
-  await context.route('**/users/me/preferences', async (route) => {
-    const response = await route.fetch();
-    const json = await response.json();
-    return route.fulfill({ response, json: { ...json, ratings: { enabled: true } } });
-  });
+  await context.route('**/users/me/preferences', async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: {
+        albums: { defaultAssetOrder: 'desc' },
+        folders: { enabled: false, sidebarWeb: false },
+        memories: { enabled: true, duration: 5 },
+        people: { enabled: true, sidebarWeb: false },
+        sharedLinks: { enabled: true, sidebarWeb: false },
+        ratings: { enabled: true },
+        tags: { enabled: false, sidebarWeb: false },
+        emailNotifications: { enabled: true, albumInvite: true, albumUpdate: true },
+        download: { archiveSize: 4_294_967_296, includeEmbeddedVideos: false },
+        purchase: { showSupportBadge: true, hideBuyButtonUntil: '2100-02-12T00:00:00.000Z' },
+        cast: { gCastEnabled: false },
+        recentlyAdded: { sidebarWeb: false },
+      },
+    }),
+  );
+};
+
+// "Find similar" searches by the item's smart-search embedding, so the viewer offers it only when the
+// server has smart search (viewer-menu.ts, as the production ViewSimilar action). The base mock has it
+// off; this answers the same flags with it on.
+const enableSmartSearch = async (context: BrowserContext) => {
+  await context.route('**/api/server/features', async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: {
+        smartSearch: true,
+        askSearch: false,
+        facialRecognition: false,
+        duplicateDetection: false,
+        map: true,
+        reverseGeocoding: true,
+        importFaces: false,
+        sidecar: true,
+        search: true,
+        trash: true,
+        oauth: false,
+        oauthAutoLaunch: false,
+        ocr: false,
+        passwordLogin: true,
+        configFile: false,
+        email: false,
+      },
+    }),
+  );
 };
 
 test.describe.configure({ mode: 'parallel' });
@@ -42,7 +89,15 @@ test.describe('viewer media sources', () => {
     const badge = page.getByTestId('viewer-live-badge');
     await expect(badge).toHaveAccessibleName('Play live clip');
     await expect(page.getByTestId('asset-viewer-navbar-actions').getByLabel('Play Motion Photo')).toHaveCount(0);
-    await badge.click();
+    // MediaViewer.jsx:1535-1551: a mouse plays the clip while it hovers the badge, and a press toggles it.
+    // A mouse click therefore both enters (play) and toggles (stop), so the press is made from the keyboard.
+    await badge.hover();
+    await expect(badge).toHaveAttribute('aria-pressed', 'true');
+    await expect(badge).toHaveAccessibleName('Stop live clip');
+    await page.mouse.move(0, 0);
+    await expect(badge).toHaveAttribute('aria-pressed', 'false');
+    await badge.focus();
+    await page.keyboard.press('Enter');
     await expect(badge).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -77,13 +132,17 @@ test.describe('viewer media sources', () => {
     await expect(page.getByText('Original file unavailable')).toBeVisible();
   });
 
-  test('the More menu follows the template (V-7, V-11)', async ({ page }) => {
+  test('the More menu follows the template (V-7, V-11)', async ({ context, page }) => {
+    await enableSmartSearch(context);
     await page.goto(`/photos/${fixture.primaryAsset.id}`);
     await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
     await page.getByRole('button', { name: 'More actions' }).click();
     const menu = page.getByRole('menu');
+    // Group headings (media-viewer.mjs viewerActionGroups): "Download" heads a group whose first item is
+    // also "Download", so the heading row is matched on its own rather than by text alone.
+    const headings = menu.locator('li[role="presentation"]');
     for (const heading of ['Download', 'Organize', 'Go to', 'Jobs', 'Viewer']) {
-      await expect(menu.getByText(heading, { exact: true })).toBeVisible();
+      await expect(headings.filter({ hasText: new RegExp(`^${heading}$`) })).toBeVisible();
     }
     await expect(menu.getByRole('menuitem', { name: 'Find similar' })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: 'Slideshow settings' })).toBeVisible();
@@ -137,9 +196,13 @@ test.describe('viewer media sources', () => {
     await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
     await page.getByRole('button', { name: 'More actions' }).focus();
     await page.keyboard.press(' ');
-    await expect(page.getByRole('menu')).toBeVisible();
+    // The menu stays in the page while closed, so its button says whether Space opened it.
+    await expect(page.getByRole('button', { name: 'More actions' })).toHaveAttribute('aria-expanded', 'true');
     await page.keyboard.press('Escape');
-    await page.locator('#immich-asset-viewer').focus();
+    await expect(page.getByRole('button', { name: 'More actions' })).toHaveAttribute('aria-expanded', 'false');
+    // Closing the menu returns focus to its button, where Space would open it again. The viewer's
+    // section is not focusable, so focus is released to the page (MediaViewer.jsx:789: not a button).
+    await page.getByRole('button', { name: 'More actions' }).blur();
     await page.keyboard.press(' ');
     await expect(page.getByTestId('viewer-footer').getByRole('button', { name: 'Pause slideshow' })).toBeVisible();
   });
