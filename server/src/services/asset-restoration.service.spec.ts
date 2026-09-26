@@ -180,20 +180,39 @@ describe(AssetRestorationService.name, () => {
 
   describe('getOptions', () => {
     it('offers Frameleaf Cloud for a mode once a model is chosen where the catalogue marks no default (FL-186)', async () => {
+      const video = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Video, duration: '00:00:30' })
+        .exif({ exifImageWidth: 1920, exifImageHeight: 1080, orientation: '1', fileSizeInByte: 50_000_000 })
+        .build();
+      mocks.asset.getById.mockResolvedValue(video as never);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([video.id]));
       const facts = mlDestinationStub.frameleafCloudConsented.lastProbeCloud!;
       const cloud = { ...mlDestinationStub.frameleafCloudConsented, lastProbeCloud: { ...facts, defaultModels: {} } };
       mocks.mlDestination.getAll.mockResolvedValue([cloud]);
       mocks.mlDestination.getSpend.mockResolvedValue(0);
       const request = { mode: AssetRestorationMode.Creative, upscale: 2 as const };
 
-      const unchosen = await sut.getOptions(authStub.user1, asset.id, request);
+      const unchosen = await sut.getOptions(authStub.user1, video.id, request);
       expect(unchosen.destinations[0]).toMatchObject({ available: false, refusal: MlAdmissionRefusal.ModelMismatch });
 
       mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
         { modelGroup: 'restoration-creative', modelId: 'restore-creative', updatedAt: new Date() },
       ]);
-      const chosen = await sut.getOptions(authStub.user1, asset.id, request);
+      const chosen = await sut.getOptions(authStub.user1, video.id, request);
       expect(chosen.destinations[0]).toMatchObject({ available: true, refusal: null });
+    });
+
+    it('judges Frameleaf Cloud for a photo as upscaling, the only way it restores photos (FL-162)', async () => {
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.frameleafCloudConsented]);
+      mocks.mlDestination.getSpend.mockResolvedValue(0);
+      mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
+        { modelGroup: 'restoration-faithful', modelId: 'restore-faithful', updatedAt: new Date() },
+      ]);
+
+      const options = await sut.getOptions(authStub.user1, asset.id, { mode: AssetRestorationMode.Faithful, upscale: 2 });
+
+      // the stub's catalogue has no upscaling model, so a photo is refused there however restoration is set
+      expect(options.destinations[0]).toMatchObject({ available: false });
+      expect(options.destinations[0].refusal).not.toBeNull();
     });
 
     it('lists every destination with the admission verdict from the persisted probe and a per-destination estimate', async () => {
@@ -284,18 +303,24 @@ describe(AssetRestorationService.name, () => {
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
     });
 
-    it('refuses a cloud destination without consent and creates nothing', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
+    it('never sends anything to Frameleaf Cloud from here: cloud work is estimated and confirmed first (FL-162)', async () => {
+      for (const destination of [mlDestinationStub.frameleafCloud, mlDestinationStub.frameleafCloudConsented]) {
+        mocks.mlDestination.getById.mockResolvedValue(destination);
 
-      await expect(
-        sut.requestPreview(authStub.user1, asset.id, {
-          ...request,
-          destinationId: mlDestinationStub.frameleafCloud.id,
-        }),
-      ).rejects.toBeInstanceOf(MlDestinationRefusedError);
+        await expect(
+          sut.requestPreview(authStub.user1, asset.id, { ...request, destinationId: destination.id }),
+        ).rejects.toThrow('Frameleaf Cloud work is estimated and confirmed first');
+      }
       expect(restorations.create).not.toHaveBeenCalled();
       expect(operations.create).not.toHaveBeenCalled();
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
+    });
+
+    it('refuses Smooth motion as a restoration request: it is its own Frameleaf Cloud job (FL-162)', async () => {
+      await expect(
+        sut.requestPreview(authStub.user1, asset.id, { ...request, mode: AssetRestorationMode.SmoothMotion }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(restorations.create).not.toHaveBeenCalled();
     });
 
     it('creates the next revision and a preview job bound to the named destination', async () => {
