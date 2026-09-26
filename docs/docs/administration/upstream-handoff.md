@@ -46,22 +46,53 @@ imports and preservation packages remain unavailable until adoption. Until then,
 official server can still start on the library with no handoff.
 
 Adoption is an explicit, one-way step. Afterwards, the library can go back to the
-official server only through the certified handoff described below. Take database and media
-checkpoints first. Then, with every server container stopped, run the command from a
-one-shot admin process that uses the Frameleaf image:
+official server only through the certified handoff described below. It also changes
+existing official data, as listed below. Take database and media checkpoints first.
+Adoption refuses to run unless maintenance mode is on and no other server is connected to
+the database. Stop every server container, then run these commands from one-shot admin
+processes that use the Frameleaf image:
 
 ```bash
+immich-admin enable-maintenance-mode
 immich-admin fork-schema adopt
 immich-admin fork-schema status
+immich-admin disable-maintenance-mode
 ```
 
 Adoption runs in one transaction. It applies the upstream migrations newer than the
 certified tag (for example `1787148183729-ClusterGroups`) and every Frameleaf
 public-schema migration in name order. It never runs the Frameleaf copy of the workflow
 rewrite, because the official `1778614946174-UpdateWorkflowTables` already ran. It then
-completes the Frameleaf index and column steps that depend on those tables and sets the
-phase to `legacy`. Workflow, plugin and method rows are checked unchanged, and an
-`official-origin-adoption` audit row records the applied migrations.
+completes the Frameleaf steps that depend on those tables and sets the phase to `legacy`.
+Workflow, plugin and method rows are checked unchanged. An `official-origin-adoption`
+audit row records the applied migrations and, for each step below, the row counts of the
+affected tables right before and right after it (`details.steps`).
+
+### Changes adoption makes to existing official data
+
+- **Locked folder (`2100000000320-AddAssetLock`).** Every asset in the official Locked
+  folder gets a Frameleaf lock record, and its stored visibility becomes `timeline`
+  (`hidden` for the video part of a live photo). Stacks and live photos lock as a whole:
+  every other member of a stack with a Locked member, and the video part of a Locked live
+  photo, is locked too. After a later handoff, the official app therefore shows those
+  stack members and live-photo videos as Locked as well.
+- **Covers and face thumbnails (`2100000000290-ClearLockedAlbumCovers`,
+  `2100000000300-ClearLockedCoverReferences` and the same repair in `2100000000320`).** An
+  album whose cover is a Locked photo gets its newest photo that is not Locked as its
+  cover, or no cover. A person whose featured face is on a Locked photo gets another face,
+  or none, and its thumbnail is cleared so it is generated again.
+- **Ownerless albums (`1786385711807-AlbumOwnerDeleteTrigger`).** Albums without an owner
+  are deleted, and from then on an album is deleted when its last owner leaves.
+- **Memories (`1787148183730-DeleteMismatchedMemoryAssets`).** Links from a memory to
+  another user's photo are deleted.
+- **OCR sync (`1786972746372-AssetOcrSyncReset`).** The mobile apps' OCR sync checkpoints
+  are deleted, so the next sync sends every OCR result again.
+- **People (`1787148183729-ClusterGroups`).** Each user gets a cluster group, and each person
+  becomes a member of a person group that keeps the person's ID. Faces and person history
+  point at the group instead of the person.
+- **Removed faces.** Faces the owner removed in the official app are recorded as the
+  owner's own `remove` decisions in the face correction history (the audit row counts
+  them as `faceDecisionsCarriedOver`).
 
 If adoption fails, nothing is applied and the command can be run again. The command refuses a
 ledger that is not the exact certified `v3.1.0` ledger. For a library from an older
@@ -69,9 +100,9 @@ official release, upgrade it with the official server to `v3.1.0` first. The com
 refuses a library that already holds Frameleaf tables and one that has been handed over.
 Running it again after success changes nothing.
 
-Start the server normally. The adopted library now follows the same sequence as any
-other Frameleaf library: `fork-schema start` for the compatibility backfill, then the
-exact operator sequence below for a certified handoff and return.
+Leave maintenance mode and start the server normally. The adopted library now follows the
+same sequence as any other Frameleaf library: `fork-schema start` for the compatibility
+backfill, then the exact operator sequence below for a certified handoff and return.
 
 ## Checkpoints and destructive boundary
 

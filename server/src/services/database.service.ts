@@ -132,7 +132,7 @@ export class DatabaseService extends BaseService {
         if (await this.databaseRepository.isAwaitingOfficialAdoption()) {
           this.logger.warn(
             'This library was created by the official server and has not been adopted yet. ' +
-              'Frameleaf features stay unavailable until an administrator takes database and media checkpoints and runs `immich-admin fork-schema adopt`.',
+              'Frameleaf features stay unavailable until an administrator takes database and media checkpoints, enables maintenance mode, stops every server and runs `immich-admin fork-schema adopt`.',
           );
         }
 

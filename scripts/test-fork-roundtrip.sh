@@ -546,9 +546,20 @@ start_fork
 phase origin-post-migrator src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
 # FL-44: starting Frameleaf on the official library keeps it certified-upstream (the origin phases
 # above prove that). The explicit adoption makes it a full Frameleaf library before any Frameleaf row
-# is written. As documented for operators, it runs from a one-shot admin process with the server
-# stopped; the next start then boots the library the way every later start will.
+# is written. As documented for operators, it runs in maintenance mode from a one-shot admin process
+# with every server stopped; the next start then boots the library the way every later start will.
 stop_fork
+one_shot_admin() {
+  local output code
+  set +e
+  output="$(compose run --rm --no-deps --entrypoint immich-admin fork-server "$@" 2>&1)"
+  code=$?
+  set -e
+  echo "$output"
+  [[ "$code" -eq 0 ]] || exit "$code"
+  if grep -q '^Error:' <<<"$output"; then exit 1; fi
+}
+one_shot_admin enable-maintenance-mode
 set +e
 adopt_output="$(printf 'y\n' | compose run --rm -T --no-deps --entrypoint immich-admin fork-server fork-schema adopt 2>&1)"
 adopt_code=$?
@@ -577,6 +588,7 @@ BEGIN
 END
 $$;
 SQL
+one_shot_admin disable-maintenance-mode
 start_fork
 phase chain-fork-seed src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
 printf 'y\n' | compose exec -T fork-server immich-admin fork-schema start --batch-size 32

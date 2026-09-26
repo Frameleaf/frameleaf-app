@@ -3,7 +3,6 @@ import { forkSchemaCutoverCommands } from 'src/commands/fork-schema-cutover.comm
 import {
   ConfirmForkSchemaAdoptQuestion,
   ConfirmForkSchemaStartQuestion,
-  ConfirmForkSchemaAdoptQuestion,
   forkSchemaCommands,
 } from 'src/commands/fork-schema.command.js';
 import { GrantAdminCommand, PromptEmailQuestion, RevokeAdminCommand } from 'src/commands/grant-admin.js';
@@ -26,6 +25,7 @@ export const commandsAndQuestions = [
   ...forkSchemaCutoverCommands,
   ...forkSchemaCommands,
   ConfirmForkSchemaStartQuestion,
+  ConfirmForkSchemaAdoptQuestion,
   ResetAdminPasswordCommand,
   PromptPasswordResetQuestions,
   PromptEmailQuestion,
