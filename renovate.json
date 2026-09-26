@@ -33,13 +33,9 @@
       ]
     },
     {
-      "matchPackageNames": ["ghcr.io/immich-app/postgres"],
-      "matchUpdateTypes": ["major"],
+      "description": "Frameleaf's Postgres image keeps PostgreSQL 14 and its extension versions identical to existing databases; change them only with a migration plan (FL-191).",
+      "matchPackageNames": ["ghcr.io/frameleaf/frameleaf-postgres", "docker.io/pgvector/pgvector"],
       "enabled": false
-    },
-    {
-      "matchPackageNames": ["ghcr.io/immich-app/base-server-*"],
-      "maxMajorIncrement": 0
     },
     {
       "matchPackageNames": ["ruby"],
