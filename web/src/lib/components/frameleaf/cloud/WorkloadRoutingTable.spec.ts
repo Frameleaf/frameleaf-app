@@ -412,8 +412,8 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       expect(within(picker).getByText(/downloads the first time a job uses it/)).toBeInTheDocument();
 
       await fireEvent.click(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B: CPU · slow/ }));
-      expect(store.draft.machineLearning.imageDescription.modelName).toBe('Qwen/Qwen2.5-VL-7B-Instruct');
-      expect(store.baseline.machineLearning.imageDescription.modelName).toBe('Qwen/Qwen2.5-VL-3B-Instruct');
+      expect(store.draft.machineLearning.imageDescription?.modelName).toBe('Qwen/Qwen2.5-VL-7B-Instruct');
+      expect(store.baseline.machineLearning.imageDescription?.modelName).toBe('Qwen/Qwen2.5-VL-3B-Instruct');
       expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B/ })).toBeChecked();
       expect(
         within(picker).getByText(/Save with the settings bar to use Qwen2\.5-VL 7B on this server\./),
@@ -449,11 +449,11 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
           cloudMlModelChoiceUpdateDto: { modelId: 'ms_DESCHUGE' },
         }),
       );
-      expect(store.draft.machineLearning.imageDescription.modelName).toBe('Qwen/Qwen2.5-VL-3B-Instruct');
+      expect(store.draft.machineLearning.imageDescription?.modelName).toBe('Qwen/Qwen2.5-VL-3B-Instruct');
       expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 3B/ })).toBeChecked();
 
       await fireEvent.click(within(local).getByRole('radio', { name: /^Florence-2 large/ }));
-      expect(store.draft.machineLearning.imageDescription.modelName).toBe('microsoft/Florence-2-large-ft');
+      expect(store.draft.machineLearning.imageDescription?.modelName).toBe('microsoft/Florence-2-large-ft');
       expect(within(cloud).getByRole('radio', { name: /Descriptions · Huge/ })).toBeChecked();
       expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledTimes(1);
       expect(store.draft.frameleafCloud!.cloudMl.routing.descriptions).toBe('both');
