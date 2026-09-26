@@ -14,6 +14,7 @@
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
+  import type { ViewerAsset } from '$lib/managers/timeline-manager/viewer-asset.svelte';
   import { fromTimelinePlainDate } from '$lib/utils/timeline-util';
   import type { Snippet } from 'svelte';
   import { locale } from 'svelte-i18n';
@@ -52,6 +53,13 @@
     tileOverlay?: Snippet<[TimelineAsset]>;
     /** The hover quick actions each tile may offer. */
     quickActions?: (asset: TimelineAsset) => TileQuickActions | null;
+    /**
+     * Years and All (FL-143): this day's tiles that a later month lays out at the start of its rows,
+     * where a row runs on across the month boundary. The later month draws them, measured from its
+     * own first row, inside rows `hostedHeight` tall. Without it the day draws its own tiles.
+     */
+    hosted?: ViewerAsset[];
+    hostedHeight?: number;
   };
 
   let {
@@ -72,7 +80,12 @@
     onFocusAsset,
     tileOverlay,
     quickActions,
+    hosted,
+    hostedHeight = 0,
   }: Props = $props();
+
+  // A tile laid out in a later month's rows is drawn there, not here.
+  const tiles = $derived(hosted ?? timelineDay.activeViewerAssets.filter((viewerAsset) => !viewerAsset.flowHost));
 
   const dayIds = $derived(timelineDay.viewerAssets.map((viewerAsset) => viewerAsset.id));
   const state = $derived(groupSelectionState(dayIds, selection));
@@ -124,9 +137,13 @@
     <div style:height="{headerHeight}px" aria-hidden="true"></div>
   {/if}
 
-  <div class="fl-day-rows" style:width="{timelineDay.width}px" style:height="{timelineDay.height}px">
-    {#each timelineDay.activeViewerAssets as viewerAsset (viewerAsset.id)}
-      {@const position = viewerAsset.position}
+  <div
+    class="fl-day-rows"
+    style:width="{timelineDay.width}px"
+    style:height="{hosted ? hostedHeight : timelineDay.height}px"
+  >
+    {#each tiles as viewerAsset (viewerAsset.id)}
+      {@const position = hosted ? viewerAsset.flowPosition : viewerAsset.position}
       {@const asset = viewerAsset.asset}
       {#if position && asset}
         {@const tileHeight = captionBelow ? position.height + captionHeight : position.height}
