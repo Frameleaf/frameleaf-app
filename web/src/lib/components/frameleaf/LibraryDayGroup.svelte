@@ -63,6 +63,8 @@
     hosted?: ViewerAsset[];
     hostedWidth?: number;
     hostedHeight?: number;
+    /** Tiles drawn now wait for their thumbnails (the scrubber is being dragged); see `AssetTile`. */
+    deferImages?: boolean;
   };
 
   let {
@@ -86,6 +88,7 @@
     hosted,
     hostedWidth = 0,
     hostedHeight = 0,
+    deferImages = false,
   }: Props = $props();
 
   // A tile laid out in a later month's rows is drawn there, not here.
@@ -173,6 +176,7 @@
             onFocus={onFocusAsset}
             overlay={tileOverlay}
             quickActions={quickActions?.(asset)}
+            deferImage={deferImages}
           />
         </div>
       {/if}

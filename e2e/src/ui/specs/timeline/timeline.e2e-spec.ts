@@ -869,7 +869,10 @@ test.describe('Timeline', () => {
     test('All lays the library out as one flow: rows run on across month boundaries', async ({ page }) => {
       await openTimeline(page);
       await groupingUtils.choose(page, 'All');
-      await expectRowsRunOn(page);
+      // The newest month's 107 photos fill some 25 justified rows (about 6,000px) before the first
+      // row that runs on into the next month; at 50px a step that is over 120 steps, more than the
+      // test's 30 seconds on a slower runner.
+      await expectRowsRunOn(page, 200);
     });
 
     test('All: a month loading above what is on screen does not move it', async ({ page }) => {
