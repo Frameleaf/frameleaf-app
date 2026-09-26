@@ -127,6 +127,45 @@ test("comments are not scanned, strings are, and line numbers survive", () => {
     [4, 7],
   );
 
+  // JSX text is not a comment: a URL or `//` in an email template's text is scanned.
+  const jsx = [
+    "export const Footer = () => (",
+    "  <Text>Visit https://immich.app for help</Text>",
+    "  <Text>//Immich</Text>",
+    ");",
+    "const note = 1; // Immich comment",
+  ].join("\n");
+  assert.deepEqual(
+    scanText(stripComments("server/src/emails/x.tsx", jsx), [NAME, SITES], {
+      file: "server/src/emails/x.tsx",
+    }).map(({ line, match }) => [line, match]),
+    [
+      [2, "immich.app"],
+      [3, "Immich"],
+    ],
+  );
+
+  // Only real docstrings are dropped: a triple-quoted argument that starts a line is scanned.
+  const docstrings = [
+    "def handler(",
+    "    request: Request,",
+    ") -> Response:",
+    '    """Handles Immich requests."""',
+    "    log.info(",
+    '        """Immich is ready"""',
+    "    )",
+    "class Model:",
+    "    # comment first",
+    '    """Model for Immich."""',
+    '    name = """Immich ML"""',
+  ].join("\n");
+  assert.deepEqual(
+    scanText(stripComments("x.py", docstrings), [NAME], { file: "x.py" }).map(
+      ({ line }) => line,
+    ),
+    [6, 11],
+  );
+
   const shell = ["# Immich installer", 'echo "Starting Immich"'].join("\n");
   assert.deepEqual(
     scanText(stripComments("install.sh", shell), [NAME], {
