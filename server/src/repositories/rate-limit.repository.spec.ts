@@ -1,4 +1,4 @@
-import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { RELEASE_SCRIPT, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
 
 const redis = vi.hoisted(() => {
@@ -14,8 +14,7 @@ const redis = vi.hoisted(() => {
       status: 'ready',
       multi: vi.fn(() => multi),
       expire: vi.fn(),
-      decr: vi.fn(),
-      del: vi.fn(),
+      eval: vi.fn(),
       on: vi.fn(),
       quit: vi.fn(),
       disconnect: vi.fn(),
@@ -59,15 +58,13 @@ describe(RateLimitRepository.name, () => {
     expect(redis.created).toHaveBeenCalledTimes(1);
   });
 
-  it('gives an attempt back with DECR, and removes a counter that reaches zero', async () => {
-    redis.client.decr.mockResolvedValueOnce(3);
+  it('gives an attempt back with one atomic script that never recreates or leaves a spent counter', async () => {
+    redis.client.eval.mockResolvedValueOnce(3);
     await sut.release('key');
-    expect(redis.client.decr).toHaveBeenCalledWith('key');
-    expect(redis.client.del).not.toHaveBeenCalled();
-
-    redis.client.decr.mockResolvedValueOnce(0);
-    await sut.release('key');
-    expect(redis.client.del).toHaveBeenCalledWith('key');
+    expect(redis.client.eval).toHaveBeenCalledWith(RELEASE_SCRIPT, 1, 'key');
+    expect(RELEASE_SCRIPT).toContain(`redis.call('EXISTS', KEYS[1]) == 0`);
+    expect(RELEASE_SCRIPT).toContain(`redis.call('DECR', KEYS[1])`);
+    expect(RELEASE_SCRIPT).toContain(`redis.call('DEL', KEYS[1])`);
   });
 
   it('counts with INCR and reports the time left in the window', async () => {
