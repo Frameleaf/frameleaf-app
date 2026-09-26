@@ -201,20 +201,42 @@ export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<Clo
     detail: ML_CLONE_SUSPENDED_DETAIL,
     link,
   };
+  // a `since` that does not parse counts as expired
+  const blocks = (suspension: FrameleafMlSuspension) =>
+    Date.now() - Date.parse(suspension.since) < ML_SUSPENSION_PROBE_AFTER_MS;
   const suspension = await readMlSuspension(deps, cloudUrl, link.instanceId);
   let probing = false;
   if (suspension) {
-    if (Date.now() - Date.parse(suspension.since) < ML_SUSPENSION_PROBE_AFTER_MS) {
+    if (blocks(suspension)) {
       return suspendedRefusal;
     }
-    // one probe a day: claim it first, so other admissions keep waiting whatever the probe meets
+    // One probe a day. The claim re-reads the suspension and rewrites it from now under a lock, so a
+    // second worker (or job) waiting on the lock finds the fresh claim and is refused instead of probing
+    // too. The lock is released before the probe, and before loadInstanceIdentity takes its own lock.
+    type Claim = 'blocked' | 'claimed' | 'cleared';
+    const { instanceId } = link;
+    let claim: Claim;
     try {
-      await recordMlSuspension(deps, cloudUrl, link.instanceId);
+      claim = await deps.databaseRepository.withLock(DatabaseLock.FrameleafMlProbe, async (): Promise<Claim> => {
+        const current = await readMlSuspension(deps, cloudUrl, instanceId);
+        if (!current) {
+          return 'cleared';
+        }
+        if (blocks(current)) {
+          return 'blocked';
+        }
+        await recordMlSuspension(deps, cloudUrl, instanceId);
+        return 'claimed';
+      });
     } catch (error) {
-      deps.logger.warn(`Could not record the cloud processing suspension: ${error}`);
+      deps.logger.warn(`Could not claim the cloud processing probe: ${error}`);
       return suspendedRefusal;
     }
-    probing = true;
+    if (claim === 'blocked') {
+      return suspendedRefusal;
+    }
+    // `cleared`: a check-in cleared the suspension meanwhile, so this is an ordinary request
+    probing = claim === 'claimed';
   }
 
   try {
@@ -240,7 +262,10 @@ export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<Clo
       try {
         await clearMlSuspension(deps);
       } catch (error) {
-        deps.logger.warn(`Could not clear the cloud processing suspension: ${error}`);
+        // the claim's fresh `since` then blocks ML tokens until the next check-in clears it (or a day)
+        deps.logger.warn(
+          `Could not clear the cloud processing suspension after Frameleaf Cloud issued an ML token; the next check-in clears it: ${error}`,
+        );
       }
     }
     return { state: CloudConnectionState.Ready, gateway: { url: gatewayUrl, token }, region: link.dataRegion, link };
