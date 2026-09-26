@@ -971,7 +971,6 @@ export class ICloudSyncService {
           leaseToken: resource.leaseToken!,
           ownerId: connection.ownerId,
           includeHidden: connection.config.includeHidden,
-          recoverExternalAsManaged: connection.config.recoverExternalAsManaged,
         };
         const reused = await this.recovery.verifyMapped(authority);
         if (reused && reused.outcome !== 'reused') {

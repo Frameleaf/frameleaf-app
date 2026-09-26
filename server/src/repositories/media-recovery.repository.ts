@@ -5,7 +5,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { MediaIntegrityResult } from 'src/services/media-integrity.service.js';
-import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import {
   AssetLockReason,
   AssetStatus,
@@ -85,13 +84,17 @@ export type RecoveryTarget = {
   physicalOriginalFileId: string | null;
   forkPhysicalFileId: string | null;
   outcome: 'imported' | 'reused' | 'repaired-missing' | 'repaired-corrupt';
+  /**
+   * FL-69: an external original with the same content, recorded as evidence only. Recovery never modifies
+   * it and never reuses it: the item is imported as a new managed asset beside it (owner decision).
+   */
+  matchedExternalAssetId?: string;
 };
 export type RecoveryAuthority = {
   resourceId: string;
   leaseToken: string;
   ownerId: string;
   includeHidden: boolean;
-  recoverExternalAsManaged: boolean;
 };
 export type RecoveryReservation = { target: RecoveryTarget; promotedPath: string };
 
@@ -237,6 +240,7 @@ export class MediaRecoveryRepository {
       candidate?: RecoveryCandidate;
       outcome: RecoveryTarget['outcome'];
       proposedPath: string;
+      matchedExternalAssetId?: string;
     },
   ): Promise<RecoveryReservation | undefined> {
     return this.db.transaction().execute(async (trx) => {
@@ -245,6 +249,7 @@ export class MediaRecoveryRepository {
       if (!resource || ['committed', 'finalized'].includes(resource.status)) {
         return;
       }
+      const matchedExternalAssetId = input.candidate ? undefined : input.matchedExternalAssetId;
       const target: RecoveryTarget = resource.expectedTarget ?? {
         assetId: input.candidate?.id ?? randomUUID(),
         updateId: input.candidate?.updateId ?? null,
@@ -256,6 +261,7 @@ export class MediaRecoveryRepository {
         physicalOriginalFileId: input.candidate?.physicalOriginalFileId ?? null,
         forkPhysicalFileId: input.candidate?.forkPhysicalFileId ?? null,
         outcome: input.outcome,
+        ...(matchedExternalAssetId && { matchedExternalAssetId }),
       };
       if (resource.sha256 && !resource.sha256.equals(input.verified.sha256)) {
         return;
@@ -279,11 +285,8 @@ export class MediaRecoveryRepository {
         if (!(await this.lockTarget(trx, input, target, input.verified))) {
           return;
         }
-      } else {
-        const matches = await this.candidates(trx, input.ownerId, input.verified);
-        if (matches.length > 0) {
-          return;
-        }
+      } else if (await this.hasManagedMatch(trx, input.ownerId, input.verified)) {
+        return;
       }
       const promotedPath = resource.promotedPath ?? input.proposedPath;
       await this.lockPath(trx, promotedPath);
@@ -359,11 +362,8 @@ export class MediaRecoveryRepository {
       if (target.updateId && !candidate) {
         return { outcome: 'retry', reason: 'target_changed' };
       }
-      if (!target.updateId) {
-        const matches = await this.candidates(trx, input.ownerId, input.verified);
-        if (matches.length > 0) {
-          return { outcome: 'retry', reason: 'matching_asset_created' };
-        }
+      if (!target.updateId && (await this.hasManagedMatch(trx, input.ownerId, input.verified))) {
+        return { outcome: 'retry', reason: 'matching_asset_created' };
       }
       const final = await input.verifyFinal();
       if (
@@ -485,14 +485,11 @@ export class MediaRecoveryRepository {
           .onConflict((oc) => oc.column('assetId').doUpdateSet({ fileSizeInByte: final.sizeInBytes }))
           .execute();
       }
-      // FL-69: a reused external original keeps its path checksum, so its digests are recorded as an external
-      // scan's: the reviewed recovery and Library Care may match them, sync, upload checks and restores never
-      // do, and a later scan of the file in place refreshes them
-      const source =
-        reused && target.checksumAlgorithm === ChecksumAlgorithm.sha1Path ? EXTERNAL_SCAN_CHECKSUM : 'icloud-recovery';
+      // Every committed asset is managed (FL-69: an external original is never the recovered asset), so
+      // these are a managed copy's digests
       await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
         VALUES (${assetId}::uuid, ${final.sha1}, ${final.sha256}, ${final.sizeInBytes}, ARRAY[${promotedPath}]::text[], 1,
-          ${{ source, resourceId: input.resourceId, identity: final.identity }}::jsonb, now(), now())
+          ${{ source: 'icloud-recovery', resourceId: input.resourceId, identity: final.identity }}::jsonb, now(), now())
         ON CONFLICT ("assetId") DO UPDATE SET sha1 = EXCLUDED.sha1, sha256 = EXCLUDED.sha256, "sizeInBytes" = EXCLUDED."sizeInBytes",
           "verifiedPaths" = EXCLUDED."verifiedPaths", evidence = EXCLUDED.evidence, "verifiedAt" = now(), "updatedAt" = now()`.execute(
         trx,
@@ -523,11 +520,25 @@ export class MediaRecoveryRepository {
             { name: JobName.AssetGenerateThumbnails, data: { id: assetId, source: 'upload' } },
           ];
       await sql`UPDATE immich_fork.icloud_resource SET status = 'committed', "assetId" = ${assetId}::uuid,
-        path = ${promotedPath}, verification = ${{ outcome: target.outcome, identity: final.identity, sizeInBytes: final.sizeInBytes }}::jsonb,
+        path = ${promotedPath}, verification = ${{
+          outcome: target.outcome,
+          identity: final.identity,
+          sizeInBytes: final.sizeInBytes,
+          ...(target.matchedExternalAssetId && { matchedExternalAssetId: target.matchedExternalAssetId }),
+        }}::jsonb,
         "pendingJobs" = ${pendingJobs}::jsonb, "lastError" = NULL, "updatedAt" = now()
         WHERE id = ${input.resourceId}::uuid`.execute(trx);
       return { outcome: target.outcome, assetId };
     });
+  }
+
+  /**
+   * Whether an asset other than an external original already holds these bytes. An external match is
+   * evidence only (FL-69), so it never stands in the way of importing the managed copy.
+   */
+  private async hasManagedMatch(trx: Kysely<DB>, ownerId: string, verified: Pick<VerifiedMedia, 'sha1' | 'sha256'>) {
+    const matches = await this.candidates(trx, ownerId, verified);
+    return matches.some(({ isExternal }) => !isExternal);
   }
 
   private async lockAuthority(trx: Kysely<DB>, ownerId: string, checksum: Buffer): Promise<ForkSchemaPhase> {
@@ -585,9 +596,9 @@ export class MediaRecoveryRepository {
       (row.physicalOriginalFileId ?? null) !== target.physicalOriginalFileId ||
       row.deletedAt ||
       row.status !== AssetStatus.Active ||
-      // An external original matched by its recorded content digests (FL-69: a Library Care scan's, or an
-      // earlier recovery's) is only reused in place, unless the reviewer chose to recover it as managed
-      (row.isExternal && target.outcome !== 'reused' && !input.recoverExternalAsManaged)
+      // FL-69 (owner decision): an external original is never reused, repaired or converted by recovery;
+      // a match with one is evidence only, and the item is imported as a new managed asset
+      row.isExternal
     ) {
       return;
     }
