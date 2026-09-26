@@ -13,7 +13,12 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import { INSTANCE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
-import { FrameleafCloudError, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import {
+  CloudEstimateRequest,
+  CloudJobCreateRequest,
+  FrameleafCloudError,
+  ed25519Thumbprint,
+} from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
 /**
@@ -24,7 +29,14 @@ import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js
  */
 type FakeCloud = {
   url: string;
-  requests: Array<{ method: string; path: string; auth: string | null; dpop: string | null; body: string }>;
+  requests: Array<{
+    method: string;
+    path: string;
+    auth: string | null;
+    dpop: string | null;
+    idempotencyKey: string | null;
+    body: string;
+  }>;
   publicJwk?: FrameleafInstanceIdentity['publicJwk'];
   /** The DPoP-bound token the token endpoint minted last. */
   token?: string;
@@ -77,9 +89,14 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
       path,
       auth: request.headers.authorization ?? null,
       dpop: (request.headers.dpop as string | undefined) ?? null,
+      idempotencyKey: (request.headers['idempotency-key'] as string | undefined) ?? null,
       body,
     });
     const send = (status: number, payload: unknown) => {
+      if (status === 204) {
+        response.writeHead(204);
+        return response.end();
+      }
       response.writeHead(status, { 'content-type': 'application/json' });
       response.end(JSON.stringify(payload));
     };
@@ -140,51 +157,53 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
       ) {
         return send(401, { code: 'invalid-token', message: 'no token' });
       }
-      switch (path.split('?', 1)[0]) {
-        case '/ml-eu/ping': {
+      // FL-183: the gateway answers with the cloud's own FC-34 golden fixtures
+      const admitted = cloudContractFixture<{ jobId: string }>('ml/job-admitted.json');
+      const route = `${request.method} ${path.split('?', 1)[0]}`;
+      switch (route) {
+        case 'GET /ml-eu/ping': {
+          return send(200, { ok: true });
+        }
+        case 'GET /ml-eu/capabilities': {
+          return send(200, cloudContractFixture('ml/capabilities.json'));
+        }
+        case 'GET /ml-eu/hardware': {
+          return send(200, cloudContractFixture('ml/hardware.json'));
+        }
+        case 'GET /ml-eu/v2/catalog': {
+          return send(200, cloudContractFixture('ml/catalog.json'));
+        }
+        case 'GET /ml-eu/v2/wallet': {
+          return send(200, cloudContractFixture('ml/wallet.json'));
+        }
+        case 'GET /ml-eu/v2/usage': {
+          return send(200, cloudContractFixture('ml/usage.json'));
+        }
+        case 'GET /ml-eu/v2/consent/current': {
+          return send(200, cloudContractFixture('ml/consent-current.json'));
+        }
+        case 'POST /ml-eu/v2/consent': {
+          const posted = JSON.parse(body);
+          return send(200, {
+            ...cloudContractFixture('ml/consent-recorded.json'),
+            recordedVersion: posted.version,
+            features: posted.features,
+          });
+        }
+        case 'POST /ml-eu/v2/estimates': {
+          return send(200, cloudContractFixture('ml/estimate-response.json'));
+        }
+        case 'POST /ml-eu/v2/jobs': {
+          return send(201, admitted);
+        }
+        case `GET /ml-eu/v2/jobs/${admitted.jobId}`: {
+          return send(200, { ...admitted, run: null });
+        }
+        case `POST /ml-eu/v2/jobs/${admitted.jobId}/cancel`: {
           return send(200, {});
         }
-        case '/ml-eu/capabilities': {
-          return send(200, {
-            protocol: 'frameleaf-cloud-v2',
-            region: 'eu',
-            workloads: ['enrichment', 'restoration-faithful', 'teleportation'],
-            consent: { requiredVersion: '2026-09-25', recordedVersion: '2026-09-25' },
-            entitlement: { active: true },
-            wallet: { balanceUsd: 12.5, heldUsd: 2.5, dailyCapUsd: 20, spentTodayUsd: 1 },
-            limits: { concurrentJobs: 2 },
-            catalogEtag: 'etag-1',
-          });
-        }
-        case '/ml-eu/hardware': {
-          return send(200, { providers: ['CUDAExecutionProvider'], cudaDeviceCount: 1, preferredAcceleration: 'cuda' });
-        }
-        case '/ml-eu/v2/catalog': {
-          return send(200, {
-            etag: 'etag-1',
-            models: [
-              {
-                id: 'describe',
-                workload: 'enrichment',
-                name: 'Describe',
-                fingerprint: 'f1',
-                pricing: { unit: 'image', usd: 0.002 },
-              },
-            ],
-          });
-        }
-        case '/ml-eu/v2/wallet': {
-          return send(200, {
-            balanceUsd: 12.5,
-            heldUsd: 2.5,
-            dailyCapUsd: 20,
-            spentTodayUsd: 1,
-            topUpUrl: 'https://account.cloud.test/wallet',
-          });
-        }
-        case '/ml-eu/v2/consent': {
-          const posted = JSON.parse(body);
-          return send(200, { recordedVersion: posted.version, features: posted.features });
+        case `DELETE /ml-eu/v2/jobs/${admitted.jobId}`: {
+          return send(204, null);
         }
       }
     }
@@ -335,24 +354,35 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     await ml.ping(resolution.gateway);
     await expect(ml.getCapabilities(resolution.gateway)).resolves.toMatchObject({
       region: 'eu',
-      entitlement: { active: true },
-      consent: { requiredVersion: '2026-09-25', features: { identityNames: false } },
-      wallet: { balanceUsd: 12.5 },
+      entitlement: { active: true, state: 'active', graceUntil: null },
+      consent: { requiredVersion: '2026-09-26.1', features: { identityNames: false } },
+      wallet: { balanceUsd: 10 },
     });
     await expect(ml.getHardware(resolution.gateway)).resolves.toMatchObject({ cudaDeviceCount: 1 });
-    await expect(ml.getCatalog(resolution.gateway)).resolves.toMatchObject({ models: [{ id: 'describe' }] });
+    await expect(ml.getCatalog(resolution.gateway)).resolves.toMatchObject({
+      refused: 0,
+      models: [{ sku: 'ms_K6WT70CS' }, { sku: 'ms_M7QG26PT' }, { sku: 'ms_54S55W7C' }],
+    });
     await expect(ml.getWallet(resolution.gateway)).resolves.toMatchObject({
-      topUpUrl: 'https://account.cloud.test/wallet',
+      settingsUrl: 'https://account.frameleaf.cloud/wallet',
     });
-    await expect(
-      ml.recordConsent(resolution.gateway, {
-        version: '2026-09-25',
-        features: { identityNames: false, medicalSignals: false, ocrAddon: true },
-      }),
-    ).resolves.toEqual({
-      recordedVersion: '2026-09-25',
-      features: { identityNames: false, medicalSignals: false, ocrAddon: true },
+    await expect(ml.getUsage(resolution.gateway, new Date('2026-09-01T00:00:00.000Z'))).resolves.toMatchObject({
+      items: [{ jobId: '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f', modelSku: 'ms_K6WT70CS' }],
     });
+    await expect(ml.getConsent(resolution.gateway)).resolves.toMatchObject({
+      requiredVersion: '2026-09-26.1',
+      recordedVersion: null,
+    });
+    const consent = cloudContractFixture<{
+      version: string;
+      features: { identityNames: boolean; medicalSignals: boolean; ocrAddon: boolean };
+    }>('ml/consent-record-request.json');
+    await expect(ml.recordConsent(resolution.gateway, consent)).resolves.toEqual({
+      recordedVersion: '2026-09-26.1',
+      recordedAt: '2026-09-26T04:00:00.000Z',
+      features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+    });
+    expect(JSON.parse(cloud.requests.find((request) => request.path === '/ml-eu/v2/consent')!.body)).toEqual(consent);
 
     const gatewayCalls = cloud.requests.filter(
       (request) => request.path.startsWith('/ml-eu/') && request.path !== '/ml-eu/ping',
@@ -373,7 +403,12 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     [403, { code: 'entitlement-missing', message: 'no plan' }, MlAdmissionRefusal.EntitlementMissing],
     [409, { code: 'model-mismatch', message: 'model' }, MlAdmissionRefusal.ModelMismatch],
     [429, { code: 'rate-limited', message: 'slow down' }, MlAdmissionRefusal.QuotaExceeded],
-    [503, { code: 'capacity', message: 'busy' }, MlAdmissionRefusal.CloudUnavailable],
+    // FL-183 (FC-34): capacity refuses this destination, never moving the job to another one
+    [503, { code: 'capacity', message: 'busy' }, MlAdmissionRefusal.DestinationUnhealthy],
+    [503, { code: 'maintenance', message: 'down' }, MlAdmissionRefusal.CloudUnavailable],
+    [503, cloudContractFixture('errors/capacity.json'), MlAdmissionRefusal.DestinationUnhealthy],
+    [403, cloudContractFixture('errors/region-mismatch.json'), MlAdmissionRefusal.DestinationUnhealthy],
+    [403, cloudContractFixture('errors/consent-version-outdated.json'), MlAdmissionRefusal.ConsentVersionOutdated],
     [401, { code: 'x', message: 'y', refusal: 'entitlement-missing' }, MlAdmissionRefusal.EntitlementMissing],
     // FL-177: the golden envelope (data object, null detail) and the request-invalid refusal
     [402, cloudContractFixture('errors/insufficient-credits.json'), MlAdmissionRefusal.WalletInsufficient],
@@ -414,6 +449,166 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     await expect(
       new FrameleafCloudMlRepository(cloudRepository).getCapabilities(resolution.gateway),
     ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.CloudUnavailable });
+  });
+
+  describe('estimates and jobs (FL-183, FC-34)', () => {
+    const ready = async () => {
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
+      const resolution = await resolveCloudGateway(deps);
+      if (resolution.state !== CloudConnectionState.Ready) {
+        throw new Error('not ready');
+      }
+      return { gateway: resolution.gateway, ml: new FrameleafCloudMlRepository(cloudRepository) };
+    };
+    const gatewayRequests = (method: string, path: string) =>
+      cloud.requests.filter((request) => request.method === method && request.path === `/ml-eu${path}`);
+    const estimateRequest = () => cloudContractFixture<CloudEstimateRequest>('ml/estimate-request.json');
+    const jobRequest = () => cloudContractFixture<CloudJobCreateRequest>('ml/job-request.json');
+    const jobId = '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f';
+
+    it('estimates, admits with the sealed estimate and an idempotency key, then reads, cancels and acknowledges the job', async () => {
+      const { gateway, ml } = await ready();
+
+      const estimate = await ml.createEstimate(gateway, estimateRequest());
+      expect(estimate).toMatchObject({ modelSku: 'ms_K6WT70CS', modelRev: 'mr_B2H147RBJBQ0', basis: 'measured' });
+      expect(JSON.parse(gatewayRequests('POST', '/v2/estimates')[0].body)).toEqual(estimateRequest());
+
+      const admitted = await ml.createJob(gateway, jobRequest(), 'batch-0192f1b0-1');
+      expect(admitted).toMatchObject({ jobId, status: 'admitted', hold: { amountUsd: 0.203_251 } });
+      const [posted] = gatewayRequests('POST', '/v2/jobs');
+      expect(posted.idempotencyKey).toBe('batch-0192f1b0-1');
+      expect(JSON.parse(posted.body)).toEqual(jobRequest());
+      expect(JSON.parse(posted.body).estimate).toBe(estimate.estimate);
+
+      await expect(ml.getJob(gateway, jobId)).resolves.toMatchObject({ jobId, status: 'admitted', run: null });
+      await ml.cancelJob(gateway, jobId);
+      await ml.deleteJob(gateway, jobId);
+      expect(gatewayRequests('POST', `/v2/jobs/${jobId}/cancel`)).toHaveLength(1);
+      expect(gatewayRequests('DELETE', `/v2/jobs/${jobId}`)).toHaveLength(1);
+      const calls = cloud.requests.filter((request) => request.path.startsWith('/ml-eu/v2/'));
+      expect(calls.every((request) => request.auth === `DPoP ${cloud.token}` && !!request.dpop)).toBe(true);
+    });
+
+    it.each([
+      'estimate-display-as-input.json',
+      'estimate-gpu-class.json',
+      'estimate-model-id.json',
+      'estimate-name-as-sku.json',
+      'estimate-unknown-request-key.json',
+    ])('never sends the rejected %s estimate request', async (name) => {
+      const { gateway, ml } = await ready();
+      await expect(
+        ml.createEstimate(gateway, cloudContractFixture<CloudEstimateRequest>(`ml/rejected/${name}`)),
+      ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.RequestInvalid, status: null });
+      expect(gatewayRequests('POST', '/v2/estimates')).toEqual([]);
+    });
+
+    it.each(['job-model-fingerprint.json', 'job-model-id.json'])('never sends the rejected %s job', async (name) => {
+      const { gateway, ml } = await ready();
+      await expect(
+        ml.createJob(gateway, cloudContractFixture<CloudJobCreateRequest>(`ml/rejected/${name}`), 'batch-key-0001'),
+      ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.RequestInvalid });
+      expect(gatewayRequests('POST', '/v2/jobs')).toEqual([]);
+    });
+
+    it('never sends a job without a usable idempotency key, or calls a job path with anything but a job id', async () => {
+      const { gateway, ml } = await ready();
+      await expect(ml.createJob(gateway, jobRequest(), 'short')).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.RequestInvalid,
+      });
+      await expect(ml.getJob(gateway, '../wallet')).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.RequestInvalid,
+      });
+      await expect(ml.cancelJob(gateway, 'job-1')).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.RequestInvalid,
+      });
+      expect(cloud.requests.filter((request) => request.path.startsWith('/ml-eu/v2/jobs'))).toEqual([]);
+    });
+
+    it('refuses the job on 503 capacity as this destination being unhealthy, and on a spent estimate as a model mismatch', async () => {
+      const { gateway, ml } = await ready();
+      cloud.respond = ({ path }) =>
+        path === '/ml-eu/v2/jobs' ? { status: 503, body: cloudContractFixture('errors/capacity.json') } : undefined;
+      await expect(ml.createJob(gateway, jobRequest(), 'batch-key-0002')).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.DestinationUnhealthy,
+        status: 503,
+      });
+
+      cloud.respond = ({ path }) =>
+        path === '/ml-eu/v2/jobs'
+          ? { status: 409, body: cloudContractFixture('errors/estimate-used.json') }
+          : undefined;
+      await expect(ml.createJob(gateway, jobRequest(), 'batch-key-0003')).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.ModelMismatch,
+        envelope: { code: 'estimate-mismatch', detail: 'used' },
+      });
+    });
+
+    it('refuses an admission for another model revision than the one sent', async () => {
+      const { gateway, ml } = await ready();
+      cloud.respond = ({ path }) =>
+        path === '/ml-eu/v2/jobs'
+          ? { status: 201, body: { ...cloudContractFixture('ml/job-admitted.json'), modelRev: 'mr_0WNPDD697MT0' } }
+          : undefined;
+      await expect(ml.createJob(gateway, jobRequest(), 'batch-key-0004')).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.ModelMismatch,
+      });
+    });
+
+    it('treats a leaking answer as not understood: a catalogue entry is left out, a usage report or job run refused', async () => {
+      const { gateway, ml } = await ready();
+      const catalog = cloudContractFixture<{ etag: string; models: unknown[] }>('ml/catalog.json');
+      cloud.respond = ({ path }) => {
+        switch (path.split('?', 1)[0]) {
+          case '/ml-eu/v2/catalog': {
+            const leak = cloudContractFixture('ml/rejected/catalog-entry-model-id.json');
+            return { status: 200, body: { ...catalog, models: [...catalog.models, leak] } };
+          }
+          case '/ml-eu/v2/usage': {
+            return { status: 200, body: cloudContractFixture('ml/rejected/usage-model-id.json') };
+          }
+          case `/ml-eu/v2/jobs/${jobId}`: {
+            const run = cloudContractFixture('ml/rejected/job-run-worker-details.json');
+            return { status: 200, body: { ...cloudContractFixture('ml/job-admitted.json'), status: 'running', run } };
+          }
+          default: {
+            return undefined;
+          }
+        }
+      };
+      const parsed = await ml.getCatalog(gateway);
+      expect(parsed.refused).toBe(1);
+      expect(parsed.models.map((model) => model.sku)).toEqual(['ms_K6WT70CS', 'ms_M7QG26PT', 'ms_54S55W7C']);
+      await expect(ml.getUsage(gateway, new Date())).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.CloudUnavailable,
+      });
+      await expect(ml.getJob(gateway, jobId)).rejects.toMatchObject({ refusal: MlAdmissionRefusal.CloudUnavailable });
+    });
+
+    it('never sends consent with the reserved text-recognition add-on on, and maps an outdated version', async () => {
+      const { gateway, ml } = await ready();
+      await expect(
+        ml.recordConsent(gateway, {
+          version: '2026-09-26.1',
+          features: { identityNames: false, medicalSignals: false, ocrAddon: true },
+        }),
+      ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.RequestInvalid });
+      expect(gatewayRequests('POST', '/v2/consent')).toEqual([]);
+
+      cloud.respond = ({ path }) =>
+        path === '/ml-eu/v2/consent'
+          ? { status: 403, body: cloudContractFixture('errors/consent-version-outdated.json') }
+          : undefined;
+      await expect(
+        ml.recordConsent(gateway, {
+          version: '2026-01-15.1',
+          features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+        }),
+      ).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.ConsentVersionOutdated,
+        envelope: { data: { requiredVersion: '2026-09-26.1' } },
+      });
+    });
   });
 
   it('refuses when the cloud does not answer', async () => {

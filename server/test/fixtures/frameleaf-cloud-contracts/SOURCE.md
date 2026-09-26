@@ -9,19 +9,23 @@ tested against what the cloud publishes (FL-177).
 - The FC-18 files (`errors/insufficient-credits.json`, `errors/use-dpop-nonce.json`,
   `instance/register-request.json`, `instance/register-response.json`) are byte-identical to `codex/FC-18-instances`
   at `3c7a87ee75b76bbada72c031d36738f301db6cfa`.
-- `ml/` and `ml/rejected/` (every file, FL-181): `codex/FC-66-api-protection` at
-  `44311b822d94c8cd9a2cc95cd4bcde79e54902b4` (Frameleaf/frameleaf-cloud#19). These fixtures use the FC-66
-  `packages/contracts/src/ml/gateway.ts` shape (`sku`, `computeSku`, `rev`, `rate`, `eta`, …), which is not
-  yet what `server/src/utils/frameleaf-cloud.ts`'s `catalogSchema`/`usageSchema` parse field-for-field; FL-181
-  only reads each fixture's `workload` (and, where present, `mode`) string to test the workload ID mapping,
-  not the full catalogue/estimate/job schema. A later story should reconcile the rest of the shape.
-- `ml/catalog-restoration.json` is **app-authored, not copied from the cloud**: a two-model restoration
-  catalogue (one `mode: "faithful"`, one `mode: "creative"`) in this server's own `catalogSchema` shape
-  (`id`/`fingerprint`/`pricing`, not the FC-66 `sku`/`rev`/`rate` wire shape), used to test that a restoration
-  mode is only admitted once the catalogue names a usable model for it (FL-181 P1). The cloud confirmed
-  `models[].mode` is exactly `"faithful"`/`"creative"` on every restoration model and never absent (2026-09-25),
-  but has not yet published its own catalogue fixture with a restoration entry (tracked for FC-34). Replace
-  this file with the cloud's own fixture once FC-34 ships one.
+- `ml/` and `ml/rejected/` (every file): FL-183 copied them from the FC-34 pull request branch, **not
+  `main`**: `codex/FC-34-ml-gateway` at `89fb079f2a2dd7f82bd01c15b7609e2068cd09d6`
+  (Frameleaf/frameleaf-cloud#29, open and unmerged when copied on 2026-09-26). Every file is byte-identical to
+  that commit (git blob hashes compared). Against the FL-181 copy (`codex/FC-66-api-protection` at
+  `44311b822d94c8cd9a2cc95cd4bcde79e54902b4`), `ml/catalog-restoration.json` is replaced by the cloud's own
+  fixture, and new are `capabilities.json`, `capabilities-not-ready.json`, `hardware.json`, `wallet.json`,
+  `consent-current.json`, `consent-record-request.json`, `consent-recorded.json`, `job-admitted.json` and
+  `rejected/catalog-entry-{mode-on-descriptions,non-commercial-licence,restoration-without-mode}.json` and
+  `rejected/consent-record-{email,ocr-addon}.json`; every other `ml/` file is unchanged. The server's
+  production schemas in `server/src/utils/frameleaf-cloud.ts` parse every answer fixture field for field,
+  check every request fixture before it would be sent, and refuse every `ml/rejected/` fixture (FL-183).
+- `errors/` (FL-183): `capacity.json`, `consent-missing.json`, `consent-version-outdated.json`, `daily-cap.json`,
+  `entitlement-missing.json`, `estimate-used.json`, `ml-rate-limited.json` and `region-mismatch.json` are
+  byte-identical to the same FC-34 commit `89fb079f2a2dd7f82bd01c15b7609e2068cd09d6`. The wallet top-up
+  envelopes (`balance-cap.json`, `top-up-minimum.json`) belong to the account API and are not copied.
+- Re-check when FC-34 merges: if Frameleaf/frameleaf-cloud#29 lands on `main` with any of these files changed,
+  copy the `main` version and record that commit here.
 - `licence/check-symbol/` (every file) is byte-identical to `packages/contracts/fixtures/licence/check-symbol/` at
   `8bf5b83ed2a5a4ce22b64f553a6f48ec78768504` (`feat: FC-22 Luhn mod 32 check symbol for licence keys`); see that
   folder's own `SOURCE.md` for what it exercises (FL-182).
@@ -38,5 +42,5 @@ tested against what the cloud publishes (FL-177).
   including `activation-jose.json` and its `-kid-mismatch`/`-jkt-mismatch`/`-missing-jwk` variants, the
   offline activation request, refresh, deactivate and entitlements (FL-177).
 
-Do not edit these files by hand, except `ml/catalog-restoration.json`, which is ours to maintain until FC-34
-ships a real one. When the cloud changes a fixture, copy the new version and update the commit above.
+Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
+above.

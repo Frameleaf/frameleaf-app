@@ -1,0 +1,29 @@
+{
+  "sku": "ms_F1SSRED6",
+  "workload": "restoration",
+  "rank": 2,
+  "label": "Restore · Creative",
+  "display": {
+    "model": "SeedVR2-3B",
+    "gpu": "H100-class, 80 GB"
+  },
+  "computeSku": "cs_M3QZ4QK7",
+  "rate": {
+    "perSecondUsd": 0.003702,
+    "startFeeUsd": 0.45
+  },
+  "eta": {
+    "p50Sec": 45,
+    "p90Sec": 150
+  },
+  "limits": {
+    "maxInputs": 20,
+    "maxInputBytes": 2147483648
+  },
+  "rev": "mr_9KD3V6W0PM2R",
+  "mode": "creative",
+  "licence": {
+    "name": "NTU S-Lab License 1.0",
+    "commercialHosted": "no"
+  }
+}

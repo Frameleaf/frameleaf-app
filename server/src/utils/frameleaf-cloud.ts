@@ -8,6 +8,10 @@ import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
  * "Discovery", "Tokens" and "Cloud ML v2"). These schemas are the server's side of the published
  * `packages/contracts` fixtures: unknown fields are ignored, missing required fields fail the read,
  * and a response that fails its schema is treated as the cloud being unavailable, never as a grant.
+ * FL-183: the ML gateway shapes the contract declares strict (catalogue entries, estimates, job
+ * admission, `job.run` and usage items) are strict here too, so an internal identifier or worker
+ * detail on the wire is refused rather than dropped, and every body sent to the gateway is checked
+ * against its contract first (`cloudRequestBody`).
  */
 
 /** Longest a cloud response body may be; discovery, capabilities, catalogue and wallet are small. */
@@ -157,6 +161,40 @@ const consentFeaturesSchema = z.object({
 });
 export type CloudConsentFeatures = z.infer<typeof consentFeaturesSchema>;
 
+/**
+ * A consent disclosure version as the gateway names it (FC-34 `ConsentVersion`): the date it was
+ * written and a revision, `2026-09-26.1`. Versions are never edited in place, so a new text is a new
+ * version and consent recorded for an older one answers 403 `consent-version-outdated`.
+ */
+export const CONSENT_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d{1,3}$/;
+
+/**
+ * The opaque identifiers of the ML gateway (FC-66 `packages/contracts/src/ml/identifiers.ts`):
+ * Crockford base32 without I, L, O and U. A model SKU (`ms_`) replaces the old model id, a model
+ * revision (`mr_`) the old model fingerprint, a compute SKU (`cs_`) the GPU class, and a voice SKU
+ * (`vs_`) a TTS voice name. None of them can be derived from, or matched to, a model or GPU name.
+ */
+export const MODEL_SKU_PATTERN = /^ms_[\dA-HJKMNP-TV-Z]{8}$/;
+export const COMPUTE_SKU_PATTERN = /^cs_[\dA-HJKMNP-TV-Z]{8}$/;
+export const VOICE_SKU_PATTERN = /^vs_[\dA-HJKMNP-TV-Z]{8}$/;
+export const MODEL_REV_PATTERN = /^mr_[\dA-HJKMNP-TV-Z]{12}$/;
+
+const modelSkuSchema = z.string().regex(MODEL_SKU_PATTERN);
+const computeSkuSchema = z.string().regex(COMPUTE_SKU_PATTERN);
+const voiceSkuSchema = z.string().regex(VOICE_SKU_PATTERN);
+const modelRevSchema = z.string().regex(MODEL_REV_PATTERN);
+
+/** An ISO 8601 timestamp with a zone, as every gateway timestamp is. */
+const gatewayTimestamp = () => z.iso.datetime({ offset: true });
+
+/** Text for people only (FC-66 `DisplayText`): never an identifier, no markup or control characters. */
+const displayText = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .regex(/^[^\p{Cc}<>]*$/u);
+
 /** Micro-USD per dollar: the cloud's ledger unit, and the finest a gateway `*Usd` amount may be. */
 const MICROS_PER_USD = 1_000_000;
 
@@ -168,6 +206,9 @@ const MICROS_PER_USD = 1_000_000;
 export const usdAmount = () =>
   // zod 4 numbers are finite already
   z.number().transform((value) => Math.round(value * MICROS_PER_USD) / MICROS_PER_USD);
+
+/** A gateway price or charge (FC-66 `GatewayUsd`): a `usdAmount` that is never negative and at most 1,000,000. */
+const gatewayUsd = () => usdAmount().pipe(z.number().min(0).max(1_000_000));
 
 const walletSchema = z.object({
   balanceUsd: usdAmount(),
@@ -185,23 +226,30 @@ const optionalHttpsUrl = () =>
     .catch(null);
 
 /**
- * `GET /capabilities`. `workloads` lists only what can run right now (entitled, consented and with a
- * balance). `entitlement` is the account's cloud processing entitlement, either as a flag or as an
- * object carrying `active`.
+ * `GET /capabilities` (FC-34 `CapabilitiesResponse`). `workloads` lists only what can run right now
+ * (a published model, the entitlement active or in grace, consent at the required version and a
+ * wallet with free balance that is not frozen); an ID this server does not know is ignored.
+ * `entitlement` is `{active, state, graceUntil}`: `active` (grace included) is what this server
+ * reads, and `state`/`graceUntil` only explain it.
  */
 export const capabilitiesSchema = z.object({
   protocol: z.literal('frameleaf-cloud-v2'),
   region: z.string().min(1).max(16),
-  workloads: z.array(z.string()).max(64),
+  workloads: z.array(z.string().max(64)).max(64),
   consent: z.object({
     requiredVersion: z.string().min(1).max(64),
-    recordedVersion: z.string().min(1).max(64).nullable().default(null),
-    features: consentFeaturesSchema.default({ identityNames: false, medicalSignals: false, ocrAddon: false }),
+    recordedVersion: z.string().min(1).max(64).nullable(),
+    features: consentFeaturesSchema,
   }),
-  entitlement: z.union([z.boolean(), z.object({ active: z.boolean() }).loose()]),
+  entitlement: z.object({
+    active: z.boolean(),
+    state: z.string().min(1).max(40),
+    graceUntil: gatewayTimestamp().nullable(),
+  }),
   wallet: walletSchema,
-  limits: z.record(z.string(), z.number()).default({}),
-  catalogEtag: z.string().max(200).nullable().default(null),
+  /** `maxInputBytes`, `maxInputs` and `concurrentTimePriced` (the jobs this account may run at once). */
+  limits: z.record(z.string().max(64), z.number()),
+  catalogEtag: z.string().max(200).nullable(),
 });
 export type CloudCapabilities = z.infer<typeof capabilitiesSchema>;
 
@@ -227,42 +275,116 @@ export const walletResponseSchema = walletSchema.extend({
 export type CloudWalletSettings = { dailyCapUsd?: number; autoTopUp?: boolean };
 export type CloudWallet = z.infer<typeof walletResponseSchema>;
 
-export const catalogSchema = z.object({
-  etag: z.string().max(200).nullable().default(null),
-  models: z
-    .array(
-      z.object({
-        id: z.string().min(1).max(200),
-        workload: z.string().min(1).max(64),
-        name: z.string().min(1).max(200),
-        fingerprint: z.string().min(1).max(200),
-        description: z.string().max(2000).default(''),
-        pricing: z
-          .object({
-            unit: z.string().min(1).max(64),
-            usd: usdAmount().pipe(z.number().min(0)),
-          })
-          .nullable()
-          .default(null),
-        retired: z.boolean().default(false),
-        /**
-         * FL-181 (cloud-confirmed 2026-09-25): which app workload a `restoration` catalog entry
-         * serves. Exactly `"faithful"` or `"creative"` on a restoration model — the cloud never
-         * publishes a restoration model without one — and `null` (or absent) for every other
-         * workload, which never splits by mode.
-         */
-        mode: z.enum(['faithful', 'creative']).nullable().default(null),
-      }),
-    )
-    .max(500),
-});
+/** Video restoration styles: a restoration model SKU is either faithful or creative (FC-34). */
+export const CLOUD_RESTORATION_MODES = ['faithful', 'creative'] as const;
+export type CloudRestorationMode = (typeof CLOUD_RESTORATION_MODES)[number];
+
+/**
+ * One `GET /v2/catalog` entry (FC-66 `CatalogEntry`, FC-34 `mode` and `licence`). The cloud's model
+ * identity is `sku` (the model SKU) and `rev` (its current revision); this server stores and compares
+ * the SKU wherever it used to keep a catalogue model id (`ml_workload_route.modelId`,
+ * `CloudProbeFacts.modelIds`) and shows `rev` where it used to show the model fingerprint. `label` and
+ * `display` are text for people and are never sent back.
+ *
+ * Strict, as the contract is: an entry that names an internal identifier (`modelId`, `gpuClass`,
+ * `modelFingerprint`), carries a name where a SKU or revision belongs, gives a restoration model no
+ * mode (or any other model one), or has a licence that forbids commercial hosted use is refused.
+ * `catalogSchema` leaves such an entry out rather than failing the whole catalogue, so it is never
+ * offered, chosen or sent.
+ */
+export const catalogEntrySchema = z
+  .strictObject({
+    sku: modelSkuSchema,
+    workload: z.string().min(1).max(64),
+    /** Position on the workload's ladder, 1 = lightest. */
+    rank: z.number().int().min(1).max(50),
+    label: displayText(80),
+    display: z.strictObject({ model: displayText(80), gpu: displayText(80) }),
+    computeSku: computeSkuSchema,
+    rate: z.strictObject({ perSecondUsd: gatewayUsd(), startFeeUsd: gatewayUsd() }),
+    eta: z.strictObject({ p50Sec: z.number().min(0), p90Sec: z.number().min(0) }),
+    limits: z
+      .record(z.string().regex(/^[a-z][\dA-Za-z]{0,39}$/), z.number())
+      .refine((limits) => Object.keys(limits).length <= 20, 'at most 20 limits'),
+    rev: modelRevSchema,
+    /** Licence attribution where a model licence requires it ("Built with Qwen"). */
+    notice: displayText(200).optional(),
+    /**
+     * FL-181, FC-34: `faithful` or `creative` on every restoration model and null or absent on every
+     * other workload; the restoration style is chosen by choosing the SKU.
+     */
+    mode: z.enum(CLOUD_RESTORATION_MODES).nullable().optional(),
+    /**
+     * FC-34: the model licence shown next to the model. Only `yes` and `conditions` are ever
+     * published; `no` (a licence forbidding commercial hosted use) refuses the entry.
+     */
+    licence: z.strictObject({ name: displayText(80), commercialHosted: z.enum(['yes', 'conditions']) }).optional(),
+  })
+  .superRefine((entry, context) => {
+    const hasMode = entry.mode !== undefined && entry.mode !== null;
+    if (entry.workload === 'restoration' && !hasMode) {
+      context.addIssue({ code: 'custom', path: ['mode'], message: 'a restoration model names its mode' });
+    }
+    if (entry.workload !== 'restoration' && hasMode) {
+      context.addIssue({ code: 'custom', path: ['mode'], message: 'only restoration models have a mode' });
+    }
+  })
+  .transform((entry) => ({
+    ...entry,
+    notice: entry.notice ?? null,
+    mode: entry.mode ?? null,
+    licence: entry.licence ?? null,
+  }));
+export type CloudCatalogEntry = z.infer<typeof catalogEntrySchema>;
+
+/**
+ * `GET /v2/catalog` (FC-34 `CatalogResponse`): only what this server may run now. Every entry is
+ * checked on its own against `catalogEntrySchema`; one that fails is left out and counted in
+ * `refused`, so a single bad entry never hides the rest and is never offered.
+ */
+export const catalogSchema = z
+  .object({
+    etag: z.string().max(200).nullable(),
+    models: z.array(z.unknown()).max(500),
+  })
+  .transform(({ etag, models }) => {
+    const accepted: CloudCatalogEntry[] = [];
+    let refused = 0;
+    for (const model of models) {
+      const parsed = catalogEntrySchema.safeParse(model);
+      if (parsed.success) {
+        accepted.push(parsed.data);
+      } else {
+        refused++;
+      }
+    }
+    return { etag, models: accepted, refused };
+  });
 export type CloudCatalog = z.infer<typeof catalogSchema>;
 
+/**
+ * The catalogue models this server may offer: every accepted entry except a local-only model (FL-146),
+ * recognised by its display name, since a SKU never names the model.
+ */
+export const offeredCatalogModels = (catalog: Pick<CloudCatalog, 'models'> | null): CloudCatalogEntry[] =>
+  (catalog?.models ?? []).filter((model) => !isLocalOnlyModel(model.sku) && !isLocalOnlyModel(model.display.model));
+
+/**
+ * `GET /v2/consent/current` (FC-34 `ConsentCurrent`): the disclosure the region asks for now and
+ * what this server last recorded, with the per-feature choices recorded alongside that version.
+ */
 export const consentCurrentSchema = z.object({
   requiredVersion: z.string().min(1).max(64),
-  recordedVersion: z.string().min(1).max(64).nullable().default(null),
-  features: consentFeaturesSchema.default({ identityNames: false, medicalSignals: false, ocrAddon: false }),
+  recordedVersion: z.string().min(1).max(64).nullable(),
+  recordedAt: gatewayTimestamp().nullable(),
+  features: consentFeaturesSchema,
   summary: z.string().max(4000).default(''),
+  /** SHA-256 (hex) of the disclosure text: what a consent record stores. */
+  textSha256: z
+    .string()
+    .regex(/^[\da-f]{64}$/)
+    .nullable()
+    .default(null),
   documentUrl: z
     .url({ protocol: /^https$/ })
     .nullable()
@@ -270,35 +392,278 @@ export const consentCurrentSchema = z.object({
 });
 export type CloudConsentCurrent = z.infer<typeof consentCurrentSchema>;
 
+/**
+ * `POST /v2/consent` body (FC-34 `ConsentRecordRequest`), checked before it is sent. Only the
+ * current required version is accepted by the cloud; the text-recognition add-on (`ocrAddon`) is
+ * reserved and always off; `acknowledgedBy`, when sent, is this server's opaque user id, never a
+ * name or an email.
+ */
+export const consentRecordRequestSchema = z.strictObject({
+  version: z.string().regex(CONSENT_VERSION_PATTERN),
+  features: z.strictObject({ identityNames: z.boolean(), medicalSignals: z.boolean(), ocrAddon: z.literal(false) }),
+  acknowledgedBy: z
+    .string()
+    .regex(/^[\w-]{1,64}$/)
+    .optional(),
+});
+export type CloudConsentRecordRequest = z.infer<typeof consentRecordRequestSchema>;
+
+/** `POST /v2/consent` answer (FC-34 `ConsentRecorded`). */
 export const consentRecordedSchema = z.object({
   recordedVersion: z.string().min(1).max(64),
+  recordedAt: gatewayTimestamp(),
   features: consentFeaturesSchema,
 });
+export type CloudConsentRecorded = z.infer<typeof consentRecordedSchema>;
 
 /**
- * `GET /v2/usage?since=<ISO 8601>` (FL-177, as-built decision #24). Models and compute are opaque
- * SKUs (`modelSku`, `computeSku`); a model name or id never travels on the wire.
+ * `GET /v2/usage?since=<ISO 8601>` (FL-177, as-built decision #24; FC-66 `UsageItem`). Models and
+ * compute are opaque SKUs (`modelSku`, `computeSku`). Strict, as the contract is: an item carrying a
+ * model id (or any other field) refuses the whole answer, so no settlement is applied from it.
  */
 export const usageSchema = z.object({
   items: z
     .array(
-      z.object({
-        jobId: z.string().min(1).max(200),
-        clientRef: z.string().max(200).nullable().default(null),
-        settledUsd: usdAmount().pipe(z.number().min(0)),
-        credits: z.number().nullable().default(null),
-        settledAt: z.string(),
+      z.strictObject({
+        jobId: z.uuid(),
+        clientRef: z.string().max(200).nullable(),
+        settledUsd: gatewayUsd(),
+        credits: z.number().nullable(),
+        settledAt: gatewayTimestamp(),
         // What the settlement is made of (metered GPU time, start fees per worker), when reported.
-        modelSku: z.string().max(200).nullable().default(null),
-        computeSku: z.string().max(200).nullable().default(null),
-        gpuSeconds: z.number().min(0).nullable().default(null),
-        workers: z.number().int().min(1).max(64).nullable().default(null),
-        estimateUsd: usdAmount().pipe(z.number().min(0)).nullable().default(null),
+        modelSku: modelSkuSchema.nullable(),
+        computeSku: computeSkuSchema.nullable(),
+        gpuSeconds: z.number().min(0).nullable(),
+        workers: z.number().int().min(0).nullable(),
+        estimateUsd: gatewayUsd().nullable(),
       }),
     )
     .max(1000),
 });
 export type CloudUsage = z.infer<typeof usageSchema>;
+
+/** One input a job uploads, described by its digest; the cloud never sees a file name (FC-66 `JobInput`). */
+const jobInputSchema = z.strictObject({
+  inputId: z.string().regex(/^[\w-]{1,64}$/),
+  contentType: z.string().regex(/^[a-z]+\/[\d+.a-z-]{1,100}$/),
+  bytes: z.number().int().min(1).max(68_719_476_736),
+  sha256: z.string().regex(/^[\da-f]{64}$/),
+});
+export type CloudJobInput = z.infer<typeof jobInputSchema>;
+
+const jobInputsSchema = z
+  .array(jobInputSchema)
+  .min(1)
+  .max(1000)
+  .refine((inputs) => new Set(inputs.map((input) => input.inputId)).size === inputs.length, 'inputId must be unique');
+
+/** A language tag (ISO 639 with an optional region), never free text. */
+const languageTag = z.string().regex(/^[a-z]{2,3}(-[A-Z]{2})?$/);
+const scale = z.union([z.literal(2), z.literal(4)]);
+
+/**
+ * The strict `request` allow-list per cloud workload (FC-66 `WORKLOAD_REQUESTS`, API protection
+ * measure 2): prompts, sampling and model parameters stay in the cloud, and any other key is refused
+ * here before it is sent, as the cloud would refuse it with 422 `request-invalid`.
+ */
+export const CLOUD_WORKLOAD_REQUESTS = {
+  descriptions: z.strictObject({
+    language: languageTag.optional(),
+    length: z.enum(['short', 'standard', 'long']).optional(),
+  }),
+  upscale: z.strictObject({ scale: scale.optional() }),
+  restoration: z.strictObject({ mode: z.enum(CLOUD_RESTORATION_MODES).optional(), scale: scale.optional() }),
+  transcription: z.strictObject({ language: languageTag.optional() }),
+  // `text` is what is spoken, not an instruction: plain text, no control characters but line breaks.
+  tts: z.strictObject({
+    voice: voiceSkuSchema,
+    text: z
+      .string()
+      .min(1)
+      .max(5000)
+      .regex(/^(?:[^\p{Cc}]|\n)*$/u),
+  }),
+  interpolation: z.strictObject({ factor: z.union([z.literal(2), z.literal(4), z.literal(8)]).optional() }),
+} as const;
+
+/**
+ * The sealed estimate (FC-66, FC-34): an opaque `est1.` token binding this server, the workload,
+ * model SKU and revision, compute SKU, inputs, request and price for 15 minutes. It is spent by the
+ * first job admitted with it, so it is sent once, never edited and never reused for another job.
+ */
+const sealedEstimateSchema = z.string().regex(/^est1\.[\w-]{40,8192}$/);
+
+const estimateRequestFor = <W extends keyof typeof CLOUD_WORKLOAD_REQUESTS>(workload: W) =>
+  z.strictObject({
+    workload: z.literal(workload),
+    modelSku: modelSkuSchema,
+    inputs: jobInputsSchema,
+    request: CLOUD_WORKLOAD_REQUESTS[workload],
+  });
+
+/** `POST /v2/estimates` body (FC-66 `EstimateRequest`), checked before it is sent. */
+export const estimateRequestSchema = z.discriminatedUnion('workload', [
+  estimateRequestFor('descriptions'),
+  estimateRequestFor('upscale'),
+  estimateRequestFor('restoration'),
+  estimateRequestFor('transcription'),
+  estimateRequestFor('tts'),
+  estimateRequestFor('interpolation'),
+]);
+export type CloudEstimateRequest = z.infer<typeof estimateRequestSchema>;
+
+/** `POST /v2/estimates` answer (FC-66 `EstimateResponse`): the sealed estimate and what it quotes. */
+export const estimateResponseSchema = z.strictObject({
+  estimate: sealedEstimateSchema,
+  expiresAt: gatewayTimestamp(),
+  modelSku: modelSkuSchema,
+  modelRev: modelRevSchema,
+  computeSku: computeSkuSchema,
+  cost: z.strictObject({
+    p50: gatewayUsd(),
+    p90: gatewayUsd(),
+    startup: gatewayUsd(),
+    hold: gatewayUsd(),
+    minimum: gatewayUsd(),
+  }),
+  seconds: z.strictObject({ coldStart: z.number().min(0), run: z.number().min(0) }),
+  basis: z.enum(['measured', 'modelled']),
+});
+export type CloudEstimate = z.infer<typeof estimateResponseSchema>;
+
+/** Whether a sealed estimate may still be sent with a job: the cloud refuses it after `expiresAt`. */
+export const estimateUsable = (estimate: Pick<CloudEstimate, 'expiresAt'>, now = Date.now()): boolean =>
+  Date.parse(estimate.expiresAt) > now;
+
+const jobRequestFor = <W extends keyof typeof CLOUD_WORKLOAD_REQUESTS>(workload: W) =>
+  z.strictObject({
+    estimate: sealedEstimateSchema,
+    workload: z.literal(workload),
+    modelSku: modelSkuSchema,
+    modelRev: modelRevSchema,
+    clientRef: z
+      .string()
+      .max(200)
+      .regex(/^[^\p{Cc}]*$/u)
+      .nullable()
+      .optional(),
+    packKey: z
+      .string()
+      .regex(/^[\w-]{1,64}$/)
+      .optional(),
+    deadlineSeconds: z.number().int().min(60).max(604_800).optional(),
+    inputs: jobInputsSchema,
+    request: CLOUD_WORKLOAD_REQUESTS[workload],
+  });
+
+/**
+ * `POST /v2/jobs` body (FC-66 `JobCreateRequest`), checked before it is sent. It must match what its
+ * sealed estimate binds; otherwise the cloud answers 409 `estimate-mismatch` (`ModelMismatch`).
+ */
+export const jobCreateRequestSchema = z.discriminatedUnion('workload', [
+  jobRequestFor('descriptions'),
+  jobRequestFor('upscale'),
+  jobRequestFor('restoration'),
+  jobRequestFor('transcription'),
+  jobRequestFor('tts'),
+  jobRequestFor('interpolation'),
+]);
+export type CloudJobCreateRequest = z.infer<typeof jobCreateRequestSchema>;
+
+/**
+ * `Idempotency-Key` on `POST /v2/jobs`: one per logical submission. A retry with the same key and
+ * body answers the same admission, so a retry never spends a second estimate or holds twice.
+ */
+export const IDEMPOTENCY_KEY_PATTERN = /^[\w-]{8,100}$/;
+
+/**
+ * `POST /v2/jobs` answer up to admission (FC-34 `JobAdmitted`): the sealed estimate is spent and the
+ * wallet holds `hold.amountUsd`. Uploads and every later state belong to the broker (FC-39).
+ */
+export const jobAdmittedSchema = z.strictObject({
+  jobId: z.uuid(),
+  status: z.literal('admitted'),
+  modelSku: modelSkuSchema,
+  modelRev: modelRevSchema,
+  computeSku: computeSkuSchema,
+  hold: z.strictObject({ amountUsd: gatewayUsd(), ceilingUsd: gatewayUsd(), minimumUsd: gatewayUsd() }),
+  createdAt: gatewayTimestamp(),
+});
+export type CloudJobAdmitted = z.infer<typeof jobAdmittedSchema>;
+
+/** `job.run` (FC-66 `JobRun`): exactly these four fields; worker or data-centre details refuse it. */
+export const jobRunSchema = z.strictObject({
+  startedAt: gatewayTimestamp().nullable(),
+  meteredSeconds: z.number().min(0),
+  workers: z.number().int().min(0),
+  startFees: z.number().int().min(0),
+});
+export type CloudJobRun = z.infer<typeof jobRunSchema>;
+
+/** The job states of `GET /v2/jobs/{id}` (docs/cloud-ml.md job state machine, FC-34 `admitted`). */
+export const CLOUD_JOB_STATUSES = [
+  'admitted',
+  'awaiting_upload',
+  'queued',
+  'starting',
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+  'cancelled_budget',
+  'expired',
+] as const;
+
+/** Identifier fields that name cloud internals; no gateway answer carries them (FC-66). */
+const INTERNAL_IDENTIFIER_FIELDS = ['modelId', 'gpuClass', 'modelFingerprint'] as const;
+
+/**
+ * `GET /v2/jobs/{id}` (FC-34 up to `admitted`; the later states, `progress` and `result` are FC-39's
+ * and not yet published). Unknown fields are ignored, but a status naming an internal identifier is
+ * refused, and `run` must have exactly its four fields.
+ */
+export const jobStatusSchema = z
+  .object({
+    jobId: z.uuid(),
+    status: z.enum(CLOUD_JOB_STATUSES),
+    modelSku: modelSkuSchema,
+    modelRev: modelRevSchema,
+    computeSku: computeSkuSchema.optional(),
+    hold: z.strictObject({ amountUsd: gatewayUsd(), ceilingUsd: gatewayUsd(), minimumUsd: gatewayUsd() }).optional(),
+    run: jobRunSchema.nullable().optional(),
+    charges: z
+      .object({ meteredUsd: gatewayUsd(), holdUsd: gatewayUsd(), ceilingUsd: gatewayUsd() })
+      .nullable()
+      .optional(),
+    purgeAfter: gatewayTimestamp().nullable().optional(),
+  })
+  .loose()
+  .superRefine((status, context) => {
+    for (const field of INTERNAL_IDENTIFIER_FIELDS) {
+      if (field in status) {
+        context.addIssue({ code: 'custom', path: [field], message: `${field} is never on the wire` });
+      }
+    }
+  });
+export type CloudJobStatus = z.infer<typeof jobStatusSchema>;
+
+/**
+ * A body this server is about to send to the ML gateway, checked against the contract first. One the
+ * cloud would refuse is never sent: it is refused here with `RequestInvalid`, as the cloud would.
+ */
+export const cloudRequestBody = <T extends z.ZodType>(schema: T, body: unknown, what: string): z.infer<T> => {
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const where = issue?.path.length ? ` (${issue.path.join('.')})` : '';
+    throw new FrameleafCloudError(
+      MlAdmissionRefusal.RequestInvalid,
+      null,
+      `This server did not send ${what}: Frameleaf Cloud would not accept it${where}`,
+    );
+  }
+  return parsed.data;
+};
 
 /**
  * The error codes of Frameleaf Cloud's `ErrorEnvelope` the server acts on (frameleaf-cloud
@@ -328,9 +693,20 @@ export enum CloudErrorCode {
   /** The change needs the account owner to confirm it in the account app (a wallet increase). */
   StepUpRequired = 'step-up-required',
   ConsentMissing = 'consent-missing',
+  /** 403: consent is recorded for an older disclosure version (`data.requiredVersion` names the current one). */
   ConsentVersionOutdated = 'consent-version-outdated',
   DailyCap = 'daily-cap',
   RequestInvalid = 'request-invalid',
+  /** 409: the sealed estimate does not match the job, or was already spent (`detail: "used"`). */
+  EstimateMismatch = 'estimate-mismatch',
+  /** 409: the sealed estimate is older than 15 minutes. */
+  EstimateExpired = 'estimate-expired',
+  /** 503 (FC-34): the region takes no new jobs now (until FC-39 binds the broker, every job). */
+  Capacity = 'capacity',
+  /** 403 (FC-34): the account or the server belongs to another region's gateway. */
+  RegionMismatch = 'region-mismatch',
+  /** 403 (FC-19, FC-34): the cloud suspects this server's identity was copied. */
+  CloneSuspected = 'clone_suspected',
 }
 
 /**
@@ -405,6 +781,11 @@ export const refusalFromCloudError = (
           // the link is gone: the cloud is unavailable to this server, whatever was asked
           return MlAdmissionRefusal.CloudUnavailable;
         }
+        case CloudErrorCode.RegionMismatch:
+        case CloudErrorCode.CloneSuspected: {
+          // FC-34: the gateway refuses this server itself, never for want of consent
+          return MlAdmissionRefusal.DestinationUnhealthy;
+        }
         default: {
           return MlAdmissionRefusal.ConsentMissing;
         }
@@ -418,6 +799,12 @@ export const refusalFromCloudError = (
     }
     case 429: {
       return MlAdmissionRefusal.QuotaExceeded;
+    }
+    case 503: {
+      // FC-34: `capacity` refuses this destination now; the job is never moved to another one
+      return code === CloudErrorCode.Capacity
+        ? MlAdmissionRefusal.DestinationUnhealthy
+        : MlAdmissionRefusal.CloudUnavailable;
     }
     default: {
       return MlAdmissionRefusal.CloudUnavailable;
@@ -497,9 +884,13 @@ export type CloudProbeFacts = {
   spentTodayUsd: number;
   limits: Record<string, number>;
   catalogEtag: string | null;
+  /**
+   * The model SKUs (`ms_…`, FC-66) the catalogue offered at this check (FL-183): the cloud's model
+   * identity, and what `ml_workload_route.modelId` names for Frameleaf Cloud work.
+   */
   modelIds: string[];
   /**
-   * The app workload each catalogued model id serves (FL-181 P1), from the catalogue's own
+   * The app workload each catalogued model SKU serves (FL-181 P1), from the catalogue's own
    * `workload`/`mode`, exactly as `workloadForCatalogEntry` reads it. `null` for a model the catalog
    * does not place. Admission uses this to refuse a modelId whose catalogue mode does not match the
    * workload asked for, since `restoration` alone (in `modelIds`) cannot tell faithful and creative
@@ -534,8 +925,8 @@ export const cloudModelFor = (workload: MlWorkload, chosen: string | null | unde
   return workload === MlWorkload.Enrichment ? CLOUD_DESCRIPTION_DEFAULT_MODEL : null;
 };
 
-export const isEntitled = (entitlement: CloudCapabilities['entitlement']): boolean =>
-  typeof entitlement === 'boolean' ? entitlement : entitlement.active;
+/** FC-34: the server reads `active` alone, which already includes a grace period (`state: grace`). */
+export const isEntitled = (entitlement: CloudCapabilities['entitlement']): boolean => entitlement.active;
 
 export const cloudFactsFromCapabilities = (
   capabilities: CloudCapabilities,
@@ -664,7 +1055,7 @@ export const studioAiCloudWorkloadId = (feature: StudioAiCloudFeature): CloudWor
  * exactly one app workload; a `restoration` entry needs its own `mode` (faithful or creative, read
  * from the catalog entry) to say which one, and `null` when the catalog does not say.
  */
-export const workloadForCatalogEntry = (workload: string, mode: 'faithful' | 'creative' | null): MlWorkload | null => {
+export const workloadForCatalogEntry = (workload: string, mode: CloudRestorationMode | null): MlWorkload | null => {
   if (workload === 'restoration') {
     if (mode === 'creative') {
       return MlWorkload.RestorationCreative;
