@@ -834,28 +834,29 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
 
     /**
      * FC-34 (cloud decision 2026-09-26): a catalogue entry may carry `default: true`, at most one per
-     * group (workload; for restoration, workload and mode). The cloud has not yet published its
-     * fixtures for this (catalog-descriptions.json, rejected/catalog-two-defaults.json, the updated
-     * catalog-restoration.json), so these specs build the catalogues from its published entries.
+     * group (workload; for restoration, workload and mode). The cloud's fixtures for this
+     * (catalog-descriptions.json, rejected/catalog-two-defaults.json, the updated
+     * catalog-restoration.json) are copied from origin/main, so these specs build their catalogues
+     * from them directly.
      */
     describe('defaults', () => {
       const catalogModels = cloudContractFixture<{ models: Record<string, unknown>[] }>('ml/catalog.json').models;
+      const [light, standard] = cloudContractFixture<{ models: Record<string, unknown>[] }>(
+        'ml/catalog-descriptions.json',
+      ).models;
       const [faithful, creative] = cloudContractFixture<{ models: Record<string, unknown>[] }>(
         'ml/catalog-restoration.json',
       ).models;
-      const [standard, best, upscale] = catalogModels;
+      const twoDefaults = cloudContractFixture<{ models: Record<string, unknown>[] }>(
+        'ml/rejected/catalog-two-defaults.json',
+      ).models;
+      const [, , upscale] = catalogModels;
       const parse = (models: unknown[]) => catalogSchema.parse({ etag: '"cat-test"', models });
 
       it('reads one default per group, with restoration grouped by mode', () => {
-        const catalog = parse([
-          { ...standard, default: true },
-          best,
-          { ...upscale, default: false },
-          { ...faithful, default: true },
-          { ...creative, default: true },
-        ]);
+        const catalog = parse([light, standard, { ...upscale, default: false }, faithful, creative]);
         expect(catalog.refused).toBe(0);
-        expect(catalog.models.map((model) => model.default)).toEqual([true, false, false, true, true]);
+        expect(catalog.models.map((model) => model.default)).toEqual([false, true, false, true, true]);
         expect(catalogDefaults(catalog.models)).toEqual({
           descriptions: 'ms_K6WT70CS',
           'restoration:faithful': 'ms_YS60DAXB',
@@ -864,18 +865,17 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
       });
 
       it('names no default for a group the cloud marks none in (not available to this region or licence)', () => {
-        const catalog = parse([standard, best, { ...faithful, default: true }, creative]);
+        const catalog = parse([light, { ...standard, default: false }, faithful, { ...creative, default: false }]);
         expect(catalogDefaults(catalog.models)).toEqual({ 'restoration:faithful': 'ms_YS60DAXB' });
       });
 
       it('refuses two defaults in one group: the group keeps its models, has no default, and counts once', () => {
         const catalog = parse([
-          { ...standard, default: true },
-          { ...best, default: true },
+          ...twoDefaults,
           { ...upscale, default: true },
-          { ...creative, default: true },
-          { ...creative, sku: 'ms_CRE8TVE2', rev: 'mr_CRE8TVE2CRE8', default: true },
-          { ...faithful, default: true },
+          creative,
+          { ...creative, sku: 'ms_CRE8TVE2', rev: 'mr_CRE8TVE2CRE8' },
+          faithful,
         ]);
         expect(catalog.refused).toBe(2);
         expect(catalog.models).toHaveLength(6);
@@ -887,17 +887,14 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
 
       it('never counts a refused entry toward a default, nor a default that is not a boolean', () => {
         const leaky = cloudContractFixture<Record<string, unknown>>('ml/rejected/catalog-entry-model-id.json');
-        const catalog = parse([
-          { ...standard, default: true },
-          { ...leaky, default: true },
-        ]);
+        const catalog = parse([standard, { ...leaky, default: true }]);
         expect(catalog.refused).toBe(1);
         expect(catalogDefaults(catalog.models)).toEqual({ descriptions: 'ms_K6WT70CS' });
         expect(catalogEntrySchema.safeParse({ ...standard, default: 'yes' }).success).toBe(false);
       });
 
       it('never names a local-only model as a default', () => {
-        const catalog = parse([{ ...standard, default: true, display: { model: 'Qwen2.5 VL 3B', gpu: 'Any' } }]);
+        const catalog = parse([{ ...standard, display: { model: 'Qwen2.5 VL 3B', gpu: 'Any' } }]);
         expect(catalogDefaults(offeredCatalogModels(catalog))).toEqual({});
       });
 
