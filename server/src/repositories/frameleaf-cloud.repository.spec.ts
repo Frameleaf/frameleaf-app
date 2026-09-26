@@ -12,7 +12,7 @@ import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { INSTANCE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
+import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
@@ -201,7 +201,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
   let cloud: FakeCloud;
   let identityDir: string;
   let metadata: Map<string, unknown>;
-  let deps: CloudGatewayDeps;
+  let deps: CloudMlGatewayDeps;
   let cloudRepository: FrameleafCloudRepository;
   let identity: InstanceIdentityRepository;
 
@@ -231,9 +231,15 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
           }
           return Promise.resolve();
         },
+        delete: (key: string) => {
+          metadata.delete(key);
+          return Promise.resolve();
+        },
       } as never,
       instanceIdentityRepository: identity,
       frameleafCloudRepository: cloudRepository,
+      eventRepository: { emit: () => Promise.resolve() },
+      logger: LoggingRepository.create(),
     };
   });
 

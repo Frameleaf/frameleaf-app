@@ -348,6 +348,96 @@ describe(FrameleafLicenseService.name, () => {
       expect(store()?.plan?.claims.jti).toBe('jti-2');
     });
 
+    describe('the answer replaces every certificate held (FL-185)', () => {
+      const keyCertificate = (claims: Record<string, unknown> = {}) =>
+        certificate({
+          lic: { id: 'licence-1', last4: 'H23J', kind: 'server' },
+          ent: ['SUPPORTER_SERVER'],
+          lic_exp: null,
+          jti: 'key-1',
+          ...claims,
+        });
+      const holdPlanAndKey = async () => {
+        await sut.installCertificate(authStub.admin, { certificate: certificate({ jti: 'plan-1' }) });
+        await sut.installCertificate(authStub.admin, { certificate: keyCertificate() });
+        metadata.set(SystemMetadataKey.FrameleafLicense, {
+          ...store()!,
+          key: { ...store()!.key!, activationId: 'activation-1' },
+        });
+        link();
+        serveToken();
+      };
+
+      it('drops a held key certificate the answer leaves out', async () => {
+        await holdPlanAndKey();
+        cloud.on('POST /api/v1/licenses/refresh', () => ({
+          status: 200,
+          body: { certificates: [certificate({ jti: 'plan-2' })] },
+        }));
+
+        await sut.refreshNow();
+
+        const refresh = cloud.requests.find(({ path }) => path === '/api/v1/licenses/refresh')!;
+        // the list sent is informational: the jtis held, in any order
+        expect([...refresh.json().certificates].sort()).toEqual(['key-1', 'plan-1']);
+        expect(store()?.key).toBeNull();
+        expect(store()?.plan).toMatchObject({ claims: { jti: 'plan-2' }, refreshedAt: expect.any(String) });
+        await expect(sut.getStatus()).resolves.toMatchObject({ entitlements: { supporter: false }, key: null });
+      });
+
+      it('keeps the activation of the key held here when the answer lists it again', async () => {
+        await holdPlanAndKey();
+        cloud.on('POST /api/v1/licenses/refresh', () => ({
+          status: 200,
+          body: {
+            certificates: [
+              certificate({ jti: 'plan-2' }),
+              keyCertificate({ lic: { id: 'licence-2', last4: 'K9PQ', kind: 'server' }, jti: 'key-other' }),
+              keyCertificate({ jti: 'key-2' }),
+            ],
+          },
+        }));
+
+        await sut.refreshNow();
+
+        expect(store()?.key).toMatchObject({
+          source: 'key',
+          keyHint: 'H23J',
+          activationId: 'activation-1',
+          claims: { jti: 'key-2' },
+        });
+        expect(store()?.plan?.claims.jti).toBe('plan-2');
+      });
+
+      it.each([
+        ['an empty answer', (): string[] => [], 'does not understand'],
+        [
+          'an answer without a plan certificate',
+          (): string[] => [keyCertificate({ jti: 'key-2' })],
+          'without a plan certificate',
+        ],
+      ])('keeps both certificates and records the error for %s, retrying in an hour', async (_, answer, error) => {
+        await holdPlanAndKey();
+        cloud.on('POST /api/v1/licenses/refresh', () => ({ status: 200, body: { certificates: answer() } }));
+
+        await expect(sut.handleRefresh({ force: true })).resolves.toBe(JobStatus.Success);
+
+        const held = store()!;
+        expect(held.plan).toMatchObject({
+          claims: { jti: 'plan-1' },
+          lastRefreshError: expect.stringContaining(error),
+        });
+        expect(held.key).toMatchObject({
+          claims: { jti: 'key-1' },
+          activationId: 'activation-1',
+          lastRefreshError: expect.stringContaining(error),
+        });
+        const retryIn = Date.parse(held.plan!.nextRefreshAt!) - Date.now();
+        expect(retryIn).toBeGreaterThan(55 * 60 * 1000);
+        expect(retryIn).toBeLessThanOrEqual(60 * 60 * 1000);
+      });
+    });
+
     it('says a file licence is not refreshed online when unlinked', async () => {
       await sut.installCertificate(authStub.admin, { certificate: certificate() });
       await expect(sut.refreshNow()).rejects.toThrow('came from a file');
