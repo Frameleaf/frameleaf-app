@@ -14,6 +14,17 @@ type PhysicalFile = Selectable<PhysicalFileTable>;
 
 export const PHYSICAL_FILE_HANDOFF_REFUSAL = 'Shared files cannot change during database handoff';
 
+/**
+ * Takes the transaction-scoped advisory lock that guards one file path against concurrent reference
+ * changes (see `deleteUnreferencedPath`). Released on commit or rollback. The key is derived in JS
+ * rather than via `hashtext` so every caller agrees on it without depending on an undocumented
+ * Postgres builtin. A caller taking several paths takes them in sorted order.
+ */
+export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> => {
+  const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
+  await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
+};
+
 export type PhysicalNormalizationAsset = {
   id: string;
   checksum: Buffer;
@@ -967,15 +978,9 @@ export class PhysicalFileRepository {
     );
   }
 
-  /**
-   * Advisory lock guarding one path against concurrent reference changes.
-   * Transaction-scoped, so it is released on commit or rollback. The key is
-   * derived in JS rather than via `hashtext` so every caller agrees on it
-   * without depending on an undocumented Postgres builtin.
-   */
+  /** Advisory lock guarding one path against concurrent reference changes (`lockFilePath`). */
   private async lockPath(trx: Transaction<DB>, path: string): Promise<void> {
-    const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
-    await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
+    await lockFilePath(trx, path);
   }
 
   // Every caller changes which rows reference a file (or deletes it), so it is refused while a

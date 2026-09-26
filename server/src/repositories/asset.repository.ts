@@ -38,6 +38,7 @@ import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table.js';
@@ -94,6 +95,17 @@ import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
 export type AssetStats = Record<AssetType, number>;
+
+/** What `remove` reports about the files a removed asset held, beyond its generated ones. */
+export type RemovedAsset = { originalPath: string; reservationTemporaryPath: string | null; videoEditPaths?: string[] };
+
+/** The file cleanup `remove` queues inside its transaction (FL-169). */
+export type AssetFileRelease = {
+  /** Every file the removal frees, in the order they are queued. Called with what the removal reports. */
+  files: (removed: RemovedAsset) => string[];
+  /** Queues their deletion; a failure rolls the removal back. */
+  queue: (files: string[]) => Promise<void>;
+};
 
 export interface DescriptionStats {
   totalAssets: number;
@@ -1360,23 +1372,37 @@ export class AssetRepository {
     return this.db.isTransaction ? callback(this.db) : this.db.transaction().execute(callback);
   }
 
-  async remove(asset: {
-    id: string;
-  }): Promise<
-    { originalPath: string; reservationTemporaryPath: string | null; videoEditPaths?: string[] } | undefined
-  > {
+  /**
+   * Removes an asset row and everything the fork keeps for it, in one transaction.
+   *
+   * FL-169: with `release`, the deletion of the files the removal frees is queued inside that
+   * transaction, while it holds the path lock of every one of them. A failure to queue rolls the
+   * removal back, so the row (and a retry's way to its files) survives; once the row is gone, the
+   * cleanup is already queued. FileDelete takes the same path locks, so it cannot count references
+   * before this transaction ends: after a commit the removed rows no longer protect the files, and
+   * after a rollback they still do. Files another asset still references are kept either way.
+   */
+  async remove(asset: { id: string }, release?: AssetFileRelease): Promise<RemovedAsset | undefined> {
     return this.db.transaction().execute(async (tx) => {
-      const locked = await sql<{ originalPath: string; reservationTemporaryPath: string | null }>`
-        SELECT
-          coalesce(mapping."upstreamPath", reservation."upstreamPath", asset."originalPath") AS "originalPath",
-          reservation."temporaryPath" AS "reservationTemporaryPath"
-        FROM public.asset asset
-        LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
-        LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
-        WHERE asset.id = ${asset.id}::uuid
-        FOR UPDATE OF asset
-      `.execute(tx);
-      const lockedAsset = locked.rows[0];
+      const lockedPaths = new Set<string>();
+      const lockPaths = async (paths: string[]) => {
+        for (const path of [...new Set(paths)].filter((path) => !lockedPaths.has(path)).toSorted()) {
+          await lockFilePath(tx, path);
+          lockedPaths.add(path);
+        }
+      };
+
+      if (release) {
+        // Path locks come before the asset row lock, the order every other path-locking writer uses.
+        // The paths are read again under the row lock below; one that changed in between is locked then.
+        const unlocked = await this.readRemovedPaths(tx, asset.id, false);
+        if (unlocked) {
+          const videoEditPaths = await this.getReleasableVideoEditPaths([asset.id], tx);
+          await lockPaths(release.files({ ...unlocked, videoEditPaths }));
+        }
+      }
+
+      const lockedAsset = await this.readRemovedPaths(tx, asset.id, true);
       if (!lockedAsset) {
         return;
       }
@@ -1386,43 +1412,78 @@ export class AssetRepository {
       await this.smartAlbums.deleteAssets([asset.id], tx);
       await this.deleteForkDerivedResults([asset.id], tx);
       await tx.deleteFrom('asset').where('id', '=', asUuid(asset.id)).execute();
-      return { ...lockedAsset, ...(videoEditPaths.length > 0 && { videoEditPaths }) };
+      const removed: RemovedAsset = { ...lockedAsset, ...(videoEditPaths.length > 0 && { videoEditPaths }) };
+
+      if (release) {
+        const files = release.files(removed);
+        await lockPaths(files);
+        await release.queue(files);
+      }
+
+      return removed;
     });
   }
 
-  private async deleteVideoEditVersions(ids: string[], db: Kysely<DB>): Promise<string[]> {
-    if (ids.length === 0) return [];
+  private async readRemovedPaths(tx: Kysely<DB>, id: string, lock: boolean) {
+    const rows = await sql<{ originalPath: string; reservationTemporaryPath: string | null }>`
+      SELECT
+        coalesce(mapping."upstreamPath", reservation."upstreamPath", asset."originalPath") AS "originalPath",
+        reservation."temporaryPath" AS "reservationTemporaryPath"
+      FROM public.asset asset
+      LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
+      LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
+      WHERE asset.id = ${id}::uuid
+      ${lock ? sql`FOR UPDATE OF asset` : sql``}
+    `.execute(tx);
+    return rows.rows[0];
+  }
+
+  /**
+   * The files of the assets' saved video versions, when the versions can be deleted with them now.
+   * While fork writes are disabled or a handoff runs, the rows are left behind as orphans: the asset
+   * delete must not fail, and the nightly orphan release reclaims their files later.
+   */
+  private async getReleasableVideoEditPaths(ids: string[], db: Kysely<DB>): Promise<string[] | undefined> {
+    return (await this.getReleasableVideoEditVersions(ids, db))?.paths;
+  }
+
+  private async getReleasableVideoEditVersions(
+    ids: string[],
+    db: Kysely<DB>,
+  ): Promise<{ count: number; paths: string[] } | undefined> {
+    if (ids.length === 0) return;
     const phase = await sql<{
       phase: ForkSchemaPhase;
     }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`.execute(db);
-    // While fork writes are disabled or a handoff runs, the rows are left behind as orphans: the
-    // asset delete must not fail, and the nightly orphan release reclaims their files later.
-    if (!phase.rows[0] || !isForkWriteEnabled(phase.rows[0].phase)) return [];
+    if (!phase.rows[0] || !isForkWriteEnabled(phase.rows[0].phase)) return;
     const handoff = await sql`SELECT 1 FROM immich_fork.migration_audit WHERE status='running'
       AND name IN ('official-handoff-preparation','fork-return-reconciliation') LIMIT 1`.execute(db);
-    if (handoff.rows.length > 0) return [];
+    if (handoff.rows.length > 0) return;
     const retained = await sql<Pick<VideoEditVersion, 'masterPath' | 'proxyPath' | 'files'>>`
       SELECT "masterPath", "proxyPath", files FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])
       UNION ALL SELECT payload->>'masterPath', payload->>'proxyPath', payload->'files' FROM immich_fork.orphaned_records
       WHERE "sourceTable"='video_edit_version' AND payload->>'assetId'=ANY(${ids}::text[])`.execute(db);
-    if (retained.rows.length === 0) return [];
+    const paths = retained.rows
+      .flatMap((version) => [
+        version.masterPath,
+        version.masterPath && getEditedMasterLineagePath(version.masterPath),
+        version.proxyPath,
+        ...version.files.map((file) => file.path),
+      ])
+      .filter((path): path is string => !!path);
+    return { count: retained.rows.length, paths: [...new Set(paths)] };
+  }
+
+  private async deleteVideoEditVersions(ids: string[], db: Kysely<DB>): Promise<string[]> {
+    const releasable = await this.getReleasableVideoEditVersions(ids, db);
+    if (!releasable || releasable.count === 0) return [];
+    const { paths } = releasable;
     await sql`DELETE FROM immich_fork.video_edit_selection WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
     await sql`DELETE FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
     await sql`DELETE FROM immich_fork.orphaned_records WHERE "sourceTable" IN ('video_edit_selection','video_edit_version')
       AND payload->>'assetId'=ANY(${ids}::text[])`.execute(db);
     // FileDelete checks all remaining public and private references under a path lock.
-    return [
-      ...new Set(
-        retained.rows
-          .flatMap((version) => [
-            version.masterPath,
-            version.masterPath && getEditedMasterLineagePath(version.masterPath),
-            version.proxyPath,
-            ...version.files.map((file) => file.path),
-          ])
-          .filter((path): path is string => !!path),
-      ),
-    ];
+    return paths;
   }
 
   private async deleteForkDerivedResults(ids: string[], db: Kysely<DB>): Promise<void> {
