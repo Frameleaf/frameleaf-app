@@ -585,6 +585,9 @@ describe(AssetService.name, () => {
       });
 
       describe('stacks, handoffs and storage moves (FL-179)', () => {
+        // Every medium asset shares one default original path; these tests move and reserve paths, and a move
+        // follows every row naming its path, so each asset here gets its own.
+        const ownOriginalPath = () => `/data/library/${randomUUID()}.jpg`;
         const recordMove = async (assetId: string, oldPath: string, newPath: string) => {
           const { id } = await forkDatabase
             .insertInto('move_history')
@@ -646,8 +649,12 @@ describe(AssetService.name, () => {
           const { sut, ctx } = setup(forkDatabase);
           const queue = ctx.getMock(JobRepository).queue;
           const { user } = await ctx.newUser();
-          const { asset: primary } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
-          const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+          const { asset: primary } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: ownOriginalPath(),
+            deletedAt: new Date(),
+          });
+          const { asset: other } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, other.id]);
           queue.mockImplementation((job) =>
             job.name === JobName.FileDelete ? Promise.reject(new Error('commit failed')) : Promise.resolve(),
@@ -675,8 +682,12 @@ describe(AssetService.name, () => {
           const { sut, ctx } = setup(forkDatabase);
           ctx.getMock(JobRepository).queue.mockResolvedValue();
           const { user } = await ctx.newUser();
-          const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
-          const { asset: member } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const { asset: primary } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
+          const { asset: member } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: ownOriginalPath(),
+            deletedAt: new Date(),
+          });
           const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, member.id]);
 
           await expect(sut.handleAssetDeletion({ id: member.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
@@ -688,9 +699,13 @@ describe(AssetService.name, () => {
           const { sut, ctx } = setup(forkDatabase);
           ctx.getMock(JobRepository).queue.mockResolvedValue();
           const { user } = await ctx.newUser();
-          const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
-          const { asset: member } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
-          const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+          const { asset: primary } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
+          const { asset: member } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: ownOriginalPath(),
+            deletedAt: new Date(),
+          });
+          const { asset: other } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, member.id, other.id]);
 
           await expect(sut.handleAssetDeletion({ id: member.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
@@ -704,7 +719,11 @@ describe(AssetService.name, () => {
           const { sut, ctx } = setup(forkDatabase);
           ctx.getMock(JobRepository).queue.mockResolvedValue();
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const { asset } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: ownOriginalPath(),
+            deletedAt: new Date(),
+          });
           const developPath = await addDevelopRevision(asset.id, user.id);
 
           await sql`
@@ -734,7 +753,11 @@ describe(AssetService.name, () => {
           const { sut, ctx } = setup(forkDatabase);
           ctx.getMock(JobRepository).queue.mockResolvedValue();
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const { asset } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: ownOriginalPath(),
+            deletedAt: new Date(),
+          });
           const movedPath = `/data/library/${asset.id}-moved.jpg`;
           const moveId = await recordMove(asset.id, asset.originalPath, movedPath);
 
@@ -748,7 +771,7 @@ describe(AssetService.name, () => {
         it('renames the file and saves its new path as one unit', async () => {
           const { ctx } = setup(forkDatabase);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           const to = `/data/library/${asset.id}-template.jpg`;
           const moveId = await recordMove(asset.id, asset.originalPath, to);
           const operations = { rename: vi.fn(() => Promise.resolve(true)), finish: vi.fn(noop), undo: vi.fn(noop) };
@@ -778,8 +801,8 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset: removed } = await ctx.newAsset({ ownerId: user.id });
-          const { asset: changed } = await ctx.newAsset({ ownerId: user.id });
+          const { asset: removed } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
+          const { asset: changed } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           const removedMove = await recordMove(removed.id, removed.originalPath, `/data/library/${removed.id}-t.jpg`);
           const changedMove = await recordMove(
             changed.id,
@@ -841,7 +864,7 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           const { asset: sharer } = await ctx.newAsset({ ownerId: user.id, originalPath: asset.originalPath });
           const physicalId = await addPhysicalOriginal(asset.originalPath, asset.id);
           await forkDatabase
@@ -879,7 +902,7 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           const to = `/data/library/${asset.id}-taken.jpg`;
           const physicalId = await addPhysicalOriginal(asset.originalPath, asset.id);
           await forkDatabase
@@ -916,7 +939,11 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const { asset } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: ownOriginalPath(),
+            deletedAt: new Date(),
+          });
           const to = `/data/library/${asset.id}-racing.jpg`;
           const moveId = await recordMove(asset.id, asset.originalPath, to);
           let renameStarted!: () => void;
@@ -973,7 +1000,11 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const { asset } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: ownOriginalPath(),
+            deletedAt: new Date(),
+          });
           // sorts before the original, so the move locks it first and then waits for the original
           const to = `/0-moved/${asset.id}.jpg`;
           const releaseRow = await holdLock((tx) =>
@@ -1017,8 +1048,8 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
-          const { asset: member } = await ctx.newAsset({ ownerId: user.id });
+          const { asset: primary } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
+          const { asset: member } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, member.id]);
           const releaseStack = await holdLock((tx) =>
             tx.selectFrom('stack').select('id').where('id', '=', stack.id).forUpdate().execute(),
@@ -1044,7 +1075,11 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const { asset } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: ownOriginalPath(),
+            deletedAt: new Date(),
+          });
           await sql`
             INSERT INTO immich_fork.asset_physical_file ("assetId", "upstreamPath")
             VALUES (${asset.id}::uuid, ${asset.originalPath})
@@ -1080,7 +1115,7 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           await sql`
             INSERT INTO immich_fork.asset_physical_file ("assetId", "upstreamPath")
             VALUES (${asset.id}::uuid, ${asset.originalPath})
@@ -1113,7 +1148,7 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           await sql`
             INSERT INTO immich_fork.asset_storage_reservation
               ("assetId", token, "sourcePath", "upstreamPath", "temporaryPath", status)
@@ -1137,7 +1172,7 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           await sql`
             INSERT INTO immich_fork.asset_physical_file ("assetId", "upstreamPath")
             VALUES (${asset.id}::uuid, ${`/data/upstream/${asset.id}.jpg`})
@@ -1158,7 +1193,7 @@ describe(AssetService.name, () => {
           const { ctx } = setup(forkDatabase);
           const repository = ctx.get(AssetRepository);
           const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
           const { asset: other } = await ctx.newAsset({ ownerId: user.id, originalPath: asset.originalPath });
           const to = `/data/library/${asset.id}-unlinked.jpg`;
           const moveId = await recordMove(asset.id, asset.originalPath, to);
