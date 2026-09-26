@@ -107,7 +107,7 @@
 <Dialog
   bind:open
   title={mode === 'replace' ? $t('library_care_recover_title') : $t('library_care_locate_title')}
-  closeLabel={$t('cancel')}
+  closeLabel={$t('close')}
 >
   <div class="recovery">
     <p>{mode === 'replace' ? $t('library_care_recover_intro') : $t('library_care_locate_intro')}</p>

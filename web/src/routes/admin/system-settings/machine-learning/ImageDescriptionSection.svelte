@@ -328,7 +328,6 @@
         {$t('frameleaf_enrichment_open')}
       </Button>
     </div>
-    <EnrichmentWorkbench bind:open={workbenchOpen} draft={imageDescription} saved={savedImageDescription} />
 
     <SettingGroup key="image-description-status-regen" title={$t('admin.image_description_status_section')} subtitle="">
       <div class="flex flex-col gap-4">
@@ -400,3 +399,10 @@
     </SettingGroup>
   </div>
 </SettingGroup>
+
+<!--
+  The workbench is a dialog, so it lives outside the collapsible group: the Library Care
+  "Enrichment tasks" deep link (`openSetting=workbench`) opens it without first expanding this group,
+  and collapsing the group never unmounts an open workbench.
+-->
+<EnrichmentWorkbench bind:open={workbenchOpen} draft={imageDescription} saved={savedImageDescription} />

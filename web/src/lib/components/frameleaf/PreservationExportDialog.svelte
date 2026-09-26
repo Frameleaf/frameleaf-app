@@ -450,7 +450,7 @@
             <Badge
               tone={supportTone(group.level)}
               value={group.categories.length}
-              label={$t(supportLevelKey(group.level))}
+              label={$t('frameleaf_preservation_support_count', { values: { count: group.categories.length } })}
             />
             <strong>{$t(supportLevelKey(group.level))}</strong>
             <span>{group.categories.map((category) => $t(supportCategoryKey(category))).join(', ')}</span>
