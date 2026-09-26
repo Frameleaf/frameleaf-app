@@ -1141,7 +1141,7 @@ export type LicenseStatusResponseDto = {
     key: (LicenseSlotDto) | null;
     keyHint: string | null;
     kind: (LicenseKind) | null;
-    /** A supporter key or plan is active or in grace; plans then cost 20% less */
+    /** A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products */
     licensed: boolean;
     /** This server is linked to a Frameleaf account */
     linked: boolean;
@@ -5159,9 +5159,10 @@ export type LicenseProductDto = {
     storeUrl: string | null;
 };
 export type LicenseProductsResponseDto = {
-    /** Cloud backup is usage based, not part of a plan */
+    /** Cloud backup a plan includes, and the blocks and monthly rate for more */
     backup: {
-        minimumTb: number;
+        blockTb: number;
+        includedTb: number;
         usdPerTbMonth: number;
     };
     /** AI credit top-ups the store accepts; credit is never discounted */
@@ -5170,8 +5171,10 @@ export type LicenseProductsResponseDto = {
         minimumUsd: number;
     };
     currency: Currency;
-    /** Share taken off plans on a licensed server */
+    /** Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup */
     licensedDiscount: number;
+    /** Version of the plan prices in force: published by Frameleaf Cloud, else the bundled snapshot */
+    pricesVersion: string;
     products: LicenseProductDto[];
     /** The store this server was deployed with; null when there is none */
     storeUrl: string | null;

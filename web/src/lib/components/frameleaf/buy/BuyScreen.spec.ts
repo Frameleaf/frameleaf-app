@@ -20,12 +20,13 @@ const store = 'https://frameleaf.cloud.test/store';
 const products = (storeUrl: string | null = store): LicenseProductsResponseDto => ({
   currency: Currency.Usd,
   licensedDiscount: 0.2,
+  pricesVersion: '2026-09-25.1',
   storeUrl,
   credit: { minimumUsd: 20, maximumUsd: 500 },
-  backup: { usdPerTbMonth: 7.99, minimumTb: 1 },
+  backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
   products: [
-    ['cloud-monthly', 'plan', 'month', 6],
-    ['cloud-annual', 'plan', 'year', 60],
+    ['cloud-monthly', 'plan', 'month', 9.99],
+    ['cloud-annual', 'plan', 'year', 99.9],
     ['supporter-server', 'supporter', 'one-time', 100],
     ['supporter-individual', 'supporter', 'one-time', 25],
     ['credit-25', 'credit', 'one-time', 25],
@@ -79,16 +80,18 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     sdkMock.getCloudMlStatus.mockResolvedValue({ wallet: null } as never);
   });
 
-  it('shows plan and supporter cards in US dollars, with backup priced on its own', async () => {
+  it('shows plan and supporter cards in US dollars, with 1 TB of backup included and more priced by the TB', async () => {
     render(BuyScreen);
 
     expect(await screen.findByRole('heading', { name: 'Support Frameleaf', level: 1 })).toBeInTheDocument();
-    expect(screen.getByText('$6')).toBeInTheDocument();
-    expect(screen.getByText('$60')).toBeInTheDocument();
+    expect(screen.getByText('$9.99')).toBeInTheDocument();
+    expect(screen.getByText('$99.90')).toBeInTheDocument();
     expect(screen.getByText('$100')).toBeInTheDocument();
     expect(screen.getByText('$25')).toBeInTheDocument();
-    expect(screen.queryByText(/1 TB encrypted/)).not.toBeInTheDocument();
-    expect(screen.getByText(/from \$7.99\/month per TB, 1 TB minimum/)).toBeInTheDocument();
+    expect(screen.getAllByText('1 TB encrypted cloud backup')).toHaveLength(2);
+    expect(
+      screen.getByText(/includes 1 TB of cloud backup\. More storage is \$9\.99\/month for each extra 1 TB/),
+    ).toBeInTheDocument();
     // AI credit is an administrator's
     expect(screen.queryByRole('group', { name: 'Add AI credit' })).not.toBeInTheDocument();
   });
@@ -117,9 +120,26 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     flags.value = { supporter: true, frameleafCloud: false };
     render(BuyScreen);
 
-    expect(await screen.findByText('$4.80')).toBeInTheDocument();
-    expect(screen.getByText('$48')).toBeInTheDocument();
-    expect(screen.getByLabelText('Regular price $6')).toBeInTheDocument();
+    expect(await screen.findByText('$7.99')).toBeInTheDocument();
+    expect(screen.getByText('$79.92')).toBeInTheDocument();
+    expect(screen.getByLabelText('Regular price $9.99')).toBeInTheDocument();
+  });
+
+  it('takes the discount Frameleaf Cloud published off plans only, and says how much', async () => {
+    flags.value = { supporter: true, frameleafCloud: false };
+    sdkMock.getLicenseProducts.mockResolvedValue({
+      ...products(),
+      licensedDiscount: 0.25,
+      pricesVersion: '2026-10-01.2',
+    });
+    render(BuyScreen);
+
+    expect(await screen.findByText('$7.49')).toBeInTheDocument();
+    expect(screen.getByText('$74.93')).toBeInTheDocument();
+    expect(screen.getByText(/plan prices are 25% lower/)).toBeInTheDocument();
+    // supporter keys and extra backup keep their prices
+    expect(screen.getByText('$100')).toBeInTheDocument();
+    expect(screen.getByText(/More storage is \$9\.99\/month/)).toBeInTheDocument();
   });
 
   it('gives the discount for a personal supporter key and says so without calling the server licensed', async () => {
@@ -127,7 +147,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
       user({ license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T00:00:00.000Z' } }),
     );
     render(BuyScreen);
-    expect(await screen.findByText('$4.80')).toBeInTheDocument();
+    expect(await screen.findByText('$7.99')).toBeInTheDocument();
     expect(screen.getByText(/Your supporter key takes 20% off plan prices/)).toBeInTheDocument();
     expect(screen.queryByText(/This server is licensed/)).not.toBeInTheDocument();
   });

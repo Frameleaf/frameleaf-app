@@ -64,8 +64,8 @@ The server proves who it is to Frameleaf Cloud with its own key. A client secret
 
 **Plan** and **Licence** are separate pages. Neither is needed to self-host, and neither ever locks a photo or a local feature.
 
-- A **Frameleaf Cloud plan** ($6 a month or $60 a year) adds remote access. Checkout happens in the Frameleaf store; the linked server picks the plan up by itself. Cloud backup is priced separately by what you store, from $7.99 a month per TB with a 1 TB minimum. **Remove from this server** takes the plan off this server only; the subscription is managed in your Frameleaf account.
-- A **licence** is a one-time supporter key: `FL-SXXX-XXXX-XXXX` for a server ($100) or `FL-IXXX-XXXX-XXXX` for one person ($25). It adds a supporter badge, and a licensed server pays 20% less for Frameleaf Cloud plans. AI credit is priced the same for everyone. Removing the key ends the badge and the discount; a plan is not affected.
+- A **Frameleaf Cloud plan** ($9.99 a month or $99.90 a year) adds remote access and includes 1 TB of cloud backup. Checkout happens in the Frameleaf store; the linked server picks the plan up by itself. More backup storage is sold in 1 TB blocks at $9.99 a month each. A licensed server pays less for plans: 20% by default ($7.99 a month or $79.92 a year). Frameleaf Cloud can publish a different discount, up to 50%, which the server picks up on its next check-in, applies from the time Frameleaf Cloud sets and keeps across restarts. AI credit and extra backup storage are never discounted. **Remove from this server** takes the plan off this server only; the subscription is managed in your Frameleaf account.
+- A **licence** is a one-time supporter key: `FL-SXXX-XXXX-XXXX` for a server ($100) or `FL-IXXX-XXXX-XXXX` for one person ($25). It adds a supporter badge, and a licensed server pays less for Frameleaf Cloud plans (see above). AI credit is priced the same for everyone. Removing the key ends the badge and the discount; a plan is not affected.
 
 Every price is in US dollars. When the server was deployed without a Frameleaf Cloud address, the cards say purchasing isn't available yet.
 
