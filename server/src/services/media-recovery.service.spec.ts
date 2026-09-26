@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AssetStatus, AssetType, ChecksumAlgorithm } from 'src/enum.js';
+import { AssetLockReason, AssetStatus, AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import {
   MediaRecoveryRepository,
@@ -80,6 +80,7 @@ describe(MediaRecoveryService.name, () => {
       damaged: false,
       matchesContent: true,
       identityConflict: false,
+      lockReason: null,
     };
     repository.getResource.mockResolvedValue({
       stagingPath: input.stagedPath,
@@ -209,6 +210,25 @@ describe(MediaRecoveryService.name, () => {
       }
     },
   );
+  describe('a Locked external original (FL-69)', () => {
+    beforeEach(() => {
+      Object.assign(candidate, { isExternal: true, hidden: true, lockReason: AssetLockReason.Marked });
+    });
+    it('still asks for consent before importing a copy of it', async () => {
+      expect(await sut.reconcile(input)).toMatchObject({
+        outcome: 'needs-review',
+        reason: 'hidden_match_requires_consent',
+      });
+      expect(repository.reserve).not.toHaveBeenCalled();
+    });
+    it('imports the copy with consent, naming the original so the copy is locked like it', async () => {
+      input.includeHidden = true;
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'imported', assetId: importedId });
+      expect(repository.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({ candidate: undefined, matchedExternalAssetId: candidate.id }),
+      );
+    });
+  });
   it('keeps reusing a managed original when an external original matches too', async () => {
     await writeFile(original, bytes);
     repository.findCandidates.mockResolvedValue([{ ...candidate, id: randomUUID(), isExternal: true }, candidate]);
