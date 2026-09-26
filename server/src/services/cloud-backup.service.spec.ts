@@ -1505,6 +1505,32 @@ describe(CloudBackupService.name, () => {
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRestore: { status: 'failed' } });
     });
 
+    it('restores on bare metal from the newest backup, with the bucket and the key alone', async () => {
+      metadata = {};
+      store.listAll = vi
+        .fn()
+        .mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
+          prefix === 'm/'
+            ? onPage([
+                { key: 'm/20260925T030000Z.json.gz', size: 1, etag: null },
+                { key: manifestKey, size: 1, etag: null },
+                { key: 'm/notes.txt', size: 1, etag: null },
+              ]).then(() => 3)
+            : Promise.resolve(0),
+        );
+      const lines: string[] = [];
+
+      const result = await sut.restoreFromBucket(
+        { s3, key: key.toString('base64'), scope: 'files', restoreDatabase: false },
+        (line) => lines.push(line),
+      );
+
+      expect(store.readMarker).toHaveBeenCalledWith(expect.objectContaining({ bucket: s3.bucket }), key);
+      expect(store.get).toHaveBeenCalledWith(expect.anything(), manifestKey, key);
+      expect(result).toMatchObject({ manifestKey, files: 1, databaseRestored: false });
+      expect(lines.join('\n')).not.toContain(key.toString('base64'));
+    });
+
     it('lists the items a backup holds with whether each is still in the library', async () => {
       index.getLibraryState.mockResolvedValue(new Map());
 
