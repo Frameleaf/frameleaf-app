@@ -522,8 +522,8 @@ fingerprint, entitlements{remoteAccess,cloudMl,cloudBackup,supporter}, refresh, 
   notifies admins once a day. Runs read internal assets only (`isExternal = false`, active and trashed, Locked
   included). Review fixes: the manifest is streamed (paged entries → gzip → multipart) and never rewritten once complete
   (the `done` checkpoint precedes deleting its entries); a new claim clears the bucket's index and every reconcile drops
-  rows the listing lacks; each run re-reads the claim marker; dumps named by a complete manifest (`databaseKey`) are
-  never pruned; stored key files are written and read back before the claim (rename fallback where hard links fail) and
+  rows the listing lacks; each run re-reads the claim marker; the newest 7 dumps and the one the newest complete manifest names
+  (`databaseKey`) are kept; stored key files are written and read back before the claim (rename fallback where hard links fail) and
   removed only when that setup created them and the claim failed; a checksum is trusted only when `verifiedPaths` holds
   the original's path; restarted workers ask the others for an own-memory key. Not in this slice: schedule, retention,
   verification, escrow, restore and the Activity progress stages (CLD-302), and the managed grant and key rotation (FC-33).

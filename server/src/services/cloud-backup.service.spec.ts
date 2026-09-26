@@ -219,7 +219,7 @@ describe(CloudBackupService.name, () => {
       currentTime: vi.fn().mockResolvedValue(new Date('2026-09-26T02:59:00.000Z')),
       pruneUnseen: vi.fn().mockResolvedValue(0),
       setManifestDatabase: vi.fn().mockResolvedValue(undefined),
-      listManifestDatabaseKeys: vi.fn().mockResolvedValue(new Set()),
+      getLatestManifestDatabaseKey: vi.fn().mockResolvedValue(null),
       endAbandonedManifests: vi.fn().mockResolvedValue(0),
       countAssets: vi.fn().mockResolvedValue(3),
       listAssets: vi.fn().mockResolvedValue([]),
@@ -812,19 +812,20 @@ describe(CloudBackupService.name, () => {
       expect(store.uploadFile).not.toHaveBeenCalled();
     });
 
-    it('keeps the newest seven dumps and every dump a complete manifest names', async () => {
+    it('keeps the newest seven dumps and the dump of the newest complete backup', async () => {
       const older = Array.from({ length: 9 }, (_, i) => `db/cloud-backup-immich-db-backup-2026090${i}.sql.gz`);
       store.listAll.mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
         prefix === 'db/'
           ? onPage([...older, dumpKey].map((name) => ({ key: name, size: 1, etag: null }))).then(() => older.length + 1)
           : Promise.resolve(0),
       );
-      index.listManifestDatabaseKeys.mockResolvedValue(new Set([older[0]]));
+      index.getLatestManifestDatabaseKey.mockResolvedValue(older[0]);
 
       await sut.run(operationOf(), 'claim-1');
 
       const deleted = store.delete.mock.calls.map(([, name]) => name as string);
-      // the current dump and the six newest earlier ones stay; the oldest stays because a manifest names it
+      // the current dump and the six newest earlier ones stay; the oldest stays because the newest complete
+      // manifest names it; every other dump goes, whatever older manifest named it
       expect(deleted.toSorted()).toEqual([older[1], older[2]]);
     });
 
@@ -858,15 +859,32 @@ describe(CloudBackupService.name, () => {
       );
     });
 
-    it('ends the manifests of runs the lease sweep failed before it looks for work', async () => {
+    it('ends the manifests of runs the lease sweep failed before it looks for work, at most once a minute', async () => {
       index.endAbandonedManifests.mockResolvedValue(1);
 
       await sut.drain();
+      await sut.drain();
 
-      expect(index.endAbandonedManifests).toHaveBeenCalled();
+      expect(index.endAbandonedManifests).toHaveBeenCalledOnce();
       expect(index.endAbandonedManifests.mock.invocationCallOrder[0]).toBeLessThan(
         operations.claimNext.mock.invocationCallOrder[0],
       );
+      expect(operations.claimNext).toHaveBeenCalledTimes(2);
+    });
+
+    it('records a run cancelled after its manifest was written as complete', async () => {
+      operations.beginValidation.mockResolvedValue(false);
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(store.uploadStream).toHaveBeenCalledOnce();
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith('run-1', 'claim-1', { released: false });
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+        lastRun: { status: 'completed' },
+        lastManifestKey: 'm/20260926T030000Z.json.gz',
+        lastSuccessAt: expect.any(String),
+      });
     });
 
     it('notifies every administrator once when a run fails for good', async () => {

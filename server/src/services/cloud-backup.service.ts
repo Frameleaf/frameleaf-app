@@ -99,6 +99,8 @@ export const CLOUD_BACKUP_LEASE_MS = 10 * 60_000;
 export const CLOUD_BACKUP_KEY_WAIT_MS = 60_000;
 /** Manifest entries read per page while the manifest is streamed to the bucket. */
 export const CLOUD_BACKUP_MANIFEST_PAGE = 1000;
+/** How often a worker ends the manifests of runs that are over. */
+const ABANDONED_SWEEP_INTERVAL_MS = 60_000;
 /** A worker asks the others for an own-memory key at most this often. */
 const KEY_ASK_INTERVAL_MS = 10_000;
 
@@ -170,6 +172,7 @@ export class CloudBackupService {
   /** Callers waiting for another worker to share the own-memory key. */
   private keyWaiters = new Set<() => void>();
   private lastKeyAskAt = 0;
+  private lastAbandonedSweepAt = 0;
   /** How long a status read or "Back up now" waits for another worker to share an own-memory key. */
   keyAskMs = 1000;
   private tickHandle?: ReturnType<typeof setInterval>;
@@ -581,10 +584,14 @@ export class CloudBackupService {
 
   /** Lapsed claims are recovered by `MediaOperationSweepService`, for every kind, not here. */
   async drain(): Promise<void> {
-    // A run the lease sweep failed, or one removed, leaves its manifest running: end it and its entries.
-    const ended = await this.index.endAbandonedManifests();
-    if (ended > 0) {
-      this.logger.log(`Ended ${ended} cloud backup manifest(s) whose run is over`);
+    // A run the lease sweep failed, or one removed, leaves its manifest running: end it and its entries,
+    // at most once a minute.
+    if (Date.now() - this.lastAbandonedSweepAt >= ABANDONED_SWEEP_INTERVAL_MS) {
+      this.lastAbandonedSweepAt = Date.now();
+      const ended = await this.index.endAbandonedManifests();
+      if (ended > 0) {
+        this.logger.log(`Ended ${ended} cloud backup manifest(s) whose run is over`);
+      }
     }
     while (!this.stopping) {
       const claim = await this.operations.claimNext({
@@ -774,8 +781,8 @@ export class CloudBackupService {
   }
 
   /**
-   * Keep the newest seven dumps and every dump a complete manifest names; remove the rest. Only dumps
-   * (`db/`) are ever removed from the bucket here.
+   * Keep the newest seven dumps and the dump the newest complete manifest names (so the latest complete
+   * backup always has its database); remove the rest. Only dumps (`db/`) are ever removed here.
    */
   private async pruneDatabaseDumps(run: Run, current: string) {
     const dumps: string[] = [];
@@ -783,7 +790,7 @@ export class CloudBackupService {
       dumps.push(...objects.map(({ key }) => key));
       return Promise.resolve();
     });
-    const referenced = await this.index.listManifestDatabaseKeys(run.metadata.bucketRef);
+    const latest = await this.index.getLatestManifestDatabaseKey(run.metadata.bucketRef);
     const newest = new Set(
       [current, ...dumps.filter((key) => key !== current).toSorted((a, b) => compareCodeUnits(b, a))].slice(
         0,
@@ -791,7 +798,7 @@ export class CloudBackupService {
       ),
     );
     for (const key of dumps) {
-      if (!newest.has(key) && !referenced.has(key)) {
+      if (!newest.has(key) && key !== latest) {
         await this.store.delete(run.connection, key);
       }
     }
@@ -1124,11 +1131,7 @@ export class CloudBackupService {
     if (result.manifestId) {
       await this.index.deleteEntries(result.manifestId);
     }
-    if (!(await this.operations.beginValidation(id, claimToken))) {
-      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
-      await this.recordRun(operation, result, 'cancelled');
-      return;
-    }
+    // The manifest is in the bucket: the backup is complete, even when a cancel arrived after it.
     const finishedAt = new Date().toISOString();
     await this.recordRun(operation, result, 'completed');
     await this.updateMetadata((current) => ({
@@ -1136,8 +1139,11 @@ export class CloudBackupService {
       lastSuccessAt: finishedAt,
       lastManifestKey: result.manifestKey ?? current.lastManifestKey,
     }));
-    if (!(await this.operations.complete(id, claimToken, { resultAssetId: null }))) {
-      // Cancelled after the manifest was written: the backup is complete and recorded; settle the cancel.
+    const completed =
+      (await this.operations.beginValidation(id, claimToken)) &&
+      (await this.operations.complete(id, claimToken, { resultAssetId: null }));
+    if (!completed) {
+      // Cancelled after the manifest was written: the backup stands as recorded; settle the cancel.
       await this.operations.acknowledgeCancel(id, claimToken, { released: false });
     }
     this.logger.log(

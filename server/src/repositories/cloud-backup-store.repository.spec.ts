@@ -444,6 +444,8 @@ describe(CloudBackupStoreRepository.name, () => {
       reason: 'sse-c-unsupported',
       message: SSE_C_REFUSED_MESSAGE,
     });
+    expect(SSE_C_REFUSED_MESSAGE).toContain('may block customer-provided encryption keys (SSE-C)');
+    expect(SSE_C_REFUSED_MESSAGE).toContain('these credentials can’t write to it');
     expect(SSE_C_REFUSED_MESSAGE).toContain('Amazon S3 turns SSE-C off by default on new buckets');
     await expect(
       sut.claim(connection, bucketKey, { instanceId: 'instance-1', keyFingerprint: 'ABCD-1234', now: new Date() }),
@@ -455,6 +457,9 @@ describe(CloudBackupStoreRepository.name, () => {
     await expect(sut.list(connection, '')).rejects.toThrow('clock is off');
 
     s3.failures = [{ status: 301, code: 'PermanentRedirect' }];
+    await expect(sut.list(connection, '')).rejects.toThrow('regional endpoint');
+
+    s3.failures = [{ status: 307, code: 'TemporaryRedirect' }];
     await expect(sut.list(connection, '')).rejects.toThrow('regional endpoint');
   });
 

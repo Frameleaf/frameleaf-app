@@ -96,7 +96,7 @@ set
 where
   "id" = $2
 
--- CloudBackupIndexRepository.listManifestDatabaseKeys
+-- CloudBackupIndexRepository.getLatestManifestDatabaseKey
 select
   "databaseKey"
 from
@@ -105,6 +105,10 @@ where
   "bucket" = $1
   and "status" = $2
   and "databaseKey" is not null
+order by
+  "createdAt" desc
+limit
+  $3
 
 -- CloudBackupIndexRepository.endAbandonedManifests
 update "cloud_backup_manifest"
@@ -124,6 +128,9 @@ where
   )
 returning
   "id"
+delete from "cloud_backup_manifest_entry"
+where
+  "manifestId" in ($1)
 
 -- CloudBackupIndexRepository.upsertEntries
 insert into
