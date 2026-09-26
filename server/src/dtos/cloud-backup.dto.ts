@@ -161,7 +161,7 @@ const CloudBackupRestoreSchema = z
     manifestKey: ManifestKeySchema,
     scope: CloudBackupRestoreScopeSchema,
     assetIds: z
-      .array(z.uuid())
+      .array(z.uuidv4())
       .max(10_000)
       .optional()
       .describe('files: the items to restore (every item when absent); asset: exactly one item'),
