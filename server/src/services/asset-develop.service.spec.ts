@@ -95,8 +95,7 @@ describe(AssetDevelopService.name, () => {
       setCurrent: vi.fn().mockResolvedValue(void 0),
       requestCancel: vi.fn().mockResolvedValue(void 0),
       isCancelRequested: vi.fn().mockResolvedValue(false),
-      getFilePaths: vi.fn().mockResolvedValue([]),
-      deleteByAsset: vi.fn().mockResolvedValue(void 0),
+      releaseRemovedAssetRevisions: vi.fn().mockResolvedValue([]),
       listUnfinished: vi.fn().mockResolvedValue([]),
       beginAttempt: vi.fn().mockImplementation((id: string) =>
         developRepository.get(id).then((row: AssetDevelopRevision) => ({
@@ -503,11 +502,56 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('onAssetDelete', () => {
+    /** The repository releases the files and queues their deletion inside its transaction, as it does. */
+    const releasing = (files: string[]) =>
+      developRepository.releaseRemovedAssetRevisions.mockImplementation(
+        async (queue: (files: string[]) => Promise<void>) => {
+          if (files.length > 0) {
+            await queue(files);
+          }
+          return files;
+        },
+      );
+
     it('removes the revisions and queues their rendered files for deletion', async () => {
-      developRepository.getFilePaths.mockResolvedValue(['/m1', '/p1']);
+      releasing(['/m1', '/p1']);
       await sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId });
-      expect(developRepository.deleteByAsset).toHaveBeenCalledWith(asset.id);
+      expect(developRepository.releaseRemovedAssetRevisions).toHaveBeenCalledWith(expect.any(Function), asset.id);
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/m1', '/p1'] } });
+    });
+
+    it('queues nothing when the revisions are left for later, as during a handoff (FL-179)', async () => {
+      releasing([]);
+      await sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('fails, keeping the revisions for the nightly sweep, when the cleanup cannot be queued (FL-179)', async () => {
+      releasing(['/m1']);
+      mocks.job.queue.mockRejectedValue(new Error('redis unavailable'));
+      await expect(sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId })).rejects.toThrow(
+        'redis unavailable',
+      );
+    });
+  });
+
+  describe('onNightlyDatabaseCleanup (FL-179)', () => {
+    it('releases the revisions of removed assets left earlier', async () => {
+      developRepository.releaseRemovedAssetRevisions.mockImplementation(
+        async (queue: (files: string[]) => Promise<void>) => {
+          await queue(['/m2']);
+          return ['/m2'];
+        },
+      );
+      await sut.onNightlyDatabaseCleanup();
+      expect(developRepository.releaseRemovedAssetRevisions).toHaveBeenCalledWith(expect.any(Function));
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/m2'] } });
+    });
+
+    it('defers a failure to the next night', async () => {
+      developRepository.releaseRemovedAssetRevisions.mockRejectedValue(new Error('database unavailable'));
+      await expect(sut.onNightlyDatabaseCleanup()).resolves.toBeUndefined();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
   describe('onBootstrap', () => {

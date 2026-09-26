@@ -61,6 +61,8 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000590-HardenMediaOperationRetryAndCheckpoints')).toBe('legacy-fork');
     expect(classifyMigration('2100000000610-AddClassificationRule')).toBe('legacy-fork');
     expect(classifyMigration('2100000000620-FrameleafCloudMlDestination')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000630-AddWorkflowRunStep')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000640-AddAssetFilePathIndex')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {

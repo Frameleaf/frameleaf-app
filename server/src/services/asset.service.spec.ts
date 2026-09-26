@@ -8,6 +8,7 @@ import {
   AssetFileType,
   AssetLockReason,
   AssetMetadataKey,
+  AssetPathType,
   AssetStatus,
   AssetType,
   AssetVisibility,
@@ -64,6 +65,7 @@ describe(AssetService.name, () => {
         files: deletion.files ?? [],
         videoDuplicateFramePaths: [],
         derivedPaths: [],
+        pendingMoves: [],
         ...removedExtras,
       };
       if (release) {
@@ -1095,44 +1097,103 @@ describe(AssetService.name, () => {
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
 
-    it('should delete the entire stack if deleted asset was the primary asset and the stack would only contain one asset afterwards', async () => {
+    it('leaves the stack change to the removal, so a removal that rolls back leaves the stack (FL-179)', async () => {
       const asset = AssetFactory.from()
         .stack({}, (builder) => builder.asset())
         .build();
-      mocks.stack.delete.mockResolvedValue();
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      mocks.asset.remove.mockRejectedValueOnce(new Error('removal rolled back'));
 
-      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
-
-      expect(mocks.stack.delete).toHaveBeenCalledWith(asset.stackId);
-    });
-
-    it('should delete the stack when a non-primary asset is deleted and only the primary would remain', async () => {
-      const asset = AssetFactory.from().build();
-      const deletionAsset = {
-        ...getForAssetDeletion(asset),
-        stack: { id: newUuid(), primaryAssetId: newUuid(), assets: [{ id: asset.id }] },
-      };
-      mocks.stack.delete.mockResolvedValue();
-      mocks.assetJob.getForAssetDeletion.mockResolvedValue(deletionAsset);
-
-      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
-
-      expect(mocks.stack.delete).toHaveBeenCalledWith(deletionAsset.stack.id);
-    });
-
-    it('should keep the stack when a non-primary asset is deleted and the primary plus another asset remain', async () => {
-      const asset = AssetFactory.from().build();
-      const deletionAsset = {
-        ...getForAssetDeletion(asset),
-        stack: { id: newUuid(), primaryAssetId: newUuid(), assets: [{ id: asset.id }, { id: newUuid() }] },
-      };
-      mocks.assetJob.getForAssetDeletion.mockResolvedValue(deletionAsset);
-
-      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+      await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow(
+        'removal rolled back',
+      );
 
       expect(mocks.stack.delete).not.toHaveBeenCalled();
       expect(mocks.stack.update).not.toHaveBeenCalled();
+    });
+
+    it('releases both paths of a storage move that never committed (FL-179)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      removedExtras = {
+        pendingMoves: [
+          {
+            pathType: AssetPathType.Original,
+            oldPath: asset.originalPath,
+            newPath: '/data/library/2024/moved.jpg',
+            stagedPath: '/data/library/2024/moved.jpg.m1.moving',
+          },
+          {
+            pathType: AssetFileType.Thumbnail,
+            oldPath: asset.files[0].path,
+            newPath: '/data/thumbs/moved.webp',
+            stagedPath: '/data/thumbs/moved.webp.m2.moving',
+          },
+        ],
+      };
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: {
+          files: [
+            asset.files[0].path,
+            asset.originalPath,
+            '/data/library/2024/moved.jpg',
+            '/data/library/2024/moved.jpg.m1.moving',
+            '/data/thumbs/moved.webp',
+            '/data/thumbs/moved.webp.m2.moving',
+          ],
+          removedAssetId: asset.id,
+        },
+      });
+    });
+
+    it('never releases the moved original of an external library item (FL-179)', async () => {
+      const asset = AssetFactory.from({ libraryId: newUuid(), isExternal: true })
+        .file({ type: AssetFileType.Thumbnail })
+        .build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      removedExtras = {
+        pendingMoves: [
+          {
+            pathType: AssetPathType.Original,
+            oldPath: asset.originalPath,
+            newPath: '/library/moved.jpg',
+            stagedPath: '/library/moved.jpg.m1.moving',
+          },
+          {
+            pathType: AssetFileType.Sidecar,
+            oldPath: `${asset.originalPath}.xmp`,
+            newPath: '/library/moved.jpg.xmp',
+            stagedPath: '/library/moved.jpg.xmp.m2.moving',
+          },
+          {
+            pathType: AssetFileType.Thumbnail,
+            oldPath: asset.files[0].path,
+            newPath: '/data/thumbs/moved.webp',
+            stagedPath: '/data/thumbs/moved.webp.m3.moving',
+          },
+        ],
+      };
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        // a staged copy is always Frameleaf's own; the library's own files are never released
+        data: {
+          files: [
+            asset.files[0].path,
+            '/library/moved.jpg.m1.moving',
+            '/library/moved.jpg.xmp.m2.moving',
+            '/data/thumbs/moved.webp',
+            '/data/thumbs/moved.webp.m3.moving',
+          ],
+          removedAssetId: asset.id,
+        },
+      });
     });
 
     it('should delete a live photo', async () => {

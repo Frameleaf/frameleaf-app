@@ -75,8 +75,23 @@ type HostContext = {
   allowedHosts: string[];
 };
 
+/** FL-179: how long a queued run's completed steps are kept for a replay of its job. */
+const WORKFLOW_RUN_STEP_RETENTION_DAYS = 7;
+
+/**
+ * FL-179: the execution id of the automatic retry a run queues, derived from the run's own. A replay of
+ * the run that queues the retry again queues the same job (its job id is the execution id), and a
+ * duplicate that still runs skips the steps the first one completed.
+ */
+export const getAutomaticRetryExecutionId = (executionId: string): string => {
+  const hex = createHash('sha256').update(`${executionId}:automatic-retry`).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+};
+
 export class WorkflowExecutionService extends BaseService {
   private jwtSecret!: string;
+  // FL-179: the missing step table is reported once per process
+  private runStepsMissingLogged = false;
 
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.PluginSync, workers: [ImmichWorker.Microservices] })
   async onPluginSync() {
@@ -407,9 +422,36 @@ export class WorkflowExecutionService extends BaseService {
     await this.jobRepository.queueAll(
       items.map((workflow) => ({
         name: JobName.WorkflowAssetTrigger,
-        data: { workflowId: workflow.id, assetId },
+        // FL-179: fixed when queued, so a replay of this job continues the same run and its completed steps
+        data: { workflowId: workflow.id, assetId, runId: crypto.randomUUID(), executionId: crypto.randomUUID() },
       })),
     );
+  }
+
+  /**
+   * FL-179: completed steps are kept long enough for a stalled job to be replayed, then forgotten
+   * as part of the nightly database cleanup. A failure waits for the next night.
+   */
+  /**
+   * FL-179: the startup migrations have run by now, so whether `workflow_run_step` exists is checked
+   * again rather than trusted from before them.
+   */
+  @OnEvent({ name: 'AppBootstrap' })
+  onBootstrapCheckRunSteps() {
+    this.workflowRepository.resetRunStepTable();
+  }
+
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  async onNightlyDatabaseCleanup() {
+    try {
+      const before = new Date(Date.now() - WORKFLOW_RUN_STEP_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+      const deleted = await this.workflowRepository.deleteCompletedStepsBefore(before);
+      if (deleted > 0) {
+        this.logger.debug(`Forgot ${deleted} completed workflow steps no replay can need`);
+      }
+    } catch (error: any) {
+      this.logger.warn(`Workflow step cleanup deferred: ${error}`);
+    }
   }
 
   @OnJob({ name: JobName.WorkflowAssetTrigger, queue: QueueName.Workflow })
@@ -496,17 +538,71 @@ export class WorkflowExecutionService extends BaseService {
    * steps before it already applied), then only manual retries. Pausing or deleting the workflow
    * cancels runs that have not started, including a pending retry; a step already running finishes.
    * Once a step has run, the job never throws (FL-169), so "Retry failed" cannot replay applied steps.
+   *
+   * FL-179: a job whose worker stopped is replayed with the same data. Each completed step is recorded
+   * under the job's `executionId`, outside the job data, and a replay skips the recorded steps (and
+   * stops where a recorded step stopped the run). An automatic or manual retry is a newly queued job
+   * with its own `executionId`: a manual retry from run history runs every step again.
+   *
+   * FL-179: a failed job is not kept (JOBS_NOT_RETRIED), so a run that fails before its first step
+   * is recorded in run history as an error, where Retry runs it again.
    */
   private async execute<T extends WorkflowType>(
     job: JobOf<JobName.WorkflowAssetTrigger>,
     assetIds: string[],
     getHandler: (type: T) => ExecuteOptions<T> | undefined,
   ): Promise<JobStatus | undefined> {
+    const run = { ...job, runId: job.runId ?? crypto.randomUUID() };
+    // what is known of the workflow when the run fails
+    const known: { logging?: boolean; definition?: unknown } = {};
+    try {
+      return await this.executeRun(run, assetIds, getHandler, known);
+    } catch (error) {
+      // Once a step has run nothing throws (FL-169), so this failed before the first step.
+      await this.recordRunFailure(run, error, known);
+      throw error;
+    }
+  }
+
+  private async recordRunFailure(
+    job: JobOf<JobName.WorkflowAssetTrigger> & { runId: string },
+    error: unknown,
+    known: { logging?: boolean; definition?: unknown },
+  ) {
+    if (known.logging === false) {
+      return;
+    }
+    try {
+      await this.workflowRepository.log({
+        workflowId: job.workflowId,
+        runId: job.runId,
+        attempt: job.attempt ?? 0,
+        triggerDataId: job.assetId,
+        result: WorkflowResult.Error,
+        errorCode: null,
+        // every step's parameters and every extra field can hold a credential
+        error: redactRunError(error instanceof Error ? error.message : String(error), known.definition ?? null),
+      });
+    } catch (logError: any) {
+      this.logger.error(
+        `Unable to record the failure of workflow ${job.workflowId} run ${job.runId}: ${logError}`,
+        logError?.stack,
+      );
+    }
+  }
+
+  private async executeRun<T extends WorkflowType>(
+    job: JobOf<JobName.WorkflowAssetTrigger> & { runId: string },
+    assetIds: string[],
+    getHandler: (type: T) => ExecuteOptions<T> | undefined,
+    known: { logging?: boolean; definition?: unknown },
+  ): Promise<JobStatus | undefined> {
     const { workflowId, assetId } = job;
     const workflow = await this.workflowRepository.getForWorkflowRun(workflowId);
     if (!workflow) {
       return;
     }
+    known.logging = workflow.logging;
 
     const { machineLearning } = await this.getConfig({ withCache: true });
     // Match `onAssetMetadataExtracted` — either NSFW OR description can flag NSFW.
@@ -517,7 +613,7 @@ export class WorkflowExecutionService extends BaseService {
       }
     }
 
-    const runId = job.runId ?? crypto.randomUUID();
+    const { runId } = job;
     const attempt = job.attempt ?? 0;
     type RunLogEntry = Omit<WorkflowRunLog, 'workflowId' | 'runId' | 'attempt' | 'triggerDataId'>;
     const log = async (entry: RunLogEntry) => {
@@ -550,6 +646,7 @@ export class WorkflowExecutionService extends BaseService {
     // Track only configuration this run successfully persisted. Reloading the latest definition here
     // would also trust an owner's intervening edit and could skip a newly restrictive filter.
     const expectedDefinition = structuredClone(definitionOf(workflow));
+    known.definition = expectedDefinition;
     let steps = workflow.steps;
     if (job.fromStepId) {
       if (!job.definitionSha256 || job.definitionSha256 !== definitionSha256(expectedDefinition)) {
@@ -592,13 +689,37 @@ export class WorkflowExecutionService extends BaseService {
       return;
     }
 
+    // FL-179: the steps an earlier run of this same job completed before its worker stopped
+    const { executionId } = job;
+    if (executionId && !this.runStepsMissingLogged && !(await this.workflowRepository.hasRunStepTable())) {
+      this.runStepsMissingLogged = true;
+      this.logger.warn(
+        'Workflow step progress is not recorded on this database (workflow_run_step is missing); a stalled run is replayed from its first step',
+      );
+    }
+    const completedSteps = executionId
+      ? await this.workflowRepository.getCompletedSteps(executionId)
+      : new Map<string, { halted: boolean }>();
+
     const { read, write } = handler;
     const readResult = await read(type);
     let data = readResult.data;
 
     let haltedStepId: string | undefined;
+    // set when this is a replay that skipped a step an earlier run of the job completed
+    let replayed = false;
     for (const [index, step] of steps.entries()) {
       const definitionStep = expectedDefinition.steps.find((item) => item.id === step.id);
+      const completed = completedSteps.get(step.id);
+      if (completed) {
+        replayed = true;
+        this.logger.debug(`Workflow ${workflowId} run ${runId} already completed step ${step.id}; skipping it`);
+        if (completed.halted) {
+          haltedStepId = step.id;
+          break;
+        }
+        continue;
+      }
       // FL-169: set once the step's changes are written; a later failure in the step must not run it again
       let applied = false;
       let halts = false;
@@ -648,6 +769,10 @@ export class WorkflowExecutionService extends BaseService {
         // The step has run and its changes are written. Reading the data back and saving the step's
         // own config can still fail; the automatic retry then resumes after this step.
         applied = true;
+        // FL-179: recorded outside the job, so a replay of this job does not run the step again
+        if (executionId) {
+          await this.workflowRepository.completeStep({ executionId, workflowId, stepId: step.id, halted: halts });
+        }
         if (result?.changes) {
           ({ data } = await read(type));
         }
@@ -700,6 +825,8 @@ export class WorkflowExecutionService extends BaseService {
                 attempt: 1,
                 fromStepId: retryFromStepId,
                 definitionSha256: definitionSha256(expectedDefinition),
+                // FL-179: a replay of this run queues the same retry, not a second one
+                executionId: executionId ? getAutomaticRetryExecutionId(executionId) : crypto.randomUUID(),
               },
             });
           } catch (queueError: any) {
@@ -715,13 +842,37 @@ export class WorkflowExecutionService extends BaseService {
       }
     }
 
+    // FL-179: a replay of a run that already finished and logged it does not log it again
+    const finish = async (entry: RunLogEntry) => {
+      if (replayed && workflow.logging && (await this.isRunFinished(workflowId, runId, attempt))) {
+        this.logger.debug(`Workflow ${workflowId} run ${runId} was already recorded as ${entry.result}`);
+        return;
+      }
+      await record(entry);
+    };
+
     if (haltedStepId) {
-      await record({ result: WorkflowResult.Halted, workflowStepId: haltedStepId });
+      await finish({ result: WorkflowResult.Halted, workflowStepId: haltedStepId });
       this.logger.debug(`Workflow ${workflowId} run ${runId} stopped on step ${haltedStepId}`);
       return;
     }
 
-    await record({ result: WorkflowResult.Completed });
+    await finish({ result: WorkflowResult.Completed });
     this.logger.debug(`Workflow ${workflowId} run ${runId} executed successfully`);
+  }
+
+  /** Whether this attempt of the run is already logged as completed or halted; unknown counts as not. */
+  private async isRunFinished(workflowId: string, runId: string, attempt: number): Promise<boolean> {
+    try {
+      const latest = await this.workflowRepository.getLatestRunAttempt(workflowId, runId);
+      return (
+        !!latest &&
+        (latest.attempt ?? 0) === attempt &&
+        (latest.result === WorkflowResult.Completed || latest.result === WorkflowResult.Halted)
+      );
+    } catch (error: any) {
+      this.logger.warn(`Unable to read the run history of workflow ${workflowId} run ${runId}: ${error}`);
+      return false;
+    }
   }
 }

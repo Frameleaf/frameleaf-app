@@ -609,9 +609,17 @@ export type JobItem =
       data: {
         workflowId: string;
         assetId: string;
-        /** Set on retries: the run they continue and which attempt this is (FL-82). */
+        /**
+         * The run this job belongs to and which attempt it is (FL-82). Set when the run is queued, so a
+         * replay of a stalled job logs to the same run; a job queued before that gets a new run id.
+         */
         runId?: string;
         attempt?: number;
+        /**
+         * FL-179: identifies this queued job. Completed steps are recorded under it, so a replay of the
+         * same job after its worker stopped skips them. Every newly queued run and retry has its own.
+         */
+        executionId?: string;
         /** The automatic retry starts at the step that failed; earlier steps already applied. */
         fromStepId?: string;
         /** The complete definition at failure; continuation is refused if it has changed. */
