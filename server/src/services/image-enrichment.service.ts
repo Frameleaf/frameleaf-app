@@ -31,7 +31,6 @@ import {
   ImmichWorker,
   JobName,
   JobStatus,
-  MlDestinationKind,
   MlWorkload,
   Permission,
   QueueName,
