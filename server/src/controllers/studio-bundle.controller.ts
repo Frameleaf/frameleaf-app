@@ -26,7 +26,7 @@ import {
   StudioBundleUploadDto,
 } from 'src/dtos/studio-bundle.dto.js';
 import { ApiTag } from 'src/enum.js';
-import { Auth, AuthRequest, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, AuthRequest, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { StudioBundleService, studioBundleUploadFolder } from 'src/services/studio-bundle.service.js';
 import { asStreamableFile } from 'src/utils/file.js';
 import { STUDIO_BUNDLE_MAX_BYTES } from 'src/utils/studio-bundle.js';
@@ -136,6 +136,8 @@ export class StudioBundleController {
 
   @Get('exports/:id/download')
   @Authenticated()
+  // FL-161: a bundle carries the project's source media
+  @OriginalTransfer()
   @FileResponse()
   @Endpoint({
     summary: 'Download a Studio bundle',

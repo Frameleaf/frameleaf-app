@@ -803,6 +803,46 @@ describe(SystemConfigService.name, () => {
       ).resolves.toBeUndefined();
     });
 
+    it('refuses to allow originals or passwords over remote access on an unlinked server (FL-161)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      for (const remoteAccess of [
+        { allowOriginalsOverRelay: true, allowPasswordOverRelay: false },
+        { allowOriginalsOverRelay: false, allowPasswordOverRelay: true },
+      ]) {
+        await expect(
+          sut.onConfigValidate({
+            newConfig: { ...defaults, frameleafCloud: { ...defaults.frameleafCloud, remoteAccess } },
+            oldConfig: defaults,
+          }),
+        ).rejects.toThrow('Link this server to Frameleaf Cloud before allowing');
+      }
+    });
+
+    it('allows them on a linked server, and always allows turning them off (FL-161)', async () => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        frameleafCloud: { ...env.frameleafCloud, url: 'https://cloud.test' },
+      });
+      mocks.systemMetadata.get.mockResolvedValue({
+        status: 'linked',
+        cloudUrl: 'https://cloud.test',
+        instanceId: 'instance-1',
+      } as never);
+      const open = {
+        ...defaults,
+        frameleafCloud: {
+          ...defaults.frameleafCloud,
+          remoteAccess: { allowOriginalsOverRelay: true, allowPasswordOverRelay: true },
+        },
+      };
+
+      await expect(sut.onConfigValidate({ newConfig: open, oldConfig: defaults })).resolves.toBeUndefined();
+
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(sut.onConfigValidate({ newConfig: defaults, oldConfig: open })).resolves.toBeUndefined();
+    });
+
     it('should update the config and emit an event', async () => {
       mocks.systemMetadata.get.mockResolvedValue(partialConfig);
       await expect(sut.updateAdminConfig(updatedConfig)).resolves.toEqual(mapConfig(updatedConfig));

@@ -2351,15 +2351,17 @@ describe(AuthService.name, () => {
         );
       });
 
-      it('ignores a via header without the edge secret', async () => {
-        await expect(
-          sut.authenticateWebsocket({
-            authorization: 'Bearer auth_token',
-            'x-frameleaf-via': 'relay',
-            'x-frameleaf-via-auth': 'guess',
-          }),
-        ).resolves.toMatchObject({ via: null });
-        expect(mocks.frameleafAccount.getSession).not.toHaveBeenCalled();
+      it('refuses a via claim without the edge secret, never treating it as home', async () => {
+        for (const claim of [
+          { 'x-frameleaf-via': 'lan', 'x-frameleaf-via-auth': 'guess' },
+          { 'x-frameleaf-via': 'lan' },
+          { 'x-frameleaf-via-auth': secret },
+        ]) {
+          await expect(
+            sut.authenticateWebsocket({ authorization: 'Bearer auth_token', ...claim }),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+        }
+        expect(mocks.session.getByToken).not.toHaveBeenCalled();
       });
 
       it('leaves a handshake without an origin (an app) to authentication', async () => {

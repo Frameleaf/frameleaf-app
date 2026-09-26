@@ -8,6 +8,7 @@ import {
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
+import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset, AuthSharedLink } from 'src/database.js';
 import {
@@ -353,6 +354,7 @@ export class AssetMediaService extends BaseService {
     auth: AuthDto,
     id: string,
     dto: AssetMediaOptionsDto,
+    via: FrameleafVia | null = null,
   ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
@@ -372,6 +374,14 @@ export class AssetMediaService extends BaseService {
     );
 
     if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
+      // FL-161: through the relay the original is refused unless an administrator allowed it, so the
+      // viewer gets the preview instead of a redirect it cannot follow
+      if (via === 'relay') {
+        const { frameleafCloud } = await this.getConfig({ withCache: true });
+        if (!frameleafCloud.remoteAccess.allowOriginalsOverRelay) {
+          return { targetSize: AssetMediaSize.PREVIEW };
+        }
+      }
       // use original file for web supported images
       return { targetSize: 'original' };
     }

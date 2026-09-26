@@ -125,7 +125,28 @@ const ORIGINAL_TRANSFER_ROUTES = new Set([
   'POST download/archive',
   'GET admin/database-backups/:filename',
   'GET preservation/packages/:id/download',
+  // full-resolution masters, bundles, renders and archives, as large as originals
+  'GET assets/:id/edit-versions/:versionId/download',
+  'GET studio/bundles/exports/:id/download',
+  'GET studio/exports/:id/download',
+  'GET memories/exports/:id/download',
+  // the flagged file itself, usually an original
+  'GET admin/integrity/report/:id/file',
 ]);
+
+/**
+ * FL-161: media routes deliberately left available through the relay: what a viewer needs to browse
+ * and play (thumbnails and previews; a full-size view falls back to the preview there), and small
+ * derived files.
+ */
+const RELAY_MEDIA_ROUTES = [
+  'GET assets/:id/thumbnail',
+  'GET assets/:id/video/playback',
+  'GET assets/:id/video/stream/main.m3u8',
+  'GET people/:id/thumbnail',
+  'GET preservation/packages/:id/manifest',
+  'GET users/:id/profile-image',
+];
 
 /** FL-161: the rate-limited sign-in and Frameleaf Cloud routes, by rule. */
 const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
@@ -175,6 +196,8 @@ const getRoutes = () => {
         path,
         auth: getAuthenticatedOptions(reflector, handler),
         originalTransfer: reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, handler) === true,
+        homeNetworkOnly:
+          reflector.getAllAndOverride<boolean | undefined>(MetadataKey.HomeNetworkOnly, [handler, Controller]) === true,
         rateLimit: reflector.get<RateLimitRule | undefined>(MetadataKey.RateLimit, handler),
       };
     });
@@ -215,8 +238,20 @@ describe('controllers', () => {
     const marked = routes.filter((route) => route.originalTransfer).map((route) => route.id);
 
     expect(new Set(marked)).toEqual(ORIGINAL_TRANSFER_ROUTES);
-    expect(marked).not.toContain('GET assets/:id/thumbnail');
-    expect(marked).not.toContain('GET assets/:id/video/playback');
+    for (const id of RELAY_MEDIA_ROUTES) {
+      expect(routes.find((route) => route.id === id)).toMatchObject({
+        originalTransfer: false,
+        homeNetworkOnly: false,
+      });
+    }
+  });
+
+  it('should keep the whole render-worker API, original inputs included, on the home network (FL-161)', () => {
+    const workerRoutes = routes.filter((route) => route.path.startsWith('render-workers/'));
+
+    expect(workerRoutes.map((route) => route.id)).toContain('GET render-workers/operations/:id/inputs/:grant');
+    expect(workerRoutes.filter((route) => !route.homeNetworkOnly)).toEqual([]);
+    expect(routes.filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))).toEqual([]);
   });
 
   it('should rate limit sign-in, licence activation and link start (FL-161)', () => {

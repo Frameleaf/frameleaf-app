@@ -1,11 +1,54 @@
 import { Injectable } from '@nestjs/common';
 import { compareSync, hash } from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { createHash, createPublicKey, createVerify, randomBytes, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createHash, createHmac, createPublicKey, createVerify, randomBytes, randomUUID } from 'node:crypto';
+import { constants, createReadStream } from 'node:fs';
+import { mkdir, open, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
+/** FL-161: the per-server keyed-hash secret, in the identity directory next to the instance key. */
+export const SERVER_HMAC_KEY_FILE = 'server-hmac.key';
+const SERVER_HMAC_KEY_BYTES = 32;
+
+/**
+ * Read the per-server key, creating it once (O_EXCL, 0600, flushed) when it does not exist. A key
+ * another process is still writing is read again shortly; a key of any other length is an error.
+ */
+const loadServerHmacKey = async (directory: string): Promise<Buffer> => {
+  const file = join(directory, SERVER_HMAC_KEY_FILE);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  try {
+    const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    const key = randomBytes(SERVER_HMAC_KEY_BYTES);
+    try {
+      await handle.writeFile(key);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    return key;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      throw error;
+    }
+  }
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const key = await readFile(file);
+    if (key.length === SERVER_HMAC_KEY_BYTES) {
+      return key;
+    }
+    if (key.length > SERVER_HMAC_KEY_BYTES) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`The server key ${file} is damaged; remove it to create a new one`);
+};
 
 @Injectable()
 export class CryptoRepository {
+  private serverHmacKeys = new Map<string, Promise<Buffer>>();
+
   randomUUID(): string {
     return randomUUID();
   }
@@ -91,6 +134,24 @@ export class CryptoRepository {
   hashFileMatching(filepath: string | Buffer, reference: Buffer): Promise<Buffer> {
     const algorithm = reference.length === 32 ? 'sha256' : 'sha1';
     return this.hashFile(filepath, algorithm);
+  }
+
+  /**
+   * FL-161: an HMAC-SHA256 (base64url) of `value` under this server's own key, which lives in
+   * `directory` (the identity directory) and never in the database, so a database backup alone
+   * cannot produce one. `purpose` separates the uses of the key.
+   */
+  async serverKeyedHash(directory: string, purpose: string, value: string): Promise<string> {
+    let key = this.serverHmacKeys.get(directory);
+    if (!key) {
+      key = loadServerHmacKey(directory);
+      this.serverHmacKeys.set(directory, key);
+      // a failure is not remembered: the next call tries again
+      void key.catch(() => this.serverHmacKeys.delete(directory));
+    }
+    return createHmac('sha256', await key)
+      .update(`${purpose}\0${value}`)
+      .digest('base64url');
   }
 
   randomBytesAsText(bytes: number) {

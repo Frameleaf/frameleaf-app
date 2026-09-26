@@ -1,6 +1,6 @@
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthGuard, Authenticated, OriginalTransfer } from 'src/middleware/auth.guard.js';
+import { AuthGuard, Authenticated, HomeNetworkOnly, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -21,11 +21,16 @@ class TestController {
 
   @Authenticated()
   thumbnailRoute() {}
+
+  @Authenticated({ public: true })
+  @HomeNetworkOnly()
+  workerInputRoute() {}
 }
 
 const contextFor = (handler: () => void, request: Record<string, unknown> = {}) =>
   ({
     getHandler: () => handler,
+    getClass: () => TestController,
     switchToHttp: () => ({ getRequest: () => ({ headers: {}, query: {}, path: '/', ...request }) }),
   }) as unknown as ExecutionContext;
 
@@ -122,6 +127,21 @@ describe(AuthGuard.name, () => {
         sut.canActivate(contextFor(TestController.prototype.originalRoute, { frameleafVia: 'wan' })),
       ).resolves.toBe(true);
       await expect(sut.canActivate(contextFor(TestController.prototype.originalRoute))).resolves.toBe(true);
+    });
+
+    it('refuses a home-network route over remote access, public or not, whatever the settings (FL-161)', async () => {
+      const authenticate = vitest.spyOn(authService, 'authenticate');
+
+      for (const via of ['relay', 'wan'] as const) {
+        await expect(
+          sut.canActivate(contextFor(TestController.prototype.workerInputRoute, { frameleafVia: via })),
+        ).rejects.toThrow('only available on the home network');
+      }
+      await expect(
+        sut.canActivate(contextFor(TestController.prototype.workerInputRoute, { frameleafVia: 'lan' })),
+      ).resolves.toBe(true);
+      await expect(sut.canActivate(contextFor(TestController.prototype.workerInputRoute))).resolves.toBe(true);
+      expect(authenticate).not.toHaveBeenCalled();
     });
   });
 });
