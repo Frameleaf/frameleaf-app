@@ -46,6 +46,8 @@ test.describe('Album', () => {
 
   test('opens the Map screen scoped to the album and returns to it from the viewer', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
+    // The markers are map layers, so they appear only once a style loads; serve one locally.
+    await utils.mockMapStyle(context);
 
     const imagePath = `${testAssetDir}/metadata/gps-position/thompson-springs.jpg`;
     const mapAsset = await utils.createAsset(admin.accessToken, {
