@@ -23,7 +23,7 @@ import {
 } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
-import { mockEnvData, newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
+import { envData, mockEnvData, newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
 import { newCryptoRepositoryMock } from 'test/repositories/crypto.repository.mock.js';
 
 class TestController {
@@ -41,6 +41,8 @@ class TestController {
 
   unlimited() {}
 }
+
+const IDENTITY_DIR = '/data/frameleaf/identity';
 
 // the crypto mock's keyed hash: `${purpose}:${value} (keyed)`
 const keyed = (principal: string) => `rate-limit:${principal} (keyed)`;
@@ -122,6 +124,12 @@ describe(RateLimitGuard.name, () => {
     vi.clearAllMocks();
     store = memoryCounters();
     configRepository = newConfigRepositoryMock();
+    // The principal keys are HMACs under the key in the identity directory. Without one configured the
+    // directory falls back to the media location, which a unit test never sets, so resolving it throws
+    // and the guard treats that like unavailable counters (home requests pass uncounted).
+    configRepository.getEnv.mockReturnValue(
+      mockEnvData({ frameleafCloud: { ...envData.frameleafCloud, identityDir: IDENTITY_DIR } }),
+    );
     cryptoRepository = newCryptoRepositoryMock();
     sut = create();
     interceptor = new RateLimitFailureInterceptor(
@@ -136,6 +144,11 @@ describe(RateLimitGuard.name, () => {
     await expect(sut.canActivate(contextFor(TestController.prototype.login, request))).resolves.toBe(true);
 
     const principalKey = `frameleaf:rate-limit:login:principal:${keyed('email:person@example.com\u{0}198.51.100.7')}`;
+    expect(cryptoRepository.serverKeyedHash).toHaveBeenCalledWith(
+      IDENTITY_DIR,
+      'rate-limit',
+      'email:person@example.com\u{0}198.51.100.7',
+    );
     expect(store.hit).toHaveBeenNthCalledWith(1, 'frameleaf:rate-limit:login:ip:198.51.100.7', 600);
     expect(store.hit).toHaveBeenNthCalledWith(2, principalKey, 600);
     expect(request.frameleafRateLimitFailures).toEqual([
@@ -287,8 +300,18 @@ describe(RateLimitGuard.name, () => {
     );
   });
 
+  it('counts a home request as not testing: the unit tests run with IMMICH_ENV unset', () => {
+    expect(configRepository.getEnv().environment).not.toBe(ImmichEnvironment.Testing);
+    expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('IMMICH_ENV=testing'));
+  });
+
   it('skips the route limits, but not the ceiling, when IMMICH_ENV is testing, and says so at start', async () => {
-    configRepository.getEnv.mockReturnValue(mockEnvData({ environment: ImmichEnvironment.Testing }));
+    configRepository.getEnv.mockReturnValue(
+      mockEnvData({
+        environment: ImmichEnvironment.Testing,
+        frameleafCloud: { ...envData.frameleafCloud, identityDir: IDENTITY_DIR },
+      }),
+    );
     sut = create();
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('IMMICH_ENV=testing'));
 
