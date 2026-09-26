@@ -1,8 +1,8 @@
 {
-  "version": "1.5.0-beta.2",
-  "tag": "v1.5.0-beta.2",
-  "publishedAt": "2026-09-10T08:30:00Z",
-  "url": "https://github.com/Frameleaf/frameleaf-app/releases/tag/v1.5.0-beta.2",
-  "notesUrl": "https://github.com/Frameleaf/frameleaf-app/releases/tag/v1.5.0-beta.2",
+  "version": "3.3.0-rc.1",
+  "tag": "frameleaf-v3.3.0-rc.1-2",
+  "publishedAt": "2026-09-20T08:30:00Z",
+  "url": "https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.3.0-rc.1-2",
+  "notesUrl": "https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.3.0-rc.1-2",
   "minimumSupported": null
 }
