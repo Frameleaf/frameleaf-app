@@ -82,19 +82,16 @@ describe('frameleaf remote access (FL-165)', () => {
     });
 
     it('takes the direct domain from discovery before enrolment, and frameleaf.net only as the default', () => {
-      const document = discoverySchema.parse({
-        ...cloudContractFixture('instance/discovery.json'),
-        remote: { directDomain: 'frameleaf.net' },
-      });
-      expect(directDomainOf(null, document)).toBe('frameleaf.net');
-      expect(directDomainOf(null, discoverySchema.parse(cloudContractFixture('instance/discovery.json')))).toBe(
-        DEFAULT_DIRECT_DOMAIN,
-      );
+      const golden = cloudContractFixture('instance/discovery.json');
+      // the cloud's published discovery names its direct domain (frameleaf-cloud daa22f6)
+      expect(directDomainOf(null, discoverySchema.parse(golden))).toBe(golden.remote.directDomain);
+      const other = discoverySchema.parse({ ...golden, remote: { directDomain: 'direct.example' } });
+      expect(directDomainOf(null, other)).toBe('direct.example');
+      const older = discoverySchema.parse({ ...golden, remote: undefined });
+      expect(directDomainOf(null, older)).toBe(DEFAULT_DIRECT_DOMAIN);
+      expect(DEFAULT_DIRECT_DOMAIN).toBe('frameleaf.net');
       // a bad remote block is dropped, never fails discovery
-      const bad = discoverySchema.parse({
-        ...cloudContractFixture('instance/discovery.json'),
-        remote: { directDomain: 'not a domain' },
-      });
+      const bad = discoverySchema.parse({ ...golden, remote: { directDomain: 'not a domain' } });
       expect(bad.remote).toBeUndefined();
     });
 
