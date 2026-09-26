@@ -525,12 +525,16 @@ export type CloudMlJobModelDto = {
     gpu: string;
     /** The catalogue name */
     label: string;
+    /** The GPU rate per metered second, USD */
+    perSecondUsd: number;
     /** Position on the model slider, 1 = lightest */
     rank: number;
     /** The model revision the estimate is bound to */
     rev: string;
     /** The catalogue model SKU */
     sku: string;
+    /** One start fee, USD */
+    startFeeUsd: number;
 };
 export type CloudMlJobPerUnitDto = {
     /** Likely cost per unit, start fees included, USD; an estimate, never a price */
@@ -566,6 +570,8 @@ export type CloudMlJobEstimateResponseDto = {
     /** The least the job can cost once a worker starts (one start fee), USD */
     minimumUsd: number;
     model: CloudMlJobModelDto;
+    /** Every model Frameleaf Cloud offers for this work here, light to heavy, for the model slider */
+    models: CloudMlJobModelDto[];
     /** Likely total: GPU time × rate + start fees, USD */
     p50Usd: number;
     /** High end, in nine cases out of ten, USD */

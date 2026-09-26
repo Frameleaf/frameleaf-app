@@ -51999,6 +51999,13 @@
           "model": {
             "$ref": "#/components/schemas/CloudMlJobModelDto"
           },
+          "models": {
+            "description": "Every model Frameleaf Cloud offers for this work here, light to heavy, for the model slider",
+            "items": {
+              "$ref": "#/components/schemas/CloudMlJobModelDto"
+            },
+            "type": "array"
+          },
           "p50Usd": {
             "description": "Likely total: GPU time × rate + start fees, USD",
             "format": "double",
@@ -52067,6 +52074,7 @@
           "holdUsd",
           "minimumUsd",
           "model",
+          "models",
           "p50Usd",
           "p90Usd",
           "perSecondUsd",
@@ -52091,6 +52099,11 @@
             "description": "The catalogue name",
             "type": "string"
           },
+          "perSecondUsd": {
+            "description": "The GPU rate per metered second, USD",
+            "format": "double",
+            "type": "number"
+          },
           "rank": {
             "description": "Position on the model slider, 1 = lightest",
             "maximum": 9007199254740991,
@@ -52104,14 +52117,21 @@
           "sku": {
             "description": "The catalogue model SKU",
             "type": "string"
+          },
+          "startFeeUsd": {
+            "description": "One start fee, USD",
+            "format": "double",
+            "type": "number"
           }
         },
         "required": [
           "gpu",
           "label",
+          "perSecondUsd",
           "rank",
           "rev",
-          "sku"
+          "sku",
+          "startFeeUsd"
         ],
         "type": "object"
       },

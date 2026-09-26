@@ -483,6 +483,18 @@ describe(CloudMlJobService.name, () => {
       });
       // five seconds of preview, as a per-minute estimate with the start fees included, never a price
       expect(estimate.perUnit).toEqual({ unit: 'minute', quantity: 0.08, p50Usd: 14.4, p90Usd: 19.2 });
+      // the slider offers every model of this work's group, light to heavy, and never a model name
+      expect(estimate.models).toEqual([
+        {
+          sku: FAITHFUL,
+          rev: FAITHFUL_REV,
+          label: 'Restore · Faithful',
+          gpu: 'L40S-class, 48 GB',
+          rank: 1,
+          perSecondUsd: 0.001301,
+          startFeeUsd: 0.1,
+        },
+      ]);
       // the sealed estimate names the model on the slider and the prepared input by its digest only
       expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledWith(expect.anything(), {
         workload: 'restoration',
