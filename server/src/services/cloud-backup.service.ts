@@ -95,19 +95,22 @@ import {
 } from 'src/services/cloud-backup-maintenance.js';
 import {
   CloudBackupRestoreResult,
+  CloudBackupRestoreScope,
   CloudBackupRestoreSnapshot,
   CloudBackupRestorer,
+  RESTORE_REPLACED_FOLDER,
   emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
-import { readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
+import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
 import {
   CLOUD_BACKUP_BATCH,
   CLOUD_BACKUP_DB_DUMPS_KEPT,
   CLOUD_BACKUP_DB_PREFIX,
   CLOUD_BACKUP_MANIFEST_FORMAT,
+  CLOUD_BACKUP_MANIFEST_PREFIX,
   CLOUD_BACKUP_OBJECT_PREFIX,
   CLOUD_BACKUP_OWN_MEMORY_ACKNOWLEDGEMENT,
   CloudBackupManifest,
@@ -115,6 +118,7 @@ import {
   CloudBackupRunResult,
   backupKeyFile,
   bucketRef,
+  compactIso,
   emptyRunResult,
   isSha256Hex,
   keyFingerprint,
@@ -176,6 +180,16 @@ const MANAGED_USAGE_REFRESH_MS = 10 * 60_000;
 const PRUNE_PREVIEW_VALID_MS = 24 * 60 * 60_000;
 /** FL-164: items a restore list reads the library state of per query. */
 const LIBRARY_STATE_BATCH = 5000;
+
+/** FL-164: what `immich-admin cloud-backup restore` restores from, and how much of it. */
+export type CloudBackupBareMetalRestore = {
+  s3: CloudBackupS3;
+  /** The key file's content, the base64 key, or the recovery code. Never logged. */
+  key: string;
+  manifestKey?: string;
+  scope: Extract<CloudBackupRestoreScope, 'files' | 'database' | 'library'>;
+  restoreDatabase: boolean;
+};
 
 /** FL-164: what a `cloud_backup` operation does; a row from before FL-164 has no task and is a backup run. */
 type BackupTask = 'backup' | 'verify' | 'prune';
@@ -2380,6 +2394,87 @@ export class CloudBackupService {
     }
     this.manifestCache = { bucketRef: metadata.bucketRef, key, manifest };
     return manifest;
+  }
+
+  /**
+   * FL-164: `immich-admin cloud-backup restore`, for disaster recovery on a server whose web app is not
+   * running (or whose database is empty): everything comes from the bucket and the key alone. The key
+   * must open the bucket's claim; the newest manifest (or the one named) is read, its files are
+   * restored in place under the media folder and its database dump into `<media>/backups`, each checked
+   * against its SHA-256. With `restoreDatabase` the dump is then restored through the maintenance
+   * restore's own procedure. Nothing is recorded as a cloud backup claim: set cloud backup up again
+   * afterwards, which reclaims the same bucket.
+   */
+  async restoreFromBucket(
+    options: CloudBackupBareMetalRestore,
+    report: (line: string) => void,
+  ): Promise<CloudBackupRestoreResult & { manifestKey: string; databaseRestored: boolean }> {
+    const key = parseBackupKey(options.key);
+    const connection = await this.connectionFor(options.s3);
+    const marker = await this.store.readMarker(connection, key);
+    report(`The key opens bucket ${connection.bucket}, claimed by server ${marker.instanceId} on ${marker.claimedAt}.`);
+
+    const listed: string[] = [];
+    await this.store.listAll(connection, CLOUD_BACKUP_MANIFEST_PREFIX, (page) => {
+      listed.push(...page.map(({ key: name }) => name).filter((name) => manifestTime(name)));
+      return Promise.resolve();
+    });
+    const manifestKey = options.manifestKey ?? listed.toSorted((a, b) => compareCodeUnits(b, a))[0];
+    if (!manifestKey || !listed.includes(manifestKey)) {
+      throw new Error(
+        manifestKey ? `This bucket holds no backup named ${manifestKey}.` : 'This bucket holds no complete backup yet.',
+      );
+    }
+    const manifest = readManifest(await this.store.get(connection, manifestKey, key));
+    report(
+      `Restoring ${manifestKey}: ${Object.keys(manifest.assets).length} items${manifest.database ? ' and the database' : ''}.`,
+    );
+
+    const operationId = `command-${compactIso(new Date())}`;
+    const mediaLocation = StorageCore.getMediaLocation();
+    const plan = restorePlan({
+      manifest,
+      scope: options.scope,
+      assetIds: null,
+      operationId,
+      mediaLocation,
+      currentOriginals: new Map(),
+    });
+    let reportedAt = 0;
+    const result = await this.restorer.restore({
+      bucket: { bucketRef: bucketRef(connection.endpoint, connection.bucket), connection, bucketKey: key },
+      manifest,
+      scope: options.scope,
+      files: plan.files,
+      destination: plan.destination,
+      mediaLocation,
+      backupsFolder: StorageCore.getBaseFolder(StorageFolder.Backups),
+      operationId,
+      start: emptyRestoreResult(),
+      checkpoint: (current) => {
+        if (Date.now() - reportedAt >= 5000) {
+          reportedAt = Date.now();
+          report(`${current.files} of ${current.filesTotal} files restored and checked.`);
+        }
+        return Promise.resolve(true);
+      },
+    });
+    if (!result) {
+      throw new Error('The restore stopped before it finished.');
+    }
+    report(
+      `${result.files} files restored and checked: ${result.skipped} were already in place, ${result.replaced} were moved aside to ${join(mediaLocation, RESTORE_REPLACED_FOLDER, operationId)}.`,
+    );
+
+    let databaseRestored = false;
+    if (options.restoreDatabase && result.databaseFile) {
+      report(`Restoring the database from ${result.databaseFile}…`);
+      await this.databaseBackup.restoreDatabaseBackup(result.databaseFile, (action, progress) =>
+        report(`Database ${action}: ${Math.round(progress * 100)}%`),
+      );
+      databaseRestored = true;
+    }
+    return { ...result, manifestKey, databaseRestored };
   }
 
   /* ------------------------------------------------------------------ */

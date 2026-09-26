@@ -1,3 +1,4 @@
+import { cloudBackupCommands } from 'src/commands/cloud-backup.command.js';
 import { forkHandoffCommands } from 'src/commands/fork-handoff.command.js';
 import { forkSchemaCutoverCommands } from 'src/commands/fork-schema-cutover.command.js';
 import {
@@ -22,6 +23,8 @@ import { VersionCommand } from 'src/commands/version.command.js';
 // Compatibility handoff commands replace the unsafe historical schema-revert command.
 export const commandsAndQuestions = [
   ...forkHandoffCommands,
+  // FL-164: bare-metal restore from a cloud backup bucket
+  ...cloudBackupCommands,
   ...forkSchemaCutoverCommands,
   ...forkSchemaCommands,
   ConfirmForkSchemaStartQuestion,
