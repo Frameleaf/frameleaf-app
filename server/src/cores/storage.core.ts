@@ -10,7 +10,12 @@ import {
   RawExtractedFormat,
   StorageFolder,
 } from 'src/enum.js';
-import { ASSET_MOVE_PATH_TYPES, AssetMovePathType, AssetRepository } from 'src/repositories/asset.repository.js';
+import {
+  ASSET_MOVE_PATH_TYPES,
+  AssetMovePathType,
+  AssetRepository,
+  getStagedMovePath,
+} from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -231,6 +236,10 @@ export class StorageCore {
         return false;
       }
 
+      // FL-179: a copy an interrupted attempt staged for the recorded new path is not needed any more
+      if (move.newPath !== newPath) {
+        await this.removeStaged(getStagedMovePath(move.newPath, move.id));
+      }
       move = await this.moveRepository.update(move.id, { id: move.id, oldPath: actualPath, newPath });
     } else {
       move = await this.moveRepository.create({ entityId, pathType, oldPath, newPath });
@@ -244,7 +253,7 @@ export class StorageCore {
     const source = move.oldPath;
 
     if (!ASSET_MOVE_PATH_TYPES.has(pathType)) {
-      if (source !== newPath && !(await this.moveAcrossFilesystems(source, newPath, assetInfo))) {
+      if (source !== newPath && !(await this.moveAcrossFilesystems(source, newPath, move.id, assetInfo))) {
         return false;
       }
       await this.savePath(pathType, entityId, newPath, ownerId);
@@ -280,7 +289,7 @@ export class StorageCore {
     });
 
     if (result === 'failed' && state.crossDevice) {
-      const staged = await this.stageCopy(source, newPath, assetInfo);
+      const staged = await this.stageCopy(source, getStagedMovePath(newPath, move.id), assetInfo);
       if (!staged) {
         return false;
       }
@@ -309,7 +318,11 @@ export class StorageCore {
     } else if (result === 'changed') {
       this.logger.log(`Skipped moving ${oldPath}: asset ${entityId} no longer uses it`);
     } else if (result === 'deferred') {
-      this.logger.log(`Deferred moving ${oldPath}: its shared file records cannot change now`);
+      this.logger.log(`Deferred moving ${oldPath}: records that cannot change now name it; the nightly job retries`);
+    } else if (result === 'mismatched') {
+      this.logger.warn(
+        `Deferred moving ${oldPath}: asset ${entityId} is mapped to another file; the move is kept until they agree`,
+      );
     }
     return result === 'moved';
   }
@@ -341,17 +354,16 @@ export class StorageCore {
   }
 
   /**
-   * Copies a file to a temporary name beside `to` (so the final step is a rename on one filesystem)
-   * and verifies the copy. Returns the temporary path, or nothing when the copy failed or did not
-   * match, having removed it.
+   * Copies a file to `staged`, beside its new path (so the final step is a rename on one filesystem),
+   * and verifies the copy. Returns the staged path, or nothing when the copy failed or did not match,
+   * having removed it.
    */
   private async stageCopy(
     source: string,
-    to: string,
+    staged: string,
     assetInfo?: { sizeInBytes: number; checksum: Buffer },
   ): Promise<string | undefined> {
     this.logger.debug(`Unable to rename file. Falling back to copy, verify and delete`);
-    const staged = `${to}.${this.cryptoRepository.randomUUID()}.moving`;
     try {
       await this.storageRepository.copyFile(source, staged);
       if (!(await this.verifyNewPathContentsMatchesExpected(source, staged, assetInfo))) {
@@ -388,13 +400,14 @@ export class StorageCore {
   private async moveAcrossFilesystems(
     source: string,
     to: string,
+    moveId: string,
     assetInfo?: { sizeInBytes: number; checksum: Buffer },
   ): Promise<boolean> {
     const renamed = await this.rename(source, to);
     if (renamed !== 'cross-device') {
       return renamed === 'renamed';
     }
-    const staged = await this.stageCopy(source, to, assetInfo);
+    const staged = await this.stageCopy(source, getStagedMovePath(to, moveId), assetInfo);
     if (!staged) {
       return false;
     }

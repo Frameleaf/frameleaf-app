@@ -649,12 +649,14 @@ export class AssetService extends BaseService {
           files.push(assetFiles.sidecarFile?.path, removed.originalPath, removed.reservationTemporaryPath ?? undefined);
         }
 
-        // FL-179: a storage move that never committed can have left the file at either of its paths
+        // FL-179: a storage move that never committed can have left the file at either of its paths,
+        // and a copy across filesystems staged beside the new one (always Frameleaf's own)
         for (const move of removed.pendingMoves) {
           const isOwnersFile = move.pathType === AssetPathType.Original || move.pathType === AssetFileType.Sidecar;
           if (ownsOriginal || !isOwnersFile) {
             files.push(move.oldPath, move.newPath);
           }
+          files.push(move.stagedPath);
         }
 
         // a path can be named twice (a version file that is also a generated file); delete it once

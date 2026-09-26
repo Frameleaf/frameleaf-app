@@ -1117,8 +1117,18 @@ describe(AssetService.name, () => {
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
       removedExtras = {
         pendingMoves: [
-          { pathType: AssetPathType.Original, oldPath: asset.originalPath, newPath: '/data/library/2024/moved.jpg' },
-          { pathType: AssetFileType.Thumbnail, oldPath: asset.files[0].path, newPath: '/data/thumbs/moved.webp' },
+          {
+            pathType: AssetPathType.Original,
+            oldPath: asset.originalPath,
+            newPath: '/data/library/2024/moved.jpg',
+            stagedPath: '/data/library/2024/moved.jpg.m1.moving',
+          },
+          {
+            pathType: AssetFileType.Thumbnail,
+            oldPath: asset.files[0].path,
+            newPath: '/data/thumbs/moved.webp',
+            stagedPath: '/data/thumbs/moved.webp.m2.moving',
+          },
         ],
       };
 
@@ -1127,7 +1137,14 @@ describe(AssetService.name, () => {
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
         data: {
-          files: [asset.files[0].path, asset.originalPath, '/data/library/2024/moved.jpg', '/data/thumbs/moved.webp'],
+          files: [
+            asset.files[0].path,
+            asset.originalPath,
+            '/data/library/2024/moved.jpg',
+            '/data/library/2024/moved.jpg.m1.moving',
+            '/data/thumbs/moved.webp',
+            '/data/thumbs/moved.webp.m2.moving',
+          ],
           removedAssetId: asset.id,
         },
       });
@@ -1140,9 +1157,24 @@ describe(AssetService.name, () => {
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
       removedExtras = {
         pendingMoves: [
-          { pathType: AssetPathType.Original, oldPath: asset.originalPath, newPath: '/library/moved.jpg' },
-          { pathType: AssetFileType.Sidecar, oldPath: `${asset.originalPath}.xmp`, newPath: '/library/moved.jpg.xmp' },
-          { pathType: AssetFileType.Thumbnail, oldPath: asset.files[0].path, newPath: '/data/thumbs/moved.webp' },
+          {
+            pathType: AssetPathType.Original,
+            oldPath: asset.originalPath,
+            newPath: '/library/moved.jpg',
+            stagedPath: '/library/moved.jpg.m1.moving',
+          },
+          {
+            pathType: AssetFileType.Sidecar,
+            oldPath: `${asset.originalPath}.xmp`,
+            newPath: '/library/moved.jpg.xmp',
+            stagedPath: '/library/moved.jpg.xmp.m2.moving',
+          },
+          {
+            pathType: AssetFileType.Thumbnail,
+            oldPath: asset.files[0].path,
+            newPath: '/data/thumbs/moved.webp',
+            stagedPath: '/data/thumbs/moved.webp.m3.moving',
+          },
         ],
       };
 
@@ -1150,7 +1182,17 @@ describe(AssetService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [asset.files[0].path, '/data/thumbs/moved.webp'], removedAssetId: asset.id },
+        // a staged copy is always Frameleaf's own; the library's own files are never released
+        data: {
+          files: [
+            asset.files[0].path,
+            '/library/moved.jpg.m1.moving',
+            '/library/moved.jpg.xmp.m2.moving',
+            '/data/thumbs/moved.webp',
+            '/data/thumbs/moved.webp.m3.moving',
+          ],
+          removedAssetId: asset.id,
+        },
       });
     });
 
