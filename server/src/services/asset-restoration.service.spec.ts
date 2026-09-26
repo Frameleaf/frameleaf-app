@@ -568,26 +568,14 @@ describe(AssetRestorationService.name, () => {
       expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'video')).file).toBeNull();
     });
 
-    it('serves the restored preview for a full-size view through the relay (FL-161)', async () => {
+    it('serves the restored preview for a full-size view when full-size files may not be sent (FL-161)', async () => {
       restorations.listRestoredForPlayback.mockResolvedValue([
         restored({ sourceType: 'image', resultPath: '/r.png', resultPreviewPath: '/r.jpg' }),
       ]);
-      mocks.systemMetadata.get.mockResolvedValue(null as never);
 
-      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'fullsize', 'relay')).file?.path).toBe('/r.jpg');
-      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'fullsize', 'wan')).file?.path).toBe('/r.png');
-      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'fullsize', 'lan')).file?.path).toBe('/r.png');
-    });
-
-    it('serves the full-size restored result through the relay once originals are allowed there (FL-161)', async () => {
-      restorations.listRestoredForPlayback.mockResolvedValue([
-        restored({ sourceType: 'image', resultPath: '/r.png', resultPreviewPath: '/r.jpg' }),
-      ]);
-      mocks.systemMetadata.get.mockResolvedValue({
-        frameleafCloud: { remoteAccess: { allowOriginalsOverRelay: true, allowPasswordOverRelay: false } },
-      } as never);
-
-      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'fullsize', 'relay')).file?.path).toBe('/r.png');
+      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'fullsize', false)).file?.path).toBe('/r.jpg');
+      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'fullsize', true)).file?.path).toBe('/r.png');
+      expect((await sut.getPlaybackChoice(authStub.user1, asset.id, 'preview', false)).file?.path).toBe('/r.jpg');
     });
 
     it('keeps the ordinary version, revalidated, while a restoration exists but the original is chosen', async () => {

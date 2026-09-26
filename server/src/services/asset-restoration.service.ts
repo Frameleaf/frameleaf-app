@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -542,14 +541,15 @@ export class AssetRestorationService {
    *
    * `view` is what the caller serves: video playback, or a photo's preview or full-size view.
    *
-   * FL-161: through the relay a full-size restored result is as large as an original, so unless an
-   * administrator allowed originals there, the restored preview is served instead.
+   * FL-161: through the relay a full-size restored result is as large as an original. The caller says
+   * whether full-size files may be sent (`fullSizeAllowed`, false through the relay unless an
+   * administrator allowed originals there); when not, the restored preview is served instead.
    */
   async getPlaybackChoice(
     auth: AuthDto,
     assetId: string,
     view: 'video' | 'preview' | 'fullsize',
-    via: FrameleafVia | null = null,
+    fullSizeAllowed = true,
   ): Promise<{ file: ImmichFileResponse | null; revalidate: boolean }> {
     if (auth.sharedLink) {
       return { file: null, revalidate: false };
@@ -563,13 +563,7 @@ export class AssetRestorationService {
       return { file: null, revalidate: false };
     }
     const current = restored.find((row) => row.isCurrent);
-    let served = view;
-    if (view === 'fullsize' && via === 'relay') {
-      const { frameleafCloud } = await this.getConfig({ withCache: true });
-      if (!frameleafCloud.remoteAccess.allowOriginalsOverRelay) {
-        served = 'preview';
-      }
-    }
+    const served = view === 'fullsize' && !fullSizeAllowed ? 'preview' : view;
     const path = current && (served === 'preview' ? current.resultPreviewPath : current.resultPath);
     if (!path) {
       return { file: null, revalidate: true };

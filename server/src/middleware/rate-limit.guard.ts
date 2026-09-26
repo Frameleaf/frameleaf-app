@@ -35,7 +35,9 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  *   of their own address, at home or away. Each attempt is counted up front, atomically (`INCR`), so
  *   parallel attempts cannot all slip in before a failure is recorded; `RateLimitFailureInterceptor`
  *   gives the attempt back (`DECR`) when it did not fail with 401, so a correct password never uses
- *   up the limit.
+ *   up the limit. There is deliberately no cap per account across addresses (it would let anyone
+ *   lock a person out): guessing from many addresses is held back by the per-address limits and by
+ *   bcrypt, which makes each guess cost tens of milliseconds of server time.
  * - Every request the edge worker vouched for as `relay` or `wan` also counts toward
  *   `REMOTE_ACCESS_CEILING` for its address; thumbnails and previews (`@RemoteMediaCeiling()`),
  *   which a timeline requests by the hundred, count toward the higher `REMOTE_MEDIA_CEILING`

@@ -11,17 +11,38 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 export const SERVER_HMAC_KEY_FILE = 'server-hmac.key';
 const SERVER_HMAC_KEY_BYTES = 32;
 
-/** A new key in a temporary file beside `file` (O_EXCL, 0600, flushed), ready to be linked or renamed. */
+/** `link()` failures where the file system cannot hard-link (SMB/CIFS, FUSE, another device). */
+const NO_HARD_LINK = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV']);
+/** File flush failures that only mean the mount cannot flush (some FUSE file systems). */
+const FILE_SYNC_UNSUPPORTED = new Set(['EINVAL', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP']);
+
+/**
+ * A new key in a temporary file beside `file` (O_EXCL, 0600), ready to be linked or renamed. It is
+ * flushed where the mount can flush; a mount that cannot (some FUSE file systems) is accepted, like
+ * the instance key (`InstanceIdentityRepository.writeKeyExclusive`).
+ */
 const writeServerHmacKeyFile = async (file: string) => {
   const temporary = `${file}.${randomBytes(6).toString('hex')}.tmp`;
   const key = randomBytes(SERVER_HMAC_KEY_BYTES);
   const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
   try {
     await handle.writeFile(key);
-    await handle.sync();
-  } finally {
-    await handle.close();
+    await handle.sync().catch((error: NodeJS.ErrnoException) => {
+      if (!FILE_SYNC_UNSUPPORTED.has(error.code ?? '')) {
+        throw error;
+      }
+    });
+  } catch (error) {
+    // never leave a partly written key behind
+    await handle.close().catch(() => {
+      // the write error is the one reported
+    });
+    await unlink(temporary).catch(() => {
+      // already gone
+    });
+    throw error;
   }
+  await handle.close();
   return { temporary, key };
 };
 
@@ -36,11 +57,44 @@ const readServerHmacKey = async (file: string): Promise<Buffer | null> => {
   }
 };
 
+/** The key now on disk, which must be whole. */
+const readBackServerHmacKey = async (file: string): Promise<Buffer> => {
+  const key = await readServerHmacKey(file);
+  if (key?.length === SERVER_HMAC_KEY_BYTES) {
+    return key;
+  }
+  throw new Error(`The server key ${file} could not be read back`);
+};
+
+/**
+ * Put a new key in place when none exists: hard-linked from its temporary file, which fails when
+ * another process created one first (whose key is then used). Where the file system cannot hard-link
+ * (SMB/CIFS, FUSE, another device), the temporary file is renamed into place after checking that no
+ * key appeared meanwhile, as the instance key does.
+ */
+const createServerHmacKey = async (file: string, temporary: string, key: Buffer): Promise<Buffer> => {
+  try {
+    await link(temporary, file);
+    return key;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? '';
+    if (code !== 'EEXIST' && !NO_HARD_LINK.has(code)) {
+      throw error;
+    }
+    if (code === 'EEXIST' || (await readServerHmacKey(file))) {
+      return readBackServerHmacKey(file);
+    }
+    await rename(temporary, file);
+    // a process that raced this one may have renamed its own key in last: use what is on disk
+    return readBackServerHmacKey(file);
+  }
+};
+
 /**
  * Read the per-server key, creating it when it does not exist. A key only ever appears whole: it is
- * written to a temporary file and linked into place (which fails if another process created one
- * first, whose key is then used). A key of the wrong length is replaced the same way, by an atomic
- * rename, and `onReset` is told, because every token made with the old key stops matching.
+ * written to a temporary file and then linked (or renamed) into place. A key of the wrong length is
+ * replaced by an atomic rename, and `onReset` is told, because every token made with the old key
+ * stops matching; the key is then read back, so two processes replacing it at once agree on one.
  */
 const loadServerHmacKey = async (directory: string, onReset: (file: string) => void): Promise<Buffer> => {
   const file = join(directory, SERVER_HMAC_KEY_FILE);
@@ -54,22 +108,9 @@ const loadServerHmacKey = async (directory: string, onReset: (file: string) => v
     if (existing) {
       await rename(temporary, file);
       onReset(file);
-      return key;
+      return await readBackServerHmacKey(file);
     }
-    try {
-      await link(temporary, file);
-      return key;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw error;
-      }
-    }
-    // another process created it meanwhile: use its key
-    const created = await readServerHmacKey(file);
-    if (created?.length === SERVER_HMAC_KEY_BYTES) {
-      return created;
-    }
-    throw new Error(`The server key ${file} could not be read back`);
+    return await createServerHmacKey(file, temporary, key);
   } finally {
     await unlink(temporary).catch(() => {
       // renamed into place, or already gone

@@ -66,7 +66,9 @@ export class AssetMediaController {
     ordinary: () => Promise<ImmichFileResponse | AssetMediaRedirectResponse>,
     via: FrameleafVia | null = null,
   ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
-    const choice = await this.restorationService.getPlaybackChoice(auth, id, view, via);
+    // FL-161: through the relay a full-size restored result is refused like an original
+    const fullSizeAllowed = view === 'fullsize' ? await this.service.fullSizeAllowed(via) : true;
+    const choice = await this.restorationService.getPlaybackChoice(auth, id, view, fullSizeAllowed);
     if (choice.file) {
       return choice.file;
     }
