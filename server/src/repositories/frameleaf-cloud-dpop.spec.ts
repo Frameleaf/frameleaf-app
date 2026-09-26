@@ -235,6 +235,28 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
       expect(tokenRequests()).toHaveLength(1);
     });
 
+    it('retry with the nonce the challenge itself sent, even when a parallel call stored another one', async () => {
+      await mint();
+      // another call's answer lands between this challenge and its retry and replaces the origin's nonce
+      const nonces = (repository as unknown as { nonces: Map<string, string> }).nonces;
+      const set = nonces.set.bind(nonces);
+      nonces.set = (origin, value) => set(origin, value === 'from-challenge' ? 'from-a-parallel-call' : value);
+      cloud.on('POST /api/v1/instance/thing', (request) =>
+        request.dpop?.claims.nonce === 'from-challenge'
+          ? { status: 200, body: {} }
+          : {
+              status: 401,
+              body: USE_DPOP_NONCE_ENVELOPE,
+              headers: { 'DPoP-Nonce': 'from-challenge', 'WWW-Authenticate': 'DPoP error="use_dpop_nonce"' },
+            },
+      );
+
+      await call();
+      const calls = cloud.requests.filter(({ path }) => path === '/api/v1/instance/thing');
+      expect(calls).toHaveLength(2);
+      expect(claimsOf(calls[1]).nonce).toBe('from-challenge');
+    });
+
     it('do not retry a challenge that brings no new nonce', async () => {
       cloud.on('POST /api/v1/instance/thing', () => ({ status: 401, body: USE_DPOP_NONCE_ENVELOPE }));
       await expect(call()).rejects.toBeInstanceOf(FrameleafCloudError);
@@ -282,6 +304,8 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
 
       const requests = cloud.requests.filter(({ path }) => path === '/api/v1/instances');
       expect(requests).toHaveLength(2);
+      // the cloud checks the proof and nonce before it consumes the link token, so the retry reuses it
+      expect(requests[0].headers.authorization).toBe('Bearer link-token');
       expect(requests[1].headers.authorization).toBe('Bearer link-token');
       expect(claimsOf(requests[1])).toEqual({
         jti: expect.any(String),
@@ -291,6 +315,63 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
         nonce: 'register-nonce',
       });
       expect(requests[1].dpop!.jkt).toBe(signer.kid);
+    });
+  });
+
+  describe('the fake cloud is as strict as FC-66', () => {
+    it('refuses a token request or a registration without a proof', async () => {
+      cloud.on('POST /api/v1/instances', () => ({ status: 200, body: {} }));
+      await expect(
+        repository.requestJson(z.unknown(), {
+          method: 'POST',
+          url: `${cloud.url}/id/token`,
+          form: { grant_type: 'client_credentials', client_id: 'instance-1' },
+        }),
+      ).rejects.toMatchObject({ status: 400, oauth: { error: 'invalid_dpop_proof' } });
+      await expect(
+        repository.requestJson(z.unknown(), {
+          method: 'POST',
+          url: `${cloud.url}/api/v1/instances`,
+          bearer: 'link-token',
+          body: {},
+        }),
+      ).rejects.toMatchObject({ status: 401, envelope: { code: 'invalid_dpop_proof' } });
+    });
+
+    it('refuses a proof whose key is not the client assertion’s', async () => {
+      const other = await newSigner();
+      // the assertion by one key, the proof by another
+      const mixed: FrameleafKeySigner = {
+        ...signer,
+        sign: (header, payload) =>
+          header.typ === 'dpop+jwt'
+            ? other.sign({ ...header, jwk: other.publicJwk }, payload)
+            : signer.sign(header, payload),
+      };
+      await expect(repository.accessToken(document, 'instance-1', document.api, mixed)).rejects.toMatchObject({
+        status: 400,
+        oauth: { error: 'invalid_dpop_proof' },
+      });
+    });
+
+    it('refuses an instance token presented as a bearer, and a token it never minted', async () => {
+      const token = await mint();
+      await expect(
+        repository.requestJson(z.unknown(), {
+          method: 'POST',
+          url: `${cloud.url}/api/v1/instance/thing`,
+          bearer: token.accessToken,
+          body: {},
+        }),
+      ).rejects.toMatchObject({ status: 401, envelope: { code: 'invalid_token' } });
+      await expect(
+        repository.requestJson(z.unknown(), {
+          method: 'POST',
+          url: `${cloud.url}/api/v1/instance/thing`,
+          dpop: { signer, accessToken: `${token.accessToken}x` },
+          body: {},
+        }),
+      ).rejects.toMatchObject({ status: 401, envelope: { code: 'invalid_token' } });
     });
   });
 });

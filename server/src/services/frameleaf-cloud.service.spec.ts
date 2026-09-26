@@ -9,6 +9,7 @@ import { AdminAuditAction, DatabaseLock, JobName, JobStatus, NotificationLevel, 
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import {
   CANDIDATE_KEY_FILE,
+  INSTANCE_KEY_FILE,
   InstanceIdentityRepository,
   PROVEN_KEY_FILE,
   RETIRING_KEY_FILE,
@@ -402,6 +403,22 @@ describe(FrameleafCloudService.name, () => {
       expect(cloud.requests.filter(({ path }) => path === '/id/reg')).toHaveLength(1);
     });
 
+    it('retries a registration nonce challenge once with the same link token (FL-178)', async () => {
+      serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+      cloud.nonce = 'register-nonce-1';
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+
+      expect(storedLink()?.status).toBe('linked');
+      const registers = cloud.requests.filter(({ path }) => path === '/api/v1/instances');
+      expect(registers).toHaveLength(2);
+      // the cloud checks the proof and its nonce before it consumes the link token
+      expect(registers.map(({ headers }) => headers.authorization)).toEqual(['Bearer link-token', 'Bearer link-token']);
+      expect(registers[1].dpop!.claims.nonce).toBe('register-nonce-1');
+      expect(cloud.refusals).toEqual([{ path: '/api/v1/instances', status: 401, code: 'use_dpop_nonce' }]);
+    });
+
     it('cancels a pending code', async () => {
       serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
       await sut.startLink(authStub.admin);
@@ -433,6 +450,21 @@ describe(FrameleafCloudService.name, () => {
       await sut.onBootstrap();
       expect(cloud.requests).toHaveLength(0);
       expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('already used once'));
+    });
+
+    it('retries a headless registration nonce challenge once with the same link token (FL-178)', async () => {
+      serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+      cloud.nonce = 'register-nonce-2';
+      linkToken = 'fll_headless_token_3';
+      await sut.onBootstrap();
+
+      expect(storedLink()?.status).toBe('linked');
+      const registers = cloud.requests.filter(({ path }) => path === '/api/v1/instances');
+      expect(registers.map(({ headers }) => headers['x-frameleaf-link-token'])).toEqual([
+        'fll_headless_token_3',
+        'fll_headless_token_3',
+      ]);
+      expect(registers[1].dpop!.claims.nonce).toBe('register-nonce-2');
     });
 
     it('records a token the cloud refuses and does not retry it', async () => {
@@ -1312,6 +1344,87 @@ describe(FrameleafCloudService.name, () => {
       makeDue();
       await sut.handleHeartbeat();
       expect(Date.parse(storedLink()!.heartbeat!.keyRecovery!.nextAttemptAt!)).toBe(until);
+    });
+
+    it('promotes a candidate the cloud issued a token for even when that token is not usable here (FL-178)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      const candidateKid = await writeCandidate();
+      commandRotation();
+      // the cloud accepts the candidate's assertion but answers with a bearer token
+      cloud.on('POST /id/token', (request) =>
+        assertionKidOf(request) === candidateKid
+          ? { status: 200, body: { access_token: 'opaque-bearer', token_type: 'Bearer', expires_in: 600 } }
+          : tokenAnswer(request),
+      );
+      makeDue();
+      await sut.handleHeartbeat();
+
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(after.kid).toBe(candidateKid);
+      expect(after.retiring?.kid).toBe(before.kid);
+      expect(after.candidate).toBeUndefined();
+      expect(pathsCalled()).not.toContain('GET /api/v1/instance/keys/nonce');
+      expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('its token was not usable'));
+    });
+
+    it('ends the link on a key_retired check-in, after asking about a candidate (FL-178)', async () => {
+      const candidateKid = await writeCandidate();
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 401,
+        body: { code: 'key_retired', message: 'This server key was replaced or has retired. Link the server again.' },
+      }));
+      cloud.on('POST /id/token', (request) =>
+        assertionKidOf(request) === candidateKid
+          ? { status: 401, body: { error: 'invalid_client' } }
+          : tokenAnswer(request),
+      );
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
+
+      expect(
+        cloud.requests.some((request) => request.path === '/id/token' && assertionKidOf(request) === candidateKid),
+      ).toBe(true);
+      expect(storedLink()).toMatchObject({
+        status: 'revoked',
+        revoked: { reason: 'Frameleaf Cloud no longer recognises this server.' },
+      });
+    });
+
+    it('ends the link as an expired key on a key_retired check-in during a recovery (FL-178)', async () => {
+      const since = Date.now() - 60 * 60 * 1000;
+      await writeFile(
+        join(identityDir, ROTATION_NEEDED_FILE),
+        JSON.stringify({ since: new Date(since).toISOString(), until: new Date(since + 24 * 60 * 60 * 1000) }),
+      );
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 401,
+        body: { code: 'key_retired', message: 'past its window' },
+      }));
+      makeDue();
+      await sut.handleHeartbeat();
+
+      expect(storedLink()).toMatchObject({
+        status: 'revoked',
+        revoked: { reason: 'This server’s identity key could not be replaced before its previous key expired.' },
+      });
+      await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).rejects.toThrow();
+    });
+
+    it('only counts a failure when key_retired answers a token of a key another worker replaced since (FL-178)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', async () => {
+        // another worker rotates the key while this check-in is in flight
+        await writeFile(
+          join(identityDir, INSTANCE_KEY_FILE),
+          generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }),
+          { mode: 0o600 },
+        );
+        return { status: 401, body: { code: 'key_retired', message: 'replaced' } };
+      });
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
+
+      expect(storedLink()).toMatchObject({ status: 'linked', heartbeat: { failures: 1 } });
     });
 
     const sutForgetTokens = () =>
