@@ -50,6 +50,8 @@ export const CLOUD_ML_JOB_ESTIMATES_KEPT = 10;
  * spending the job's automatic retry. A running job's reads are never counted: it is read until it ends.
  */
 export const CLOUD_ML_JOB_MAX_TRANSIENT_FAILURES = 8;
+/** Reads of a running job refused as unauthorized in a row (at least a minute apart: a day) before it fails. */
+export const CLOUD_ML_JOB_MAX_UNAUTHORIZED_READS = 24 * 60;
 /** How long a person waits before asking for another full-video estimate while one is being prepared. */
 export const CLOUD_ML_JOB_PREPARING_RETRY_SECONDS = 5;
 /** A Smooth motion or restoration preview is a clip of this many seconds. */
@@ -422,8 +424,9 @@ export const cloudMlJobMonthStart = (now: Date): Date => new Date(Date.UTC(now.g
 
 /**
  * What one person's confirmed jobs count against their monthly limit (FL-162 owner decision): a
- * settled job its settled charge, a job still running (or ended but not settled) the amount the AI
- * Wallet holds for it, and a job that ended before anything was sent nothing.
+ * settled job its settled charge; a job still running (or ended but not settled) the amount the AI
+ * Wallet holds for it, or, before it was sent, the most a reseal could hold (its confirmed hold plus
+ * `CLOUD_ML_JOB_PRICE_TOLERANCE`); and a job that ended before anything was sent nothing.
  */
 export const cloudMlJobSpentUsd = (
   rows: ReadonlyArray<{
@@ -448,8 +451,14 @@ export const cloudMlJobSpentUsd = (
     if (ended.has(row.status) && !row.remoteJobId) {
       continue;
     }
-    const cost = parseCloudMlJobResult(row.result).cost;
-    total += cost ? cost.totalUsd : (row.holdUsd ?? 0);
+    const result = parseCloudMlJobResult(row.result);
+    if (result.cost) {
+      total += result.cost.totalUsd;
+      continue;
+    }
+    const submitted = result.submission?.attemptedAt ? result.submission.holdUsd : null;
+    const held = result.job ? Math.max(result.job.holdUsd, submitted ?? 0) : submitted;
+    total += held ?? (row.holdUsd ?? 0) * CLOUD_ML_JOB_PRICE_TOLERANCE;
   }
   return Math.round(total * 10_000) / 10_000;
 };

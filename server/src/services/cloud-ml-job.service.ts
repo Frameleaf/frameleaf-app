@@ -81,6 +81,7 @@ import {
   CLOUD_ML_JOB_MAX_ESTIMATES,
   CLOUD_ML_JOB_MAX_POLL_MS,
   CLOUD_ML_JOB_MAX_TRANSIENT_FAILURES,
+  CLOUD_ML_JOB_MAX_UNAUTHORIZED_READS,
   CLOUD_ML_JOB_POLL_MS,
   CLOUD_ML_JOB_PREPARING_RETRY_SECONDS,
   CLOUD_ML_JOB_PREVIEW_SECONDS,
@@ -864,22 +865,22 @@ export class CloudMlJobService {
     return this.restorationRepository.create(
       {
         assetId: record.assetId,
-      ownerId: record.ownerId,
-      status: AssetRestorationStatus.PreviewQueued,
-      mode: record.settings.mode,
-      // a Smooth motion version keeps its frame-rate factor where a restoration keeps its upscale
-      upscale: smooth ? (record.settings.factor ?? 2) : record.settings.upscale,
-      keepGrain: record.settings.keepGrain,
-      workload: record.appWorkload,
-      destinationId: destination.id,
-      destinationKind: MlDestinationKind.FrameleafCloud,
-      destinationName: destination.name,
-      sourceType: record.sourceType,
-      sourceChecksum: Buffer.from(record.sourceChecksumHex, 'hex'),
-      sourceWidth: sizes.width,
-      sourceHeight: sizes.height,
-      sourceDurationSeconds: record.sourceType === 'video' ? this.durationOf(source) : null,
-      previewRegion: record.settings.region as unknown as Record<string, unknown>,
+        ownerId: record.ownerId,
+        status: AssetRestorationStatus.PreviewQueued,
+        mode: record.settings.mode,
+        // a Smooth motion version keeps its frame-rate factor where a restoration keeps its upscale
+        upscale: smooth ? (record.settings.factor ?? 2) : record.settings.upscale,
+        keepGrain: record.settings.keepGrain,
+        workload: record.appWorkload,
+        destinationId: destination.id,
+        destinationKind: MlDestinationKind.FrameleafCloud,
+        destinationName: destination.name,
+        sourceType: record.sourceType,
+        sourceChecksum: Buffer.from(record.sourceChecksumHex, 'hex'),
+        sourceWidth: sizes.width,
+        sourceHeight: sizes.height,
+        sourceDurationSeconds: record.sourceType === 'video' ? this.durationOf(source) : null,
+        previewRegion: record.settings.region as unknown as Record<string, unknown>,
         estimate: null,
         provenance: { requestedBy: auth.user.id, sessionElevated: !!auth.session?.hasElevatedPermission },
       },
@@ -1075,6 +1076,10 @@ export class CloudMlJobService {
     }
     const failures = run.result.transientFailures + 1;
     if (counted && failures > CLOUD_ML_JOB_MAX_TRANSIENT_FAILURES) {
+      return false;
+    }
+    // a refused access token is signed again on the next read; one refused for a day will not pass
+    if (status === 401 && failures > CLOUD_ML_JOB_MAX_UNAUTHORIZED_READS) {
       return false;
     }
     const retryAfter = error instanceof FrameleafCloudError ? error.retryAfterSeconds : null;
@@ -1336,7 +1341,10 @@ export class CloudMlJobService {
         false,
       );
     }
-    if (sealed.cost.p90 > snapshot.approved.p90Usd * CLOUD_ML_JOB_PRICE_TOLERANCE) {
+    if (
+      sealed.cost.p90 > snapshot.approved.p90Usd * CLOUD_ML_JOB_PRICE_TOLERANCE ||
+      sealed.cost.hold > snapshot.approved.holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE
+    ) {
       throw new CloudMlJobFailure(
         'cloud_ml_estimate_increased',
         `Frameleaf Cloud now estimates this job at up to ${sealed.cost.p90.toFixed(2)} USD, above the ${snapshot.approved.p90Usd.toFixed(2)} USD you confirmed. Nothing was sent; estimate again.`,
@@ -1896,6 +1904,8 @@ export class CloudMlJobService {
   private async cancel(run: JobRun) {
     const { operation, claimToken, snapshot } = run;
     const statuses = STAGE_STATUSES[snapshot.stage];
+    // put right here, so the cleanup pass never reconciles it again (and never touches a later job)
+    run.result = { ...run.result, reconciled: true };
     let released = !run.result.job;
     if (run.result.job) {
       const resolution = await resolveCloudGateway(this.gatewayDeps());
@@ -1904,9 +1914,9 @@ export class CloudMlJobService {
         const finished = await this.finishStopped(operation, run.result, client);
         run.result = finished.result;
         released = finished.released;
-        await this.save(run, { quiet: true });
       }
     }
+    await this.save(run, { quiet: true });
     await this.mediaOperationRepository.acknowledgeCancel(operation.id, claimToken, { released });
     const now = new Date();
     if (snapshot.stage === 'full' && !run.result.job) {
@@ -1924,11 +1934,6 @@ export class CloudMlJobService {
       });
     }
     await this.removeJobFiles(snapshot);
-    // put right here, so the cleanup pass never reconciles it again (and never touches a later job)
-    await this.mediaOperationRepository.setFinishedResult(operation.id, {
-      ...run.result,
-      reconciled: true,
-    } as unknown as Record<string, unknown>);
     this.logger.log(`Frameleaf Cloud job ${operation.id} cancelled by its owner`);
   }
 

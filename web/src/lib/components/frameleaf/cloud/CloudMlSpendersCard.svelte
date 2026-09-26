@@ -42,7 +42,7 @@
   /** People who can be allowed: not administrators (they always may), not removed, not listed yet. */
   const candidates = $derived(
     users
-      .filter((user) => !user.isAdmin && !user.deletedAt && !spenders.some((entry) => entry.userId === user.id))
+      .filter((user) => !user.isAdmin && !user.deletedAt && spenders.every((entry) => entry.userId !== user.id))
       .toSorted((a, b) => a.name.localeCompare(b.name)),
   );
 
@@ -65,14 +65,18 @@
     }
   };
 
-  /** An empty limit is no limit; anything else is a whole or decimal amount of USD, never below zero. */
-  const setCap = (userId: string, value: string) => {
+  /**
+   * An empty limit is no limit; anything else is USD from 0 to 100,000. The field shows what is kept,
+   * also when clamping leaves the stored value as it was (the page would not redraw it then).
+   */
+  const setCap = (userId: string, input: HTMLInputElement) => {
     if (!cloudMl) {
       return;
     }
-    const amount = value.trim() === '' ? null : Number(value);
+    const amount = input.value.trim() === '' ? null : Number(input.value);
     const monthlyCapUsd = amount === null || !Number.isFinite(amount) ? null : Math.min(100_000, Math.max(0, amount));
     cloudMl.spenders = spenders.map((entry) => (entry.userId === userId ? { ...entry, monthlyCapUsd } : entry));
+    input.value = monthlyCapUsd === null ? '' : String(monthlyCapUsd);
   };
 </script>
 
@@ -115,7 +119,7 @@
                         values: { name: nameOf(spender.userId) },
                       })}
                       {disabled}
-                      onchange={(event) => setCap(spender.userId, event.currentTarget.value)}
+                      onchange={(event) => setCap(spender.userId, event.currentTarget)}
                     />
                     <span>USD</span>
                   </span>

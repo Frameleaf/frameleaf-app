@@ -184,14 +184,6 @@ const LIST_COLUMNS = [
   'updateId',
 ] as const;
 
-/**
- * Durable media operations (FL-43, FL-104).
- *
- * Every worker-facing write is a conditional UPDATE guarded by the claim token. That is the whole
- * defence against a resurrected worker: the guard is in the WHERE clause, so two workers racing
- * for the same job resolve in Postgres rather than in application code, and a stale token updates
- * zero rows and is reported as such rather than silently succeeding.
- */
 /** FL-162: one confirmed Frameleaf Cloud job, as a person's monthly spend counts it. */
 export type CloudMlJobSpendRow = {
   status: MediaOperationStatus;
@@ -201,6 +193,14 @@ export type CloudMlJobSpendRow = {
   settledUsd: number | null;
 };
 
+/**
+ * Durable media operations (FL-43, FL-104).
+ *
+ * Every worker-facing write is a conditional UPDATE guarded by the claim token. That is the whole
+ * defence against a resurrected worker: the guard is in the WHERE clause, so two workers racing
+ * for the same job resolve in Postgres rather than in application code, and a stale token updates
+ * zero rows and is reported as such rather than silently succeeding.
+ */
 @Injectable()
 export class MediaOperationRepository {
   private listeners = new Set<(changes: MediaOperationChange[]) => void>();
