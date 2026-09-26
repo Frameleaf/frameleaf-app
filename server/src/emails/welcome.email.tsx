@@ -2,6 +2,7 @@ import { Link, Section, Text } from '@react-email/components';
 import * as React from 'react';
 import { ImmichButton } from 'src/emails/components/button.component.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
+import { NO_LINK_SIGN_IN } from 'src/emails/components/no-link.js';
 import { WelcomeEmailProps } from 'src/repositories/email.repository.js';
 import { replaceTemplateTags } from 'src/utils/replace-template-tags.js';
 
@@ -48,15 +49,21 @@ export const WelcomeEmail = ({ baseUrl, displayName, username, password, customT
 
       {!customTemplate && emailContent}
 
-      <Section className="flex justify-center my-6">
-        <ImmichButton href={`${baseUrl}/auth/login`}>Login</ImmichButton>
-      </Section>
+      {baseUrl ? (
+        <>
+          <Section className="flex justify-center my-6">
+            <ImmichButton href={`${baseUrl}/auth/login`}>Login</ImmichButton>
+          </Section>
 
-      <Text className="text-xs">
-        If you cannot click the button use the link below to proceed with first login.
-        <br />
-        <Link href={baseUrl}>{baseUrl}</Link>
-      </Text>
+          <Text className="text-xs">
+            If you cannot click the button use the link below to proceed with first login.
+            <br />
+            <Link href={baseUrl}>{baseUrl}</Link>
+          </Text>
+        </>
+      ) : (
+        <Text>{NO_LINK_SIGN_IN}</Text>
+      )}
     </ImmichLayout>
   );
 };

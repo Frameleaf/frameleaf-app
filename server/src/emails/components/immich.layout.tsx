@@ -9,7 +9,7 @@ const emailPreset = createRequire(import.meta.url)('tailwindcss-preset-email');
 interface ImmichLayoutProps {
   children: React.ReactNode;
   preview: string;
-  baseUrl: string;
+  baseUrl?: string;
 }
 
 export const ImmichLayout = ({ children, preview, baseUrl }: ImmichLayoutProps) => (
@@ -52,11 +52,15 @@ export const ImmichLayout = ({ children, preview, baseUrl }: ImmichLayoutProps) 
         <Container className="my-[40px] mx-auto max-w-[465px]">
           <Section className="my-6 p-12 border border-red-400 rounded-[50px] bg-gray-50">
             <Section className="flex justify-center mb-12">
-              <Img
-                src={getFrameleafEmailLogoUrl(baseUrl)}
-                className="h-12 antialiased rounded-none w-full"
-                alt="Frameleaf"
-              />
+              {baseUrl ? (
+                <Img
+                  src={getFrameleafEmailLogoUrl(baseUrl)}
+                  className="h-12 antialiased rounded-none w-full"
+                  alt="Frameleaf"
+                />
+              ) : (
+                <Text className="m-0 text-center text-2xl font-semibold">Frameleaf</Text>
+              )}
             </Section>
 
             {children}

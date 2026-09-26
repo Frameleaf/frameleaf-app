@@ -204,7 +204,7 @@ Override the default notifications text with notification templates. More inform
 
 ### External Domain
 
-Overrides the domain name in shared links and email notifications. The URL should not include a trailing slash.
+Sets the address used in shared links, email notifications and maintenance login links. The URL should not include a trailing slash. Without it, a server linked to Frameleaf Cloud uses its public URL; otherwise emails are sent without links (see [email notifications](./email-notification.mdx#links-in-emails)).
 
 ### Welcome Message
 
