@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -21,8 +22,9 @@ const read = (path) => readFileSync(resolve(root, path), "utf8");
 // Actual multi-file resolution is a separate Compose CLI validation gate.
 const compose = (path) =>
   load(read(path).replace(/!(?:reset|override)\b/g, ""));
+// FL-191: Frameleaf publishes its own database image, built from docker/postgres.
 const databaseImage =
-  "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23";
+  "ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0";
 
 for (const [filename, project, rootless] of [
   ["docker-compose.yml", "immich", false],
@@ -98,7 +100,12 @@ test("local builds retain projects/storage and build ordinary ML from the prod s
     assert.deepEqual(config.services.database.volumes, [
       "${UPLOAD_LOCATION}/postgres:/var/lib/postgresql/data",
     ]);
-    assert.equal(config.services.database.image, databaseImage);
+    // Local stacks build the database from source, so they work before any publication.
+    assert.equal(config.services.database.image, "frameleaf-postgres:local");
+    assert.deepEqual(config.services.database.build, {
+      context: "./postgres",
+      dockerfile: "Dockerfile",
+    });
     assert.equal(
       config.services["immich-machine-learning"].build.target,
       "prod",
@@ -227,10 +234,8 @@ for (const [file, image] of [
 }
 
 test("pinned build dependencies, runtime identity and orphan adoption remain compatible", () => {
-  assert.match(
-    read("server/Dockerfile"),
-    /^FROM ghcr\.io\/immich-app\/base-server-prod:[^\n]+@sha256:[a-f0-9]{64} AS prod$/m,
-  );
+  assert.match(read("server/Dockerfile"), /^FROM base-server-prod AS prod$/m);
+  assert.match(read("server/Dockerfile"), /^FROM base-server-dev AS builder$/m);
   assert.match(
     read("server/Dockerfile"),
     /^HEALTHCHECK CMD immich-healthcheck$/m,
@@ -412,4 +417,174 @@ test("Compose resolves all deployment files and hardware overlays without a daem
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
+});
+
+// FL-191: nothing Frameleaf builds or runs pulls an upstream image. The official server image is the
+// compatibility target of the handoff and appears only in its certification lane and handoff code.
+const upstreamRegistry = ["ghcr.io", "immich-app"].join("/");
+const compatibilityTargetFiles = new Set([
+  "docker/postgres/Dockerfile",
+  "docs/docs/administration/upstream-handoff.md",
+  "docs/docs/features/revert-to-upstream.md",
+  "e2e/docker-compose.fork-roundtrip.yml",
+  "scripts/test-fork-roundtrip.sh",
+  "scripts/test-fork-roundtrip.test.mjs",
+  "server/src/commands/fork-handoff.command.spec.ts",
+  "server/src/fork-schema/supported-versions.json",
+  "server/src/repositories/fork-handoff.repository.ts",
+  "server/src/services/fork-handoff.service.spec.ts",
+  "server/test/medium/specs/fork-schema/return-reconciliation.spec.ts",
+]);
+const historicalRecord = (file) =>
+  file.startsWith("docs/superpowers/") ||
+  file.startsWith(".superpowers/") ||
+  file.startsWith("docs/docs/developer/evidence/");
+
+test("only the compatibility-target exceptions name an upstream image", () => {
+  const result = spawnSync(
+    "git",
+    ["grep", "-l", "-F", upstreamRegistry, "--", ".", ":(exclude)mobile"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.ok(
+    result.status === 0 || result.status === 1,
+    result.error?.message || result.stderr,
+  );
+  const unexpected = result.stdout
+    .split("\n")
+    .filter(Boolean)
+    .filter(
+      (file) => !compatibilityTargetFiles.has(file) && !historicalRecord(file),
+    );
+  assert.deepEqual(unexpected, []);
+  // The exception is the official server image only, never a database, base or build-cache image.
+  for (const file of compatibilityTargetFiles) {
+    if (file === "docker/postgres/Dockerfile") continue;
+    for (const match of read(file).matchAll(
+      /ghcr\.io\/immich-app\/([a-z0-9-]+)/g,
+    ))
+      assert.equal(match[1], "immich-server", `${file}: ${match[0]}`);
+  }
+  assert.match(
+    read("e2e/docker-compose.fork-roundtrip.yml"),
+    /Compatibility-target exception/,
+  );
+  assert.match(
+    read(".github/workflows/fork-roundtrip.yml"),
+    /Compatibility-target exception/,
+  );
+});
+
+test("the server base is built in-repo and identical in the production and development Dockerfiles", () => {
+  const block = (file) => {
+    const match = read(file).match(
+      /^# BEGIN frameleaf-server-base\n[\s\S]*?^# END frameleaf-server-base$/m,
+    );
+    assert.ok(match, `${file}: missing server base block`);
+    return match[0];
+  };
+  assert.equal(block("server/Dockerfile.dev"), block("server/Dockerfile"));
+  assert.match(read("server/Dockerfile.dev"), /^FROM base-server-dev AS dev$/m);
+  for (const file of ["server/Dockerfile", "server/Dockerfile.dev"]) {
+    for (const [, image] of read(file).matchAll(/^FROM\s+(\S+)/gm)) {
+      assert.ok(
+        !image.includes("/") || /@sha256:[a-f0-9]{64}$/.test(image),
+        `${file}: external base ${image} must be digest-pinned`,
+      );
+      assert.doesNotMatch(image, /immich-app/);
+    }
+    for (const [, source] of read(file).matchAll(
+      /^COPY (server\/base-image\/\S+)/gm,
+    ))
+      assert.ok(existsSync(resolve(root, source)), `${file}: ${source}`);
+  }
+  // The vendored build pins every compiled library to an exact revision.
+  for (const name of [
+    "imagemagick",
+    "jpegli",
+    "libheif",
+    "libjxl",
+    "libraw",
+    "libvips",
+  ]) {
+    const pin = JSON.parse(read(`server/base-image/sources/${name}.json`));
+    assert.match(pin.revision, /^[a-f0-9]{40}$/, name);
+  }
+  const ffmpeg = JSON.parse(read("server/base-image/packages/ffmpeg.json"));
+  assert.match(ffmpeg.sha256.amd64, /^[a-f0-9]{64}$/);
+  assert.match(ffmpeg.sha256.arm64, /^[a-f0-9]{64}$/);
+});
+
+test("the owned Postgres image keeps the exact database and extension versions", () => {
+  const dockerfile = read("docker/postgres/Dockerfile");
+  assert.match(
+    dockerfile,
+    /^FROM docker\.io\/pgvector\/pgvector:0\.8\.1-pg14-bookworm@sha256:[a-f0-9]{64}$/m,
+  );
+  for (const line of [
+    "ARG PG_MAJOR=14",
+    "ARG VECTORCHORD_TAG=0.4.3",
+    "ARG PGVECTORS_TAG=0.2.0",
+  ])
+    assert.ok(dockerfile.split("\n").includes(line), line);
+  for (const name of [
+    "VECTORCHORD_SHA256_AMD64",
+    "VECTORCHORD_SHA256_ARM64",
+    "PGVECTORS_SHA256_AMD64",
+    "PGVECTORS_SHA256_ARM64",
+  ])
+    assert.match(dockerfile, new RegExp(`^ARG ${name}=[a-f0-9]{64}$`, "m"));
+  assert.equal((dockerfile.match(/sha256sum -c -/g) ?? []).length, 2);
+  assert.match(
+    dockerfile,
+    /^ENTRYPOINT \["\/usr\/local\/bin\/immich-docker-entrypoint\.sh"\]$/m,
+  );
+  for (const file of [
+    "healthcheck.sh",
+    "immich-docker-entrypoint.sh",
+    "set-env.sh",
+    "postgresql.hdd.conf",
+    "postgresql.ssd.conf",
+  ])
+    assert.ok(existsSync(resolve(root, "docker/postgres", file)), file);
+  // Every test stack builds this image instead of pulling a database image.
+  for (const [file, context] of [
+    ["e2e/docker-compose.yml", "../docker/postgres"],
+    ["e2e/docker-compose.fork-roundtrip.yml", "../docker/postgres"],
+  ]) {
+    const database = compose(file).services.database;
+    assert.equal(database.build.context, context, file);
+    assert.doesNotMatch(database.image, /\//, file);
+  }
+  assert.match(
+    read("server/test/medium/globalSetup.ts"),
+    /GenericContainer\.fromDockerfile\(postgresImageContext\)/,
+  );
+});
+
+test("the Postgres workflow builds on pull requests and publishes only on an authorised release", () => {
+  const workflow = load(read(".github/workflows/postgres.yml"));
+  const { build, publish } = workflow.jobs;
+  assert.deepEqual(build.permissions, { contents: "read" });
+  const buildStep = build.steps.find(
+    (step) => step.name === "Build without publishing",
+  );
+  assert.equal(buildStep.with.push, false);
+  assert.equal(buildStep.with.context, "docker/postgres");
+  assert.deepEqual(publish.needs, "build");
+  assert.match(publish.if, /vars\.FRAMELEAF_ENABLE_POSTGRES_PUBLISH == 'true'/);
+  assert.match(publish.if, /github\.ref ==\s+'refs\/heads\/fork\/main'/);
+  assert.equal(workflow.on.workflow_dispatch.inputs.publish.default, false);
+  assert.equal(
+    publish.steps.find((step) => step.name === "Container tags").with.images,
+    "ghcr.io/frameleaf/frameleaf-postgres",
+  );
+  const guard = publish.steps.findIndex(
+    (step) =>
+      step.name === "Verify release commit is the current delivery branch",
+  );
+  const login = publish.steps.findIndex(
+    (step) => step.name === "Login to owned GHCR namespace",
+  );
+  assert.ok(guard >= 0 && guard < login);
 });

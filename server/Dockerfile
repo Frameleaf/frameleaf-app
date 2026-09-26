@@ -1,4 +1,271 @@
-FROM ghcr.io/immich-app/base-server-dev:202609151314@sha256:ba336c43615bf9fe10d27637c3baf84cfc1379482dc712c35e314946e378a076 AS builder
+# BEGIN frameleaf-server-base
+# Frameleaf builds its own server base instead of pulling a prebuilt one. The stages between these
+# markers reproduce the base-server-dev image from immich-app/base-images tag 202609151314 (commit
+# 0f4c144d44c0556f8a7fc9143f82a176986369fc, AGPL-3.0). The scripts, version pins and patches it runs
+# are vendored in server/base-image. server/Dockerfile and server/Dockerfile.dev carry identical
+# copies of this block; docker/frameleaf-delivery.test.mjs fails if they drift apart.
+FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590 AS base-server-build
+ARG DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /usr/src/base-image
+
+ENV LD_LIBRARY_PATH=/usr/local/lib \
+  LD_RUN_PATH=/usr/local/lib
+
+COPY server/base-image/configure-apt.sh ./
+
+# Install ca-certificates first, then set up the PostgreSQL client repository
+RUN ./configure-apt.sh && \
+  apt-get update && \
+  apt-get install --no-install-recommends -yqq ca-certificates && \
+  mkdir -p /usr/share/postgresql-common/pgdg
+
+ADD --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+
+RUN . /etc/os-release && \
+  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+  apt-get update && \
+  apt-get install --no-install-recommends -yqq \
+  git \
+  autoconf \
+  automake \
+  libtool \
+  libltdl-dev \
+  build-essential \
+  cmake \
+  jq \
+  libbrotli-dev \
+  # libde265 v1.0.16 includes a fix for HDR images
+  libde265-dev/testing \
+  libexif-dev \
+  libexpat1-dev \
+  libglib2.0-dev \
+  libgsf-1-dev \
+  libmimalloc3 \
+  # libjpeg62-turbo-dev is only for building libvips; the final image uses jpegli (/usr/local/lib/libjpeg.so.62)
+  libjpeg62-turbo-dev \
+  liblcms2-dev \
+  librsvg2-dev \
+  libspng-dev \
+  meson \
+  ninja-build \
+  pkg-config \
+  wget \
+  unzip \
+  zlib1g \
+  postgresql-client-14 \
+  postgresql-client-15 \
+  postgresql-client-16 \
+  postgresql-client-17 \
+  postgresql-client-18 \
+  tini \
+  make \
+  ocl-icd-libopencl1 \
+  libopenmpt0 \
+  libbluray2 \
+  libvpx9 \
+  libzvbi0 \
+  libmp3lame0 \
+  libopus0 \
+  libtheora0 \
+  libvorbis0a \
+  libvorbisenc2 \
+  libx264-164 \
+  libdav1d-dev \
+  libhwy-dev \
+  libwebp-dev \
+  libio-compress-brotli-perl \
+  libaom-dev
+
+FROM base-server-build AS base-server-geodata
+
+ADD https://download.geonames.org/export/dump/cities500.zip /build/geodata/cities500.zip
+ADD --chmod=444 https://download.geonames.org/export/dump/admin1CodesASCII.txt /build/geodata/admin1CodesASCII.txt
+ADD --chmod=444 https://download.geonames.org/export/dump/admin2Codes.txt /build/geodata/admin2Codes.txt
+ADD --chmod=444 https://download.geonames.org/export/dump/countryInfo.txt /build/geodata/countryInfo.txt
+ADD --chmod=444 https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson /build/geodata/ne_10m_admin_0_countries.geojson
+
+RUN umask 0333 && unzip /build/geodata/cities500.zip -d /build/geodata/ && \
+  rm /build/geodata/cities500.zip && date --iso-8601=seconds | tr -d "\n" > /build/geodata/geodata-date.txt
+
+FROM base-server-build AS base-server-jpegli
+
+COPY server/base-image/sources/jpegli.json server/base-image/sources/jpegli.sh ./
+COPY server/base-image/sources/jpegli-patches/ ./jpegli-patches/
+RUN ./jpegli.sh
+
+FROM base-server-build AS base-server-libheif
+
+COPY server/base-image/sources/libheif.json server/base-image/sources/libheif.sh ./
+RUN ./libheif.sh
+
+FROM base-server-build AS base-server-libjxl
+
+COPY server/base-image/sources/libjxl.json server/base-image/sources/libjxl.sh ./
+RUN ./libjxl.sh
+
+FROM base-server-build AS base-server-libraw
+
+COPY server/base-image/sources/libraw.json server/base-image/sources/libraw.sh ./
+RUN ./libraw.sh
+
+FROM base-server-libraw AS base-server-imagemagick
+
+COPY --from=base-server-libheif /usr/local/lib/ /usr/local/lib/libheif/
+COPY --from=base-server-libheif /usr/local/include/libheif/ /usr/local/include/libheif/
+
+COPY --from=base-server-libjxl /usr/local/lib/ /usr/local/lib/libjxl/
+COPY --from=base-server-libjxl /usr/local/include/jxl/ /usr/local/include/jxl/
+
+COPY --from=base-server-jpegli /usr/local/lib/ /usr/local/lib/jpegli/
+COPY --from=base-server-jpegli /usr/local/include/jconfig.h /usr/local/include/jmorecfg.h /usr/local/include/jpeglib.h /usr/local/include/
+
+# COPY resolves symlinks unless copying the enclosing folder, so this is a workaround to get the correct result.
+RUN cp -r /usr/local/lib/libheif/libheif* /usr/local/lib/libjxl/libjxl* /usr/local/lib/jpegli/libjpeg.so* /usr/local/lib && \
+  mv /usr/local/lib/libheif/pkgconfig/* /usr/local/lib/libjxl/pkgconfig/* /usr/local/lib/pkgconfig && \
+  rm -r /usr/local/lib/libheif /usr/local/lib/libjxl /usr/local/lib/jpegli
+
+COPY server/base-image/sources/imagemagick.json server/base-image/sources/imagemagick.sh ./
+RUN ./imagemagick.sh
+
+FROM base-server-imagemagick AS base-server-libvips
+
+COPY server/base-image/sources/libvips.json server/base-image/sources/libvips.sh ./
+COPY server/base-image/sources/libvips-patches/ ./libvips-patches/
+RUN ./libvips.sh
+
+FROM base-server-build AS base-server-dev
+
+COPY server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
+RUN ./ffmpeg.sh
+
+COPY --from=base-server-libvips /usr/local/lib/ /usr/local/lib/
+COPY --from=base-server-libvips /usr/local/bin/vips* /usr/local/bin/
+COPY --from=base-server-libvips /usr/local/include/vips/ /usr/local/include/vips/
+COPY --from=base-server-geodata /build/geodata /build/geodata
+
+ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib
+
+RUN ldconfig /usr/local/lib
+
+# Record the exact source revisions and package versions this base was built from.
+COPY server/base-image/packages/ ./packages/
+COPY server/base-image/sources/ ./sources/
+RUN jq -s '.' packages/*.json > /tmp/packages.json && \
+  jq -s '.' sources/*.json > /tmp/sources.json && \
+  jq -n \
+  --slurpfile sources /tmp/sources.json \
+  --slurpfile packages /tmp/packages.json \
+  '{sources: $sources[0], packages: $packages[0]}' \
+  > /build/build-lock.json && \
+  rm -f /tmp/packages.json /tmp/sources.json
+
+WORKDIR /usr/src/app
+# END frameleaf-server-base
+
+# The production base: runtime libraries only, with the media libraries built above. It reproduces
+# base-server-prod from the same base-images revision.
+FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590 AS base-server-prod
+ARG DEBIAN_FRONTEND=noninteractive
+
+# renovate: datasource=custom.intel-igc depName=intel/intel-graphics-compiler
+ARG IGC_VERSION=2.38.2+22051
+# renovate: datasource=custom.intel-opencl-icd depName=intel/compute-runtime
+ARG COMPUTE_RUNTIME_VERSION=26.27.39122.11-0
+# renovate: datasource=custom.intel-gmmlib depName=intel/compute-runtime
+ARG GMMLIB_VERSION=22.10.0
+
+WORKDIR /build
+
+COPY server/base-image/configure-apt.sh server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
+
+RUN ./configure-apt.sh && \
+  apt-get update && \
+  apt-get install curl ca-certificates --no-install-recommends -yqq && \
+  mkdir -p /usr/share/postgresql-common/pgdg
+
+ADD --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+
+RUN . /etc/os-release && \
+  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+  apt-get update && \
+  apt-get install --no-install-recommends -yqq \
+  jq \
+  libde265-0/testing \
+  libexif12 \
+  libexpat1 \
+  libgcc-s1 \
+  libglib2.0-0 \
+  libgomp1 \
+  libgsf-1-114 \
+  liblcms2-2 \
+  liblqr-1-0 \
+  libltdl7 \
+  libopenexr-3-1-30 \
+  libopenjp2-7 \
+  librsvg2-2 \
+  libspng0 \
+  tini \
+  wget \
+  zlib1g \
+  ocl-icd-libopencl1 \
+  postgresql-client-14 \
+  postgresql-client-15 \
+  postgresql-client-16 \
+  postgresql-client-17 \
+  postgresql-client-18 \
+  libio-compress-brotli-perl \
+  libwebp7 \
+  libwebpdemux2 \
+  libwebpmux3 \
+  libhwy1t64 \
+  libaom3 && \
+  ./ffmpeg.sh && \
+  if [ $(arch) = "x86_64" ]; then \
+  # Old driver
+  wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.17537.24/intel-igc-core_1.0.17537.24_amd64.deb && \
+  wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.17537.24/intel-igc-opencl_1.0.17537.24_amd64.deb && \
+  wget https://github.com/intel/compute-runtime/releases/download/24.35.30872.36/intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb && \
+  # New driver
+  IGC_TAG="${IGC_VERSION%%+*}" && \
+  CR_TAG="${COMPUTE_RUNTIME_VERSION%-*}" && \
+  wget "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_TAG}/intel-igc-core-2_${IGC_VERSION}_amd64.deb" && \
+  wget "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_TAG}/intel-igc-opencl-2_${IGC_VERSION}_amd64.deb" && \
+  wget "https://github.com/intel/compute-runtime/releases/download/${CR_TAG}/intel-opencl-icd_${COMPUTE_RUNTIME_VERSION}_amd64.deb" &&  \
+  # Shared libigdgmm1
+  wget -nv "https://github.com/intel/compute-runtime/releases/download/${CR_TAG}/libigdgmm12_${GMMLIB_VERSION}_amd64.deb" && \
+  dpkg -i *.deb && \
+  # intel-igc-opencl ships libopencl-clang.so and .so.14 as two identical files
+  ln -sf libopencl-clang.so.14 /usr/local/lib/libopencl-clang.so; \
+  fi && \
+  # use shared libraries
+  (cd /usr/lib/jellyfin-ffmpeg/lib && \
+  rm -f libdav1d.so* libfontconfig.so* libfreetype.so* libfribidi.so* libharfbuzz.so* libigdgmm.so* libz.so*) && \
+  apt-get install -t testing --no-install-recommends -yqq libmimalloc3 && \
+  apt-get remove -yqq jq wget ca-certificates && \
+  apt-get autoremove -yqq && \
+  apt-get clean && \
+  rm -rf \
+  configure-apt.sh \
+  ffmpeg* \
+  *.deb \
+  /var/lib/apt/lists \
+  /usr/lib/$(arch)-linux-gnu/libjpeg.so* \
+  /usr/share/doc/libjpeg62-turbo \
+  /usr/share/lintian/overrides/libjpeg62-turbo
+
+COPY --from=base-server-dev /usr/local/lib/ /usr/local/lib/
+COPY --from=base-server-dev /build/ /build/
+
+WORKDIR /usr/src/app
+
+ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib \
+  # jellyfin-ffmpeg keeps its Vulkan ICD manifests outside the loader's default search path
+  XDG_DATA_DIRS=/usr/lib/jellyfin-ffmpeg/share:/usr/local/share:/usr/share
+
+RUN ldconfig /usr/local/lib
+
+FROM base-server-dev AS builder
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
   CI=1 \
   COREPACK_HOME=/tmp \
@@ -125,7 +392,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   PATH="$(mise where github:extism/js-pdk):$(mise where github:webassembly/binaryen)/bin:$PATH" \
   pnpm --filter @immich/plugin-core build
 
-FROM ghcr.io/immich-app/base-server-prod:202609151314@sha256:1d71b4254aeba9a547ed9c6a4a1acf490b5e8786d6dad2a943bd61bb0c8ab736 AS prod
+FROM base-server-prod AS prod
 
 WORKDIR /usr/src/app
 ENV NODE_ENV=production \

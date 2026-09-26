@@ -107,7 +107,7 @@ for (const [failures, attempts, status] of [
 set -Eeuo pipefail
 attempts=0
 compose() {
-  [[ "$*" == 'pull official-server database redis' ]] || return 90
+  [[ "$*" == 'pull official-server redis' ]] || return 90
   attempts=$((attempts + 1))
   echo "pull $attempts"
   [[ "$attempts" -gt "$FAILURES" ]]
