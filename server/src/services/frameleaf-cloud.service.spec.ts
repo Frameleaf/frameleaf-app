@@ -1190,7 +1190,10 @@ describe(FrameleafCloudService.name, () => {
         await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
         cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
         let nonces = 0;
-        cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: `nonce-${++nonces}` } }));
+        cloud.on('GET /api/v1/instance/keys/nonce', () => ({
+          status: 200,
+          body: { nonce: `rotation-nonce-${++nonces}` },
+        }));
         cloud.on('POST /api/v1/instance/keys/rotate', () => answers.shift() ?? { status: 200, body: {} });
         makeDue();
         await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
@@ -1209,7 +1212,7 @@ describe(FrameleafCloudService.name, () => {
           .map((request) =>
             JSON.parse(Buffer.from(request.json().proof.split('.', 2)[1], 'base64url').toString('utf8')),
           );
-        expect(proofs.map(({ nonce }) => nonce)).toEqual(['nonce-1', 'nonce-2']);
+        expect(proofs.map(({ nonce }) => nonce)).toEqual(['rotation-nonce-1', 'rotation-nonce-2']);
         expect(storedLink()?.heartbeat?.keyRecovery).toBeUndefined();
         expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
         expect((metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).rotationNeeded).toBe(
@@ -1510,7 +1513,10 @@ describe(FrameleafCloudService.name, () => {
         status: 200,
         body: { commands: [{ id: 'k1', type: 'key.rotate' }] },
       }));
-      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: `nonce-${++nonces}` } }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({
+        status: 200,
+        body: { nonce: `rotation-nonce-${++nonces}` },
+      }));
       cloud.on('POST /api/v1/instance/keys/rotate', () => answers.shift() ?? { status: 200, body: {} });
       cloud.on('POST /api/v1/instance/commands/k1/ack', () => ({ status: 200, body: {} }));
       makeDue();
