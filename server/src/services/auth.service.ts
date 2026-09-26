@@ -32,7 +32,7 @@ import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
-import { frameleafOAuthConfig, logoutTokenAudiences } from 'src/utils/frameleaf-sign-in.js';
+import { frameleafLogoutUrl, frameleafOAuthConfig, logoutTokenAudiences } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
@@ -175,16 +175,53 @@ export class AuthService extends BaseService {
 
   async logout(auth: AuthDto, authType: AuthType): Promise<LogoutResponseDto> {
     let oauthBearerToken: string | undefined;
+    let frameleafRedirect: string | null = null;
     if (auth.session) {
       const session = await this.sessionRepository.get(auth.session.id);
       oauthBearerToken = session?.oauthBearerToken ?? undefined;
+      // FL-177: read before the session goes, while its Sign in with Frameleaf tag still exists
+      frameleafRedirect = await this.frameleafLogoutRedirect(auth.session.id, oauthBearerToken);
       await this.sessionRepository.delete(auth.session.id);
       await this.eventRepository.emit('SessionDelete', { sessionId: auth.session.id });
     }
 
     return {
       successful: true,
-      redirectUri: await this.getLogoutEndpoint(authType, oauthBearerToken),
+      redirectUri: frameleafRedirect ?? (await this.getLogoutEndpoint(authType, oauthBearerToken)),
+    };
+  }
+
+  /**
+   * FL-177 (as-built decision #32): a session Sign in with Frameleaf created ends at Frameleaf too,
+   * through the issuer's `end_session_endpoint` (RP-initiated logout). Any other session, or a
+   * Frameleaf one when the issuer cannot be reached or advertises no endpoint, signs out as before;
+   * a failure here never stops the sign-out.
+   */
+  private async frameleafLogoutRedirect(sessionId: string, idToken: string | undefined): Promise<string | null> {
+    try {
+      if (!(await this.frameleafAccountRepository.getSession(sessionId))) {
+        return null;
+      }
+      const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
+      const config = await frameleafOAuthConfig(this.frameleafDeps());
+      if (!cloudUrl || !config) {
+        return null;
+      }
+      const endpoint = await this.oauthRepository.getLogoutEndpoint(config);
+      return frameleafLogoutUrl(cloudUrl, endpoint, config.clientId, idToken);
+    } catch (error) {
+      this.logger.warn(`Could not end the Frameleaf session on sign-out: ${error}`);
+      return null;
+    }
+  }
+
+  private frameleafDeps() {
+    return {
+      configRepository: this.configRepository,
+      databaseRepository: this.databaseRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+      instanceIdentityRepository: this.instanceIdentityRepository,
+      frameleafCloudRepository: this.frameleafCloudRepository,
     };
   }
 
@@ -230,16 +267,7 @@ export class AuthService extends BaseService {
 
   /** Returns whether the token was Frameleaf's (and was handled). */
   private async frameleafBackchannelLogout(logoutToken: string): Promise<boolean> {
-    const config = await frameleafOAuthConfig(
-      {
-        configRepository: this.configRepository,
-        databaseRepository: this.databaseRepository,
-        systemMetadataRepository: this.systemMetadataRepository,
-        instanceIdentityRepository: this.instanceIdentityRepository,
-        frameleafCloudRepository: this.frameleafCloudRepository,
-      },
-      await this.getConfig({ withCache: false }),
-    );
+    const config = await frameleafOAuthConfig(this.frameleafDeps());
     if (!config || !logoutTokenAudiences(logoutToken).includes(config.clientId)) {
       return false;
     }

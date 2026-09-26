@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -27,7 +27,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { CloudErrorCode, FrameleafCloudError, cloudErrorCode, storeAddress } from 'src/utils/frameleaf-cloud.js';
 import {
   BUNDLED_PRICING,
   LicenseSigningKey,
@@ -88,6 +88,16 @@ const refreshResponseSchema = z.object({
 });
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
+/**
+ * FL-177: Frameleaf Cloud refused an activation because this server's ID is already registered
+ * with a different identity key (409 `instance-id-taken`), usually after the key was replaced here.
+ */
+export const IDENTITY_KEY_MISMATCH_MESSAGE =
+  'This server’s identity key does not match the one Frameleaf Cloud has registered for it. Link this server again from Settings → Frameleaf Cloud → Account & link, then activate the key.';
+
+/** How long a signed activation from an unlinked server may be used (the token assertions' limit). */
+const ACTIVATION_PROOF_TTL_SECONDS = 120;
 
 /**
  * Frameleaf licence certificates replace the inherited product key (FL-156, CLD-003).
@@ -158,7 +168,7 @@ export class FrameleafLicenseService extends BaseService {
    * call.
    */
   async getProducts(): Promise<LicenseProductsResponseDto> {
-    const storeUrl = this.storeUrl();
+    const storeUrl = await this.storeUrl();
     const pricing = effectivePricing(await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafPricing));
     return {
       currency: 'USD',
@@ -174,10 +184,21 @@ export class FrameleafLicenseService extends BaseService {
     };
   }
 
-  /** The store is `/store` on the Frameleaf Cloud address this server was deployed with, or none. */
-  private storeUrl(): string | null {
+  /**
+   * The store (FL-177, as-built decision #29): the one discovery names (`store`, on the account site),
+   * as the link last recorded it or as this process already holds discovery, else `/store` on the
+   * Frameleaf Cloud address this server was deployed with; none when that is unset. Either way it must
+   * pass the cloud address rule. Nothing is fetched here.
+   */
+  private async storeUrl(): Promise<string | null> {
     const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
-    return cloudUrl ? `${cloudUrl}/store` : null;
+    if (!cloudUrl) {
+      return null;
+    }
+    const { link } = await readCloudLink(this.gatewayDeps());
+    const recorded = link?.cloudUrl === cloudUrl ? storeAddress(cloudUrl, link.store) : null;
+    const held = storeAddress(cloudUrl, this.frameleafCloudRepository.peekDiscovery(cloudUrl)?.store);
+    return recorded ?? held ?? `${cloudUrl}/store`;
   }
 
   // ------------------------------------------------------------------ server key and file
@@ -464,8 +485,12 @@ export class FrameleafLicenseService extends BaseService {
   // ------------------------------------------------------------------ helpers
 
   /**
-   * `POST /v1/licenses/activate {key, fingerprint {instanceId, jkt}, instanceName}`: with this
-   * server's token when linked, otherwise as the public, rate-limited activation.
+   * `POST /v1/licenses/activate {key, fingerprint {instanceId, jkt}, instanceName}`. A linked server
+   * sends it as JSON with its instance token. An unlinked server has no token, so the body travels as
+   * a compact JWS signed by this server's identity key (`application/jose`, header `jwk` = the public
+   * key and `kid` = its thumbprint, the `jkt`),
+   * with `aud` (the activation address), `iat`, `exp` and `jti` so a copy cannot be replayed; the
+   * cloud binds the certificate to that key (FL-177, as-built decision #28).
    */
   private async activateWithCloud(key: string, extra: { user?: string }) {
     const { cloudUrl, linked, link } = await readCloudLink(this.gatewayDeps());
@@ -480,17 +505,40 @@ export class FrameleafLicenseService extends BaseService {
     try {
       const token = linked ? await this.apiToken(cloudUrl, instanceId) : null;
       const document = token?.document ?? (await this.frameleafCloudRepository.discovery(cloudUrl));
+      const url = `${document.api.replace(/\/+$/, '')}/v1/licenses/activate`;
+      const body = {
+        key,
+        fingerprint: { instanceId, jkt: identity.kid, ...extra },
+        instanceName: config.server.name?.trim() || 'Frameleaf server',
+      };
+      if (token) {
+        return await this.frameleafCloudRepository.requestJson(certificateResponseSchema, {
+          method: 'POST',
+          url,
+          bearer: token.bearer,
+          body,
+        });
+      }
+      const issuedAt = Math.floor(Date.now() / 1000);
+      // the header carries the public key (`jwk`) beside its thumbprint (`kid`): the cloud holds no key
+      // for a server that was never linked, so it verifies against the header key (FL-177 review)
+      const proof = this.instanceIdentityRepository.signJwsWithPublicKey({
+        ...body,
+        aud: url,
+        iat: issuedAt,
+        exp: issuedAt + ACTIVATION_PROOF_TTL_SECONDS,
+        jti: randomUUID(),
+      });
       return await this.frameleafCloudRepository.requestJson(certificateResponseSchema, {
         method: 'POST',
-        url: `${document.api.replace(/\/+$/, '')}/v1/licenses/activate`,
-        bearer: token?.bearer,
-        body: {
-          key,
-          fingerprint: { instanceId, jkt: identity.kid, ...extra },
-          instanceName: config.server.name?.trim() || 'Frameleaf server',
-        },
+        url,
+        raw: { contentType: 'application/jose', body: proof },
       });
     } catch (error) {
+      if (cloudErrorCode(error) === CloudErrorCode.InstanceIdTaken) {
+        // FL-177: this server's ID is registered with Frameleaf Cloud under another identity key
+        throw new ConflictException(IDENTITY_KEY_MISMATCH_MESSAGE);
+      }
       if (error instanceof FrameleafCloudError) {
         throw error.status !== null && error.status < 500
           ? new BadRequestException(error.message || 'Frameleaf Cloud did not accept this key.')

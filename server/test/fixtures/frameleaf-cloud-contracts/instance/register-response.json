@@ -1,0 +1,12 @@
+{
+  "instanceId": "0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53",
+  "oidc": {
+    "issuer": "https://id.frameleaf.cloud",
+    "clientId": "0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53",
+    "scope": "openid email profile",
+    "roleClaim": "frameleaf_role",
+    "storageLabelClaim": ""
+  },
+  "services": {},
+  "owner": { "accountId": "0192f1a0-1111-7aaa-8bbb-123456789abc", "label": "Ana", "email": "ana@example.com", "dataRegion": "eu" }
+}

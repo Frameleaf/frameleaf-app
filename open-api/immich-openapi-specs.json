@@ -896,7 +896,7 @@
         "x-immich-state": "Alpha"
       },
       "put": {
-        "description": "Changes the daily spending cap or automatic top-up on the linked Frameleaf account. Payment details stay on frameleaf.cloud.",
+        "description": "Lowers the daily spending cap or turns automatic top-up off on the linked Frameleaf account. Raising the cap or turning automatic top-up on is done by the account owner in the Frameleaf account; Frameleaf Cloud refuses it here with 403. Payment details stay on frameleaf.cloud.",
         "operationId": "updateCloudMlWallet",
         "parameters": [],
         "requestBody": {
@@ -40335,14 +40335,6 @@
             "maxLength": 100,
             "type": "string"
           },
-          "clientSecret": {
-            "description": "Frameleaf client secret (write-only; empty preserves the existing secret)",
-            "type": "string"
-          },
-          "clientSecretConfigured": {
-            "description": "Read-only indicator that a client secret is stored. Set by the server; ignored on write.",
-            "type": "boolean"
-          },
           "showOnLocalLogin": {
             "description": "Show Sign in with Frameleaf on the local sign-in page too",
             "type": "boolean"
@@ -40350,7 +40342,6 @@
         },
         "required": [
           "buttonText",
-          "clientSecret",
           "showOnLocalLogin"
         ],
         "type": "object"
@@ -49819,6 +49810,16 @@
         ],
         "type": "object"
       },
+      "CloudLinkRefusal": {
+        "description": "Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: this server, or another one with its ID, is still registered; key-already-linked: this server’s key is already linked (a copied identity directory)",
+        "enum": [
+          "instance-limit",
+          "server-refused",
+          "instance-id-taken",
+          "key-already-linked"
+        ],
+        "type": "string"
+      },
       "CloudLinkResult": {
         "description": "How the current or last device authorization stands",
         "enum": [
@@ -50052,6 +50053,11 @@
             "description": "The job id Frameleaf Cloud settled",
             "type": "string"
           },
+          "computeSku": {
+            "description": "The compute SKU the job ran on, when reported",
+            "nullable": true,
+            "type": "string"
+          },
           "costUsd": {
             "description": "The settled charge, USD",
             "format": "double",
@@ -50083,8 +50089,8 @@
             "nullable": true,
             "type": "string"
           },
-          "modelId": {
-            "description": "The catalogue model the job used, when reported",
+          "modelSku": {
+            "description": "The catalogue model SKU the job used, when reported",
             "nullable": true,
             "type": "string"
           },
@@ -50105,13 +50111,14 @@
         },
         "required": [
           "cloudJobId",
+          "computeSku",
           "costUsd",
           "credits",
           "estimateUsd",
           "finishedAt",
           "gpuSeconds",
           "jobName",
-          "modelId",
+          "modelSku",
           "succeeded",
           "workers",
           "workload"
@@ -50227,6 +50234,11 @@
             "format": "double",
             "type": "number"
           },
+          "settingsUrl": {
+            "description": "Where the account owner raises the daily cap or turns on automatic top-up, when Frameleaf Cloud named it; this server can only lower the cap or turn automatic top-up off",
+            "nullable": true,
+            "type": "string"
+          },
           "spentTodayUsd": {
             "description": "Spent today, USD",
             "format": "double",
@@ -50248,6 +50260,7 @@
           "balanceUsd",
           "dailyCapUsd",
           "heldUsd",
+          "settingsUrl",
           "spentTodayUsd",
           "topUpUrl",
           "updatedAt"
@@ -50403,6 +50416,15 @@
             "nullable": true,
             "type": "string"
           },
+          "linkRefusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudLinkRefusal"
+              }
+            ],
+            "description": "Why Frameleaf Cloud refused the last link attempt, while unlinked; null when it gave no such reason",
+            "nullable": true
+          },
           "linkResult": {
             "allOf": [
               {
@@ -50493,6 +50515,7 @@
           "keyFingerprint",
           "lastContactAt",
           "lastError",
+          "linkRefusal",
           "linkResult",
           "linkTokenConfigured",
           "linkedAt",
@@ -50572,8 +50595,7 @@
         "description": "A server secret that can be replaced or cleared but never read back",
         "enum": [
           "smtp-password",
-          "oauth-client-secret",
-          "frameleaf-oidc-client-secret"
+          "oauth-client-secret"
         ],
         "type": "string"
       },
@@ -59790,7 +59812,8 @@
           "wallet-insufficient",
           "quota-exceeded",
           "model-mismatch",
-          "insufficient-memory"
+          "insufficient-memory",
+          "request-invalid"
         ],
         "type": "string"
       },
@@ -62627,7 +62650,8 @@
           "consent-version-outdated",
           "wallet-insufficient",
           "quota-exceeded",
-          "model-mismatch"
+          "model-mismatch",
+          "request-invalid"
         ],
         "type": "string"
       },

@@ -6,6 +6,7 @@
  * in US dollars in every country and never converted. The store address comes from the server's
  * deployment configuration (`GET license/products`), never from here.
  */
+import { CloudLinkRefusal } from '@immich/sdk';
 
 // ------------------------------------------------------------------ prices
 
@@ -149,6 +150,40 @@ export const displayHost = (url: string) => {
 /** A short, readable key fingerprint: `SHA256:` and the first and last characters. */
 export const shortFingerprint = (kid: string | null | undefined) =>
   kid ? `SHA256:${kid.slice(0, 4)}…${kid.slice(-4)}` : '';
+
+/**
+ * FL-177: the title and help for a link Frameleaf Cloud refused for a reason an administrator can act
+ * on (402 `instance-limit`, 403 for a removed server or a suspended account, 409 `instance-id-taken`
+ * and 409 `jwk_already_bound`).
+ */
+export const linkRefusalKeys = (refusal: CloudLinkRefusal) => {
+  switch (refusal) {
+    case CloudLinkRefusal.InstanceLimit: {
+      return {
+        title: 'frameleaf_cloud_link_refusal_instance_limit_title',
+        body: 'frameleaf_cloud_link_refusal_instance_limit_body',
+      } as const;
+    }
+    case CloudLinkRefusal.ServerRefused: {
+      return {
+        title: 'frameleaf_cloud_link_refusal_server_refused_title',
+        body: 'frameleaf_cloud_link_refusal_server_refused_body',
+      } as const;
+    }
+    case CloudLinkRefusal.InstanceIdTaken: {
+      return {
+        title: 'frameleaf_cloud_link_refusal_instance_id_taken_title',
+        body: 'frameleaf_cloud_link_refusal_instance_id_taken_body',
+      } as const;
+    }
+    case CloudLinkRefusal.KeyAlreadyLinked: {
+      return {
+        title: 'frameleaf_cloud_link_refusal_key_already_linked_title',
+        body: 'frameleaf_cloud_link_refusal_key_already_linked_body',
+      } as const;
+    }
+  }
+};
 
 // ------------------------------------------------------------------ store (FL-172)
 

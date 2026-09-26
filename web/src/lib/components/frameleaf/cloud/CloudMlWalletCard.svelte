@@ -3,19 +3,24 @@
    * The AI Wallet (FL-159, handoff §3.1 and §2.5; prototype FrameleafCloud.jsx `Processing` wallet card
    * and top-up dialog): prepaid credit for cloud jobs. Balance, held for running jobs, available, and
    * today's spend against the daily cap, all as Frameleaf Cloud reports them, in USD for everyone.
-   * The daily cap and automatic top-up are the account's settings, changed here on the linked
-   * account. Adding credit happens on frameleaf.cloud: $25 by default, presets $25 / $50 / $100, any
-   * whole amount from $20 to $500, no bonus credit, card fees included; this server never sees card
-   * details, and the link appears only when Frameleaf Cloud returned one.
+   * The daily cap and automatic top-up are the account's settings. This server may only reduce spend
+   * (FL-177, as-built decision #22): lower the cap or turn automatic top-up off. Raising the cap and
+   * turning automatic top-up on need the account owner in the Frameleaf account app, so they are links
+   * there (`settingsUrl`, when Frameleaf Cloud named it), and a `403 step-up-required` answer says so.
+   * Adding credit happens on frameleaf.cloud: $25 by default, presets $25 / $50 / $100, any whole
+   * amount from $20 to $500, no bonus credit, card fees included; this server never sees card details,
+   * and the link appears only when Frameleaf Cloud returned one.
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import {
+    canLowerCap,
     DEFAULT_WALLET_PACK,
     formatDateTime,
     formatUsd,
+    isStepUpRequired,
     isTopUpAmount,
     topUpCheckoutUrl,
     walletAvailable,
@@ -24,7 +29,7 @@
     WALLET_MIN_TOP_UP_USD,
   } from '$lib/frameleaf/cloud-ml';
   import { handleError } from '$lib/utils/handle-error';
-  import { updateCloudMlWallet, type CloudMlWalletDto } from '@immich/sdk';
+  import { getCloudMlWallet, updateCloudMlWallet, type CloudMlWalletDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiCreditCardOutline, mdiOpenInNew, mdiPlus } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
@@ -56,13 +61,26 @@
   );
   const checkout = $derived(topUpCheckoutUrl(wallet?.topUpUrl, amount));
 
+  // Shown when an increase was asked for here: it is made in the Frameleaf account instead.
+  let increaseAsked = $state(false);
+
   const save = async (change: { dailyCapUsd?: number; autoTopUp?: boolean }) => {
     saving = true;
     try {
       const next = await updateCloudMlWallet({ cloudMlWalletUpdateDto: change });
       onChanged?.(next);
     } catch (error) {
-      handleError(error, $t('admin.frameleaf_cloud_ml_wallet_error'));
+      if (isStepUpRequired(error)) {
+        increaseAsked = true;
+        // the refusal may have named the account page; read the wallet again to link to it
+        try {
+          onChanged?.(await getCloudMlWallet());
+        } catch {
+          // the explanation stands without the link
+        }
+      } else {
+        handleError(error, $t('admin.frameleaf_cloud_ml_wallet_error'));
+      }
     } finally {
       saving = false;
     }
@@ -70,9 +88,17 @@
 
   const saveCap = () => {
     const value = Number(capInput);
-    if (Number.isFinite(value) && value >= 1 && value <= 1000 && value !== wallet?.dailyCapUsd) {
-      void save({ dailyCapUsd: value });
+    if (!Number.isFinite(value) || value < 1 || value > 1000 || value === wallet?.dailyCapUsd) {
+      return;
     }
+    if (!canLowerCap(wallet?.dailyCapUsd, value)) {
+      // raising the cap is the account owner's, in the Frameleaf account
+      increaseAsked = true;
+      capInput = wallet?.dailyCapUsd === null || wallet?.dailyCapUsd === undefined ? '' : String(wallet.dailyCapUsd);
+      return;
+    }
+    increaseAsked = false;
+    void save({ dailyCapUsd: value });
   };
 </script>
 
@@ -144,13 +170,42 @@
       </span>
       <small>{$t('admin.frameleaf_cloud_ml_wallet_daily_cap_help')}</small>
     </label>
+    <p class="fc-muted">
+      {#if wallet.settingsUrl}
+        <a class="fc-link" href={wallet.settingsUrl} target="_blank" rel="noopener noreferrer">
+          {$t('admin.frameleaf_cloud_ml_wallet_raise_cap')}
+          <Icon icon={mdiOpenInNew} size="14" aria-hidden={true} />
+        </a>
+      {:else}
+        {$t('admin.frameleaf_cloud_ml_wallet_raise_cap_account')}
+      {/if}
+    </p>
+    {#if increaseAsked}
+      <p class="fc-refusal" role="alert">{$t('admin.frameleaf_cloud_ml_wallet_step_up')}</p>
+    {/if}
     <SettingToggle
       title={$t('admin.frameleaf_cloud_ml_wallet_auto_top_up')}
       subtitle={$t('admin.frameleaf_cloud_ml_wallet_auto_top_up_help')}
       checked={wallet.autoTopUp}
-      disabled={!ready || saving}
-      onToggle={(value) => void save({ autoTopUp: value })}
-    />
+      disabled={!ready || saving || !wallet.autoTopUp}
+      onToggle={(value) => {
+        // only turning it off happens here; turning it on is a link to the Frameleaf account
+        if (!value) {
+          void save({ autoTopUp: false });
+        }
+      }}
+    >
+      {#if !wallet.autoTopUp}
+        {#if wallet.settingsUrl}
+          <a class="fc-link" href={wallet.settingsUrl} target="_blank" rel="noopener noreferrer">
+            {$t('admin.frameleaf_cloud_ml_wallet_auto_top_up_turn_on')}
+            <Icon icon={mdiOpenInNew} size="14" aria-hidden={true} />
+          </a>
+        {:else}
+          <small>{$t('admin.frameleaf_cloud_ml_wallet_auto_top_up_turn_on_account')}</small>
+        {/if}
+      {/if}
+    </SettingToggle>
     <div class="fc-actions">
       <Button
         variant="primary"
