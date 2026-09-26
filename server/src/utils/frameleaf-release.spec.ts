@@ -1,4 +1,58 @@
-import { newestFrameleafRelease, parseFrameleafReleaseTag } from 'src/utils/frameleaf-release.js';
+import { ReleaseChannel } from 'src/enum.js';
+import {
+  FrameleafFeedRelease,
+  newestFrameleafRelease,
+  parseFrameleafFeedRelease,
+  parseFrameleafReleaseTag,
+  releaseFeedChannel,
+} from 'src/utils/frameleaf-release.js';
+
+// Frameleaf Cloud release feed response (FC-70, `GET /v1/releases/latest`).
+// TODO(FC-70): replace with the shared fixture in packages/contracts/fixtures/releases/ when it lands.
+const feedRelease: FrameleafFeedRelease = {
+  version: '3.2.1',
+  tag: 'frameleaf-v3.2.1-4',
+  publishedAt: '2026-09-25T12:00:00Z',
+  url: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1-4',
+  notesUrl: 'https://help.frameleaf.ai/releases/3.2.1',
+  minimumSupported: null,
+};
+
+describe('releaseFeedChannel', () => {
+  it('maps the update channel setting to the feed channel', () => {
+    expect(releaseFeedChannel(ReleaseChannel.Stable)).toBe('stable');
+    expect(releaseFeedChannel(ReleaseChannel.ReleaseCandidate)).toBe('beta');
+  });
+});
+
+describe('parseFrameleafFeedRelease', () => {
+  it('reads the version and publication time of a feed release', () => {
+    expect(parseFrameleafFeedRelease(feedRelease, ReleaseChannel.Stable)).toEqual({
+      version: '3.2.1',
+      publishedAt: '2026-09-25T12:00:00Z',
+    });
+    expect(parseFrameleafFeedRelease({ ...feedRelease, minimumSupported: '3.0.0' }, ReleaseChannel.Stable)).toEqual(
+      expect.objectContaining({ version: '3.2.1' }),
+    );
+  });
+
+  it('accepts a prerelease only on the beta channel', () => {
+    const candidate = { ...feedRelease, version: '3.3.0-rc.1', tag: 'frameleaf-v3.3.0-rc.1-2' };
+    expect(parseFrameleafFeedRelease(candidate, ReleaseChannel.ReleaseCandidate)?.version).toBe('3.3.0-rc.1');
+    expect(parseFrameleafFeedRelease(candidate, ReleaseChannel.Stable)).toBeUndefined();
+  });
+
+  it.each([
+    ['a leading "v"', { ...feedRelease, version: 'v3.2.1' }],
+    ['a version that is not semver', { ...feedRelease, version: '3.2' }],
+    ['a missing version', { ...feedRelease, version: undefined }],
+    ['a list', [feedRelease]],
+    ['no body', null],
+    ['text', 'latest'],
+  ])('rejects %s', (_, body) => {
+    expect(parseFrameleafFeedRelease(body, ReleaseChannel.Stable)).toBeUndefined();
+  });
+});
 
 describe('parseFrameleafReleaseTag', () => {
   it.each([
