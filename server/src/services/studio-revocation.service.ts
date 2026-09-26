@@ -51,7 +51,9 @@ export class StudioRevocationService {
     await this.sourcesRemoved(assetIds);
   }
 
-  @OnEvent({ name: 'AssetDelete' })
+  // FL-169: revocation is an access boundary, so it runs before the other AssetDelete handlers; they
+  // are isolated from each other, so none of them can skip it either.
+  @OnEvent({ name: 'AssetDelete', priority: -1 })
   async onAssetDelete({ assetId }: ArgOf<'AssetDelete'>): Promise<void> {
     await this.sourcesRemoved([assetId]);
   }

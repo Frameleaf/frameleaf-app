@@ -638,20 +638,61 @@ export class AssetService extends BaseService {
       }
     }
 
-    const videoDuplicateFrameFiles = await this.duplicateRepository.getVideoDuplicateFrames([id]);
+    // FL-169: the file cleanup is queued inside the removal's transaction, from the files read there
+    // under the asset's row lock. If it cannot be queued the row stays and a retry runs the whole
+    // deletion again; once the row is gone, its files are queued. The job names the asset, so a job
+    // whose removal rolled back after it was queued deletes nothing; FileDelete also keeps any file
+    // another asset references (a deduplicated original).
+    const removedAsset = await this.assetRepository.remove(asset, {
+      files: (removed) => {
+        const assetFiles = getAssetFiles(removed.files);
+        const files = [
+          assetFiles.thumbnailFile?.path,
+          assetFiles.previewFile?.path,
+          assetFiles.fullsizeFile?.path,
+          assetFiles.editedFullsizeFile?.path,
+          assetFiles.editedPreviewFile?.path,
+          assetFiles.editedThumbnailFile?.path,
+          assetFiles.encodedVideoFile?.path,
+          ...removed.videoDuplicateFramePaths,
+          ...(removed.videoEditPaths ?? []),
+          // restoration and develop outputs; never the original they were made from
+          ...removed.derivedPaths,
+        ];
 
-    const removedAsset = await this.assetRepository.remove(asset);
+        // FL-78: an external library item only references its original, which stays in the library's
+        // folder whatever happens to the item; its sidecar there is the owner's too. Generated files
+        // above are Frameleaf's own and go either way.
+        if (deleteOnDisk && !asset.isOffline && !asset.libraryId) {
+          files.push(assetFiles.sidecarFile?.path, removed.originalPath, removed.reservationTemporaryPath ?? undefined);
+        }
+
+        // a path can be named twice (a version file that is also a generated file); delete it once
+        return [...new Set(files.filter((file): file is string => !!file))];
+      },
+      queue: (files) => this.jobRepository.queue({ name: JobName.FileDelete, data: { files, removedAssetId: id } }),
+    });
     if (!removedAsset) {
       return JobStatus.Failed;
     }
-    if (!asset.libraryId) {
-      await this.userRepository.updateUsage(asset.ownerId, -(asset.exifInfo?.fileSizeInByte || 0));
-    }
 
-    await this.eventRepository.emit('AssetDelete', { assetId: id, userId: asset.ownerId });
+    // FL-169: the row is gone from here on, so a retry could not repeat or repair any of the steps
+    // below. Each runs even when another fails, and a failure is logged rather than failing the job.
+    await this.afterAssetRemoval(id, 'update the storage usage', async () => {
+      if (!asset.libraryId) {
+        await this.userRepository.updateUsage(asset.ownerId, -(asset.exifInfo?.fileSizeInByte || 0));
+      }
+    });
+
+    await this.afterAssetRemoval(id, 'announce the deletion', () =>
+      this.eventRepository.emit('AssetDelete', { assetId: id, userId: asset.ownerId }),
+    );
 
     // delete the motion if it is not used by another asset
-    if (asset.livePhotoVideoId) {
+    await this.afterAssetRemoval(id, 'queue the deletion of its motion part', async () => {
+      if (!asset.livePhotoVideoId) {
+        return;
+      }
       const count = await this.assetRepository.getLivePhotoCount(asset.livePhotoVideoId);
       if (count === 0) {
         await this.jobRepository.queue({
@@ -659,35 +700,17 @@ export class AssetService extends BaseService {
           data: { id: asset.livePhotoVideoId, deleteOnDisk },
         });
       }
-    }
-
-    const assetFiles = getAssetFiles(asset.files ?? []);
-    const files = [
-      assetFiles.thumbnailFile?.path,
-      assetFiles.previewFile?.path,
-      assetFiles.fullsizeFile?.path,
-      assetFiles.editedFullsizeFile?.path,
-      assetFiles.editedPreviewFile?.path,
-      assetFiles.editedThumbnailFile?.path,
-      assetFiles.encodedVideoFile?.path,
-      ...videoDuplicateFrameFiles.map(({ path }) => path),
-      ...(removedAsset.videoEditPaths ?? []),
-    ];
-
-    // FL-78: an external library item only references its original, which stays in the library's
-    // folder whatever happens to the item; its sidecar there is the owner's too. Generated files
-    // above are Frameleaf's own and go either way.
-    if (deleteOnDisk && !asset.isOffline && !asset.libraryId) {
-      files.push(
-        assetFiles.sidecarFile?.path,
-        removedAsset.originalPath,
-        removedAsset.reservationTemporaryPath ?? undefined,
-      );
-    }
-
-    await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: files.filter(Boolean) } });
+    });
 
     return JobStatus.Success;
+  }
+
+  private async afterAssetRemoval(id: string, action: string, step: () => Promise<void>) {
+    try {
+      await step();
+    } catch (error: any) {
+      this.logger.error(`Deleted asset ${id} but could not ${action}: ${error}`, error?.stack);
+    }
   }
 
   private async isOrphanedMotionPart(asset: { id: string; visibility: AssetVisibility }) {

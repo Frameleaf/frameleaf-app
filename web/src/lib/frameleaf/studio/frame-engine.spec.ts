@@ -182,7 +182,7 @@ describe('studio editor frame (FL-88)', () => {
       type: 'service',
       callId: 7,
       name: 'stageDraft',
-      args: [{ id: 'g', edited: true }, ['editor.save']],
+      args: [{ id: 'g', edited: true }, ['editor.save'], 3, 1],
     });
     port.postMessage({ type: 'dirty', dirty: true });
     port.postMessage({ type: 'request-export', kind: 'video' });
@@ -191,20 +191,37 @@ describe('studio editor frame (FL-88)', () => {
     port.postMessage({ type: 'playhead', time: { num: 1.5, den: 2 } });
     await tick();
 
-    expect(host.stageDraft).toHaveBeenCalledWith({ id: 'g', edited: true }, ['editor.save']);
+    // The revision and the host graph version the editor's graph came from travel with the draft.
+    expect(host.stageDraft).toHaveBeenCalledWith({ id: 'g', edited: true }, ['editor.save'], 3, 1);
+    expect(results).toContainEqual({ type: 'service-result', callId: 7, ok: true, value: { status: 'staged' } });
 
-    // The revision the editor's graph came from travels with the draft; anything else is dropped.
-    for (const [callId, base] of [
-      [8, 3],
-      [9, -1],
-      [10, 'x'],
+    // Protocol 3 (FL-174): a draft without both as whole counts is refused, never passed on, so the
+    // host can never take it for its own graph.
+    for (const [callId, base, version] of [
+      [8, undefined, undefined],
+      [9, 3, undefined],
+      [10, -1, 2],
+      [11, 'x', 2],
+      [12, 3, -1],
+      [13, 3, 1.5],
     ] as const) {
-      port.postMessage({ type: 'service', callId, name: 'stageDraft', args: [{ id: 'g' }, ['editor.save'], base] });
+      port.postMessage({
+        type: 'service',
+        callId,
+        name: 'stageDraft',
+        args: [{ id: 'v' }, ['editor.save'], base, version],
+      });
     }
     await tick();
-    expect(host.stageDraft).toHaveBeenCalledWith({ id: 'g' }, ['editor.save'], 3);
-    expect(host.stageDraft).toHaveBeenLastCalledWith({ id: 'g' }, ['editor.save']);
-    expect(results).toContainEqual({ type: 'service-result', callId: 7, ok: true, value: { status: 'staged' } });
+    expect(host.stageDraft).toHaveBeenCalledTimes(1);
+    for (const callId of [8, 9, 10, 11, 12, 13]) {
+      expect(results).toContainEqual({
+        type: 'service-result',
+        callId,
+        ok: true,
+        value: { status: 'rejected', reason: 'invalid' },
+      });
+    }
     expect(host.setDirty).toHaveBeenCalledWith(true);
     // The editor's Export opens the host's export dialog; nothing renders inside the editor.
     expect(host.requestExport).toHaveBeenCalledWith('video');

@@ -23,6 +23,13 @@
  *   from an earlier generation is dropped rather than applied over the current project.
  * - **Review is read-only.** A shared-space member gets the graph only when the server says
  *   every source resolved for them; `withheld` says so, and there is no draft and no lease.
+ * - **The host's own graph is never overwritten by an older editor graph (FL-174).** A canonical
+ *   command, undo or redo, Reload and a restore put a graph in place that the editor did not make,
+ *   and each advances `project.graphVersion`. The editor reports the version its graph was loaded
+ *   from with every draft; a draft from before the latest one is refused as `superseded` and leaves
+ *   the host's draft (the command's effect) untouched. The editor then reloads to show the host's
+ *   graph. Rebasing is not attempted: Freecut graphs have no merge, and a command's envelopes are
+ *   not replayable for undo or a restore.
  */
 import {
   acquireStudioProjectLease,
@@ -251,26 +258,34 @@ export interface StudioProjectSessionOptions {
   newKey?: () => string;
 }
 
+/**
+ * What `stage` did. `ignored`: this session may not hold a draft now (a reviewer, no lease, disposed).
+ * `superseded`: an editor graph older than the host's own latest graph (FL-174); nothing changed.
+ */
+export type StudioStageOutcome = 'staged' | 'ignored' | 'superseded';
+
 export interface StudioProjectSession {
   readonly state: StudioProjectSessionState;
   /** Load the project (or start the draft) and, for the owner, take the lease. */
   open(): Promise<void>;
   /**
-   * Record the engine's current document and the command ids that produced it since the last
-   * stage. The save happens after the debounce, not now. `envelopes` are the canonical commands the
-   * engine applied (FL-92); they travel with the save, and the server checks them and counts the
-   * revision summary from them.
+   * Stage the host's own graph: the result of canonical commands (FL-92), undo or redo, with the
+   * command ids and the envelopes the engine applied. They travel with the save; the server checks
+   * them and counts the revision summary from them. It advances `project.graphVersion`, so an editor
+   * draft loaded before it is refused (FL-174). The save happens after the debounce, not now.
    */
+  stage(graph: unknown, commands?: readonly string[], envelopes?: readonly StudioCommandEnvelope[]): StudioStageOutcome;
   /**
-   * `baseRevision` is the revision the edited graph was loaded from, when the caller knows it (the
-   * editor frame reports it). Without it the draft is taken to be built on what the session shows.
+   * Stage the editor's own draft (FL-89 autosave): always the editor's, never the host's, so it can
+   * never advance `project.graphVersion`. `baseRevision` and `graphVersion` are what the editor's
+   * graph was loaded from; a graph from before the host's latest is refused as `superseded` (FL-174).
    */
-  stage(
+  stageEditor(
     graph: unknown,
-    commands?: readonly string[],
-    envelopes?: readonly StudioCommandEnvelope[],
-    baseRevision?: number,
-  ): void;
+    commands: readonly string[],
+    baseRevision: number,
+    graphVersion: number,
+  ): StudioStageOutcome;
   /** Send the staged draft now, if there is one. */
   flush(): Promise<void>;
   /** Discard the draft and re-read the project. Resolves a `conflict` by accepting the head. */
@@ -381,11 +396,19 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
   let renewMs = STUDIO_LEASE_RENEW_MS;
   /** Bumped by open, reload, saveAsCopy and dispose; responses from an older value are dropped. */
   let generation = 0;
+  /**
+   * `project.graphVersion`: bumped whenever the host puts a graph in place that the editor did not
+   * make (a host-side stage, Reload, a restore). Never reset, so it only moves forward (FL-174).
+   */
+  let graphVersion = 0;
   let disposed = false;
   let inflight: AbortController | null = null;
 
   const emit = (patch: Partial<StudioProjectSessionState>) => {
     state = { ...state, ...patch, hasDraft: draft !== null };
+    if (state.project.graphVersion !== graphVersion) {
+      state = { ...state, project: { ...state.project, graphVersion } };
+    }
     options.onChange(state);
   };
 
@@ -483,11 +506,15 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     });
   };
 
-  const applyDetail = (detail: StudioProjectDetailDto, gen: number, leaseHeld: boolean) => {
+  /** `replaced`: the host puts this graph in place over the editor's (Reload, restore). */
+  const applyDetail = (detail: StudioProjectDetailDto, gen: number, leaseHeld: boolean, replaced = false) => {
     if (gen !== generation) {
       return;
     }
     editorSaves.clear();
+    if (replaced) {
+      graphVersion += 1;
+    }
     projectId = detail.id;
     emit({
       project: {
@@ -517,8 +544,11 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     emit({ status: 'error', error: error instanceof Error ? error.message : String(error) });
   };
 
-  /** Read the project and, for the owner, take the lease. Never touches the draft. */
-  const load = async (gen: number, { keepDraft }: { keepDraft: boolean }) => {
+  /**
+   * Read the project and, for the owner, take the lease. Never touches the draft. `replaced`: the
+   * head replaces what the editor shows (Reload), so a draft the editor made before it is superseded.
+   */
+  const load = async (gen: number, { keepDraft, replaced = false }: { keepDraft: boolean; replaced?: boolean }) => {
     if (!projectId) {
       emit({ status: 'saved', project: draftHandle(options.name), access: 'owner', conflict: null, error: null });
       return;
@@ -542,7 +572,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     // An archived or trashed project opens read-only, for its owner too: it takes no lease (FL-91).
     const shelved = detail.shelf === StudioProjectShelf.Archived || detail.shelf === StudioProjectShelf.Trashed;
     if (detail.access !== 'owner' || shelved) {
-      applyDetail(detail, gen, false);
+      applyDetail(detail, gen, false, replaced);
       emit({ status: 'review', conflict: null });
       return;
     }
@@ -553,7 +583,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         return;
       }
       applyLease(lease);
-      applyDetail(detail, gen, lease.heldByYou);
+      applyDetail(detail, gen, lease.heldByYou, replaced);
       scheduleRenewal(gen);
       emit({ status: keepDraft && draft ? 'dirty' : 'saved', conflict: null });
       if (keepDraft && draft) {
@@ -567,7 +597,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       if (conflict) {
         // Another instance is editing, or the project was put away in the meantime. Open for
         // review; for a live project the person may take over explicitly.
-        applyDetail(detail, gen, false);
+        applyDetail(detail, gen, false, replaced);
         emit({ status: isShelvedConflict(conflict) ? 'review' : 'lease-lost', conflict });
         return;
       }
@@ -796,7 +826,9 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       if (draft) {
         emit({ project: { ...state.project, hasLease: true } });
       } else {
-        applyDetail(detail, gen, true);
+        // A head that moved while this tab was not writing replaces what the editor shows; an editor
+        // draft made before it is superseded, never staged over it (FL-174).
+        applyDetail(detail, gen, true, detail.revision !== state.project.revision);
       }
       emit({ status: draft ? 'dirty' : 'saved', conflict: null });
       scheduleRenewal(gen);
@@ -829,6 +861,75 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     return revision;
   };
 
+  /** `stage` and `stageEditor`: `origin` says whose graph it is; the editor's is never the host's. */
+  const stageGraph = (
+    graph: unknown,
+    commands: readonly string[],
+    envelopes: readonly StudioCommandEnvelope[],
+    baseRevision: number | undefined,
+    editorGraphVersion: number | undefined,
+    origin: 'host' | 'editor',
+  ): StudioStageOutcome => {
+    // Edits made after the lease was lost are kept with the draft until the person reacquires,
+    // takes over or saves a copy; they are never dropped (FL-89).
+    const keepsDraft = (state.status === 'lease-lost' || state.status === 'conflict') && state.access === 'owner';
+    if (disposed || state.access === 'reviewer' || (!state.project.hasLease && !keepsDraft)) {
+      return 'ignored';
+    }
+    // An editor graph loaded before the host's own latest graph lacks the host's change; staging it
+    // would replace that change (a command still in the draft, or one already saved). Refused, the
+    // draft stays as it is and the editor reloads to the host's graph (FL-174).
+    if (editorGraphVersion !== undefined && editorGraphVersion < graphVersion) {
+      return 'superseded';
+    }
+    if (origin === 'host') {
+      graphVersion += 1;
+    }
+    // Commands already travelling in a save belong to that revision's summary, not the next.
+    const base = draft && draft !== inflightDraft ? draft : null;
+    const counts: Record<string, number> = base ? { ...base.counts } : {};
+    for (const id of commands) {
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    // A save carries at most the per-save limit of envelopes (FL-92); the oldest beyond it travel
+    // as a count, and a draft that reaches the limit is sent now rather than after the pause.
+    const merged = [...(base?.envelopes ?? []), ...envelopes];
+    const overflow = Math.max(0, merged.length - STUDIO_MAX_COMMANDS_PER_SAVE);
+    draft = {
+      graph,
+      counts,
+      total: (base?.total ?? 0) + commands.length,
+      envelopes: merged.slice(overflow),
+      unchecked: (base?.unchecked ?? 0) + overflow,
+      // A different document is a different request; the key is assigned when it is sent.
+      requestKey: null,
+      // Later edits share the first unsaved edit's base, even while that one is in flight. A graph
+      // loaded from an older revision keeps that older base, so it can never claim a newer head; the
+      // editor's own saves it has not heard of yet carry it forward.
+      baseRevision: Math.min(draft?.baseRevision ?? state.project.revision, followEditorSaves(baseRevision)),
+      fromEditor: origin === 'editor',
+    };
+    if (keepsDraft) {
+      emit({ project: { ...state.project, graph } });
+      return 'staged';
+    }
+    if (state.status === 'conflict') {
+      // The person has not decided yet; more edits join the draft and wait with it.
+      emit({ project: { ...state.project, graph } });
+      return 'staged';
+    }
+    // A document the server refused ('error') gets a fresh attempt with the next edit.
+    emit({ project: { ...state.project, graph }, status: isOnline() ? 'dirty' : 'offline' });
+    if (isOnline()) {
+      if (draft.envelopes.length >= STUDIO_MAX_COMMANDS_PER_SAVE) {
+        void flush();
+      } else {
+        scheduleFlush();
+      }
+    }
+    return 'staged';
+  };
+
   const session: StudioProjectSession = {
     get state() {
       return state;
@@ -839,55 +940,12 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       await load(generation, { keepDraft: false });
     },
 
-    stage(graph, commands = [], envelopes = [], baseRevision) {
-      // Edits made after the lease was lost are kept with the draft until the person reacquires,
-      // takes over or saves a copy; they are never dropped (FL-89).
-      const keepsDraft = (state.status === 'lease-lost' || state.status === 'conflict') && state.access === 'owner';
-      if (disposed || state.access === 'reviewer' || (!state.project.hasLease && !keepsDraft)) {
-        return;
-      }
-      // Commands already travelling in a save belong to that revision's summary, not the next.
-      const base = draft && draft !== inflightDraft ? draft : null;
-      const counts: Record<string, number> = base ? { ...base.counts } : {};
-      for (const id of commands) {
-        counts[id] = (counts[id] ?? 0) + 1;
-      }
-      // A save carries at most the per-save limit of envelopes (FL-92); the oldest beyond it travel
-      // as a count, and a draft that reaches the limit is sent now rather than after the pause.
-      const merged = [...(base?.envelopes ?? []), ...envelopes];
-      const overflow = Math.max(0, merged.length - STUDIO_MAX_COMMANDS_PER_SAVE);
-      draft = {
-        graph,
-        counts,
-        total: (base?.total ?? 0) + commands.length,
-        envelopes: merged.slice(overflow),
-        unchecked: (base?.unchecked ?? 0) + overflow,
-        // A different document is a different request; the key is assigned when it is sent.
-        requestKey: null,
-        // Later edits share the first unsaved edit's base, even while that one is in flight. A graph
-        // loaded from an older revision keeps that older base, so it can never claim a newer head; the
-        // editor's own saves it has not heard of yet carry it forward.
-        baseRevision: Math.min(draft?.baseRevision ?? state.project.revision, followEditorSaves(baseRevision)),
-        fromEditor: baseRevision !== undefined,
-      };
-      if (keepsDraft) {
-        emit({ project: { ...state.project, graph } });
-        return;
-      }
-      if (state.status === 'conflict') {
-        // The person has not decided yet; more edits join the draft and wait with it.
-        emit({ project: { ...state.project, graph } });
-        return;
-      }
-      // A document the server refused ('error') gets a fresh attempt with the next edit.
-      emit({ project: { ...state.project, graph }, status: isOnline() ? 'dirty' : 'offline' });
-      if (isOnline()) {
-        if (draft.envelopes.length >= STUDIO_MAX_COMMANDS_PER_SAVE) {
-          void flush();
-        } else {
-          scheduleFlush();
-        }
-      }
+    stage(graph, commands = [], envelopes = []) {
+      return stageGraph(graph, commands, envelopes, undefined, undefined, 'host');
+    },
+
+    stageEditor(graph, commands, baseRevision, editorGraphVersion) {
+      return stageGraph(graph, commands, [], baseRevision, editorGraphVersion, 'editor');
     },
 
     async flush() {
@@ -900,7 +958,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       draft = null;
       stopTimers();
       generation += 1;
-      await load(generation, { keepDraft: false });
+      await load(generation, { keepDraft: false, replaced: true });
       return state.project;
     },
 
@@ -995,7 +1053,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         if (gen !== generation) {
           return false;
         }
-        applyDetail(detail, gen, true);
+        applyDetail(detail, gen, true, true);
         emit({ status: 'saved', conflict: null, lastSavedAt: now() });
         scheduleRenewal(gen);
         return true;
