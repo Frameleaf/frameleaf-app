@@ -54,7 +54,7 @@ Use this checklist when validating image enrichment against a real library or lo
 
 ## Descriptions and Tags
 
-When description and tag generation is enabled, Immich sends the asset preview image to the machine learning service and stores the model result as private enrichment metadata. Immich then applies visible metadata according to the admin settings:
+When description and tag generation is enabled, Frameleaf sends the asset preview image to the machine learning service and stores the model result as private enrichment metadata. Frameleaf then applies visible metadata according to the admin settings:
 
 - Descriptions are written to the asset description field.
 - Existing user descriptions are preserved, with a generated block appended once.
@@ -65,9 +65,9 @@ The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. In this 
 
 ## NSFW Detection
 
-When NSFW detection is enabled, Immich sends the asset preview image to a dedicated classifier. The private enrichment metadata stores the NSFW flag, score, labels, model name, status, and timestamps.
+When NSFW detection is enabled, Frameleaf sends the asset preview image to a dedicated classifier. The private enrichment metadata stores the NSFW flag, score, labels, model name, status, and timestamps.
 
-The default NSFW model is `onnx-community/nsfw_image_detection-ONNX`, with a default threshold of `0.85`. When an image is detected as NSFW, Immich can add an `nsfw` tag and specific visible reason tags when they are supported by the classifier result and the visible image content.
+The default NSFW model is `onnx-community/nsfw_image_detection-ONNX`, with a default threshold of `0.85`. When an image is detected as NSFW, Frameleaf can add an `nsfw` tag and specific visible reason tags when they are supported by the classifier result and the visible image content.
 
 The private NSFW flag is the source of truth for privacy features. Tags are searchable metadata, not a security boundary.
 
@@ -85,7 +85,7 @@ Locked-folder behavior is session based. Unlocking the locked folder elevates th
 
 ## Running Both Jobs
 
-If both settings are enabled, Immich runs NSFW detection first and passes the result into the description and tag prompt. This allows the generated description and tags to remain factual while including visible NSFW reasons when they are supported.
+If both settings are enabled, Frameleaf runs NSFW detection first and passes the result into the description and tag prompt. This allows the generated description and tags to remain factual while including visible NSFW reasons when they are supported.
 
 To process existing libraries, go to `Administration > Jobs` and run the `All` action for the specific enrichment task you want to backfill. Use `NSFW Detection` first if you want classifier results available before description/tag generation, then run `Image descriptions and tags`. The legacy `Image Enrichment` queue command still queues every enabled enrichment task for API compatibility, but the admin Jobs page exposes the two backfills separately.
 
@@ -136,7 +136,7 @@ The dropdown also exposes a **fallback model** field. Florence-2 is the typical 
 
 The fallback logic is **split by destination**:
 
-- **Local URLs**: if the primary model fails (HTTP 5xx), Immich retries the same request with the fallback model name. Local Florence-2 then takes the call.
+- **Local URLs**: if the primary model fails (HTTP 5xx), Frameleaf retries the same request with the fallback model name. Local Florence-2 then takes the call.
 - **Frameleaf Cloud**: the fallback is **never** attempted. The model chosen for cloud work is the contract; silently switching to another model in the cloud would be surprising.
 
 If descriptions run only on Frameleaf Cloud, the fallback never runs; leaving it set is harmless.

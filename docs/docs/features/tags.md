@@ -1,10 +1,10 @@
 # Tags
 
-Immich supports hierarchical tags, with the ability to read existing tags from the XMP `TagsList` field and IPTC `Keywords` field. Any changes to tags made through Immich are also written back to a [sidecar](/features/xmp-sidecars) file. You can re-run the metadata extraction jobs for all assets to import your existing tags.
+Frameleaf supports hierarchical tags, with the ability to read existing tags from the XMP `TagsList` field and IPTC `Keywords` field. Any changes to tags made through Frameleaf are also written back to a [sidecar](/features/xmp-sidecars) file. You can re-run the metadata extraction jobs for all assets to import your existing tags.
 
 ## Enable tags feature
 
-You can enable this feature from the [`Account Settings > Features > Tags`](https://my.immich.app/user-settings?isOpen=feature+tags).
+You can enable this feature from the `Account Settings > Features > Tags`.
 
 <img src={require('./img/tag-enable.webp').default} width="50%" title='Tag view enable' />
 

@@ -1,6 +1,6 @@
 # Database GUI
 
-A short guide on connecting [pgAdmin](https://www.pgadmin.org/) to Immich.
+A short guide on connecting [pgAdmin](https://www.pgadmin.org/) to Frameleaf.
 
 ## 1. Install pgAdmin
 
@@ -50,4 +50,4 @@ The parameters used here match those specified in the example `.env` file. If yo
 | Username             | `postgres`        |
 | Password             | `postgres`        |
 
-Click on "Save" to connect to the Immich database.
+Click on "Save" to connect to the Frameleaf database.

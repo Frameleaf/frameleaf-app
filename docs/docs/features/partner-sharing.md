@@ -1,6 +1,6 @@
 # Partner Sharing
 
-Immich allows you to share your library with other users. They can then view your library and download the assets. You can manage Partner Sharing from the [User Settings](docs/features/user-settings.md) page on the web.
+Frameleaf allows you to share your library with other users. They can then view your library and download the assets. You can manage Partner Sharing from the [User Settings](docs/features/user-settings.md) page on the web.
 
 Partner sharing includes:
 
@@ -41,7 +41,7 @@ Partner shared photos can be displayed in the main timeline. This feature can be
 
 ### Web
 
-The option can be found at [`Account Settings > Partner Sharing > Show in timeline`](https://my.immich.app/user-settings?isOpen=partner-sharing)
+The option can be found at `Account Settings > Partner Sharing > Show in timeline`
 
 <img src={require('./img/partner-sharing-5.webp').default} width="70%" title='Partner Sharing for the web interface' />
 

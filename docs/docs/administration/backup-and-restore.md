@@ -5,19 +5,19 @@ import TabItem from '@theme/TabItem';
 import { mdiAlertCircle, mdiCheckCircle } from '@mdi/js';
 import Icon from '@mdi/react';
 
-A [3-2-1 backup strategy](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) is recommended to protect your data. You should keep copies of your uploaded photos/videos as well as the Immich database for a comprehensive backup solution. This page provides an overview on how to backup the database and the location of user-uploaded pictures and videos. A template bash script that can be run as a cron job is provided [here](/guides/template-backup-script.md)
+A [3-2-1 backup strategy](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) is recommended to protect your data. You should keep copies of your uploaded photos/videos as well as the Frameleaf database for a comprehensive backup solution. This page provides an overview on how to backup the database and the location of user-uploaded pictures and videos. A template bash script that can be run as a cron job is provided [here](/guides/template-backup-script.md)
 
 :::danger
-The instructions on this page show you how to prepare your Immich instance to be backed up, and which files to take a backup of. You still need to take care of using an actual backup tool to make a backup yourself.
+The instructions on this page show you how to prepare your Frameleaf instance to be backed up, and which files to take a backup of. You still need to take care of using an actual backup tool to make a backup yourself.
 :::
 
 ## Database
 
-Immich stores [file paths](https://github.com/immich-app/immich/discussions/3299) and user metadata in the database. It does not scan the library folder, so database backups are essential.
+Frameleaf stores file paths and user metadata in the database. It does not scan the library folder, so database backups are essential.
 
 ### Automatic Database Backups
 
-Immich automatically creates database backups for disaster-recovery purposes. These backups are stored in `UPLOAD_LOCATION/backups` and can be managed through the web interface.
+Frameleaf automatically creates database backups for disaster-recovery purposes. These backups are stored in `UPLOAD_LOCATION/backups` and can be managed through the web interface.
 
 You can adjust the backup schedule and retention settings in **Administration > Settings > Backup** (default: keep last 14 backups, create daily at 2:00 AM).
 
@@ -37,11 +37,11 @@ The backup will appear in `UPLOAD_LOCATION/backups` and counts toward your reten
 
 ### Restoring a Database Backup
 
-Immich provides two ways to restore a database backup: through the web interface or via the command line. The web interface is the recommended method for most users.
+Frameleaf provides two ways to restore a database backup: through the web interface or via the command line. The web interface is the recommended method for most users.
 
 #### Restore from Settings {#restore-from-settings}
 
-If you have an existing Immich installation:
+If you have an existing Frameleaf installation:
 
 <img
 src={require('./img/restore-from-settings.webp').default}
@@ -60,7 +60,7 @@ Restoring a backup will wipe the current database and replace it with the backup
 
 #### Restore from Onboarding {#restore-from-onboarding}
 
-If you're setting up Immich on a fresh installation and want to restore from an existing backup:
+If you're setting up Frameleaf on a fresh installation and want to restore from an existing backup:
 
 1. Download and populate `.env` and `docker-compose.yml` as per the [installation instructions](/install/docker-compose).
 2. Move the previous's instance data directories containing `backups`, `encoded-video`, `library`, `profile`, `thumbs` and `upload` into the new `UPLOAD_LOCATION`
@@ -81,7 +81,7 @@ Assuming your previous `UPLOAD_LOCATION` was `UPLOAD_LOCATION=/my-broken-instanc
 
 :::
 
-4. Start the Immich services with `docker compose up -d`
+4. Start the Frameleaf services with `docker compose up -d`
 
 <img
 src={require('./img/restore-from-onboarding.webp').default}
@@ -89,7 +89,7 @@ title="Restore from onboarding"
 />
 
 5. On the welcome screen, click **Restore from backup**
-6. Immich will enter maintenance mode and display integrity checks for your storage folders
+6. Frameleaf will enter maintenance mode and display integrity checks for your storage folders
 7. Review the folder status to ensure your library files are accessible
 8. Click **Next** to proceed to backup selection
 9. Select a backup from the list or upload a backup file (`.sql.gz`)
@@ -110,26 +110,26 @@ You can upload a database backup file directly:
 
 ### Backup Version Compatibility {#backup-compatibility}
 
-When viewing backups, Immich displays compatibility indicators based on the current version and the information from the filename:
+When viewing backups, Frameleaf displays compatibility indicators based on the current version and the information from the filename:
 
-- <Icon path={mdiCheckCircle} size={1} color="green"/> Backup version matches current Immich version
-- <Icon path={mdiAlertCircle} size={1} color="#feb001"/> Backup was created with a different Immich version
+- <Icon path={mdiCheckCircle} size={1} color="green"/> Backup version matches current Frameleaf version
+- <Icon path={mdiAlertCircle} size={1} color="#feb001"/> Backup was created with a different Frameleaf version
 - <Icon path={mdiAlertCircle} size={1} color="red"/> Could not determine backup version
 
 :::warning
-Restoring a backup from a different Immich version may require database migrations. The restore process will attempt to run migrations automatically, but you should ensure you're restoring to a compatible version when possible.
+Restoring a backup from a different Frameleaf version may require database migrations. The restore process will attempt to run migrations automatically, but you should ensure you're restoring to a compatible version when possible.
 :::
 
 ### Restore Process {#restore-process}
 
-During restoration, Immich will:
+During restoration, Frameleaf will:
 
 1. Create a backup of the current database (restore point)
 2. Restore the selected backup
 3. Run database migrations if needed
 4. Perform a health check to verify the restore succeeded
 
-If the restore fails (e.g., corrupted backup or missing admin user), Immich will automatically roll back to the restore point.
+If the restore fails (e.g., corrupted backup or missing admin user), Frameleaf will automatically roll back to the restore point.
 
 ### Restore via Command Line {#restore-cli}
 
@@ -145,11 +145,11 @@ docker compose exec -T database pg_dump --clean --if-exists --dbname=<DB_DATABAS
 ```
 
 ```bash title='Restore'
-docker compose down -v  # CAUTION! Deletes all Immich data to start from scratch
+docker compose down -v  # CAUTION! Deletes all Frameleaf data to start from scratch
 ## Uncomment the next line and replace DB_DATA_LOCATION with your Postgres path to permanently reset the Postgres database
-# rm -rf DB_DATA_LOCATION # CAUTION! Deletes all Immich data to start from scratch
-docker compose pull             # Update to latest version of Immich (if desired)
-docker compose create           # Create Docker containers for Immich apps without running them
+# rm -rf DB_DATA_LOCATION # CAUTION! Deletes all Frameleaf data to start from scratch
+docker compose pull             # Update to latest version of Frameleaf (if desired)
+docker compose create           # Create Docker containers for Frameleaf apps without running them
 docker compose up -d database    # Start Postgres server
 sleep 10                        # Wait for Postgres server to start up
 # Check the database user if you deviated from the default
@@ -158,7 +158,7 @@ sleep 10                        # Wait for Postgres server to start up
 gunzip --stdout "/path/to/backup/dump.sql.gz" \
 | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
 | docker compose exec -T database psql --dbname=<DB_DATABASE_NAME> --username=<DB_USERNAME> --single-transaction --set ON_ERROR_STOP=on  # Restore Backup
-docker compose up -d            # Start remainder of Immich apps
+docker compose up -d            # Start remainder of Frameleaf apps
 ```
 
   </TabItem>
@@ -171,12 +171,12 @@ docker compose up -d            # Start remainder of Immich apps
 ```
 
 ```powershell title='Restore'
-docker compose down -v  # CAUTION! Deletes all Immich data to start from scratch
+docker compose down -v  # CAUTION! Deletes all Frameleaf data to start from scratch
 ## Uncomment the next line and replace DB_DATA_LOCATION with your Postgres path to permanently reset the Postgres database
-# Remove-Item -Recurse -Force DB_DATA_LOCATION # CAUTION! Deletes all Immich data to start from scratch
+# Remove-Item -Recurse -Force DB_DATA_LOCATION # CAUTION! Deletes all Frameleaf data to start from scratch
 ## You should mount the backup (as a volume, example: `- 'C:\path\to\backup\dump.sql:/dump.sql'`) into the database service using the docker-compose.yml
-docker compose pull                               # Update to latest version of Immich (if desired)
-docker compose create                             # Create Docker containers for Immich apps without running them
+docker compose pull                               # Update to latest version of Frameleaf (if desired)
+docker compose create                             # Create Docker containers for Frameleaf apps without running them
 docker compose up -d database                      # Start Postgres server
 sleep 10                                          # Wait for Postgres server to start up
 docker compose exec database bash              # Enter the Docker shell and run the following command
@@ -186,18 +186,18 @@ docker compose exec database bash              # Enter the Docker shell and run 
 
 cat "/dump.sql" | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" | psql --dbname=<DB_DATABASE_NAME> --username=<DB_USERNAME>  --single-transaction --set ON_ERROR_STOP=on
 exit                                              # Exit the Docker shell
-docker compose up -d                              # Start remainder of Immich apps
+docker compose up -d                              # Start remainder of Frameleaf apps
 ```
 
   </TabItem>
 </Tabs>
 
 :::warning
-The backup and restore process changed in v2.5.0, if you have a backup created with an older version of Immich, use the documentation version selector to find manual restore instructions for your backup.
+The backup and restore process changed in v2.5.0, if you have a backup created with an older server version, use the documentation version selector to find manual restore instructions for your backup.
 :::
 
 :::note
-For the database restore to proceed properly, it requires a completely fresh install (i.e., the Immich server has never run since creating the Docker containers). If the Immich app has run, you may encounter Postgres conflicts (relation already exists, violated foreign key constraints, etc.). In this case, delete the `DB_DATA_LOCATION` folder to reset the database.
+For the database restore to proceed properly, it requires a completely fresh install (i.e., the Frameleaf server has never run since creating the Docker containers). If the Frameleaf app has run, you may encounter Postgres conflicts (relation already exists, violated foreign key constraints, etc.). In this case, delete the `DB_DATA_LOCATION` folder to reset the database.
 :::
 
 :::tip
@@ -210,7 +210,7 @@ The provided restore process ensures your database is never in a broken state by
 
 ## Filesystem
 
-Immich does not handle filesystem backups for you. You have to arrange these yourself! Immich stores two types of content in the filesystem: (a) original, unmodified assets (photos and videos), and (b) generated content. We recommend backing up the entire contents of `UPLOAD_LOCATION`, but only the original content is critical, which is stored in the following folders:
+Frameleaf does not handle filesystem backups for you. You have to arrange these yourself! Frameleaf stores two types of content in the filesystem: (a) original, unmodified assets (photos and videos), and (b) generated content. We recommend backing up the entire contents of `UPLOAD_LOCATION`, but only the original content is critical, which is stored in the following folders:
 
 1. `UPLOAD_LOCATION/library`
 2. `UPLOAD_LOCATION/upload`
@@ -231,7 +231,7 @@ Some storage locations are impacted by the Storage Template. See below for more 
 
 :::note
 The `UPLOAD_LOCATION/library` folder is not used by default on new machines running version 1.92.0. It is used only if the system administrator activated the storage template engine,
-for more info read the [release notes](https://github.com/immich-app/immich/releases/tag/v1.92.0#:~:text=the%20partner%E2%80%99s%20assets.-,Hardening%20storage%20template).
+for more information see [Storage template](/administration/storage-template).
 :::
 
 **1. User-Specific Folders:**
@@ -254,11 +254,11 @@ for more info read the [release notes](https://github.com/immich-app/immich/rele
   - Videos that have been re-encoded from the original for wider compatibility. The original is not removed.
   - Stored in `UPLOAD_LOCATION/encoded-video/<userID>`.
 - **Database Dump Backups:**
-  - Automatic database backups created by Immich for disaster recovery.
+  - Automatic database backups created by Frameleaf for disaster recovery.
   - Stored in `UPLOAD_LOCATION/backups/`.
 - **Postgres**
-  - The Immich database containing all the information to allow the system to function properly.  
-    **Note:** This folder will only appear to users who have made the changes mentioned in [v1.102.0](https://github.com/immich-app/immich/discussions/8930) (an optional, non-mandatory change) or who started with this version.
+  - The Frameleaf database containing all the information to allow the system to function properly.  
+    **Note:** This folder will only appear to users who have made the database changes introduced in v1.102.0 (an optional, non-mandatory change) or who started with this version.
   - Stored in `DB_DATA_LOCATION`.
 
 </TabItem>
@@ -297,11 +297,11 @@ When you turn off the storage template engine, it will leave the assets in `UPLO
   - Temporarily located in `UPLOAD_LOCATION/upload/<userID>`.
   - Transferred to `UPLOAD_LOCATION/library/<userID>` upon successful upload.
 - **Database Dump Backups:**
-  - Automatic database backups created by Immich for disaster recovery.
+  - Automatic database backups created by Frameleaf for disaster recovery.
   - Stored in `UPLOAD_LOCATION/backups/`.
 - **Postgres**
-  - The Immich database containing all the information to allow the system to function properly.  
-    **Note:** This folder will only appear to users who have made the changes mentioned in [v1.102.0](https://github.com/immich-app/immich/discussions/8930) (an optional, non-mandatory change) or who started with this version.
+  - The Frameleaf database containing all the information to allow the system to function properly.  
+    **Note:** This folder will only appear to users who have made the database changes introduced in v1.102.0 (an optional, non-mandatory change) or who started with this version.
   - Stored in `DB_DATA_LOCATION`.
 
 </TabItem>
@@ -315,7 +315,7 @@ You can think of it as App-Which-Must-Not-Be-Named, the only access to viewing, 
 
 ## Backup ordering
 
-A backup of Immich should contain both the database and the asset files. When backing these up it's possible for them to get out of sync, potentially resulting in broken assets after you restore.  
+A backup of Frameleaf should contain both the database and the asset files. When backing these up it's possible for them to get out of sync, potentially resulting in broken assets after you restore.  
 The best way of dealing with this is to stop the immich-server container while you take a backup. If nothing is changing then the backup will always be in sync.
 
 If stopping the container is not an option, then the recommended order is to back up the database first, and the filesystem second. This way, the worst case scenario is that there are files on the filesystem that the database doesn't know about. If necessary, these can be (re)uploaded manually after a restore. If the backup is done the other way around, with the filesystem first and the database second, it's possible for the restored database to reference files that aren't in the filesystem backup, thus resulting in broken assets.

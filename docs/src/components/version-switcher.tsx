@@ -17,15 +17,13 @@ export default function VersionSwitcher(): JSX.Element {
 
         const archiveVersions = await response.json();
 
-        const allVersions = [
-          { label: 'Next', url: 'https://docs.main.preview.immich.app' },
-          { label: 'Latest', url: 'https://docs.immich.app' },
-          ...archiveVersions,
-        ].map(({ label, url, rootPath }) => ({
-          label,
-          url: new URL(url),
-          rootPath,
-        }));
+        const allVersions = [{ label: 'Latest', url: 'https://help.frameleaf.ai' }, ...archiveVersions].map(
+          ({ label, url, rootPath }) => ({
+            label,
+            url: new URL(url),
+            rootPath,
+          }),
+        );
         setVersions(allVersions);
 
         const activeVersion = allVersions.find((version) => version.url.origin === window.location.origin);
