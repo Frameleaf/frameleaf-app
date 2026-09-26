@@ -49,13 +49,13 @@
 ## Contingut
 
 - [Documentació](https://docs.immich.app/)
-- [Introducció](https://docs.immich.app/overview/introduction)
-- [Instal·lació](https://docs.immich.app/install/requirements)
+- [Introducció](https://help.frameleaf.ai/overview/quick-start)
+- [Instal·lació](https://help.frameleaf.ai/install/requirements)
 - [Mapa de ruta](https://immich.app/roadmap)
 - [Demo](#demo)
 - [Funcionalitats](#funcionalitats)
-- [Traduccions](https://docs.immich.app/developer/translations)
-- [Directrius de contribució](https://docs.immich.app/overview/support-the-project)
+- [Traduccions](https://help.frameleaf.ai/developer/translations)
+- [Directrius de contribució](https://help.frameleaf.ai/overview/support-the-project)
 
 ## Demo
 

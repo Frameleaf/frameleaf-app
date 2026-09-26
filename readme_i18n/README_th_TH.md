@@ -55,13 +55,13 @@
 ## ลิงก์
 
 - [คู่มือ](https://docs.immich.app)
-- [เกี่ยวกับ](https://docs.immich.app/overview/introduction)
-- [การติดตั้ง](https://docs.immich.app/install/requirements)
+- [เกี่ยวกับ](https://help.frameleaf.ai/overview/quick-start)
+- [การติดตั้ง](https://help.frameleaf.ai/install/requirements)
 - [โรดแมป](https://immich.app/roadmap)
 - [สาธิต](#สาธิต)
 - [คุณสมบัติ](#คุณสมบัติ)
-- [การแปลภาษา](https://docs.immich.app/developer/translations)
-- [สนับสนุนโพรเจกต์](https://docs.immich.app/overview/support-the-project)
+- [การแปลภาษา](https://help.frameleaf.ai/developer/translations)
+- [สนับสนุนโพรเจกต์](https://help.frameleaf.ai/overview/support-the-project)
 
 ## สาธิต
 
@@ -108,7 +108,7 @@
 
 ## การแปลภาษา
 
-อ่านเพิ่มเติมเกี่ยวกับการแปล [ที่นี่](https://docs.immich.app/developer/translations)
+อ่านเพิ่มเติมเกี่ยวกับการแปล [ที่นี่](https://help.frameleaf.ai/developer/translations)
 
 <a href="https://hosted.weblate.org/engage/immich/">
   <img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="สถานะการแปล" />

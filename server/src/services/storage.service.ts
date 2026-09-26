@@ -16,7 +16,7 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 
-const docsMessage = `Please see https://docs.immich.app/administration/system-integrity#folder-checks for more information.`;
+const docsMessage = `Please see https://help.frameleaf.ai/administration/system-integrity#folder-checks for more information.`;
 
 @Injectable()
 export class StorageService extends BaseService {
