@@ -6,6 +6,7 @@ import {
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
 } from 'src/dtos/asset-develop.dto.js';
+import { canWriteFork } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 
 export type AssetDevelopRevision = {
@@ -224,14 +225,24 @@ export class AssetDevelopRepository {
   }
 
   /** Every rendered file path for an asset, used when the asset itself is deleted. */
-  async getFilePaths(assetId: string): Promise<string[]> {
-    const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
-      SELECT "masterPath", "previewPath" FROM ${TABLE} WHERE "assetId" = ${assetId}::uuid
-    `.execute(this.db);
-    return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
-  }
-
-  async deleteByAsset(assetId: string): Promise<void> {
-    await sql`DELETE FROM ${TABLE} WHERE "assetId" = ${assetId}::uuid`.execute(this.db);
+  /**
+   * Deletes the revisions of assets that no longer exist (of `assetId` only, when given) and returns
+   * their rendered files for deletion. The revisions have no foreign key to the asset. FL-179: nothing
+   * is deleted while fork writes are refused (a disabled phase, or a handoff or return reconciliation
+   * running), as the asset's removal does; the nightly sweep releases those revisions later.
+   */
+  async releaseRemovedAssetRevisions(assetId?: string): Promise<string[]> {
+    return this.db.transaction().execute(async (tx) => {
+      if (!(await canWriteFork(tx))) {
+        return [];
+      }
+      const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
+        DELETE FROM ${TABLE} revision
+        WHERE NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = revision."assetId")
+        ${assetId ? sql`AND revision."assetId" = ${assetId}::uuid` : sql``}
+        RETURNING revision."masterPath", revision."previewPath"
+      `.execute(tx);
+      return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
+    });
   }
 }
