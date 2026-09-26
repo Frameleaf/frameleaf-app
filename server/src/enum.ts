@@ -1807,6 +1807,10 @@ export enum MetadataKey {
   RateLimit = 'rate_limit',
   /** FL-161: a route that sends originals, archives or database backups, refused over the relay by default. */
   OriginalTransfer = 'original_transfer',
+  /** FL-161: a route (or controller) for machines on the home network only, refused over remote access. */
+  HomeNetworkOnly = 'home_network_only',
+  /** FL-161: a route left out of the per-address remote-access ceiling (thumbnails and previews). */
+  RemoteCeilingExempt = 'remote_ceiling_exempt',
 }
 
 export enum RouteKey {

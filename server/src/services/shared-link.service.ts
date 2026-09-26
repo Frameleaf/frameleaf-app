@@ -17,6 +17,7 @@ import {
 } from 'src/dtos/shared-link.dto.js';
 import { Permission, SharedLinkType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
 import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
@@ -34,8 +35,10 @@ const safeEqual = (a: string, b: string) =>
  * plaintext ones already saved). A password that is still plaintext (a row written before the
  * migration ran) is compared in constant time and hashed on its first correct use, so every link
  * keeps working. The password is never returned: responses carry a fixed mask, and an edit that sends
- * the mask back leaves the password unchanged. The unlock token is derived from the stored hash, so a
- * leaked token reveals nothing about the password, and tokens are compared in constant time.
+ * the mask back leaves the password unchanged. The unlock token kept in the viewer's cookie is an HMAC
+ * of the link and its stored hash under this server's own key, which lives in the identity directory
+ * and never in the database, so neither a leaked token nor a database backup can produce a token or
+ * reveal the password. Tokens are compared in constant time.
  */
 @Injectable()
 export class SharedLinkService extends BaseService {
@@ -68,15 +71,11 @@ export class SharedLinkService extends BaseService {
       throw new UnauthorizedException('Invalid password');
     }
 
-    let stored = password;
-    if (legacy) {
-      stored = await this.cryptoRepository.hashBcrypt(dto.password, SALT_ROUNDS);
-      await this.sharedLinkRepository.update({ id, password: stored });
-    }
+    const stored = legacy ? await this.hashLegacyPassword(auth, id, password, dto.password) : password;
 
     return {
       sharedLink: await this.mapSharedLink(auth, sharedLink, { stripAssetMetadata: !sharedLink.showExif }),
-      token: this.asToken({ id, password: stored }),
+      token: await this.asToken({ id, password: stored }),
     };
   }
 
@@ -88,7 +87,7 @@ export class SharedLinkService extends BaseService {
     const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id, this.nsfwOptions(auth));
     const { id, password } = sharedLink;
 
-    const expected = password ? this.asToken({ id, password }) : null;
+    const expected = password ? await this.asToken({ id, password }) : null;
     if (expected && !authTokens.some((token) => safeEqual(token, expected))) {
       throw new UnauthorizedException('Password required');
     }
@@ -320,9 +319,30 @@ export class SharedLinkService extends BaseService {
     return password ? this.cryptoRepository.hashBcrypt(password, SALT_ROUNDS) : null;
   }
 
-  /** The unlock token kept in the viewer's cookie, derived from the stored hash. */
+  /**
+   * Hash a correct plaintext password on its first use. Only a row that still holds that plaintext is
+   * changed; if another request got there first, its hash is used when it matches the same password,
+   * and a password changed meanwhile is refused.
+   */
+  private async hashLegacyPassword(auth: AuthDto, id: string, legacy: string, input: string): Promise<string> {
+    const hashed = await this.cryptoRepository.hashBcrypt(input, SALT_ROUNDS);
+    if (await this.sharedLinkRepository.replaceLegacyPassword(id, legacy, hashed)) {
+      return hashed;
+    }
+    const current = (await this.findOrFail(auth.user.id, id, this.nsfwOptions(auth))).password;
+    if (current && isBcryptHash(current) && this.cryptoRepository.compareBcrypt(input, current)) {
+      return current;
+    }
+    throw new UnauthorizedException('Invalid password');
+  }
+
+  /** The unlock token kept in the viewer's cookie: an HMAC under this server's own key (see above). */
   private asToken(sharedLink: { id: string; password: string }) {
-    return this.cryptoRepository.hashSha256(`${sharedLink.id}-${sharedLink.password}`).toString('base64');
+    return this.cryptoRepository.serverKeyedHash(
+      identityDirectory(this.configRepository),
+      'shared-link-unlock',
+      `${sharedLink.id}-${sharedLink.password}`,
+    );
   }
 
   private async mapSharedLink(

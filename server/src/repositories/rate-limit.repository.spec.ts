@@ -3,8 +3,9 @@ import { newConfigRepositoryMock } from 'test/repositories/config.repository.moc
 
 const redis = vi.hoisted(() => {
   const exec = vi.fn();
-  const multi = { incr: vi.fn(), ttl: vi.fn(), exec };
+  const multi = { incr: vi.fn(), get: vi.fn(), ttl: vi.fn(), exec };
   multi.incr.mockReturnValue(multi);
+  multi.get.mockReturnValue(multi);
   multi.ttl.mockReturnValue(multi);
   return {
     multi,
@@ -14,6 +15,7 @@ const redis = vi.hoisted(() => {
       status: 'ready',
       multi: vi.fn(() => multi),
       expire: vi.fn(),
+      on: vi.fn(),
       quit: vi.fn(),
       disconnect: vi.fn(),
     },
@@ -33,25 +35,44 @@ describe(RateLimitRepository.name, () => {
   beforeEach(() => {
     vi.clearAllMocks();
     redis.multi.incr.mockReturnValue(redis.multi);
+    redis.multi.get.mockReturnValue(redis.multi);
     redis.multi.ttl.mockReturnValue(redis.multi);
     redis.client.multi.mockReturnValue(redis.multi);
     redis.client.quit.mockResolvedValue('OK');
     sut = new RateLimitRepository(newConfigRepositoryMock() as never);
   });
 
-  it('connects lazily, with commands that fail fast', async () => {
+  it('connects when the API starts, with commands that fail at once instead of queueing', async () => {
     expect(redis.created).not.toHaveBeenCalled();
+    sut.onModuleInit();
+    expect(redis.created).toHaveBeenCalledTimes(1);
+    expect(redis.created).toHaveBeenCalledWith(
+      expect.objectContaining({ enableOfflineQueue: false, maxRetriesPerRequest: 1, commandTimeout: 2000 }),
+    );
+    expect(redis.client.on).toHaveBeenCalledWith('error', expect.any(Function));
+
     redis.exec.mockResolvedValue([
       [null, 3],
       [null, 42],
     ]);
-
     await sut.hit('frameleaf:rate-limit:login:ip:198.51.100.7', 600);
-
     expect(redis.created).toHaveBeenCalledTimes(1);
-    expect(redis.created).toHaveBeenCalledWith(
-      expect.objectContaining({ lazyConnect: true, maxRetriesPerRequest: 1, commandTimeout: 2000 }),
-    );
+  });
+
+  it('reads a counter without counting (peek)', async () => {
+    redis.exec.mockResolvedValueOnce([
+      [null, '4'],
+      [null, 120],
+    ]);
+    await expect(sut.peek('key')).resolves.toEqual({ count: 4, resetSeconds: 120 });
+    expect(redis.multi.get).toHaveBeenCalledWith('key');
+    expect(redis.multi.incr).not.toHaveBeenCalled();
+
+    redis.exec.mockResolvedValueOnce([
+      [null, null],
+      [null, -2],
+    ]);
+    await expect(sut.peek('key')).resolves.toEqual({ count: 0, resetSeconds: 1 });
   });
 
   it('counts with INCR and reports the time left in the window', async () => {

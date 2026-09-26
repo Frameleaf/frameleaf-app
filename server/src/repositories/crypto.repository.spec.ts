@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHmac } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { CryptoRepository, SERVER_HMAC_KEY_FILE } from 'src/repositories/crypto.repository.js';
 
 describe(CryptoRepository.name, () => {
   let sut: CryptoRepository;
@@ -82,6 +83,32 @@ describe(CryptoRepository.name, () => {
         sha256: SHA256_ABC,
         sizeInBytes: 3,
       });
+    });
+  });
+
+  describe('serverKeyedHash (FL-161)', () => {
+    it('keys the hash with a 0600 file it creates once, and separates purposes', async () => {
+      const directory = join(tmpDir, 'identity');
+      const first = await sut.serverKeyedHash(directory, 'shared-link-unlock', 'link-1');
+
+      const key = readFileSync(join(directory, SERVER_HMAC_KEY_FILE));
+      expect(key).toHaveLength(32);
+      expect(statSync(join(directory, SERVER_HMAC_KEY_FILE)).mode & 0o777).toBe(0o600);
+      expect(first).toBe(createHmac('sha256', key).update('shared-link-unlock\0link-1').digest('base64url'));
+
+      // a fresh process reads the same key back
+      await expect(new CryptoRepository().serverKeyedHash(directory, 'shared-link-unlock', 'link-1')).resolves.toBe(
+        first,
+      );
+      await expect(sut.serverKeyedHash(directory, 'rate-limit', 'link-1')).resolves.not.toBe(first);
+    });
+
+    it('refuses a damaged key instead of replacing it', async () => {
+      const directory = join(tmpDir, 'damaged');
+      mkdirSync(directory);
+      writeFileSync(join(directory, SERVER_HMAC_KEY_FILE), Buffer.alloc(40));
+
+      await expect(sut.serverKeyedHash(directory, 'rate-limit', 'x')).rejects.toThrow('is damaged');
     });
   });
 });
