@@ -409,7 +409,7 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       expect(
         within(picker).getByText('Qwen2.5-VL 32B needs about 64 GB of GPU memory; NVIDIA GeForce RTX 3060 has 12 GB.'),
       ).toBeInTheDocument();
-      expect(within(picker).getByText(/downloads from Hugging Face the first time a job uses it/)).toBeInTheDocument();
+      expect(within(picker).getByText(/downloads the first time a job uses it/)).toBeInTheDocument();
 
       await fireEvent.click(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B: CPU · slow/ }));
       expect(store.draft.machineLearning.imageDescription.modelName).toBe('Qwen/Qwen2.5-VL-7B-Instruct');
@@ -434,8 +434,12 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       const picker = await findPicker('descriptions & tags');
       const cloud = await vi.waitFor(() => cloudStops(picker, 'Descriptions & tags'));
       const local = localStopsOf(picker);
-      // one track: this server's stops, then Frameleaf Cloud's
+      // one track: this server's stops, then Frameleaf Cloud's; each side is a real radio group, sized by stop count
       expect(radioValues(picker)).toEqual([...LOCAL_MODELS, 'ms_DESCFAST', 'ms_DESCBEST', 'ms_DESCHUGE']);
+      expect(local.parentElement).toBe(cloud.parentElement);
+      expect(local.nextElementSibling).toBe(cloud);
+      expect(local.style.getPropertyValue('--ms-count')).toBe(String(LOCAL_MODELS.length));
+      expect(cloud.style.getPropertyValue('--ms-count')).toBe('3');
       expect(within(picker).getByText('Blue · Frameleaf Cloud only, cost shown first')).toBeInTheDocument();
 
       await fireEvent.click(within(cloud).getByRole('radio', { name: /Descriptions · Huge/ }));
