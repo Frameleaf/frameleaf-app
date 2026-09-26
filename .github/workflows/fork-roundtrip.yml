@@ -1,14 +1,22 @@
 name: Fork schema official-container certification
 
+# Compatibility-target exception (FL-191): these lanes certify the handoff to and from the official
+# server, so they pull its exact pinned image (OFFICIAL_IMMICH_TAG below, digest-checked by
+# scripts/test-fork-roundtrip.sh). This is the only place Frameleaf CI pulls an upstream image; the
+# database, the candidate server and everything a Frameleaf installation runs are Frameleaf-built.
+
 on:
   workflow_call:
   pull_request:
     paths:
       - '.github/workflows/fork-roundtrip.yml'
+      - 'docker/postgres/**'
       - 'e2e/docker-compose.fork-roundtrip.yml'
       - 'e2e/src/specs/server/fork-schema-*.ts'
       - 'scripts/test-fork-roundtrip.sh'
       - 'scripts/test-fork-roundtrip.test.mjs'
+      - 'server/Dockerfile'
+      - 'server/base-image/**'
       - 'server/src/app.module.ts'
       - 'server/src/commands/**'
       - 'server/src/fork-schema/**'
@@ -38,7 +46,8 @@ jobs:
       ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     name: ${{ matrix.lane }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # The candidate image now compiles its own media libraries (FL-191), which adds to the build.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:

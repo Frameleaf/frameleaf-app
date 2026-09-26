@@ -16,9 +16,10 @@ services:
       context: ../
       dockerfile: server/Dockerfile
       cache_from:
-        # hash is the sha256 of the build-args in docker.yml
-        - type=registry,ref=ghcr.io/immich-app/immich-server-build-cache:linux-amd64-cc099f297acd18c924b35ece3245215b53d106eb2518e3af6415931d055746cd-main
-        - type=registry,ref=ghcr.io/immich-app/immich-server-build-cache:linux-arm64-cc099f297acd18c924b35ece3245215b53d106eb2518e3af6415931d055746cd-main
+        # Frameleaf's own build cache, written by the Deploy workflow for fork/main builds
+        # (.github/workflows/local-multi-runner-build.yml). A missing cache only makes the build slower.
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-amd64-cpu-prod
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-arm64-cpu-prod
       args:
         - BUILD_ID=1234567890
         - BUILD_IMAGE=e2e
@@ -53,7 +54,11 @@ services:
 
   database:
     container_name: immich-e2e-postgres
-    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    image: frameleaf-postgres:e2e
+    # Built from Frameleaf's own Postgres image source (docker/postgres).
+    build:
+      context: ../docker/postgres
+      dockerfile: Dockerfile
     command: -c fsync=off -c shared_preload_libraries=vchord.so -c config_file=/var/lib/postgresql/data/postgresql.conf
     environment:
       POSTGRES_PASSWORD: postgres

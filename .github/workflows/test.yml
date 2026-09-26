@@ -375,7 +375,8 @@ jobs:
           path: |
             e2e/docker-compose-logs.txt
             e2e/docker-diagnostics-after-api-tests.txt
-    timeout-minutes: 60
+    # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
+    timeout-minutes: 120
   e2e-tests-web:
     name: End-to-End Tests (Web)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
@@ -460,7 +461,8 @@ jobs:
         with:
           name: e2e-web-docker-logs-${{ matrix.runner }}
           path: e2e/docker-compose-logs.txt
-    timeout-minutes: 60
+    # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
+    timeout-minutes: 120
   success-check-e2e:
     name: End-to-End Tests Success
     needs:
@@ -594,21 +596,33 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-    services:
-      postgres:
-        image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3@sha256:dbf18b3ffea4a81434c65b71e20d27203baf903a0275f4341e4c16dfd901fd67
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_USER: postgres
-          POSTGRES_DB: immich
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-        ports:
-          - 5432:5432
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      # Frameleaf's own Postgres image (docker/postgres), built here rather than pulled. VectorChord is the
+      # only preloaded extension and the search path is the default, matching the schema baseline.
+      - name: Start Frameleaf Postgres
+        run: |-
+          set -euo pipefail
+          docker build -t frameleaf-postgres:ci docker/postgres
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=immich \
+            frameleaf-postgres:ci \
+            postgres -c config_file=/etc/postgresql/postgresql.conf \
+            -c shared_preload_libraries=vchord.so -c 'search_path="$user", public'
+          for _ in $(seq 1 60); do
+            logs=$(docker logs postgres 2>&1 || true)
+            if [[ "$logs" == *'PostgreSQL init process complete'* ]] &&
+              docker exec postgres pg_isready -U postgres -d immich > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs postgres
+          echo "::error::Postgres did not become ready."
+          exit 1
       - name: Setup Mise
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
         with:
