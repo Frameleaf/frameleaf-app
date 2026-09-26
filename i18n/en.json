@@ -3776,6 +3776,7 @@
   "frameleaf_cloud_restore_library_banner_title": "The database comes back through maintenance",
   "frameleaf_cloud_restore_library_start": "Start whole-library restore",
   "frameleaf_cloud_restore_load_failed": "The kept backups could not be read.",
+  "frameleaf_cloud_restore_locked_item": "Locked item",
   "frameleaf_cloud_restore_mode_items": "Items",
   "frameleaf_cloud_restore_mode_library": "Whole library",
   "frameleaf_cloud_restore_more": "Showing {shown} of {total}. Search by file name to narrow the list.",

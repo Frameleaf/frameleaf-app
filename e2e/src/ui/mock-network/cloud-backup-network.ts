@@ -43,6 +43,7 @@ export const MANIFEST_ITEMS = [
   {
     assetId: '8c5c3a24-2f65-4a8e-b3d4-3f1c3cb0c3e1',
     name: 'Elk.jpg',
+    locked: false,
     ownerId: 'owner-1',
     ownerName: 'Taylor',
     files: 2,
@@ -53,6 +54,7 @@ export const MANIFEST_ITEMS = [
   {
     assetId: '1d7c9e02-5b1a-4c3e-9f7d-2a6b8c0d1e2f',
     name: 'IMG_2041.HEIC',
+    locked: false,
     ownerId: 'owner-1',
     ownerName: 'Taylor',
     files: 1,

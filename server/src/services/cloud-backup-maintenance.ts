@@ -49,6 +49,8 @@ export type CloudBackupPruneResult = {
   objectsRemoved: number;
   bytesRemoved: number;
   dumpsRemoved: number;
+  /** Objects deleted so far, of `objectsRemoved`. */
+  deleted: number;
 };
 
 /** What a verification has checked so far. Kept on the operation row, with its cursor, as its result. */
@@ -63,6 +65,8 @@ export type CloudBackupVerifyResult = {
   missing: number;
   mismatched: number;
   degradedManifests: number;
+  /** The manifests marked degraded so far (at most `VERIFY_BAD_KEPT`), so a resumed check counts each once. */
+  degradedKeys: string[];
   /** The last object checked, in SHA-256 order: a resumed verification carries on after it. */
   cursor: string | null;
   /** The objects found missing or damaged (at most `VERIFY_BAD_KEPT` of them). */
@@ -85,6 +89,7 @@ export const emptyPruneResult = (dryRun: boolean): CloudBackupPruneResult => ({
   objectsRemoved: 0,
   bytesRemoved: 0,
   dumpsRemoved: 0,
+  deleted: 0,
 });
 
 export const emptyVerifyResult = (depth: 'sample' | 'full', now: Date): CloudBackupVerifyResult => ({
@@ -97,6 +102,7 @@ export const emptyVerifyResult = (depth: 'sample' | 'full', now: Date): CloudBac
   missing: 0,
   mismatched: 0,
   degradedManifests: 0,
+  degradedKeys: [],
   cursor: null,
   bad: [],
 });
@@ -187,17 +193,18 @@ export class CloudBackupMaintenance {
       return { ...result, done: true };
     }
 
-    // The manifests go first: once one is gone nothing can restore from it, and the objects only it
-    // named are unreferenced whichever way this is interrupted.
-    for (const manifest of plan.remove) {
-      await this.store.delete(bucket.connection, manifest.key);
-    }
+    // The manifests go first, marked pruned before they are deleted so nothing offers a restore from one
+    // that is going; the objects only they named are unreferenced whichever way this is interrupted.
     await this.index.markManifests(
       bucket.bucketRef,
       plan.remove.map(({ key }) => key),
       'pruned',
     );
+    for (const manifest of plan.remove) {
+      await this.store.delete(bucket.connection, manifest.key);
+    }
 
+    let progress = result;
     for (let start = 0; start < objects.length; start += MAINTENANCE_BATCH) {
       const batch = objects.slice(start, start + MAINTENANCE_BATCH);
       const hashes = batch.map(({ key }) => key.slice(CLOUD_BACKUP_OBJECT_PREFIX.length));
@@ -207,15 +214,16 @@ export class CloudBackupMaintenance {
       for (const { key } of batch) {
         await this.store.delete(bucket.connection, key);
       }
+      progress = { ...progress, deleted: progress.deleted + batch.length };
       // a pause or cancel stops here; the next clean-up plans again from the bucket as it is then
-      if (!(await checkpoint(result))) {
+      if (!(await checkpoint(progress))) {
         return null;
       }
     }
     for (const { key } of staleDumps) {
       await this.store.delete(bucket.connection, key);
     }
-    return { ...result, done: true };
+    return { ...progress, done: true };
   }
 
   async verify(
@@ -260,10 +268,10 @@ export class CloudBackupMaintenance {
       ...start,
       total: hashes.length + (start.depth === 'full' ? dumps.size : 0),
     };
-    // manifests marked degraded by this claim (a resumed verification counts on from its result)
-    const degraded = new Set<string>(unreadable);
+    // manifests marked degraded, counted once each across a resumed verification's claims
+    const degraded = new Set<string>([...(start.degradedKeys ?? []), ...unreadable]);
     const bad: string[] = [];
-    const degradedCount = () => start.degradedManifests + degraded.size;
+    const degradedCount = () => Math.max(start.degradedManifests, degraded.size);
 
     const record = (sha256: string, problem: 'missing' | 'mismatched') => {
       bad.push(sha256);
@@ -288,7 +296,11 @@ export class CloudBackupMaintenance {
         result = { ...result, checked: result.checked + 1, cursor: sha256 };
       }
       await this.settleBad(bucket, bad.splice(0), degraded);
-      result = { ...result, degradedManifests: degradedCount() };
+      result = {
+        ...result,
+        degradedManifests: degradedCount(),
+        degradedKeys: [...degraded].slice(0, VERIFY_BAD_KEPT),
+      };
       if (!(await checkpoint(result))) {
         return null;
       }
