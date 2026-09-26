@@ -85,7 +85,7 @@ Anyone can activate their own `FL-I…` key under **Your preferences → Support
 
 ## Cloud backup
 
-**Settings › Frameleaf Cloud › Cloud backup** backs up this server's originals and database to a bucket that only this server uses. Setup needs a linked server with cloud backup in its plan. Frameleaf-managed storage is not available yet; for now use your own bucket on any S3-compatible provider that supports customer-provided encryption keys (SSE-C), such as Wasabi. The storage address must use HTTPS.
+**Settings › Frameleaf Cloud › Cloud backup** backs up this server's originals and database to a bucket that only this server uses. Setup needs a linked server with cloud backup in its plan. Frameleaf-managed storage is not available yet; for now use your own bucket on any S3-compatible provider that supports customer-provided encryption keys (SSE-C), such as Wasabi. The storage address must use HTTPS. Frameleaf addresses the bucket by path (`<storage address>/<bucket>`), so on Amazon S3 use the bucket's regional endpoint, for example `https://s3.eu-central-1.amazonaws.com`; a bucket in another region is refused with a message saying so. Amazon S3 turns SSE-C off by default on new buckets: allow it in the bucket's default encryption settings (remove SSE-C from the blocked encryption types) before you check the bucket. A server clock that is off is refused by the provider too; keep the server's time synchronised.
 
 Setup has four steps:
 
@@ -102,11 +102,11 @@ The key is never part of the settings, a database dump, a log or an answer from 
 
 **Back up now** starts a run, which shows in Activity. A run backs up, in this order:
 
-- a fresh database dump, as `db/<file>`; the bucket keeps the seven most recent dumps;
+- a fresh database dump, as `db/<file>`; the bucket keeps the seven most recent dumps and every dump a complete backup names;
 - every original, sidecar and profile image, each unique file once as `o/<sha256>`. Locked and trashed photos are included; files in external libraries are not. Thumbnails, previews and transcoded videos are left out unless you include them in the settings;
 - a manifest of the run, `m/<time>.json.gz`, naming every photo's files by checksum.
 
-Only new or changed files upload: a photo you have twice is stored once, a second run with nothing changed uploads no files, and a file that changed is uploaded under its new checksum. A file is read once while it uploads and must match the checksum it is stored under, or it is left for the next run. Nothing on this server is changed or removed by a run, except its own temporary database dump once it is in the bucket.
+Only new or changed files upload: a photo you have twice is stored once, a second run with nothing changed uploads no files, and a file that changed is uploaded under its new checksum. A checksum on record is trusted only while the file is unchanged at the path it was verified at; anything else is hashed again. A file is read once while it uploads and must match the checksum it is stored under, or it is left for the next run. The manifest is written as the run's last step, streamed from what the run recorded, and never written twice. Each run checks the bucket's claim first: a bucket that was emptied, recreated or claimed by another server is refused until cloud backup is set up again, and setting up an emptied or recreated bucket again starts from its new listing. Nothing on this server is changed or removed by a run, except its own temporary database dump once it is in the bucket.
 
 A run records where it is every 25 photos. The administrator who started it can pause, resume or cancel it in Activity, and a run interrupted by a restart carries on with the same manifest. A run that fails is retried once; if it fails again, administrators are told once a day. The status card shows the last run, the last complete backup and the storage used.
 

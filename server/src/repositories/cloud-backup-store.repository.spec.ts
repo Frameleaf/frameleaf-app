@@ -8,6 +8,7 @@ import {
   CloudBackupFileChangedError,
   CloudBackupStoreError,
   CloudBackupStoreRepository,
+  SSE_C_REFUSED_MESSAGE,
   signS3Request,
 } from 'src/repositories/cloud-backup-store.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -34,8 +35,12 @@ class FakeS3 {
   seen: Seen[] = [];
   /** A provider that ignores SSE-C: stores the body and never echoes the algorithm. */
   ignoresSseC = false;
-  /** Status codes to answer before the next request goes through. */
-  failures: number[] = [];
+  /** Answers to give before the next request goes through: a status, or a status with its error code. */
+  failures: Array<number | { status: number; code: string }> = [];
+  /** A bucket that refuses SSE-C (Amazon S3's default for new buckets): a PUT with a customer key is 403. */
+  refusesSseC = false;
+  /** CompleteMultipartUpload finishes the object, then its answer is lost (a 500), once. */
+  loseCompleteAnswer = false;
 
   fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === 'string' ? input : input.toString());
@@ -51,7 +56,8 @@ class FakeS3 {
 
     const failure = this.failures.shift();
     if (failure) {
-      return new Response(`<Error><Code>SlowDown</Code></Error>`, { status: failure });
+      const { status, code } = typeof failure === 'number' ? { status: failure, code: 'SlowDown' } : failure;
+      return new Response(`<Error><Code>${code}</Code></Error>`, { status });
     }
 
     expect(headers.get('authorization')).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE\//);
@@ -64,6 +70,9 @@ class FakeS3 {
     const needsKey = (method === 'PUT' || method === 'GET' || method === 'HEAD' || method === 'POST') && key !== '';
     if (needsKey && !hasSseC) {
       return new Response('<Error><Code>InvalidRequest</Code></Error>', { status: 400 });
+    }
+    if (this.refusesSseC && method === 'PUT' && hasSseC) {
+      return new Response('<Error><Code>AccessDenied</Code></Error>', { status: 403 });
     }
     const keyMd5 = this.ignoresSseC ? null : headers.get('x-amz-server-side-encryption-customer-key-md5');
     const echo: Record<string, string> = this.ignoresSseC
@@ -109,6 +118,10 @@ class FakeS3 {
         keyMd5: upload.keyMd5,
       });
       this.uploads.delete(uploadId);
+      if (this.loseCompleteAnswer) {
+        this.loseCompleteAnswer = false;
+        return new Response('<Error><Code>InternalError</Code></Error>', { status: 500 });
+      }
       return new Response('<CompleteMultipartUploadResult><ETag>"multi-2"</ETag></CompleteMultipartUploadResult>', {
         headers: echo,
       });
@@ -368,6 +381,85 @@ describe(CloudBackupStoreRepository.name, () => {
     s3.failures = [403];
     await expect(sut.put(connection, 'o/abc', Buffer.from('x'), bucketKey)).rejects.toMatchObject({ status: 403 });
     expect(s3.seen.filter(({ method }) => method === 'PUT')).toHaveLength(3);
+  });
+
+  it('sends no customer key with a listing', async () => {
+    await sut.list(connection, 'o/');
+
+    const listing = s3.seen.find(({ key }) => key === '')!;
+    expect(listing.hasSseC).toBe(false);
+    for (const name of SSE_HEADERS) {
+      expect(listing.headers.has(name)).toBe(false);
+    }
+  });
+
+  it('streams an upload of unknown length: one PUT when it fits in a part, 8 MiB parts when it does not', async () => {
+    const small = randomBytes(2000);
+    await expect(
+      sut.uploadStream(connection, 'm/small.json.gz', [small], bucketKey, 'application/gzip'),
+    ).resolves.toEqual({
+      etag: '"etag-1"',
+      size: 2000,
+    });
+    expect(s3.objects.get('m/small.json.gz')?.body).toEqual(small);
+
+    const large = randomBytes(CLOUD_BACKUP_PART_BYTES + 5000);
+    const chunks = Array.from({ length: Math.ceil(large.length / 65_536) }, (_, i) =>
+      large.subarray(i * 65_536, (i + 1) * 65_536),
+    );
+    await expect(
+      sut.uploadStream(connection, 'm/large.json.gz', chunks, bucketKey, 'application/gzip'),
+    ).resolves.toEqual({
+      etag: '"multi-2"',
+      size: large.length,
+    });
+    expect(s3.objects.get('m/large.json.gz')?.body).toEqual(large);
+    const parts = s3.seen.filter(
+      ({ method, key, query }) => method === 'PUT' && key === 'm/large.json.gz' && query.has('partNumber'),
+    );
+    expect(parts).toHaveLength(2);
+    s3.expectSseCOnEveryObjectCall();
+  });
+
+  it('accepts a completed upload whose answer was lost, once the object is there with the size uploaded', async () => {
+    const content = randomBytes(CLOUD_BACKUP_PART_BYTES + 100);
+    const path = join(directory, 'lost-answer.mov');
+    await writeFile(path, content);
+    s3.loseCompleteAnswer = true;
+
+    await expect(sut.uploadFile(connection, `o/${sha256(content)}`, path, bucketKey, sha256(content))).resolves.toEqual(
+      {
+        etag: '"etag-1"',
+        size: content.length,
+      },
+    );
+    expect(s3.objects.get(`o/${sha256(content)}`)?.body).toEqual(content);
+    expect(s3.seen.some(({ method, key }) => method === 'HEAD' && key === `o/${sha256(content)}`)).toBe(true);
+  });
+
+  it('says a bucket refuses SSE-C when a customer-key PUT is refused after the listing was allowed', async () => {
+    s3.refusesSseC = true;
+
+    await expect(sut.probe(connection)).rejects.toMatchObject({
+      reason: 'sse-c-unsupported',
+      message: SSE_C_REFUSED_MESSAGE,
+    });
+    expect(SSE_C_REFUSED_MESSAGE).toContain('Amazon S3 turns SSE-C off by default on new buckets');
+    await expect(
+      sut.claim(connection, bucketKey, { instanceId: 'instance-1', keyFingerprint: 'ABCD-1234', now: new Date() }),
+    ).rejects.toMatchObject({ reason: 'sse-c-unsupported' });
+  });
+
+  it('names the common setup mistakes: a server clock that is off, and a bucket in another region', async () => {
+    s3.failures = [{ status: 403, code: 'RequestTimeTooSkewed' }];
+    await expect(sut.list(connection, '')).rejects.toThrow('clock is off');
+
+    s3.failures = [{ status: 301, code: 'PermanentRedirect' }];
+    await expect(sut.list(connection, '')).rejects.toThrow('regional endpoint');
+  });
+
+  it('reports a claim that is gone from an emptied or recreated bucket', async () => {
+    await expect(sut.readMarker(connection, bucketKey)).rejects.toMatchObject({ reason: 'claim-missing' });
   });
 
   it('never puts the bucket key or the secret in an error message', async () => {

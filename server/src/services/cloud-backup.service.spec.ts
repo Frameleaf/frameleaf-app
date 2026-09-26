@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
+import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repository.js';
 import { DatabaseLock, MediaOperationKind, MediaOperationStatus, SystemMetadataKey } from 'src/enum.js';
 import {
   CloudBackupClaimError,
@@ -82,8 +83,23 @@ const asset = (id: string, sha256: string | null, files: Array<{ type: string; p
   sha256,
   checksumSize: 100,
   verifiedAt: new Date('2026-09-10T00:00:00.000Z'),
+  checksumPathVerified: true,
   files,
 });
+
+const entry = (fileKey: string, overrides: Partial<CloudBackupEntry> = {}): CloudBackupEntry => ({
+  fileKey,
+  assetId: fileKey.split(':')[0],
+  ownerId: 'owner-1',
+  role: 'original',
+  path: `/data/library/${fileKey}`,
+  sha256: SHA_A,
+  size: 100,
+  mtime: new Date('2026-09-01T00:00:00.000Z'),
+  ...overrides,
+});
+
+const dumpKey = 'db/cloud-backup-immich-db-backup-dump.sql.gz';
 
 describe(CloudBackupService.name, () => {
   let sut: CloudBackupService;
@@ -94,6 +110,8 @@ describe(CloudBackupService.name, () => {
   let index: Record<string, ReturnType<typeof vi.fn>>;
   let keys: Record<string, ReturnType<typeof vi.fn>>;
   let databaseBackup: Record<string, ReturnType<typeof vi.fn>>;
+  /** What each streamed upload sent (the gzipped manifests). */
+  let streamed: Buffer[];
 
   const build = () =>
     new CloudBackupService(
@@ -116,6 +134,10 @@ describe(CloudBackupService.name, () => {
     );
 
   const uploadedKeys = () => store.uploadFile.mock.calls.map(([, objectKey]) => objectKey as string);
+  const manifestOf = (at = 0) => JSON.parse(gunzipSync(streamed[at]).toString());
+  type Recorded = { mock: { calls: unknown[][]; invocationCallOrder: number[] } };
+  const orderOf = (recorded: Recorded, predicate: (args: unknown[]) => boolean) =>
+    recorded.mock.invocationCallOrder[recorded.mock.calls.findIndex((args) => predicate(args))];
 
   beforeEach(() => {
     mocks = getMocks();
@@ -131,6 +153,8 @@ describe(CloudBackupService.name, () => {
     mocks.instanceIdentity.loadOrCreate.mockResolvedValue(instance as never);
     mocks.event.emit.mockResolvedValue();
     mocks.storage.stat.mockResolvedValue({ size: 100, mtime: new Date('2026-09-01T00:00:00.000Z') } as never);
+    mocks.storage.readdir.mockResolvedValue([]);
+    streamed = [];
     mocks.crypto.hashFile.mockImplementation((path: string | Buffer) =>
       Promise.resolve(Buffer.from(hex(String(path).includes('dump') ? 'dump' : String(path)), 'hex')),
     );
@@ -162,8 +186,23 @@ describe(CloudBackupService.name, () => {
           Promise.resolve({ etag: '"etag"', size: path.includes('dump') ? 50 : 100 }),
         ),
       put: vi.fn().mockResolvedValue({ etag: '"manifest"', encrypted: true }),
+      uploadStream: vi.fn().mockImplementation(async (_connection, _key, source: AsyncIterable<Buffer>) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of source) {
+          chunks.push(Buffer.from(chunk));
+        }
+        streamed.push(Buffer.concat(chunks));
+        return { etag: '"manifest"', size: streamed.at(-1)!.length };
+      }),
       delete: vi.fn().mockResolvedValue(undefined),
       listAll: vi.fn().mockResolvedValue(0),
+      readMarker: vi.fn().mockResolvedValue({
+        format: 'frameleaf-backup',
+        version: 1,
+        instanceId: 'instance-1',
+        keyFingerprint: fingerprint,
+        claimedAt: '2026-09-25T00:00:00.000Z',
+      }),
     };
     index = {
       getExisting: vi.fn().mockResolvedValue(new Set()),
@@ -174,20 +213,29 @@ describe(CloudBackupService.name, () => {
       getManifest: vi.fn().mockResolvedValue(undefined),
       finishManifest: vi.fn().mockResolvedValue(undefined),
       upsertEntries: vi.fn().mockResolvedValue(undefined),
-      getEntries: vi.fn().mockResolvedValue([]),
+      getEntriesPage: vi.fn().mockResolvedValue([]),
       deleteEntries: vi.fn().mockResolvedValue(undefined),
+      deleteBucket: vi.fn().mockResolvedValue(undefined),
+      currentTime: vi.fn().mockResolvedValue(new Date('2026-09-26T02:59:00.000Z')),
+      pruneUnseen: vi.fn().mockResolvedValue(0),
+      setManifestDatabase: vi.fn().mockResolvedValue(undefined),
+      listManifestDatabaseKeys: vi.fn().mockResolvedValue(new Set()),
+      endAbandonedManifests: vi.fn().mockResolvedValue(0),
       countAssets: vi.fn().mockResolvedValue(3),
       listAssets: vi.fn().mockResolvedValue([]),
       listProfileImages: vi.fn().mockResolvedValue([]),
     };
     keys = {
       read: vi.fn().mockResolvedValue(null),
-      write: vi.fn().mockResolvedValue('/identity/cloud-backup.key'),
+      write: vi.fn().mockResolvedValue({ path: '/identity/cloud-backup.key', created: true }),
+      remove: vi.fn().mockResolvedValue(undefined),
     };
     databaseBackup = {
       createDatabaseBackup: vi.fn().mockResolvedValue('/data/backups/cloud-backup-immich-db-backup-dump.sql.gz'),
     };
     sut = build();
+    // an own-memory key is asked for without waiting; a spec that needs the wait sets it
+    sut.keyAskMs = 0;
   });
 
   describe('setup', () => {
@@ -220,6 +268,8 @@ describe(CloudBackupService.name, () => {
         expect.stringContaining(key.toString('base64')),
       );
       expect(JSON.parse(keys.write.mock.calls[0][2] as string)).toMatchObject({ mode: 'server', fingerprint });
+      // the key file is written and read back before the bucket is claimed with it
+      expect(keys.write.mock.invocationCallOrder[0]).toBeLessThan(store.claim.mock.invocationCallOrder[0]);
 
       // the key is never configuration: only the secret access key is, as a write-only credential
       const [persisted, saved] = mocks.forkSchema.persistConfig.mock.calls.at(-1)!;
@@ -256,6 +306,10 @@ describe(CloudBackupService.name, () => {
 
       expect(keys.write).not.toHaveBeenCalled();
       expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyShare', { key: key.toString('base64') });
+      // shared only once the claim is saved, so the other workers accept it
+      const saved = orderOf(mocks.systemMetadata.set, ([name]) => name === SystemMetadataKey.FrameleafCloudBackup);
+      const shared = orderOf(mocks.websocket.serverSend, ([name]) => name === 'CloudBackupKeyShare');
+      expect(saved).toBeLessThan(shared);
       expect(status.keyLoaded).toBe(true);
     });
 
@@ -273,9 +327,46 @@ describe(CloudBackupService.name, () => {
       );
 
       await expect(setup()).rejects.toThrow(ConflictException);
-      expect(keys.write).not.toHaveBeenCalled();
+      // the key file this setup created goes again
+      expect(keys.remove).toHaveBeenCalledWith('/identity', fingerprint);
       expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toBeUndefined();
+    });
+
+    it('keeps a key file that was already there when the claim fails', async () => {
+      keys.write.mockResolvedValue({ path: '/identity/cloud-backup.key', created: false });
+      store.claim.mockRejectedValue(
+        new CloudBackupClaimError('not-empty', 'This bucket already contains other files.'),
+      );
+
+      await expect(setup()).rejects.toThrow(ConflictException);
+      expect(keys.remove).not.toHaveBeenCalled();
+    });
+
+    it('never claims a bucket with a key it could not keep', async () => {
+      keys.write.mockRejectedValue(new Error('EACCES: permission denied'));
+
+      await expect(setup()).rejects.toThrow('could not be stored on this server');
+      expect(store.claim).not.toHaveBeenCalled();
+    });
+
+    it('forgets what it knew of a bucket it claims afresh (emptied or recreated), and keeps it for its own claim', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+
+      await setup();
+
+      expect(index.deleteBucket).toHaveBeenCalledWith(ref);
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).not.toHaveProperty('reconciledAt');
+
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      index.deleteBucket.mockClear();
+      store.claim.mockResolvedValue({ existing: true, claimedAt: '2026-09-25T00:00:00.000Z' });
+      await setup();
+
+      expect(index.deleteBucket).not.toHaveBeenCalled();
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+        reconciledAt: '2026-09-25T00:00:00.000Z',
+      });
     });
 
     it('refuses an HTTP storage address and a key that is not 256 bits', async () => {
@@ -334,6 +425,23 @@ describe(CloudBackupService.name, () => {
       expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyShare', { key: key.toString('base64') });
     });
 
+    it('asks the other workers for the key when this worker restarted without it', async () => {
+      sut.keyAskMs = 5000;
+      const status = sut.getStatus();
+      await vi.waitFor(() => expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest'));
+
+      // another worker answers: the status is read with the key, without waiting out the timeout
+      await sut.onKeyShare({ key: key.toString('base64') });
+
+      await expect(status).resolves.toMatchObject({ keyLoaded: true });
+    });
+
+    it('asks for the key when a worker starts', async () => {
+      await sut.onBootstrapAskForKey();
+
+      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest');
+    });
+
     it('has nothing to unlock in the stored key modes', async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: 'server' });
 
@@ -377,17 +485,9 @@ describe(CloudBackupService.name, () => {
           asset('asset-3', SHA_B, [{ type: 'sidecar', path: 'sidecar' }]),
         ])
         .mockResolvedValueOnce([]);
-      index.getEntries.mockResolvedValue([
-        {
-          fileKey: 'asset-1:original',
-          assetId: 'asset-1',
-          ownerId: 'owner-1',
-          role: 'original',
-          path: '/a',
-          sha256: SHA_A,
-          size: 100,
-          mtime: new Date(),
-        },
+      index.getEntriesPage.mockResolvedValue([
+        entry('asset-1:original'),
+        entry('profile:owner-1', { assetId: null, role: 'profile', sha256: SHA_C }),
       ]);
 
       await sut.run(operationOf(), 'claim-1');
@@ -413,17 +513,53 @@ describe(CloudBackupService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledOnce();
       expect(mocks.storage.unlink).toHaveBeenCalledWith('/data/backups/cloud-backup-immich-db-backup-dump.sql.gz');
 
-      const [, manifestKey, body, bucketKey] = store.put.mock.calls[0];
+      const [, manifestKey, , bucketKey, contentType] = store.uploadStream.mock.calls[0];
       expect(manifestKey).toBe('m/20260926T030000Z.json.gz');
       expect(bucketKey).toEqual(key);
-      const manifest = JSON.parse(gunzipSync(body as Buffer).toString());
-      expect(manifest).toMatchObject({
+      expect(contentType).toBe('application/gzip');
+      expect(manifestOf()).toEqual({
         format: 'frameleaf-backup-manifest',
+        version: 1,
         instanceId: 'instance-1',
-        database: { key: 'db/cloud-backup-immich-db-backup-dump.sql.gz', sha256: SHA_DUMP },
-        assets: { 'asset-1': { owner: 'owner-1', files: [{ role: 'original', sha256: SHA_A }] } },
+        createdAt: expect.any(String),
+        database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
+        assets: {
+          'asset-1': {
+            owner: 'owner-1',
+            files: [
+              {
+                role: 'original',
+                path: '/data/library/asset-1:original',
+                sha256: SHA_A,
+                size: 100,
+                mtime: '2026-09-01T00:00:00.000Z',
+              },
+            ],
+          },
+        },
+        profiles: {
+          'owner-1': {
+            role: 'profile',
+            path: '/data/library/profile:owner-1',
+            sha256: SHA_C,
+            size: 100,
+            mtime: '2026-09-01T00:00:00.000Z',
+          },
+        },
       });
-      expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', expect.objectContaining({ status: 'complete' }));
+      expect(index.setManifestDatabase).toHaveBeenCalledWith('manifest-1', dumpKey);
+      expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', {
+        status: 'complete',
+        assetCount: 1,
+        fileCount: 2,
+        bytes: 200,
+      });
+      // the done checkpoint is saved before the recorded files go, so a retry never writes it again
+      const done = orderOf(
+        operations.setBulkResult,
+        ([, , write]) => (write as { result: { phase: string } }).result.phase === 'done',
+      );
+      expect(done).toBeLessThan(index.deleteEntries.mock.invocationCallOrder[0]);
       expect(index.deleteEntries).toHaveBeenCalledWith('manifest-1');
       expect(operations.complete).toHaveBeenCalled();
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
@@ -539,10 +675,10 @@ describe(CloudBackupService.name, () => {
       expect(databaseBackup.createDatabaseBackup).not.toHaveBeenCalled();
       expect(index.createManifest).not.toHaveBeenCalled();
       expect(index.listAssets).toHaveBeenCalledWith(expect.objectContaining({ afterId: 'asset-25' }));
-      expect(store.put).toHaveBeenCalledWith(
+      expect(store.uploadStream).toHaveBeenCalledWith(
         expect.anything(),
         'm/20260926T030000Z.json.gz',
-        expect.any(Buffer),
+        expect.anything(),
         key,
         'application/gzip',
       );
@@ -560,7 +696,7 @@ describe(CloudBackupService.name, () => {
       const assetWrite = operations.setBulkResult.mock.calls[2][2] as { result: { cursor: string; assets: number } };
       expect(assetWrite.result).toMatchObject({ cursor: 'asset-24', assets: 25 });
       expect(operations.settlePause).toHaveBeenCalledWith('run-1', 'claim-1');
-      expect(store.put).not.toHaveBeenCalled();
+      expect(store.uploadStream).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
@@ -572,7 +708,165 @@ describe(CloudBackupService.name, () => {
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith('run-1', 'claim-1', { released: false });
       expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', { status: 'cancelled' });
       expect(index.deleteEntries).toHaveBeenCalledWith('manifest-1');
-      expect(store.put).not.toHaveBeenCalled();
+      expect(store.uploadStream).not.toHaveBeenCalled();
+    });
+
+    it('never writes a manifest again once it is complete, when a claim resumes after writing it', async () => {
+      index.getManifest.mockResolvedValue({ id: 'manifest-1', key: 'm/20260926T030000Z.json.gz', status: 'complete' });
+      const resumed = operationOf({
+        result: {
+          phase: 'manifest',
+          manifestId: 'manifest-1',
+          manifestKey: 'm/20260926T030000Z.json.gz',
+          cursor: 'asset-9',
+          database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
+          uploaded: 3,
+          skipped: 1,
+          missing: 0,
+          changed: 0,
+          bytesUploaded: 350,
+          assets: 10,
+          total: 10,
+        },
+      });
+
+      await sut.run(resumed, 'claim-2');
+
+      expect(store.uploadStream).not.toHaveBeenCalled();
+      expect(index.finishManifest).not.toHaveBeenCalled();
+      expect(operations.setBulkResult).toHaveBeenCalledWith(
+        'run-1',
+        'claim-2',
+        expect.objectContaining({ result: expect.objectContaining({ phase: 'done' }) }),
+      );
+      expect(index.deleteEntries).toHaveBeenCalledWith('manifest-1');
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it('keeps a manifest complete when its run fails after writing it', async () => {
+      index.getManifest
+        .mockResolvedValueOnce({ id: 'manifest-1', status: 'running' })
+        .mockResolvedValue({ id: 'manifest-1', status: 'complete' });
+      operations.beginValidation.mockRejectedValue(new Error('database went away'));
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(store.uploadStream).toHaveBeenCalledOnce();
+      expect(operations.fail).toHaveBeenCalled();
+      expect(index.finishManifest).not.toHaveBeenCalledWith('manifest-1', { status: 'failed' });
+    });
+
+    it('streams the manifest a page of recorded files at a time', async () => {
+      const first = Array.from({ length: 1000 }, (_, i) =>
+        entry(`asset-${String(i).padStart(4, '0')}:original`, { sha256: SHA_B }),
+      );
+      index.getEntriesPage.mockResolvedValueOnce(first).mockResolvedValueOnce([entry('asset-9999:original')]);
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(index.getEntriesPage).toHaveBeenNthCalledWith(1, 'manifest-1', null, 1000);
+      expect(index.getEntriesPage).toHaveBeenNthCalledWith(2, 'manifest-1', 'asset-0999:original', 1000);
+      const manifest = manifestOf();
+      expect(Object.keys(manifest.assets)).toHaveLength(1001);
+      expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', expect.objectContaining({ fileCount: 1001 }));
+    });
+
+    it('drops recorded objects the bucket no longer holds when it reads the listing', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ reconciledAt: undefined });
+      index.pruneUnseen.mockResolvedValue(4);
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(index.pruneUnseen).toHaveBeenCalledWith(ref, new Date('2026-09-26T02:59:00.000Z'));
+      expect(index.currentTime.mock.invocationCallOrder[0]).toBeLessThan(
+        orderOf(store.listAll, ([, prefix]) => prefix === 'o/'),
+      );
+    });
+
+    it('refuses a run whose bucket lost its claim (emptied or recreated), rather than trusting the index', async () => {
+      store.readMarker.mockRejectedValue(
+        new CloudBackupClaimError('claim-missing', 'This bucket no longer holds frameleaf-backup.json.'),
+      );
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ error: expect.stringContaining('no longer holds') }),
+      );
+      expect(databaseBackup.createDatabaseBackup).not.toHaveBeenCalled();
+      expect(store.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('refuses a run when another server claimed the bucket since', async () => {
+      store.readMarker.mockResolvedValue({ instanceId: 'instance-2' });
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ error: expect.stringContaining('another Frameleaf server') }),
+      );
+      expect(store.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('keeps the newest seven dumps and every dump a complete manifest names', async () => {
+      const older = Array.from({ length: 9 }, (_, i) => `db/cloud-backup-immich-db-backup-2026090${i}.sql.gz`);
+      store.listAll.mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
+        prefix === 'db/'
+          ? onPage([...older, dumpKey].map((name) => ({ key: name, size: 1, etag: null }))).then(() => older.length + 1)
+          : Promise.resolve(0),
+      );
+      index.listManifestDatabaseKeys.mockResolvedValue(new Set([older[0]]));
+
+      await sut.run(operationOf(), 'claim-1');
+
+      const deleted = store.delete.mock.calls.map(([, name]) => name as string);
+      // the current dump and the six newest earlier ones stay; the oldest stays because a manifest names it
+      expect(deleted.toSorted()).toEqual([older[1], older[2]]);
+    });
+
+    it('trusts a recorded checksum only when it was verified at the original path', async () => {
+      index.listAssets
+        .mockResolvedValueOnce([{ ...asset('asset-1', SHA_A), checksumPathVerified: false }])
+        .mockResolvedValueOnce([]);
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(mocks.crypto.hashFile).toHaveBeenCalledWith('/data/library/asset-1.jpg', 'sha256');
+      expect(uploadedKeys()).toContain(`o/${hex('/data/library/asset-1.jpg')}`);
+    });
+
+    it('removes a dump an earlier run left behind before it makes a new one, and nothing else', async () => {
+      mocks.storage.readdir.mockResolvedValue([
+        'cloud-backup-immich-db-backup-20260925T030000-v2.0.0-pg16.4.sql.gz.tmp',
+        'immich-db-backup-20260925T020000-v2.0.0-pg16.4.sql.gz',
+      ]);
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(
+        expect.stringContaining('cloud-backup-immich-db-backup-20260925T030000-v2.0.0-pg16.4.sql.gz.tmp'),
+      );
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(
+        expect.stringContaining('/immich-db-backup-20260925T020000'),
+      );
+      expect(mocks.storage.readdir.mock.invocationCallOrder[0]).toBeLessThan(
+        databaseBackup.createDatabaseBackup.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('ends the manifests of runs the lease sweep failed before it looks for work', async () => {
+      index.endAbandonedManifests.mockResolvedValue(1);
+
+      await sut.drain();
+
+      expect(index.endAbandonedManifests).toHaveBeenCalled();
+      expect(index.endAbandonedManifests.mock.invocationCallOrder[0]).toBeLessThan(
+        operations.claimNext.mock.invocationCallOrder[0],
+      );
     });
 
     it('notifies every administrator once when a run fails for good', async () => {
@@ -592,7 +886,7 @@ describe(CloudBackupService.name, () => {
       expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', { status: 'failed' });
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRun: { status: 'failed' } });
       // the local dump is still removed
-      expect(mocks.storage.unlink).toHaveBeenCalledOnce();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith('/data/backups/cloud-backup-immich-db-backup-dump.sql.gz');
     });
 
     it('keeps the manifest for the automatic retry and does not notify yet', async () => {

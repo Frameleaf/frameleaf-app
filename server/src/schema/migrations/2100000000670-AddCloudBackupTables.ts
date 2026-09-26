@@ -21,6 +21,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
   "bucket" text NOT NULL,
   "key" text NOT NULL,
+  "databaseKey" text,
   "operationId" uuid,
   "createdAt" timestamp with time zone NOT NULL DEFAULT now(),
   "finishedAt" timestamp with time zone,

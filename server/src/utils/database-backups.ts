@@ -9,6 +9,17 @@ export function isValidDatabaseRoutineBackupName(filename: string) {
   return oldBackupStyle || newBackupStyle;
 }
 
+/**
+ * FL-160: the dumps a cloud backup run makes for the bucket (`cloud-backup-immich-db-backup-…`), and
+ * their unfinished `.tmp` files. They are the run's own temporary files: removed once uploaded, or by the
+ * next run, and never offered for a restore on this server.
+ */
+export const CLOUD_BACKUP_DUMP_PREFIX = 'cloud-backup-';
+
+export function isCloudBackupDumpName(filename: string) {
+  return filename.startsWith(`${CLOUD_BACKUP_DUMP_PREFIX}immich-db-backup-`);
+}
+
 export function isFailedDatabaseBackupName(filename: string) {
   return filename.match(/^immich-db-backup-.*\.sql\.gz\.tmp$/);
 }

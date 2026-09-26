@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetFileType, AssetStatus } from 'src/enum.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetFileType, AssetStatus, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 
 export type CloudBackupIndexedObject = { sha256: string; size: number; etag: string | null };
@@ -35,8 +36,18 @@ export type CloudBackupAsset = {
   sha256: string | null;
   checksumSize: number | null;
   verifiedAt: Date | null;
+  /** The checksum was verified at this very path (`verifiedPaths` holds the original's path). */
+  checksumPathVerified: boolean;
   files: Array<{ type: AssetFileType; path: string }>;
 };
+
+const MANIFEST_COLUMNS = ['id', 'bucket', 'key', 'operationId', 'status', 'createdAt'] as const;
+const ENTRY_COLUMNS = ['fileKey', 'assetId', 'ownerId', 'role', 'path', 'sha256', 'size', 'mtime'] as const;
+const FINISHED_OPERATIONS = [
+  MediaOperationStatus.Completed,
+  MediaOperationStatus.Cancelled,
+  MediaOperationStatus.Failed,
+];
 
 /**
  * Cloud backup's own tables (FL-160): the index of objects already in a claimed bucket, the run
@@ -51,6 +62,7 @@ export class CloudBackupIndexRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
   /** The hashes of these that are already in the bucket. */
+  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
   async getExisting(bucket: string, hashes: string[]): Promise<Set<string>> {
     if (hashes.length === 0) {
       return new Set();
@@ -65,6 +77,9 @@ export class CloudBackupIndexRepository {
   }
 
   /** Record objects that are in the bucket (uploaded, or found by the listing). Recording twice is harmless. */
+  @GenerateSql({
+    params: [DummyValue.STRING, [{ sha256: DummyValue.STRING, size: DummyValue.NUMBER, etag: DummyValue.STRING }]],
+  })
   async record(bucket: string, objects: CloudBackupIndexedObject[]): Promise<void> {
     if (objects.length === 0) {
       return;
@@ -84,6 +99,7 @@ export class CloudBackupIndexRepository {
   }
 
   /** Mark objects as referenced by the run in hand. */
+  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
   async touch(bucket: string, hashes: string[]): Promise<void> {
     if (hashes.length === 0) {
       return;
@@ -96,7 +112,32 @@ export class CloudBackupIndexRepository {
       .execute();
   }
 
+  /** Forget everything recorded for a bucket: a new claim starts from the bucket as it is now. */
+  @GenerateSql({ params: [DummyValue.STRING] })
+  async deleteBucket(bucket: string): Promise<void> {
+    await this.db.deleteFrom('cloud_backup_object').where('bucket', '=', bucket).execute();
+  }
+
+  /** The database's clock, which stamps `lastSeenAt`. */
+  @GenerateSql()
+  async currentTime(): Promise<Date> {
+    const row = await this.db.selectNoFrom(sql<Date>`now()`.as('now')).executeTakeFirstOrThrow();
+    return new Date(row.now);
+  }
+
+  /** Forget objects the bucket listing no longer holds: every row the listing did not touch since `since`. */
+  @GenerateSql({ params: [DummyValue.STRING, DummyValue.DATE] })
+  async pruneUnseen(bucket: string, since: Date): Promise<number> {
+    const result = await this.db
+      .deleteFrom('cloud_backup_object')
+      .where('bucket', '=', bucket)
+      .where('lastSeenAt', '<', since)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
+  }
+
   /** How many unique files the bucket holds for this server, and their size. */
+  @GenerateSql({ params: [DummyValue.STRING] })
   async getUsage(bucket: string): Promise<{ objects: number; bytes: number }> {
     const row = await this.db
       .selectFrom('cloud_backup_object')
@@ -106,22 +147,30 @@ export class CloudBackupIndexRepository {
     return { objects: Number(row?.objects ?? 0), bytes: Number(row?.bytes ?? 0) };
   }
 
+  @GenerateSql({ params: [{ bucket: DummyValue.STRING, key: DummyValue.STRING, operationId: DummyValue.UUID }] })
   async createManifest(values: { bucket: string; key: string; operationId: string }): Promise<CloudBackupManifestRow> {
     return this.db
       .insertInto('cloud_backup_manifest')
       .values(values)
-      .returning(['id', 'bucket', 'key', 'operationId', 'status', 'createdAt'])
+      .returning(MANIFEST_COLUMNS)
       .executeTakeFirstOrThrow() as Promise<CloudBackupManifestRow>;
   }
 
+  @GenerateSql({ params: [DummyValue.UUID] })
   async getManifest(id: string): Promise<CloudBackupManifestRow | undefined> {
     return this.db
       .selectFrom('cloud_backup_manifest')
-      .select(['id', 'bucket', 'key', 'operationId', 'status', 'createdAt'])
+      .select(MANIFEST_COLUMNS)
       .where('id', '=', id)
       .executeTakeFirst() as Promise<CloudBackupManifestRow | undefined>;
   }
 
+  @GenerateSql({
+    params: [
+      DummyValue.UUID,
+      { status: 'complete', assetCount: DummyValue.NUMBER, fileCount: DummyValue.NUMBER, bytes: DummyValue.NUMBER },
+    ],
+  })
   async finishManifest(
     id: string,
     values: { status: 'complete' | 'cancelled' | 'failed'; assetCount?: number; fileCount?: number; bytes?: number },
@@ -133,7 +182,79 @@ export class CloudBackupIndexRepository {
       .execute();
   }
 
+  /** The database dump a manifest names, so no complete manifest ever loses its dump to pruning. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
+  async setManifestDatabase(id: string, databaseKey: string): Promise<void> {
+    await this.db.updateTable('cloud_backup_manifest').set({ databaseKey }).where('id', '=', id).execute();
+  }
+
+  /** The database dumps complete manifests of this bucket name. */
+  @GenerateSql({ params: [DummyValue.STRING] })
+  async listManifestDatabaseKeys(bucket: string): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('cloud_backup_manifest')
+      .select('databaseKey')
+      .where('bucket', '=', bucket)
+      .where('status', '=', 'complete')
+      .where('databaseKey', 'is not', null)
+      .execute();
+    return new Set(rows.flatMap(({ databaseKey }) => (databaseKey ? [databaseKey] : [])));
+  }
+
+  /**
+   * End every running manifest whose run is over or gone (a run the lease sweep failed, or one removed):
+   * it is marked failed and its recorded files are deleted. Answers how many were ended.
+   */
+  @GenerateSql()
+  async endAbandonedManifests(): Promise<number> {
+    const ended = await this.db
+      .updateTable('cloud_backup_manifest')
+      .set({ status: 'failed', finishedAt: sql<Date>`now()` })
+      .where('status', '=', 'running')
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('media_operation')
+              .select('media_operation.id')
+              .whereRef('media_operation.id', '=', 'cloud_backup_manifest.operationId')
+              .where('media_operation.status', 'not in', FINISHED_OPERATIONS),
+          ),
+        ),
+      )
+      .returning('id')
+      .execute();
+    if (ended.length > 0) {
+      await this.db
+        .deleteFrom('cloud_backup_manifest_entry')
+        .where(
+          'manifestId',
+          'in',
+          ended.map(({ id }) => id),
+        )
+        .execute();
+    }
+    return ended.length;
+  }
+
   /** Record files of a running manifest; a file recorded again is replaced. */
+  @GenerateSql({
+    params: [
+      DummyValue.UUID,
+      [
+        {
+          fileKey: DummyValue.STRING,
+          assetId: DummyValue.UUID,
+          ownerId: DummyValue.UUID,
+          role: DummyValue.STRING,
+          path: DummyValue.STRING,
+          sha256: DummyValue.STRING,
+          size: DummyValue.NUMBER,
+          mtime: DummyValue.DATE,
+        },
+      ],
+    ],
+  })
   async upsertEntries(manifestId: string, entries: CloudBackupEntry[]): Promise<void> {
     if (entries.length === 0) {
       return;
@@ -156,12 +277,16 @@ export class CloudBackupIndexRepository {
       .execute();
   }
 
-  async getEntries(manifestId: string): Promise<CloudBackupEntry[]> {
+  /** A page of a manifest's files in `fileKey` order, after `afterFileKey`: an asset's files are adjacent. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, DummyValue.NUMBER] })
+  async getEntriesPage(manifestId: string, afterFileKey: string | null, limit: number): Promise<CloudBackupEntry[]> {
     const rows = await this.db
       .selectFrom('cloud_backup_manifest_entry')
-      .select(['fileKey', 'assetId', 'ownerId', 'role', 'path', 'sha256', 'size', 'mtime'])
+      .select(ENTRY_COLUMNS)
       .where('manifestId', '=', manifestId)
+      .$if(afterFileKey !== null, (qb) => qb.where('fileKey', '>', afterFileKey!))
       .orderBy('fileKey')
+      .limit(limit)
       .execute();
     return rows.map((row) => ({
       ...row,
@@ -170,11 +295,13 @@ export class CloudBackupIndexRepository {
     }));
   }
 
+  @GenerateSql({ params: [DummyValue.UUID] })
   async deleteEntries(manifestId: string): Promise<void> {
     await this.db.deleteFrom('cloud_backup_manifest_entry').where('manifestId', '=', manifestId).execute();
   }
 
   /** How many assets a run backs up. */
+  @GenerateSql()
   async countAssets(): Promise<number> {
     const row = await this.db
       .selectFrom('asset')
@@ -190,12 +317,49 @@ export class CloudBackupIndexRepository {
    * sidecar always, thumbnails and previews and transcoded videos only when asked for. Every owner's
    * assets, Locked and trashed ones included; external library files are not this server's to back up.
    */
+  @GenerateSql({
+    params: [
+      {
+        afterId: DummyValue.UUID,
+        limit: DummyValue.NUMBER,
+        includeThumbs: DummyValue.BOOLEAN,
+        includeEncodedVideo: DummyValue.BOOLEAN,
+      },
+    ],
+  })
   async listAssets(options: {
     afterId: string | null;
     limit: number;
     includeThumbs: boolean;
     includeEncodedVideo: boolean;
   }): Promise<CloudBackupAsset[]> {
+    const assets = await this.db
+      .selectFrom('asset')
+      .select(['id', 'ownerId', 'originalPath'])
+      .where('status', 'in', [AssetStatus.Active, AssetStatus.Trashed])
+      .where('isExternal', '=', false)
+      .$if(options.afterId !== null, (qb) => qb.where('id', '>', options.afterId!))
+      .orderBy('id')
+      .limit(options.limit)
+      .execute();
+    if (assets.length === 0) {
+      return [];
+    }
+
+    const ids = assets.map(({ id }) => id);
+    const checksums = await sql<{
+      assetId: string;
+      sha256: string;
+      size: string;
+      verifiedAt: Date;
+      verifiedPaths: string[];
+    }>`
+      select "assetId", encode("sha256", 'hex') as "sha256", "sizeInBytes"::text as "size", "verifiedAt", "verifiedPaths"
+      from immich_fork.asset_checksum
+      where "assetId" = any(${ids}::uuid[])
+    `.execute(this.db);
+    const checksumOf = new Map(checksums.rows.map((row) => [row.assetId, row]));
+
     const types: AssetFileType[] = [AssetFileType.Sidecar];
     if (options.includeThumbs) {
       types.push(AssetFileType.FullSize, AssetFileType.Preview, AssetFileType.Thumbnail);
@@ -203,49 +367,35 @@ export class CloudBackupIndexRepository {
     if (options.includeEncodedVideo) {
       types.push(AssetFileType.EncodedVideo);
     }
+    const files = await this.db
+      .selectFrom('asset_file')
+      .select(['assetId', 'type', 'path'])
+      .where('assetId', 'in', ids)
+      .where('type', 'in', types)
+      .orderBy('assetId')
+      .orderBy('type')
+      .orderBy('path')
+      .execute();
 
-    const result = await sql<{
-      id: string;
-      ownerId: string;
-      originalPath: string;
-      sha256: string | null;
-      checksumSize: string | null;
-      verifiedAt: Date | null;
-      files: Array<{ type: AssetFileType; path: string }> | null;
-    }>`
-      SELECT
-        a."id",
-        a."ownerId",
-        a."originalPath",
-        encode(c."sha256", 'hex') AS "sha256",
-        c."sizeInBytes"::text AS "checksumSize",
-        c."verifiedAt",
-        (
-          SELECT json_agg(json_build_object('type', f."type", 'path', f."path") ORDER BY f."type", f."path")
-          FROM "asset_file" f
-          WHERE f."assetId" = a."id" AND f."type" = ANY(${types}::text[])
-        ) AS "files"
-      FROM "asset" a
-      LEFT JOIN immich_fork.asset_checksum c ON c."assetId" = a."id"
-      WHERE a."status"::text = ANY(${[AssetStatus.Active, AssetStatus.Trashed]}::text[])
-        AND a."isExternal" = false
-        AND (${options.afterId}::uuid IS NULL OR a."id" > ${options.afterId}::uuid)
-      ORDER BY a."id"
-      LIMIT ${options.limit}
-    `.execute(this.db);
-
-    return result.rows.map((row) => ({
-      id: row.id,
-      ownerId: row.ownerId,
-      originalPath: row.originalPath,
-      sha256: row.sha256,
-      checksumSize: row.checksumSize === null ? null : Number(row.checksumSize),
-      verifiedAt: row.verifiedAt ? new Date(row.verifiedAt) : null,
-      files: row.files ?? [],
-    }));
+    return assets.map((asset) => {
+      const checksum = checksumOf.get(asset.id);
+      return {
+        id: asset.id,
+        ownerId: asset.ownerId,
+        originalPath: asset.originalPath,
+        sha256: checksum?.sha256 ?? null,
+        checksumSize: checksum ? Number(checksum.size) : null,
+        verifiedAt: checksum ? new Date(checksum.verifiedAt) : null,
+        checksumPathVerified: !!checksum?.verifiedPaths.includes(asset.originalPath),
+        files: files
+          .filter(({ assetId }) => assetId === asset.id)
+          .map(({ type, path }) => ({ type: type as AssetFileType, path })),
+      };
+    });
   }
 
   /** Every account's profile image. */
+  @GenerateSql()
   async listProfileImages(): Promise<Array<{ userId: string; path: string }>> {
     const rows = await this.db
       .selectFrom('user')
