@@ -196,6 +196,8 @@ describe('/faces (FL-38 corrections)', () => {
         ],
       });
     expect(edit.status).toBe(200);
+    // a saved edit renders on the editor queue, which also records the edited image's size
+    await utils.waitForQueueFinish(admin.accessToken, 'editor');
     await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
 
     const { body: source } = await request(app)
