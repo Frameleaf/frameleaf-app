@@ -589,6 +589,68 @@ describe(MediaRecoveryRepository.name, () => {
         verification: { outcome: 'imported', matchedExternalAssetId: context.assetId },
       });
     });
+
+    it('asks for consent before importing a copy of a Locked external original', async () => {
+      const { context, before, row } = await external();
+      await sql`INSERT INTO public.asset_lock ("assetId", reason) VALUES (${context.assetId}::uuid, 'detected')`.execute(
+        db,
+      );
+      const directory = await mkdtemp(join(tmpdir(), 'icloud-locked-external-'));
+      const stagedPath = join(directory, 'stage.jpg');
+      try {
+        await writeFile(stagedPath, bytes);
+        await sql`UPDATE immich_fork.icloud_resource SET "stagingPath" = ${stagedPath} WHERE id = ${context.authority.resourceId}::uuid`.execute(
+          db,
+        );
+        const integrity = { validate: vi.fn().mockResolvedValue(verified) };
+        const recovery = new MediaRecoveryService(sut, integrity as never);
+        expect(
+          await recovery.reconcile({
+            ...context.authority,
+            stagedPath,
+            originalFileName: 'original.jpg',
+            type: AssetType.Image,
+          }),
+        ).toEqual({ outcome: 'needs-review', reason: 'hidden_match_requires_consent' });
+        expect(
+          await db.selectFrom('asset').select('id').where('ownerId', '=', context.authority.ownerId).execute(),
+        ).toEqual([{ id: context.assetId }]);
+        expect(await row()).toEqual(before);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+
+    it.each([
+      ['Locked', 'detected'],
+      ['sensitive', 'marked'],
+    ])('locks the copy of a %s external original, with consent', async (kind, reason) => {
+      const { context, candidate } = await external();
+      if (kind === 'Locked') {
+        await sql`INSERT INTO public.asset_lock ("assetId", reason) VALUES (${context.assetId}::uuid, 'detected')`.execute(
+          db,
+        );
+      } else {
+        await sql`UPDATE immich_fork.asset_privacy SET "isNsfw" = true WHERE "assetId" = ${context.assetId}::uuid`.execute(
+          db,
+        );
+        await sql`UPDATE public.asset SET is_nsfw = true WHERE id = ${context.assetId}::uuid`.execute(db);
+      }
+      expect((await sut.findCandidates(context.authority.ownerId, verified))[0].hidden).toBe(true);
+      const reservation = await sut.reserve({
+        ...context.reserveInput,
+        includeHidden: true,
+        candidate: undefined,
+        outcome: 'imported',
+        matchedExternalAssetId: candidate.id,
+      });
+      const result = await sut.commit({ ...context.commitInput, includeHidden: true, reservation: reservation! });
+      expect(result.outcome).toBe('imported');
+      const lock = await sql<{ reason: string }>`
+        SELECT reason FROM public.asset_lock WHERE "assetId" = ${result.assetId!}::uuid
+      `.execute(db);
+      expect(lock.rows).toEqual([{ reason }]);
+    });
   });
   it('does not treat an earlier successful commit as proof that the file is still healthy', async () => {
     const context = await arrange();
