@@ -856,7 +856,7 @@ describe(FrameleafCloudService.name, () => {
       cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
       cloud.on('POST /api/v1/instance/keys/rotate', () => ({
         status: 401,
-        body: { code: 'key-retired', message: 'the retiring key is past its window' },
+        body: { code: 'key_retired', message: 'the retiring key is past its window' },
       }));
       makeDue();
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
@@ -879,6 +879,93 @@ describe(FrameleafCloudService.name, () => {
       await sut.handleHeartbeat();
       expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
       expect(storedLink()?.heartbeat?.relinkRequested).toBe(true);
+    });
+
+    describe('FC-19 rotation refusals', () => {
+      const rotateCalls = () => cloud.requests.filter(({ path }) => path === '/api/v1/instance/keys/rotate').length;
+      const nonceCalls = () => cloud.requests.filter(({ path }) => path === '/api/v1/instance/keys/nonce').length;
+      const setUp = async (answers: FakeCloudAnswer[]) => {
+        await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+        cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+        let nonces = 0;
+        cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: `nonce-${++nonces}` } }));
+        cloud.on('POST /api/v1/instance/keys/rotate', () => answers.shift() ?? { status: 200, body: {} });
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      };
+      const nonceInvalid: FakeCloudAnswer = {
+        status: 401,
+        body: { code: 'nonce_invalid', message: 'the nonce was already used' },
+      };
+
+      it('retries once at once with a fresh nonce on nonce_invalid', async () => {
+        await setUp([nonceInvalid]);
+        expect(nonceCalls()).toBe(2);
+        expect(rotateCalls()).toBe(2);
+        const proofs = cloud.requests
+          .filter(({ path }) => path === '/api/v1/instance/keys/rotate')
+          .map((request) =>
+            JSON.parse(Buffer.from(request.json().proof.split('.', 2)[1], 'base64url').toString('utf8')),
+          );
+        expect(proofs.map(({ nonce }) => nonce)).toEqual(['nonce-1', 'nonce-2']);
+        expect(storedLink()?.heartbeat?.keyRecovery).toBeUndefined();
+        expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
+        expect((metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).rotationNeeded).toBe(
+          undefined,
+        );
+      });
+
+      it('falls back to the normal backoff when the fresh nonce is refused too', async () => {
+        await setUp([nonceInvalid, nonceInvalid]);
+        expect(rotateCalls()).toBe(2);
+        const wait = Date.parse(storedLink()!.heartbeat!.keyRecovery!.nextAttemptAt!) - Date.now();
+        expect(wait).toBeGreaterThan(19 * 60 * 1000);
+        expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
+        await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).resolves.toBeUndefined();
+      });
+
+      it('asks for a relink on key_retired without retrying', async () => {
+        await setUp([{ status: 401, body: { code: 'key_retired', message: 'past its window' } }]);
+        expect(rotateCalls()).toBe(1);
+        expect(storedLink()?.heartbeat).toMatchObject({ relinkRequested: true, keyRecovery: { closed: true } });
+      });
+
+      it('backs off by Retry-After on rate-limited', async () => {
+        await setUp([
+          {
+            status: 429,
+            body: { code: 'rate-limited', message: 'more than 3 rotations this hour' },
+            headers: { 'Retry-After': '2400' },
+          },
+        ]);
+        expect(rotateCalls()).toBe(1);
+        const wait = Date.parse(storedLink()!.heartbeat!.keyRecovery!.nextAttemptAt!) - Date.now();
+        expect(wait).toBeGreaterThan(39 * 60 * 1000);
+        expect(wait).toBeLessThanOrEqual(40 * 60 * 1000);
+      });
+
+      it('backs off on a 401 with an unknown code instead of asking for a relink', async () => {
+        await setUp([{ status: 401, body: { code: 'unauthorized', message: 'not now' } }]);
+        expect(rotateCalls()).toBe(1);
+        expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
+        expect(storedLink()?.heartbeat?.keyRecovery?.nextAttemptAt).toEqual(expect.any(String));
+      });
+
+      it('only without a code, reads a nonce refusal from the message and retries once', async () => {
+        const oauthNonce: FakeCloudAnswer = {
+          status: 401,
+          body: { error: 'invalid_request', error_description: 'nonce reused' },
+        };
+        await setUp([oauthNonce, oauthNonce]);
+        expect(rotateCalls()).toBe(2);
+        expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
+      });
+
+      it('without a code, treats any other 401 as a key the cloud no longer accepts', async () => {
+        await setUp([{ status: 401, body: { error: 'invalid_client' } }]);
+        expect(rotateCalls()).toBe(1);
+        expect(storedLink()?.heartbeat?.relinkRequested).toBe(true);
+      });
     });
 
     it('asks for a relink without calling the cloud once a day has passed since the key was set aside (FL-175)', async () => {
