@@ -36,6 +36,75 @@ describe(ServerService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  describe('getConnections (FL-165)', () => {
+    const CLOUD = 'https://api.frameleaf.cloud';
+    const names = {
+      cloudUrl: CLOUD,
+      instanceId: 'instance-1',
+      label: 'u225vlzhsdlhwh4l',
+      domain: 'frameleaf.net',
+      names: {
+        relay: 'r.u225vlzhsdlhwh4l.frameleaf.net',
+        lanPattern: '{ipv4}.u225vlzhsdlhwh4l.frameleaf.net',
+        ipv6Pattern: '{ipv6}.u225vlzhsdlhwh4l.frameleaf.net',
+      },
+    };
+    const candidates = [
+      { kind: 'local', uri: 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443' },
+      { kind: 'relay', uri: 'https://r.u225vlzhsdlhwh4l.frameleaf.net' },
+    ];
+    const setup = (remoteAccess: Record<string, unknown>, updatedAt = new Date().toISOString()) => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({ ...env, frameleafCloud: { ...env.frameleafCloud, url: CLOUD } });
+      const metadata = new Map<string, unknown>([
+        [SystemMetadataKey.FrameleafCloudLink, { status: 'linked', cloudUrl: CLOUD, instanceId: 'instance-1' }],
+        [SystemMetadataKey.SystemConfig, { frameleafCloud: { remoteAccess } }],
+        [SystemMetadataKey.FrameleafRemoteAccess, { status: 'ready', updatedAt, names, candidates }],
+      ]);
+      mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve((metadata.get(key) ?? null) as never));
+    };
+
+    it('publishes nothing while remote access is off or the server is unlinked', async () => {
+      setup({ enabled: false });
+      await expect(sut.getConnections()).resolves.toEqual({
+        instanceId: 'instance-1',
+        publicUrl: null,
+        connections: [],
+      });
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(sut.getConnections()).resolves.toEqual({ instanceId: null, publicUrl: null, connections: [] });
+    });
+
+    it('publishes the Frameleaf address and the candidates the edge worker reported', async () => {
+      setup({ enabled: true });
+      await expect(sut.getConnections()).resolves.toEqual({
+        instanceId: 'instance-1',
+        publicUrl: 'https://r.u225vlzhsdlhwh4l.frameleaf.net',
+        connections: candidates,
+      });
+      await expect(sut.getSystemConfig()).resolves.toMatchObject({
+        frameleaf: { publicUrl: 'https://r.u225vlzhsdlhwh4l.frameleaf.net' },
+      });
+    });
+
+    it('publishes the verified custom hostname when Use my domain is chosen', async () => {
+      setup({
+        enabled: true,
+        publicUrl: 'custom',
+        customHostname: { host: 'photos.example.com', status: 'verified', checkedAt: null },
+      });
+      await expect(sut.getConnections()).resolves.toMatchObject({ publicUrl: 'https://photos.example.com' });
+    });
+
+    it('drops the candidates of an edge worker that stopped reporting', async () => {
+      setup({ enabled: true }, new Date(Date.now() - 5 * 60 * 1000).toISOString());
+      await expect(sut.getConnections()).resolves.toMatchObject({
+        publicUrl: 'https://r.u225vlzhsdlhwh4l.frameleaf.net',
+        connections: [],
+      });
+    });
+  });
+
   describe('getStorage', () => {
     it('should return the disk space as B', async () => {
       mocks.storage.checkDiskUsage.mockResolvedValue({ free: 200, available: 300, total: 500 });

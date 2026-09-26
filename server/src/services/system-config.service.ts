@@ -48,16 +48,12 @@ import {
 } from 'src/utils/config-history.js';
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import {
-  type FrameleafVia,
-  frameleafPublicUrl,
-  isHomeAddress,
-  isRemoteVia,
-  signInClient,
-} from 'src/utils/frameleaf-sign-in.js';
+import { remoteAccessUnavailable, verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
+import { type FrameleafVia, isHomeAddress, isRemoteVia, signInClient } from 'src/utils/frameleaf-sign-in.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { toPlainObject } from 'src/utils/object.js';
+import { remoteAccessPublication } from 'src/utils/public-url.js';
 
 /** Default per-asset estimate when no telemetry data is available. */
 const DEFAULT_SECONDS_PER_ASSET = 1.5;
@@ -202,15 +198,16 @@ export class SystemConfigService extends BaseService {
    * Sign in with Frameleaf is available.
    */
   async getWellKnown() {
-    const { link, linked } = await readCloudLink({
-      configRepository: this.configRepository,
-      systemMetadataRepository: this.systemMetadataRepository,
-    });
+    const deps = { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
+    const { link, linked } = await readCloudLink(deps);
+    const config = await this.getConfig({ withCache: true });
+    // FL-165: the Frameleaf address, or the verified custom hostname when "Use my domain" is chosen
+    const { publicUrl } = await remoteAccessPublication(config.frameleafCloud.remoteAccess, deps);
     return {
       api: { endpoint: '/api' },
       frameleaf: {
         instanceId: linked ? (link?.instanceId ?? null) : null,
-        publicUrl: linked ? frameleafPublicUrl(link) : null,
+        publicUrl,
         signIn: !!signInClient(link, linked),
       },
     };
@@ -297,6 +294,29 @@ export class SystemConfigService extends BaseService {
           'Link this server to Frameleaf Cloud before allowing original downloads or password sign-in over remote access.',
         );
       }
+    }
+
+    // FL-165: remote access itself needs a linked server with a remote access plan, and the custom
+    // hostname only changes through its own DNS check (Settings › Frameleaf Cloud › Remote access)
+    if (allow.enabled && !before?.enabled) {
+      const problem = await remoteAccessUnavailable({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      if (problem) {
+        throw new Error(problem);
+      }
+    }
+    const hostname = allow.customHostname ?? { host: '', status: 'pending' };
+    const previousHostname = before?.customHostname;
+    const hostnameChanged =
+      hostname.host !== (previousHostname?.host ?? '') ||
+      (hostname.host !== '' && hostname.status !== (previousHostname?.status ?? 'pending'));
+    if (hostnameChanged && hostname.host !== '') {
+      throw new Error('Add and check a custom hostname from Settings › Frameleaf Cloud › Remote access.');
+    }
+    if (allow.publicUrl === 'custom' && !verifiedCustomHost({ customHostname: hostname })) {
+      throw new Error('Use my domain needs a custom hostname that Frameleaf Cloud verified.');
     }
   }
 

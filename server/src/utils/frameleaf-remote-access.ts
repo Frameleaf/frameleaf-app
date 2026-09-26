@@ -7,6 +7,9 @@ import type {
   FrameleafRemoteConnection,
   FrameleafRemoteEnrollment,
 } from 'src/types.js';
+import { SystemMetadataKey } from 'src/enum.js';
+import { type CloudGatewayDeps, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { entitlementFlags } from 'src/utils/frameleaf-license.js';
 import { isHomeAddress } from 'src/utils/frameleaf-sign-in.js';
 
 /**
@@ -419,6 +422,30 @@ export const hostnameProblem = (hostname: Pick<RemoteHostname, 'state' | 'failur
   }
   if (hostname.state === 'caa_blocked') {
     return 'A CAA record on your domain does not allow Let’s Encrypt certificates.';
+  }
+  return null;
+};
+
+// ------------------------------------------------------------------ availability
+
+/**
+ * Why remote access cannot be turned on, or null when it can (prototype `remoteAvailability`): it
+ * needs Frameleaf Cloud set up, a linked server and an active or grace remote access entitlement.
+ */
+export const remoteAccessUnavailable = async (
+  deps: Pick<CloudGatewayDeps, 'configRepository' | 'systemMetadataRepository'>,
+  now = Date.now(),
+): Promise<string | null> => {
+  const { cloudUrl, linked } = await readCloudLink(deps);
+  if (!cloudUrl) {
+    return 'Frameleaf Cloud is not set up on this server.';
+  }
+  if (!linked) {
+    return 'Link this server to a Frameleaf account first.';
+  }
+  const licenses = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+  if (!entitlementFlags([licenses?.key, licenses?.plan], now).remoteAccess) {
+    return 'Remote access is included with a Frameleaf Cloud plan.';
   }
   return null;
 };
