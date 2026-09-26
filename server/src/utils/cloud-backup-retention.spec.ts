@@ -20,7 +20,7 @@ const hex = (text: string) => createHash('sha256').update(text).digest('hex');
 const nightly = (days: number) =>
   Array.from({ length: days }, (_, index) => {
     const createdAt = new Date(Date.UTC(2026, 8, 26 - index, 3));
-    const key = `m/${createdAt.toISOString().replaceAll(/[-:]/g, '').replace(/\.\d{3}/, '')}.json.gz`;
+    const key = `m/${createdAt.toISOString().replaceAll(/[-:]/g, '').replace(/\.\d+/, '')}.json.gz`;
     return { key, createdAt };
   });
 
@@ -150,7 +150,7 @@ describe('cloud backup retention (FL-164)', () => {
     it('reads a manifest and names every object and the dump it references', () => {
       const references = manifestReferences(readManifest(manifestBody()));
 
-      expect([...references.objects.keys()].toSorted()).toEqual([hex('a'), hex('p'), hex('x')].toSorted());
+      expect(references.objects.keys().toArray().toSorted()).toEqual([hex('a'), hex('p'), hex('x')].toSorted());
       expect(references.database).toBe('db/cloud-backup-immich-db-backup-1.sql.gz');
     });
 

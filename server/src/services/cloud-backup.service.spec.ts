@@ -884,9 +884,7 @@ describe(CloudBackupService.name, () => {
       store.listAll = vi
         .fn()
         .mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
-          prefix === 'm/'
-            ? onPage([{ key: earlier, size: 1, etag: null }]).then(() => 1)
-            : Promise.resolve(0),
+          prefix === 'm/' ? onPage([{ key: earlier, size: 1, etag: null }]).then(() => 1) : Promise.resolve(0),
         );
       store.get = vi.fn().mockResolvedValue(
         gzipSync(

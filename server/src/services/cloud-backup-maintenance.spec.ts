@@ -1,11 +1,7 @@
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { CloudBackupStoreError } from 'src/repositories/cloud-backup-store.repository.js';
-import {
-  CloudBackupBucket,
-  CloudBackupMaintenance,
-  emptyVerifyResult,
-} from 'src/services/cloud-backup-maintenance.js';
+import { CloudBackupBucket, CloudBackupMaintenance, emptyVerifyResult } from 'src/services/cloud-backup-maintenance.js';
 import { inVerifySlice } from 'src/utils/cloud-backup-retention.js';
 
 const hex = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -70,7 +66,9 @@ describe(CloudBackupMaintenance.name, () => {
     objects = new Map();
     store = {
       listAll: vi.fn().mockImplementation((_connection, prefix: string, onPage: (page: unknown[]) => Promise<void>) => {
-        const page = [...objects.entries()]
+        const page = objects
+          .entries()
+          .toArray()
           .filter(([key]) => key.startsWith(prefix))
           .map(([key, body]) => ({ key, size: body.length, etag: null }));
         return (page.length > 0 ? onPage(page) : Promise.resolve()).then(() => page.length);
@@ -141,12 +139,12 @@ describe(CloudBackupMaintenance.name, () => {
 
     it('removes nothing in a dry run, and says what it would remove', async () => {
       objects = nightlyBucket(5);
-      const before = [...objects.keys()];
+      const before = objects.keys().toArray();
 
       const result = await sut.prune(bucket, retention, true, carryOn);
 
       expect(result).toMatchObject({ dryRun: true, done: true, manifestsRemoved: 2, objectsRemoved: 2 });
-      expect([...objects.keys()]).toEqual(before);
+      expect(objects.keys().toArray()).toEqual(before);
       expect(store.delete).not.toHaveBeenCalled();
       expect(index.forget).not.toHaveBeenCalled();
     });
