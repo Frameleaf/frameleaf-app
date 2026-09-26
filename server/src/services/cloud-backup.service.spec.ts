@@ -1,17 +1,32 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repository.js';
-import { DatabaseLock, MediaOperationKind, MediaOperationStatus, SystemMetadataKey } from 'src/enum.js';
+import {
+  DatabaseLock,
+  JobStatus,
+  MediaOperationKind,
+  MediaOperationStatus,
+  MlAdmissionRefusal,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import {
   CloudBackupClaimError,
   CloudBackupFileChangedError,
   CloudBackupStoreError,
 } from 'src/repositories/cloud-backup-store.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
-import { CloudBackupService, MANAGED_STORAGE_UNAVAILABLE } from 'src/services/cloud-backup.service.js';
+import {
+  CLOUD_BACKUP_SCHEDULE_CRON,
+  CLOUD_BACKUP_VERIFY_CRON,
+  CloudBackupService,
+} from 'src/services/cloud-backup.service.js';
+import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
+import { keyEscrowBlobSchema } from 'src/utils/frameleaf-cloud-backup.js';
+import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
@@ -118,6 +133,7 @@ describe(CloudBackupService.name, () => {
   let index: Record<string, ReturnType<typeof vi.fn>>;
   let keys: Record<string, ReturnType<typeof vi.fn>>;
   let databaseBackup: Record<string, ReturnType<typeof vi.fn>>;
+  let cloudBackup: Record<string, ReturnType<typeof vi.fn>>;
   /** What each streamed upload sent (the gzipped manifests). */
   let streamed: Buffer[];
 
@@ -139,6 +155,10 @@ describe(CloudBackupService.name, () => {
       index as never,
       keys as never,
       databaseBackup as never,
+      cloudBackup as never,
+      mocks.user as never,
+      mocks.cron as never,
+      mocks.job as never,
     );
 
   const uploadedKeys = () => store.uploadFile.mock.calls.map(([, objectKey]) => objectKey as string);
@@ -228,6 +248,12 @@ describe(CloudBackupService.name, () => {
       pruneUnseen: vi.fn().mockResolvedValue(0),
       setManifestDatabase: vi.fn().mockResolvedValue(undefined),
       getLatestManifestDatabaseKey: vi.fn().mockResolvedValue(null),
+      getKeptDatabaseKeys: vi.fn().mockResolvedValue(new Set()),
+      listKeptManifests: vi.fn().mockResolvedValue([]),
+      markManifests: vi.fn().mockResolvedValue(0),
+      forget: vi.fn().mockResolvedValue(undefined),
+      getLibraryState: vi.fn().mockResolvedValue(new Map()),
+      getOwnerNames: vi.fn().mockResolvedValue(new Map()),
       endAbandonedManifests: vi.fn().mockResolvedValue(0),
       countAssets: vi.fn().mockResolvedValue(3),
       listAssets: vi.fn().mockResolvedValue([]),
@@ -240,6 +266,16 @@ describe(CloudBackupService.name, () => {
     };
     databaseBackup = {
       createDatabaseBackup: vi.fn().mockResolvedValue('/data/backups/cloud-backup-immich-db-backup-dump.sql.gz'),
+    };
+    cloudBackup = {
+      grant: vi.fn(),
+      rotate: vi.fn(),
+      usage: vi.fn(),
+      reportRun: vi.fn().mockResolvedValue(undefined),
+      putSettings: vi.fn().mockResolvedValue(undefined),
+      putEscrow: vi.fn().mockResolvedValue(undefined),
+      getEscrow: vi.fn(),
+      deleteEscrow: vi.fn().mockResolvedValue(undefined),
     };
     sut = build();
     // an own-memory key is asked for without waiting; a spec that needs the wait sets it
@@ -321,8 +357,8 @@ describe(CloudBackupService.name, () => {
       expect(status.keyLoaded).toBe(true);
     });
 
-    it('refuses Frameleaf-managed storage until Frameleaf Cloud offers it', async () => {
-      await expect(setup({ target: 'managed' })).rejects.toThrow(MANAGED_STORAGE_UNAVAILABLE);
+    it('refuses Frameleaf-managed storage while this server is not linked to Frameleaf Cloud', async () => {
+      await expect(setup({ target: 'managed' })).rejects.toThrow('not linked to Frameleaf Cloud');
       expect(store.claim).not.toHaveBeenCalled();
     });
 
@@ -421,6 +457,7 @@ describe(CloudBackupService.name, () => {
       expect(operations.createExclusive).toHaveBeenCalledWith(
         expect.objectContaining({ kind: MediaOperationKind.CloudBackup }),
         DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
       );
     });
 
@@ -823,7 +860,7 @@ describe(CloudBackupService.name, () => {
       expect(store.uploadFile).not.toHaveBeenCalled();
     });
 
-    it('keeps the newest seven dumps and the dump of the newest complete backup', async () => {
+    it('keeps the newest seven dumps and the dump of every kept backup', async () => {
       const older = Array.from({ length: 9 }, (_, i) => `db/cloud-backup-immich-db-backup-2026090${i}.sql.gz`);
       store.listAll = vi
         .fn()
@@ -834,13 +871,13 @@ describe(CloudBackupService.name, () => {
               )
             : Promise.resolve(0),
         );
-      index.getLatestManifestDatabaseKey.mockResolvedValue(older[0]);
+      index.getKeptDatabaseKeys.mockResolvedValue(new Set([older[0]]));
 
       await sut.run(operationOf(), 'claim-1');
 
       const deleted = store.delete.mock.calls.map(([, name]) => name as string);
-      // the current dump and the six newest earlier ones stay; the oldest stays because the newest complete
-      // manifest names it; every other dump goes, whatever older manifest named it
+      // the current dump and the six newest earlier ones stay; the oldest stays because a kept manifest names
+      // it; every other dump goes
       expect(deleted.toSorted()).toEqual([older[1], older[2]]);
     });
 
@@ -970,7 +1007,10 @@ describe(CloudBackupService.name, () => {
       await sut.resumeRun('run-1');
       await sut.cancelRun('run-1');
 
-      expect(operations.requestPause).toHaveBeenCalledWith('run-1', 'other-admin', [MediaOperationKind.CloudBackup]);
+      expect(operations.requestPause).toHaveBeenCalledWith('run-1', 'other-admin', [
+        MediaOperationKind.CloudBackup,
+        MediaOperationKind.CloudRestore,
+      ]);
       expect(operations.resume).toHaveBeenCalledWith('run-1', 'other-admin');
       expect(operations.requestCancel).toHaveBeenCalledWith('run-1', 'other-admin');
     });
@@ -1000,6 +1040,481 @@ describe(CloudBackupService.name, () => {
         sut.onConfigValidate({ newConfig: config({ endpoint: 'http://s3.example.test' }), oldConfig: config({}) }),
       ).toThrow('HTTPS');
       expect(() => sut.onConfigValidate({ newConfig: config({}), oldConfig: config({}) })).not.toThrow();
+    });
+  });
+  describe('schedule (FL-164)', () => {
+    const scheduled = (cronExpression = '0 4 * * *') =>
+      ({
+        frameleafCloud: {
+          cloudBackup: { enabled: true, target: 'byo-s3', schedule: { cronExpression }, verifyWeekly: true },
+        },
+      }) as never;
+
+    beforeEach(() => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      mocks.user.getAdmin.mockResolvedValue({ id: 'admin-1' } as never);
+    });
+
+    it('runs the schedule on the one server that holds its lock', async () => {
+      mocks.database.tryLock.mockResolvedValue(false);
+      await sut.onConfigInit({ newConfig: scheduled() });
+      expect(mocks.cron.create).not.toHaveBeenCalled();
+
+      mocks.database.tryLock.mockResolvedValue(true);
+      await sut.onConfigInit({ newConfig: scheduled() });
+      expect(mocks.database.tryLock).toHaveBeenCalledWith(DatabaseLock.FrameleafCloudBackupCheck);
+      expect(mocks.cron.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: CLOUD_BACKUP_SCHEDULE_CRON, expression: '0 4 * * *', start: true }),
+      );
+      expect(mocks.cron.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: CLOUD_BACKUP_VERIFY_CRON, start: true }),
+      );
+
+      sut.onConfigUpdate({ newConfig: scheduled('0 */6 * * *'), oldConfig: scheduled() });
+      expect(mocks.cron.update).toHaveBeenCalledWith(
+        expect.objectContaining({ name: CLOUD_BACKUP_SCHEDULE_CRON, expression: '0 */6 * * *' }),
+      );
+    });
+
+    it('queues one scheduled run under the lock, owned by the first administrator', async () => {
+      await expect(sut.handleSchedule()).resolves.toBe(JobStatus.Success);
+
+      expect(operations.createExclusive).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerId: 'admin-1',
+          kind: MediaOperationKind.CloudBackup,
+          snapshot: expect.objectContaining({ task: 'backup', scheduled: true }),
+        }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+    });
+
+    it('never duplicates a run already queued or in progress', async () => {
+      operations.createExclusive.mockResolvedValue({ active: { id: 'run-1', ownerId: 'admin-1', fingerprint: null } });
+      operations.getOfKind.mockResolvedValue(operationOf());
+
+      await expect(sut.handleSchedule()).resolves.toBe(JobStatus.Skipped);
+      expect(operations.createExclusive).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing while cloud backup is off', async () => {
+      metadata[SystemMetadataKey.SystemConfig] = { frameleafCloud: { cloudBackup: { enabled: false } } };
+
+      await expect(sut.handleSchedule()).resolves.toBe(JobStatus.Skipped);
+      expect(operations.createExclusive).not.toHaveBeenCalled();
+    });
+
+    it('follows a scheduled run with the clean-up of runs past retention', async () => {
+      keys.read.mockResolvedValue(keyFileOf());
+
+      const snapshot = { version: 1, bucketRef: ref, keyFingerprint: fingerprint, scheduled: true };
+      await sut.run(operationOf({ snapshot }), 'claim-1');
+
+      expect(operations.complete).toHaveBeenCalled();
+      expect(operations.createExclusive).toHaveBeenCalledWith(
+        expect.objectContaining({
+          snapshot: expect.objectContaining({ task: 'prune', dryRun: false, scheduled: true }),
+        }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+    });
+
+    it('queues the monthly full check first, then a weekly sample, and nothing in between', async () => {
+      await expect(sut.handleVerifyCheck()).resolves.toBe(JobStatus.Success);
+      expect(operations.createExclusive).toHaveBeenLastCalledWith(
+        expect.objectContaining({ snapshot: expect.objectContaining({ task: 'verify', depth: 'full' }) }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+
+      const recent = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const lastWeek = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        lastFullVerifyAt: recent,
+        lastVerify: { at: lastWeek },
+      });
+      await expect(sut.handleVerifyCheck()).resolves.toBe(JobStatus.Success);
+      expect(operations.createExclusive).toHaveBeenLastCalledWith(
+        expect.objectContaining({ snapshot: expect.objectContaining({ task: 'verify', depth: 'sample' }) }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        lastFullVerifyAt: recent,
+        lastVerify: { at: recent },
+      });
+      await expect(sut.handleVerifyCheck()).resolves.toBe(JobStatus.Skipped);
+      expect(operations.createExclusive).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('clean-up (FL-164)', () => {
+    beforeEach(() => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      keys.read.mockResolvedValue(keyFileOf());
+    });
+
+    it('asked for by hand, needs a dry run first', async () => {
+      await expect(sut.startPrune(authStub.admin, { dryRun: false })).rejects.toThrow('Preview the clean-up first');
+
+      await sut.startPrune(authStub.admin, { dryRun: true });
+      expect(operations.createExclusive).toHaveBeenCalledWith(
+        expect.objectContaining({
+          label: 'Cloud backup clean-up preview',
+          snapshot: expect.objectContaining({ dryRun: true }),
+        }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        lastPrune: { dryRun: true, at: new Date().toISOString() },
+      });
+      await sut.startPrune(authStub.admin, { dryRun: false });
+      expect(operations.createExclusive).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          label: 'Cloud backup clean-up',
+          snapshot: expect.objectContaining({ dryRun: false }),
+        }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+    });
+
+    it('needs a new dry run once a backup has run since the last one', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        lastPrune: { dryRun: true, at: new Date(Date.now() - 60_000).toISOString() },
+        lastSuccessAt: new Date().toISOString(),
+      });
+
+      await expect(sut.startPrune(authStub.admin, { dryRun: false })).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('Frameleaf-managed storage (FL-164)', () => {
+    const grant = cloudContractFixture('backup/grant-response.json');
+    const rotated = cloudContractFixture('backup/grant-rotate-response.json');
+    const managedRef = bucketRef(grant.endpoint, grant.bucket);
+    const cloudUrl = 'https://cloud.frameleaf.test';
+    const managedClaim = (overrides: Record<string, unknown> = {}) =>
+      claim({ target: 'managed', bucketRef: managedRef, endpoint: grant.endpoint, bucket: grant.bucket, ...overrides });
+    const managedOperation = () =>
+      operationOf({ snapshot: { version: 1, bucketRef: managedRef, keyFingerprint: fingerprint } });
+
+    beforeEach(() => {
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ frameleafCloud: { ...mockEnvData({}).frameleafCloud, identityDir: '/identity', url: cloudUrl } }),
+      );
+      metadata[SystemMetadataKey.FrameleafCloudLink] = { status: 'linked', cloudUrl, instanceId: 'instance-1' };
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim();
+      metadata[SystemMetadataKey.SystemConfig] = {
+        frameleafCloud: { cloudBackup: { enabled: true, target: 'managed', keyMode: 'server' } },
+      };
+      keys.read.mockResolvedValue(keyFileOf());
+      mocks.frameleafCloud.discovery.mockResolvedValue({ api: 'https://api.frameleaf.test' } as never);
+      mocks.frameleafCloud.accessToken.mockResolvedValue({ accessToken: 'token' } as never);
+      cloudBackup.rotate.mockResolvedValue(rotated);
+    });
+
+    it('rotates the key at the start of every run and never keeps it', async () => {
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(cloudBackup.rotate).toHaveBeenCalledTimes(1);
+      expect(store.readMarker).toHaveBeenCalledWith(
+        expect.objectContaining({ bucket: grant.bucket, accessKeyId: rotated.credentials.accessKeyId }),
+        key,
+      );
+      expect(operations.complete).toHaveBeenCalled();
+      const secret = rotated.credentials.secretAccessKey;
+      expect(JSON.stringify(metadata)).not.toContain(secret);
+      expect(JSON.stringify(mocks.forkSchema.persistConfig.mock.calls)).not.toContain(secret);
+      expect(JSON.stringify(mocks.logger.log.mock.calls)).not.toContain(secret);
+    });
+
+    it('stops uploads without touching this server’s files while the grant is read-only', async () => {
+      cloudBackup.rotate.mockResolvedValue({ ...rotated, readOnly: true });
+
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ error: expect.stringContaining('read-only') }),
+      );
+      expect(databaseBackup.createDatabaseBackup).not.toHaveBeenCalled();
+      expect(store.uploadFile).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('asks for no storage while Frameleaf Cloud suspects a copy of this server, and says so', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudLink] = {
+        status: 'linked',
+        cloudUrl,
+        instanceId: 'instance-1',
+        heartbeat: { cloneSuspected: true },
+      };
+
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(cloudBackup.rotate).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ error: expect.stringContaining('copy of another one') }),
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:clone-suspected' }),
+      );
+    });
+
+    it('waits out a rate limit rather than failing', async () => {
+      cloudBackup.rotate.mockRejectedValue(
+        new FrameleafCloudError(
+          MlAdmissionRefusal.CloudUnavailable,
+          429,
+          'rate limited',
+          errorEnvelopeSchema.parse(cloudContractFixture('errors/rate-limited.json')),
+          null,
+          120,
+        ),
+      );
+
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(operations.requeue).toHaveBeenCalledWith('run-1', 'claim-1', { delayMs: 120_000, returnAttempt: true });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('stops on a withdrawn grant with the reason Frameleaf Cloud gave', async () => {
+      cloudBackup.rotate.mockRejectedValue(
+        new FrameleafCloudError(
+          MlAdmissionRefusal.CloudUnavailable,
+          410,
+          'withdrawn',
+          errorEnvelopeSchema.parse(cloudContractFixture('errors/grant-revoked.json')),
+        ),
+      );
+
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ error: expect.stringContaining('unlinked from Frameleaf Cloud') }),
+      );
+    });
+
+    it('sets up with the bucket Frameleaf Cloud grants, and keeps no credential for it', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
+      metadata[SystemMetadataKey.SystemConfig] = {};
+      cloudBackup.grant.mockResolvedValue(cloudContractFixture('backup/grant-metadata.json'));
+
+      await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
+
+      // a repeated grant answers without a key, so one is rotated for the claim
+      expect(cloudBackup.rotate).toHaveBeenCalled();
+      expect(store.claim).toHaveBeenCalledWith(
+        expect.objectContaining({ bucket: grant.bucket, secretAccessKey: rotated.credentials.secretAccessKey }),
+        key,
+        expect.anything(),
+      );
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+        target: 'managed',
+        bucket: grant.bucket,
+        managed: { readOnly: false, quotaBytes: grant.quotaBytes },
+      });
+      const persisted = JSON.stringify(mocks.forkSchema.persistConfig.mock.calls);
+      expect(persisted).toContain('"target":"managed"');
+      expect(persisted).not.toContain(rotated.credentials.secretAccessKey);
+      expect(cloudBackup.putSettings).toHaveBeenCalledWith(expect.anything(), {
+        keyMode: 'server',
+        scheduleEnabled: true,
+      });
+    });
+  });
+
+  describe('key escrow (FL-164)', () => {
+    const cloudUrl = 'https://cloud.frameleaf.test';
+
+    beforeEach(() => {
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ frameleafCloud: { ...mockEnvData({}).frameleafCloud, identityDir: '/identity', url: cloudUrl } }),
+      );
+      metadata[SystemMetadataKey.FrameleafCloudLink] = { status: 'linked', cloudUrl, instanceId: 'instance-1' };
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      keys.read.mockResolvedValue(keyFileOf());
+      mocks.frameleafCloud.discovery.mockResolvedValue({ api: 'https://api.frameleaf.test' } as never);
+      mocks.frameleafCloud.accessToken.mockResolvedValue({ accessToken: 'token' } as never);
+    });
+
+    it('sends only the scrypt-wrapped key, never the key or the passphrase (server key mode)', async () => {
+      const passphrase = 'correct horse battery staple';
+
+      const status = await sut.storeEscrow(authStub.admin, { passphrase });
+
+      const [, blob] = cloudBackup.putEscrow.mock.calls[0];
+      expect(keyEscrowBlobSchema.safeParse(blob).success).toBe(true);
+      await expect(unwrapBucketKey(blob, passphrase)).resolves.toEqual(key);
+      const sent = JSON.stringify([cloudBackup.putEscrow.mock.calls, cloudBackup.putSettings.mock.calls]);
+      expect(sent).not.toContain(key.toString('base64'));
+      expect(sent).not.toContain(passphrase);
+      expect(status.escrow).toMatchObject({ stored: true });
+      expect(mocks.forkSchema.persistConfig.mock.calls.at(-1)![1]).toMatchObject({
+        frameleafCloud: { cloudBackup: { escrow: true } },
+      });
+    });
+
+    it('is never offered for your own key', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: 'own-stored' });
+
+      await expect(sut.storeEscrow(authStub.admin, { passphrase: 'correct horse battery staple' })).rejects.toThrow(
+        'only available when this server generates its own backup key',
+      );
+      expect(cloudBackup.putEscrow).not.toHaveBeenCalled();
+      expect(() =>
+        sut.onConfigValidate({
+          newConfig: { frameleafCloud: { cloudBackup: { enabled: false, keyMode: 'own-memory', escrow: true } } },
+          oldConfig: {},
+        } as never),
+      ).toThrow('only available');
+    });
+
+    it('removes the copy from Frameleaf Cloud', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ escrow: { storedAt: '2026-09-26T00:00:00.000Z' } });
+
+      const status = await sut.removeEscrow(authStub.admin);
+
+      expect(cloudBackup.deleteEscrow).toHaveBeenCalled();
+      expect(status.escrow).toMatchObject({ stored: false });
+    });
+  });
+
+  describe('restore (FL-164)', () => {
+    const manifestKey = 'm/20260926T030000Z.json.gz';
+    const kept = {
+      key: manifestKey,
+      status: 'complete',
+      databaseKey: dumpKey,
+      createdAt: new Date('2026-09-26T03:00:00.000Z'),
+      finishedAt: null,
+      assetCount: 1,
+      fileCount: 1,
+      bytes: 100,
+    };
+    const manifestBody = gzipSync(
+      JSON.stringify({
+        format: 'frameleaf-backup-manifest',
+        version: 1,
+        instanceId: 'instance-1',
+        createdAt: '2026-09-26T03:00:00.000Z',
+        database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
+        assets: {
+          'asset-1': {
+            owner: 'owner-1',
+            files: [{ role: 'original', path: '/data/library/IMG_1.jpg', sha256: SHA_A, size: 100, mtime: null }],
+          },
+        },
+        profiles: {},
+      }),
+    );
+    const restoreOperation = (scope: string, assetIds: string[] | null = null) =>
+      operationOf({
+        id: 'restore-1',
+        kind: MediaOperationKind.CloudRestore,
+        snapshot: { version: 1, bucketRef: ref, keyFingerprint: fingerprint, manifestKey, scope, assetIds },
+      });
+
+    beforeEach(() => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      keys.read.mockResolvedValue(keyFileOf());
+      index.listKeptManifests.mockResolvedValue([kept]);
+      store.get = vi.fn().mockResolvedValue(manifestBody);
+      store.download = vi.fn().mockImplementation((_connection, _key, _bucketKey, _target, sha256: string) =>
+        Promise.resolve({ size: 1, sha256 }),
+      );
+    });
+
+    it('queues a restore under the bucket lock, named without the item, only from a kept backup', async () => {
+      await expect(
+        sut.startRestore(authStub.admin, { manifestKey: 'm/20250101T030000Z.json.gz', scope: 'files' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        sut.startRestore(authStub.admin, { manifestKey, scope: 'asset', assetIds: [] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      await sut.startRestore(authStub.admin, {
+        manifestKey,
+        scope: 'asset',
+        assetIds: ['8c5c3a24-2f65-4a8e-b3d4-3f1c3cb0c3e1'],
+      });
+
+      expect(operations.createExclusive).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: MediaOperationKind.CloudRestore,
+          label: 'Restore an item from cloud backup',
+          snapshot: expect.objectContaining({ manifestKey, scope: 'asset' }),
+        }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudBackup] },
+      );
+    });
+
+    it('is refused while a backup operation holds the bucket', async () => {
+      operations.createExclusive.mockResolvedValue({ active: { id: 'run-1', ownerId: 'admin', fingerprint: null } });
+
+      await expect(sut.startRestore(authStub.admin, { manifestKey, scope: 'database' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+
+    it('restores files into the restore folder as a cloud_restore operation, each checked by its hash', async () => {
+      await sut.run(restoreOperation('files'), 'claim-1');
+
+      expect(store.download).toHaveBeenCalledWith(
+        expect.objectContaining({ bucket: s3.bucket }),
+        `o/${SHA_A}`,
+        key,
+        expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/original-IMG_1\.jpg$/),
+        SHA_A,
+      );
+      expect(operations.complete).toHaveBeenCalledWith('restore-1', 'claim-1', { resultAssetId: null });
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+        lastRestore: { operationId: 'restore-1', scope: 'files', status: 'completed', files: 1 },
+      });
+    });
+
+    it('stops with a report when an object does not match its checksum', async () => {
+      store.download = vi.fn().mockRejectedValue(new CloudBackupStoreError('mismatch', null, 'ChecksumMismatch'));
+
+      await sut.run(restoreOperation('files'), 'claim-1');
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        'restore-1',
+        'claim-1',
+        expect.objectContaining({ error: expect.stringContaining('does not match its checksum') }),
+      );
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRestore: { status: 'failed' } });
+    });
+
+    it('lists the items a backup holds with whether each is still in the library', async () => {
+      index.getLibraryState.mockResolvedValue(new Map());
+
+      const found = await sut.listManifestItems({ manifestKey, query: 'img', filter: 'deleted' });
+
+      expect(found).toEqual({
+        manifestKey,
+        total: 1,
+        items: [expect.objectContaining({ assetId: 'asset-1', name: 'IMG_1.jpg', state: 'deleted', bytes: 100 })],
+      });
     });
   });
 });
