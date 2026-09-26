@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { IncomingMessage, Server, ServerResponse, createServer } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
 /**
  * A scriptable fake Frameleaf Cloud for specs (FL-154..FL-158): discovery is served by default and
@@ -57,14 +58,9 @@ export type FakeCloud = {
 
 /**
  * The cloud's golden answer to a resource nonce challenge: packages/contracts
- * `fixtures/errors/use-dpop-nonce.json` (frameleaf-cloud, FC-19/FC-66).
+ * `fixtures/errors/use-dpop-nonce.json` (frameleaf-cloud, FC-19/FC-66), as vendored by FL-177.
  */
-export const USE_DPOP_NONCE_ENVELOPE = {
-  code: 'use_dpop_nonce',
-  message: 'Retry with the DPoP-Nonce from this response.',
-  retryable: true,
-  requestId: 'req_01J8ZK3M4N5P6Q7S',
-};
+export const USE_DPOP_NONCE_ENVELOPE = cloudContractFixture<Record<string, unknown>>('errors/use-dpop-nonce.json');
 
 const readBody = async (request: IncomingMessage) => {
   const chunks: Buffer[] = [];

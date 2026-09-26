@@ -43,6 +43,8 @@ export type FrameleafCloudRequest = {
   dpop?: { signer: FrameleafKeySigner; accessToken?: string };
   body?: unknown;
   form?: Record<string, string>;
+  /** FL-177: a body sent as it is, for example a compact JWS as `application/jose`. */
+  raw?: { contentType: string; body: string };
   headers?: Record<string, string>;
 };
 
@@ -98,6 +100,13 @@ export class FrameleafCloudRepository {
     }
     this.discoveryCache = { cloudUrl, document, validUntil: now + document.validFor * 1000 };
     return document;
+  }
+
+  /** The discovery document this process holds for `cloudUrl` and still may use, without any call. */
+  peekDiscovery(cloudUrl: string, now = Date.now()): FrameleafDiscoveryDocument | null {
+    return this.discoveryCache?.cloudUrl === cloudUrl && this.discoveryCache.validUntil > now
+      ? this.discoveryCache.document
+      : null;
   }
 
   /**
@@ -271,7 +280,10 @@ export class FrameleafCloudRepository {
     const origin = new URL(request.url).origin;
     const headers: Record<string, string> = { Accept: 'application/json', ...request.headers };
     let body: string | undefined;
-    if (request.form) {
+    if (request.raw) {
+      headers['Content-Type'] = request.raw.contentType;
+      body = request.raw.body;
+    } else if (request.form) {
       headers['Content-Type'] = 'application/x-www-form-urlencoded';
       body = new URLSearchParams(request.form).toString();
     } else if (request.body !== undefined) {

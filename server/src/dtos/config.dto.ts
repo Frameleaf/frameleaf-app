@@ -177,9 +177,9 @@ const nsfwDetectionDefaults = {
  */
 const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studio', 'interpolation'] as const;
 const frameleafCloudDefaults = {
-  // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it; the client secret
-  // is only for a cloud that registered this server with one (private_key_jwt needs none).
-  signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, clientSecret: '' },
+  // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it. The client
+  // authenticates with this server's key only (private_key_jwt); there is no client secret (FL-177).
+  signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
   cloudMl: {
     enabled: false,
     // Where each kind of work may run (§3.2): this server only until an administrator chooses.
@@ -494,13 +494,6 @@ const AdminConfigFrameleafCloudSchema = z
         showOnLocalLogin: configBool
           .describe('Show Sign in with Frameleaf on the local sign-in page too')
           .meta({ visibility: Public }),
-        // Write-only, like oauth.clientSecret: mapAdminConfig() returns '' and saving '' keeps it.
-        // Replace or clear it through /admin/config/credentials/frameleaf-oidc-client-secret.
-        clientSecret: z.string().describe('Frameleaf client secret (write-only; empty preserves the existing secret)'),
-        clientSecretConfigured: z
-          .boolean()
-          .optional()
-          .describe('Read-only indicator that a client secret is stored. Set by the server; ignored on write.'),
       })
       .default(frameleafCloudDefaults.signIn)
       .meta({ id: 'AdminConfigFrameleafSignInDto' }),
@@ -1240,14 +1233,6 @@ export function mapAdminConfig(config: SystemConfig): AdminConfigDto {
       ...config.oauth,
       clientSecret: '',
       clientSecretConfigured: config.oauth.clientSecret.length > 0,
-    },
-    frameleafCloud: {
-      ...config.frameleafCloud,
-      signIn: {
-        ...config.frameleafCloud.signIn,
-        clientSecret: '',
-        clientSecretConfigured: (config.frameleafCloud.signIn?.clientSecret ?? '').length > 0,
-      },
     },
   };
 }

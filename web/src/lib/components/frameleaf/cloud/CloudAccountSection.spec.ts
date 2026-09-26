@@ -1,4 +1,4 @@
-import { CloudHeartbeatField, CloudLinkState, type CloudStatusResponseDto } from '@immich/sdk';
+import { CloudHeartbeatField, CloudLinkRefusal, CloudLinkState, type CloudStatusResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,6 +17,7 @@ const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusRes
   lastContactAt: null,
   pending: null,
   linkResult: null,
+  linkRefusal: null,
   permissions: { allowRemoteEnable: false, allowBackupTrigger: true, allowEntitlementRefresh: true },
   revoked: null,
   lastError: null,
@@ -77,6 +78,23 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
     expect(screen.queryByRole('button', { name: /Link to Frameleaf/ })).not.toBeInTheDocument();
   });
 
+  it.each([
+    [CloudLinkRefusal.InstanceLimit, 'Your plan has no room for another server'],
+    [CloudLinkRefusal.ServerRefused, 'Frameleaf Cloud refused this server'],
+    [CloudLinkRefusal.InstanceIdTaken, 'This server’s ID is still registered'],
+    [CloudLinkRefusal.KeyAlreadyLinked, 'This server’s key is already linked'],
+  ])('explains a refused link (%s) in words an administrator can act on (FL-177)', async (linkRefusal, title) => {
+    sdkMock.getCloudStatus.mockResolvedValue(
+      status({ linkRefusal, lastError: 'Linking did not finish: raw cloud message' }),
+    );
+    render(CloudAccountSection);
+
+    expect(await screen.findByText(title)).toBeInTheDocument();
+    expect(screen.getAllByText(/Servers in your Frameleaf account|identity directory/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Linking did not finish: raw cloud message')).toBeNull();
+    expect(screen.getByRole('button', { name: /Link to Frameleaf/ })).toBeInTheDocument();
+  });
+
   it('leads the unlinked page with the mobile apps benefit and starts the device flow', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(status());
     sdkMock.startCloudLink.mockResolvedValue(pending());
@@ -126,6 +144,8 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
 
     expect(await screen.findByText('Linked to Frameleaf')).toBeInTheDocument();
     expect(screen.getByText('owner@example.test')).toBeInTheDocument();
+    // FL-177 review (#32): a role changed in the Frameleaf account applies at the next sign-in
+    expect(screen.getByText(/applies here at that person’s next Sign in with Frameleaf/)).toBeInTheDocument();
     expect(screen.getByText('At home only')).toBeInTheDocument();
 
     const sends = screen.getByTestId('cloud-heartbeat-fields');

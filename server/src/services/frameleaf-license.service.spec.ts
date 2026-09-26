@@ -1,3 +1,5 @@
+import { ConflictException } from '@nestjs/common';
+import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,8 +9,9 @@ import { AdminAuditAction, JobStatus, NotificationLevel, SystemMetadataKey, User
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
-import { FakeCloud, startFakeCloud, tokenAnswer, tokenNameOf } from 'test/fake-frameleaf-cloud.js';
+import { FrameleafLicenseService, IDENTITY_KEY_MISMATCH_MESSAGE } from 'src/services/frameleaf-license.service.js';
+import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { FakeCloud, FakeCloudRequest, startFakeCloud, tokenAnswer, tokenNameOf } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { makeLicenseSigner, signLicenseCertificate } from 'test/fixtures/frameleaf-license.fixture.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -39,6 +42,34 @@ describe(FrameleafLicenseService.name, () => {
       instanceId: instanceId(),
       accountId: 'account-1',
     });
+
+  /**
+   * FL-177 (as-built decision #28): an unlinked server's activation travels as a compact JWS signed by
+   * its identity key (`kid` = the `jkt`), bound to the activation address and short-lived. It is not
+   * a DPoP request: no token and no `DPoP` header (FL-178).
+   */
+  const signedActivation = async (request: FakeCloudRequest) => {
+    expect(request.headers['content-type']).toBe('application/jose');
+    expect(request.headers.authorization).toBeUndefined();
+    expect(request.headers.dpop).toBeUndefined();
+    const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as {
+      kid: string;
+      publicJwk: Record<string, string>;
+    };
+    // verified the way the cloud does for a server it holds no key for: with the header's own key
+    const header = decodeProtectedHeader(request.body) as { jwk?: Record<string, string>; kid?: string };
+    expect(Object.keys(header.jwk ?? {}).sort()).toEqual(['crv', 'kty', 'x']);
+    expect(header.jwk).toEqual(identity.publicJwk);
+    expect(ed25519Thumbprint(header.jwk as { crv: string; kty: string; x: string })).toBe(header.kid);
+    const { payload, protectedHeader } = await jwtVerify(request.body, await importJWK(header.jwk!, 'EdDSA'), {
+      audience: `${cloud.url}/api/v1/licenses/activate`,
+    });
+    expect(protectedHeader).toMatchObject({ alg: 'EdDSA', kid: identity.kid });
+    expect((payload.fingerprint as { jkt: string }).jkt).toBe(header.kid);
+    expect(payload.exp! - payload.iat!).toBeLessThanOrEqual(120);
+    expect(payload.jti).toEqual(expect.any(String));
+    return payload as Record<string, any>;
+  };
 
   const serveToken = () => cloud.on('POST /id/token', (request) => tokenAnswer(request));
 
@@ -127,11 +158,10 @@ describe(FrameleafLicenseService.name, () => {
       const status = await sut.activate(authStub.admin, { key: SERVER_KEY });
 
       const request = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!;
-      expect(request.headers.authorization).toBeUndefined();
-      expect(request.headers.dpop).toBeUndefined();
-      expect(request.json()).toMatchObject({
+      const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string };
+      await expect(signedActivation(request)).resolves.toMatchObject({
         key: SERVER_KEY,
-        fingerprint: { instanceId: instanceId(), jkt: expect.any(String) },
+        fingerprint: { instanceId: instanceId(), jkt: identity.kid },
         instanceName: expect.any(String),
       });
       expect(status).toMatchObject({
@@ -163,6 +193,29 @@ describe(FrameleafLicenseService.name, () => {
       expect(request.dpop).toMatchObject({
         claims: { htm: 'POST', htu: `${cloud.url}/api/v1/licenses/activate`, ath: expect.any(String) },
       });
+      // a linked server sends the plain JSON body; its token already proves who it is, and the
+      // fingerprint names the key the token is bound to
+      expect(request.headers['content-type']).toBe('application/json');
+      const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string };
+      expect(request.dpop!.jkt).toBe(identity.kid);
+      expect(request.json()).toMatchObject({
+        key: SERVER_KEY,
+        fingerprint: { instanceId: instanceId(), jkt: identity.kid },
+      });
+    });
+
+    it('never activates without the identity key’s signature when not linked (FL-177)', async () => {
+      cloud.on('POST /api/v1/licenses/activate', (request) =>
+        request.headers['content-type'] === 'application/jose'
+          ? {
+              status: 200,
+              body: { certificate: certificate({ ent: ['SUPPORTER_SERVER'], lic_exp: null, lic: { kind: 'server' } }) },
+            }
+          : { status: 401, body: { code: 'unauthorized', message: 'Sign the activation.' } },
+      );
+      await expect(sut.activate(authStub.admin, { key: SERVER_KEY })).resolves.toMatchObject({ kind: 'server' });
+      const request = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!;
+      expect(request.body.split('.')).toHaveLength(3);
     });
 
     it('refuses a certificate for another server or signed by an unknown key', async () => {
@@ -187,6 +240,17 @@ describe(FrameleafLicenseService.name, () => {
         body: { code: 'unknown-key', message: 'This key was not found.' },
       }));
       await expect(sut.activate(authStub.admin, { key: SERVER_KEY })).rejects.toThrow('This key was not found.');
+    });
+
+    it('explains an activation refused because this server’s ID is registered with another key (FL-177)', async () => {
+      cloud.on('POST /api/v1/licenses/activate', () => ({
+        status: 409,
+        body: { code: 'instance-id-taken', message: 'refused', retryable: false, requestId: 'req_01J8ZK3M4N5P6Q7R' },
+      }));
+      await expect(sut.activate(authStub.admin, { key: SERVER_KEY })).rejects.toThrow(IDENTITY_KEY_MISMATCH_MESSAGE);
+      await expect(sut.activate(authStub.admin, { key: SERVER_KEY })).rejects.toBeInstanceOf(ConflictException);
+      expect(IDENTITY_KEY_MISMATCH_MESSAGE).not.toMatch(/please|successfully|simply/i);
+      expect(store()).toBeUndefined();
     });
 
     it('says to use a file when Frameleaf Cloud is not set up', async () => {
@@ -356,6 +420,40 @@ describe(FrameleafLicenseService.name, () => {
       fetchSpy.mockRestore();
     });
 
+    it('uses the store discovery names, as the link recorded it, still without an outbound call (FL-177)', async () => {
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        status: 'linked',
+        cloudUrl,
+        instanceId: instanceId(),
+        store: `${cloud.url}/account/store/`,
+      });
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const products = await sut.getProducts();
+      expect(products.storeUrl).toBe(`${cloud.url}/account/store`);
+      expect(products.products[0].storeUrl).toBe(`${cloud.url}/account/store?product=cloud-monthly`);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    });
+
+    it('uses the store of discovery this process already holds', async () => {
+      const original = cloud.discovery;
+      cloud.discovery = () => ({ ...original(), store: `${cloud.url}/shop` });
+      await (
+        sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository }
+      ).frameleafCloudRepository.discovery(cloud.url);
+      await expect(sut.getProducts()).resolves.toMatchObject({ storeUrl: `${cloud.url}/shop` });
+    });
+
+    it('never links to a store outside the configured cloud; it falls back to FRAMELEAF_CLOUD_URL/store', async () => {
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        status: 'linked',
+        cloudUrl,
+        instanceId: instanceId(),
+        store: 'https://store.elsewhere.test/store',
+      });
+      await expect(sut.getProducts()).resolves.toMatchObject({ storeUrl: `${cloud.url}/store` });
+    });
+
     it('has no store link when Frameleaf Cloud is not set up', async () => {
       cloudUrl = null;
       const products = await sut.getProducts();
@@ -387,7 +485,7 @@ describe(FrameleafLicenseService.name, () => {
         keyHint: '8ELH',
         activatedAt: new Date('2026-09-25T12:00:00.000Z'),
       });
-      const body = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!.json();
+      const body = await signedActivation(cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!);
       expect(body.fingerprint.user).toMatch(/^[\da-f]{64}$/);
       expect(mocks.frameleafUserLicense.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ userId: authStub.user1.user.id, keyHint: '8ELH', binding: body.fingerprint.user }),
