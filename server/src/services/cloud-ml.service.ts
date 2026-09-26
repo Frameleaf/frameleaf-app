@@ -40,6 +40,7 @@ import {
   CloudUsage,
   CloudWallet,
   FrameleafCloudError,
+  catalogDefaults,
   cloudAddressProblem,
   cloudErrorCode,
   cloudFactsFromCapabilities,
@@ -296,7 +297,13 @@ export class CloudMlService extends BaseService {
         id: model.sku,
         workload: workloadForCatalogEntry(model.workload, model.mode),
         name: model.label,
-        description: [`${model.display.model}, ${model.display.gpu}`, model.notice].filter(Boolean).join('. '),
+        description: [
+          `${model.display.model}, ${model.display.gpu}`,
+          `Start fee ${model.rate.startFeeUsd} USD per worker`,
+          model.notice,
+        ]
+          .filter(Boolean)
+          .join('. '),
         fingerprint: model.rev,
         pricingUnit: 'second',
         priceUsd: model.rate.perSecondUsd,
@@ -308,7 +315,7 @@ export class CloudMlService extends BaseService {
   private warnRefusedEntries(catalog: CloudCatalog | null) {
     if (catalog && catalog.refused > 0) {
       this.logger.warn(
-        `Frameleaf Cloud listed ${catalog.refused} catalogue ${catalog.refused === 1 ? 'entry' : 'entries'} this server does not accept; ${catalog.refused === 1 ? 'it is' : 'they are'} not offered`,
+        `Frameleaf Cloud's catalogue has ${catalog.refused} ${catalog.refused === 1 ? 'problem' : 'problems'} this server does not accept: a refused entry is not offered, and a group marking two defaults has none`,
       );
     }
   }
@@ -345,6 +352,7 @@ export class CloudMlService extends BaseService {
     if (resolution.state === CloudConnectionState.Ready && rows.length > 0) {
       const since = new Date(Date.now() - CLOUD_ML_USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
       const usage = await this.frameleafCloudMlRepository.getUsage(resolution.gateway, since).catch(() => null);
+      this.warnRefusedUsage(usage);
       for (const item of usage?.items ?? []) {
         details.set(item.jobId, item);
       }
@@ -378,10 +386,21 @@ export class CloudMlService extends BaseService {
     const gateway = await this.requireGateway();
     const since = new Date(Date.now() - CLOUD_ML_USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const usage = await this.callCloud(() => this.frameleafCloudMlRepository.getUsage(gateway, since));
+    // FL-183: an item the contract refuses is left out and logged; every other settlement still applies
+    this.warnRefusedUsage(usage);
     const settled = await this.mlDestinationRepository.applySettlements(
       usage.items.map((item) => ({ cloudJobId: item.jobId, costUsd: item.settledUsd, credits: item.credits })),
     );
     return { settled };
+  }
+
+  /** A usage item the contract refuses is not applied from the report; say so once per read. */
+  private warnRefusedUsage(usage: CloudUsage | null) {
+    if (usage && usage.refused > 0) {
+      this.logger.warn(
+        `Frameleaf Cloud reported ${usage.refused} usage ${usage.refused === 1 ? 'item' : 'items'} this server does not accept; ${usage.refused === 1 ? 'its settlement is' : 'their settlements are'} not applied from this report`,
+      );
+    }
   }
 
   /**
@@ -447,7 +466,8 @@ export class CloudMlService extends BaseService {
       const modelWorkloads = Object.fromEntries(
         usableModels.map((model) => [model.sku, workloadForCatalogEntry(model.workload, model.mode)]),
       );
-      const facts = cloudFactsFromCapabilities(capabilities, modelIds, modelWorkloads);
+      // FC-34: the model the catalogue marks per group is what unrouted work uses; none is guessed
+      const facts = cloudFactsFromCapabilities(capabilities, modelIds, modelWorkloads, catalogDefaults(usableModels));
       // FL-181 (P1): `restoration` is one wire workload for both modes, so the capability alone
       // cannot tell faithful and creative apart; a mode is only offered once the catalogue itself
       // names a usable model for it. A catalogue that could not be read (`catalog` is null) offers

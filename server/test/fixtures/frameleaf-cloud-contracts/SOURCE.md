@@ -24,6 +24,11 @@ tested against what the cloud publishes (FL-177).
   `entitlement-missing.json`, `estimate-used.json`, `ml-rate-limited.json` and `region-mismatch.json` are
   byte-identical to the same FC-34 commit `89fb079f2a2dd7f82bd01c15b7609e2068cd09d6`. The wallet top-up
   envelopes (`balance-cap.json`, `top-up-minimum.json`) belong to the account API and are not copied.
+- FL-183 review round (2026-09-26): `origin/codex/FC-34-ml-gateway` at `568ea686b77cb4cec24d0f96f2e64ee00f99ed64`
+  changes no `ml/` or ML `errors/` fixture against `89fb079f2a`, and does not yet carry the default-model fixtures
+  (`ml/catalog-descriptions.json`, `ml/rejected/catalog-two-defaults.json`, the updated `ml/catalog-restoration.json`).
+  The default-model specs build their catalogues inline from the published entries until those land; copy them
+  byte-identically then and record the commit here.
 - Re-check when FC-34 merges: if Frameleaf/frameleaf-cloud#29 lands on `main` with any of these files changed,
   copy the `main` version and record that commit here.
 - `licence/check-symbol/` (every file) is byte-identical to `packages/contracts/fixtures/licence/check-symbol/` at

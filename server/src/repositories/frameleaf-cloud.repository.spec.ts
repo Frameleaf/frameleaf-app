@@ -5,14 +5,20 @@ import { IncomingMessage, Server, ServerResponse, createServer } from 'node:http
 import { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import { MlAdmissionRefusal, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { INSTANCE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
+import {
+  CLONE_SUSPECTED_NOTICE,
+  CloudConnectionState,
+  CloudMlGatewayDeps,
+  ML_CLONE_SUSPENDED_DETAIL,
+  resolveCloudGateway,
+} from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudEstimateRequest,
   CloudJobCreateRequest,
@@ -561,7 +567,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       });
     });
 
-    it('treats a leaking answer as not understood: a catalogue entry is left out, a usage report or job run refused', async () => {
+    it('treats a leaking answer as not understood: a catalogue entry or usage item is left out, a job run refused', async () => {
       const { gateway, ml } = await ready();
       const catalog = cloudContractFixture<{ etag: string; models: unknown[] }>('ml/catalog.json');
       cloud.respond = ({ path }) => {
@@ -585,10 +591,64 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       const parsed = await ml.getCatalog(gateway);
       expect(parsed.refused).toBe(1);
       expect(parsed.models.map((model) => model.sku)).toEqual(['ms_K6WT70CS', 'ms_M7QG26PT', 'ms_54S55W7C']);
-      await expect(ml.getUsage(gateway, new Date())).rejects.toMatchObject({
-        refusal: MlAdmissionRefusal.CloudUnavailable,
-      });
+      // FL-183 (P2-1): the refused item is left out and counted; the rest of the report still counts
+      await expect(ml.getUsage(gateway, new Date())).resolves.toEqual({ items: [], refused: 1 });
       await expect(ml.getJob(gateway, jobId)).rejects.toMatchObject({ refusal: MlAdmissionRefusal.CloudUnavailable });
+    });
+
+    it('suspends cloud processing when the gateway itself answers 403 clone_suspected, as the token path does (FL-185)', async () => {
+      const emit = vi.fn().mockResolvedValue(undefined);
+      deps.eventRepository = { emit };
+      const { gateway, ml } = await ready();
+      cloud.respond = ({ path }) =>
+        path === '/ml-eu/capabilities' || path === '/ml-eu/v2/wallet'
+          ? {
+              status: 403,
+              body: {
+                code: 'clone_suspected',
+                message: 'This server may be a copy.',
+                retryable: false,
+                refusal: 'destination-unhealthy',
+                requestId: 'req_01J8ZK3M4N5P6Q7Z',
+              },
+            }
+          : undefined;
+
+      await expect(ml.getCapabilities(gateway)).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.CloudUnavailable,
+        status: 403,
+        message: ML_CLONE_SUSPENDED_DETAIL,
+      });
+      expect(metadata.get(SystemMetadataKey.FrameleafMlSuspension)).toMatchObject({
+        reason: 'clone-suspected',
+        cloudUrl: cloud.url,
+        instanceId: 'instance-1',
+      });
+      expect(emit).toHaveBeenCalledWith('AdminNotify', expect.objectContaining({ ...CLONE_SUSPECTED_NOTICE }));
+      await expect(ml.getWallet(gateway)).rejects.toMatchObject({ message: ML_CLONE_SUSPENDED_DETAIL });
+      // one dedupe key: a repeat is the same notice, which the notification path keeps from repeating
+      expect(emit.mock.calls.every(([, notice]) => notice.dedupeKey === CLONE_SUSPECTED_NOTICE.dedupeKey)).toBe(true);
+
+      // and the next resolution asks for no ML token at all while the suspension stands
+      const tokenRequests = cloud.requests.filter((request) => request.path === '/id/token').length;
+      await expect(resolveCloudGateway(deps)).resolves.toMatchObject({
+        state: CloudConnectionState.Unavailable,
+        refusal: MlAdmissionRefusal.CloudUnavailable,
+        detail: ML_CLONE_SUSPENDED_DETAIL,
+      });
+      expect(cloud.requests.filter((request) => request.path === '/id/token')).toHaveLength(tokenRequests);
+    });
+
+    it('keeps the region-mismatch and capacity refusals as they are, recording no suspension', async () => {
+      const { gateway, ml } = await ready();
+      cloud.respond = ({ path }) =>
+        path === '/ml-eu/capabilities'
+          ? { status: 403, body: cloudContractFixture('errors/region-mismatch.json') }
+          : undefined;
+      await expect(ml.getCapabilities(gateway)).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.DestinationUnhealthy,
+      });
+      expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
     });
 
     it('never sends consent with the reserved text-recognition add-on on, and maps an outdated version', async () => {

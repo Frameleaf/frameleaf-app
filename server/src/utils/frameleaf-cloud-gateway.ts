@@ -89,6 +89,33 @@ export const recordMlSuspension = (
     since: new Date().toISOString(),
   });
 
+/**
+ * Frameleaf Cloud suspects a copy of this server (FL-185): record the ML suspension for this link so
+ * no ML token is asked for until a check-in clears it (or the daily probe), and, for a new suspicion,
+ * tell the administrators through the one deduplicated notice. Never throws: the refusal stands even
+ * when the suspension cannot be written or the notice cannot be sent, and both are logged.
+ */
+export const suspendCloudMl = async (
+  deps: Pick<CloudMlGatewayDeps, 'systemMetadataRepository' | 'eventRepository' | 'logger'>,
+  cloudUrl: string,
+  instanceId: string,
+  { notify }: { notify: boolean },
+): Promise<void> => {
+  try {
+    await recordMlSuspension(deps, cloudUrl, instanceId);
+  } catch (recordError) {
+    deps.logger.warn(`Could not record the cloud processing suspension: ${recordError}`);
+  }
+  if (!notify) {
+    return;
+  }
+  try {
+    await deps.eventRepository.emit('AdminNotify', { type: NotificationType.SystemMessage, ...CLONE_SUSPECTED_NOTICE });
+  } catch (notifyError) {
+    deps.logger.warn(`Could not notify administrators: ${notifyError}`);
+  }
+};
+
 /** ML tokens may be requested again (FL-185). */
 export const clearMlSuspension = (deps: Pick<CloudGatewayDeps, 'systemMetadataRepository'>): Promise<void> =>
   deps.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlSuspension);
@@ -268,26 +295,21 @@ export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<Clo
         );
       }
     }
-    return { state: CloudConnectionState.Ready, gateway: { url: gatewayUrl, token }, region: link.dataRegion, link };
+    const { instanceId } = link;
+    // FL-183: the gateway itself answering 403 clone_suspected suspends cloud processing exactly as
+    // the token endpoint's refusal does (FL-185), with the same notice
+    const onCloneSuspected = () => suspendCloudMl(deps, cloudUrl, instanceId, { notify: true });
+    return {
+      state: CloudConnectionState.Ready,
+      gateway: { url: gatewayUrl, token, onCloneSuspected },
+      region: link.dataRegion,
+      link,
+    };
   } catch (error) {
     if (isCloneSuspectedRefusal(error)) {
-      // the refusal stands even when the suspension cannot be written; the next admission asks again
-      try {
-        await recordMlSuspension(deps, cloudUrl, link.instanceId);
-      } catch (recordError) {
-        deps.logger.warn(`Could not record the cloud processing suspension: ${recordError}`);
-      }
-      // a new suspicion always notifies (the dedupe key keeps repeats out); a refused daily probe is not new
-      if (!probing) {
-        try {
-          await deps.eventRepository.emit('AdminNotify', {
-            type: NotificationType.SystemMessage,
-            ...CLONE_SUSPECTED_NOTICE,
-          });
-        } catch (notifyError) {
-          deps.logger.warn(`Could not notify administrators: ${notifyError}`);
-        }
-      }
+      // the refusal stands even when the suspension cannot be written; the next admission asks again.
+      // A new suspicion always notifies (the dedupe key keeps repeats out); a refused daily probe is not new
+      await suspendCloudMl(deps, cloudUrl, link.instanceId, { notify: !probing });
       return suspendedRefusal;
     }
     if (error instanceof FrameleafCloudError) {

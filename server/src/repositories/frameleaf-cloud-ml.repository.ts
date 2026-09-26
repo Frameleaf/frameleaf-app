@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import z from 'zod';
 import type { FrameleafInstanceToken } from 'src/utils/frameleaf-dpop.js';
 import { MlAdmissionRefusal } from 'src/enum.js';
-import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafCloudRepository, FrameleafCloudRequest } from 'src/repositories/frameleaf-cloud.repository.js';
+import { ML_CLONE_SUSPENDED_DETAIL } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudCapabilities,
   CloudCatalog,
@@ -27,6 +28,7 @@ import {
   consentRecordedSchema,
   estimateRequestSchema,
   estimateResponseSchema,
+  isGatewayCloneSuspected,
   jobAdmittedSchema,
   jobCreateRequestSchema,
   jobStatusSchema,
@@ -36,9 +38,15 @@ import {
 
 /**
  * Where to reach the regional processing gateway, and the DPoP-bound token minted for it with the key
- * that signs every call's proof (FL-178).
+ * that signs every call's proof (FL-178). `onCloneSuspected` (FL-183) is what the gateway answering
+ * 403 `clone_suspected` sets off: the same ML suspension and notice as the token endpoint's refusal
+ * (FL-185). It never throws.
  */
-export type CloudMlGateway = { url: string; token: FrameleafInstanceToken };
+export type CloudMlGateway = {
+  url: string;
+  token: FrameleafInstanceToken;
+  onCloneSuspected?: () => Promise<void>;
+};
 
 /** `GET /ping` (public; FC-66 minimal responses): `{ok: true}` and nothing else. */
 const pingSchema = z.object({ ok: z.literal(true) });
@@ -74,15 +82,15 @@ export class FrameleafCloudMlRepository {
   }
 
   getCapabilities(gateway: CloudMlGateway): Promise<CloudCapabilities> {
-    return this.cloud.requestJson(capabilitiesSchema, { url: `${gateway.url}/capabilities`, dpop: gateway.token });
+    return this.request(gateway, capabilitiesSchema, { url: `${gateway.url}/capabilities`, dpop: gateway.token });
   }
 
   getHardware(gateway: CloudMlGateway): Promise<CloudHardware> {
-    return this.cloud.requestJson(hardwareSchema, { url: `${gateway.url}/hardware`, dpop: gateway.token });
+    return this.request(gateway, hardwareSchema, { url: `${gateway.url}/hardware`, dpop: gateway.token });
   }
 
   getCatalog(gateway: CloudMlGateway): Promise<CloudCatalog> {
-    return this.cloud.requestJson(catalogSchema, { url: `${gateway.url}/v2/catalog`, dpop: gateway.token });
+    return this.request(gateway, catalogSchema, { url: `${gateway.url}/v2/catalog`, dpop: gateway.token });
   }
 
   /**
@@ -93,7 +101,7 @@ export class FrameleafCloudMlRepository {
    */
   createEstimate(gateway: CloudMlGateway, request: CloudEstimateRequest): Promise<CloudEstimate> {
     const body = cloudRequestBody(estimateRequestSchema, request, 'the estimate request');
-    return this.cloud.requestJson(estimateResponseSchema, {
+    return this.request(gateway, estimateResponseSchema, {
       method: 'POST',
       url: `${gateway.url}/v2/estimates`,
       dpop: gateway.token,
@@ -121,7 +129,7 @@ export class FrameleafCloudMlRepository {
         'This server did not send the job: its idempotency key is not one Frameleaf Cloud accepts',
       );
     }
-    const admitted = await this.cloud.requestJson(jobAdmittedSchema, {
+    const admitted = await this.request(gateway, jobAdmittedSchema, {
       method: 'POST',
       url: `${gateway.url}/v2/jobs`,
       dpop: gateway.token,
@@ -140,12 +148,12 @@ export class FrameleafCloudMlRepository {
 
   /** `GET /v2/jobs/{id}`: where a job is now. */
   getJob(gateway: CloudMlGateway, jobId: string): Promise<CloudJobStatus> {
-    return this.cloud.requestJson(jobStatusSchema, { url: this.jobUrl(gateway, jobId), dpop: gateway.token });
+    return this.request(gateway, jobStatusSchema, { url: this.jobUrl(gateway, jobId), dpop: gateway.token });
   }
 
   /** `POST /v2/jobs/{id}/cancel`: stop a job; the cloud releases what it holds. An empty answer is fine. */
   async cancelJob(gateway: CloudMlGateway, jobId: string): Promise<void> {
-    await this.cloud.requestJson(z.unknown(), {
+    await this.request(gateway, z.unknown(), {
       method: 'POST',
       url: `${this.jobUrl(gateway, jobId)}/cancel`,
       dpop: gateway.token,
@@ -154,7 +162,7 @@ export class FrameleafCloudMlRepository {
 
   /** `DELETE /v2/jobs/{id}`: acknowledge a finished job's results, so the cloud purges its storage. */
   async deleteJob(gateway: CloudMlGateway, jobId: string): Promise<void> {
-    await this.cloud.requestJson(z.unknown(), {
+    await this.request(gateway, z.unknown(), {
       method: 'DELETE',
       url: this.jobUrl(gateway, jobId),
       dpop: gateway.token,
@@ -162,12 +170,12 @@ export class FrameleafCloudMlRepository {
   }
 
   getWallet(gateway: CloudMlGateway): Promise<CloudWallet> {
-    return this.cloud.requestJson(walletResponseSchema, { url: `${gateway.url}/v2/wallet`, dpop: gateway.token });
+    return this.request(gateway, walletResponseSchema, { url: `${gateway.url}/v2/wallet`, dpop: gateway.token });
   }
 
   /** `PATCH /v2/wallet`: change the daily cap or automatic top-up; answers with the wallet. */
   updateWallet(gateway: CloudMlGateway, settings: CloudWalletSettings): Promise<CloudWallet> {
-    return this.cloud.requestJson(walletResponseSchema, {
+    return this.request(gateway, walletResponseSchema, {
       method: 'PATCH',
       url: `${gateway.url}/v2/wallet`,
       dpop: gateway.token,
@@ -177,11 +185,11 @@ export class FrameleafCloudMlRepository {
 
   getUsage(gateway: CloudMlGateway, since: Date): Promise<CloudUsage> {
     const query = new URLSearchParams({ since: since.toISOString() });
-    return this.cloud.requestJson(usageSchema, { url: `${gateway.url}/v2/usage?${query}`, dpop: gateway.token });
+    return this.request(gateway, usageSchema, { url: `${gateway.url}/v2/usage?${query}`, dpop: gateway.token });
   }
 
   getConsent(gateway: CloudMlGateway): Promise<CloudConsentCurrent> {
-    return this.cloud.requestJson(consentCurrentSchema, {
+    return this.request(gateway, consentCurrentSchema, {
       url: `${gateway.url}/v2/consent/current`,
       dpop: gateway.token,
     });
@@ -192,7 +200,7 @@ export class FrameleafCloudMlRepository {
    * jobs too. A cloud contract addition (FL-145); an empty answer is fine.
    */
   async revokeConsent(gateway: CloudMlGateway): Promise<void> {
-    await this.cloud.requestJson(z.unknown(), {
+    await this.request(gateway, z.unknown(), {
       method: 'DELETE',
       url: `${gateway.url}/v2/consent`,
       dpop: gateway.token,
@@ -210,12 +218,40 @@ export class FrameleafCloudMlRepository {
     consent: { version: string; features: CloudConsentFeatures; acknowledgedBy?: string },
   ): Promise<CloudConsentRecorded> {
     const body = cloudRequestBody(consentRecordRequestSchema, consent, 'the consent');
-    return this.cloud.requestJson(consentRecordedSchema, {
+    return this.request(gateway, consentRecordedSchema, {
       method: 'POST',
       url: `${gateway.url}/v2/consent`,
       dpop: gateway.token,
       body,
     });
+  }
+
+  /**
+   * One gateway call. A 403 `clone_suspected` answer from the gateway itself (FC-34
+   * `MlInstanceGuard`) suspends cloud processing as FL-185's token path does (`onCloneSuspected`) and
+   * refuses with `CloudUnavailable`, whatever `refusal` the answer named.
+   */
+  private async request<T extends z.ZodType>(
+    gateway: Pick<CloudMlGateway, 'onCloneSuspected'>,
+    schema: T,
+    request: FrameleafCloudRequest,
+  ): Promise<z.infer<T>> {
+    try {
+      return await this.cloud.requestJson(schema, request);
+    } catch (error) {
+      if (isGatewayCloneSuspected(error)) {
+        await gateway.onCloneSuspected?.();
+        throw new FrameleafCloudError(
+          MlAdmissionRefusal.CloudUnavailable,
+          error.status,
+          ML_CLONE_SUSPENDED_DETAIL,
+          error.envelope,
+          null,
+          error.retryAfterSeconds,
+        );
+      }
+      throw error;
+    }
   }
 
   private jobUrl(gateway: Pick<CloudMlGateway, 'url'>, jobId: string): string {

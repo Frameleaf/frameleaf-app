@@ -143,7 +143,7 @@ describe(CloudMlService.name, () => {
       settingsUrl: null,
     });
     mocks.frameleafCloudMl.getConsent.mockResolvedValue(consentCurrent);
-    mocks.frameleafCloudMl.getUsage.mockResolvedValue({ items: [] });
+    mocks.frameleafCloudMl.getUsage.mockResolvedValue({ items: [], refused: 0 });
     mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local]);
     mocks.mlDestination.getSpend.mockResolvedValue(0);
     mocks.mlDestination.applySettlements.mockResolvedValue(0);
@@ -202,11 +202,14 @@ describe(CloudMlService.name, () => {
         },
         refusal: null,
       });
-      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringMatching(/1 catalogue entry this server does not/));
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/catalogue has 1 problem this server does not accept/),
+      );
       expect(metadata.get(SystemMetadataKey.FrameleafMlWallet)).toMatchObject({ balanceUsd: 12, heldUsd: 2 });
       expect(mocks.frameleafCloudMl.getCapabilities).toHaveBeenCalledWith({
         url: 'https://ml.eu.cloud.test',
         token: { accessToken: 'ml-token', signer: identitySigner },
+        onCloneSuspected: expect.any(Function),
       });
     });
 
@@ -217,6 +220,33 @@ describe(CloudMlService.name, () => {
       const probe = await sut.probe();
 
       expect(probe.workloads).toEqual([MlWorkload.Enrichment]);
+    });
+
+    it("records the catalogue's default per group, and none for a group marking two (FL-183, FC-34)", async () => {
+      link();
+      const [descriptions, best, upscale] = catalogFixture.models;
+      const [faithful, creative] = restorationFixture.models;
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(
+        catalogSchema.parse({
+          etag: catalogFixture.etag,
+          models: [
+            { ...descriptions, default: true },
+            best,
+            { ...upscale, default: false },
+            { ...faithful, default: true },
+            { ...creative, default: true },
+            { ...creative, sku: 'ms_CRE8TVE2', rev: 'mr_CRE8TVE2CRE8', default: true },
+          ],
+        }),
+      );
+
+      const probe = await sut.probe();
+
+      expect(probe.cloud?.defaultModels).toEqual({
+        descriptions: 'ms_K6WT70CS',
+        'restoration:faithful': 'ms_YS60DAXB',
+      });
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringMatching(/catalogue has 1 problem/));
     });
 
     it('offers both restoration modes once the catalogue confirms a usable model for each (FL-181 P1)', async () => {
@@ -458,7 +488,7 @@ describe(CloudMlService.name, () => {
         id: 'ms_M7QG26PT',
         workload: MlWorkload.Enrichment,
         name: 'Descriptions · Best (fallback)',
-        description: 'Qwen2.5-VL-72B AWQ, H200-class, 141 GB. Built with Qwen',
+        description: 'Qwen2.5-VL-72B AWQ, H200-class, 141 GB. Start fee 0.1 USD per worker. Built with Qwen',
         fingerprint: 'mr_68JDMAM8444M',
         pricingUnit: 'second',
         priceUsd: 0.004_583,
@@ -466,7 +496,7 @@ describe(CloudMlService.name, () => {
       expect(result.models[3]).toMatchObject({
         id: 'ms_YS60DAXB',
         workload: MlWorkload.RestorationFaithful,
-        description: 'RealBasicVSR, L40S-class, 48 GB',
+        description: 'RealBasicVSR, L40S-class, 48 GB. Start fee 0.1 USD per worker',
         fingerprint: 'mr_4H8QZ2N7C1TX',
       });
     });
@@ -505,6 +535,24 @@ describe(CloudMlService.name, () => {
       expect(mocks.mlDestination.applySettlements).toHaveBeenCalledWith([
         { cloudJobId: '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f', costUsd: 0.0244, credits: null },
       ]);
+    });
+
+    it('applies every good settlement when one usage item is refused, and logs the refused one (FL-183)', async () => {
+      link();
+      const [item] = cloudContractFixture<{ items: Array<Record<string, unknown>> }>('ml/usage.json').items;
+      const second = { ...item, jobId: '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e10', clientRef: null, settledUsd: 1.5 };
+      const [leaky] = cloudContractFixture<{ items: unknown[] }>('ml/rejected/usage-model-id.json').items;
+      mocks.frameleafCloudMl.getUsage.mockResolvedValue(usageSchema.parse({ items: [item, leaky, second] }));
+      mocks.mlDestination.applySettlements.mockResolvedValue(2);
+
+      await expect(sut.reconcileUsage()).resolves.toEqual({ settled: 2 });
+      expect(mocks.mlDestination.applySettlements).toHaveBeenCalledWith([
+        { cloudJobId: '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f', costUsd: 0.0244, credits: null },
+        { cloudJobId: '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e10', costUsd: 1.5, credits: null },
+      ]);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/reported 1 usage item this server does not/),
+      );
     });
 
     it('applies nothing when the cloud refuses to answer the usage report as the contract says', async () => {
@@ -689,6 +737,7 @@ describe(CloudMlService.name, () => {
             estimateUsd: 0.5,
           },
         ],
+        refused: 0,
       });
       await expect(sut.getSettlements()).resolves.toMatchObject({
         items: [
