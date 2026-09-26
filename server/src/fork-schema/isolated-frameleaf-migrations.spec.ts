@@ -99,20 +99,29 @@ describe(planIsolatedFrameleafMigrations, () => {
     ).toThrow('The return applies Frameleaf migrations only to a handed-over library');
   });
 
-  it.each(['legacy', 'dual-write', 'ready', 'failed'])(
-    'does not run in the unexpected schema version 2 phase %s',
-    (phase) => {
-      expect(
-        planIsolatedFrameleafMigrations({
-          context: 'startup',
-          state: { phase, schemaVersion: '2' },
-          cutoverLedger,
-          appliedLedger: [],
-          bundled,
-        }),
-      ).toEqual({ pending: [CLASSIFICATION_RULE, FRAMELEAF_CLOUD], skipped: 'unexpected-phase' });
-    },
-  );
+  it.each(['legacy', 'dual-write', 'failed'])('does not run in the unexpected schema version 2 phase %s', (phase) => {
+    expect(
+      planIsolatedFrameleafMigrations({
+        context: 'startup',
+        state: { phase, schemaVersion: '2' },
+        cutoverLedger,
+        appliedLedger: [],
+        bundled,
+      }),
+    ).toEqual({ pending: [CLASSIFICATION_RULE, FRAMELEAF_CLOUD], skipped: 'unexpected-phase' });
+  });
+
+  it('waits for activation of a schema version 2 library in the ready phase', () => {
+    expect(
+      planIsolatedFrameleafMigrations({
+        context: 'startup',
+        state: { phase: 'ready', schemaVersion: '2' },
+        cutoverLedger,
+        appliedLedger: [],
+        bundled,
+      }),
+    ).toEqual({ pending: [CLASSIFICATION_RULE, FRAMELEAF_CLOUD], skipped: 'awaiting-activation' });
+  });
 
   it.each([
     { phase: 'inactive', schemaVersion: '1' },

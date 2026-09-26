@@ -10,6 +10,7 @@ import { DB } from 'src/schema/index.js';
 import { down as removeClassificationRules } from 'src/schema/migrations/2100000000610-AddClassificationRule.js';
 import { down as removeFrameleafCloud } from 'src/schema/migrations/2100000000620-FrameleafCloudMlDestination.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { mediumFactory } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 /**
@@ -116,13 +117,17 @@ describe('Frameleaf public migrations after the certified cutover', () => {
     `.execute(db);
   };
 
+  /** The real cutover transaction; its evidence checks are not what these tests are about. */
+  const cutOver = async () => {
+    await repository.commitForkSchemaCutover(REPORT_DIGEST, () => Promise.resolve());
+  };
+
   beforeEach(async () => {
     db = await getKyselyDB();
     repository = new TestDatabaseRepository(db, LoggingRepository.create(), new ConfigRepository());
     await repository.runForkMigrations();
     await sql`TRUNCATE immich_fork.migration_audit`.execute(db);
     await setPhase('ready', '1');
-    await repository.commitForkSchemaCutover(REPORT_DIGEST, () => Promise.resolve());
   });
 
   afterEach(async () => {
@@ -130,6 +135,7 @@ describe('Frameleaf public migrations after the certified cutover', () => {
   });
 
   it('leaves the Frameleaf names out of the official ledger after the cutover', async () => {
+    await cutOver();
     const ledger = await officialLedger();
     const cutoverLedger = await sql<{ name: string }>`
       SELECT name FROM immich_fork.migration_audit
@@ -142,6 +148,7 @@ describe('Frameleaf public migrations after the certified cutover', () => {
   });
 
   it('waits while handed over, then applies them during the return without touching the certified ledger', async () => {
+    await cutOver();
     const catalogAtCutover = await newerCatalog();
     const diffAtCutover = await newerManifestDiff();
     const checkpoint = await repository.getOfficialHandoffCheckpoint();
@@ -197,6 +204,7 @@ describe('Frameleaf public migrations after the certified cutover', () => {
   });
 
   it('applies them at the next startup once the library is active again, exactly once across concurrent servers', async () => {
+    await cutOver();
     const catalogAtCutover = await newerCatalog();
     await cutOverBeforeNewerMigrations();
     await setPhase('active', '2');
@@ -234,6 +242,7 @@ describe('Frameleaf public migrations after the certified cutover', () => {
   });
 
   it('applies a Frameleaf migration released after the return at a later startup', async () => {
+    await cutOver();
     await setPhase('active', '2');
     const catalogAtCutover = await newerCatalog();
     // Only 620 is newer than this library's return.
@@ -250,6 +259,7 @@ describe('Frameleaf public migrations after the certified cutover', () => {
   });
 
   it('rolls back every migration and ledger row when one fails, and applies them all on the next attempt', async () => {
+    await cutOver();
     const catalogAtCutover = await newerCatalog();
     await cutOverBeforeNewerMigrations();
     await setPhase('active', '2');
@@ -270,6 +280,7 @@ describe('Frameleaf public migrations after the certified cutover', () => {
   });
 
   it('refuses a library that recorded a Frameleaf migration this version does not have', async () => {
+    await cutOver();
     await setPhase('active', '2');
     await sql`
       INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
@@ -283,6 +294,7 @@ describe('Frameleaf public migrations after the certified cutover', () => {
   });
 
   it('leaves a library that has not been cut over alone', async () => {
+    await cutOver();
     await cutOverBeforeNewerMigrations();
     await setPhase('inactive', '1');
 
@@ -292,5 +304,70 @@ describe('Frameleaf public migrations after the certified cutover', () => {
       skipped: 'not-cut-over',
     });
     expect(await relationExists('public.classification_rule')).toBe(false);
+  });
+
+  it("records a face removed before the return as the owner's decision once, when 0000000000175 could not (FL-180)", async () => {
+    const user = await mediumFactory.userWithClusterGroup(db);
+    await db.insertInto('user').values(user).execute();
+    const asset = mediumFactory.assetInsert({ ownerId: user.id });
+    await db.insertInto('asset').values(asset).execute();
+    const removedAt = '2026-07-15T02:03:04.000Z';
+    const face = await sql<{ id: string }>`
+      INSERT INTO public.asset_face
+        ("assetId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2",
+         "deletedAt")
+      VALUES (${asset.id!}::uuid, 200, 100, 20, 10, 60, 50, ${removedAt}::timestamptz)
+      RETURNING id
+    `.execute(db);
+    const faceId = face.rows[0]!.id;
+    await cutOver();
+
+    // On the return boot 0000000000175 finds no person groups (ClusterGroups is post-certified residue,
+    // reverted at the cutover), so a library cut over before it existed has no decision for this face.
+    const personGroupColumns = await sql<{ count: number }>`
+      SELECT count(*)::int AS count FROM information_schema.columns
+      WHERE table_schema = 'public' AND column_name = 'personGroupId' AND table_name IN ('asset_face', 'person')
+    `.execute(db);
+    expect(personGroupColumns.rows[0]!.count).toBe(0);
+    const decisions = async () => {
+      const result = await sql<Record<string, unknown>>`
+        SELECT "ownerId", "actorId", action, "faceId", "assetId", "boxX1", "boxY1", "boxX2", "boxY2",
+          "createdAt" = ${removedAt}::timestamptz AS "decidedWhenRemoved"
+        FROM immich_fork.face_correction WHERE "faceId" = ${faceId}::uuid
+      `.execute(db);
+      return result.rows;
+    };
+    expect(await decisions()).toEqual([]);
+
+    await repository.reapplyPostCertifiedResidue();
+    await repository.applyIsolatedFrameleafMigrations('return');
+
+    const expected = [
+      {
+        action: 'remove',
+        actorId: user.id,
+        assetId: asset.id,
+        boxX1: 0.1,
+        boxX2: 0.3,
+        boxY1: 0.1,
+        boxY2: 0.5,
+        decidedWhenRemoved: true,
+        faceId,
+        ownerId: user.id,
+      },
+    ];
+    expect(await decisions()).toEqual(expected);
+    const audit = await sql<{ details: { faceDecisions: number } }>`
+      SELECT details FROM immich_fork.migration_audit WHERE name = 'return-face-decision-carry-over'
+    `.execute(db);
+    expect(audit.rows).toEqual([{ details: expect.objectContaining({ faceDecisions: 1 }) }]);
+
+    // Running the return again records nothing more.
+    await repository.applyIsolatedFrameleafMigrations('return');
+    expect(await decisions()).toEqual(expected);
+    const auditAgain = await sql<{ count: number }>`
+      SELECT count(*)::int AS count FROM immich_fork.migration_audit WHERE name = 'return-face-decision-carry-over'
+    `.execute(db);
+    expect(auditAgain.rows[0]!.count).toBe(1);
   });
 });

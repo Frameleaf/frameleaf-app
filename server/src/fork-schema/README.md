@@ -86,9 +86,15 @@ The certified official ledger is never read for these names, added to or edited.
 the public schema across a later handoff, like every Frameleaf public object that existed at the
 cutover, and `manifests/fork-v2-catalog.json` expects them. A Frameleaf public migration must
 therefore behave in the `active` phase and in the `inactive` phase of a return, where the official
-representation is authoritative, as well as in the phases before the cutover.
+representation is authoritative, as well as in the phases before the cutover. For example,
+2100000000320 applied at a return reads the saved `system-config` before the return reconciles the
+configuration; at the first start after activation, `ImageEnrichmentService.onConfigInit` locks
+the detections it missed when hiding is on and was not recorded as on.
 
 The return boot runs the `immich_fork` migrations of the new version before `prepare-fork` applies
-the newer Frameleaf public migrations. An `immich_fork` migration may therefore touch a Frameleaf
-public table or column only after checking that exactly that object exists, and must add the same
-step to `applyFrameleafSchemaForkFollowUps`, which runs after them.
+the post-certified residue (for example `asset_face.personGroupId` from
+1787148183729-ClusterGroups) and the newer Frameleaf public migrations. An `immich_fork` migration
+may therefore touch a public table or column that either of them creates only after checking that
+exactly that object exists, and must repeat the step after them: structural steps in
+`applyFrameleafSchemaForkFollowUps`, data carry-overs in a guarded, idempotent step that the return
+runs (`carryOverEarlierFaceDecisions` does this for 0000000000175).

@@ -16,7 +16,7 @@ import {
 import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import { CERTIFIED_TAG_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
 import { createFrameleafPublicMigrationProvider } from 'src/fork-schema/migration-provider.js';
-import { applyFrameleafSchemaForkFollowUps } from 'src/fork-schema/official-adoption.js';
+import { applyFrameleafSchemaForkFollowUps, carryOverEarlierFaceDecisions } from 'src/fork-schema/official-adoption.js';
 import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue.js';
 import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
 import { WorkflowRowDigest, getWorkflowCompatibilityEvidence } from 'src/fork-schema/workflow-compatibility.js';
@@ -358,8 +358,9 @@ export class ForkHandoffRepository {
    * FL-180: apply the Frameleaf public migrations a library past the certified cutover has not
    * recorded (see `src/fork-schema/isolated-frameleaf-migrations.ts`). One transaction holds the
    * state row, re-reads the Frameleaf ledger under that lock, applies each pending migration, records
-   * it in `immich_fork.migration_audit`, repeats the structural `immich_fork` follow-ups and checks the
-   * official ledger is byte-identical. A failure changes nothing, and a second caller finds nothing
+   * it in `immich_fork.migration_audit`, repeats the structural `immich_fork` follow-ups (and, during the
+   * return, the face-decision carry-over of 0000000000175) and checks the official ledger is
+   * byte-identical. A failure changes nothing, and a second caller finds nothing
    * left to do. Callers hold `DatabaseLock.Migrations`.
    */
   async applyIsolatedFrameleafMigrations(context: IsolatedFrameleafContext): Promise<IsolatedFrameleafResult> {
@@ -395,7 +396,7 @@ export class ForkHandoffRepository {
           .map(({ name }) => name),
         bundled: Object.keys(migrations),
       });
-      if (plan.skipped || plan.pending.length === 0) {
+      if (plan.skipped || (plan.pending.length === 0 && context !== 'return')) {
         return { ...plan, applied: [] };
       }
 
@@ -424,7 +425,26 @@ export class ForkHandoffRepository {
         `.execute(transaction);
         await this.afterIsolatedFrameleafMigration(transaction, name);
       }
-      await applyFrameleafSchemaForkFollowUps(transaction);
+      if (plan.pending.length > 0) {
+        await applyFrameleafSchemaForkFollowUps(transaction);
+      }
+      if (context === 'return') {
+        // After the residue and the newer Frameleaf migrations: the return boot ran 0000000000175
+        // before either existed on a library cut over before it.
+        const faceDecisions = await carryOverEarlierFaceDecisions(transaction);
+        if (faceDecisions > 0) {
+          await sql`
+            INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
+            VALUES (
+              'return-face-decision-carry-over',
+              'return-follow-up',
+              'applied',
+              jsonb_build_object('faceDecisions', ${faceDecisions}::int, 'serverVersion', ${serverVersion.toString()}::text),
+              now()
+            )
+          `.execute(transaction);
+        }
+      }
       if ((await officialLedger()) !== officialBefore) {
         throw new Error('A Frameleaf migration changed the official migration ledger');
       }
