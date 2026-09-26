@@ -361,7 +361,7 @@ export class FrameleafRemoteAccessService extends BaseService {
     const names = state.names!;
     const { bind, port } = this.configRepository.getEnv().frameleafCloud.edge;
     const host = bind === '0.0.0.0' || bind === '::' ? '127.0.0.1' : bind;
-    // the loopback name: a home address, so the listener serves it even in "Relay only" mode
+    // the loopback name: a connection from this host is served even in "Relay only" mode (as remote)
     const servername = ipv4Name(names, '127.0.0.1')!;
     return this.probeEdge(host, port, servername);
   }
