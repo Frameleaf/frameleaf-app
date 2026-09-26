@@ -100,6 +100,201 @@ const CloudBackupUnlockSchema = z
   })
   .meta({ id: 'CloudBackupUnlockDto' });
 
+/** FL-164: what a `cloud_backup` operation does. */
+const CloudBackupTaskSchema = z
+  .enum(['backup', 'verify', 'prune'])
+  .describe('backup: a backup run; verify: a check of the backed-up files; prune: a clean-up of runs past retention')
+  .meta({ id: 'CloudBackupTask' });
+
+const CloudBackupVerifyDepthSchema = z
+  .enum(['sample', 'full'])
+  .describe('sample: fetch and check this week’s 1/52 of the files; full: check every referenced file is there')
+  .meta({ id: 'CloudBackupVerifyDepth' });
+
+const CloudBackupRestoreScopeSchema = z
+  .enum(['files', 'asset', 'database', 'library'])
+  .describe(
+    'files: into a restore folder for Library Care; asset: one item back in place; database: the dump for the maintenance restore; library: every file back in place and the dump',
+  )
+  .meta({ id: 'CloudBackupRestoreScope' });
+
+const CloudBackupItemStateSchema = z
+  .enum(['active', 'trashed', 'deleted'])
+  .describe('Whether the item is in the library now, in the trash, or gone')
+  .meta({ id: 'CloudBackupItemState' });
+
+const CloudBackupItemFilterSchema = z
+  .enum(['all', 'deleted', 'in-library'])
+  .describe('all items; only items no longer in the library; only items still in the library (or its trash)')
+  .meta({ id: 'CloudBackupItemFilter' });
+
+/** A manifest key as runs write it: `m/20260926T030000Z.json.gz`. */
+const ManifestKeySchema = z
+  .string()
+  .regex(/^m\/\d{8}T\d{6}Z\.json\.gz$/)
+  .describe('The backup run’s manifest in the bucket');
+
+const CloudBackupVerifySchema = z
+  .object({ depth: CloudBackupVerifyDepthSchema })
+  .meta({ id: 'CloudBackupVerifyDto' });
+
+const CloudBackupPruneSchema = z
+  .object({
+    dryRun: z
+      .boolean()
+      .describe('Count what the clean-up would remove without removing anything; a clean-up needs a dry run first'),
+  })
+  .meta({ id: 'CloudBackupPruneDto' });
+
+const CloudBackupEscrowSchema = z
+  .object({
+    passphrase: z
+      .string()
+      .min(12)
+      .max(1024)
+      .describe('Wraps the bucket key before it is sent; never stored and never sent to Frameleaf Cloud'),
+  })
+  .meta({ id: 'CloudBackupEscrowDto' });
+
+const CloudBackupRestoreSchema = z
+  .object({
+    manifestKey: ManifestKeySchema,
+    scope: CloudBackupRestoreScopeSchema,
+    assetIds: z
+      .array(z.uuidv4())
+      .max(10_000)
+      .optional()
+      .describe('files: the items to restore (every item when absent); asset: exactly one item'),
+  })
+  .meta({ id: 'CloudBackupRestoreDto' });
+
+const CloudBackupManifestItemsSchema = z
+  .object({
+    manifestKey: ManifestKeySchema,
+    query: z.string().max(200).optional().describe('Part of a file name'),
+    filter: CloudBackupItemFilterSchema.optional(),
+    limit: z.int().min(1).max(500).optional().describe('Items to return; 100 when absent'),
+  })
+  .meta({ id: 'CloudBackupManifestItemsDto' });
+
+const CloudBackupManifestSchema = z
+  .object({
+    key: z.string(),
+    status: z.enum(['complete', 'degraded']).meta({ id: 'CloudBackupManifestStatus' }),
+    createdAt: z.string(),
+    finishedAt: z.string().nullable(),
+    assets: z.int(),
+    files: z.int(),
+    bytes: z.int(),
+    databaseKey: z.string().nullable().describe('The database dump this backup pairs with'),
+  })
+  .meta({ id: 'CloudBackupManifestDto' });
+
+const CloudBackupManifestsResponseSchema = z
+  .object({ manifests: z.array(CloudBackupManifestSchema).describe('Kept backups, newest first') })
+  .meta({ id: 'CloudBackupManifestsResponseDto' });
+
+const CloudBackupManifestItemSchema = z
+  .object({
+    assetId: z.string(),
+    name: z.string().describe('The original’s file name when it was backed up; empty for a Locked item'),
+    locked: z.boolean().describe('A Locked item: never named in this list'),
+    ownerId: z.string().nullable(),
+    ownerName: z.string().nullable(),
+    files: z.int(),
+    bytes: z.int(),
+    modifiedAt: z.string().nullable().describe('When the original was last written before the backup'),
+    state: CloudBackupItemStateSchema,
+  })
+  .meta({ id: 'CloudBackupManifestItemDto' });
+
+const CloudBackupManifestItemsResponseSchema = z
+  .object({
+    manifestKey: z.string(),
+    total: z.int().describe('Items that match, of which at most `limit` are listed'),
+    items: z.array(CloudBackupManifestItemSchema),
+  })
+  .meta({ id: 'CloudBackupManifestItemsResponseDto' });
+
+const CloudBackupLastVerifySchema = z
+  .object({
+    operationId: z.string(),
+    depth: CloudBackupVerifyDepthSchema,
+    at: z.string(),
+    status: z.enum(['passed', 'degraded', 'failed']).meta({ id: 'CloudBackupVerifyStatus' }),
+    checked: z.int(),
+    missing: z.int(),
+    mismatched: z.int(),
+    degradedManifests: z.int(),
+    error: z.string().nullable(),
+  })
+  .meta({ id: 'CloudBackupLastVerifyDto' });
+
+const CloudBackupLastPruneSchema = z
+  .object({
+    operationId: z.string(),
+    dryRun: z.boolean(),
+    at: z.string(),
+    manifestsKept: z.int(),
+    manifestsRemoved: z.int(),
+    objectsRemoved: z.int(),
+    bytesRemoved: z.int(),
+    dumpsRemoved: z.int(),
+  })
+  .meta({ id: 'CloudBackupLastPruneDto' });
+
+const CloudBackupManagedSchema = z
+  .object({
+    readOnly: z.boolean().describe('Uploads are stopped; restores keep working'),
+    readOnlyReason: z.string().nullable(),
+    quotaBytes: z.int().describe('Storage included with the plan; more is added in 1 TB blocks'),
+    usedBytes: z.int().nullable(),
+    objects: z.int().nullable(),
+    allowanceBytes: z.int().nullable(),
+    extraBlocks: z.int().nullable(),
+    measuredAt: z.string().nullable(),
+    refusal: z.string().nullable().describe('Why Frameleaf Cloud last refused backup storage'),
+  })
+  .meta({ id: 'CloudBackupManagedDto' });
+
+const CloudBackupEscrowStatusSchema = z
+  .object({
+    available: z.boolean().describe('Server key mode and a linked server: escrow can be turned on'),
+    stored: z.boolean(),
+    storedAt: z.string().nullable(),
+  })
+  .meta({ id: 'CloudBackupEscrowStatusDto' });
+
+const CloudBackupActiveRestoreSchema = z
+  .object({
+    operationId: z.string(),
+    state: CloudBackupRunStateSchema,
+    scope: CloudBackupRestoreScopeSchema,
+    progress: z.number().meta({ format: 'double' }).describe('0 to 100'),
+    files: z.int(),
+    filesTotal: z.int(),
+    bytes: z.int(),
+    bytesTotal: z.int(),
+  })
+  .meta({ id: 'CloudBackupActiveRestoreDto' });
+
+const CloudBackupLastRestoreSchema = z
+  .object({
+    operationId: z.string(),
+    scope: CloudBackupRestoreScopeSchema,
+    manifestKey: z.string(),
+    status: z.enum(['completed', 'failed', 'cancelled']).meta({ id: 'CloudBackupRestoreStatus' }),
+    at: z.string(),
+    files: z.int(),
+    bytes: z.int(),
+    skipped: z.int(),
+    replaced: z.int(),
+    destination: z.string().nullable().describe('The folder a files restore wrote to'),
+    databaseFile: z.string().nullable().describe('The restored dump, listed by the maintenance restore'),
+    error: z.string().nullable(),
+  })
+  .meta({ id: 'CloudBackupLastRestoreDto' });
+
 const CloudBackupLastRunSchema = z
   .object({
     operationId: z.string(),
@@ -117,11 +312,14 @@ const CloudBackupLastRunSchema = z
 const CloudBackupActiveRunSchema = z
   .object({
     operationId: z.string(),
+    task: CloudBackupTaskSchema,
     state: CloudBackupRunStateSchema,
     phase: CloudBackupRunPhaseSchema,
     progress: z.number().meta({ format: 'double' }).describe('0 to 100'),
     uploaded: z.int(),
     skipped: z.int(),
+    bytesUploaded: z.int(),
+    checked: z.int().describe('verify: files checked so far'),
   })
   .meta({ id: 'CloudBackupActiveRunDto' });
 
@@ -131,7 +329,7 @@ const CloudBackupStatusSchema = z
     target: CloudBackupTargetSettingSchema,
     managedAvailable: z
       .boolean()
-      .describe('Frameleaf-managed storage can be chosen; false until Frameleaf Cloud offers backup storage'),
+      .describe('Frameleaf-managed storage can be chosen: this server is linked to Frameleaf Cloud'),
     endpoint: z.string().nullable(),
     region: z.string().nullable(),
     bucket: z.string().nullable(),
@@ -148,6 +346,12 @@ const CloudBackupStatusSchema = z
       .nullable()
       .describe('Unique files this server has in the bucket and their size'),
     activeRun: CloudBackupActiveRunSchema.nullable(),
+    activeRestore: CloudBackupActiveRestoreSchema.nullable(),
+    lastRestore: CloudBackupLastRestoreSchema.nullable(),
+    lastVerify: CloudBackupLastVerifySchema.nullable(),
+    lastPrune: CloudBackupLastPruneSchema.nullable(),
+    managed: CloudBackupManagedSchema.nullable().describe('Frameleaf-managed storage only'),
+    escrow: CloudBackupEscrowStatusSchema,
   })
   .meta({ id: 'CloudBackupStatusResponseDto' });
 
@@ -157,5 +361,13 @@ export class CloudBackupGeneratedKeyDto extends createZodDto(CloudBackupGenerate
 export class CloudBackupSetupDto extends createZodDto(CloudBackupSetupSchema) {}
 export class CloudBackupUnlockDto extends createZodDto(CloudBackupUnlockSchema) {}
 export class CloudBackupStatusResponseDto extends createZodDto(CloudBackupStatusSchema) {}
+export class CloudBackupVerifyDto extends createZodDto(CloudBackupVerifySchema) {}
+export class CloudBackupPruneDto extends createZodDto(CloudBackupPruneSchema) {}
+export class CloudBackupEscrowDto extends createZodDto(CloudBackupEscrowSchema) {}
+export class CloudBackupRestoreDto extends createZodDto(CloudBackupRestoreSchema) {}
+export class CloudBackupManifestItemsDto extends createZodDto(CloudBackupManifestItemsSchema) {}
+export class CloudBackupManifestsResponseDto extends createZodDto(CloudBackupManifestsResponseSchema) {}
+export class CloudBackupManifestItemsResponseDto extends createZodDto(CloudBackupManifestItemsResponseSchema) {}
 export type CloudBackupS3 = z.infer<typeof CloudBackupS3Schema>;
+export type CloudBackupManifestItem = z.infer<typeof CloudBackupManifestItemSchema>;
 export type CloudBackupRunState = z.infer<typeof CloudBackupRunStateSchema>;

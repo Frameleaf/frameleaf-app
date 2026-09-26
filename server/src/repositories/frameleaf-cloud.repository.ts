@@ -31,7 +31,7 @@ import {
 } from 'src/utils/frameleaf-dpop.js';
 
 export type FrameleafCloudRequest = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Absolute URL; always built from the configured cloud address or from discovery. */
   url: string;
   /** A plain bearer credential (the link token, the initial access token); never an instance token. */

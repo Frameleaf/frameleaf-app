@@ -59,6 +59,16 @@ tested against what the cloud publishes (FL-177).
   `origin/main` at `517cbd3da9e20b9248c4b975bf3a400a2bce37d1` (Frameleaf/frameleaf-cloud#54, which reads the app's
   real `frameleaf-v<semver>-<sequence>` tags; first copied from #43 at `86adf20`). The contract is
   `packages/contracts/src/releases/latest.ts`; `server/src/utils/frameleaf-release.ts` reads them (FL-192).
+- FL-164 managed backup (BAK-001 FC-33, BAK-002 FC-38): `backup/grant-response.json`,
+  `backup/grant-rotate-response.json`, `backup/grant-metadata.json`, `backup/usage.json`, `backup/escrow-blob.json`,
+  `backup/escrow-record.json`, `backup/run-report.json` and `backup/settings.json`, and the backup refusals
+  `errors/grant-revoked.json`, `errors/clone-suspected.json`, `errors/escrow-not-allowed.json`,
+  `errors/rate-limited.json` and `errors/region-unavailable.json`, are byte-identical to `origin/main` at
+  `39488a50b176ea0778ee138d202bc8eda8376a70` (merge of Frameleaf/frameleaf-cloud#51). The contracts are
+  `packages/contracts/src/backup/{grant,usage,escrow,runs}.ts`; `server/src/utils/frameleaf-cloud-backup.ts` reads
+  them, and `errors/entitlement-missing.json` was checked byte-identical at that commit. Not copied, because nothing
+  here parses them yet: `backup/purge.json`, `backup/run-list.json` and `errors/purge-not-cancellable.json` (a
+  purge is started from the Frameleaf account).
 
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
 above.

@@ -19,6 +19,7 @@ import {
   fromDownload,
   fromMediaOperation,
   fromUpload,
+  isUnfinishedCloudWork,
   matchesActivityFilter,
   mediaOperationEdit,
   mediaOperationPauseState,
@@ -774,5 +775,46 @@ describe('Studio renders, server estimates and completion (FL-104)', () => {
       outcome: 'failed',
     });
     expect(activityCompletion(new Map([[done.id, done.statusKey]]), [done])).toBeNull();
+  });
+});
+
+describe('cloud backup and restore in Activity (FL-164)', () => {
+  const cloud = (kind: MediaOperationKind, status: MediaOperationStatus) =>
+    fromMediaOperation(operation({ kind, status, label: 'Cloud backup', settings: { bucket: 'family-backup' } }));
+
+  it('names each kind and follows its stages from queued to done', () => {
+    expect(cloud(MediaOperationKind.CloudBackup, MediaOperationStatus.Queued)).toMatchObject({
+      kindKey: 'frameleaf_activity_kind_cloud_backup',
+      statusKey: 'frameleaf_activity_status_queued',
+      running: true,
+    });
+    expect(cloud(MediaOperationKind.CloudRestore, MediaOperationStatus.Preparing)).toMatchObject({
+      kindKey: 'frameleaf_activity_kind_cloud_restore',
+      statusKey: 'frameleaf_activity_status_starting',
+      running: true,
+    });
+    expect(cloud(MediaOperationKind.CloudRestore, MediaOperationStatus.Rendering)).toMatchObject({
+      statusKey: 'frameleaf_activity_status_running',
+      progress: 42,
+      done: 420,
+      total: 1000,
+    });
+    expect(cloud(MediaOperationKind.CloudBackup, MediaOperationStatus.Paused)).toMatchObject({ paused: true });
+    expect(cloud(MediaOperationKind.CloudRestore, MediaOperationStatus.Completed)).toMatchObject({
+      finished: true,
+      progress: 100,
+    });
+  });
+
+  it('is started again from Cloud backup, never copied from Activity', () => {
+    expect(cloud(MediaOperationKind.CloudBackup, MediaOperationStatus.Failed).canRetry).toBe(false);
+    expect(cloud(MediaOperationKind.CloudRestore, MediaOperationStatus.Failed).canRetry).toBe(false);
+  });
+
+  it('belongs to the background work while unfinished, and to the person’s list once finished', () => {
+    expect(isUnfinishedCloudWork(cloud(MediaOperationKind.CloudBackup, MediaOperationStatus.Rendering))).toBe(true);
+    expect(isUnfinishedCloudWork(cloud(MediaOperationKind.CloudRestore, MediaOperationStatus.Paused))).toBe(true);
+    expect(isUnfinishedCloudWork(cloud(MediaOperationKind.CloudRestore, MediaOperationStatus.Failed))).toBe(false);
+    expect(isUnfinishedCloudWork(fromMediaOperation(operation()))).toBe(false);
   });
 });

@@ -1323,6 +1323,13 @@ export enum MediaOperationKind {
    * records its cursor every 25 assets, so it can pause, survive a restart and resume the same manifest.
    */
   CloudBackup = 'cloud_backup',
+  /**
+   * A restore from a cloud backup manifest (FL-164): files to `<media>/frameleaf/restore/<id>` for Library
+   * Care, one asset back to its place, the database dump into `<media>/backups` for the maintenance
+   * restore, or the whole library. Every object is fetched with the bucket key (SSE-C) and checked against
+   * its SHA-256 before it is written; a mismatch stops the restore with a report.
+   */
+  CloudRestore = 'cloud_restore',
 }
 
 export const MediaOperationKindSchema = z
@@ -2202,6 +2209,10 @@ export enum JobName {
    * every batch's next step (estimate, submit, poll, cancel, settle).
    */
   CloudMlDescriptionBatch = 'CloudMlDescriptionBatch',
+  /** FL-164: the cloud backup schedule's tick: queue a backup run unless an operation is in progress. */
+  CloudBackupSchedule = 'CloudBackupSchedule',
+  /** FL-164: the hourly check that queues the weekly sample or the monthly full verification when due. */
+  CloudBackupVerify = 'CloudBackupVerify',
 
   // OCR
   OcrQueueAll = 'OcrQueueAll',
@@ -2314,8 +2325,17 @@ export enum DatabaseLock {
    * of the suspension as one step), so no two workers probe at once.
    */
   FrameleafMlProbe = 949,
-  /** FL-160: one cloud backup run is queued or running across the whole server at a time. */
+  /**
+   * FL-160: one cloud backup operation is queued or running across the whole server at a time. FL-164:
+   * every operation that touches the bucket (a backup run, a verification, a clean-up, a restore) is
+   * created under it, so they never overlap and a scheduled run never duplicates one in progress.
+   */
   FrameleafCloudBackup = 956,
+  /**
+   * FL-164: held for the life of the process by the one server that runs the cloud backup schedule and
+   * the verification check, so exactly one scheduler enqueues work.
+   */
+  FrameleafCloudBackupCheck = 957,
   /** FL-163: one pass over Frameleaf Cloud description batches runs at a time, across every worker. */
   FrameleafCloudMlBatch = 960,
   /** FL-163: adding photos to the automatic description queue is one read-modify-write at a time. */

@@ -16,6 +16,13 @@ describe(CloudBackupAdminController.name, () => {
     pauseRun: vi.fn(),
     resumeRun: vi.fn(),
     cancelRun: vi.fn(),
+    startVerify: vi.fn(),
+    startPrune: vi.fn(),
+    listManifests: vi.fn(),
+    listManifestItems: vi.fn(),
+    startRestore: vi.fn(),
+    storeEscrow: vi.fn(),
+    removeEscrow: vi.fn(),
   };
   const runId = '0192a4c1-5e2b-7c91-9a4d-2f6b1e0c8d55';
 
@@ -43,6 +50,13 @@ describe(CloudBackupAdminController.name, () => {
       ['post', `/admin/cloud/backup/runs/${runId}/pause`],
       ['post', `/admin/cloud/backup/runs/${runId}/resume`],
       ['post', `/admin/cloud/backup/runs/${runId}/cancel`],
+      ['post', '/admin/cloud/backup/verify'],
+      ['post', '/admin/cloud/backup/prune'],
+      ['get', '/admin/cloud/backup/manifests'],
+      ['post', '/admin/cloud/backup/manifests/items'],
+      ['post', '/admin/cloud/backup/restore'],
+      ['put', '/admin/cloud/backup/escrow'],
+      ['delete', '/admin/cloud/backup/escrow'],
     ] as const) {
       await request(ctx.getHttpServer())[method](path);
       expect(ctx.authenticate).toHaveBeenCalled();
@@ -97,5 +111,64 @@ describe(CloudBackupAdminController.name, () => {
 
     const invalid = await request(ctx.getHttpServer()).post('/admin/cloud/backup/runs/not-an-id/pause');
     expect(invalid.status).toBe(400);
+  });
+
+  it('queues a sampled or full check and refuses any other depth', async () => {
+    service.startVerify.mockResolvedValue({});
+
+    const { status } = await request(ctx.getHttpServer()).post('/admin/cloud/backup/verify').send({ depth: 'full' });
+    expect(status).toBe(200);
+    expect(service.startVerify).toHaveBeenCalledWith(undefined, { depth: 'full' });
+
+    const other = await request(ctx.getHttpServer()).post('/admin/cloud/backup/verify').send({ depth: 'quick' });
+    expect(other.status).toBe(400);
+  });
+
+  it('asks whether a clean-up is a dry run', async () => {
+    service.startPrune.mockResolvedValue({});
+
+    const { status } = await request(ctx.getHttpServer()).post('/admin/cloud/backup/prune').send({ dryRun: true });
+    expect(status).toBe(200);
+    expect(service.startPrune).toHaveBeenCalledWith(undefined, { dryRun: true });
+
+    const missing = await request(ctx.getHttpServer()).post('/admin/cloud/backup/prune').send({});
+    expect(missing.status).toBe(400);
+  });
+
+  it('restores from a manifest key only, with a known scope and item ids', async () => {
+    service.startRestore.mockResolvedValue({});
+    const body = {
+      manifestKey: 'm/20260926T030000Z.json.gz',
+      scope: 'asset',
+      assetIds: ['8c5c3a24-2f65-4a8e-b3d4-3f1c3cb0c3e1'],
+    };
+
+    const { status } = await request(ctx.getHttpServer()).post('/admin/cloud/backup/restore').send(body);
+    expect(status).toBe(200);
+    expect(service.startRestore).toHaveBeenCalledWith(undefined, body);
+
+    for (const refused of [
+      { ...body, manifestKey: '../frameleaf-backup.json' },
+      { ...body, scope: 'everything' },
+      { ...body, assetIds: ['not-an-id'] },
+    ]) {
+      const response = await request(ctx.getHttpServer()).post('/admin/cloud/backup/restore').send(refused);
+      expect(response.status).toBe(400);
+    }
+    expect(service.startRestore).toHaveBeenCalledTimes(1);
+  });
+
+  it('stores an escrow copy only with a passphrase of at least twelve characters', async () => {
+    service.storeEscrow.mockResolvedValue({});
+
+    const { status } = await request(ctx.getHttpServer())
+      .put('/admin/cloud/backup/escrow')
+      .send({ passphrase: 'correct horse battery' });
+    expect(status).toBe(200);
+    expect(service.storeEscrow).toHaveBeenCalledWith(undefined, { passphrase: 'correct horse battery' });
+
+    const short = await request(ctx.getHttpServer()).put('/admin/cloud/backup/escrow').send({ passphrase: 'short' });
+    expect(short.status).toBe(400);
+    expect(service.storeEscrow).toHaveBeenCalledTimes(1);
   });
 });

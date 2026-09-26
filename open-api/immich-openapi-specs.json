@@ -482,6 +482,108 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/backup/escrow": {
+      "delete": {
+        "description": "Deletes the wrapped key Frameleaf Cloud keeps for this server.",
+        "operationId": "removeCloudBackupEscrow",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove the key copy from Frameleaf Cloud",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Server key mode only: wraps the bucket key under the passphrase (scrypt, then AES-256-GCM) and stores the result with Frameleaf Cloud, which cannot unwrap it. The passphrase is never stored or sent.",
+        "operationId": "storeCloudBackupEscrow",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupEscrowDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Keep a key copy with Frameleaf Cloud",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup/key": {
       "post": {
         "description": "A new 256-bit key made by this server for \"Generate a key for me\", returned this once for the recovery kit. Nothing is stored until setup claims a bucket with it.",
@@ -568,6 +670,224 @@
           }
         ],
         "summary": "Load the backup key into memory",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/manifests": {
+      "get": {
+        "description": "The backups retention keeps, newest first, with their size and the database dump each pairs with.",
+        "operationId": "getCloudBackupManifests",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupManifestsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the kept backups",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/manifests/items": {
+      "post": {
+        "description": "The items one kept backup holds, found by file name, and whether each is still in the library. Reads the backup’s manifest from the bucket.",
+        "operationId": "searchCloudBackupManifestItems",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupManifestItemsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupManifestItemsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search the items in a backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/prune": {
+      "post": {
+        "description": "Queues a clean-up of runs past the retention settings. Only files no kept backup names are removed. A dry run counts what would go; the clean-up itself needs a dry run from the last day first.",
+        "operationId": "pruneCloudBackup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupPruneDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Clean up backups past retention",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.run",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/restore": {
+      "post": {
+        "description": "Queues a restore from a kept backup: files into a restore folder for Library Care, one item back in place, the database dump for the maintenance restore, or the whole library. Every file is checked against its SHA-256 before it is written; a file in the way is moved aside, never deleted.",
+        "operationId": "restoreCloudBackup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupRestoreDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore from a backup",
         "tags": [
           "Frameleaf Cloud backup (admin)"
         ],
@@ -861,6 +1181,63 @@
           }
         ],
         "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/verify": {
+      "post": {
+        "description": "Queues a check of the bucket: sample fetches this week’s 1/52 of the files and checks each against its SHA-256; full checks every file a kept backup names is there. Missing or damaged files are uploaded again by the next run.",
+        "operationId": "verifyCloudBackup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupVerifyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check the backed-up files",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.run",
         "x-immich-state": "Alpha"
       }
     },
@@ -41016,25 +41393,43 @@
             "description": "Back up to the claimed bucket (set up from Settings › Frameleaf Cloud › Cloud backup)",
             "type": "boolean"
           },
+          "escrow": {
+            "description": "Keep a passphrase-wrapped copy of the bucket key with Frameleaf Cloud (server key mode only)",
+            "type": "boolean"
+          },
           "include": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudBackupIncludeDto"
           },
           "keyMode": {
             "$ref": "#/components/schemas/CloudBackupKeyMode"
           },
+          "retention": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudBackupRetentionDto"
+          },
           "s3": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudBackupS3Dto"
           },
+          "schedule": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudBackupScheduleDto"
+          },
           "target": {
             "$ref": "#/components/schemas/CloudBackupTargetSetting"
+          },
+          "verifyWeekly": {
+            "description": "Check a sample of the backed-up files every week, and every referenced file every month",
+            "type": "boolean"
           }
         },
         "required": [
           "enabled",
+          "escrow",
           "include",
           "keyMode",
+          "retention",
           "s3",
-          "target"
+          "schedule",
+          "target",
+          "verifyWeekly"
         ],
         "type": "object"
       },
@@ -41052,6 +41447,34 @@
         "required": [
           "encodedVideo",
           "thumbs"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudBackupRetentionDto": {
+        "properties": {
+          "keepDaily": {
+            "description": "Daily runs kept, in days",
+            "maximum": 90,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "keepMonthly": {
+            "description": "Monthly runs kept, in months",
+            "maximum": 120,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "keepWeekly": {
+            "description": "Weekly runs kept, in weeks",
+            "maximum": 52,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "keepDaily",
+          "keepMonthly",
+          "keepWeekly"
         ],
         "type": "object"
       },
@@ -41091,6 +41514,18 @@
           "endpoint",
           "region",
           "secretAccessKey"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudBackupScheduleDto": {
+        "properties": {
+          "cronExpression": {
+            "description": "When scheduled backup runs start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cronExpression"
         ],
         "type": "object"
       },
@@ -50644,8 +51079,68 @@
         ],
         "type": "object"
       },
+      "CloudBackupActiveRestoreDto": {
+        "properties": {
+          "bytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "bytesTotal": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "files": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "filesTotal": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "progress": {
+            "description": "0 to 100",
+            "format": "double",
+            "type": "number"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CloudBackupRestoreScope"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CloudBackupRunState"
+          }
+        },
+        "required": [
+          "bytes",
+          "bytesTotal",
+          "files",
+          "filesTotal",
+          "operationId",
+          "progress",
+          "scope",
+          "state"
+        ],
+        "type": "object"
+      },
       "CloudBackupActiveRunDto": {
         "properties": {
+          "bytesUploaded": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "checked": {
+            "description": "verify: files checked so far",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "operationId": {
             "type": "string"
           },
@@ -50665,6 +51160,9 @@
           "state": {
             "$ref": "#/components/schemas/CloudBackupRunState"
           },
+          "task": {
+            "$ref": "#/components/schemas/CloudBackupTask"
+          },
           "uploaded": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
@@ -50672,11 +51170,14 @@
           }
         },
         "required": [
+          "bytesUploaded",
+          "checked",
           "operationId",
           "phase",
           "progress",
           "skipped",
           "state",
+          "task",
           "uploaded"
         ],
         "type": "object"
@@ -50722,6 +51223,41 @@
         ],
         "type": "object"
       },
+      "CloudBackupEscrowDto": {
+        "properties": {
+          "passphrase": {
+            "description": "Wraps the bucket key before it is sent; never stored and never sent to Frameleaf Cloud",
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          }
+        },
+        "required": [
+          "passphrase"
+        ],
+        "type": "object"
+      },
+      "CloudBackupEscrowStatusDto": {
+        "properties": {
+          "available": {
+            "description": "Server key mode and a linked server: escrow can be turned on",
+            "type": "boolean"
+          },
+          "stored": {
+            "type": "boolean"
+          },
+          "storedAt": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "stored",
+          "storedAt"
+        ],
+        "type": "object"
+      },
       "CloudBackupGeneratedKeyDto": {
         "properties": {
           "createdAt": {
@@ -50748,6 +51284,24 @@
         ],
         "type": "object"
       },
+      "CloudBackupItemFilter": {
+        "description": "all items; only items no longer in the library; only items still in the library (or its trash)",
+        "enum": [
+          "all",
+          "deleted",
+          "in-library"
+        ],
+        "type": "string"
+      },
+      "CloudBackupItemState": {
+        "description": "Whether the item is in the library now, in the trash, or gone",
+        "enum": [
+          "active",
+          "trashed",
+          "deleted"
+        ],
+        "type": "string"
+      },
       "CloudBackupKeyMode": {
         "description": "server: generated by this server and kept next to its identity; own-stored: your own key with a copy on this server; own-memory: your own key, never saved",
         "enum": [
@@ -50756,6 +51310,123 @@
           "own-memory"
         ],
         "type": "string"
+      },
+      "CloudBackupLastPruneDto": {
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "bytesRemoved": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "dumpsRemoved": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "manifestsKept": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "manifestsRemoved": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "objectsRemoved": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "operationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "bytesRemoved",
+          "dryRun",
+          "dumpsRemoved",
+          "manifestsKept",
+          "manifestsRemoved",
+          "objectsRemoved",
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "CloudBackupLastRestoreDto": {
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "bytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "databaseFile": {
+            "description": "The restored dump, listed by the maintenance restore",
+            "nullable": true,
+            "type": "string"
+          },
+          "destination": {
+            "description": "The folder a files restore wrote to",
+            "nullable": true,
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "files": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "manifestKey": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "replaced": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CloudBackupRestoreScope"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CloudBackupRestoreStatus"
+          }
+        },
+        "required": [
+          "at",
+          "bytes",
+          "databaseFile",
+          "destination",
+          "error",
+          "files",
+          "manifestKey",
+          "operationId",
+          "replaced",
+          "scope",
+          "skipped",
+          "status"
+        ],
+        "type": "object"
       },
       "CloudBackupLastRunDto": {
         "properties": {
@@ -50818,6 +51489,353 @@
         "enum": [
           "running",
           "waiting-for-key",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "CloudBackupLastVerifyDto": {
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "checked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "degradedManifests": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "depth": {
+            "$ref": "#/components/schemas/CloudBackupVerifyDepth"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "mismatched": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "missing": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CloudBackupVerifyStatus"
+          }
+        },
+        "required": [
+          "at",
+          "checked",
+          "degradedManifests",
+          "depth",
+          "error",
+          "mismatched",
+          "missing",
+          "operationId",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CloudBackupManagedDto": {
+        "properties": {
+          "allowanceBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "extraBlocks": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "measuredAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "objects": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "quotaBytes": {
+            "description": "Storage included with the plan; more is added in 1 TB blocks",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "readOnly": {
+            "description": "Uploads are stopped; restores keep working",
+            "type": "boolean"
+          },
+          "readOnlyReason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "refusal": {
+            "description": "Why Frameleaf Cloud last refused backup storage",
+            "nullable": true,
+            "type": "string"
+          },
+          "usedBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "allowanceBytes",
+          "extraBlocks",
+          "measuredAt",
+          "objects",
+          "quotaBytes",
+          "readOnly",
+          "readOnlyReason",
+          "refusal",
+          "usedBytes"
+        ],
+        "type": "object"
+      },
+      "CloudBackupManifestDto": {
+        "properties": {
+          "assets": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "bytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "databaseKey": {
+            "description": "The database dump this backup pairs with",
+            "nullable": true,
+            "type": "string"
+          },
+          "files": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CloudBackupManifestStatus"
+          }
+        },
+        "required": [
+          "assets",
+          "bytes",
+          "createdAt",
+          "databaseKey",
+          "files",
+          "finishedAt",
+          "key",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CloudBackupManifestItemDto": {
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "bytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "files": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "locked": {
+            "description": "A Locked item: never named in this list",
+            "type": "boolean"
+          },
+          "modifiedAt": {
+            "description": "When the original was last written before the backup",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The original’s file name when it was backed up; empty for a Locked item",
+            "type": "string"
+          },
+          "ownerId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "ownerName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CloudBackupItemState"
+          }
+        },
+        "required": [
+          "assetId",
+          "bytes",
+          "files",
+          "locked",
+          "modifiedAt",
+          "name",
+          "ownerId",
+          "ownerName",
+          "state"
+        ],
+        "type": "object"
+      },
+      "CloudBackupManifestItemsDto": {
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/CloudBackupItemFilter"
+          },
+          "limit": {
+            "description": "Items to return; 100 when absent",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "manifestKey": {
+            "description": "The backup run’s manifest in the bucket",
+            "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "type": "string"
+          },
+          "query": {
+            "description": "Part of a file name",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifestKey"
+        ],
+        "type": "object"
+      },
+      "CloudBackupManifestItemsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupManifestItemDto"
+            },
+            "type": "array"
+          },
+          "manifestKey": {
+            "type": "string"
+          },
+          "total": {
+            "description": "Items that match, of which at most `limit` are listed",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "manifestKey",
+          "total"
+        ],
+        "type": "object"
+      },
+      "CloudBackupManifestStatus": {
+        "enum": [
+          "complete",
+          "degraded"
+        ],
+        "type": "string"
+      },
+      "CloudBackupManifestsResponseDto": {
+        "properties": {
+          "manifests": {
+            "description": "Kept backups, newest first",
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupManifestDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "manifests"
+        ],
+        "type": "object"
+      },
+      "CloudBackupPruneDto": {
+        "properties": {
+          "dryRun": {
+            "description": "Count what the clean-up would remove without removing anything; a clean-up needs a dry run first",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dryRun"
+        ],
+        "type": "object"
+      },
+      "CloudBackupRestoreDto": {
+        "properties": {
+          "assetIds": {
+            "description": "files: the items to restore (every item when absent); asset: exactly one item",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "type": "array"
+          },
+          "manifestKey": {
+            "description": "The backup run’s manifest in the bucket",
+            "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CloudBackupRestoreScope"
+          }
+        },
+        "required": [
+          "manifestKey",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "CloudBackupRestoreScope": {
+        "description": "files: into a restore folder for Library Care; asset: one item back in place; database: the dump for the maintenance restore; library: every file back in place and the dump",
+        "enum": [
+          "files",
+          "asset",
+          "database",
+          "library"
+        ],
+        "type": "string"
+      },
+      "CloudBackupRestoreStatus": {
+        "enum": [
           "completed",
           "failed",
           "cancelled"
@@ -50915,6 +51933,14 @@
       },
       "CloudBackupStatusResponseDto": {
         "properties": {
+          "activeRestore": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupActiveRestoreDto"
+              }
+            ],
+            "nullable": true
+          },
           "activeRun": {
             "allOf": [
               {
@@ -50938,6 +51964,9 @@
           "endpoint": {
             "nullable": true,
             "type": "string"
+          },
+          "escrow": {
+            "$ref": "#/components/schemas/CloudBackupEscrowStatusDto"
           },
           "instanceId": {
             "nullable": true,
@@ -50963,6 +51992,22 @@
             "nullable": true,
             "type": "string"
           },
+          "lastPrune": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupLastPruneDto"
+              }
+            ],
+            "nullable": true
+          },
+          "lastRestore": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupLastRestoreDto"
+              }
+            ],
+            "nullable": true
+          },
           "lastRun": {
             "allOf": [
               {
@@ -50975,8 +52020,25 @@
             "nullable": true,
             "type": "string"
           },
+          "lastVerify": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupLastVerifyDto"
+              }
+            ],
+            "nullable": true
+          },
+          "managed": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupManagedDto"
+              }
+            ],
+            "description": "Frameleaf-managed storage only",
+            "nullable": true
+          },
           "managedAvailable": {
-            "description": "Frameleaf-managed storage can be chosen; false until Frameleaf Cloud offers backup storage",
+            "description": "Frameleaf-managed storage can be chosen: this server is linked to Frameleaf Cloud",
             "type": "boolean"
           },
           "region": {
@@ -51009,18 +52071,24 @@
           }
         },
         "required": [
+          "activeRestore",
           "activeRun",
           "bucket",
           "claimedAt",
           "configured",
           "endpoint",
+          "escrow",
           "instanceId",
           "keyFingerprint",
           "keyLoaded",
           "keyMode",
           "lastManifestKey",
+          "lastPrune",
+          "lastRestore",
           "lastRun",
           "lastSuccessAt",
+          "lastVerify",
+          "managed",
           "managedAvailable",
           "region",
           "target",
@@ -51045,6 +52113,15 @@
         ],
         "type": "string"
       },
+      "CloudBackupTask": {
+        "description": "backup: a backup run; verify: a check of the backed-up files; prune: a clean-up of runs past retention",
+        "enum": [
+          "backup",
+          "verify",
+          "prune"
+        ],
+        "type": "string"
+      },
       "CloudBackupUnlockDto": {
         "properties": {
           "key": {
@@ -51058,6 +52135,33 @@
           "key"
         ],
         "type": "object"
+      },
+      "CloudBackupVerifyDepth": {
+        "description": "sample: fetch and check this week’s 1/52 of the files; full: check every referenced file is there",
+        "enum": [
+          "sample",
+          "full"
+        ],
+        "type": "string"
+      },
+      "CloudBackupVerifyDto": {
+        "properties": {
+          "depth": {
+            "$ref": "#/components/schemas/CloudBackupVerifyDepth"
+          }
+        },
+        "required": [
+          "depth"
+        ],
+        "type": "object"
+      },
+      "CloudBackupVerifyStatus": {
+        "enum": [
+          "passed",
+          "degraded",
+          "failed"
+        ],
+        "type": "string"
       },
       "CloudHeartbeatField": {
         "enum": [
@@ -56440,6 +57544,8 @@
           "FrameleafHeartbeat",
           "FrameleafLicenseRefresh",
           "CloudMlDescriptionBatch",
+          "CloudBackupSchedule",
+          "CloudBackupVerify",
           "OcrQueueAll",
           "Ocr",
           "ImageDescriptionQueueAll",
@@ -59738,7 +60844,8 @@
           "preservation_restore",
           "studio_export_publish",
           "cloud_description_batch",
-          "cloud_backup"
+          "cloud_backup",
+          "cloud_restore"
         ],
         "type": "string"
       },

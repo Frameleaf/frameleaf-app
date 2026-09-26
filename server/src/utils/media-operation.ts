@@ -139,8 +139,10 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.PreservationReview,
   MediaOperationKind.PreservationRestore,
   // FL-160: a cloud backup run records its phase and asset cursor every 25 assets and finishes the same
-  // manifest when it resumes.
+  // manifest when it resumes. FL-164: its verifications and clean-ups record their cursor too.
   MediaOperationKind.CloudBackup,
+  // FL-164: a restore records every file it has written and carries on from the next one.
+  MediaOperationKind.CloudRestore,
 ];
 
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);

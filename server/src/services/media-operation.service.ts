@@ -607,6 +607,12 @@ export class MediaOperationService {
       throw new BadRequestException('Back up again from Settings › Frameleaf Cloud › Cloud backup');
     }
 
+    // FL-164: a restore is started again from the Restore section, which reads the manifest and checks the
+    // key and the bucket first.
+    if (operation.kind === MediaOperationKind.CloudRestore) {
+      throw new BadRequestException('Restore again from Settings › Frameleaf Cloud › Cloud backup');
+    }
+
     // FL-163: a Frameleaf Cloud description batch spends the AI Wallet, which only an administrator may
     // do, and only after a fresh estimate; a photo owner retrying it here would queue that spend again.
     if (operation.kind === MediaOperationKind.CloudDescriptionBatch) {
