@@ -3,6 +3,7 @@ import {
   CLOUD_BACKUP_PRICING,
   cloudBackupMonthlyUsd,
   cloudPlanPrice,
+  discountPercent,
   formatCountdown,
   formatUsd,
   normalizeProductKey,
@@ -51,10 +52,14 @@ describe('Frameleaf Cloud helpers', () => {
       expect(formatUsd(60, 2)).toBe('$60.00');
     });
 
-    it('takes 20 % off plans on a licensed server only', () => {
-      expect(cloudPlanPrice(9.99, false)).toBe(9.99);
-      expect(cloudPlanPrice(9.99, true)).toBe(7.99);
-      expect(cloudPlanPrice(99.9, true)).toBe(79.92);
+    it('takes the published share off plans, and nothing without one', () => {
+      expect(cloudPlanPrice(9.99, 0)).toBe(9.99);
+      expect(cloudPlanPrice(9.99, 0.2)).toBe(7.99);
+      expect(cloudPlanPrice(99.9, 0.2)).toBe(79.92);
+      expect(cloudPlanPrice(9.99, 0.25)).toBe(7.49);
+      expect(cloudPlanPrice(99.9, 0.25)).toBe(74.93);
+      expect(discountPercent(0.2)).toBe('20%');
+      expect(discountPercent(0.25)).toBe('25%');
     });
 
     it('includes 1 TB of cloud backup with a plan and sells more in 1 TB blocks', () => {

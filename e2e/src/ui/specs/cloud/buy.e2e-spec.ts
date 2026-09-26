@@ -12,6 +12,7 @@ const KEY = 'FL-IC8Q-BT2Q-8ELH';
 const products = (storeUrl: string | null) => ({
   currency: 'USD',
   licensedDiscount: 0.2,
+  pricesVersion: '2026-09-25.1',
   storeUrl,
   credit: { minimumUsd: 20, maximumUsd: 500 },
   backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },

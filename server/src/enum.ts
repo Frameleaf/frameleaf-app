@@ -502,6 +502,11 @@ export enum SystemMetadataKey {
   FrameleafMlWallet = 'frameleaf-ml-wallet',
   /** FL-156: this server's Frameleaf licence certificate and its refresh state. */
   FrameleafLicense = 'frameleaf-license',
+  /**
+   * The last valid plan pricing Frameleaf Cloud published on a heartbeat (prices version and the
+   * licensed-server plan discount), so a restart keeps it instead of the bundled snapshot.
+   */
+  FrameleafPricing = 'frameleaf-pricing',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
   HardwareCheck = 'hardware-check',
   /**

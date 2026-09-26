@@ -29,10 +29,12 @@ import { BaseService } from 'src/services/base.service.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import {
+  BUNDLED_PRICING,
   LicenseSigningKey,
   certificateKind,
   certificateProblem,
   checkLicenseKey,
+  effectivePricing,
   entitlementFlags,
   isLicensed,
   licenseKeyProblem,
@@ -60,8 +62,11 @@ export const LICENSE_PRODUCTS = Object.freeze([
 /** A plan includes this much cloud backup; more is sold in whole blocks at this rate per TB a month. */
 export const CLOUD_BACKUP_PRICE = Object.freeze({ includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 });
 
-/** Plans cost this much less on a licensed server; AI credit is never discounted (FL-156). */
-export const LICENSED_DISCOUNT = 0.2;
+/**
+ * The bundled share taken off plans on a licensed server, used until Frameleaf Cloud publishes one
+ * on a heartbeat. AI credit and extra backup blocks are never discounted (FL-156).
+ */
+export const LICENSED_DISCOUNT = BUNDLED_PRICING.licensedDiscountPercent / 100;
 
 const certificateResponseSchema = z.object({
   certificate: z
@@ -147,12 +152,18 @@ export class FrameleafLicenseService extends BaseService {
     };
   }
 
-  /** `GET license/products`: bundled prices and the deployment's store. Makes no outbound call. */
-  getProducts(): LicenseProductsResponseDto {
+  /**
+   * `GET license/products`: bundled prices, the plan discount Frameleaf Cloud published that is in
+   * effect by the server clock (else the bundled one) and the deployment's store. Makes no outbound
+   * call.
+   */
+  async getProducts(): Promise<LicenseProductsResponseDto> {
     const storeUrl = this.storeUrl();
+    const pricing = effectivePricing(await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafPricing));
     return {
       currency: 'USD',
-      licensedDiscount: LICENSED_DISCOUNT,
+      pricesVersion: pricing.pricesVersion,
+      licensedDiscount: pricing.licensedDiscountPercent / 100,
       storeUrl,
       products: LICENSE_PRODUCTS.map((product) => ({
         ...product,
