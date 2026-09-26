@@ -239,7 +239,7 @@
     "map_enable_description": "Povoliť funkcie mapy",
     "map_gps_settings": "Mapa a nastavenia GPS",
     "map_gps_settings_description": "Spravovať nastavenia mapy a GPS (reverzné geokódovanie)",
-    "map_implications": "Funkcia mapy využíva externú službu poskytujúcu mapové dlaždice (tiles.immich.cloud)",
+    "map_implications": "Funkcia mapy využíva externú službu poskytujúcu mapové dlaždice (tiles.frameleaf.cloud)",
     "map_light_style": "Svetlý štýl",
     "map_manage_reverse_geocoding_settings": "Spravovať nastavenia <link>reverzného geokódovania</link>",
     "map_reverse_geocoding": "Reverzné Geokódovanie",

@@ -203,7 +203,7 @@
     "map_enable_description": "Ota käyttöön karttatoiminnot",
     "map_gps_settings": "Kartta- ja GPS-asetukset",
     "map_gps_settings_description": "Hallitse kartan ja GPS:n (käänteisen geokoodauksen) asetuksia",
-    "map_implications": "Karttaominaisuus käyttää ulkoista karttapalvelua (tiles.immich.cloud)",
+    "map_implications": "Karttaominaisuus käyttää ulkoista karttapalvelua (tiles.frameleaf.cloud)",
     "map_light_style": "Vaalea teema",
     "map_manage_reverse_geocoding_settings": "Hallitse <link>käänteisen geokoodauksen</link> asetuksia",
     "map_reverse_geocoding": "Käänteinen Geokoodaus",

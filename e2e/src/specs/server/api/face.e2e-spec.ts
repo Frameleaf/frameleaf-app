@@ -60,7 +60,7 @@ describe('/faces (FL-38 corrections)', () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
     stranger = await utils.userSetup(admin.accessToken, {
-      email: 'face-stranger@immich.cloud',
+      email: 'face-stranger@example.com',
       name: 'Stranger',
       password: 'password',
     });

@@ -239,7 +239,7 @@
     "map_enable_description": "Activer la carte",
     "map_gps_settings": "Paramètres de la carte et GPS",
     "map_gps_settings_description": "Gérer les paramètres de la Carte & GPS",
-    "map_implications": "La carte repose sur un service de tuiles externe (tiles.immich.cloud)",
+    "map_implications": "La carte repose sur un service de tuiles externe (tiles.frameleaf.cloud)",
     "map_light_style": "Thème clair",
     "map_manage_reverse_geocoding_settings": "Gérer les <link>paramètres de géocodage inversé</link>",
     "map_reverse_geocoding": "Géocodage inversé",

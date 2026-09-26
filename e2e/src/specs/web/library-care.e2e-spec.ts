@@ -61,7 +61,7 @@ test.describe('Library Care', () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
     owner = await utils.userSetup(admin.accessToken, {
-      email: 'jamie@immich.cloud',
+      email: 'jamie@example.com',
       name: 'Jamie',
       password: 'password',
     });

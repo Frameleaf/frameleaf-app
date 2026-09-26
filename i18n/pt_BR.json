@@ -239,7 +239,7 @@
     "map_enable_description": "Ativar recursos do mapa",
     "map_gps_settings": "Mapa e Configurações de GPS",
     "map_gps_settings_description": "Gerenciar Mapa e Configurações de GPS (Geocodificação Reversa)",
-    "map_implications": "O mapa depende de um serviço externo para funcionar (tiles.immich.cloud)",
+    "map_implications": "O mapa depende de um serviço externo para funcionar (tiles.frameleaf.cloud)",
     "map_light_style": "Tema Claro",
     "map_manage_reverse_geocoding_settings": "Gerenciar configurações de <link> Geocodificação reversa</link>",
     "map_reverse_geocoding": "Geocodificação reversa",

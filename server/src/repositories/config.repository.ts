@@ -23,7 +23,7 @@ import {
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
-import { FRAMELEAF_RELEASES_API } from 'src/utils/frameleaf-release.js';
+import { FRAMELEAF_RELEASE_FEED, FRAMELEAF_RELEASES_API } from 'src/utils/frameleaf-release.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
 
@@ -71,7 +71,10 @@ export interface EnvData {
   };
 
   versionCheck: {
+    /** Frameleaf Cloud release feed, asked first. */
     url: string;
+    /** Frameleaf's GitHub releases, asked only when the feed cannot answer. */
+    fallbackUrl: string;
   };
 
   network: {
@@ -305,8 +308,9 @@ const getEnv = (): EnvData => {
     },
 
     versionCheck: {
-      // FL-80: Frameleaf's own release feed only; no Immich version service, in any environment.
-      url: FRAMELEAF_RELEASES_API,
+      // FL-80 / FL-192: Frameleaf's own release feeds only; no Immich version service, in any environment.
+      url: FRAMELEAF_RELEASE_FEED,
+      fallbackUrl: FRAMELEAF_RELEASES_API,
     },
 
     network: {

@@ -52,7 +52,7 @@ test.describe('Personal access (FL-67)', () => {
   const createUser = async () => {
     const suffix = randomUUID().slice(0, 8);
     const user = await utils.userSetup(admin.accessToken, {
-      email: `personal-access-${suffix}@immich.cloud`,
+      email: `personal-access-${suffix}@example.com`,
       name: `Personal Access ${suffix}`,
       password: 'password',
     });
