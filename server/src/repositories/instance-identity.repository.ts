@@ -783,6 +783,21 @@ export class InstanceIdentityRepository {
     return this.signWith(this.cached.privateKey, kid, payload, type);
   }
 
+  /**
+   * FL-177: a compact EdDSA JWS that carries its own public key in the header (`jwk`, RFC 7515
+   * section 4.1.3) beside `kid`, its RFC 7638 thumbprint, for a receiver that holds no key for this
+   * server yet (a licence activation from a server that was never linked). Signed by `signer` (by
+   * default the current key), so a caller that also names the key elsewhere, such as a fingerprint's
+   * `jkt`, takes both from the same key snapshot (FL-177 review); the header key always matches the
+   * signature.
+   */
+  signJwsWithPublicKey(
+    payload: Record<string, unknown>,
+    { signer = this.currentSigner(), type = 'JWT' }: { signer?: FrameleafKeySigner; type?: string } = {},
+  ): string {
+    return signer.sign({ alg: 'EdDSA', typ: type, kid: signer.kid, jwk: signer.publicJwk }, payload);
+  }
+
   private signWith(privateKey: KeyObject, kid: string, payload: Record<string, unknown>, type = 'JWT') {
     return this.jws(privateKey, { alg: 'EdDSA', typ: type, kid }, payload);
   }

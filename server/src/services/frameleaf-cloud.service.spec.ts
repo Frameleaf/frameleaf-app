@@ -32,6 +32,7 @@ import {
   tokenNameOf,
 } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 /** The RFC 7638 kid of an Ed25519 private key. */
@@ -65,6 +66,9 @@ describe(FrameleafCloudService.name, () => {
   const headerOf = (jws: string) =>
     JSON.parse(Buffer.from(jws.split('.', 1)[0], 'base64url').toString('utf8')) as { kid: string };
   const pathsCalled = () => cloud.requests.map(({ method, path }) => `${method} ${path}`);
+  /** The UUIDv7 this server generated with its key (FL-177: the id it registers with). */
+  const localInstanceId = () =>
+    (metadata.get(SystemMetadataKey.FrameleafInstance) as { instanceId: string }).instanceId;
 
   /** The fake cloud's link and token endpoints. `grant` answers the device-code poll. */
   const serveLinking = (grant: () => { status: number; body: unknown }) => {
@@ -82,24 +86,21 @@ describe(FrameleafCloudService.name, () => {
     cloud.on('POST /id/token', (request) =>
       request.form().get('grant_type') === 'client_credentials' ? tokenAnswer(request) : grant(),
     );
-    cloud.on('POST /api/v1/instances', () => ({
-      status: 200,
-      body: {
-        instanceId: 'instance-1',
-        oidc: {
-          issuer: `${cloud.url}/id`,
-          clientId: 'instance-1',
-          initialAccessToken: 'initial-access-token',
-          registrationEndpoint: `${cloud.url}/id/reg`,
-          scope: 'openid email profile',
-          roleClaim: 'frameleaf_role',
-          storageLabelClaim: '',
+    // the golden answer (frameleaf-cloud packages/contracts), adopting the id the server sent (decision #4)
+    cloud.on('POST /api/v1/instances', (request) => {
+      const { instanceId } = request.json();
+      const answer = cloudContractFixture('instance/register-response.json');
+      return {
+        status: 200,
+        body: {
+          ...answer,
+          instanceId,
+          oidc: { ...answer.oidc, issuer: `${cloud.url}/id`, clientId: instanceId },
+          services: { relayOrigin: 'https://r.label.frameleaf-direct.test' },
+          owner: { accountId: 'account-1', email: 'owner@example.test', dataRegion: 'eu' },
         },
-        services: { relayOrigin: 'https://r.label.frameleaf-direct.test' },
-        owner: { accountId: 'account-1', email: 'owner@example.test', dataRegion: 'eu' },
-      },
-    }));
-    cloud.on('POST /id/reg', () => ({ status: 201, body: { client_id: 'instance-1' } }));
+      };
+    });
   };
 
   const makeDue = () => {
@@ -323,22 +324,22 @@ describe(FrameleafCloudService.name, () => {
       expect(cloud.requests).toHaveLength(0);
     });
 
-    it('registers on approval, completes client registration once and keeps no secret', async () => {
+    it('registers on approval with its own instance ID and keeps no secret', async () => {
       await linkNow();
       const link = storedLink()!;
 
       expect(link).toMatchObject({
         status: 'linked',
-        instanceId: 'instance-1',
+        instanceId: localInstanceId(),
         accountId: 'account-1',
         accountLabel: 'owner@example.test',
         dataRegion: 'eu',
         lastLinkResult: 'approved',
-        oidc: { clientId: 'instance-1', roleClaim: 'frameleaf_role', storageLabelClaim: '' },
+        oidc: { clientId: localInstanceId(), roleClaim: 'frameleaf_role', storageLabelClaim: '' },
         desired: { remoteAccess: false, cloudBackup: false },
       });
+      expect(link.oidc).not.toHaveProperty('registrationEndpoint');
       const stored = JSON.stringify(link);
-      expect(stored).not.toContain('initial-access-token');
       expect(stored).not.toContain('link-token');
       expect(stored).not.toContain('device-code-1');
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
@@ -351,7 +352,8 @@ describe(FrameleafCloudService.name, () => {
       await expect(sut.getStatus()).resolves.toMatchObject({
         state: 'linked',
         account: { id: 'account-1', label: 'owner@example.test' },
-        signInClientId: 'instance-1',
+        signInClientId: localInstanceId(),
+        linkRefusal: null,
       });
     });
 
@@ -367,10 +369,9 @@ describe(FrameleafCloudService.name, () => {
       makeDue();
       await sut.getLink();
       expect(storedLink()?.status).not.toBe('linked');
-      expect(pathsCalled()).not.toContain('POST /id/reg');
     });
 
-    it('sends the link token to POST /v1/instances and the initial access token to /reg', async () => {
+    it('sends POST /v1/instances exactly as the golden request, with its own UUIDv7, and nothing else (FL-177)', async () => {
       serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
       await sut.startLink(authStub.admin);
       makeDue();
@@ -379,28 +380,90 @@ describe(FrameleafCloudService.name, () => {
       const register = cloud.requests.find(({ path }) => path === '/api/v1/instances')!;
       expect(register.headers.authorization).toBe('Bearer link-token');
       expectRegistrationProof(register);
-      expect(register.json()).toMatchObject({
+      const body = register.json();
+      const golden = cloudContractFixture('instance/register-request.json');
+      expect(Object.keys(body)).toEqual(Object.keys(golden));
+      expect(Object.keys(body.jwk)).toEqual(Object.keys(golden.jwk));
+      expect(body).toMatchObject({
+        instanceId: localInstanceId(),
         name: expect.any(String),
         version: expect.any(String),
         platform: expect.any(String),
         jwk: { kty: 'OKP', crv: 'Ed25519', kid: expect.any(String) },
         bootId: expect.any(String),
-        capabilities: expect.any(Array),
-        permissions: { allowRemoteEnable: false, allowBackupTrigger: true, allowEntitlementRefresh: true },
+        capabilities: golden.capabilities,
+        permissions: golden.permissions,
       });
-      const registration = cloud.requests.find(({ path }) => path === '/id/reg')!;
-      expect(registration.headers.authorization).toBe('Bearer initial-access-token');
-      expect(registration.json()).toMatchObject({
-        token_endpoint_auth_method: 'private_key_jwt',
-        redirect_uris: [
-          'https://r.label.frameleaf-direct.test/auth/login',
-          'https://r.label.frameleaf-direct.test/user-settings',
-          'https://r.label.frameleaf-direct.test/link',
-          'https://r.label.frameleaf-direct.test/api/oauth/mobile-redirect',
-          'frameleaf-auth:///oauth-callback',
-        ],
+      expect(body.instanceId).toMatch(/^[\da-f]{8}-[\da-f]{4}-7[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
+      // the cloud registers the sign-in client itself: no dynamic client registration, no redirect URIs
+      expect(pathsCalled().filter((call) => call.startsWith('POST /api/v1/instances'))).toHaveLength(1);
+      expect(pathsCalled().some((call) => call.endsWith('/reg'))).toBe(false);
+      expect(JSON.stringify(body)).not.toContain('redirect');
+    });
+
+    it('registers with the boot id its check-ins then send (FL-177)', async () => {
+      await sut.onBootstrap();
+      serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+      await sut.checkInNow();
+
+      const registered = cloud.requests.find(({ path }) => path === '/api/v1/instances')!.json().bootId;
+      const beat = cloud.requests.find(({ path }) => path === '/api/v1/instance/heartbeat')!.json().bootId;
+      expect(registered).toBe((metadata.get(SystemMetadataKey.FrameleafBoot) as { bootId: string }).bootId);
+      expect(beat).toBe(registered);
+    });
+
+    it('ignores an initial access token an older cloud still sends, and never registers a client', async () => {
+      serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+      const original = cloud.routes.get('POST /api/v1/instances')!;
+      cloud.on('POST /api/v1/instances', async (request) => {
+        const answer = await original(request);
+        const body = answer.body as { oidc: Record<string, unknown> };
+        return {
+          ...answer,
+          body: {
+            ...body,
+            oidc: {
+              ...body.oidc,
+              initialAccessToken: 'initial-access-token',
+              registrationEndpoint: `${cloud.url}/id/reg`,
+            },
+          },
+        };
       });
-      expect(cloud.requests.filter(({ path }) => path === '/id/reg')).toHaveLength(1);
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+
+      expect(storedLink()?.status).toBe('linked');
+      expect(pathsCalled()).not.toContain('POST /id/reg');
+      expect(JSON.stringify(storedLink())).not.toContain('initial-access-token');
+    });
+
+    it.each([
+      [402, 'instance-limit', 'instance-limit', /no room for another server/],
+      [403, 'instance_revoked', 'server-refused', /removed from your Frameleaf account, or the account is suspended/],
+      [409, 'instance-id-taken', 'instance-id-taken', /or another one with its ID, is still registered/],
+      [409, 'jwk_already_bound', 'key-already-linked', /identity directory was copied/],
+    ])('explains a %s %s refusal of the registration and ends the attempt', async (status, code, refusal, message) => {
+      serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+      cloud.on('POST /api/v1/instances', () => ({
+        status,
+        body: { code, message: 'refused', retryable: false, requestId: 'req_01J8ZK3M4N5P6Q7R' },
+      }));
+      await sut.startLink(authStub.admin);
+      makeDue();
+
+      await expect(sut.getLink()).resolves.toMatchObject({ state: 'unlinked', linkRefusal: refusal, pending: null });
+      expect(storedLink()).toMatchObject({ status: 'unlinked', lastLinkRefusal: refusal });
+      expect(storedLink()?.lastError).toMatch(message);
+
+      // a new attempt starts clean
+      serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+      await expect(sut.startLink(authStub.admin)).resolves.toMatchObject({ state: 'pending', linkRefusal: null });
     });
 
     it('retries a registration nonce challenge once with the same link token (FL-178)', async () => {
@@ -560,6 +623,163 @@ describe(FrameleafCloudService.name, () => {
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
       expect(metadata.has(SystemMetadataKey.FrameleafPricing)).toBe(false);
       expect(storedLink()!.heartbeat!.failures).toBe(0);
+    });
+
+    it('sends one boot id per server start from every worker, and a new one after a restart (FL-177)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      makeDue();
+      await sut.handleHeartbeat();
+      await sut.checkInNow();
+      const beats = cloud.requests.filter(({ path }) => path === '/api/v1/instance/heartbeat');
+      expect(beats).toHaveLength(2);
+      const boot = metadata.get(SystemMetadataKey.FrameleafBoot) as { bootId: string };
+      expect(beats.map((beat) => beat.json().bootId)).toEqual([boot.bootId, boot.bootId]);
+
+      // the microservices worker starts again: a new id, which every later check-in sends
+      await sut.onBootstrap();
+      const restarted = (metadata.get(SystemMetadataKey.FrameleafBoot) as { bootId: string }).bootId;
+      expect(restarted).not.toBe(boot.bootId);
+      await sut.checkInNow();
+      const last = cloud.requests.filter(({ path }) => path === '/api/v1/instance/heartbeat').at(-1)!;
+      expect(last.json().bootId).toBe(restarted);
+    });
+
+    it('handles the golden heartbeat answer and acknowledges exactly as the golden ack (FC-19)', async () => {
+      const answer = cloudContractFixture('instance/heartbeat-response.json');
+      const commandId = answer.commands[0].id;
+      let ack: unknown;
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: answer }));
+      cloud.on(`POST /api/v1/instance/commands/${commandId}/ack`, (request) => {
+        ack = request.json();
+        return { status: 204 };
+      });
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      // backup.run is allowed by default and fails here: the ack is the golden one, word for word
+      expect(ack).toEqual(cloudContractFixture('instance/command-ack.json'));
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:notice:maintenance-2026-10-01' }),
+      );
+      // the golden pricing is the bundled 2026-09-25.1: the bundle stays in force, nothing new is kept
+      expect(metadata.get(SystemMetadataKey.FrameleafPricing)).toBeUndefined();
+      const sent = cloud.requests.find(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
+      const golden = cloudContractFixture('instance/heartbeat-request.json');
+      expect(Object.keys(sent)).toEqual(Object.keys(golden));
+      for (const key of ['health', 'remoteAccess', 'permissions'] as const) {
+        expect(Object.keys(sent[key])).toEqual(Object.keys(golden[key]));
+      }
+    });
+
+    it('asks for a new link when every instance route answers key_retired, without revoking (FC-19)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 401,
+        body: cloudContractFixture('errors/key-retired.json'),
+      }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
+
+      expect(storedLink()).toMatchObject({
+        status: 'linked',
+        heartbeat: { failures: 1, relinkRequested: true },
+        lastError: expect.stringContaining('Link the server again'),
+      });
+      await expect(sut.getStatus()).resolves.toMatchObject({ state: 'linked', relinkRequested: true });
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({
+          dedupeKey: 'frameleaf-cloud:relink',
+          description: expect.stringContaining('no longer accepts this server’s key'),
+        }),
+      );
+      expect(mocks.adminAudit.create).not.toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.CloudRevoked }),
+      ]);
+    });
+
+    it('does not warn again or try the candidate once a new link is already asked for (FL-177 review)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 401,
+        body: cloudContractFixture('errors/key-retired.json'),
+      }));
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.heartbeat?.relinkRequested).toBe(true);
+      mocks.event.emit.mockClear();
+      const candidate = vi.spyOn(sut as unknown as { tryCandidateKey: () => Promise<boolean> }, 'tryCandidateKey');
+
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
+      expect(storedLink()?.heartbeat?.failures).toBe(2);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:relink' }),
+      );
+      expect(candidate).not.toHaveBeenCalled();
+    });
+
+    it('closes an open key recovery (FL-175) when a check-in answers key_retired, with its own notice', async () => {
+      await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 401,
+        body: cloudContractFixture('errors/key-retired.json'),
+      }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
+
+      expect(storedLink()).toMatchObject({
+        status: 'linked',
+        heartbeat: { failures: 1, relinkRequested: true, keyRecovery: { closed: true } },
+      });
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:identity-key-expired' }),
+      );
+      expect(mocks.event.emit).not.toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:relink' }),
+      );
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.CloudKeyRecoveryRotation, detail: 'window-closed' }),
+      ]);
+      await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).rejects.toThrow();
+    });
+
+    it('records the store discovery names, and forgets it when discovery stops naming it (FL-177)', async () => {
+      const original = cloud.discovery;
+      cloud.discovery = () => ({ ...original(), store: `${cloud.url}/account/store` });
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      sutForgetTokens();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.store).toBe(`${cloud.url}/account/store`);
+
+      cloud.discovery = original;
+      sutForgetTokens();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.store).toBeUndefined();
+    });
+
+    it('treats invalid_token as a token to mint again, never as a revoke (FL-177)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 401,
+        body: { code: 'invalid_token', message: 'expired', retryable: true, requestId: 'req_01J8ZK3M4N5P6Q7R' },
+      }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
+      expect(storedLink()).toMatchObject({ status: 'linked', heartbeat: { failures: 1 } });
+    });
+
+    it('revokes on an instance_revoked envelope from the API (FL-177)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 403,
+        body: { code: 'instance_revoked', message: 'removed', retryable: false, requestId: 'req_01J8ZK3M4N5P6Q7R' },
+      }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
+      expect(storedLink()?.status).toBe('revoked');
     });
 
     it('waits for the next check-in time', async () => {
@@ -1368,11 +1588,11 @@ describe(FrameleafCloudService.name, () => {
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('its token was not usable'));
     });
 
-    it('ends the link on a key_retired check-in, after asking about a candidate (FL-178)', async () => {
+    it('asks about a candidate on a key_retired check-in, then for a new link, without revoking (FL-178)', async () => {
       const candidateKid = await writeCandidate();
       cloud.on('POST /api/v1/instance/heartbeat', () => ({
         status: 401,
-        body: { code: 'key_retired', message: 'This server key was replaced or has retired. Link the server again.' },
+        body: cloudContractFixture('errors/key-retired.json'),
       }));
       cloud.on('POST /id/token', (request) =>
         assertionKidOf(request) === candidateKid
@@ -1382,33 +1602,38 @@ describe(FrameleafCloudService.name, () => {
       makeDue();
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
 
-      expect(
-        cloud.requests.some((request) => request.path === '/id/token' && assertionKidOf(request) === candidateKid),
-      ).toBe(true);
+      const asked = cloud.requests.find(
+        (request) => request.path === '/id/token' && assertionKidOf(request) === candidateKid,
+      );
+      expect(asked?.dpop?.jkt).toBe(candidateKid);
+      await expect(access(join(identityDir, CANDIDATE_KEY_FILE))).rejects.toThrow();
       expect(storedLink()).toMatchObject({
-        status: 'revoked',
-        revoked: { reason: 'Frameleaf Cloud no longer recognises this server.' },
+        status: 'linked',
+        heartbeat: { failures: 1, relinkRequested: true, relinkReason: 'key' },
       });
     });
 
-    it('ends the link as an expired key on a key_retired check-in during a recovery (FL-178)', async () => {
-      const since = Date.now() - 60 * 60 * 1000;
-      await writeFile(
-        join(identityDir, ROTATION_NEEDED_FILE),
-        JSON.stringify({ since: new Date(since).toISOString(), until: new Date(since + 24 * 60 * 60 * 1000) }),
-      );
+    it('still asks about a candidate on key_retired after the cloud commanded a relink (FL-177 review)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      const link = storedLink()!;
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        ...link,
+        heartbeat: { ...link.heartbeat!, relinkRequested: true, relinkReason: 'command' },
+      });
+      const candidateKid = await writeCandidate();
+      // the cloud holds the candidate: the current key is retired, the candidate gets a token
       cloud.on('POST /api/v1/instance/heartbeat', () => ({
         status: 401,
-        body: { code: 'key_retired', message: 'past its window' },
+        body: cloudContractFixture('errors/key-retired.json'),
       }));
       makeDue();
-      await sut.handleHeartbeat();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
 
-      expect(storedLink()).toMatchObject({
-        status: 'revoked',
-        revoked: { reason: 'This server’s identity key could not be replaced before its previous key expired.' },
-      });
-      await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).rejects.toThrow();
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(after.kid).toBe(candidateKid);
+      expect(after.retiring?.kid).toBe(before.kid);
+      expect(storedLink()?.status).toBe('linked');
+      expect(storedLink()?.heartbeat?.relinkReason).toBe('command');
     });
 
     it('only counts a failure when key_retired answers a token of a key another worker replaced since (FL-178)', async () => {
@@ -1425,10 +1650,55 @@ describe(FrameleafCloudService.name, () => {
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
 
       expect(storedLink()).toMatchObject({ status: 'linked', heartbeat: { failures: 1 } });
+      expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
     });
 
     const sutForgetTokens = () =>
       (sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository }).frameleafCloudRepository.forget();
+  });
+
+  describe('no sign-in client secret (FL-177, as-built decision #10)', () => {
+    it('removes a client secret an earlier version saved when the server starts', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        oauth: { issuerUrl: 'https://login.example.test', clientSecret: 'upstream' },
+        frameleafCloud: { signIn: { buttonText: 'Use Frameleaf', clientSecret: 'old-secret' } },
+      });
+      clearConfigCache();
+      await sut.onBootstrap();
+
+      const stored = metadata.get(SystemMetadataKey.SystemConfig);
+      expect(JSON.stringify(stored)).not.toContain('old-secret');
+      expect(stored).toMatchObject({ frameleafCloud: { signIn: { buttonText: 'Use Frameleaf' } } });
+      // the administrator's own provider keeps its secret (FL-177 review)
+      expect(stored).toMatchObject({ oauth: { issuerUrl: 'https://login.example.test', clientSecret: 'upstream' } });
+    });
+
+    it('leaves the settings alone when there is no secret to remove', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { signIn: { buttonText: 'Use Frameleaf' } } });
+      await sut.onBootstrap();
+      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+    });
+
+    it('treats secret.rotate as dropping cached tokens and discovery', async () => {
+      await linkNow();
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 200,
+        body: { commands: [{ id: 's1', type: 'secret.rotate' }] },
+      }));
+      cloud.on('POST /api/v1/instance/commands/s1/ack', () => ({ status: 200, body: {} }));
+      makeDue();
+      await sut.handleHeartbeat();
+
+      const ack = cloud.requests.find(({ path }) => path === '/api/v1/instance/commands/s1/ack')!;
+      expect(ack.json()).toEqual({ result: 'done', detail: null });
+      // the acknowledgement needed a new token and a new discovery read after the rotation
+      const after = pathsCalled().slice(pathsCalled().indexOf('POST /api/v1/instance/heartbeat') + 1);
+      expect(after).toEqual([
+        'GET /.well-known/frameleaf-services',
+        'POST /id/token',
+        'POST /api/v1/instance/commands/s1/ack',
+      ]);
+    });
   });
 
   describe('Sign in with Frameleaf settings (FL-158)', () => {
@@ -1442,7 +1712,7 @@ describe(FrameleafCloudService.name, () => {
       await linkNow();
       await expect(sut.updateSignIn(authStub.admin, { showOnLocalLogin: true })).resolves.toMatchObject({
         signInShowOnLocalLogin: true,
-        signInClientId: 'instance-1',
+        signInClientId: localInstanceId(),
       });
       await expect(sut.updateSignIn(authStub.admin, { buttonText: 'Use Frameleaf' })).resolves.toMatchObject({
         signInShowOnLocalLogin: true,
@@ -1493,6 +1763,33 @@ describe(FrameleafCloudService.name, () => {
       const stored = metadata.get(SystemMetadataKey.SystemConfig) as
         { frameleafCloud?: { signIn?: { clientSecret?: string } } } | undefined;
       expect(stored?.frameleafCloud?.signIn?.clientSecret ?? '').toBe('');
+    });
+
+    it('removes the plan certificate and keeps the supporter key’s (FL-177, as-built decision #12)', async () => {
+      await linkNow();
+      cloud.on('DELETE /api/v1/instance', () => ({ status: 204 }));
+      const key = { kind: 'server', source: 'key', kid: 'key-kid', certificate: 'key.jws' };
+      const plan = { kind: 'plan', source: 'account', kid: 'plan-kid', certificate: 'plan.jws' };
+      metadata.set(SystemMetadataKey.FrameleafLicense, { key, plan, noticeState: 'active' });
+
+      await sut.unlink(authStub.admin);
+      expect(metadata.get(SystemMetadataKey.FrameleafLicense)).toEqual({ key, plan: null, noticeState: 'active' });
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_frameleaf_cloud', admin.id, { topic: 'license' });
+    });
+
+    it('removes the plan certificate on a cloud-side revoke too', async () => {
+      await linkNow();
+      metadata.set(SystemMetadataKey.FrameleafLicense, {
+        key: null,
+        plan: { kind: 'plan', source: 'account', kid: 'plan-kid', certificate: 'plan.jws' },
+      });
+      cloud.on('POST /id/token', () => ({ status: 401, body: { error: 'invalid_client' } }));
+      (sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository }).frameleafCloudRepository.forget();
+      makeDue();
+      await sut.handleHeartbeat();
+
+      expect(storedLink()?.status).toBe('revoked');
+      expect(metadata.get(SystemMetadataKey.FrameleafLicense)).toEqual({ key: null, plan: null });
     });
 
     it('unlinks locally even when the cloud cannot be reached', async () => {

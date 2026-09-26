@@ -1,0 +1,12 @@
+{
+  "code": "insufficient-credits",
+  "message": "Your AI Wallet balance is too low for this job.",
+  "retryable": false,
+  "refusal": "wallet-insufficient",
+  "detail": null,
+  "data": {
+    "requiredUsd": 1.25,
+    "freeUsd": 0.4
+  },
+  "requestId": "req_01J8ZK3M4N5P6Q7R"
+}

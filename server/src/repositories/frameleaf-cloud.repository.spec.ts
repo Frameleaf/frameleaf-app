@@ -14,6 +14,7 @@ import { INSTANCE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
 /**
  * A fake Frameleaf Cloud (FL-159): discovery, the token endpoint (which verifies the EdDSA client
@@ -374,6 +375,14 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     [429, { code: 'rate-limited', message: 'slow down' }, MlAdmissionRefusal.QuotaExceeded],
     [503, { code: 'capacity', message: 'busy' }, MlAdmissionRefusal.CloudUnavailable],
     [401, { code: 'x', message: 'y', refusal: 'entitlement-missing' }, MlAdmissionRefusal.EntitlementMissing],
+    // FL-177: the golden envelope (data object, null detail) and the request-invalid refusal
+    [402, cloudContractFixture('errors/insufficient-credits.json'), MlAdmissionRefusal.WalletInsufficient],
+    [422, { code: 'request-invalid', message: 'bad request' }, MlAdmissionRefusal.RequestInvalid],
+    [
+      503,
+      { code: 'capacity', message: 'busy', refusal: 'destination-unhealthy' },
+      MlAdmissionRefusal.DestinationUnhealthy,
+    ],
   ])('maps a %s %j error envelope to a refusal', async (status, body, refusal) => {
     metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
     const resolution = await resolveCloudGateway(deps);
