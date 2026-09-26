@@ -168,15 +168,44 @@ const albumsWithoutCover = count(
   ['public.album'],
   `SELECT count(*)::int AS count FROM public.album WHERE "albumThumbnailAssetId" IS NULL`,
 );
-const lockedAlbumCovers = count(
-  ['public.album', 'public.asset'],
-  `SELECT count(*)::int AS count FROM public.album
-   WHERE "albumThumbnailAssetId" IN (SELECT id FROM public.asset WHERE visibility::text = 'locked')`,
-);
 const peopleWithoutThumbnail = count(
   ['public.person'],
   `SELECT count(*)::int AS count FROM public.person WHERE "thumbnailPath" = ''`,
 );
+
+/**
+ * References to Locked assets that the cover repairs replace. 2100000000290 and 2100000000300 read
+ * Locked as the official Locked folder (`visibility = locked`); 2100000000320 reads it as a lock
+ * record (`asset_lock`), so its counters are keyed on the lock records.
+ */
+const lockedReferences = (locked: { relations: readonly string[]; ids: string }) => ({
+  lockedAlbumCovers: count(
+    ['public.album', ...locked.relations],
+    `SELECT count(*)::int AS count FROM public.album WHERE "albumThumbnailAssetId" IN (${locked.ids})`,
+  ),
+  lockedFaceThumbnails: count(
+    ['public.person', 'public.asset_face', ...locked.relations],
+    `SELECT count(*)::int AS count FROM public.person person
+     JOIN public.asset_face face ON face.id = person."faceAssetId"
+     WHERE face."assetId" IN (${locked.ids})`,
+  ),
+  lockedSharedSpaceCovers: count(
+    ['public.shared_space_person', ...locked.relations],
+    `SELECT count(*)::int AS count FROM public.shared_space_person WHERE "coverAssetId" IN (${locked.ids})`,
+  ),
+  lockedPetCovers: count(
+    ['public.pet', ...locked.relations],
+    `SELECT count(*)::int AS count FROM public.pet WHERE "featuredAssetId" IN (${locked.ids})`,
+  ),
+});
+const lockedFolderReferences = lockedReferences({
+  relations: ['public.asset'],
+  ids: `SELECT id FROM public.asset WHERE visibility::text = 'locked'`,
+});
+const lockRecordReferences = lockedReferences({
+  relations: ['public.asset_lock'],
+  ids: `SELECT "assetId" FROM public.asset_lock`,
+});
 
 /**
  * What each adoption migration that changes or deletes existing official data touched, as row counts
@@ -215,11 +244,16 @@ export const ADOPTION_STEP_COUNTERS: Readonly<Record<string, Readonly<Record<str
        WHERE memory."ownerId" <> asset."ownerId"`,
     ),
   },
-  '2100000000290-ClearLockedAlbumCovers': { lockedAlbumCovers, albumsWithoutCover },
-  '2100000000300-ClearLockedCoverReferences': { lockedAlbumCovers, albumsWithoutCover, peopleWithoutThumbnail },
+  '2100000000290-ClearLockedAlbumCovers': { ...lockedFolderReferences, albumsWithoutCover },
+  '2100000000300-ClearLockedCoverReferences': {
+    ...lockedFolderReferences,
+    albumsWithoutCover,
+    peopleWithoutThumbnail,
+  },
   '2100000000320-AddAssetLock': {
     lockedFolderAssets,
     assetLocks: count(['public.asset_lock'], `SELECT count(*)::int AS count FROM public.asset_lock`),
+    ...lockRecordReferences,
     albumsWithoutCover,
     peopleWithoutThumbnail,
   },

@@ -48,9 +48,14 @@ official server can still start on the library with no handoff.
 Adoption is an explicit, one-way step. Afterwards, the library can go back to the
 official server only through the certified handoff described below. It also changes
 existing official data, as listed below. Take database and media checkpoints first.
-Adoption refuses to run unless maintenance mode is on and no other server is connected to
-the database. Stop every server container, then run these commands from one-shot admin
-processes that use the Frameleaf image:
+Adoption refuses to run unless maintenance mode is on. It also refuses when another
+database client holds a transaction, is running a query, or connects from a different
+address than the admin process. It cannot detect an idle server that connects from the
+admin process's own address, for example over the same Unix socket, through a
+connection pooler, or when the command runs through `docker exec` inside a server
+container. Maintenance mode is required for that reason, and stopping every server is
+the operator's responsibility. Stop every server container, then run these commands from
+one-shot admin processes that use the Frameleaf image:
 
 ```bash
 immich-admin enable-maintenance-mode
@@ -65,8 +70,17 @@ public-schema migration in name order. It never runs the Frameleaf copy of the w
 rewrite, because the official `1778614946174-UpdateWorkflowTables` already ran. It then
 completes the Frameleaf steps that depend on those tables and sets the phase to `legacy`.
 Workflow, plugin and method rows are checked unchanged. An `official-origin-adoption`
-audit row records the applied migrations and, for each step below, the row counts of the
-affected tables right before and right after it (`details.steps`).
+audit row records the applied migrations. For each step below, `details.steps` holds
+table counts taken right before and right after that step, inside the transaction. A
+count reads `null` while its tables do not exist yet. The counts are totals, not
+per-row change records, so a difference is exact only where the step can move the count
+in one direction. The ownerless albums, cross-owner memory links, Locked-folder assets
+and OCR sync counts are exact. `albumsWithoutCover` and `peopleWithoutThumbnail` also
+include rows that already had no cover or thumbnail. The `locked…` reference counts
+(album covers, featured faces, shared-space person covers and pet covers that point at a
+Locked asset) show how many references the repair released, but not whether each one got
+a replacement or was cleared. `2100000000290` and `2100000000300` count Locked-folder
+assets, and `2100000000320` counts assets with a lock record.
 
 ### Changes adoption makes to existing official data
 
