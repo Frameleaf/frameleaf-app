@@ -2104,4 +2104,284 @@ describe(AuthService.name, () => {
       await expect(sut.resetPinCode(AuthFactory.create(user), { pinCode: '000000' })).rejects.toThrow('Wrong PIN code');
     });
   });
+
+  describe('remote access (FL-161)', () => {
+    const user = UserFactory.create();
+    const sessionRow = () => ({
+      id: 'session-1',
+      updatedAt: new Date(),
+      user,
+      pinExpiresAt: null,
+      appVersion: null,
+      oauthSid: null,
+    });
+    const sessionRequest = (via: 'lan' | 'wan' | 'relay' | null) => ({
+      headers: { authorization: 'Bearer auth_token' },
+      queryParams: {},
+      metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/assets', via },
+    });
+    const allowPassword = () =>
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.SystemConfig
+            ? { frameleafCloud: { remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: true } } }
+            : null) as never,
+        ),
+      );
+    const refusedWith = async (promise: Promise<unknown>, code: string) => {
+      const error = await promise.then(
+        () => null,
+        (error_: unknown) => error_,
+      );
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).getResponse()).toMatchObject({ code, statusCode: 403 });
+    };
+    const signInRequired = (promise: Promise<unknown>) => refusedWith(promise, 'frameleaf_sign_in_required');
+
+    describe('authenticate', () => {
+      it.each([null, 'lan'] as const)('never checks a request that arrived %s', async (via) => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+
+        await expect(sut.authenticate(sessionRequest(via))).resolves.toMatchObject({ user });
+        expect(mocks.frameleafAccount.getSession).not.toHaveBeenCalled();
+        expect(mocks.frameleafAccount.getLinkByUser).not.toHaveBeenCalled();
+      });
+
+      it.each(['wan', 'relay'] as const)('accepts a Frameleaf session arriving %s', async (via) => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
+
+        await expect(sut.authenticate(sessionRequest(via))).resolves.toMatchObject({ user });
+        expect(mocks.frameleafAccount.getSession).toHaveBeenCalledWith('session-1');
+      });
+
+      it.each(['wan', 'relay'] as const)('refuses a password session arriving %s', async (via) => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+        await signInRequired(sut.authenticate(sessionRequest(via)));
+      });
+
+      it('lets any valid session sign out over the relay', async () => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+
+        await expect(
+          sut.authenticate({
+            ...sessionRequest('relay'),
+            metadata: { ...sessionRequest('relay').metadata, uri: '/api/auth/logout', remoteSignInExempt: true },
+          }),
+        ).resolves.toMatchObject({ user });
+        expect(mocks.frameleafAccount.getSession).not.toHaveBeenCalled();
+      });
+
+      it('accepts a password session over the relay when an administrator allowed passwords there', async () => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+        allowPassword();
+
+        await expect(sut.authenticate(sessionRequest('relay'))).resolves.toMatchObject({ user });
+      });
+
+      it.each(['wan', 'relay'] as const)('lets a public shared link through %s', async (via) => {
+        mocks.sharedLink.getByKey.mockResolvedValue({ ...sharedLinkStub.valid, user } as any);
+
+        await expect(
+          sut.authenticate({
+            headers: { 'x-immich-share-key': 'key' },
+            queryParams: {},
+            metadata: { adminRoute: false, sharedLinkRoute: true, uri: '/api/assets', via },
+          }),
+        ).resolves.toMatchObject({ sharedLink: expect.anything() });
+        expect(mocks.frameleafAccount.getSession).not.toHaveBeenCalled();
+      });
+
+      it.each(['wan', 'relay'] as const)(
+        'accepts an API key %s only when its owner is linked to a Frameleaf account',
+        async (via) => {
+          const apiKey = ApiKeyFactory.from({ permissions: [Permission.All] })
+            .user(user)
+            .build();
+          mocks.apiKey.getKey.mockResolvedValue(apiKey);
+          const request = {
+            headers: { 'x-api-key': 'auth_token' },
+            queryParams: {},
+            metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/assets', via },
+          };
+
+          mocks.frameleafAccount.getLinkByUser.mockResolvedValueOnce(undefined);
+          await signInRequired(sut.authenticate(request));
+
+          mocks.frameleafAccount.getLinkByUser.mockResolvedValueOnce({ userId: user.id, sub: 'fl-sub' } as never);
+          await expect(sut.authenticate(request)).resolves.toMatchObject({ user, apiKey: expect.anything() });
+          expect(mocks.frameleafAccount.getLinkByUser).toHaveBeenCalledWith(user.id);
+        },
+      );
+
+      it('does not let an allowed password open API keys of unlinked owners', async () => {
+        const apiKey = ApiKeyFactory.from({ permissions: [Permission.All] })
+          .user(user)
+          .build();
+        mocks.apiKey.getKey.mockResolvedValue(apiKey);
+        mocks.frameleafAccount.getLinkByUser.mockResolvedValue(undefined);
+        allowPassword();
+
+        await signInRequired(
+          sut.authenticate({
+            headers: { 'x-api-key': 'auth_token' },
+            queryParams: {},
+            metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/assets', via: 'relay' },
+          }),
+        );
+      });
+    });
+
+    describe('login', () => {
+      it.each(['wan', 'relay'] as const)('refuses a password %s before looking anyone up', async (via) => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+        await signInRequired(sut.login(dto, { ...loginDetails, via }));
+        expect(mocks.user.getByEmail).not.toHaveBeenCalled();
+        expect(mocks.crypto.compareBcrypt).not.toHaveBeenCalled();
+      });
+
+      it('accepts a password over the relay when an administrator allowed it', async () => {
+        const passwordUser = UserFactory.create({ password: 'immich_password' });
+        mocks.user.getByEmail.mockResolvedValue(passwordUser);
+        mocks.session.create.mockResolvedValue(SessionFactory.create());
+        allowPassword();
+
+        await expect(sut.login(dto, { ...loginDetails, via: 'relay' })).resolves.toMatchObject({
+          userId: passwordUser.id,
+        });
+      });
+
+      it.each([null, 'lan'] as const)('keeps password sign-in %s as it was', async (via) => {
+        const passwordUser = UserFactory.create({ password: 'immich_password' });
+        mocks.user.getByEmail.mockResolvedValue(passwordUser);
+        mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+        await expect(sut.login(dto, { ...loginDetails, via })).resolves.toMatchObject({ userId: passwordUser.id });
+      });
+    });
+
+    describe('requireOriginalTransfer', () => {
+      it.each([null, undefined, 'lan', 'wan'] as const)('never refuses a transfer that arrived %s', async (via) => {
+        await expect(sut.requireOriginalTransfer(via, '/api/assets/1/original')).resolves.toBeUndefined();
+        expect(mocks.systemMetadata.get).not.toHaveBeenCalled();
+      });
+
+      it('refuses originals, archives and backups over the relay by default', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+        await refusedWith(
+          sut.requireOriginalTransfer('relay', '/api/download/archive'),
+          'frameleaf_relay_originals_refused',
+        );
+      });
+
+      it('allows them over the relay once an administrator did', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          frameleafCloud: { remoteAccess: { allowOriginalsOverRelay: true, allowPasswordOverRelay: false } },
+        } as never);
+
+        await expect(sut.requireOriginalTransfer('relay', '/api/download/archive')).resolves.toBeUndefined();
+      });
+    });
+
+    describe('authenticateWebsocket', () => {
+      const secret = 'edge-secret-0123456789abcdef';
+
+      beforeEach(() => {
+        mocks.config.getEnv.mockReturnValue({
+          ...mocks.config.getEnv(),
+          frameleafCloud: {
+            ...mocks.config.getEnv().frameleafCloud,
+            url: 'https://api.frameleaf.cloud',
+            edge: { ...mocks.config.getEnv().frameleafCloud.edge, secret },
+          },
+        });
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.FrameleafCloudLink
+              ? {
+                  status: 'linked',
+                  cloudUrl: 'https://api.frameleaf.cloud',
+                  instanceId: 'instance-1',
+                  services: { relayOrigin: 'https://r.k3v9.frameleaf-direct.net' },
+                }
+              : null) as never,
+          ),
+        );
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
+      });
+
+      it('refuses a page from another origin before reading the session', async () => {
+        await expect(
+          sut.authenticateWebsocket({
+            host: '192.168.1.10:2283',
+            origin: 'https://evil.example',
+            authorization: 'Bearer auth_token',
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(mocks.session.getByToken).not.toHaveBeenCalled();
+      });
+
+      it('accepts the same origin and the published relay name', async () => {
+        await expect(
+          sut.authenticateWebsocket({
+            host: '192.168.1.10:2283',
+            origin: 'http://192.168.1.10:2283',
+            authorization: 'Bearer auth_token',
+          }),
+        ).resolves.toMatchObject({ auth: { user }, via: null });
+
+        await expect(
+          sut.authenticateWebsocket({
+            host: '127.0.0.1:2283',
+            origin: 'https://r.k3v9.frameleaf-direct.net',
+            authorization: 'Bearer auth_token',
+            'x-frameleaf-via': 'relay',
+            'x-frameleaf-via-auth': secret,
+          }),
+        ).resolves.toMatchObject({ auth: { user }, via: 'relay' });
+        expect(mocks.frameleafAccount.getSession).toHaveBeenCalledWith('session-1');
+      });
+
+      it('applies the remote rule to a relayed handshake', async () => {
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+
+        await signInRequired(
+          sut.authenticateWebsocket({
+            host: '127.0.0.1:2283',
+            origin: 'https://r.k3v9.frameleaf-direct.net',
+            authorization: 'Bearer auth_token',
+            'x-frameleaf-via': 'relay',
+            'x-frameleaf-via-auth': secret,
+          }),
+        );
+      });
+
+      it('refuses a via claim without the edge secret, never treating it as home', async () => {
+        for (const claim of [
+          { 'x-frameleaf-via': 'lan', 'x-frameleaf-via-auth': 'guess' },
+          { 'x-frameleaf-via': 'lan' },
+          { 'x-frameleaf-via-auth': secret },
+        ]) {
+          await expect(
+            sut.authenticateWebsocket({ authorization: 'Bearer auth_token', ...claim }),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+        }
+        expect(mocks.session.getByToken).not.toHaveBeenCalled();
+      });
+
+      it('leaves a handshake without an origin (an app) to authentication', async () => {
+        await expect(sut.authenticateWebsocket({ authorization: 'Bearer auth_token' })).resolves.toMatchObject({
+          auth: { user },
+        });
+      });
+    });
+  });
 });

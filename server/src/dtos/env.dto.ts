@@ -112,7 +112,8 @@ export const EnvSchema = z
     FRAMELEAF_EDGE_BIND: z.string().min(1).optional(),
     /**
      * FL-158: the per-boot secret the edge worker sends as `X-Frameleaf-Via-Auth`; without it every
-     * `X-Frameleaf-Via` header is ignored.
+     * `X-Frameleaf-Via` header is ignored. FL-161: the supervisor generates a new one on every boot and
+     * hands it to its workers; a value set here is used instead.
      */
     FRAMELEAF_EDGE_SECRET: z.string().min(16).optional(),
     /** FL-158: this server's address on the home network, offered to visitors who are on it. */

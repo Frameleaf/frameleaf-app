@@ -1,83 +1,67 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { setPersistenceGate } from '../src/persistence-gate'
-import { saveTimeline } from '../src/shims/timeline-persistence'
+import { saveTimelineWithDeps } from '../src/shims/timeline-persistence'
 
 /**
- * `saveTimeline` (FL-89, FL-174, FL-187) wraps Freecut's own engine save; both Ctrl+S and its
- * interval autosave call the exported name through the build's alias, so the wrapper is the one
- * place that can tell whether a save this document started still belongs to the mount it started
- * for, once the engine's own write has finished.
+ * `saveTimelineWithDeps` (FL-89, FL-174, FL-187) is `saveTimeline` with its engine save, its content
+ * read and its gate taken as arguments, driven here against fakes instead of `@/features/timeline/…`.
+ *
+ * `vite.config.mjs`'s `frameleaf-gate-timeline-persistence` plugin sends every import of
+ * `@/features/timeline/stores/timeline-persistence` whose importer is not this shim's own file to the
+ * shim instead of the engine's module underneath it — including the resolution `vi.mock` does for
+ * that specifier from a test file. Mocking that specifier here would therefore replace the shim
+ * itself with the mock, not the engine calls the shim makes, and every assertion about the shim's own
+ * gate logic would pass or fail for the wrong reason. `saveTimelineWithDeps` exists so this file never
+ * needs to mock that specifier at all.
  */
 
-const mocks = vi.hoisted(() => ({
-  content: 'r0',
-  engineSaveTimeline: vi.fn(async () => undefined),
-  markDirty: vi.fn(),
-  markClean: vi.fn(),
-}))
+let content = 'r0'
+const contentOf = () => content
+const save = vi.fn(async () => undefined)
+const markDirty = vi.fn()
 
-vi.mock('@/features/timeline/stores/timeline-persistence', () => ({
-  buildTimelineFromStores: () => ({
-    currentFrame: 0,
-    zoomLevel: 1,
-    scrollPosition: 0,
-    content: mocks.content,
-  }),
-  loadTimeline: vi.fn(),
-  saveTimeline: (...args: unknown[]) => mocks.engineSaveTimeline(...args),
-}))
+const run = (projectId: string, mayStartSave: (projectId: string) => boolean) =>
+  saveTimelineWithDeps(projectId, { save, contentOf, mayStartSave, markDirty })
 
-vi.mock('@/features/timeline/stores/timeline-settings-store', () => ({
-  useTimelineSettingsStore: {
-    getState: () => ({ markDirty: mocks.markDirty, markClean: mocks.markClean }),
-  },
-}))
-
-describe('saveTimeline gate (FL-187)', () => {
+describe('saveTimelineWithDeps gate (FL-187)', () => {
   beforeEach(() => {
-    mocks.content = 'r0'
-    mocks.engineSaveTimeline.mockClear()
-    mocks.engineSaveTimeline.mockImplementation(async () => undefined)
-    mocks.markDirty.mockClear()
-    mocks.markClean.mockClear()
+    content = 'r0'
+    save.mockClear()
+    save.mockImplementation(async () => undefined)
+    markDirty.mockClear()
   })
 
   it('never asks the engine to save once the gate refuses the mount up front', async () => {
-    setPersistenceGate({ mayStartSave: () => false, loadFinished: () => undefined })
-    await saveTimeline('p-m0')
-    expect(mocks.engineSaveTimeline).not.toHaveBeenCalled()
-    expect(mocks.markDirty).not.toHaveBeenCalled()
+    await run('p-m0', () => false)
+    expect(save).not.toHaveBeenCalled()
+    expect(markDirty).not.toHaveBeenCalled()
   })
 
   it('marks the timeline dirty again the moment the save’s own mount is gone, before comparing content', async () => {
     let allowed = true
-    setPersistenceGate({ mayStartSave: () => allowed, loadFinished: () => undefined })
-    mocks.engineSaveTimeline.mockImplementation(async () => {
+    save.mockImplementation(async () => {
       // A remount replaces the mount while the engine's own write is still in flight (FL-187): by
       // the time it resolves, Freecut has already marked the (shared) timeline clean for it, and
       // this document's gate would refuse the very save it just started.
       allowed = false
     })
-    await saveTimeline('p-m0')
-    expect(mocks.engineSaveTimeline).toHaveBeenCalledWith('p-m0')
+    await run('p-m0', () => allowed)
+    expect(save).toHaveBeenCalledWith('p-m0')
     // The correction runs even though the content did not change, which is the case the content
     // comparison alone would miss: nothing here tells the person a save succeeded for a mount that
     // is no longer current.
-    expect(mocks.markDirty).toHaveBeenCalledTimes(1)
+    expect(markDirty).toHaveBeenCalledTimes(1)
   })
 
   it('still marks dirty when the content changed under a save that otherwise stayed valid', async () => {
-    setPersistenceGate({ mayStartSave: () => true, loadFinished: () => undefined })
-    mocks.engineSaveTimeline.mockImplementation(async () => {
-      mocks.content = 'r1' // an edit landed in the stores while the engine wrote (FL-174)
+    save.mockImplementation(async () => {
+      content = 'r1' // an edit landed in the stores while the engine wrote (FL-174)
     })
-    await saveTimeline('p-m0')
-    expect(mocks.markDirty).toHaveBeenCalledTimes(1)
+    await run('p-m0', () => true)
+    expect(markDirty).toHaveBeenCalledTimes(1)
   })
 
   it('leaves the timeline alone when the save both stayed valid and nothing changed', async () => {
-    setPersistenceGate({ mayStartSave: () => true, loadFinished: () => undefined })
-    await saveTimeline('p-m0')
-    expect(mocks.markDirty).not.toHaveBeenCalled()
+    await run('p-m0', () => true)
+    expect(markDirty).not.toHaveBeenCalled()
   })
 })

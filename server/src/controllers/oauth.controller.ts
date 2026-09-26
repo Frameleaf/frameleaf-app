@@ -13,6 +13,7 @@ import {
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
 import { ApiTag, AuthType, ImmichCookie } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
 import { respondWithCookie } from 'src/utils/response.js';
 
@@ -81,6 +82,7 @@ export class OAuthController {
 
   @Post('callback')
   @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.oauthCallback)
   @Endpoint({
     summary: 'Finish OAuth',
     description: 'Complete the OAuth authorization process by exchanging the authorization code for a session token.',
@@ -108,6 +110,7 @@ export class OAuthController {
 
   @Post('link')
   @Authenticated()
+  @RateLimited(RATE_LIMITS.oauthCallback)
   @HttpCode(HttpStatus.OK)
   @Endpoint({
     summary: 'Link OAuth account',

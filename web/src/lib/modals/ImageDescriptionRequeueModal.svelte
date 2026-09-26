@@ -9,12 +9,13 @@
   import { Button, LoadingSpinner, Modal, ModalBody, ModalFooter } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
-  type CloseResult = { queued: boolean } | { deferred: true };
+  type CloseResult = { queued: boolean; cloudBatches: boolean } | { deferred: true };
 
   interface Props {
     // Resolves with one of:
     //   - { queued: true|false }: re-queue was triggered (true = newly enqueued,
-    //     false = a re-queue was already in-flight).
+    //     false = a re-queue was already in-flight); `cloudBatches` (FL-163): descriptions go to
+    //     Frameleaf Cloud, which describes them in batches, so nothing was queued.
     //   - { deferred: true }: admin chose "Re-queue later". The pending marker
     //     is now set server-side so the banner reminds them.
     //   - undefined: dismissed/cancelled, or the estimate fetch failed.

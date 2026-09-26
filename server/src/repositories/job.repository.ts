@@ -648,6 +648,9 @@ export class JobRepository {
       case JobName.FrameleafLicenseRefresh: {
         return { deduplication: { id: JobName.FrameleafLicenseRefresh } };
       }
+      case JobName.CloudMlDescriptionBatch: {
+        return { deduplication: { id: JobName.CloudMlDescriptionBatch } };
+      }
       case JobName.DatabaseBackup: {
         return { deduplication: { id: JobName.DatabaseBackup } };
       }

@@ -46,7 +46,7 @@ import {
   RenderWorkerWriteResultDto,
 } from 'src/dtos/render-worker.dto.js';
 import { ApiTag, ImmichHeader } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, HomeNetworkOnly } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -223,6 +223,9 @@ const WorkerSessionHeader = () =>
  */
 @ApiTags(ApiTag.RenderWorkers)
 @Controller('render-workers')
+// FL-161: render workers run on the home network. Their API, including the original inputs they read
+// through claim grants, is refused over remote access whatever allowOriginalsOverRelay says.
+@HomeNetworkOnly()
 export class RenderWorkerController {
   constructor(
     private service: RenderWorkerService,

@@ -16,6 +16,7 @@ import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { CloudBackupService } from 'src/services/cloud-backup.service.js';
+import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
@@ -114,6 +115,7 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 export const services = [
   CloudMlService,
   CloudBackupService,
+  CloudMlBatchService,
   FrameleafAuthService,
   FrameleafCloudService,
   FrameleafLicenseService,

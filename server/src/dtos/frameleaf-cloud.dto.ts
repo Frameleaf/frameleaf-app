@@ -84,6 +84,10 @@ const CloudStatusResponseSchema = z
     signInLinkedAccounts: z.int().describe('Accounts here linked to a Frameleaf account'),
     signInShowOnLocalLogin: z.boolean().describe('Sign in with Frameleaf is offered at home too'),
     signInButtonText: z.string().describe('The Sign in with Frameleaf button text'),
+    allowOriginalsOverRelay: z
+      .boolean()
+      .describe('Originals, archives and database backups may be downloaded through the relay'),
+    allowPasswordOverRelay: z.boolean().describe('Password sign-in is allowed away from home'),
   })
   .meta({ id: 'CloudStatusResponseDto' });
 
@@ -98,4 +102,16 @@ const CloudSignInUpdateSchema = z
   .meta({ id: 'CloudSignInUpdateDto' });
 
 export class CloudSignInUpdateDto extends createZodDto(CloudSignInUpdateSchema) {}
+
+const CloudRemoteAccessUpdateSchema = z
+  .object({
+    allowOriginalsOverRelay: z
+      .boolean()
+      .optional()
+      .describe('Allow original downloads, archives and database backups through the relay'),
+    allowPasswordOverRelay: z.boolean().optional().describe('Allow password sign-in away from home'),
+  })
+  .meta({ id: 'CloudRemoteAccessUpdateDto' });
+
+export class CloudRemoteAccessUpdateDto extends createZodDto(CloudRemoteAccessUpdateSchema) {}
 export class CloudPermissionsUpdateDto extends createZodDto(CloudPermissionsUpdateSchema) {}

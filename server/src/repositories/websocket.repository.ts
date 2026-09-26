@@ -87,8 +87,10 @@ export type FrameleafCloudTopic = 'link' | 'license' | 'account';
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;
 
+// FL-161: no permissive `cors`. Only the websocket transport is offered, and each handshake's
+// `Origin` is checked against this server's own names in `AuthService.authenticateWebsocket()`
+// before the socket joins any room.
 @WebSocketGateway({
-  cors: true,
   path: '/api/socket.io',
   transports: ['websocket'],
 })

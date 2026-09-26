@@ -13,6 +13,7 @@ import {
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
 import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { respondWithCookie } from 'src/utils/response.js';
 
@@ -27,6 +28,7 @@ export class FrameleafAuthController {
 
   @Post('authorize')
   @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
   @Endpoint({
     operationId: 'startFrameleafSignIn',
     summary: 'Start Sign in with Frameleaf',
@@ -55,6 +57,7 @@ export class FrameleafAuthController {
 
   @Post('callback')
   @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
   @Endpoint({
     operationId: 'finishFrameleafSignIn',
     summary: 'Finish Sign in with Frameleaf',
@@ -76,6 +79,7 @@ export class FrameleafAuthController {
 
   @Post('handoff')
   @Authenticated()
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
   @Endpoint({
     operationId: 'createFrameleafHandoff',
     summary: 'Hand a Sign in with Frameleaf session to another address',
@@ -89,6 +93,7 @@ export class FrameleafAuthController {
 
   @Post('handoff/redeem')
   @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
   @Endpoint({
     operationId: 'redeemFrameleafHandoff',
     summary: 'Sign in with a handoff code',
@@ -106,6 +111,7 @@ export class FrameleafAuthController {
 
   @Get('link')
   @Authenticated({ permission: Permission.FrameleafAccountRead })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
   @Endpoint({
     operationId: 'getFrameleafAccountLink',
     summary: 'Get your Frameleaf account link',
@@ -118,6 +124,7 @@ export class FrameleafAuthController {
 
   @Post('link')
   @Authenticated({ permission: Permission.FrameleafAccountUpdate })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
   @HttpCode(HttpStatus.OK)
   @Endpoint({
     operationId: 'linkFrameleafAccount',
@@ -132,6 +139,7 @@ export class FrameleafAuthController {
 
   @Delete('link')
   @Authenticated({ permission: Permission.FrameleafAccountUpdate })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     operationId: 'unlinkFrameleafAccount',

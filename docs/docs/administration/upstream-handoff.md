@@ -107,6 +107,13 @@ runs, they cover assets with a lock record.
 - **People (`1787148183729-ClusterGroups`).** Each user gets a cluster group, and each person
   becomes a member of a person group that keeps the person's ID. Faces and person history
   point at the group instead of the person.
+- **Shared-link passwords (`2100000000660-HashSharedLinkPasswords`).** Every shared-link
+  password is replaced by its bcrypt hash, and an empty password is removed. Each link keeps
+  working with the same password in Frameleaf. The official server compares passwords as
+  plaintext, so after a later handoff every password-protected link stays locked there (it never
+  opens without a password) until its password is set again in the official app. The audit row
+  counts them as `passwordProtectedLinks` and, before the step, `plaintextPasswordLinks`; both
+  are exact.
 - **Removed faces.** Faces the owner removed in the official app are recorded as the
   owner's own `remove` decisions in the face correction history (the audit row counts
   them as `faceDecisionsCarriedOver`).
@@ -170,6 +177,20 @@ immich-admin fork-schema-cutover apply \
 
 immich-admin fork-handoff prepare-official
 ```
+
+`prepare-official` first counts the password-protected shared links, inside the
+same read-only transaction that prepares the checkpoint. Frameleaf stores their
+passwords as bcrypt hashes, which the official server cannot check, so each of
+those links stays locked on the official server (it never opens without a
+password) until you set its password again in the official app. With any such
+link, `prepare-official` stops and says how many; run it again as
+`immich-admin fork-handoff prepare-official --acknowledge-shared-link-passwords`
+once you have planned to reset those passwords. It then prints the number on
+standard error. Links whose password was set on the official server and not yet
+used in Frameleaf still hold that password as it was typed; they keep working
+on the official server, need no acknowledgement and are counted separately. After the return, the passwords you set on the official server
+keep working in Frameleaf: a plaintext password is hashed on its first correct
+use.
 
 Save the canonical JSON printed by `prepare-official`. It names exact image
 `ghcr.io/immich-app/immich-server:v3.1.0`. Keep maintenance enabled while

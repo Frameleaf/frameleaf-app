@@ -1,9 +1,13 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
+  CloudMlDescriptionBatchCreateDto,
+  CloudMlDescriptionBatchesResponseDto,
+  CloudMlDescriptionEstimateResponseDto,
   CloudMlDestinationCreateDto,
   CloudMlModelChoiceUpdateDto,
   CloudMlModelChoicesResponseDto,
@@ -15,18 +19,23 @@ import {
 } from 'src/dtos/cloud-ml.dto.js';
 import { MlDestinationResponseDto } from 'src/dtos/ml-destination.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { CloudMlService } from 'src/services/cloud-ml.service.js';
 
 /**
  * Frameleaf Cloud processing administration (FL-159). Consent for the destination is recorded with
  * the existing `PUT /ml-destinations/:id/consent`; routes use `PUT /ml-destinations/routes/:workload`.
- * The Frameleaf Cloud model per model group (FL-186) is chosen here, apart from the routes.
+ * The Frameleaf Cloud model per model group (FL-186) is chosen here, apart from the routes, and a
+ * description backfill (FL-163) is estimated and queued here.
  */
 @ApiTags(ApiTag.FrameleafCloudMl)
 @Controller('admin/cloud/ml')
 export class CloudMlAdminController {
-  constructor(private service: CloudMlService) {}
+  constructor(
+    private service: CloudMlService,
+    private batchService: CloudMlBatchService,
+  ) {}
 
   @Get()
   @Authenticated({ permission: Permission.AdminCloudMlRead, admin: true })
@@ -39,6 +48,35 @@ export class CloudMlAdminController {
   })
   getStatus(): Promise<CloudMlStatusResponseDto> {
     return this.service.getStatus();
+  }
+
+  @Post('descriptions/batches')
+  @Authenticated({ permission: Permission.AdminCloudMlUpdate, admin: true })
+  @Endpoint({
+    operationId: 'startCloudMlDescriptionBackfill',
+    summary: 'Describe photos with Frameleaf Cloud',
+    description:
+      'Queues the estimated backfill as batches, one owner per batch and one cloud job per batch. Refused when the model changed, more photos need a description than were estimated, or the AI Wallet or a budget cannot cover it; nothing is sent to another destination.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  startDescriptionBackfill(
+    @Body() dto: CloudMlDescriptionBatchCreateDto,
+  ): Promise<CloudMlDescriptionBatchesResponseDto> {
+    return this.batchService.startBackfill(dto);
+  }
+
+  @Post('descriptions/estimate')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudMlUpdate, admin: true })
+  @Endpoint({
+    operationId: 'estimateCloudMlDescriptionBackfill',
+    summary: 'Estimate describing photos with Frameleaf Cloud',
+    description:
+      'What describing every photo still without a description would cost, from the metered GPU time of the chosen model: a p50–p90 range, a per-photo figure, the start fee per batch and the AI Wallet balance. Nothing is queued.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  estimateDescriptionBackfill(@Auth() auth: AuthDto): Promise<CloudMlDescriptionEstimateResponseDto> {
+    return this.batchService.estimateBackfill(auth);
   }
 
   @Post('destination')

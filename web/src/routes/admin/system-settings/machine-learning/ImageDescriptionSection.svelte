@@ -186,6 +186,9 @@
     }
     if ('deferred' in result && result.deferred) {
       toastManager.primary($t('admin.image_description_requeue_deferred_toast'));
+    } else if ('cloudBatches' in result && result.cloudBatches) {
+      // FL-163: descriptions routed to Frameleaf Cloud go through batches, estimate first
+      toastManager.primary($t('admin.machine_learning_image_description_requeue_cloud_batches'));
     } else if ('queued' in result) {
       toastManager.primary(
         result.queued

@@ -26,6 +26,7 @@ describe(CloudAdminController.name, () => {
       ['delete', '/admin/cloud/link/pending'],
       ['put', '/admin/cloud/permissions'],
       ['put', '/admin/cloud/sign-in'],
+      ['put', '/admin/cloud/remote-access'],
       ['post', '/admin/cloud/heartbeat'],
     ] as const) {
       await request(ctx.getHttpServer())[method](path);
@@ -59,5 +60,20 @@ describe(CloudAdminController.name, () => {
     const ok = await request(ctx.getHttpServer()).put('/admin/cloud/sign-in').send({ showOnLocalLogin: true });
     expect(ok.status).toBe(200);
     expect(service.updateSignIn.mock.calls[0][1]).toEqual({ showOnLocalLogin: true });
+  });
+
+  it('accepts only the two remote-access settings, as booleans (FL-161)', async () => {
+    service.updateRemoteAccess.mockResolvedValue({ state: 'linked' } as never);
+    const bad = await request(ctx.getHttpServer())
+      .put('/admin/cloud/remote-access')
+      .send({ allowOriginalsOverRelay: 'yes' });
+    expect(bad.status).toBe(400);
+    expect(service.updateRemoteAccess).not.toHaveBeenCalled();
+
+    const ok = await request(ctx.getHttpServer())
+      .put('/admin/cloud/remote-access')
+      .send({ allowPasswordOverRelay: true, requireFrameleafSignIn: false });
+    expect(ok.status).toBe(200);
+    expect(service.updateRemoteAccess.mock.calls[0][1]).toEqual({ allowPasswordOverRelay: true });
   });
 });
