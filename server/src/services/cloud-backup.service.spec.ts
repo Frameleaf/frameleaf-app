@@ -52,8 +52,16 @@ const claim = (overrides: Record<string, unknown> = {}) => ({
   reconciledAt: '2026-09-25T00:00:00.000Z',
   ...overrides,
 });
-const enabledConfig = (keyMode = 'server', include = { thumbs: false, encodedVideo: false }) => ({
-  frameleafCloud: { cloudBackup: { enabled: true, target: 'byo-s3', s3, keyMode, include } },
+const enabledConfig = (keyMode = 'server', include?: { thumbs: boolean; encodedVideo: boolean }) => ({
+  frameleafCloud: {
+    cloudBackup: {
+      enabled: true,
+      target: 'byo-s3',
+      s3,
+      keyMode,
+      include: include ?? { thumbs: false, encodedVideo: false },
+    },
+  },
 });
 const keyFileOf = (mode: 'server' | 'own-stored' | 'own-memory' = 'server') =>
   JSON.stringify(backupKeyFile({ key, instanceId: 'instance-1', bucket: s3.bucket, mode, createdAt: new Date() }));
@@ -89,7 +97,7 @@ const asset = (id: string, sha256: string | null, files: Array<{ type: string; p
 
 const entry = (fileKey: string, overrides: Partial<CloudBackupEntry> = {}): CloudBackupEntry => ({
   fileKey,
-  assetId: fileKey.split(':')[0],
+  assetId: fileKey.split(':', 1)[0],
   ownerId: 'owner-1',
   role: 'original',
   path: `/data/library/${fileKey}`,
@@ -370,6 +378,7 @@ describe(CloudBackupService.name, () => {
     });
 
     it('refuses an HTTP storage address and a key that is not 256 bits', async () => {
+      // eslint-disable-next-line unicorn/prefer-https -- an HTTP storage address is what is being refused
       await expect(setup({ s3: { ...s3, endpoint: 'http://s3.example.test' } })).rejects.toThrow('HTTPS');
       await expect(setup({ key: 'not-a-key' })).rejects.toBeInstanceOf(BadRequestException);
       expect(store.claim).not.toHaveBeenCalled();
@@ -557,7 +566,7 @@ describe(CloudBackupService.name, () => {
       // the done checkpoint is saved before the recorded files go, so a retry never writes it again
       const done = orderOf(
         operations.setBulkResult,
-        ([, , write]) => (write as { result: { phase: string } }).result.phase === 'done',
+        (call) => (call[2] as { result: { phase: string } }).result.phase === 'done',
       );
       expect(done).toBeLessThan(index.deleteEntries.mock.invocationCallOrder[0]);
       expect(index.deleteEntries).toHaveBeenCalledWith('manifest-1');
@@ -636,14 +645,16 @@ describe(CloudBackupService.name, () => {
 
     it('fills the index from the bucket listing on the first run in a bucket', async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ reconciledAt: undefined });
-      store.listAll.mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
-        prefix === 'o/'
-          ? onPage([
-              { key: `o/${SHA_A}`, size: 100, etag: '"a"' },
-              { key: 'o/not-a-hash', size: 1, etag: null },
-            ]).then(() => 2)
-          : Promise.resolve(0),
-      );
+      store.listAll = vi
+        .fn()
+        .mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
+          prefix === 'o/'
+            ? onPage([
+                { key: `o/${SHA_A}`, size: 100, etag: '"a"' },
+                { key: 'o/not-a-hash', size: 1, etag: null },
+              ]).then(() => 2)
+            : Promise.resolve(0),
+        );
 
       await sut.run(operationOf(), 'claim-1');
 
@@ -814,11 +825,15 @@ describe(CloudBackupService.name, () => {
 
     it('keeps the newest seven dumps and the dump of the newest complete backup', async () => {
       const older = Array.from({ length: 9 }, (_, i) => `db/cloud-backup-immich-db-backup-2026090${i}.sql.gz`);
-      store.listAll.mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
-        prefix === 'db/'
-          ? onPage([...older, dumpKey].map((name) => ({ key: name, size: 1, etag: null }))).then(() => older.length + 1)
-          : Promise.resolve(0),
-      );
+      store.listAll = vi
+        .fn()
+        .mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
+          prefix === 'db/'
+            ? onPage([...older, dumpKey].map((name) => ({ key: name, size: 1, etag: null }))).then(
+                () => older.length + 1,
+              )
+            : Promise.resolve(0),
+        );
       index.getLatestManifestDatabaseKey.mockResolvedValue(older[0]);
 
       await sut.run(operationOf(), 'claim-1');
@@ -981,6 +996,7 @@ describe(CloudBackupService.name, () => {
         'storage address and a bucket name',
       );
       expect(() =>
+        // eslint-disable-next-line unicorn/prefer-https -- an HTTP storage address is what is being refused
         sut.onConfigValidate({ newConfig: config({ endpoint: 'http://s3.example.test' }), oldConfig: config({}) }),
       ).toThrow('HTTPS');
       expect(() => sut.onConfigValidate({ newConfig: config({}), oldConfig: config({}) })).not.toThrow();

@@ -51002,8 +51002,8 @@
               }
             },
             "required": [
-              "bytes",
-              "objects"
+              "objects",
+              "bytes"
             ],
             "type": "object"
           }
