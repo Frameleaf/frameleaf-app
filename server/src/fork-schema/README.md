@@ -21,9 +21,11 @@ completes it in one transaction:
 
 - It refuses anything but an `inactive` / `1` state without Frameleaf tables whose ledger is the
   exact certified tag, optionally followed by an ordered prefix of the post-certified migrations.
-- It refuses to run unless maintenance mode is on and no other server is connected
-  (`pg_stat_activity`: no other client backend with a transaction or a running query, and none from
-  another address).
+- It refuses to run unless maintenance mode is on, and when `pg_stat_activity` shows another
+  client backend that holds a transaction, is active, or connects from a different address. Idle
+  connections from the admin process's own address (the same Unix socket, a pooler, `docker exec`
+  into a server container) cannot be told apart from the admin's own pool. That is why maintenance
+  mode is required.
 - It sets the phase to `legacy`, the phase a fresh install starts in, so migrations that read the
   phase follow the same rules they follow on a fresh install.
 - It applies every missing post-certified upstream migration through its registered apply in
@@ -35,8 +37,9 @@ completes it in one transaction:
   first boot, before the tables and columns existed.
 - It checks that plugin, method and step rows are unchanged and that the workflow count is the same,
   then records an `official-origin-adoption` audit row. For every step that changes or deletes
-  official data (`ADOPTION_STEP_COUNTERS`), the row records the affected tables' counts before and
-  after it. `docs/docs/administration/upstream-handoff.md` lists these changes for operators.
+  official data (`ADOPTION_STEP_COUNTERS`), `details.steps` records table counts taken right
+  before and right after it. These are totals, not per-row change records. The operator guide says
+  which ones are exact. `docs/docs/administration/upstream-handoff.md` lists these changes for operators.
 - Its ledger timestamps follow the latest existing one, so a lagging clock cannot reorder the ledger.
 
 A failure rolls everything back. The certified official server can still read the library, and the
