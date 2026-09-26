@@ -38,13 +38,13 @@ describe('Locked content over the API (FL-34)', () => {
     await utils.createAsset(owner.accessToken);
     marked = await utils.createAsset(owner.accessToken);
     const { status } = await request(app).post('/auth/pin-code').set(bearer(owner.accessToken)).send(pin);
-    expect(status).toBe(201);
+    expect(status).toBe(204);
   });
 
   it('drops a marked item from counts, facets and thumbnails once the session locks', async () => {
     expect(await total(owner.accessToken)).toBe(2);
 
-    await request(app).post('/auth/session/unlock').set(bearer(owner.accessToken)).send(pin).expect(200);
+    await request(app).post('/auth/session/unlock').set(bearer(owner.accessToken)).send(pin).expect(204);
     const mark = await request(app)
       .put(`/assets/${marked.id}/image-enrichment`)
       .set(bearer(owner.accessToken))
@@ -52,7 +52,7 @@ describe('Locked content over the API (FL-34)', () => {
     expect(mark.status).toBe(200);
 
     // once the session locks, the marked item is gone from every count and facet, and its files
-    await request(app).post('/auth/session/lock').set(bearer(owner.accessToken)).expect(200);
+    await request(app).post('/auth/session/lock').set(bearer(owner.accessToken)).expect(204);
     expect(await total(owner.accessToken)).toBe(1);
     expect(await facetTotal(owner.accessToken)).toBe(1);
     const { status } = await request(app).get(`/assets/${marked.id}/thumbnail`).set(bearer(owner.accessToken));
@@ -64,13 +64,13 @@ describe('Locked content over the API (FL-34)', () => {
       .get('/timeline/buckets')
       .query({ visibility: 'locked' })
       .set(bearer(owner.accessToken));
-    expect(status).toBe(403);
+    expect(status).toBe(401);
   });
 
   it('never gives another account, administrator included, the item or its count', async () => {
     const { status: adminPin } = await request(app).post('/auth/pin-code').set(bearer(admin.accessToken)).send(pin);
-    expect([201, 400]).toContain(adminPin);
-    await request(app).post('/auth/session/unlock').set(bearer(admin.accessToken)).send(pin).expect(200);
+    expect(adminPin).toBe(204);
+    await request(app).post('/auth/session/unlock').set(bearer(admin.accessToken)).send(pin).expect(204);
 
     for (const path of [`/assets/${marked.id}`, `/assets/${marked.id}/original`, `/assets/${marked.id}/thumbnail`]) {
       const { status } = await request(app).get(path).set(bearer(admin.accessToken));
