@@ -379,7 +379,10 @@ describe(FrameleafLicenseService.name, () => {
 
         const refresh = cloud.requests.find(({ path }) => path === '/api/v1/licenses/refresh')!;
         // the list sent is informational: the jtis held, in any order
-        expect([...refresh.json().certificates].sort()).toEqual(['key-1', 'plan-1']);
+        expect([...(refresh.json().certificates as string[])].toSorted((a, b) => a.localeCompare(b))).toEqual([
+          'key-1',
+          'plan-1',
+        ]);
         expect(store()?.key).toBeNull();
         expect(store()?.plan).toMatchObject({ claims: { jti: 'plan-2' }, refreshedAt: expect.any(String) });
         await expect(sut.getStatus()).resolves.toMatchObject({ entitlements: { supporter: false }, key: null });
