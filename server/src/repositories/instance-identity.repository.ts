@@ -617,6 +617,11 @@ export class InstanceIdentityRepository {
     }
     const dir = dirname(identity.keyFile);
     const nextFile = join(dir, NEXT_KEY_FILE);
+    // a candidate may be the key the cloud holds; a lost answer now would replace it (makeCandidate), so
+    // it is resolved (promoted or discarded, see the cloud service) before any new rotation (FL-175)
+    if (await exists(join(dir, CANDIDATE_KEY_FILE))) {
+      throw new Error('A candidate key from an earlier rotation is still open; it must be resolved first');
+    }
     const pair = generateKeyPairSync('ed25519');
     try {
       await this.writeKeyExclusive(nextFile, pair.privateKey.export({ format: 'pem', type: 'pkcs8' }));
