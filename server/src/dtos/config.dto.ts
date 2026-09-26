@@ -6,6 +6,11 @@ import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
 import { CloudBackupKeyModeSchema, CloudBackupTargetSettingSchema } from 'src/dtos/cloud-backup.dto.js';
 import {
+  RemoteAccessModeSchema,
+  RemoteAccessPublicUrlSchema,
+  RemoteHostnameStatusSchema,
+} from 'src/dtos/frameleaf-remote-access.dto.js';
+import {
   AudioCodec,
   AudioCodecSchema,
   CQMode,
@@ -183,7 +188,20 @@ const frameleafCloudDefaults = {
   // FL-161: what remote access may carry. Remote visitors always sign in with Frameleaf; originals,
   // archives and database backups stay off the relay, and passwords are refused away from home,
   // unless an administrator turns these on.
-  remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: false },
+  // FL-165: remote access itself is off until an administrator turns it on on a linked, entitled
+  // server. `directPort` is the external port direct connections use; `portMapping: false` means the
+  // administrator forwards it on the router. `publicUrl` chooses the published address: the Frameleaf
+  // relay name, or the custom hostname once Frameleaf Cloud verified its DNS records.
+  remoteAccess: {
+    enabled: false,
+    mode: 'relay' as 'relay' | 'relay-and-direct',
+    directPort: 2443,
+    portMapping: true,
+    allowOriginalsOverRelay: false,
+    allowPasswordOverRelay: false,
+    publicUrl: 'frameleaf' as 'frameleaf' | 'custom',
+    customHostname: { host: '', status: 'pending' as 'pending' | 'verified', checkedAt: null as string | null },
+  },
   cloudMl: {
     enabled: false,
     // Where each kind of work may run (§3.2): this server only until an administrator chooses.
@@ -515,12 +533,32 @@ const AdminConfigFrameleafCloudSchema = z
       .meta({ id: 'AdminConfigFrameleafSignInDto' }),
     remoteAccess: z
       .object({
+        enabled: configBool.describe(
+          'Serve remote access through Frameleaf Cloud (needs a linked server with a remote access plan)',
+        ),
+        mode: RemoteAccessModeSchema,
+        directPort: z.int().min(1024).max(65_535).describe('External port for direct connections'),
+        portMapping: configBool.describe(
+          'Ask the router to open the direct port automatically; off when it is forwarded by hand',
+        ),
         allowOriginalsOverRelay: configBool.describe(
           'Allow original downloads, archives and database backups over the Frameleaf relay',
         ),
         allowPasswordOverRelay: configBool.describe(
           'Allow password sign-in, and sessions it creates, over remote access',
         ),
+        publicUrl: RemoteAccessPublicUrlSchema,
+        customHostname: z
+          .object({
+            host: z
+              .string()
+              .max(253)
+              .regex(/^$|^(?:[\da-z](?:[\da-z-]{0,61}[\da-z])?\.){2,}[\da-z](?:[\da-z-]{0,61}[\da-z])?$/)
+              .describe('A hostname on a domain the administrator owns; empty when none'),
+            status: RemoteHostnameStatusSchema,
+            checkedAt: z.string().nullable().describe('When its DNS records were last checked'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCustomHostnameDto' }),
       })
       .default(frameleafCloudDefaults.remoteAccess)
       .meta({ id: 'AdminConfigFrameleafRemoteAccessDto' }),

@@ -419,7 +419,16 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   frameleafCloud: {
     signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
-    remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: false },
+    remoteAccess: {
+      enabled: false,
+      mode: 'relay',
+      directPort: 2443,
+      portMapping: true,
+      allowOriginalsOverRelay: false,
+      allowPasswordOverRelay: false,
+      publicUrl: 'frameleaf',
+      customHostname: { host: '', status: 'pending', checkedAt: null },
+    },
     cloudMl: {
       enabled: false,
       routing: {
@@ -815,6 +824,29 @@ describe(SystemConfigService.name, () => {
       ).resolves.toBeUndefined();
     });
 
+    it('keeps remote access itself out of a whole-settings save (FL-165)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await sut.updateAdminConfig({
+        ...defaults,
+        frameleafCloud: {
+          ...defaults.frameleafCloud,
+          remoteAccess: {
+            ...defaults.frameleafCloud.remoteAccess,
+            enabled: true,
+            mode: 'relay-and-direct',
+            directPort: 4443,
+            publicUrl: 'custom',
+            customHostname: { host: 'photos.example.com', status: 'verified', checkedAt: null },
+          },
+        },
+      });
+      const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1)?.[0] as
+        | { frameleafCloud?: { remoteAccess?: Record<string, unknown> } }
+        | undefined;
+      // every value stayed the stored default, so nothing of remote access was written
+      expect(persisted?.frameleafCloud?.remoteAccess).toBeUndefined();
+    });
+
     it('refuses to allow originals or passwords over remote access on an unlinked server (FL-161)', async () => {
       mocks.systemMetadata.get.mockResolvedValue(null as never);
       for (const remoteAccess of [
@@ -823,7 +855,13 @@ describe(SystemConfigService.name, () => {
       ]) {
         await expect(
           sut.onConfigValidate({
-            newConfig: { ...defaults, frameleafCloud: { ...defaults.frameleafCloud, remoteAccess } },
+            newConfig: {
+              ...defaults,
+              frameleafCloud: {
+                ...defaults.frameleafCloud,
+                remoteAccess: { ...defaults.frameleafCloud.remoteAccess, ...remoteAccess },
+              },
+            },
             oldConfig: defaults,
           }),
         ).rejects.toThrow('Link this server to Frameleaf Cloud before allowing');
@@ -845,7 +883,11 @@ describe(SystemConfigService.name, () => {
         ...defaults,
         frameleafCloud: {
           ...defaults.frameleafCloud,
-          remoteAccess: { allowOriginalsOverRelay: true, allowPasswordOverRelay: true },
+          remoteAccess: {
+            ...defaults.frameleafCloud.remoteAccess,
+            allowOriginalsOverRelay: true,
+            allowPasswordOverRelay: true,
+          },
         },
       };
 

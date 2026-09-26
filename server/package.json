@@ -54,6 +54,7 @@
     "@react-email/components": "^1.0.0",
     "@react-email/render": "^2.0.0",
     "@socket.io/redis-adapter": "^8.3.0",
+    "acme-client": "^5.4.0",
     "archiver": "^7.0.0",
     "async-lock": "^1.4.0",
     "bcrypt": "^6.0.0",

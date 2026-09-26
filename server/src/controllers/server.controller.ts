@@ -2,6 +2,7 @@ import { Controller, Get, HttpCode, HttpStatus, Post, Req } from '@nestjs/common
 import { ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { RemoteConnectionsResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
 import {
   ReleaseEventV1,
   ServerAboutResponseDto,
@@ -78,6 +79,18 @@ export class ServerController {
   })
   getStorage(): Promise<ServerStorageResponseDto> {
     return this.service.getStorage();
+  }
+
+  @Get('connections')
+  @Authenticated({ permission: Permission.ServerAbout })
+  @Endpoint({
+    summary: 'Get connections',
+    description:
+      'The ways to reach this server through Frameleaf Cloud remote access, in the order apps should try them (local, wan, ipv6, custom hostname, relay), and the address it publishes. Empty unless remote access is on.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getServerConnections(): Promise<RemoteConnectionsResponseDto> {
+    return this.service.getConnections();
   }
 
   @Get('ping')
