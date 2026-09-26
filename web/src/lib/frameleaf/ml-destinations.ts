@@ -165,6 +165,9 @@ export const mlRefusalLabelKey = (refusal: MlAdmissionRefusal): Translations => 
     case MlAdmissionRefusal.InsufficientMemory: {
       return 'admin.frameleaf_ml_refusal_insufficient_memory';
     }
+    case MlAdmissionRefusal.RequestInvalid: {
+      return 'admin.frameleaf_ml_refusal_request_invalid';
+    }
   }
 };
 

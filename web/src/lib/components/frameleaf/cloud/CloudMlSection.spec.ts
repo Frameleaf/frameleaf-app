@@ -67,6 +67,7 @@ const wallet: CloudMlWalletDto = {
   spentTodayUsd: 5,
   autoTopUp: false,
   topUpUrl: null,
+  settingsUrl: null,
   updatedAt: '2026-09-25T09:00:00.000Z',
 };
 
@@ -154,21 +155,76 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(store.draft.frameleafCloud!.cloudMl.enabled).toBe(true);
   });
 
-  it('shows the AI Wallet in US dollars and saves a new daily cap', async () => {
+  it('shows the AI Wallet in US dollars and saves a lower daily cap', async () => {
     useDraft(true);
     sdkMock.getCloudMlStatus.mockResolvedValue(status({ enabled: true, consent: consent('2026-10-01') }));
-    sdkMock.updateCloudMlWallet.mockResolvedValue({ ...wallet, dailyCapUsd: 30 });
+    sdkMock.updateCloudMlWallet.mockResolvedValue({ ...wallet, dailyCapUsd: 15 });
     render(CloudMlSection);
 
     expect(await screen.findByText('$12.00')).toBeInTheDocument();
     expect(screen.getByText('$10.00 available')).toBeInTheDocument();
     expect(screen.getByText('$5.00 of $20.00 daily cap')).toBeInTheDocument();
     const cap = screen.getByLabelText('Daily spending cap');
-    await fireEvent.input(cap, { target: { value: '30' } });
+    await fireEvent.input(cap, { target: { value: '15' } });
     await fireEvent.change(cap);
     await vi.waitFor(() =>
-      expect(sdkMock.updateCloudMlWallet).toHaveBeenCalledWith({ cloudMlWalletUpdateDto: { dailyCapUsd: 30 } }),
+      expect(sdkMock.updateCloudMlWallet).toHaveBeenCalledWith({ cloudMlWalletUpdateDto: { dailyCapUsd: 15 } }),
     );
+  });
+
+  it('sends raising the cap and turning on automatic top-up to the Frameleaf account (FL-177)', async () => {
+    useDraft(true);
+    const settingsUrl = 'https://account.frameleaf.cloud/wallet';
+    sdkMock.getCloudMlStatus.mockResolvedValue(
+      status({ enabled: true, consent: consent('2026-10-01'), wallet: { ...wallet, settingsUrl } }),
+    );
+    render(CloudMlSection);
+
+    const cap = await screen.findByLabelText('Daily spending cap');
+    await fireEvent.input(cap, { target: { value: '30' } });
+    await fireEvent.change(cap);
+    expect(await screen.findByText(/happen in your Frameleaf account/)).toBeInTheDocument();
+    expect(sdkMock.updateCloudMlWallet).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: /Raise the cap in your Frameleaf account/ })).toHaveAttribute(
+      'href',
+      settingsUrl,
+    );
+    expect(screen.getByRole('link', { name: /Turn it on in your Frameleaf account/ })).toHaveAttribute(
+      'href',
+      settingsUrl,
+    );
+    expect(screen.getByRole('switch', { name: 'Top up automatically' })).toBeDisabled();
+  });
+
+  it('turns automatic top-up off from this server', async () => {
+    useDraft(true);
+    sdkMock.getCloudMlStatus.mockResolvedValue(
+      status({ enabled: true, consent: consent('2026-10-01'), wallet: { ...wallet, autoTopUp: true } }),
+    );
+    sdkMock.updateCloudMlWallet.mockResolvedValue({ ...wallet, autoTopUp: false });
+    render(CloudMlSection);
+
+    await fireEvent.click(await screen.findByRole('switch', { name: 'Top up automatically' }));
+    await vi.waitFor(() =>
+      expect(sdkMock.updateCloudMlWallet).toHaveBeenCalledWith({ cloudMlWalletUpdateDto: { autoTopUp: false } }),
+    );
+  });
+
+  it('explains a step-up refusal from Frameleaf Cloud instead of failing', async () => {
+    useDraft(true);
+    sdkMock.getCloudMlStatus.mockResolvedValue(
+      status({ enabled: true, consent: consent('2026-10-01'), wallet: { ...wallet, dailyCapUsd: null } }),
+    );
+    sdkMock.isHttpError.mockReturnValueOnce(true);
+    sdkMock.updateCloudMlWallet.mockRejectedValueOnce({ status: 403, data: { message: 'step-up' } });
+    sdkMock.getCloudMlWallet.mockResolvedValue({ ...wallet, dailyCapUsd: null });
+    render(CloudMlSection);
+
+    const cap = await screen.findByLabelText('Daily spending cap');
+    await fireEvent.input(cap, { target: { value: '40' } });
+    await fireEvent.change(cap);
+    expect(await screen.findByText(/happen in your Frameleaf account/)).toBeInTheDocument();
+    expect(sdkMock.getCloudMlWallet).toHaveBeenCalled();
   });
 
   it('checks out on frameleaf.cloud only when the cloud returned a top-up address', async () => {
@@ -221,7 +277,8 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
         {
           cloudJobId: 'job-1',
           workload: MlWorkload.RestorationFaithful,
-          modelId: 'realbasicvsr@1',
+          modelSku: 'realbasicvsr@1',
+          computeSku: null,
           succeeded: true,
           costUsd: 2.21,
           estimateUsd: 2.26,

@@ -3,18 +3,17 @@
    * Settings → Access & security → Sign in with Frameleaf (FL-158): the prototype's `FrameleafSignIn`
    * card (design/frameleaf/template/src/FrameleafCloud.jsx:2835-2885, effd05ffb7) on real state from
    * `admin/cloud/status`. Remote access always requires a Frameleaf sign-in; the administrator only
-   * chooses whether the button is also offered at home, once the server is linked.
+   * chooses whether the button is also offered at home, once the server is linked. The client proves
+   * itself with this server's key only, so there is no client secret to manage (FL-177).
    */
   import './cloud-account.css';
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import CloudToggleRow from '$lib/components/frameleaf/cloud/CloudToggleRow.svelte';
-  import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { ConfigCredential } from '@immich/sdk';
   import { mdiShieldAccountOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -101,7 +100,6 @@
         <Button disabled={busy || !buttonTextChanged} onclick={() => void saveButtonText()}>{$t('save')}</Button>
       </div>
     </div>
-    <CredentialRow name={ConfigCredential.FrameleafOidcClientSecret} />
     {#if failure}
       <p class="fc-notice is-error" role="alert">{failure}</p>
     {/if}

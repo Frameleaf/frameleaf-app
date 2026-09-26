@@ -10,6 +10,7 @@
  */
 import {
   CloudMlConnection,
+  isHttpError,
   type CloudMlStatusResponseDto,
   type CloudMlWalletDto,
   type HardwareCheckResponseDto,
@@ -98,6 +99,17 @@ export const DEFAULT_WALLET_PACK = 'pack-25';
 /** Balance minus holds, never below zero. */
 export const walletAvailable = (wallet: Pick<CloudMlWalletDto, 'balanceUsd' | 'heldUsd'> | null | undefined) =>
   wallet ? Math.max(0, wallet.balanceUsd - wallet.heldUsd) : 0;
+
+/**
+ * Whether this server may make a daily cap change itself (FL-177, as-built decision #22): only one
+ * that reduces spend, a lower cap or a first cap where there was none. Raising it is done by the
+ * account owner in the Frameleaf account.
+ */
+export const canLowerCap = (current: number | null | undefined, next: number) =>
+  current === null || current === undefined || next < current;
+
+/** The server refused a wallet change because the account owner has to make it (403 step-up). */
+export const isStepUpRequired = (error: unknown) => isHttpError(error) && error.status === 403;
 
 /** A custom top-up amount the checkout accepts: whole dollars from $20 to $500. */
 export const isTopUpAmount = (amount: number) =>
