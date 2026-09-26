@@ -1,5 +1,5 @@
 import { AssetMediaResponseDto, LoginResponseDto, updateAsset, updatePerson } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { expect, Locator, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 
 /**
@@ -7,6 +7,18 @@ import { asBearerAuth, utils } from 'src/utils.js';
  * search they open, "Things in your photos" lists the account's tags, and "Recent captures" names
  * each item and its capture day. Hidden people and archived items never appear.
  */
+/** The offset of the element that scrolls the page: the layout's content area, not `main` or the window. */
+const scrollOffset = (inside: Locator) =>
+  inside.evaluate((element) => {
+    for (let node = element.parentElement; node; node = node.parentElement) {
+      const { overflowY } = getComputedStyle(node);
+      if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+        return node.scrollTop;
+      }
+    }
+    return document.scrollingElement?.scrollTop ?? 0;
+  });
+
 test.describe('Explore', () => {
   let admin: LoginResponseDto;
   let first: AssetMediaResponseDto;
@@ -83,10 +95,7 @@ test.describe('Explore', () => {
 
     const things = page.getByRole('region', { name: 'Things in your photos' });
     await things.scrollIntoViewIfNeeded();
-    const scrolled = await page.evaluate(() => {
-      const scroller = document.querySelector('main') ?? document.scrollingElement;
-      return scroller?.scrollTop ?? 0;
-    });
+    const scrolled = await scrollOffset(things);
 
     await things.getByRole('link', { name: /beach/ }).click();
     await page.waitForURL(/\/search\?query=.*tagIds/);
@@ -100,10 +109,7 @@ test.describe('Explore', () => {
     await page.goBack();
     await page.waitForURL(/\/explore/);
     await expect(things).toBeVisible();
-    const restored = await page.evaluate(() => {
-      const scroller = document.querySelector('main') ?? document.scrollingElement;
-      return scroller?.scrollTop ?? 0;
-    });
+    const restored = await scrollOffset(things);
     expect(Math.abs(restored - scrolled)).toBeLessThan(80);
   });
 

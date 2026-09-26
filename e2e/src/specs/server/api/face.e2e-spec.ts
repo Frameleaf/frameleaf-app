@@ -80,7 +80,10 @@ describe('/faces (FL-38 corrections)', () => {
       personGroupId: emma.id,
       imageWidth: 400,
       imageHeight: 300,
-      box: { x1: 40, y1: 30, x2: 120, y2: 110 },
+      // Inside the crop the round-trip test applies (x 100-300, y 50-200): the editor render hides a face
+      // that is mostly outside the crop (checkFaceVisibility, under half its area inside), and a hidden
+      // face is not listed.
+      box: { x1: 140, y1: 80, x2: 220, y2: 160 },
     }))!;
   });
 
