@@ -55368,9 +55368,13 @@
       "LicenseProductsResponseDto": {
         "properties": {
           "backup": {
-            "description": "Cloud backup is usage based, not part of a plan",
+            "description": "Cloud backup a plan includes, and the blocks and monthly rate for more",
             "properties": {
-              "minimumTb": {
+              "blockTb": {
+                "format": "double",
+                "type": "number"
+              },
+              "includedTb": {
                 "format": "double",
                 "type": "number"
               },
@@ -55380,8 +55384,9 @@
               }
             },
             "required": [
-              "usdPerTbMonth",
-              "minimumTb"
+              "includedTb",
+              "blockTb",
+              "usdPerTbMonth"
             ],
             "type": "object"
           },

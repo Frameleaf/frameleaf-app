@@ -71,20 +71,20 @@ const products = (storeUrl: string | null = 'https://frameleaf.cloud.test/store'
   credit: { minimumUsd: 20, maximumUsd: 500 },
   licensedDiscount: 0.2,
   storeUrl,
-  backup: { usdPerTbMonth: 7.99, minimumTb: 1 },
+  backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
   products: [
     {
       id: 'cloud-monthly',
       kind: Kind3.Plan,
       period: Period.Month,
-      priceUsd: 6,
+      priceUsd: 9.99,
       storeUrl: storeUrl && `${storeUrl}?product=cloud-monthly`,
     },
     {
       id: 'cloud-annual',
       kind: Kind3.Plan,
       period: Period.Year,
-      priceUsd: 60,
+      priceUsd: 99.9,
       storeUrl: storeUrl && `${storeUrl}?product=cloud-annual`,
     },
     { id: 'supporter-server', kind: Kind3.Supporter, period: Period.OneTime, priceUsd: 100, storeUrl: null },
@@ -312,15 +312,15 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
   });
 
   describe('PlanSection', () => {
-    it('shows plan cards with the store link and backup as its own usage price', async () => {
+    it('shows plan cards with the store link, 1 TB of backup included and the price of more', async () => {
       sdkMock.getLicenseStatus.mockResolvedValue(license());
       render(PlanSection);
 
       expect(await screen.findByText('No plan on this server')).toBeInTheDocument();
-      expect(screen.getByText('$6')).toBeInTheDocument();
-      expect(screen.getByText('$60')).toBeInTheDocument();
-      expect(screen.queryByText(/1 TB encrypted/)).not.toBeInTheDocument();
-      expect(screen.getByText(/from \$7.99\/month per TB, 1 TB minimum/)).toBeInTheDocument();
+      expect(screen.getByText('$9.99')).toBeInTheDocument();
+      expect(screen.getByText('$99.90')).toBeInTheDocument();
+      expect(screen.getAllByText('1 TB encrypted cloud backup')).toHaveLength(2);
+      expect(screen.getByText(/More storage is \$9\.99\/month for each extra 1 TB/)).toBeInTheDocument();
       expect(screen.getAllByRole('button', { name: 'Continue to checkout' })).toHaveLength(2);
     });
 
@@ -330,10 +330,9 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       );
       render(PlanSection);
 
-      expect(await screen.findByText(/\$4.80/)).toBeInTheDocument();
-      expect(screen.getByText('$6').tagName).toBe('S');
-      expect(screen.getByText(/\$4.80/)).toBeInTheDocument();
-      expect(screen.getByText(/\$48/)).toBeInTheDocument();
+      expect(await screen.findByText(/\$7\.99/)).toBeInTheDocument();
+      expect(screen.getByText('$9.99').tagName).toBe('S');
+      expect(screen.getByText(/\$79\.92/)).toBeInTheDocument();
       expect(screen.getByText(/AI credit is priced the same for everyone/)).toBeInTheDocument();
     });
 

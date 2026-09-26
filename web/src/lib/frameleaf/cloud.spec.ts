@@ -52,15 +52,16 @@ describe('Frameleaf Cloud helpers', () => {
     });
 
     it('takes 20 % off plans on a licensed server only', () => {
-      expect(cloudPlanPrice(6, false)).toBe(6);
-      expect(cloudPlanPrice(6, true)).toBe(4.8);
-      expect(cloudPlanPrice(60, true)).toBe(48);
+      expect(cloudPlanPrice(9.99, false)).toBe(9.99);
+      expect(cloudPlanPrice(9.99, true)).toBe(7.99);
+      expect(cloudPlanPrice(99.9, true)).toBe(79.92);
     });
 
-    it('prices cloud backup per TB per month with a one-TB minimum', () => {
-      expect(CLOUD_BACKUP_PRICING).toEqual({ usdPerTbMonth: 7.99, minimumTb: 1 });
-      expect(cloudBackupMonthlyUsd(0)).toBe(7.99);
-      expect(cloudBackupMonthlyUsd(0.4)).toBe(7.99);
+    it('includes 1 TB of cloud backup with a plan and sells more in 1 TB blocks', () => {
+      expect(CLOUD_BACKUP_PRICING).toEqual({ includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 });
+      expect(cloudBackupMonthlyUsd(0)).toBe(0);
+      expect(cloudBackupMonthlyUsd(1)).toBe(0);
+      expect(cloudBackupMonthlyUsd(1.4)).toBe(9.99);
       expect(cloudBackupMonthlyUsd(2.5)).toBe(19.98);
     });
   });

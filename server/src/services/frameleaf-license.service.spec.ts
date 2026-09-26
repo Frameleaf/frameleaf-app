@@ -316,12 +316,12 @@ describe(FrameleafLicenseService.name, () => {
         currency: 'USD',
         licensedDiscount: 0.2,
         storeUrl: `${cloud.url}/store`,
-        backup: { usdPerTbMonth: 7.99, minimumTb: 1 },
+        backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
         credit: { minimumUsd: 20, maximumUsd: 500 },
       });
       expect(products.products.map(({ id, priceUsd }) => [id, priceUsd])).toEqual([
-        ['cloud-monthly', 6],
-        ['cloud-annual', 60],
+        ['cloud-monthly', 9.99],
+        ['cloud-annual', 99.9],
         ['supporter-server', 100],
         ['supporter-individual', 25],
         ['credit-25', 25],

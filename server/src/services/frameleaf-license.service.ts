@@ -42,10 +42,13 @@ import {
 } from 'src/utils/frameleaf-license.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
-/** Bundled price snapshots in US dollars (owner decision on FL-146, 2026-09-25). */
+/**
+ * Bundled price snapshots in US dollars, matching the prices Frameleaf Cloud records (owner decision,
+ * 2026-09-25): a plan is $9.99 a month or $99.90 a year and includes 1 TB of cloud backup.
+ */
 export const LICENSE_PRODUCTS = Object.freeze([
-  { id: 'cloud-monthly', kind: 'plan', period: 'month', priceUsd: 6 },
-  { id: 'cloud-annual', kind: 'plan', period: 'year', priceUsd: 60 },
+  { id: 'cloud-monthly', kind: 'plan', period: 'month', priceUsd: 9.99 },
+  { id: 'cloud-annual', kind: 'plan', period: 'year', priceUsd: 99.9 },
   { id: 'supporter-server', kind: 'supporter', period: 'one-time', priceUsd: 100 },
   { id: 'supporter-individual', kind: 'supporter', period: 'one-time', priceUsd: 25 },
   // AI credit presets (never discounted); the store also takes $20 to $500 (docs/ai-wallet.md)
@@ -54,8 +57,8 @@ export const LICENSE_PRODUCTS = Object.freeze([
   { id: 'credit-100', kind: 'credit', period: 'one-time', priceUsd: 100 },
 ] as const);
 
-/** Cloud backup is usage based: this rate per TB per month, with a one-TB minimum (FL-146). */
-export const CLOUD_BACKUP_PRICE = Object.freeze({ usdPerTbMonth: 7.99, minimumTb: 1 });
+/** A plan includes this much cloud backup; more is sold in whole blocks at this rate per TB a month. */
+export const CLOUD_BACKUP_PRICE = Object.freeze({ includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 });
 
 /** Plans cost this much less on a licensed server; AI credit is never discounted (FL-156). */
 export const LICENSED_DISCOUNT = 0.2;

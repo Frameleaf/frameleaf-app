@@ -5159,9 +5159,10 @@ export type LicenseProductDto = {
     storeUrl: string | null;
 };
 export type LicenseProductsResponseDto = {
-    /** Cloud backup is usage based, not part of a plan */
+    /** Cloud backup a plan includes, and the blocks and monthly rate for more */
     backup: {
-        minimumTb: number;
+        blockTb: number;
+        includedTb: number;
         usdPerTbMonth: number;
     };
     /** AI credit top-ups the store accepts; credit is never discounted */
