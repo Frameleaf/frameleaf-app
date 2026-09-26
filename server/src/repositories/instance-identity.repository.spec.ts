@@ -4,8 +4,8 @@ import {
   access,
   link,
   mkdtemp,
-  readdir,
   readFile,
+  readdir,
   rm,
   stat,
   utimes,
@@ -614,7 +614,7 @@ describe(InstanceIdentityRepository.name, () => {
       fsControl.syncErrors = { [dir]: 'EINVAL', [join(dir, NEXT_KEY_FILE)]: 'ENOTSUP' };
       const first = await repository.rotate(identity, () => Promise.resolve(), 24);
       await repository.rotate(first, () => Promise.resolve(), 24);
-      expect(warn.mock.calls.filter(([message]) => String(message).includes('cannot flush'))).toHaveLength(1);
+      expect(warn.mock.calls.filter(([message]) => message.includes('cannot flush'))).toHaveLength(1);
     });
 
     it('removes a next key whose write fails, before the cloud hears of it (ENOSPC) (FL-175)', async () => {
