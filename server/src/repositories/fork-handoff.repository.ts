@@ -2,10 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
+import { join } from 'node:path';
+import type { Migration } from 'kysely/migration';
+import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { assertICloudReferences, reconcileICloudReferences } from 'src/fork-schema/icloud-reconciliation.js';
+import {
+  ISOLATED_FRAMELEAF_AUDIT_PHASE,
+  IsolatedFrameleafContext,
+  IsolatedFrameleafResult,
+  planIsolatedFrameleafMigrations,
+} from 'src/fork-schema/isolated-frameleaf-migrations.js';
 import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import { CERTIFIED_TAG_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
+import { createFrameleafPublicMigrationProvider } from 'src/fork-schema/migration-provider.js';
+import { applyFrameleafSchemaForkFollowUps, carryOverEarlierFaceDecisions } from 'src/fork-schema/official-adoption.js';
 import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue.js';
 import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
 import { WorkflowRowDigest, getWorkflowCompatibilityEvidence } from 'src/fork-schema/workflow-compatibility.js';
@@ -341,6 +352,116 @@ export class ForkHandoffRepository {
       }
     }
     return applied;
+  }
+
+  /**
+   * FL-180: apply the Frameleaf public migrations a library past the certified cutover has not
+   * recorded (see `src/fork-schema/isolated-frameleaf-migrations.ts`). One transaction holds the
+   * state row, re-reads the Frameleaf ledger under that lock, applies each pending migration, records
+   * it in `immich_fork.migration_audit`, repeats the structural `immich_fork` follow-ups (and, during the
+   * return, the face-decision carry-over of 0000000000175) and checks the official ledger is
+   * byte-identical. A failure changes nothing, and a second caller finds nothing
+   * left to do. Callers hold `DatabaseLock.Migrations`.
+   */
+  async applyIsolatedFrameleafMigrations(context: IsolatedFrameleafContext): Promise<IsolatedFrameleafResult> {
+    const migrations = await this.loadFrameleafPublicMigrations();
+    return this.db.transaction().execute(async (transaction) => {
+      const relations = await sql<{ present: boolean }>`
+        SELECT to_regclass('immich_fork.state') IS NOT NULL
+          AND to_regclass('immich_fork.migration_audit') IS NOT NULL AS present
+      `.execute(transaction);
+      const stateResult = relations.rows[0]?.present
+        ? await sql<{ phase: string; schemaVersion: string }>`
+            SELECT phase, "schemaVersion" FROM immich_fork.state WHERE id = 1 FOR UPDATE
+          `.execute(transaction)
+        : { rows: [] };
+      const ledgerResult = stateResult.rows[0]
+        ? await sql<{ name: string; phase: string }>`
+            SELECT DISTINCT name, phase
+            FROM immich_fork.migration_audit
+            WHERE status = 'applied'
+              AND (
+                (phase = 'ledger-cutover' AND details->>'classification' = 'legacy-fork')
+                OR phase = ${ISOLATED_FRAMELEAF_AUDIT_PHASE}
+              )
+            ORDER BY name, phase
+          `.execute(transaction)
+        : { rows: [] };
+      const plan = planIsolatedFrameleafMigrations({
+        context,
+        state: stateResult.rows[0],
+        cutoverLedger: ledgerResult.rows.filter(({ phase }) => phase === 'ledger-cutover').map(({ name }) => name),
+        appliedLedger: ledgerResult.rows
+          .filter(({ phase }) => phase === ISOLATED_FRAMELEAF_AUDIT_PHASE)
+          .map(({ name }) => name),
+        bundled: Object.keys(migrations),
+      });
+      // Whatever the plan, the return still repeats the face-decision carry-over below: it is guarded
+      // and idempotent, and a library without the Frameleaf ledger can hold faces as well.
+      const applying = plan.skipped ? [] : plan.pending;
+      if (applying.length === 0 && context !== 'return') {
+        return { ...plan, applied: [] };
+      }
+
+      const officialLedger = async () => {
+        const ledger = await sql<{ name: string; timestamp: string }>`
+          SELECT name, timestamp::text AS timestamp FROM public.kysely_migrations ORDER BY timestamp, name
+        `.execute(transaction);
+        return JSON.stringify(ledger.rows);
+      };
+      const officialBefore = await officialLedger();
+      for (const name of applying) {
+        await migrations[name]!.up(transaction);
+        await sql`
+          INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
+          VALUES (
+            ${name},
+            ${ISOLATED_FRAMELEAF_AUDIT_PHASE},
+            'applied',
+            jsonb_build_object(
+              'classification', 'legacy-fork',
+              'context', ${context}::text,
+              'serverVersion', ${serverVersion.toString()}::text
+            ),
+            now()
+          )
+        `.execute(transaction);
+        await this.afterIsolatedFrameleafMigration(transaction, name);
+      }
+      if (applying.length > 0) {
+        await applyFrameleafSchemaForkFollowUps(transaction);
+      }
+      if (context === 'return') {
+        // After the residue and the newer Frameleaf migrations: the return boot ran 0000000000175
+        // before either existed on a library cut over before it.
+        const faceDecisions = await carryOverEarlierFaceDecisions(transaction);
+        if (faceDecisions > 0) {
+          await sql`
+            INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
+            VALUES (
+              'return-face-decision-carry-over',
+              'return-follow-up',
+              'applied',
+              jsonb_build_object('faceDecisions', ${faceDecisions}::int, 'serverVersion', ${serverVersion.toString()}::text),
+              now()
+            )
+          `.execute(transaction);
+        }
+      }
+      if ((await officialLedger()) !== officialBefore) {
+        throw new Error('A Frameleaf migration changed the official migration ledger');
+      }
+      return { ...plan, applied: applying };
+    });
+  }
+
+  protected loadFrameleafPublicMigrations(): Promise<Record<string, Migration>> {
+    return createFrameleafPublicMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations')).getMigrations();
+  }
+
+  /** Test seam: runs inside the transaction after each applied Frameleaf migration and its audit row. */
+  protected afterIsolatedFrameleafMigration(_transaction: Kysely<DB>, _name: string): Promise<void> {
+    return Promise.resolve();
   }
 
   async assertCertifiedReturnLedger(kysely: Kysely<DB> = this.db): Promise<'v3.1.0'> {

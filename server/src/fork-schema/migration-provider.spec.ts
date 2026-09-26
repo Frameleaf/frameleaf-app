@@ -1,8 +1,17 @@
-import { resolve } from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import type { Migration, MigrationProvider } from 'kysely/migration';
 import {
+  CERTIFIED_TAG_MIGRATIONS,
+  GENERIC_LEGACY_FORK_MIGRATIONS,
+  POST_CERTIFIED_UPSTREAM_MIGRATIONS,
+} from 'src/fork-schema/migration-manifest.js';
+import {
   createCertifiedLedgerMigrationProvider,
+  createFrameleafPublicMigrationProvider,
   createLegacyMigrationProvider,
+  createOfficialMigrationProvider,
 } from 'src/fork-schema/migration-provider.js';
 import {
   ADD_PLUGIN_METHOD_ALLOWED_HOSTS_MIGRATION,
@@ -102,5 +111,46 @@ describe(createLegacyMigrationProvider, () => {
     expect(names).toContain('1778000000000-PhysicalDeduplication');
     expect(names).toContain('2100000000570-AddWorkflowDefinitions');
     expect(names).toContain('1787148183729-ClusterGroups');
+  });
+});
+
+describe(createFrameleafPublicMigrationProvider, () => {
+  const folder = resolve('src/schema/migrations');
+
+  it('yields exactly the Frameleaf public migrations, in name order (FL-180)', async () => {
+    const names = Object.keys(await createFrameleafPublicMigrationProvider(folder).getMigrations());
+
+    expect(names).toEqual([...GENERIC_LEGACY_FORK_MIGRATIONS].toSorted());
+    expect(names).toContain('2100000000610-AddClassificationRule');
+    expect(names).toContain('2100000000620-FrameleafCloudMlDestination');
+  });
+
+  it('never yields an upstream migration or the Frameleaf copy of the workflow rewrite (FL-180)', async () => {
+    const names = new Set(Object.keys(await createFrameleafPublicMigrationProvider(folder).getMigrations()));
+
+    expect(names.has(LEGACY_WORKFLOW_MIGRATION)).toBe(false);
+    expect(names.has(OFFICIAL_WORKFLOW_MIGRATION)).toBe(false);
+    expect(CERTIFIED_TAG_MIGRATIONS.filter((name) => names.has(name))).toEqual([]);
+    expect([...POST_CERTIFIED_UPSTREAM_MIGRATIONS].filter((name) => names.has(name))).toEqual([]);
+  });
+
+  it('shares no migration with the certified official provider (FL-180)', async () => {
+    const official = Object.keys(await createOfficialMigrationProvider(folder).getMigrations());
+    const frameleaf = new Set(Object.keys(await createFrameleafPublicMigrationProvider(folder).getMigrations()));
+
+    expect(official.filter((name) => frameleaf.has(name))).toEqual([]);
+  });
+
+  it('refuses an unknown migration file (FL-180)', async () => {
+    const unknownFolder = await mkdtemp(join(tmpdir(), 'frameleaf-public-provider-'));
+    try {
+      await writeFile(join(unknownFolder, '9999999999999-Unknown.mjs'), 'export async function up() {}\n');
+
+      await expect(createFrameleafPublicMigrationProvider(unknownFolder).getMigrations()).rejects.toThrow(
+        `Unknown migration in the Frameleaf public migration folder (${unknownFolder}): 9999999999999-Unknown`,
+      );
+    } finally {
+      await rm(unknownFolder, { recursive: true, force: true });
+    }
   });
 });

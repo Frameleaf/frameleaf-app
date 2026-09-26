@@ -39,6 +39,7 @@ const activeReport = {
 const setup = () => {
   const databaseMocks = {
     activateAfterReturnReconciliation: vi.fn().mockResolvedValue(activeReport),
+    applyIsolatedFrameleafMigrations: vi.fn().mockResolvedValue({ applied: [], pending: [], skipped: null }),
     archiveAndDeleteOrphans: vi.fn().mockResolvedValue({ archived: 0, deleted: 0 }),
     getPreparedOfficialHandoffCheckpoint: vi.fn().mockResolvedValue(checkpoint),
     prepareOfficialHandoffCheckpoint: vi.fn().mockResolvedValue(checkpoint),
@@ -91,6 +92,47 @@ describe(ForkHandoffService.name, () => {
     );
   });
 
+  it('applies newer Frameleaf migrations under the migrations lock after the residue and before any reconciliation (FL-180)', async () => {
+    const { databaseMocks, migrationMocks, sut } = setup();
+    let locked = false;
+    databaseMocks.withLock.mockImplementation(async (_lock, callback: () => Promise<unknown>) => {
+      locked = true;
+      try {
+        return await callback();
+      } finally {
+        locked = false;
+      }
+    });
+    databaseMocks.applyIsolatedFrameleafMigrations.mockImplementation(() => {
+      expect(locked).toBe(true);
+      return Promise.resolve({ applied: ['2100000000610-AddClassificationRule'], pending: [], skipped: null });
+    });
+
+    await expect(sut.prepareFork({ batchSize: 1 })).resolves.toEqual(activeReport);
+
+    expect(databaseMocks.applyIsolatedFrameleafMigrations).toHaveBeenCalledExactlyOnceWith('return');
+    expect(databaseMocks.withLock).toHaveBeenNthCalledWith(1, DatabaseLock.Migrations, expect.any(Function));
+    const applied = databaseMocks.applyIsolatedFrameleafMigrations.mock.invocationCallOrder[0];
+    expect(databaseMocks.reapplyPostCertifiedResidue.mock.invocationCallOrder[0]).toBeLessThan(applied);
+    expect(applied).toBeLessThan(databaseMocks.getReturnWorkflowSnapshot.mock.invocationCallOrder[0]);
+    expect(applied).toBeLessThan(databaseMocks.archiveAndDeleteOrphans.mock.invocationCallOrder[0]);
+    expect(applied).toBeLessThan(migrationMocks.reconcileAfterOfficialReturn.mock.invocationCallOrder[0]);
+  });
+
+  it('stops the return before any reconciliation when a Frameleaf migration fails (FL-180)', async () => {
+    const { databaseMocks, migrationMocks, sut } = setup();
+    databaseMocks.applyIsolatedFrameleafMigrations.mockRejectedValue(
+      new Error('synthetic Frameleaf migration failure'),
+    );
+
+    await expect(sut.prepareFork({ batchSize: 1 })).rejects.toThrow('synthetic Frameleaf migration failure');
+
+    expect(databaseMocks.getReturnWorkflowSnapshot).not.toHaveBeenCalled();
+    expect(databaseMocks.archiveAndDeleteOrphans).not.toHaveBeenCalled();
+    expect(migrationMocks.reconcileAfterOfficialReturn).not.toHaveBeenCalled();
+    expect(databaseMocks.activateAfterReturnReconciliation).not.toHaveBeenCalled();
+  });
+
   it('fails an unsupported ledger before any reconciliation provider runs', async () => {
     const { databaseMocks, migrationMocks, sut } = setup();
     databaseMocks.getReturnEvidence.mockRejectedValue(new Error('exact certified v3.1.0 ledger'));
@@ -100,5 +142,6 @@ describe(ForkHandoffService.name, () => {
     expect(databaseMocks.archiveAndDeleteOrphans).not.toHaveBeenCalled();
     expect(migrationMocks.reconcileAfterOfficialReturn).not.toHaveBeenCalled();
     expect(databaseMocks.withLock).not.toHaveBeenCalled();
+    expect(databaseMocks.applyIsolatedFrameleafMigrations).not.toHaveBeenCalled();
   });
 });
