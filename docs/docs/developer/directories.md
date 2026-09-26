@@ -4,7 +4,7 @@ title: Directories
 
 # Repository Folder Structure
 
-Our [GitHub Repository](https://github.com/immich-app/immich) is a [monorepo](https://en.wikipedia.org/wiki/Monorepo) and includes the following folders:
+The [Frameleaf GitHub Repository](https://github.com/Frameleaf/frameleaf-app) is a [monorepo](https://en.wikipedia.org/wiki/Monorepo) and includes the following folders:
 
 | Folder              | Description                                                          |
 | :------------------ | :------------------------------------------------------------------- |
@@ -15,7 +15,7 @@ Our [GitHub Repository](https://github.com/immich-app/immich) is a [monorepo](ht
 | `packages/scripts`  | Scripts for version bumps and draft releases                         |
 | `docker/`           | Docker compose resources for dev, test, production                   |
 | `design/`           | Screenshots and logos for the README                                 |
-| `docs/`             | Source code for the [https://immich.app](https://immich.app) website |
+| `docs/`             | Source code for the documentation website |
 | `machine-learning/` | Source code for the `immich-machine-learning` docker image           |
 | `mobile/`           | Source code for the mobile app, both Android and iOS                 |
 | `server/`           | Source code for the `immich-server` docker image                     |
