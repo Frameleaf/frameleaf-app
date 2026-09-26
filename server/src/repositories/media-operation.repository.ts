@@ -776,6 +776,27 @@ export class MediaOperationRepository {
     return row ? { operation: row as unknown as MediaOperation, claimToken } : undefined;
   }
 
+  /**
+   * FL-163: record the remote job a claimed operation started (a Frameleaf Cloud job id), so a cancel or
+   * failure that happens while nobody holds the claim still leaves the remote job to be released by the
+   * cleanup pass (`getUnreleasedRemoteOperations`). Guarded by the claim, and never overwrites a remote
+   * job already recorded: one operation is one remote job.
+   */
+  async setRemoteJobId(id: string, claimToken: string, remoteJobId: string): Promise<boolean> {
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ remoteJobId })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .where((eb) => eb.or([eb('remoteJobId', 'is', null), eb('remoteJobId', '=', remoteJobId)]))
+        .executeTakeFirst(),
+    );
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
   /** Extend the lease. Returns false when the claim has already been taken away. */
   async heartbeat(id: string, claimToken: string, leaseMs: number): Promise<boolean> {
     const result = await this.write((db) =>

@@ -208,6 +208,20 @@ export class MediaRepository {
   }
 
   /**
+   * FL-163: the copy of a photo that may leave this server for Frameleaf Cloud. The preview is decoded and
+   * written again as a JPEG; sharp keeps no EXIF, XMP or IPTC unless asked to (`keepExif`,
+   * `withMetadata`), so the capture location, camera, dates and every other tag stay here. Only the
+   * sRGB colour profile is kept, so colours read the same.
+   */
+  async writeCloudUpload(input: string, output: string): Promise<void> {
+    await sharp(input, { failOn: 'error', limitInputPixels: false })
+      .rotate()
+      .withIccProfile('srgb')
+      .jpeg({ quality: 90, chromaSubsampling: '4:4:4', progressive: false })
+      .toFile(output);
+  }
+
+  /**
    * Compose a set of input images into a single JPEG grid (left-to-right,
    * top-to-bottom). Cells are letterboxed to a fixed size on a black canvas
    * to keep aspect ratios intact. Used to feed multiple video frames through
