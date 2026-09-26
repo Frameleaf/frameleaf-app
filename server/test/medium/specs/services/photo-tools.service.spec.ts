@@ -380,15 +380,20 @@ describe('derivative privacy (FL-64)', () => {
     expect(tracked.map(({ path }) => path)).toEqual(expect.arrayContaining([stored.masterPath, stored.previewPath]));
     expect(tracked).toHaveLength(2);
 
+    // AssetDelete is announced once the asset's row is gone (FL-179: the listener releases only the
+    // revisions of an asset that no longer exists, so it never takes a live asset's versions)
     job.queue.mockClear();
+    await sut.onAssetDelete({ assetId: asset.id, userId: user.id });
+    expect(await develop.listByAsset(asset.id)).toHaveLength(1);
+    expect(job.queue).not.toHaveBeenCalled();
+
+    await database.deleteFrom('asset').where('id', '=', asset.id).execute();
     await sut.onAssetDelete({ assetId: asset.id, userId: user.id });
     expect(await develop.listByAsset(asset.id)).toEqual([]);
     expect(job.queue).toHaveBeenCalledWith({
       name: JobName.FileDelete,
       data: { files: expect.arrayContaining([stored.masterPath, stored.previewPath]) },
     });
-
-    await database.deleteFrom('asset').where('id', '=', asset.id).execute();
     await expect(
       database.selectFrom('develop_export').select('id').where('assetId', '=', asset.id).execute(),
     ).resolves.toEqual([]);
