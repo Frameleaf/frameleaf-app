@@ -56,7 +56,8 @@ tested against what the cloud publishes (FL-177).
   `velocity-limit.json`), plus `errors/balance-cap.json` and `errors/top-up-minimum.json` (account API, noted
   above).
 - FC-70 release feed: `releases/latest-stable.json` and `releases/latest-beta.json` are byte-identical to
-  `origin/main` at `86adf20ee0f403859abf225c1a14531214a465c1` (Frameleaf/frameleaf-cloud#43). The contract is
+  `origin/main` at `517cbd3da9e20b9248c4b975bf3a400a2bce37d1` (Frameleaf/frameleaf-cloud#54, which reads the app's
+  real `frameleaf-v<semver>-<sequence>` tags; first copied from #43 at `86adf20`). The contract is
   `packages/contracts/src/releases/latest.ts`; `server/src/utils/frameleaf-release.ts` reads them (FL-192).
 
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit

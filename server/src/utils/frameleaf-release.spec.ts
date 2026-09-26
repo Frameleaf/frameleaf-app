@@ -39,6 +39,8 @@ describe('parseFrameleafFeedRelease', () => {
       publishedAt: beta.publishedAt,
     });
     expect(parseFrameleafFeedRelease(beta, ReleaseChannel.Stable)).toBeUndefined();
+    expect(parseFrameleafReleaseTag(stable.tag)).toEqual({ version: stable.version, sequence: 4 });
+    expect(parseFrameleafReleaseTag(beta.tag)).toEqual({ version: beta.version, sequence: 2 });
   });
 
   it('reads the version and publication time of a feed release', () => {

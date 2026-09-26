@@ -1,8 +1,8 @@
 {
-  "version": "1.4.0",
-  "tag": "v1.4.0",
-  "publishedAt": "2026-08-01T12:00:00Z",
-  "url": "https://github.com/Frameleaf/frameleaf-app/releases/tag/v1.4.0",
-  "notesUrl": "https://github.com/Frameleaf/frameleaf-app/releases/tag/v1.4.0",
-  "minimumSupported": "1.2.0"
+  "version": "3.2.1",
+  "tag": "frameleaf-v3.2.1-4",
+  "publishedAt": "2026-09-10T12:00:00Z",
+  "url": "https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1-4",
+  "notesUrl": "https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1-4",
+  "minimumSupported": "3.0.0"
 }
