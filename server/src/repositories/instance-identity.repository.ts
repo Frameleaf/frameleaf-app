@@ -164,6 +164,7 @@ export class InstanceIdentityRepository {
     } catch (error) {
       throw new Error(
         `The Frameleaf identity key ${keyFile} is not a readable private key (${error}). It was left as it is: restore it from a backup, or remove it to give this server a new identity and link it again.`,
+        { cause: error },
       );
     }
   }
@@ -267,12 +268,13 @@ export class InstanceIdentityRepository {
   }
 
   private flushWasSkipped(target: string, code: string) {
-    if (!this.flushSkipped) {
-      this.flushSkipped = true;
-      this.logger.warn(
-        `This file system cannot flush ${target} to disk (${code}); a power failure during a key rotation could lose or cut short the new key`,
-      );
+    if (this.flushSkipped) {
+      return;
     }
+    this.flushSkipped = true;
+    this.logger.warn(
+      `This file system cannot flush ${target} to disk (${code}); a power failure during a key rotation could lose or cut short the new key`,
+    );
   }
 
   /**
@@ -333,11 +335,7 @@ export class InstanceIdentityRepository {
         await this.setAside(keyFile, error);
       }
     }
-    if (!currentKid) {
-      // nothing to retire: an older rotation's retiring key and sidecar must not pass for this one's
-      await rm(retiringFile, { force: true });
-      await rm(join(dir, RETIRING_META_FILE), { force: true });
-    } else {
+    if (currentKid) {
       const sidecar = join(dir, RETIRING_META_FILE);
       await this.writeSidecar(sidecar, { ...rotation, kid: currentKid });
       await rm(retiringFile, { force: true });
@@ -349,6 +347,10 @@ export class InstanceIdentityRepository {
         }
         ignore(['EEXIST', 'ENOENT'])(error);
       });
+    } else {
+      // nothing to retire: an older rotation's retiring key and sidecar must not pass for this one's
+      await rm(retiringFile, { force: true });
+      await rm(join(dir, RETIRING_META_FILE), { force: true });
     }
     await rename(join(dir, PROVEN_KEY_FILE), keyFile).catch(ignore(['ENOENT']));
     await rm(join(dir, ROTATION_NEEDED_FILE), { force: true });
@@ -627,7 +629,7 @@ export class InstanceIdentityRepository {
       await this.writeKeyExclusive(nextFile, pair.privateKey.export({ format: 'pem', type: 'pkcs8' }));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(`A key rotation is already under way (${nextFile} exists)`);
+        throw new Error(`A key rotation is already under way (${nextFile} exists)`, { cause: error });
       }
       throw error;
     }
