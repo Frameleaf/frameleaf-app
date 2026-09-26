@@ -417,8 +417,8 @@ describe('cloud workload ID mapping (FL-181)', () => {
   it('assigns a restoration catalog entry to the app workload its own mode names', () => {
     expect(workloadForCatalogEntry('restoration', 'faithful')).toBe(MlWorkload.RestorationFaithful);
     expect(workloadForCatalogEntry('restoration', 'creative')).toBe(MlWorkload.RestorationCreative);
-    // Pending cloud confirmation of the mode field (FL-181): a restoration entry that does not say is
-    // left unassigned rather than guessed.
+    // The cloud never publishes a restoration model without a mode (FL-181); a null one is still
+    // left unassigned rather than guessed, since this server never over-admits a restoration mode.
     expect(workloadForCatalogEntry('restoration', null)).toBeNull();
   });
 
@@ -467,7 +467,13 @@ describe('Frameleaf Cloud ml contract fixtures (FC-66, FL-181)', () => {
     expect(usage.items.map((item) => item.clientRef)).toContain(job.clientRef);
   });
 
-  it('leaves every rejected catalog entry’s own workload ID valid: the cloud refuses these for leaking an identifier, not for their workload', () => {
+  it('carries no workload on a running job either: `job.run` is metering only', () => {
+    const run = cloudContractFixture<Record<string, unknown>>('ml/job-run.json');
+    expect(run).not.toHaveProperty('workload');
+    expect(Object.keys(run).sort()).toEqual(['meteredSeconds', 'startFees', 'startedAt', 'workers']);
+  });
+
+  it('leaves the workload ID of every rejected catalog entry valid: the cloud refuses these for leaking an identifier, not for their workload', () => {
     for (const name of [
       'catalog-entry-gpu-class.json',
       'catalog-entry-model-id.json',
@@ -479,7 +485,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-66, FL-181)', () => {
     }
   });
 
-  it('leaves every rejected estimate and job request’s own workload ID valid, for the same reason', () => {
+  it('leaves the workload ID of every rejected estimate and job request valid, for the same reason', () => {
     for (const name of [
       'estimate-display-as-input.json',
       'estimate-gpu-class.json',

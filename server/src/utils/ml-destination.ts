@@ -388,6 +388,14 @@ const evaluateCloudAdmission = (
       `${destination.name}: the model ${modelId} is not in the Frameleaf Cloud catalogue any more`,
     );
   }
+  // FL-181 (P1): `restoration` is one wire workload for both modes, so a model in the catalogue is
+  // not proof it serves the mode asked for; the catalogue's own mode for that model must match.
+  if (modelId && isRestorationWorkload(workload) && facts.modelWorkloads[modelId] !== workload) {
+    return refuse(
+      MlAdmissionRefusal.ModelMismatch,
+      `${destination.name}: the model ${modelId} does not run ${workload} in the Frameleaf Cloud catalogue`,
+    );
+  }
   const available = facts.balanceUsd - facts.heldUsd;
   if (facts.balanceUsd <= 0 || available <= 0) {
     return refuse(MlAdmissionRefusal.WalletInsufficient, `${destination.name}: the AI Wallet is empty`);

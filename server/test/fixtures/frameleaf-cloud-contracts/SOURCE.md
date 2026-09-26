@@ -15,6 +15,13 @@ tested against what the cloud publishes (FL-177).
   yet what `server/src/utils/frameleaf-cloud.ts`'s `catalogSchema`/`usageSchema` parse field-for-field; FL-181
   only reads each fixture's `workload` (and, where present, `mode`) string to test the workload ID mapping,
   not the full catalogue/estimate/job schema. A later story should reconcile the rest of the shape.
+- `ml/catalog-restoration.json` is **app-authored, not copied from the cloud**: a two-model restoration
+  catalogue (one `mode: "faithful"`, one `mode: "creative"`) in this server's own `catalogSchema` shape
+  (`id`/`fingerprint`/`pricing`, not the FC-66 `sku`/`rev`/`rate` wire shape), used to test that a restoration
+  mode is only admitted once the catalogue names a usable model for it (FL-181 P1). The cloud confirmed
+  `models[].mode` is exactly `"faithful"`/`"creative"` on every restoration model and never absent (2026-09-25),
+  but has not yet published its own catalogue fixture with a restoration entry (tracked for FC-34). Replace
+  this file with the cloud's own fixture once FC-34 ships one.
 
-Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
-above.
+Do not edit these files by hand, except `ml/catalog-restoration.json`, which is ours to maintain until FC-34
+ships a real one. When the cloud changes a fixture, copy the new version and update the commit above.

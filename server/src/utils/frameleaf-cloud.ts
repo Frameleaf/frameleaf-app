@@ -245,9 +245,10 @@ export const catalogSchema = z.object({
           .default(null),
         retired: z.boolean().default(false),
         /**
-         * FL-181 (pending cloud confirmation of the field name): which app workload a `restoration`
-         * catalog entry serves. `null` (or absent) for a model this server cannot place, and for
-         * every other workload, which never splits by mode.
+         * FL-181 (cloud-confirmed 2026-09-25): which app workload a `restoration` catalog entry
+         * serves. Exactly `"faithful"` or `"creative"` on a restoration model — the cloud never
+         * publishes a restoration model without one — and `null` (or absent) for every other
+         * workload, which never splits by mode.
          */
         mode: z.enum(['faithful', 'creative']).nullable().default(null),
       }),
@@ -496,6 +497,14 @@ export type CloudProbeFacts = {
   limits: Record<string, number>;
   catalogEtag: string | null;
   modelIds: string[];
+  /**
+   * The app workload each catalogued model id serves (FL-181 P1), from the catalogue's own
+   * `workload`/`mode`, exactly as `workloadForCatalogEntry` reads it. `null` for a model the catalog
+   * does not place. Admission uses this to refuse a modelId whose catalogue mode does not match the
+   * workload asked for, since `restoration` alone (in `modelIds`) cannot tell faithful and creative
+   * models apart.
+   */
+  modelWorkloads: Record<string, MlWorkload | null>;
   refusal: { refusal: MlAdmissionRefusal; detail: string } | null;
 };
 
@@ -527,7 +536,11 @@ export const cloudModelFor = (workload: MlWorkload, chosen: string | null | unde
 export const isEntitled = (entitlement: CloudCapabilities['entitlement']): boolean =>
   typeof entitlement === 'boolean' ? entitlement : entitlement.active;
 
-export const cloudFactsFromCapabilities = (capabilities: CloudCapabilities, modelIds: string[]): CloudProbeFacts => ({
+export const cloudFactsFromCapabilities = (
+  capabilities: CloudCapabilities,
+  modelIds: string[],
+  modelWorkloads: Record<string, MlWorkload | null> = {},
+): CloudProbeFacts => ({
   region: capabilities.region,
   consentRequiredVersion: capabilities.consent.requiredVersion,
   consentRecordedVersion: capabilities.consent.recordedVersion,
@@ -540,6 +553,7 @@ export const cloudFactsFromCapabilities = (capabilities: CloudCapabilities, mode
   limits: capabilities.limits,
   catalogEtag: capabilities.catalogEtag,
   modelIds,
+  modelWorkloads,
   refusal: null,
 });
 
