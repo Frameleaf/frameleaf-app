@@ -397,9 +397,12 @@ describe('/people', () => {
         utils.createPerson(admin.accessToken, { name: 'Bulk named' }),
         utils.createPerson(admin.accessToken, { name: '' }),
       ]);
-      const asset = await utils.createAsset(admin.accessToken);
-      await utils.createFace({ assetId: asset.id, personGroupId: named.id });
-      await utils.createFace({ assetId: asset.id, personGroupId: unnamed.id });
+      // an unnamed person is listed only once they have the minimum number of faces (three by default)
+      const assets = await Promise.all([0, 1, 2].map(() => utils.createAsset(admin.accessToken)));
+      await utils.createFace({ assetId: assets[0].id, personGroupId: named.id });
+      for (const { id } of assets) {
+        await utils.createFace({ assetId: id, personGroupId: unnamed.id });
+      }
 
       const hide = await request(app)
         .put('/people')
@@ -626,7 +629,11 @@ describe('/people', () => {
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({ birthDate: future });
       expect(update.status).toBe(400);
-      expect(update.body).toEqual(errorDto.badRequest(expect.stringContaining('Birth date cannot be in the future')));
+      // request validation names the refused field in `errors`, under a generic message
+      expect(update.body).toEqual({
+        message: 'Validation failed',
+        errors: [expect.objectContaining({ path: ['birthDate'], message: 'Birth date cannot be in the future' })],
+      });
 
       const create = await request(app)
         .post('/people')

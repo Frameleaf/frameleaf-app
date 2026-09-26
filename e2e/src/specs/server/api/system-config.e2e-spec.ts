@@ -50,17 +50,26 @@ describe('/system-config', () => {
       expect(response2.body).toEqual(config);
     });
 
-    it('should keep automatic external version checks disabled when requested', async () => {
+    // FL-80: automatic checks ask only Frameleaf's own releases, so the administrator's choice is kept
+    it('should turn automatic version checks on and off', async () => {
       const config = await getSystemConfig(admin.accessToken);
+      const enabledConfig = { ...config, newVersionCheck: { ...config.newVersionCheck, enabled: true } };
       const { status, body } = await request(app)
         .put('/system-config')
         .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ ...config, newVersionCheck: { ...config.newVersionCheck, enabled: true } });
+        .send(enabledConfig);
 
-      const expectedConfig = { ...config, newVersionCheck: { ...config.newVersionCheck, enabled: false } };
       expect(status).toBe(200);
-      expect(body).toEqual(expectedConfig);
-      expect(await getSystemConfig(admin.accessToken)).toEqual(expectedConfig);
+      expect(body).toEqual(enabledConfig);
+      expect(await getSystemConfig(admin.accessToken)).toEqual(enabledConfig);
+
+      const disabledConfig = { ...config, newVersionCheck: { ...config.newVersionCheck, enabled: false } };
+      const disabled = await request(app)
+        .put('/system-config')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send(disabledConfig);
+      expect(disabled.status).toBe(200);
+      expect(disabled.body).toEqual(disabledConfig);
     });
 
     it('should reject an invalid config entry', async () => {
@@ -88,9 +97,11 @@ describe('/system-config', () => {
         expect.arrayContaining([
           { name: 'smtp-password', configured: false },
           { name: 'oauth-client-secret', configured: false },
+          // FL-158: the Frameleaf sign-in client secret
+          { name: 'frameleaf-oidc-client-secret', configured: false },
         ]),
       );
-      expect(body).toHaveLength(2);
+      expect(body).toHaveLength(3);
     });
 
     // FL-67: a stored secret is write-only: the configuration only reports that it is configured
