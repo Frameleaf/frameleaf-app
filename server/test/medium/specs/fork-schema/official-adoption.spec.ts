@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import {
   CERTIFIED_TAG_MIGRATIONS,
   GENERIC_LEGACY_FORK_MIGRATIONS,
@@ -16,6 +16,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
+import { getKyselyConfig } from 'src/utils/database.js';
 import { restoreOfficialPublicSchema } from 'test/medium/specs/fork-schema/official-schema-fixture.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -53,6 +54,41 @@ const relations = async (db: Kysely<DB>, names: string[]) => {
   return Object.fromEntries(rows.map(({ name, present }) => [name, present]));
 };
 
+const connectToSameDatabase = async (db: Kysely<DB>): Promise<Kysely<DB>> => {
+  const database = await sql<{ name: string }>`SELECT current_database() AS name`.execute(db);
+  const url = process.env.IMMICH_TEST_POSTGRES_URL!.replace('/mich', () => `/${database.rows[0]!.name}`);
+  return new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url }));
+};
+
+const setMaintenanceMode = async (db: Kysely<DB>, isMaintenanceMode: boolean) => {
+  await sql`
+    INSERT INTO public.system_metadata (key, value)
+    VALUES ('maintenance-mode', ${JSON.stringify({ isMaintenanceMode })}::jsonb)
+    ON CONFLICT (key) DO UPDATE SET value = excluded.value
+  `.execute(db);
+};
+
+/** An official v3.1.0 asset row (the columns that schema requires). */
+const insertOfficialAsset = async (db: Kysely<DB>, id: string, ownerId: string, visibility: string) => {
+  await sql`
+    INSERT INTO public.asset
+      (id, "ownerId", checksum, "checksumAlgorithm", "fileCreatedAt", "fileModifiedAt", "localDateTime",
+       "originalFileName", "originalPath", type, visibility)
+    VALUES (${id}::uuid, ${ownerId}::uuid, ${randomBytes(20)}, 'sha1', now(), now(), now(),
+      ${`${id}.jpg`}, ${`/data/upload/${id}.jpg`}, 'IMAGE', ${visibility}::asset_visibility_enum)
+  `.execute(db);
+};
+
+/** The values of `column` in `public.<table>` that are among `ids`. */
+const existing = async (db: Kysely<DB>, table: string, column: string, ids: string[]) => {
+  const { rows } = await sql<{ id: string }>`
+    SELECT ${sql.ref(column)}::text AS id FROM ${sql.table(`public.${table}`)}
+    WHERE ${sql.ref(column)} = ANY(${ids}::uuid[])
+    ORDER BY 1
+  `.execute(db);
+  return rows.map(({ id }) => id);
+};
+
 const columnExists = async (db: Kysely<DB>, table: string, column: string) => {
   const { rows } = await sql<{ present: boolean }>`
     SELECT EXISTS (
@@ -68,8 +104,17 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   let repository: DatabaseRepository;
   let officialLedger: string[];
   const userId = randomUUID();
+  const otherUserId = randomUUID();
   const personId = randomUUID();
   const workflowId = randomUUID();
+  const lockedAssetId = randomUUID();
+  const stackMateId = randomUUID();
+  const otherOwnersAssetId = randomUUID();
+  const stackId = randomUUID();
+  const memoryId = randomUUID();
+  const ownerlessAlbumId = randomUUID();
+  const ownedAlbumId = randomUUID();
+  const removedFaceId = randomUUID();
 
   beforeAll(async () => {
     db = await getKyselyDB('official_origin_full_adoption');
@@ -92,6 +137,51 @@ describe('official-origin adoption into a full Frameleaf library', () => {
       INSERT INTO public.workflow (id, "ownerId", trigger, name)
       VALUES (${workflowId}::uuid, ${userId}::uuid, 'AssetCreate', 'Adopted workflow')
     `.execute(db);
+    await sql`
+      INSERT INTO public."user" (id, email, name) VALUES (${otherUserId}::uuid, 'other@example.test', 'Other')
+    `.execute(db);
+
+    // A stack with one member in the official Locked folder.
+    await insertOfficialAsset(db, lockedAssetId, userId, 'locked');
+    await insertOfficialAsset(db, stackMateId, userId, 'timeline');
+    await sql`
+      INSERT INTO public.stack (id, "ownerId", "primaryAssetId")
+      VALUES (${stackId}::uuid, ${userId}::uuid, ${stackMateId}::uuid)
+    `.execute(db);
+    await sql`
+      UPDATE public.asset SET "stackId" = ${stackId}::uuid WHERE id IN (${lockedAssetId}::uuid, ${stackMateId}::uuid)
+    `.execute(db);
+
+    // A memory that also links another owner's asset.
+    await insertOfficialAsset(db, otherOwnersAssetId, otherUserId, 'timeline');
+    await sql`
+      INSERT INTO public.memory (id, "ownerId", type, data, "memoryAt")
+      VALUES (${memoryId}::uuid, ${userId}::uuid, 'on_this_day', '{"year":2020}'::jsonb, now())
+    `.execute(db);
+    await sql`
+      INSERT INTO public.memory_asset ("memoriesId", "assetId")
+      VALUES (${memoryId}::uuid, ${stackMateId}::uuid), (${memoryId}::uuid, ${otherOwnersAssetId}::uuid)
+    `.execute(db);
+
+    // An album without an owner and one with.
+    await sql`
+      INSERT INTO public.album (id, "albumName")
+      VALUES (${ownerlessAlbumId}::uuid, 'Ownerless'), (${ownedAlbumId}::uuid, 'Owned')
+    `.execute(db);
+    await sql`
+      INSERT INTO public.album_user ("albumId", "userId", role)
+      VALUES (${ownedAlbumId}::uuid, ${userId}::uuid, 'owner')
+    `.execute(db);
+
+    // A face the owner removed from their person.
+    await sql`
+      INSERT INTO public.asset_face
+        (id, "assetId", "personId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1",
+         "boundingBoxX2", "boundingBoxY2", "deletedAt")
+      VALUES (${removedFaceId}::uuid, ${stackMateId}::uuid, ${personId}::uuid, 100, 100, 10, 20, 50, 60, now())
+    `.execute(db);
+
+    await setMaintenanceMode(db, true);
     officialLedger = await ledgerNames(db);
   }, 120_000);
 
@@ -102,6 +192,33 @@ describe('official-origin adoption into a full Frameleaf library', () => {
     await expect(forkState(db)).resolves.toEqual({ active: false, phase: 'inactive', schemaVersion: '1' });
     await expect(repository.isAwaitingOfficialAdoption()).resolves.toBe(true);
     await expect(repository.detectMigrationMode()).resolves.toBe('isolated');
+  });
+
+  it('refuses to adopt outside maintenance mode', async () => {
+    await setMaintenanceMode(db, false);
+    try {
+      await expect(repository.adoptOfficialOrigin()).rejects.toThrow('Adoption requires maintenance mode');
+    } finally {
+      await setMaintenanceMode(db, true);
+    }
+    await expect(forkState(db)).resolves.toEqual({ active: false, phase: 'inactive', schemaVersion: '1' });
+  });
+
+  it('refuses to adopt while another server is working in the database', async () => {
+    const otherServer = await connectToSameDatabase(db);
+    try {
+      await otherServer.transaction().execute(async (transaction) => {
+        await sql`UPDATE public.album SET "albumName" = "albumName" WHERE id = ${ownedAlbumId}::uuid`.execute(
+          transaction,
+        );
+        await expect(repository.adoptOfficialOrigin()).rejects.toThrow(
+          'stop every server connected to this database first',
+        );
+      });
+    } finally {
+      await otherServer.destroy();
+    }
+    await expect(ledgerNames(db)).resolves.toEqual(officialLedger);
   });
 
   it('rolls an interrupted adoption back completely, so the official server can still read the library', async () => {
@@ -119,6 +236,13 @@ describe('official-origin adoption into a full Frameleaf library', () => {
       'public.physical_file': false,
     });
     await expect(columnExists(db, 'user', 'clusterGroupId')).resolves.toBe(false);
+    // The destructive steps before the interruption are rolled back with everything else.
+    await expect(existing(db, 'album', 'id', [ownerlessAlbumId])).resolves.toEqual([ownerlessAlbumId]);
+    await expect(existing(db, 'memory_asset', 'assetId', [otherOwnersAssetId])).resolves.toEqual([otherOwnersAssetId]);
+    const visibility = await sql<{ visibility: string }>`
+      SELECT visibility::text AS visibility FROM public.asset WHERE id = ${lockedAssetId}::uuid
+    `.execute(db);
+    expect(visibility.rows).toEqual([{ visibility: 'locked' }]);
     const audit = await sql`SELECT 1 FROM immich_fork.migration_audit WHERE name = ${OFFICIAL_ADOPTION_AUDIT}`.execute(
       db,
     );
@@ -152,6 +276,79 @@ describe('official-origin adoption into a full Frameleaf library', () => {
     `.execute(db);
     expect(definition.rows).toEqual([{ count: 1 }]);
     expect(classifyWorkflowCompatibility(await getWorkflowCompatibilityEvidence(db)).mode).toBe('official');
+  });
+
+  it('applies the documented changes to official data and records what each step touched', async () => {
+    // Locked folder -> lock records, extended to the whole stack; the asset returns to the timeline.
+    const locks = await sql<{ assetId: string; reason: string; previousVisibility: string | null }>`
+      SELECT "assetId"::text AS "assetId", reason, "previousVisibility"::text AS "previousVisibility"
+      FROM public.asset_lock WHERE "assetId" IN (${lockedAssetId}::uuid, ${stackMateId}::uuid)
+    `.execute(db);
+    expect(locks.rows).toEqual(
+      expect.arrayContaining([
+        { assetId: lockedAssetId, reason: 'immich-locked-folder', previousVisibility: 'locked' },
+        { assetId: stackMateId, reason: 'immich-locked-folder', previousVisibility: null },
+      ]),
+    );
+    expect(locks.rows).toHaveLength(2);
+    const visibility = await sql<{ visibility: string }>`
+      SELECT visibility::text AS visibility FROM public.asset WHERE id = ${lockedAssetId}::uuid
+    `.execute(db);
+    expect(visibility.rows).toEqual([{ visibility: 'timeline' }]);
+
+    // The ownerless album and the other owner's memory link are deleted; the rest stays.
+    await expect(existing(db, 'album', 'id', [ownerlessAlbumId, ownedAlbumId])).resolves.toEqual([ownedAlbumId]);
+    await expect(existing(db, 'memory_asset', 'assetId', [stackMateId, otherOwnersAssetId])).resolves.toEqual([
+      stackMateId,
+    ]);
+
+    // The removed face is carried over as the owner's `remove` decision (0000000000175).
+    const decisions = await sql`
+      SELECT "ownerId"::text AS "ownerId", "actorId"::text AS "actorId", action, "assetId"::text AS "assetId",
+        "fromPersonId"::text AS "fromPersonId", "toPersonId", "boxX1", "boxY1", "boxX2", "boxY2"
+      FROM immich_fork.face_correction WHERE "faceId" = ${removedFaceId}::uuid
+    `.execute(db);
+    expect(decisions.rows).toEqual([
+      {
+        ownerId: userId,
+        actorId: userId,
+        action: 'remove',
+        assetId: stackMateId,
+        fromPersonId: personId,
+        toPersonId: null,
+        boxX1: 0.1,
+        boxY1: 0.2,
+        boxX2: 0.5,
+        boxY2: 0.6,
+      },
+    ]);
+
+    const audit = await sql<{ details: { faceDecisionsCarriedOver: number; steps: Record<string, unknown> } }>`
+      SELECT details FROM immich_fork.migration_audit WHERE name = ${OFFICIAL_ADOPTION_AUDIT} AND status = 'applied'
+    `.execute(db);
+    expect(audit.rows).toHaveLength(1);
+    const { faceDecisionsCarriedOver, steps } = audit.rows[0]!.details;
+    expect(faceDecisionsCarriedOver).toBe(1);
+    expect(steps['1786385711807-AlbumOwnerDeleteTrigger']).toEqual({
+      before: { albums: 2, ownerlessAlbums: 1 },
+      after: { albums: 1, ownerlessAlbums: 0 },
+    });
+    expect(steps['1787148183730-DeleteMismatchedMemoryAssets']).toEqual({
+      before: { memoryAssets: 2, crossOwnerMemoryAssets: 1 },
+      after: { memoryAssets: 1, crossOwnerMemoryAssets: 0 },
+    });
+    expect(steps['1787148183729-ClusterGroups']).toEqual({
+      before: { people: 1, personGroups: null, clusterGroups: null },
+      after: { people: 1, personGroups: 1, clusterGroups: 2 },
+    });
+    expect(steps['2100000000320-AddAssetLock']).toMatchObject({
+      before: { lockedFolderAssets: 1, assetLocks: null },
+      after: { lockedFolderAssets: 0, assetLocks: 2 },
+    });
+    expect(steps['1786972746372-AssetOcrSyncReset']).toEqual({
+      before: { ocrSyncCheckpoints: 0 },
+      after: { ocrSyncCheckpoints: 0 },
+    });
   });
 
   it('creates the Frameleaf public tables and repeats the table-dependent fork migration steps', async () => {

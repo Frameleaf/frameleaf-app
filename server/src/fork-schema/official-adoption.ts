@@ -112,14 +112,22 @@ export const assertWorkflowDataPreserved = (before: WorkflowCompatibility, after
 };
 
 /**
- * Parts of released `immich_fork` migrations that only act when a Frameleaf public table exists.
- * They ran at the first boot, before adoption created those tables, so they are repeated here. The
- * `up` functions of 0000000000170, 0000000000172 and 0000000000201 are idempotent and run as
- * released; 0000000000176 also creates a fork table that already exists, so only its
- * `pet_observation` statement is repeated. The history carry-over of 0000000000175 is not: an
- * official library has no Frameleaf face decisions to carry over.
+ * Parts of released `immich_fork` migrations that only act once the Frameleaf public schema exists.
+ * They ran at the first boot, before adoption created those tables and columns, so they are repeated
+ * here, after every adoption migration (ClusterGroups included):
+ *
+ * - 0000000000170, 0000000000172 and 0000000000201: their `up` functions are idempotent and run as
+ *   released.
+ * - 0000000000176: it also creates a fork table that already exists, so only its `pet_observation`
+ *   statement is repeated.
+ * - 0000000000175: its carry-over of earlier face decisions needs `asset_face.personGroupId`, which
+ *   ClusterGroups creates. An official library has no `correctedAt`, so the carry-over reduces to the
+ *   faces the owner removed (soft-deleted, `deletedAt`), recorded as `remove` decisions exactly as
+ *   0000000000175 records them. Faces already recorded are skipped.
+ *
+ * Returns the number of face decisions carried over.
  */
-export async function applyAdoptionForkFollowUps(db: Kysely<any>): Promise<void> {
+export async function applyAdoptionForkFollowUps(db: Kysely<any>): Promise<{ faceDecisions: number }> {
   await indexMlAccountingJobs(db);
   await addRenderSessionOutputEvidence(db);
   await sql`
@@ -127,5 +135,113 @@ export async function applyAdoptionForkFollowUps(db: Kysely<any>): Promise<void>
       ADD COLUMN IF NOT EXISTS "sourceChecksum" bytea,
       ADD COLUMN IF NOT EXISTS "staleAt" timestamp with time zone
   `.execute(db);
+  const faceDecisions = await sql`
+    INSERT INTO immich_fork.face_correction
+      ("ownerId", "actorId", action, "faceId", "assetId", "assetChecksum", "boxX1", "boxY1", "boxX2", "boxY2",
+       "fromPersonId", "toPersonId", "toPersonName", "createdAt")
+    SELECT asset."ownerId", asset."ownerId", 'remove', face.id, face."assetId", asset.checksum,
+      face."boundingBoxX1"::float8 / face."imageWidth", face."boundingBoxY1"::float8 / face."imageHeight",
+      face."boundingBoxX2"::float8 / face."imageWidth", face."boundingBoxY2"::float8 / face."imageHeight",
+      face."personGroupId", NULL, NULL, face."deletedAt"
+    FROM public.asset_face face
+    INNER JOIN public.asset asset ON asset.id = face."assetId"
+    WHERE face."deletedAt" IS NOT NULL
+      AND face."imageWidth" > 0 AND face."imageHeight" > 0
+      AND NOT EXISTS (
+        SELECT 1 FROM immich_fork.face_correction recorded
+        WHERE recorded."faceId" = face.id AND recorded.action = 'remove'
+      )
+  `.execute(db);
   await indexMlAccountingCloudJobs(db);
+  return { faceDecisions: Number(faceDecisions.numAffectedRows ?? 0) };
+}
+
+type StepCounter = { relations: readonly string[]; query: string };
+
+const count = (relations: readonly string[], query: string): StepCounter => ({ relations, query });
+
+const lockedFolderAssets = count(
+  ['public.asset'],
+  `SELECT count(*)::int AS count FROM public.asset WHERE visibility::text = 'locked'`,
+);
+const albumsWithoutCover = count(
+  ['public.album'],
+  `SELECT count(*)::int AS count FROM public.album WHERE "albumThumbnailAssetId" IS NULL`,
+);
+const lockedAlbumCovers = count(
+  ['public.album', 'public.asset'],
+  `SELECT count(*)::int AS count FROM public.album
+   WHERE "albumThumbnailAssetId" IN (SELECT id FROM public.asset WHERE visibility::text = 'locked')`,
+);
+const peopleWithoutThumbnail = count(
+  ['public.person'],
+  `SELECT count(*)::int AS count FROM public.person WHERE "thumbnailPath" = ''`,
+);
+
+/**
+ * What each adoption migration that changes or deletes existing official data touched, as row counts
+ * taken right before and right after it inside the adoption transaction. The migrations expose no
+ * counts of their own, so the affected tables are counted. Recorded in the adoption audit row.
+ */
+export const ADOPTION_STEP_COUNTERS: Readonly<Record<string, Readonly<Record<string, StepCounter>>>> = {
+  '1786385711807-AlbumOwnerDeleteTrigger': {
+    albums: count(['public.album'], `SELECT count(*)::int AS count FROM public.album`),
+    ownerlessAlbums: count(
+      ['public.album', 'public.album_user'],
+      `SELECT count(*)::int AS count FROM public.album album
+       WHERE NOT EXISTS (
+         SELECT 1 FROM public.album_user owner WHERE owner."albumId" = album.id AND owner.role = 'owner'
+       )`,
+    ),
+  },
+  '1786972746372-AssetOcrSyncReset': {
+    ocrSyncCheckpoints: count(
+      ['public.session_sync_checkpoint'],
+      `SELECT count(*)::int AS count FROM public.session_sync_checkpoint WHERE type = 'AssetOcrV1'`,
+    ),
+  },
+  '1787148183729-ClusterGroups': {
+    people: count(['public.person'], `SELECT count(*)::int AS count FROM public.person`),
+    personGroups: count(['public.person_group'], `SELECT count(*)::int AS count FROM public.person_group`),
+    clusterGroups: count(['public.cluster_group'], `SELECT count(*)::int AS count FROM public.cluster_group`),
+  },
+  '1787148183730-DeleteMismatchedMemoryAssets': {
+    memoryAssets: count(['public.memory_asset'], `SELECT count(*)::int AS count FROM public.memory_asset`),
+    crossOwnerMemoryAssets: count(
+      ['public.memory_asset', 'public.memory', 'public.asset'],
+      `SELECT count(*)::int AS count FROM public.memory_asset link
+       JOIN public.memory memory ON memory.id = link."memoriesId"
+       JOIN public.asset asset ON asset.id = link."assetId"
+       WHERE memory."ownerId" <> asset."ownerId"`,
+    ),
+  },
+  '2100000000290-ClearLockedAlbumCovers': { lockedAlbumCovers, albumsWithoutCover },
+  '2100000000300-ClearLockedCoverReferences': { lockedAlbumCovers, albumsWithoutCover, peopleWithoutThumbnail },
+  '2100000000320-AddAssetLock': {
+    lockedFolderAssets,
+    assetLocks: count(['public.asset_lock'], `SELECT count(*)::int AS count FROM public.asset_lock`),
+    albumsWithoutCover,
+    peopleWithoutThumbnail,
+  },
+};
+
+/** Counts for one step; a counter whose tables do not exist yet reads `null`. */
+export async function countAdoptionStep(
+  db: Kysely<any>,
+  name: string,
+): Promise<Record<string, number | null> | undefined> {
+  const counters = ADOPTION_STEP_COUNTERS[name];
+  if (!counters) {
+    return undefined;
+  }
+  const result: Record<string, number | null> = {};
+  for (const [key, { relations, query }] of Object.entries(counters)) {
+    const present = await sql<{ present: boolean }>`
+      SELECT bool_and(to_regclass(relation) IS NOT NULL) AS present FROM unnest(${[...relations]}::text[]) AS relation
+    `.execute(db);
+    result[key] = present.rows[0]?.present
+      ? ((await sql.raw<{ count: number }>(query).execute(db)).rows[0]?.count ?? 0)
+      : null;
+  }
+  return result;
 }

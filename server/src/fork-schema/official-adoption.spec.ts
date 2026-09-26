@@ -5,6 +5,7 @@ import {
   SUPPORTED_UPSTREAM_MIGRATIONS,
 } from 'src/fork-schema/migration-manifest.js';
 import {
+  ADOPTION_STEP_COUNTERS,
   assertAdoptableOfficialLedger,
   assertWorkflowDataPreserved,
   planOfficialAdoption,
@@ -158,5 +159,22 @@ describe(assertWorkflowDataPreserved, () => {
     expect(() => assertWorkflowDataPreserved(compatibility(), compatibility({ mode: 'legacy-alias' }))).toThrow(
       'Adoption changed the workflow migration marker',
     );
+  });
+});
+
+describe('ADOPTION_STEP_COUNTERS', () => {
+  it('counts only steps adoption applies, among them every documented destructive one', () => {
+    const plan = new Set(planOfficialAdoption(CERTIFIED_TAG_MIGRATIONS, bundled));
+
+    expect(Object.keys(ADOPTION_STEP_COUNTERS).filter((name) => !plan.has(name))).toEqual([]);
+    expect(Object.keys(ADOPTION_STEP_COUNTERS).toSorted()).toEqual([
+      '1786385711807-AlbumOwnerDeleteTrigger',
+      '1786972746372-AssetOcrSyncReset',
+      '1787148183729-ClusterGroups',
+      '1787148183730-DeleteMismatchedMemoryAssets',
+      '2100000000290-ClearLockedAlbumCovers',
+      '2100000000300-ClearLockedCoverReferences',
+      '2100000000320-AddAssetLock',
+    ]);
   });
 });

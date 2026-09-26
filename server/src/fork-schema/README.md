@@ -21,16 +21,23 @@ completes it in one transaction:
 
 - It refuses anything but an `inactive` / `1` state without Frameleaf tables whose ledger is the
   exact certified tag, optionally followed by an ordered prefix of the post-certified migrations.
+- It refuses to run unless maintenance mode is on and no other server is connected
+  (`pg_stat_activity`: no other client backend with a transaction or a running query, and none from
+  another address).
 - It sets the phase to `legacy`, the phase a fresh install starts in, so migrations that read the
   phase follow the same rules they follow on a fresh install.
 - It applies every missing post-certified upstream migration through its registered apply in
   `post-certified-residue.ts`, and every Frameleaf public migration, in name order. It never runs
   `1779400000000-UpdateWorkflowTables`, whose official original `1778614946174` already ran.
-- It repeats the parts of released `immich_fork` migrations that act only when a Frameleaf public
-  table exists (0000000000170, 0000000000172, 0000000000176, 0000000000201). Those migrations
-  already ran at the first boot, before the tables existed.
+- It repeats the parts of released `immich_fork` migrations that act only once the Frameleaf public
+  schema exists (0000000000170, 0000000000172, 0000000000176, 0000000000201, and the face-decision
+  carry-over of 0000000000175, which needs ClusterGroups). Those migrations already ran at the
+  first boot, before the tables and columns existed.
 - It checks that plugin, method and step rows are unchanged and that the workflow count is the same,
-  then records an `official-origin-adoption` audit row.
+  then records an `official-origin-adoption` audit row. For every step that changes or deletes
+  official data (`ADOPTION_STEP_COUNTERS`), the row records the affected tables' counts before and
+  after it. `docs/docs/administration/upstream-handoff.md` lists these changes for operators.
+- Its ledger timestamps follow the latest existing one, so a lagging clock cannot reorder the ledger.
 
 A failure rolls everything back. The certified official server can still read the library, and the
 command can be run again. Once it has succeeded, running it again changes nothing.
@@ -42,4 +49,6 @@ and the certified handoff and return apply unchanged. The cutover sees a `curren
 installation whose workflow marker is already official, so it aliases nothing.
 
 Adoption adds no migration. Adding a fork migration that only acts when a Frameleaf public table
-exists requires adding its follow-up step to `applyAdoptionForkFollowUps`, as well.
+exists requires adding its follow-up step to `applyAdoptionForkFollowUps`, as well. Adding a
+Frameleaf public migration that changes existing official data requires a counter in
+`ADOPTION_STEP_COUNTERS` and an entry in the operator documentation.
