@@ -807,13 +807,13 @@ const actions = {
   "date-grouped-photos-browse-chronological-library": [
     "fixed",
     ["T-3", "T-7", "T-10"],
-    "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); Years/Months/Days/All grouping with ⌘-wheel, pinch, D/M/Y and the announcement (T-3)",
+    "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); Years/Months/Days/All grouping with ⌘-wheel, pinch, D/M/Y and the announcement (T-3); All rows (and Years when not shown as cards) run on across month boundaries as one flow (FL-143)",
     { production: [`${W}/lib/components/frameleaf/LibraryTimeline.svelte`] },
   ],
   "grid-list-compare-and-persisted-query-selection-layout": [
     "fixed",
     ["T-8", "S-15", "S-17"],
-    "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); square Browse and Work grids with Thumbnail size (T-8; the month-boundary row gap is owner decision FL-143)",
+    "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); square Browse and Work grids with Thumbnail size (T-8); the grid runs on across month boundaries as one grid, and All rows as one flow (FL-143)",
     { production: [`${W}/lib/components/frameleaf/ResultsToolbar.svelte`] },
   ],
   "jump-scroll-to-time-restore-asset-position": [
