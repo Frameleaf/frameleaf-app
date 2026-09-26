@@ -6927,6 +6927,26 @@
     {
       "definition": "uuid|not null|immich_uuid_v7()||",
       "identity": "public.workflow.updateId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.workflow_run_step.createdAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_run_step.executionId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.workflow_run_step.halted"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_run_step.stepId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_run_step.workflowId"
     }
   ],
   "constraints": [
@@ -9117,6 +9137,14 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.workflow.workflow_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"executionId\", \"stepId\")",
+      "identity": "public.workflow_run_step.workflow_run_step_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.workflow_run_step.workflow_run_step_workflowId_fkey"
     }
   ],
   "enums": [
@@ -11395,6 +11423,10 @@
       "identity": "public.asset.UQ_assets_owner_checksum"
     },
     {
+      "definition": "CREATE INDEX asset_file_path_frameleaf_idx ON public.asset_file USING btree (path)",
+      "identity": "public.asset_file.asset_file_path_frameleaf_idx"
+    },
+    {
       "definition": "CREATE INDEX \"classification_match_assetId_idx\" ON public.classification_match USING btree (\"assetId\")",
       "identity": "public.classification_match.classification_match_assetId_idx"
     },
@@ -12901,6 +12933,18 @@
     {
       "definition": "CREATE UNIQUE INDEX workflow_pkey ON public.workflow USING btree (id)",
       "identity": "public.workflow.workflow_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"workflow_run_step_createdAt_idx\" ON public.workflow_run_step USING btree (\"createdAt\")",
+      "identity": "public.workflow_run_step.workflow_run_step_createdAt_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX workflow_run_step_pkey ON public.workflow_run_step USING btree (\"executionId\", \"stepId\")",
+      "identity": "public.workflow_run_step.workflow_run_step_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"workflow_run_step_workflowId_idx\" ON public.workflow_run_step USING btree (\"workflowId\")",
+      "identity": "public.workflow_run_step.workflow_run_step_workflowId_idx"
     }
   ],
   "migrationOverrides": [
@@ -13784,6 +13828,10 @@
     {
       "definition": "table",
       "identity": "public.workflow_log_detail"
+    },
+    {
+      "definition": "table",
+      "identity": "public.workflow_run_step"
     },
     {
       "definition": "table",

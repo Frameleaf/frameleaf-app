@@ -5,7 +5,7 @@ import { Mocked, vitest } from 'vitest';
 import { JobName, JobStatus, WorkflowResult, WorkflowRunErrorCode, WorkflowType } from 'src/enum.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
-import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
+import { WorkflowExecutionService, getAutomaticRetryExecutionId } from 'src/services/workflow-execution.service.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -454,6 +454,7 @@ describe(WorkflowExecutionService.name, () => {
           attempt: 1,
           fromStepId: webhookId,
           definitionSha256: expect.stringMatching(/^[\da-f]{64}$/),
+          executionId: expect.any(String),
         },
       });
     });
@@ -802,6 +803,239 @@ describe(WorkflowExecutionService.name, () => {
         await expect(sut.handleAssetTrigger({ workflowId, assetId })).rejects.toThrow('database unavailable');
 
         expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('a run that fails before its first step (FL-179)', () => {
+      it('is recorded in run history, where Retry can run it again', async () => {
+        setup();
+        mocks.workflow.getForAssetV1.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).rejects.toThrow('database unavailable');
+
+        expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+        expect(mocks.workflow.log).toHaveBeenCalledExactlyOnceWith({
+          workflowId,
+          runId: expect.any(String),
+          attempt: 0,
+          triggerDataId: assetId,
+          result: WorkflowResult.Error,
+          errorCode: null,
+          error: 'database unavailable',
+        });
+      });
+
+      it('keeps the run id it was queued with and hides credentials from the definition', async () => {
+        const workflow = setup();
+        (workflow.definition as { extra: Record<string, unknown> }).extra = { apiKey: 'workflow-extra-key' };
+        const runId = newUuid();
+        mocks.workflow.getForAssetV1.mockRejectedValue(new Error('refused workflow-extra-key'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, attempt: 2 })).rejects.toThrow();
+
+        const [entry] = mocks.workflow.log.mock.calls[0]!;
+        expect(entry).toMatchObject({ runId, attempt: 2, result: WorkflowResult.Error });
+        expect(entry.error).not.toContain('workflow-extra-key');
+      });
+
+      it('records nothing when run history is off', async () => {
+        setup({ logging: false });
+        mocks.workflow.getForAssetV1.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).rejects.toThrow('database unavailable');
+
+        expect(mocks.workflow.log).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('a database without the step table (FL-179)', () => {
+      it('runs every step, records nothing, and reports the missing table once', async () => {
+        setup();
+        mocks.workflow.hasRunStepTable.mockResolvedValue(false);
+        // the repository degrades the same way: nothing completed, nothing recorded
+        mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
+        mocks.workflow.completeStep.mockResolvedValue();
+        mocks.plugin.callMethod.mockResolvedValue({});
+
+        await sut.handleAssetTrigger({ workflowId, assetId, runId: newUuid(), executionId: newUuid() });
+        await sut.handleAssetTrigger({ workflowId, assetId, runId: newUuid(), executionId: newUuid() });
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledTimes(4);
+        expect(mocks.workflow.log).toHaveBeenCalledWith(expect.objectContaining({ result: WorkflowResult.Completed }));
+        const warnings = mocks.logger.warn.mock.calls.filter(([message]) =>
+          String(message).includes('workflow_run_step'),
+        );
+        expect(warnings).toHaveLength(1);
+      });
+
+      it('checks for the table again once the startup migrations have run', () => {
+        mocks.workflow.resetRunStepTable.mockReturnValue();
+        sut.onBootstrapCheckRunSteps();
+
+        expect(mocks.workflow.resetRunStepTable).toHaveBeenCalledOnce();
+      });
+    });
+
+    describe('a stalled job replayed with the same data (FL-179)', () => {
+      const runId = newUuid();
+      const executionId = newUuid();
+
+      beforeEach(() => {
+        mocks.workflow.hasRunStepTable.mockResolvedValue(true);
+      });
+
+      it('records each step it completes under the job’s execution id', async () => {
+        setup();
+        mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
+        mocks.workflow.completeStep.mockResolvedValue();
+        mocks.plugin.callMethod.mockResolvedValue({});
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, executionId })).resolves.toBeUndefined();
+
+        expect(mocks.workflow.getCompletedSteps).toHaveBeenCalledWith(executionId);
+        expect(mocks.workflow.completeStep.mock.calls).toEqual([
+          [{ executionId, workflowId, stepId: filterId, halted: false }],
+          [{ executionId, workflowId, stepId: webhookId, halted: false }],
+        ]);
+        // recorded before the next step starts
+        expect(mocks.workflow.completeStep.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.plugin.callMethod.mock.invocationCallOrder[1],
+        );
+      });
+
+      it('skips the steps an earlier run of the job completed', async () => {
+        setup();
+        mocks.workflow.getCompletedSteps.mockResolvedValue(new Map([[filterId, { halted: false }]]));
+        mocks.workflow.getLatestRunAttempt.mockResolvedValue(undefined);
+        mocks.workflow.completeStep.mockResolvedValue();
+        mocks.plugin.callMethod.mockResolvedValue({});
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, executionId })).resolves.toBeUndefined();
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledOnce();
+        expect(mocks.plugin.callMethod).toHaveBeenCalledWith(
+          expect.objectContaining({ methodName: 'webhook' }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+        expect(mocks.workflow.log).toHaveBeenCalledWith(
+          expect.objectContaining({ result: WorkflowResult.Completed, runId, attempt: 0 }),
+        );
+      });
+
+      it('stops where a completed step stopped the run', async () => {
+        setup();
+        mocks.workflow.getCompletedSteps.mockResolvedValue(new Map([[filterId, { halted: true }]]));
+        mocks.workflow.getLatestRunAttempt.mockResolvedValue(undefined);
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, executionId })).resolves.toBeUndefined();
+
+        expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+        expect(mocks.workflow.log).toHaveBeenCalledWith(
+          expect.objectContaining({ result: WorkflowResult.Halted, workflowStepId: filterId }),
+        );
+      });
+
+      it('records a halting step as halted', async () => {
+        setup();
+        mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
+        mocks.workflow.completeStep.mockResolvedValue();
+        mocks.plugin.callMethod.mockResolvedValueOnce({ workflow: { continue: false } });
+
+        await sut.handleAssetTrigger({ workflowId, assetId, runId, executionId });
+
+        expect(mocks.workflow.completeStep).toHaveBeenCalledExactlyOnceWith({
+          executionId,
+          workflowId,
+          stepId: filterId,
+          halted: true,
+        });
+      });
+
+      it('resumes after a step whose completion could not be recorded, in a job of its own', async () => {
+        setup();
+        mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
+        mocks.workflow.completeStep.mockRejectedValue(new Error('database unavailable'));
+        mocks.plugin.callMethod.mockResolvedValue({});
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, executionId })).resolves.toBe(
+          JobStatus.Failed,
+        );
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledOnce();
+        const [retry] = mocks.job.queue.mock.calls[0]!;
+        expect(retry).toMatchObject({
+          name: JobName.WorkflowAssetTrigger,
+          data: { runId, attempt: 1, fromStepId: webhookId, executionId: expect.any(String) },
+        });
+        expect((retry as unknown as { data: { executionId: string } }).data.executionId).not.toBe(executionId);
+      });
+
+      it('does not log a run again when a replay finds it already finished and logged', async () => {
+        setup();
+        mocks.workflow.getCompletedSteps.mockResolvedValue(
+          new Map([
+            [filterId, { halted: false }],
+            [webhookId, { halted: false }],
+          ]),
+        );
+        mocks.workflow.getLatestRunAttempt.mockResolvedValue({
+          runId,
+          triggerDataId: assetId,
+          result: WorkflowResult.Completed,
+          attempt: 0,
+        } as never);
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, executionId })).resolves.toBeUndefined();
+
+        expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+        expect(mocks.workflow.getLatestRunAttempt).toHaveBeenCalledWith(workflowId, runId);
+        expect(mocks.workflow.log).not.toHaveBeenCalled();
+      });
+
+      it('queues the same automatic retry when a replay fails the step again', async () => {
+        setup();
+        mocks.workflow.getCompletedSteps.mockResolvedValue(new Map([[filterId, { halted: false }]]));
+        mocks.workflow.getLatestRunAttempt.mockResolvedValue(undefined);
+        mocks.plugin.callMethod.mockRejectedValue(new Error('webhook failed'));
+
+        await sut.handleAssetTrigger({ workflowId, assetId, runId, executionId });
+        await sut.handleAssetTrigger({ workflowId, assetId, runId, executionId });
+
+        const retries = mocks.job.queue.mock.calls.map(
+          ([job]) => (job as unknown as { data: { executionId: string } }).data.executionId,
+        );
+        expect(retries).toEqual([getAutomaticRetryExecutionId(executionId), getAutomaticRetryExecutionId(executionId)]);
+        expect(retries[0]).not.toBe(executionId);
+        expect(retries[0]).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-8[\da-f]{3}-[\da-f]{12}$/);
+      });
+
+      it('queues every new run with its own run and execution ids', async () => {
+        const userId = newUuid();
+        mocks.workflow.search.mockResolvedValue([{ id: workflowId }, { id: newUuid() }] as never);
+
+        await sut.onAssetTagged({ userId, assetId });
+
+        const [jobs] = mocks.job.queueAll.mock.calls[0]!;
+        const data = jobs.map((job) => (job as unknown as { data: { runId: string; executionId: string } }).data);
+        expect(data).toEqual([
+          expect.objectContaining({ workflowId, assetId, runId: expect.any(String), executionId: expect.any(String) }),
+          expect.objectContaining({ assetId, runId: expect.any(String), executionId: expect.any(String) }),
+        ]);
+        expect(new Set(data.map(({ executionId }) => executionId)).size).toBe(2);
+      });
+
+      it('forgets completed steps a week old in the nightly cleanup, deferring a failure', async () => {
+        mocks.workflow.deleteCompletedStepsBefore.mockResolvedValueOnce(3);
+
+        await sut.onNightlyDatabaseCleanup();
+
+        const [before] = mocks.workflow.deleteCompletedStepsBefore.mock.calls[0]!;
+        expect(Date.now() - before.getTime()).toBeGreaterThanOrEqual(7 * 24 * 60 * 60 * 1000);
+        expect(Date.now() - before.getTime()).toBeLessThan(8 * 24 * 60 * 60 * 1000);
+
+        mocks.workflow.deleteCompletedStepsBefore.mockRejectedValueOnce(new Error('database unavailable'));
+        await expect(sut.onNightlyDatabaseCleanup()).resolves.toBeUndefined();
       });
     });
 
