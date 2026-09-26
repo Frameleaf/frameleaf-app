@@ -597,8 +597,11 @@ export class WorkflowExecutionService extends BaseService {
     let data = readResult.data;
 
     let haltedStepId: string | undefined;
-    for (const step of steps) {
+    for (const [index, step] of steps.entries()) {
       const definitionStep = expectedDefinition.steps.find((item) => item.id === step.id);
+      // FL-169: set once the step's changes are written; a later failure in the step must not run it again
+      let applied = false;
+      let halts = false;
       try {
         const payload: WorkflowEventPayload<typeof type> = {
           trigger: workflow.trigger,
@@ -627,6 +630,7 @@ export class WorkflowExecutionService extends BaseService {
           payload,
           context,
         );
+        halts = !(result?.workflow?.continue ?? true);
         if (result?.changes) {
           await write(
             {
@@ -640,6 +644,11 @@ export class WorkflowExecutionService extends BaseService {
             } as AuthDto,
             result.changes,
           );
+        }
+        // The step has run and its changes are written. Reading the data back and saving the step's
+        // own config can still fail; the automatic retry then resumes after this step.
+        applied = true;
+        if (result?.changes) {
           ({ data } = await read(type));
         }
 
@@ -652,8 +661,7 @@ export class WorkflowExecutionService extends BaseService {
 
         // The halt is recorded after the loop: in here, a record that failed to save would be taken
         // for a failed step, and the automatic retry would run this finished step again.
-        const shouldContinue = result?.workflow?.continue ?? true;
-        if (!shouldContinue) {
+        if (halts) {
           haltedStepId = step.id;
           break;
         }
@@ -674,7 +682,14 @@ export class WorkflowExecutionService extends BaseService {
           error: message,
         });
 
-        if (attempt === 0 && !job.manual) {
+        // A step that failed before its changes were written runs again. One whose changes were written
+        // is not repeated: the retry resumes at the next step, and there is none when this step was the
+        // last or asked the run to stop.
+        let retryFromStepId: string | undefined = step.id;
+        if (applied) {
+          retryFromStepId = halts ? undefined : steps[index + 1]?.id;
+        }
+        if (attempt === 0 && !job.manual && retryFromStepId) {
           try {
             await this.jobRepository.queue({
               name: JobName.WorkflowAssetTrigger,
@@ -683,14 +698,14 @@ export class WorkflowExecutionService extends BaseService {
                 assetId,
                 runId,
                 attempt: 1,
-                fromStepId: step.id,
+                fromStepId: retryFromStepId,
                 definitionSha256: definitionSha256(expectedDefinition),
               },
             });
           } catch (queueError: any) {
             // Without its automatic retry the run stays failed; the owner can retry it from run history.
             this.logger.error(
-              `Unable to queue the automatic retry of workflow ${workflowId} run ${runId} from step ${step.id}: ${queueError}`,
+              `Unable to queue the automatic retry of workflow ${workflowId} run ${runId} from step ${retryFromStepId}: ${queueError}`,
               queueError?.stack,
             );
           }
