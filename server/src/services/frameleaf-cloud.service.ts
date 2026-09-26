@@ -759,6 +759,15 @@ export class FrameleafCloudService extends BaseService {
         body: await this.buildHeartbeatPayload(link),
       });
     } catch (error) {
+      if (cloudErrorCode(error) === CloudErrorCode.KeyRetired) {
+        // FL-177 (FC-19): the token was minted with a key the cloud retired or revoked. A candidate
+        // key the cloud may hold after a lost rotation answer is tried first; otherwise only a new
+        // link helps, which the administrators are asked for. The link itself is not revoked.
+        const recovered = await this.tryCandidateKey(cloudUrl, link);
+        const current = (await this.readLink(cloudUrl)) ?? link;
+        await this.recordHeartbeatFailure(recovered ? current : this.requireRelink(current, 'key'), error);
+        return JobStatus.Failed;
+      }
       if (this.isRevocation(error)) {
         // a rotation whose answer was lost may have left the cloud holding the candidate key; only
         // invalid_client can mean that, an explicit instance-revoked never does
@@ -965,20 +974,31 @@ export class FrameleafCloudService extends BaseService {
         return link;
       }
       case CloudCommandType.Relink: {
-        this.notify({
-          level: NotificationLevel.Warning,
-          title: 'Link this server to Frameleaf again',
-          description:
-            'Frameleaf Cloud asked for this server to be linked again. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.',
-          dedupeKey: 'frameleaf-cloud:relink',
-          dedupeDays: 1,
-        });
-        return {
-          ...link,
-          heartbeat: { ...link.heartbeat, failures: link.heartbeat?.failures ?? 0, relinkRequested: true },
-        };
+        return this.requireRelink(link, 'command');
       }
     }
+  }
+
+  /**
+   * Ask the administrators to link this server again: on the cloud's `relink` command, or when every
+   * instance route answers 401 `key_retired` (FL-177). Nothing on this server is removed.
+   */
+  private requireRelink(link: FrameleafCloudLink, why: 'command' | 'key'): FrameleafCloudLink {
+    this.notify({
+      level: NotificationLevel.Warning,
+      title: 'Link this server to Frameleaf again',
+      description: `${
+        why === 'key'
+          ? 'Frameleaf Cloud no longer accepts this server’s key.'
+          : 'Frameleaf Cloud asked for this server to be linked again.'
+      } Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.`,
+      dedupeKey: 'frameleaf-cloud:relink',
+      dedupeDays: 1,
+    });
+    return {
+      ...link,
+      heartbeat: { ...link.heartbeat, failures: link.heartbeat?.failures ?? 0, relinkRequested: true },
+    };
   }
 
   /** Key rotation: nonce, then the new key with a proof signed by the current key. */

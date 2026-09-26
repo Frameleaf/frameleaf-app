@@ -6,8 +6,10 @@ import {
   accountLabelOf,
   buildHeartbeat,
   commandPermission,
+  heartbeatResponseSchema,
   instanceRegistrationSchema,
   isUserCode,
+  keyNonceSchema,
   linkEndpoints,
   linkRefusalOf,
   nextHeartbeatDelay,
@@ -127,6 +129,36 @@ describe('frameleaf-cloud-link (FL-155)', () => {
     for (const message of Object.values(LINK_REFUSAL_MESSAGES)) {
       expect(message).not.toMatch(/please|successfully|simply/i);
     }
+  });
+
+  it('builds the golden heartbeat request exactly (FC-19 fixtures)', () => {
+    const golden = cloudContractFixture('instance/heartbeat-request.json');
+    expect(buildHeartbeat(golden)).toEqual(golden);
+    expect(Object.keys(golden)).toEqual([...HEARTBEAT_FIELDS]);
+  });
+
+  it('reads the golden heartbeat answer: commands, notices and pricing, extra fields ignored', () => {
+    const answer = heartbeatResponseSchema.parse(cloudContractFixture('instance/heartbeat-response.json'));
+    expect(answer).toMatchObject({
+      commands: [{ id: '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f', type: 'backup.run' }],
+      entitlementsChanged: false,
+      servicesChanged: false,
+      nextHeartbeatSec: 300,
+      cloneSuspected: false,
+      notices: [{ id: 'maintenance-2026-10-01', level: 'info' }],
+      pricing: { pricesVersion: '2026-09-25.1', licensedDiscountPercent: 20, effectiveFrom: '2026-09-25T00:00:00Z' },
+    });
+    expect(commandPermission(answer.commands[0].type)).toBe('allowBackupTrigger');
+    const polled = heartbeatResponseSchema.shape.commands.parse(
+      cloudContractFixture('instance/commands-poll-response.json').commands,
+    );
+    expect(polled.map(({ type }) => commandPermission(type))).toEqual(['allowRemoteEnable']);
+  });
+
+  it('reads the golden key rotation nonce', () => {
+    expect(keyNonceSchema.parse(cloudContractFixture('instance/key-nonce-response.json'))).toEqual({
+      nonce: 'BGLOnAp_vMX9Y-YITAxJheRWVqJbSLcpHkqrmuDqmX0',
+    });
   });
 
   it('defaults the permission toggles as the prototype does', () => {
