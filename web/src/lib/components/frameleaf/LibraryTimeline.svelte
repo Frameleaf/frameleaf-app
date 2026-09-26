@@ -1236,8 +1236,9 @@
               }}
             >
               <!--
-                Years and All (FL-143): a row that runs on from the months before this one starts with
-                their tiles; this month lays them out and draws them, ahead of its own in reading order.
+                Years and All, and the Browse and Work grids (FL-143): a row that runs on from the
+                months before this one starts with their tiles; this month lays them out and draws
+                them, ahead of its own in reading order.
               -->
               {#each carriedDays(month) as carried (carried.key)}
                 <LibraryDayGroup
@@ -1249,8 +1250,8 @@
                   {selecting}
                   {ratingFor}
                   layout={tileLayout}
-                  captionHeight={rowCaptionHeight}
-                  captionBelow
+                  captionHeight={cells ? cells.captionHeight : rowCaptionHeight}
+                  captionBelow={!cells}
                   {showFileNames}
                   showHeader={false}
                   grouped

@@ -1,14 +1,17 @@
-import { justifiedFlowLayout } from '$lib/frameleaf/justified-rows';
+import { justifiedFlowLayout, type JustifiedFlowLayout } from '$lib/frameleaf/justified-rows';
+import { cellGrid, type CellGridOptions } from '$lib/frameleaf/library-grid';
 import type { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
 import type { FlowItem } from '../types';
 
 /**
- * Years and All: one justified flow across month buckets (FL-143).
+ * One continuous flow across month buckets (FL-143).
  *
  * The prototype justifies a whole year or "All" group as one flow (`TimelineLibrary.jsx`
- * `justifiedRows` over `group.assets`). Production loads the library a month bucket at a time, so a
- * group's flow is assembled from its months as they load:
+ * `justifiedRows` over `group.assets`), and lays Browse and Work out as one grid over everything
+ * (`App.jsx` `.media-grid`, no date groups at all). Production loads the library a month bucket at a
+ * time, so a group's flow is assembled from its months as they load. A cell grid is the simple case:
+ * its unfinished row is just the cells after the last full row.
  *
  * - Each loaded month lays out the rows it completes. The row still unfinished at its end (its
  *   *tail*) is either laid out as its last row (the month is *closed*), or, when the next month of
@@ -44,14 +47,48 @@ const isSettling = (month: TimelineMonth, now: number) =>
 const sameItems = (a: FlowItem[], b: FlowItem[]) =>
   a.length === b.length && a.every((item, index) => item.viewerAsset === b[index].viewerAsset);
 
-/** Whether the month at `index` may run on from the month before it: both loaded, in one group. */
+/**
+ * Whether the month at `index` may run on from the month before it: both loaded, in one group. The
+ * Browse and Work grids are one group over the whole library.
+ */
 function canRunOn(manager: TimelineManager, index: number) {
   const month = manager.months[index];
   const previous = manager.months[index - 1];
   if (!manager.continuousGroups || !month || !previous || !month.isLoaded || !previous.isLoaded) {
     return false;
   }
-  return manager.grouping === 'all' || previous.yearMonth.year === month.yearMonth.year;
+  return !!manager.cells || manager.grouping === 'all' || previous.yearMonth.year === month.yearMonth.year;
+}
+
+/** The row gap inside the flow: the grid's gutter, or the justified rows' spacing. */
+const flowGap = (manager: TimelineManager) => manager.cells?.gap ?? manager.justifiedLayoutOptions.spacing;
+
+/**
+ * A cell grid laid out like a justified flow: the full rows, and the cells after the last full row as
+ * the unfinished row (laid out as the last row only with `closeTail`).
+ */
+function cellFlowLayout(count: number, width: number, cells: CellGridOptions, closeTail: boolean): JustifiedFlowLayout {
+  const grid = cellGrid(count, width, cells);
+  if (grid.cellWidth === 0) {
+    return {
+      positions: Array.from({ length: count }, () => undefined),
+      tailStart: count,
+      rowCount: 0,
+      width: 0,
+      height: 0,
+    };
+  }
+  const full = Math.floor(count / grid.columns) * grid.columns;
+  const tailStart = full;
+  const laid = closeTail ? count : full;
+  const rowCount = Math.ceil(laid / grid.columns);
+  return {
+    positions: Array.from({ length: count }, (_, index) => (index < laid ? grid.position(index) : undefined)),
+    tailStart,
+    rowCount,
+    width: rowCount === 0 ? 0 : grid.width,
+    height: rowCount === 0 ? 0 : rowCount * grid.rowPitch - Math.max(0, cells.gap),
+  };
 }
 
 function ownItems(month: TimelineMonth): FlowItem[] {
@@ -66,11 +103,13 @@ function ownItems(month: TimelineMonth): FlowItem[] {
 
 function flowOf(manager: TimelineManager, month: TimelineMonth, carry: FlowItem[], closeTail: boolean) {
   const items = carry.length > 0 ? [...carry, ...ownItems(month)] : ownItems(month);
-  const layout = justifiedFlowLayout(
-    items.map((item) => item.viewerAsset.asset.ratio),
-    manager.justifiedLayoutOptions,
-    { closeTail },
-  );
+  const layout = manager.cells
+    ? cellFlowLayout(items.length, manager.viewportWidth, manager.cells, closeTail)
+    : justifiedFlowLayout(
+        items.map((item) => item.viewerAsset.asset.ratio),
+        manager.justifiedLayoutOptions,
+        { closeTail },
+      );
   return { items, layout };
 }
 
@@ -131,7 +170,7 @@ function layoutFlowMonth(manager: TimelineManager, index: number, compensation: 
 
   // Everything handed on: the month keeps only the space that puts the next month's first row one
   // row gap below the rows (or header) above it.
-  const spacing = manager.justifiedLayoutOptions.spacing;
+  const spacing = flowGap(manager);
   const height =
     items.length === 0
       ? 0
