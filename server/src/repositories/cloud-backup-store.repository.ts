@@ -11,6 +11,7 @@ import {
   parseMarker,
   sseCustomerHeaders,
 } from 'src/utils/cloud-backup.js';
+import { compareCodeUnits } from 'src/utils/compare.js';
 
 /**
  * Cloud backup storage (FL-160): the S3 API calls the backup agent makes, signed with AWS Signature
@@ -28,6 +29,8 @@ import {
  *   hashes to that name. SSE-C ETags are not MD5 digests of the plaintext, so an ETag is required and
  *   recorded, never compared with one.
  * - **Path-style addressing** (`<endpoint>/<bucket>/<key>`), which every S3-compatible provider accepts.
+ *   On Amazon S3 the storage address must be the bucket's regional endpoint
+ *   (`https://s3.<region>.amazonaws.com`); another region answers with a redirect, reported as such.
  */
 
 export type CloudBackupConnection = {
@@ -40,7 +43,8 @@ export type CloudBackupConnection = {
 
 export type CloudBackupObjectInfo = { key: string; size: number; etag: string | null };
 
-export type CloudBackupClaimRefusal = 'claimed-by-another-server' | 'other-key' | 'not-empty' | 'sse-c-unsupported';
+export type CloudBackupClaimRefusal =
+  'claimed-by-another-server' | 'other-key' | 'not-empty' | 'sse-c-unsupported' | 'claim-missing';
 
 /** A provider answered with an error, or could not be reached. The message never holds a secret. */
 export class CloudBackupStoreError extends Error {
@@ -73,6 +77,10 @@ export class CloudBackupFileChangedError extends Error {
   }
 }
 
+/** What an administrator reads when the provider refuses customer-provided keys on a bucket it lists. */
+export const SSE_C_REFUSED_MESSAGE =
+  'This bucket refuses customer-provided encryption keys (SSE-C), which Frameleaf backups need. Amazon S3 turns SSE-C off by default on new buckets: allow it in the bucket’s default encryption settings (remove SSE-C from the blocked encryption types), then check the bucket again.';
+
 const EMPTY_SHA256 = createHash('sha256').update('').digest('hex');
 const REQUEST_TIMEOUT_MS = 120_000;
 const PART_TIMEOUT_MS = 10 * 60_000;
@@ -86,9 +94,6 @@ const RESERVED: Record<string, string> = { '!': '%21', "'": '%27', '(': '%28', '
 
 /** RFC 3986 encoding, as SigV4 requires (encodeURIComponent leaves `!'()*` alone). */
 const encodeRfc3986 = (value: string) => encodeURIComponent(value).replaceAll(/[!'()*]/g, (char) => RESERVED[char]);
-
-/** Byte order, which SigV4's canonical request needs (never locale order). */
-const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 const decodeXml = (value: string) =>
   value
@@ -117,6 +122,26 @@ const amzDates = (now: Date) => {
 };
 
 /**
+ * What a provider's refusal means, in words an administrator can act on. The common setup mistakes get
+ * their own sentence; anything else is named by its status and code. Never a header, never a key.
+ */
+export const describeProviderError = (status: number, code: string | null, action: string) => {
+  if (code === 'RequestTimeTooSkewed') {
+    return 'The storage provider refused the request because this server’s clock is off. Correct the server’s time (for example with NTP) and try again.';
+  }
+  if (status === 301 || code === 'PermanentRedirect') {
+    return 'The bucket is in another region. Use the bucket’s regional endpoint as the storage address, for example https://s3.eu-central-1.amazonaws.com.';
+  }
+  if (code === 'NoSuchBucket') {
+    return 'The storage provider has no bucket by that name.';
+  }
+  if (code === 'SignatureDoesNotMatch' || code === 'InvalidAccessKeyId') {
+    return 'The storage provider refused these credentials. Check the access key ID and secret access key.';
+  }
+  return `The storage provider refused ${action}: ${status}${code ? ` ${code}` : ''}`;
+};
+
+/**
  * AWS Signature Version 4 for S3: the headers to send (without `host`, which `fetch` sets from the URL
  * it was signed for), including `authorization`, `x-amz-date` and `x-amz-content-sha256`. Every header
  * given is signed, the SSE-C ones included.
@@ -141,7 +166,7 @@ export const signS3Request = (request: {
     'x-amz-content-sha256': payloadHash,
     'x-amz-date': amzDate,
   };
-  const signedNames = Object.keys(headers).toSorted(byCodeUnit);
+  const signedNames = Object.keys(headers).toSorted(compareCodeUnits);
   const canonicalHeaders = signedNames.map((name) => `${name}:${headers[name].trim()}\n`).join('');
   const signedHeaders = signedNames.join(';');
   const canonicalRequest = [
@@ -172,6 +197,8 @@ type SignedRequest = {
   body?: Buffer;
   timeoutMs?: number;
 };
+
+type Part = { partNumber: number; etag: string };
 
 @Injectable()
 export class CloudBackupStoreRepository {
@@ -318,15 +345,7 @@ export class CloudBackupStoreRepository {
     try {
       const { size } = await handle.stat();
       if (size <= CLOUD_BACKUP_PART_BYTES) {
-        const body = Buffer.alloc(size);
-        let offset = 0;
-        while (offset < size) {
-          const { bytesRead } = await handle.read(body, offset, size - offset, offset);
-          if (bytesRead === 0) {
-            throw new CloudBackupFileChangedError(path);
-          }
-          offset += bytesRead;
-        }
+        const body = await this.readExactly(handle, path, 0, size);
         if (sha256Hex(body) !== expectedSha256) {
           throw new CloudBackupFileChangedError(path);
         }
@@ -334,113 +353,58 @@ export class CloudBackupStoreRepository {
         return { etag, size };
       }
 
-      return await this.uploadParts(connection, key, path, handle, size, bucketKey, expectedSha256);
+      const digest = createHash('sha256');
+      const readParts = async function* (store: CloudBackupStoreRepository) {
+        for (let offset = 0; offset < size; offset += CLOUD_BACKUP_PART_BYTES) {
+          const part = await store.readExactly(handle, path, offset, Math.min(CLOUD_BACKUP_PART_BYTES, size - offset));
+          digest.update(part);
+          yield part;
+        }
+      };
+      const etag = await this.multipart(connection, key, bucketKey, 'application/octet-stream', readParts(this), () => {
+        if (digest.digest('hex') !== expectedSha256) {
+          throw new CloudBackupFileChangedError(path);
+        }
+      });
+      return { etag, size };
     } finally {
       await handle.close();
     }
   }
 
-  private async uploadParts(
+  /**
+   * Upload a stream of unknown length as `key` (a run's gzipped manifest), holding at most one 8 MiB part
+   * in memory: one PUT when it all fits in a part, else a multipart upload.
+   */
+  async uploadStream(
     connection: CloudBackupConnection,
     key: string,
-    path: string,
-    handle: FileHandle,
-    size: number,
+    source: AsyncIterable<Buffer | Uint8Array | string> | Iterable<Buffer | Uint8Array>,
     bucketKey: Buffer,
-    expectedSha256: string,
+    contentType: string,
   ): Promise<{ etag: string; size: number }> {
-    const created = await this.send(connection, {
-      method: 'POST',
-      key,
-      query: { uploads: '' },
-      headers: { ...sseCustomerHeaders(bucketKey), 'content-type': 'application/octet-stream' },
-    });
-    const uploadId = xmlValue(await created.text(), 'UploadId');
-    if (!uploadId) {
-      throw new CloudBackupStoreError(`The storage provider did not start an upload for ${key}`, created.status, null);
+    const iterator = this.partsOf(source)[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    const firstPart = first.done ? Buffer.alloc(0) : first.value;
+    const second = first.done ? first : await iterator.next();
+    if (second.done) {
+      const { etag } = await this.put(connection, key, firstPart, bucketKey, contentType);
+      return { etag, size: firstPart.length };
     }
 
-    try {
-      const digest = createHash('sha256');
-      const parts: Array<{ partNumber: number; etag: string }> = [];
-      let offset = 0;
-      for (let partNumber = 1; offset < size; partNumber++) {
-        const length = Math.min(CLOUD_BACKUP_PART_BYTES, size - offset);
-        const body = Buffer.alloc(length);
-        let read = 0;
-        while (read < length) {
-          const { bytesRead } = await handle.read(body, read, length - read, offset + read);
-          if (bytesRead === 0) {
-            throw new CloudBackupFileChangedError(path);
-          }
-          read += bytesRead;
-        }
-        digest.update(body);
-        const response = await this.send(connection, {
-          method: 'PUT',
-          key,
-          query: { partNumber: String(partNumber), uploadId },
-          body,
-          headers: { ...sseCustomerHeaders(bucketKey), 'content-md5': md5Base64(body) },
-          timeoutMs: PART_TIMEOUT_MS,
-        });
-        const etag = response.headers.get('etag');
-        if (!etag) {
-          throw new CloudBackupStoreError(
-            `The storage provider did not confirm part ${partNumber} of ${key}`,
-            null,
-            null,
-          );
-        }
-        parts.push({ partNumber, etag });
-        offset += length;
+    let size = 0;
+    const all = async function* () {
+      for (const part of [firstPart, second.value]) {
+        size += part.length;
+        yield part;
       }
-
-      if (digest.digest('hex') !== expectedSha256) {
-        throw new CloudBackupFileChangedError(path);
+      for (let next = await iterator.next(); !next.done; next = await iterator.next()) {
+        size += next.value.length;
+        yield next.value;
       }
-
-      const manifest = Buffer.from(
-        `<CompleteMultipartUpload>${parts
-          .map(
-            ({ partNumber, etag }) =>
-              `<Part><PartNumber>${partNumber}</PartNumber><ETag>${escapeXml(etag)}</ETag></Part>`,
-          )
-          .join('')}</CompleteMultipartUpload>`,
-      );
-      const completed = await this.send(connection, {
-        method: 'POST',
-        key,
-        query: { uploadId },
-        body: manifest,
-        headers: {
-          ...sseCustomerHeaders(bucketKey),
-          'content-type': 'application/xml',
-          'content-md5': md5Base64(manifest),
-        },
-        timeoutMs: PART_TIMEOUT_MS,
-      });
-      // CompleteMultipartUpload can answer 200 with an error in the body.
-      const xml = await completed.text();
-      const code = xmlValue(xml, 'Code');
-      if (code) {
-        throw new CloudBackupStoreError(
-          `The storage provider refused to finish ${key} (${code})`,
-          completed.status,
-          code,
-        );
-      }
-      const etag = xmlValue(xml, 'ETag') ?? completed.headers.get('etag');
-      if (!etag) {
-        throw new CloudBackupStoreError(`The storage provider did not confirm ${key}`, completed.status, 'MissingETag');
-      }
-      return { etag, size };
-    } catch (error) {
-      await this.send(connection, { method: 'DELETE', key, query: { uploadId } }).catch((abortError: unknown) =>
-        this.logger.warn(`Could not abandon the unfinished upload of ${key}: ${String(abortError)}`),
-      );
-      throw error;
-    }
+    };
+    const etag = await this.multipart(connection, key, bucketKey, contentType, all());
+    return { etag, size };
   }
 
   /**
@@ -453,7 +417,7 @@ export class CloudBackupStoreRepository {
     const probeKey = `${CLOUD_BACKUP_PROBE_PREFIX}${randomUUID()}`;
     const testKey = randomBytes(32);
     const content = randomBytes(64);
-    const { encrypted } = await this.put(connection, probeKey, content, testKey);
+    const { encrypted } = await this.putWithCustomerKey(connection, probeKey, content, testKey);
     try {
       if (!encrypted) {
         throw new CloudBackupClaimError(
@@ -521,7 +485,7 @@ export class CloudBackupStoreRepository {
       keyFingerprint: options.keyFingerprint,
       claimedAt: options.now.toISOString(),
     };
-    const { encrypted } = await this.put(
+    const { encrypted } = await this.putWithCustomerKey(
       connection,
       CLOUD_BACKUP_MARKER,
       Buffer.from(JSON.stringify(marker)),
@@ -551,11 +515,21 @@ export class CloudBackupStoreRepository {
     return { existing: false, claimedAt: marker.claimedAt };
   }
 
-  private async readMarker(connection: CloudBackupConnection, bucketKey: Buffer): Promise<CloudBackupMarker> {
+  /**
+   * The bucket's claim, read with this bucket's key. A marker that is gone (an emptied or recreated
+   * bucket) or that this key cannot read is refused, never guessed at.
+   */
+  async readMarker(connection: CloudBackupConnection, bucketKey: Buffer): Promise<CloudBackupMarker> {
     let body: Buffer;
     try {
       body = await this.get(connection, CLOUD_BACKUP_MARKER, bucketKey);
     } catch (error) {
+      if (error instanceof CloudBackupStoreError && error.status === 404) {
+        throw new CloudBackupClaimError(
+          'claim-missing',
+          `This bucket no longer holds ${CLOUD_BACKUP_MARKER}: it was emptied or recreated. Set up cloud backup again to claim it.`,
+        );
+      }
       if (error instanceof CloudBackupStoreError && error.status !== null && error.status < 500) {
         throw new CloudBackupClaimError(
           'other-key',
@@ -572,6 +546,181 @@ export class CloudBackupStoreRepository {
       );
     }
     return marker;
+  }
+
+  /**
+   * A PUT with a customer key, the first write a check or a claim makes after listing the bucket. A 403
+   * there, with the listing allowed, means the bucket refuses SSE-C (Amazon S3's default for new buckets).
+   */
+  private async putWithCustomerKey(
+    connection: CloudBackupConnection,
+    key: string,
+    body: Buffer,
+    bucketKey: Buffer,
+    contentType?: string,
+  ) {
+    try {
+      return await this.put(connection, key, body, bucketKey, contentType);
+    } catch (error) {
+      if (error instanceof CloudBackupStoreError && error.status === 403) {
+        throw new CloudBackupClaimError('sse-c-unsupported', SSE_C_REFUSED_MESSAGE);
+      }
+      throw error;
+    }
+  }
+
+  private async readExactly(handle: FileHandle, path: string, offset: number, length: number): Promise<Buffer> {
+    const body = Buffer.alloc(length);
+    let read = 0;
+    while (read < length) {
+      const { bytesRead } = await handle.read(body, read, length - read, offset + read);
+      if (bytesRead === 0) {
+        throw new CloudBackupFileChangedError(path);
+      }
+      read += bytesRead;
+    }
+    return body;
+  }
+
+  /** A stream cut into 8 MiB parts (the last one shorter), holding one part in memory at a time. */
+  private async *partsOf(
+    source: AsyncIterable<Buffer | Uint8Array | string> | Iterable<Buffer | Uint8Array>,
+  ): AsyncGenerator<Buffer> {
+    let pending: Buffer[] = [];
+    let pendingBytes = 0;
+    for await (const chunk of source) {
+      let buffer = Buffer.from(chunk);
+      while (pendingBytes + buffer.length >= CLOUD_BACKUP_PART_BYTES) {
+        const take = CLOUD_BACKUP_PART_BYTES - pendingBytes;
+        yield Buffer.concat([...pending, buffer.subarray(0, take)]);
+        buffer = buffer.subarray(take);
+        pending = [];
+        pendingBytes = 0;
+      }
+      if (buffer.length > 0) {
+        pending.push(buffer);
+        pendingBytes += buffer.length;
+      }
+    }
+    if (pendingBytes > 0) {
+      yield Buffer.concat(pending);
+    }
+  }
+
+  /**
+   * One multipart upload of `parts`, in order, with SSE-C and Content-MD5 on every part. `beforeComplete`
+   * may refuse the upload (a file that does not hash to its name); on any failure the upload is aborted,
+   * never completed. Answers the object's ETag.
+   */
+  private async multipart(
+    connection: CloudBackupConnection,
+    key: string,
+    bucketKey: Buffer,
+    contentType: string,
+    parts: AsyncIterable<Buffer>,
+    beforeComplete?: () => void,
+  ): Promise<string> {
+    const created = await this.send(connection, {
+      method: 'POST',
+      key,
+      query: { uploads: '' },
+      headers: { ...sseCustomerHeaders(bucketKey), 'content-type': contentType },
+    });
+    const uploadId = xmlValue(await created.text(), 'UploadId');
+    if (!uploadId) {
+      throw new CloudBackupStoreError(`The storage provider did not start an upload for ${key}`, created.status, null);
+    }
+
+    try {
+      const uploaded: Part[] = [];
+      let size = 0;
+      for await (const body of parts) {
+        const partNumber = uploaded.length + 1;
+        const response = await this.send(connection, {
+          method: 'PUT',
+          key,
+          query: { partNumber: String(partNumber), uploadId },
+          body,
+          headers: { ...sseCustomerHeaders(bucketKey), 'content-md5': md5Base64(body) },
+          timeoutMs: PART_TIMEOUT_MS,
+        });
+        const etag = response.headers.get('etag');
+        if (!etag) {
+          throw new CloudBackupStoreError(
+            `The storage provider did not confirm part ${partNumber} of ${key}`,
+            null,
+            null,
+          );
+        }
+        uploaded.push({ partNumber, etag });
+        size += body.length;
+      }
+      beforeComplete?.();
+      return await this.complete(connection, key, uploadId, uploaded, bucketKey, size);
+    } catch (error) {
+      await this.send(connection, { method: 'DELETE', key, query: { uploadId } }).catch((abortError: unknown) =>
+        this.logger.warn(`Could not abandon the unfinished upload of ${key}: ${String(abortError)}`),
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * CompleteMultipartUpload. When a retried completion finds the upload gone (`NoSuchUpload`), the first
+   * attempt may have finished with its answer lost: the object is looked at before this counts as a
+   * failure, and accepted only when it is there with the size that was uploaded.
+   */
+  private async complete(
+    connection: CloudBackupConnection,
+    key: string,
+    uploadId: string,
+    parts: Part[],
+    bucketKey: Buffer,
+    size: number,
+  ): Promise<string> {
+    const manifest = Buffer.from(
+      `<CompleteMultipartUpload>${parts
+        .map(
+          ({ partNumber, etag }) =>
+            `<Part><PartNumber>${partNumber}</PartNumber><ETag>${escapeXml(etag)}</ETag></Part>`,
+        )
+        .join('')}</CompleteMultipartUpload>`,
+    );
+    try {
+      const completed = await this.send(connection, {
+        method: 'POST',
+        key,
+        query: { uploadId },
+        body: manifest,
+        headers: {
+          ...sseCustomerHeaders(bucketKey),
+          'content-type': 'application/xml',
+          'content-md5': md5Base64(manifest),
+        },
+        timeoutMs: PART_TIMEOUT_MS,
+      });
+      const xml = await completed.text();
+      const { status } = completed;
+      const etag = xmlValue(xml, 'ETag') ?? completed.headers.get('etag');
+      // CompleteMultipartUpload can answer 200 with an error in the body.
+      const code = xmlValue(xml, 'Code');
+      if (code) {
+        throw new CloudBackupStoreError(`The storage provider refused to finish ${key} (${code})`, status, code);
+      }
+      if (!etag) {
+        throw new CloudBackupStoreError(`The storage provider did not confirm ${key}`, status, 'MissingETag');
+      }
+      return etag;
+    } catch (error) {
+      if (!(error instanceof CloudBackupStoreError) || error.code !== 'NoSuchUpload') {
+        throw error;
+      }
+      const object = await this.head(connection, key, bucketKey);
+      if (object?.etag && object.size === size) {
+        return object.etag;
+      }
+      throw error;
+    }
   }
 
   /** Sign and send one request, retrying twice on a network failure, 429 or 5xx. */
@@ -612,7 +761,7 @@ export class CloudBackupStoreRepository {
     const canonicalUri = `${basePath}/${encodeRfc3986(connection.bucket)}${objectPath}`;
     const query = Object.entries(request.query ?? {})
       .map(([name, value]) => [encodeRfc3986(name), encodeRfc3986(value)] as const)
-      .toSorted(([a, aValue], [b, bValue]) => byCodeUnit(a, b) || byCodeUnit(aValue, bValue))
+      .toSorted(([a, aValue], [b, bValue]) => compareCodeUnits(a, b) || compareCodeUnits(aValue, bValue))
       .map(([name, value]) => `${name}=${value}`)
       .join('&');
 
@@ -630,17 +779,20 @@ export class CloudBackupStoreRepository {
     });
 
     const url = `${endpoint.origin}${canonicalUri}${query ? `?${query}` : ''}`;
+    const action = `${request.method} ${request.key ?? connection.bucket}`;
     let response: Response;
     try {
       response = await fetch(url, {
         method: request.method,
         headers: sent,
         body: request.body ? new Uint8Array(request.body) : undefined,
+        // a signed request is never replayed at another address
+        redirect: 'manual',
         signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
       });
     } catch (error) {
       throw new CloudBackupStoreError(
-        `The storage provider could not be reached (${request.method} ${request.key ?? connection.bucket}): ${error instanceof Error ? error.message : String(error)}`,
+        `The storage provider could not be reached (${action}): ${error instanceof Error ? error.message : String(error)}`,
         null,
         null,
       );
@@ -649,11 +801,7 @@ export class CloudBackupStoreRepository {
     if (!response.ok) {
       const body = request.method === 'HEAD' ? '' : await response.text().catch(() => '');
       const code = xmlValue(body, 'Code');
-      throw new CloudBackupStoreError(
-        `The storage provider refused ${request.method} ${request.key ?? connection.bucket}: ${response.status}${code ? ` ${code}` : ''}`,
-        response.status,
-        code,
-      );
+      throw new CloudBackupStoreError(describeProviderError(response.status, code, action), response.status, code);
     }
     return response;
   }

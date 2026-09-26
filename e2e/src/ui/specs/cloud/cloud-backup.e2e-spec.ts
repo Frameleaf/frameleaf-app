@@ -9,10 +9,10 @@ import {
 import { CloudMockState, setupCloudMockApiRoutes } from 'src/ui/mock-network/cloud-network.js';
 
 /**
- * Settings → Frameleaf Cloud → Cloud backup (FL-160) against a mocked server: the setup dialog asks for
- * the encryption key choice first; an own key must be downloaded, and saved elsewhere, before Continue
- * is enabled, and never keeping it on the server needs the typed acknowledgement; a generated key shows
- * the recovery kit once and needs it saved.
+ * Settings → Frameleaf Cloud → Cloud backup (FL-160) against a mocked server: after the bucket is checked,
+ * the setup dialog asks how the encryption key is kept before anything is claimed; an own key must be
+ * downloaded, and saved elsewhere, before Continue is enabled, and never keeping it on the server needs the
+ * typed acknowledgement; a generated key shows the recovery kit once and needs it saved.
  */
 const backupPage = '/user-settings?area=cloud&section=cloud-backup';
 
@@ -52,7 +52,7 @@ test.describe('Frameleaf Cloud backup setup', () => {
     await expect(dialog.getByRole('radio', { name: /Frameleaf-managed storage/ })).toBeDisabled();
     await fillBucket(page);
 
-    // the key choice comes first
+    // the key choice, before anything is claimed: a generated key is preselected
     await expect(dialog.getByRole('radio', { name: /Generate a key for me/ })).toBeChecked();
     await dialog.getByRole('radio', { name: /I’ll maintain my own key/ }).check();
     const next = dialog.getByRole('button', { name: 'Continue' });

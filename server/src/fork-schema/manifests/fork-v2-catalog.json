@@ -3329,6 +3329,10 @@
       "identity": "public.cloud_backup_manifest.createdAt"
     },
     {
+      "definition": "text|nullable|||",
+      "identity": "public.cloud_backup_manifest.databaseKey"
+    },
+    {
       "definition": "integer|not null|0||",
       "identity": "public.cloud_backup_manifest.fileCount"
     },

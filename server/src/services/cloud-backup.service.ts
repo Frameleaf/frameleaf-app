@@ -1,10 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { basename } from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { basename, join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createGzip } from 'node:zlib';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { CloudBackupKeyMode, FrameleafCloudBackup, FrameleafCloudBackupRun } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   CloudBackupCheckDto,
@@ -25,8 +28,15 @@ import {
   MediaOperationStatus,
   NotificationLevel,
   NotificationType,
+  StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
+import {
+  CloudBackupAsset,
+  CloudBackupEntry,
+  CloudBackupIndexRepository,
+} from 'src/repositories/cloud-backup-index.repository.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import {
   CloudBackupClaimError,
   CloudBackupConnection,
@@ -34,12 +44,6 @@ import {
   CloudBackupStoreError,
   CloudBackupStoreRepository,
 } from 'src/repositories/cloud-backup-store.repository.js';
-import {
-  CloudBackupAsset,
-  CloudBackupEntry,
-  CloudBackupIndexRepository,
-} from 'src/repositories/cloud-backup-index.repository.js';
-import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -64,7 +68,7 @@ import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
   CLOUD_BACKUP_OBJECT_PREFIX,
   CLOUD_BACKUP_OWN_MEMORY_ACKNOWLEDGEMENT,
-  CloudBackupManifest,
+  CloudBackupManifestFile,
   CloudBackupRunResult,
   backupKeyFile,
   bucketRef,
@@ -80,7 +84,9 @@ import {
   s3SettingsProblem,
   signingRegion,
 } from 'src/utils/cloud-backup.js';
+import { compareCodeUnits } from 'src/utils/compare.js';
 import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
+import { CLOUD_BACKUP_DUMP_PREFIX, isCloudBackupDumpName } from 'src/utils/database-backups.js';
 import { identityDirectory, loadInstanceIdentity } from 'src/utils/frameleaf-cloud-gateway.js';
 
 const KIND = MediaOperationKind.CloudBackup;
@@ -91,6 +97,10 @@ export const CLOUD_BACKUP_TICK_MS = 5000;
 export const CLOUD_BACKUP_LEASE_MS = 10 * 60_000;
 /** How long a run waits before it looks for an own-memory key again. */
 export const CLOUD_BACKUP_KEY_WAIT_MS = 60_000;
+/** Manifest entries read per page while the manifest is streamed to the bucket. */
+export const CLOUD_BACKUP_MANIFEST_PAGE = 1000;
+/** A worker asks the others for an own-memory key at most this often. */
+const KEY_ASK_INTERVAL_MS = 10_000;
 
 /** Frameleaf-managed storage waits for Frameleaf Cloud backup grants (FC-33), which are not published yet. */
 export const MANAGED_STORAGE_UNAVAILABLE =
@@ -157,6 +167,11 @@ type HashedFile = FileToBackUp & { sha256: string; size: number; mtime: Date };
 @Injectable()
 export class CloudBackupService {
   private memoryKey?: { fingerprint: string; key: Buffer };
+  /** Callers waiting for another worker to share the own-memory key. */
+  private keyWaiters = new Set<() => void>();
+  private lastKeyAskAt = 0;
+  /** How long a status read or "Back up now" waits for another worker to share an own-memory key. */
+  keyAskMs = 1000;
   private tickHandle?: ReturnType<typeof setInterval>;
   private active?: Promise<void>;
   private stopping = false;
@@ -208,7 +223,7 @@ export class CloudBackupService {
       claimedAt: metadata?.claimedAt ?? null,
       keyMode: metadata?.keyMode ?? null,
       keyFingerprint: metadata?.keyFingerprint ?? null,
-      keyLoaded: metadata ? !!(await this.loadKey(metadata).catch(() => null)) : false,
+      keyLoaded: metadata ? !!(await this.loadKeyOrAsk(metadata).catch(() => null)) : false,
       lastRun: metadata?.lastRun ? this.mapLastRun(metadata.lastRun) : null,
       lastSuccessAt: metadata?.lastSuccessAt ?? null,
       lastManifestKey: metadata?.lastManifestKey ?? null,
@@ -307,6 +322,13 @@ export class CloudBackupService {
       frameleafCloudRepository: this.frameleafCloudRepository,
     });
 
+    // The stored key modes write and read back the key file first, so a bucket is never claimed with a
+    // key this server could not keep; a claim that then fails takes away only a file this setup created.
+    const keyFile =
+      dto.keyMode === 'own-memory'
+        ? null
+        : await this.storeKey(dto.keyMode, key, { instanceId: identity.instanceId, bucket: connection.bucket });
+
     let claim: { existing: boolean; claimedAt: string };
     try {
       claim = await this.store.claim(connection, key, {
@@ -315,10 +337,11 @@ export class CloudBackupService {
         now: new Date(),
       });
     } catch (error) {
+      if (keyFile?.created) {
+        await this.keys.remove(identityDirectory(this.configRepository), fingerprint);
+      }
       throw this.asRequestError(error);
     }
-
-    await this.keepKey(dto.keyMode, key, { instanceId: identity.instanceId, bucket: connection.bucket });
 
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
       DatabaseLock.SystemConfigUpdate,
@@ -345,7 +368,12 @@ export class CloudBackupService {
 
     const ref = bucketRef(connection.endpoint, connection.bucket);
     const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-    const sameBucket = previous?.bucketRef === ref && previous.keyFingerprint === fingerprint;
+    // A new claim means the bucket was empty: whatever the index remembers of it (an emptied or recreated
+    // bucket) is gone, and the first run reads the bucket's listing again.
+    if (!claim.existing) {
+      await this.index.deleteBucket(ref);
+    }
+    const sameBucket = claim.existing && previous?.bucketRef === ref && previous.keyFingerprint === fingerprint;
     await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudBackup, {
       target: 'byo-s3',
       bucketRef: ref,
@@ -364,6 +392,12 @@ export class CloudBackupService {
         lastManifestKey: previous.lastManifestKey,
       }),
     });
+
+    // Own-memory: held here, and shared once the claim is saved so the other workers accept it.
+    if (dto.keyMode === 'own-memory') {
+      this.memoryKey = { fingerprint, key };
+      this.websocketRepository.serverSend('CloudBackupKeyShare', { key: key.toString('base64') });
+    }
 
     this.logger.log(
       `Cloud backup set up by ${auth.user.id}: bucket ${connection.bucket} ${claim.existing ? 'reclaimed' : 'claimed'}, key ${fingerprint} (${dto.keyMode})`,
@@ -417,7 +451,7 @@ export class CloudBackupService {
     if (!frameleafCloud.cloudBackup.enabled) {
       throw new BadRequestException('Cloud backup is off. Set it up again to back up.');
     }
-    if (metadata.keyMode === 'own-memory' && !(await this.loadKey(metadata))) {
+    if (metadata.keyMode === 'own-memory' && !(await this.loadKeyOrAsk(metadata))) {
       throw new ConflictException('Load the backup key to back up. This server does not keep it.');
     }
 
@@ -486,8 +520,12 @@ export class CloudBackupService {
       return;
     }
     const bytes = Buffer.from(key, 'base64');
-    if (keyFingerprint(bytes) === metadata.keyFingerprint) {
-      this.memoryKey = { fingerprint: metadata.keyFingerprint, key: bytes };
+    if (keyFingerprint(bytes) !== metadata.keyFingerprint) {
+      return;
+    }
+    this.memoryKey = { fingerprint: metadata.keyFingerprint, key: bytes };
+    for (const wake of this.keyWaiters) {
+      wake();
     }
   }
 
@@ -502,6 +540,15 @@ export class CloudBackupService {
   /* ------------------------------------------------------------------ */
   /* The worker                                                          */
   /* ------------------------------------------------------------------ */
+
+  /** Every worker that starts asks the others for an own-memory key they may hold. */
+  @OnEvent({ name: 'AppBootstrap' })
+  async onBootstrapAskForKey() {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (metadata?.keyMode === 'own-memory') {
+      this.websocketRepository.serverSend('CloudBackupKeyRequest');
+    }
+  }
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
   onBootstrap() {
@@ -534,6 +581,11 @@ export class CloudBackupService {
 
   /** Lapsed claims are recovered by `MediaOperationSweepService`, for every kind, not here. */
   async drain(): Promise<void> {
+    // A run the lease sweep failed, or one removed, leaves its manifest running: end it and its entries.
+    const ended = await this.index.endAbandonedManifests();
+    if (ended > 0) {
+      this.logger.log(`Ended ${ended} cloud backup manifest(s) whose run is over`);
+    }
     while (!this.stopping) {
       const claim = await this.operations.claimNext({
         kinds: [KIND],
@@ -629,6 +681,12 @@ export class CloudBackupService {
       accessKeyId: settings.s3.accessKeyId,
       secretAccessKey: settings.s3.secretAccessKey,
     };
+    // The claim is read again on every run: a bucket another server claimed since, or one emptied or
+    // recreated (its index would no longer match it), is refused rather than backed up into.
+    const marker = await this.store.readMarker(connection, bucketKey);
+    if (marker.instanceId !== metadata.instanceId) {
+      throw new Error('This bucket is now claimed by another Frameleaf server. Set up cloud backup again.');
+    }
     const run: Run = { id, claimToken, operation, metadata, connection, bucketKey, progress, uploadedNow: new Set() };
 
     const running = await this.operations.reportProgress(id, claimToken, {
@@ -660,8 +718,8 @@ export class CloudBackupService {
     if (progress.result.phase === 'profiles' && !(await this.backUpProfiles(run))) {
       return;
     }
-    if (progress.result.phase === 'manifest') {
-      await this.writeManifest(run);
+    if (progress.result.phase === 'manifest' && !(await this.writeManifest(run))) {
+      return;
     }
     await this.finish(run);
   }
@@ -682,7 +740,8 @@ export class CloudBackupService {
 
   /** The database first: a fresh dump to `db/<file>`, the oldest dumps beyond the last seven removed. */
   private async backUpDatabase(run: Run): Promise<boolean> {
-    const path = await this.databaseBackup.createDatabaseBackup('cloud-backup-');
+    await this.removeLeftoverDumps();
+    const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX);
     try {
       const sha256 = (await this.cryptoRepository.hashFile(path, 'sha256')).toString('hex');
       const key = `${CLOUD_BACKUP_DB_PREFIX}${basename(path)}`;
@@ -692,6 +751,7 @@ export class CloudBackupService {
         database: { key, sha256, size },
         bytesUploaded: run.progress.result.bytesUploaded + size,
       };
+      await this.index.setManifestDatabase(run.progress.result.manifestId!, key);
       await this.pruneDatabaseDumps(run, key);
     } finally {
       // Only the dump this run made is removed; it is in the bucket now, or the run failed.
@@ -701,24 +761,47 @@ export class CloudBackupService {
     return this.checkpoint(run);
   }
 
+  /**
+   * A dump a run made and could not remove (the process stopped between making and uploading it) is
+   * removed by the next run: it is only ever this run's temporary file, never a restore point.
+   */
+  private async removeLeftoverDumps() {
+    const folder = StorageCore.getBaseFolder(StorageFolder.Backups);
+    const names = await this.storageRepository.readdir(folder).catch((): string[] => []);
+    for (const name of names.filter((name) => isCloudBackupDumpName(name))) {
+      await this.storageRepository.unlink(join(folder, name));
+    }
+  }
+
+  /**
+   * Keep the newest seven dumps and every dump a complete manifest names; remove the rest. Only dumps
+   * (`db/`) are ever removed from the bucket here.
+   */
   private async pruneDatabaseDumps(run: Run, current: string) {
     const dumps: string[] = [];
     await this.store.listAll(run.connection, CLOUD_BACKUP_DB_PREFIX, (objects) => {
       dumps.push(...objects.map(({ key }) => key));
       return Promise.resolve();
     });
-    const old = dumps
-      .filter((key) => key !== current)
-      .toSorted((a, b) => b.localeCompare(a))
-      .slice(CLOUD_BACKUP_DB_DUMPS_KEPT - 1);
-    for (const key of old) {
-      await this.store.delete(run.connection, key);
+    const referenced = await this.index.listManifestDatabaseKeys(run.metadata.bucketRef);
+    const newest = new Set(
+      [current, ...dumps.filter((key) => key !== current).toSorted((a, b) => compareCodeUnits(b, a))].slice(
+        0,
+        CLOUD_BACKUP_DB_DUMPS_KEPT,
+      ),
+    );
+    for (const key of dumps) {
+      if (!newest.has(key) && !referenced.has(key)) {
+        await this.store.delete(run.connection, key);
+      }
     }
   }
 
   /** The first run in a bucket fills the index from its listing, so nothing already there uploads again. */
   private async reconcile(run: Run): Promise<boolean> {
     if (!run.metadata.reconciledAt) {
+      // Every object the listing finds is stamped now; any row it did not stamp is not in the bucket.
+      const since = await this.index.currentTime();
       const found = await this.store.listAll(run.connection, CLOUD_BACKUP_OBJECT_PREFIX, (objects) =>
         this.index.record(
           run.metadata.bucketRef,
@@ -727,6 +810,10 @@ export class CloudBackupService {
             .filter(({ sha256 }) => isSha256Hex(sha256)),
         ),
       );
+      const dropped = await this.index.pruneUnseen(run.metadata.bucketRef, since);
+      if (dropped > 0) {
+        this.logger.warn(`Cloud backup run ${run.id}: ${dropped} recorded objects are no longer in the bucket`);
+      }
       const reconciledAt = new Date().toISOString();
       run.metadata = { ...run.metadata, reconciledAt, lastCheckAt: reconciledAt };
       await this.updateMetadata((current) => ({ ...current, reconciledAt, lastCheckAt: reconciledAt }));
@@ -770,8 +857,9 @@ export class CloudBackupService {
         ownerId: asset.ownerId,
         role: 'original',
         path: asset.originalPath,
+        // trusted only when it was verified at this very path
         recorded:
-          asset.sha256 && isSha256Hex(asset.sha256) && asset.checksumSize !== null
+          asset.sha256 && isSha256Hex(asset.sha256) && asset.checksumSize !== null && asset.checksumPathVerified
             ? { sha256: asset.sha256, size: asset.checksumSize, verifiedAt: asset.verifiedAt }
             : null,
       },
@@ -921,57 +1009,121 @@ export class CloudBackupService {
     };
   }
 
-  /** The manifest, built from what the run recorded, to `m/<ISO>.json.gz`. */
-  private async writeManifest(run: Run) {
+  /**
+   * The manifest, streamed to `m/<ISO>.json.gz` from the files the run recorded, a page at a time: memory
+   * holds one page and one asset's files, however large the library. A manifest already complete (a claim
+   * that stopped after writing it) is never written again. The `done` checkpoint is saved before the
+   * recorded files are removed (in `finish`), so a retry can never find the entries gone and the manifest
+   * still to write. Answers whether to carry on (no when the claim was lost).
+   */
+  private async writeManifest(run: Run): Promise<boolean> {
     const { result } = run.progress;
-    const entries = await this.index.getEntries(result.manifestId!);
-    const manifest: CloudBackupManifest = {
+    const manifestId = result.manifestId!;
+    const row = await this.index.getManifest(manifestId);
+    if (row?.status !== 'complete') {
+      const counts = { assets: 0, files: 0, bytes: 0 };
+      await pipeline(
+        Readable.from(this.manifestChunks(run, manifestId, counts)),
+        createGzip(),
+        async (source: AsyncIterable<Buffer>) => {
+          await this.store.uploadStream(run.connection, result.manifestKey!, source, run.bucketKey, 'application/gzip');
+        },
+      );
+      await this.index.finishManifest(manifestId, {
+        status: 'complete',
+        assetCount: counts.assets,
+        fileCount: counts.files,
+        bytes: counts.bytes,
+      });
+    }
+
+    run.progress.result = { ...run.progress.result, phase: 'done' };
+    // Written whatever a pause or cancel asks: the backup is complete, and `finish` settles either.
+    const written = await this.operations.setBulkResult(run.id, run.claimToken, {
+      result: run.progress.result as unknown as Record<string, unknown>,
+      processedUnits: run.progress.result.assets,
+      totalUnits: run.progress.result.total ?? run.progress.result.assets,
+      progress: runProgress(run.progress.result),
+      leaseMs: CLOUD_BACKUP_LEASE_MS,
+    });
+    if (!written) {
+      this.logger.warn(`Cloud backup run ${run.id}: claim lost after its manifest was written`);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * The manifest's JSON in pieces: the header, then each asset with its files (an asset's entries are
+   * adjacent in `fileKey` order), then the profile images. Counts what it wrote into `counts`.
+   */
+  private async *manifestChunks(
+    run: Run,
+    manifestId: string,
+    counts: { assets: number; files: number; bytes: number },
+  ): AsyncGenerator<string> {
+    const header = {
       format: CLOUD_BACKUP_MANIFEST_FORMAT,
       version: 1,
       instanceId: run.metadata.instanceId,
       createdAt: new Date().toISOString(),
-      database: result.database,
-      assets: {},
-      profiles: {},
+      database: run.progress.result.database,
     };
-    let bytes = 0;
-    for (const entry of entries) {
-      const file = {
-        role: entry.role,
-        path: entry.path,
-        sha256: entry.sha256,
-        size: entry.size,
-        mtime: asIso(entry.mtime),
-      };
-      bytes += entry.size;
-      if (entry.assetId) {
-        manifest.assets[entry.assetId] ??= { owner: entry.ownerId, files: [] };
-        manifest.assets[entry.assetId].files.push(file);
-      } else if (entry.ownerId) {
-        manifest.profiles[entry.ownerId] = file;
-      }
-    }
+    yield `${JSON.stringify(header).slice(0, -1)},"assets":{`;
 
-    await this.store.put(
-      run.connection,
-      result.manifestKey!,
-      gzipSync(Buffer.from(JSON.stringify(manifest))),
-      run.bucketKey,
-      'application/gzip',
-    );
-    await this.index.finishManifest(result.manifestId!, {
-      status: 'complete',
-      assetCount: Object.keys(manifest.assets).length,
-      fileCount: entries.length,
-      bytes,
-    });
-    await this.index.deleteEntries(result.manifestId!);
-    run.progress.result = { ...result, phase: 'done' };
+    const profiles: string[] = [];
+    let asset: { id: string; owner: string | null; files: CloudBackupManifestFile[] } | null = null;
+    const assetJson = (current: { id: string; owner: string | null; files: CloudBackupManifestFile[] }) => {
+      const body = JSON.stringify({ owner: current.owner, files: current.files });
+      const text = `${counts.assets > 0 ? ',' : ''}${JSON.stringify(current.id)}:${body}`;
+      counts.assets += 1;
+      return text;
+    };
+
+    let after: string | null = null;
+    let more = true;
+    while (more) {
+      const page = await this.index.getEntriesPage(manifestId, after, CLOUD_BACKUP_MANIFEST_PAGE);
+      for (const entry of page) {
+        counts.files += 1;
+        counts.bytes += entry.size;
+        const file: CloudBackupManifestFile = {
+          role: entry.role,
+          path: entry.path,
+          sha256: entry.sha256,
+          size: entry.size,
+          mtime: asIso(entry.mtime),
+        };
+        if (!entry.assetId) {
+          if (entry.ownerId) {
+            profiles.push(`${JSON.stringify(entry.ownerId)}:${JSON.stringify(file)}`);
+          }
+          continue;
+        }
+        if (asset?.id !== entry.assetId) {
+          if (asset) {
+            yield assetJson(asset);
+          }
+          asset = { id: entry.assetId, owner: entry.ownerId, files: [] };
+        }
+        asset.files.push(file);
+      }
+      more = page.length === CLOUD_BACKUP_MANIFEST_PAGE;
+      after = page.at(-1)?.fileKey ?? after;
+    }
+    if (asset) {
+      yield assetJson(asset);
+    }
+    yield `},"profiles":{${profiles.join(',')}}}`;
   }
 
   private async finish(run: Run) {
     const { id, claimToken, operation } = run;
     const { result } = run.progress;
+    // The manifest is in the bucket and the `done` checkpoint saved: its recorded files can go now.
+    if (result.manifestId) {
+      await this.index.deleteEntries(result.manifestId);
+    }
     if (!(await this.operations.beginValidation(id, claimToken))) {
       await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       await this.recordRun(operation, result, 'cancelled');
@@ -1035,6 +1187,11 @@ export class CloudBackupService {
   /** A run that ends without a manifest keeps nothing of it; what it uploaded stays in the index. */
   private async endManifest(result: CloudBackupRunResult, status: 'cancelled' | 'failed') {
     if (!result.manifestId) {
+      return;
+    }
+    // A manifest already in the bucket stays complete, whatever happens to its run afterwards.
+    const row = await this.index.getManifest(result.manifestId);
+    if (row?.status === 'complete') {
       return;
     }
     await this.index.finishManifest(result.manifestId, { status });
@@ -1105,13 +1262,42 @@ export class CloudBackupService {
     return keyFingerprint(key) === metadata.keyFingerprint ? key : null;
   }
 
-  private async keepKey(mode: CloudBackupKeyMode, key: Buffer, options: { instanceId: string; bucket: string }) {
-    const fingerprint = keyFingerprint(key);
-    if (mode === 'own-memory') {
-      this.memoryKey = { fingerprint, key };
-      this.websocketRepository.serverSend('CloudBackupKeyShare', { key: key.toString('base64') });
-      return;
+  /**
+   * The own-memory key, asking the other workers for it when this one does not hold it (a restarted
+   * worker): the request goes out at most every ten seconds and waits up to `keyAskMs` for an answer.
+   */
+  private async loadKeyOrAsk(metadata: FrameleafCloudBackup): Promise<Buffer | null> {
+    const key = await this.loadKey(metadata);
+    if (key || metadata.keyMode !== 'own-memory') {
+      return key;
     }
+    const now = Date.now();
+    if (now - this.lastKeyAskAt < KEY_ASK_INTERVAL_MS) {
+      return null;
+    }
+    this.lastKeyAskAt = now;
+    this.websocketRepository.serverSend('CloudBackupKeyRequest');
+    if (this.keyAskMs > 0) {
+      await new Promise<void>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const done = () => {
+          clearTimeout(timer);
+          this.keyWaiters.delete(done);
+          resolve();
+        };
+        this.keyWaiters.add(done);
+        timer = setTimeout(done, this.keyAskMs);
+      });
+    }
+    return this.loadKey(metadata);
+  }
+
+  /** Write and read back the key file of a stored key mode (0600). */
+  private async storeKey(
+    mode: Exclude<CloudBackupKeyMode, 'own-memory'>,
+    key: Buffer,
+    options: { instanceId: string; bucket: string },
+  ): Promise<{ created: boolean }> {
     const file = backupKeyFile({
       key,
       instanceId: options.instanceId,
@@ -1119,7 +1305,15 @@ export class CloudBackupService {
       mode,
       createdAt: new Date(),
     });
-    await this.keys.write(identityDirectory(this.configRepository), fingerprint, JSON.stringify(file, null, 2));
+    try {
+      return await this.keys.write(
+        identityDirectory(this.configRepository),
+        keyFingerprint(key),
+        JSON.stringify(file, null, 2),
+      );
+    } catch (error) {
+      throw new BadRequestException(`The backup key could not be stored on this server: ${errorMessage(error)}`);
+    }
   }
 
   private parseKey(value: string): Buffer {
