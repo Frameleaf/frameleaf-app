@@ -634,7 +634,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
           features: { identityNames: false, medicalSignals: false, ocrAddon: false },
         },
         entitlement: { active: true, state: 'active', graceUntil: null },
-        wallet: { balanceUsd: 10, heldUsd: 0.203_251, dailyCapUsd: 20, spentTodayUsd: 0 },
+        wallet: { balanceUsd: 10, heldUsd: 0.203251, dailyCapUsd: 20, spentTodayUsd: 0 },
         limits: { maxInputBytes: 2_147_483_648, maxInputs: 1000, concurrentTimePriced: 2 },
         catalogEtag: '"cat-eu-3f9c2a71b0d4e58c"',
       });
@@ -688,7 +688,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
     it('reads wallet.json with its account-app settings page', () => {
       expect(walletResponseSchema.parse(cloudContractFixture('ml/wallet.json'))).toEqual({
         balanceUsd: 10,
-        heldUsd: 0.203_251,
+        heldUsd: 0.203251,
         dailyCapUsd: 20,
         spentTodayUsd: 0,
         topUpUrl: null,
@@ -715,7 +715,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         label: 'Descriptions · Best (fallback)',
         display: { model: 'Qwen2.5-VL-72B AWQ', gpu: 'H200-class, 141 GB' },
         computeSku: 'cs_7WF1N0N6',
-        rate: { perSecondUsd: 0.004_583, startFeeUsd: 0.1 },
+        rate: { perSecondUsd: 0.004583, startFeeUsd: 0.1 },
         eta: { p50Sec: 120, p90Sec: 210 },
         limits: { maxInputs: 1000, maxInputBytes: 52_428_800 },
         rev: 'mr_68JDMAM8444M',
@@ -1028,7 +1028,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         modelSku: 'ms_K6WT70CS',
         modelRev: 'mr_B2H147RBJBQ0',
         computeSku: 'cs_KGECTVQ0',
-        hold: { amountUsd: 0.203_251, ceilingUsd: 0.223_577, minimumUsd: 0.2 },
+        hold: { amountUsd: 0.203251, ceilingUsd: 0.223577, minimumUsd: 0.2 },
         createdAt: '2026-09-26T04:01:00.000Z',
       });
     });
