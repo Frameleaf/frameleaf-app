@@ -29,6 +29,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { getConfig } from 'src/utils/config.js';
 import { StoredChunk, mediaOperationProgress, planChunkResume } from 'src/utils/media-operation.js';
+import { STRIP_VIDEO_METADATA_OPTIONS, strippedStillFormat, strippedVideoStreams } from 'src/utils/media-privacy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { MlDestinationNotFoundError, MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import {
@@ -519,10 +520,15 @@ export class RestorationWorkerService {
     const { snapshot, source, workDir, operation } = ctx;
     const { image } = await this.getConfig();
 
-    // A web-native original is sent as it is. Anything else (RAW, HEIC, TIFF) is decoded once
-    // into a working copy the adapter can read; the original itself is never rewritten.
-    let inputPath = source.originalPath;
-    if (!mimeTypes.isWebSupportedImage(source.originalFileName)) {
+    // FL-162: a web-native original is re-encoded without EXIF, XMP, IPTC or GPS (its ICC profile
+    // kept), so no metadata reaches the worker. Anything else (RAW, HEIC, TIFF) is decoded once into a
+    // working copy the adapter can read, which carries none either; the original is never rewritten.
+    let inputPath: string;
+    if (mimeTypes.isWebSupportedImage(source.originalFileName)) {
+      const format = strippedStillFormat(source.originalFileName);
+      inputPath = this.scratch(ctx, path.join(workDir, `input-${operation.id}.${format === 'jpeg' ? 'jpg' : 'png'}`));
+      await this.mediaRepository.writeStrippedStill(source.originalPath, inputPath, format);
+    } else {
       const decoded = await this.decodeSource(source, image);
       inputPath = this.scratch(ctx, path.join(workDir, `input-${operation.id}.jpg`));
       await this.mediaRepository.encodeDevelopOutput(
@@ -598,6 +604,7 @@ export class RestorationWorkerService {
     await this.mediaRepository.transcode(source.originalPath, beforeTmp, {
       inputOptions: ['-ss', start.toFixed(3), '-t', clipSeconds.toFixed(3)],
       outputOptions: [
+        ...strippedVideoStreams(true),
         ...crop,
         '-c:v',
         'libx264',
@@ -611,6 +618,8 @@ export class RestorationWorkerService {
         'aac',
         '-b:a',
         '192k',
+        // FL-162: the clip goes to another machine; it carries no metadata or chapters
+        ...STRIP_VIDEO_METADATA_OPTIONS,
         '-movflags',
         '+faststart',
       ],
@@ -766,7 +775,19 @@ export class RestorationWorkerService {
           '-t',
           (plan.chunk.endSeconds - plan.chunk.startSeconds).toFixed(3),
         ],
-        outputOptions: ['-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '10', '-pix_fmt', 'yuv420p'],
+        outputOptions: [
+          ...strippedVideoStreams(false),
+          '-c:v',
+          'libx264',
+          '-preset',
+          'veryfast',
+          '-crf',
+          '10',
+          '-pix_fmt',
+          'yuv420p',
+          // FL-162: every chunk goes to another machine; it carries no metadata or chapters
+          ...STRIP_VIDEO_METADATA_OPTIONS,
+        ],
         twoPass: false,
         progress: { frameCount: 0, percentInterval: 5 },
       });
