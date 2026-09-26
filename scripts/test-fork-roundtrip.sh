@@ -544,6 +544,40 @@ stop_fork
 export FORK_WORKERS_INCLUDE=api,microservices
 start_fork
 phase origin-post-migrator src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
+# FL-44: starting Frameleaf on the official library keeps it certified-upstream (the origin phases
+# above prove that). The explicit adoption makes it a full Frameleaf library before any Frameleaf row
+# is written. As documented for operators, it runs from a one-shot admin process with the server
+# stopped; the next start then boots the library the way every later start will.
+stop_fork
+set +e
+adopt_output="$(printf 'y\n' | compose run --rm -T --no-deps --entrypoint immich-admin fork-server fork-schema adopt 2>&1)"
+adopt_code=$?
+set -e
+echo "$adopt_output"
+[[ "$adopt_code" -eq 0 ]] || exit "$adopt_code"
+grep -q '^Error:' <<<"$adopt_output" && exit 1
+grep -q '^Adopted: yes' <<<"$adopt_output" || { echo 'Official library was not adopted' >&2; exit 1; }
+grep -q '^Phase: legacy' <<<"$adopt_output" || { echo 'Adopted library did not enter the legacy phase' >&2; exit 1; }
+psql_sql -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM public.kysely_migrations WHERE name = '1787148183729-ClusterGroups') <> 1 THEN
+    RAISE EXCEPTION 'adoption did not apply 1787148183729-ClusterGroups exactly once';
+  END IF;
+  IF (SELECT count(*) FROM public.kysely_migrations WHERE name = '2100000000570-AddWorkflowDefinitions') <> 1 THEN
+    RAISE EXCEPTION 'adoption did not apply the Frameleaf public migrations';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.kysely_migrations WHERE name = '1779400000000-UpdateWorkflowTables') THEN
+    RAISE EXCEPTION 'adoption ran the Frameleaf copy of the official workflow rewrite';
+  END IF;
+  IF (SELECT count(*) FROM immich_fork.migration_audit
+      WHERE name = 'official-origin-adoption' AND status = 'applied') <> 1 THEN
+    RAISE EXCEPTION 'adoption left no audit record';
+  END IF;
+END
+$$;
+SQL
+start_fork
 phase chain-fork-seed src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
 printf 'y\n' | compose exec -T fork-server immich-admin fork-schema start --batch-size 32
 for _ in {1..600}; do

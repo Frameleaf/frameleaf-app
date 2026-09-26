@@ -36,6 +36,43 @@ The command refuses to continue if both markers exist, neither marker exists
 while workflow tables exist, or the marker and exact schema fingerprint
 disagree. Do not repair these cases by manually editing the ledger.
 
+## Adopting a library created by the official server
+
+A library the official v3.1.0 server created stays certified-upstream when Frameleaf
+first starts on it. Startup adds only the `immich_fork` schema, leaves the state
+`inactive` with schema version `1`, and warns that the library has not been adopted
+yet. Frameleaf features such as people groups, media operations, Studio projects, Takeout
+imports and preservation packages remain unavailable until adoption. Until then, the
+official server can still start on the library with no handoff.
+
+Adoption is an explicit, one-way step. Afterwards, the library can go back to the
+official server only through the certified handoff described below. Take database and media
+checkpoints first. Then, with every server container stopped, run the command from a
+one-shot admin process that uses the Frameleaf image:
+
+```bash
+immich-admin fork-schema adopt
+immich-admin fork-schema status
+```
+
+Adoption runs in one transaction. It applies the upstream migrations newer than the
+certified tag (for example `1787148183729-ClusterGroups`) and every Frameleaf
+public-schema migration in name order. It never runs the Frameleaf copy of the workflow
+rewrite, because the official `1778614946174-UpdateWorkflowTables` already ran. It then
+completes the Frameleaf index and column steps that depend on those tables and sets the
+phase to `legacy`. Workflow, plugin and method rows are checked unchanged, and an
+`official-origin-adoption` audit row records the applied migrations.
+
+If adoption fails, nothing is applied and the command can be run again. The command refuses a
+ledger that is not the exact certified `v3.1.0` ledger. For a library from an older
+official release, upgrade it with the official server to `v3.1.0` first. The command also
+refuses a library that already holds Frameleaf tables and one that has been handed over.
+Running it again after success changes nothing.
+
+Start the server normally. The adopted library now follows the same sequence as any
+other Frameleaf library: `fork-schema start` for the compatibility backfill, then the
+exact operator sequence below for a certified handoff and return.
+
 ## Checkpoints and destructive boundary
 
 Take immutable, mutually consistent checkpoints of both PostgreSQL and every
