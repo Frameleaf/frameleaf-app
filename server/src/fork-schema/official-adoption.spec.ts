@@ -175,6 +175,7 @@ describe('ADOPTION_STEP_COUNTERS', () => {
       '2100000000290-ClearLockedAlbumCovers',
       '2100000000300-ClearLockedCoverReferences',
       '2100000000320-AddAssetLock',
+      '2100000000660-HashSharedLinkPasswords',
     ]);
   });
 });
