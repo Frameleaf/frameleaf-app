@@ -75,6 +75,7 @@ const certificateResponseSchema = z.object({
     .max(64 * 1024),
   activationId: z.string().max(200).optional(),
 });
+/** FL-185: the complete current set, never empty: the plan certificate first, then one per key activation. */
 const refreshResponseSchema = z.object({
   certificates: z
     .array(
@@ -83,9 +84,12 @@ const refreshResponseSchema = z.object({
         .min(1)
         .max(64 * 1024),
     )
-    .max(10)
-    .default([]),
+    .min(1)
+    .max(10),
 });
+
+/** FL-185: a refresh answer without a plan certificate is not one the contract allows. */
+const REFRESH_WITHOUT_PLAN_MESSAGE = 'Frameleaf Cloud sent licence certificates without a plan certificate';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -334,8 +338,8 @@ export class FrameleafLicenseService extends BaseService {
         },
       });
       // FL-185: the answer is the complete current set (the plan certificate first, then one per usable
-      // key activation on this server), so it replaces everything held here: a certificate it leaves
-      // out is dropped, not kept to age out
+      // key activation on this server, an empty plan certificate for an account without a plan), so it
+      // replaces everything held here: a key certificate it leaves out is dropped, not kept to age out
       let plan: FrameleafLicense | null = null;
       let key: FrameleafLicense | null = null;
       for (const certificate of response.certificates) {
@@ -364,13 +368,14 @@ export class FrameleafLicenseService extends BaseService {
           }
         }
       }
+      if (!plan) {
+        // malformed: keep what is held (it ages out through grace only if this persists) and retry in an hour
+        throw new BadRequestException(REFRESH_WITHOUT_PLAN_MESSAGE);
+      }
       if (store.key && !key) {
         this.logger.log(
           'Frameleaf Cloud no longer lists the key activation on this server; its certificate is removed',
         );
-      }
-      if (store.plan && !plan) {
-        this.logger.log('Frameleaf Cloud sent no plan certificate; the one held here is removed');
       }
       const stamp = (license: FrameleafLicense | null) =>
         license && { ...license, refreshedAt: new Date(now).toISOString(), lastRefreshError: undefined };

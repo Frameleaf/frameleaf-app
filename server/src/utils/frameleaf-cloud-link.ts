@@ -250,8 +250,9 @@ export const heartbeatResponseSchema = z.object({
 export type HeartbeatResponse = z.infer<typeof heartbeatResponseSchema>;
 
 /**
- * `GET {api}/v1/discovery` (instance token): only the ML service's status is read here (FL-185), to
- * learn whether cloud processing is still `suspended` after a check-in reported `servicesChanged`.
+ * `GET {api}/v1/discovery` (instance token): only the ML service's status and `cloneSuspected` are read
+ * here (FL-185), to learn whether cloud processing is still `suspended` while check-ins report a
+ * suspected copy.
  */
 export const instanceServicesSchema = z.object({
   services: z
@@ -263,6 +264,7 @@ export const instanceServicesSchema = z.object({
     })
     .loose()
     .default({}),
+  cloneSuspected: z.boolean().optional(),
 });
 
 export const keyNonceSchema = z.object({ nonce: z.string().min(8).max(512) });
