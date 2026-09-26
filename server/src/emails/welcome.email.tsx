@@ -11,7 +11,7 @@ export const WelcomeEmail = ({ baseUrl, displayName, username, password, customT
     displayName,
     username,
     password,
-    baseUrl,
+    baseUrl: baseUrl ?? '',
   };
 
   const emailContent = customTemplate ? (

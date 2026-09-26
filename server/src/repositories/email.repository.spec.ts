@@ -79,6 +79,18 @@ describe(EmailRepository.name, () => {
       }
     });
 
+    it('should drop the {baseUrl} tag from a custom template when the server has no public address (FL-190)', async () => {
+      const { html, text } = await sut.renderEmail({
+        template: EmailTemplate.ALBUM_INVITE,
+        data: { albumName: 'Holiday', albumId: '123', recipientName: 'Jane', senderName: 'John' },
+        customTemplate: '{senderName} shared {albumName}: {baseUrl}/albums/{albumId}',
+      });
+
+      expect(text).toContain('John shared Holiday: /albums/123');
+      expect(html).not.toContain('{baseUrl}');
+      expect(text).toContain(NO_LINK_ALBUM);
+    });
+
     it('should render the email correctly for WELCOME template', async () => {
       const request: EmailRenderRequest = {
         template: EmailTemplate.WELCOME,

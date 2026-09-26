@@ -20,7 +20,7 @@ export const AlbumInviteEmail = ({
     recipientName,
     senderName,
     albumId,
-    baseUrl,
+    baseUrl: baseUrl ?? '',
   };
 
   const emailContent = customTemplate ? (

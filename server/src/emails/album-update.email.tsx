@@ -18,7 +18,7 @@ export const AlbumUpdateEmail = ({
     albumName,
     recipientName,
     albumId,
-    baseUrl,
+    baseUrl: baseUrl ?? '',
   };
 
   const emailContent = customTemplate ? (
