@@ -298,6 +298,10 @@
         context,
       );
       saveLocalSetup(created);
+      // Take the step now too: if a later load fails, Continue must not try to create the admin again.
+      signedIn = true;
+      direction = 1;
+      setup = created;
       // Record the new-server flow now, not on the debounced save: a reload before that save would
       // otherwise resume this server as an existing library.
       try {
@@ -310,9 +314,6 @@
       // The server config first: the redrawn page reads it to send this administrator on to setup.
       await serverConfigManager.loadServerConfig();
       await authManager.load();
-      signedIn = true;
-      direction = 1;
-      setup = created;
       await loadServerData();
       return false;
     }
