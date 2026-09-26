@@ -11,9 +11,12 @@ import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
  *
  * FL-178: like the cloud after FC-66, every request that carries a `DPoP` header has its proof
  * checked before any route runs (RFC 9449 section 4.3: `typ`, `alg`, a public `jwk` and no `kid`,
- * the signature, `htm`, `htu`, `iat` within ±60 s, `jti` not reused, `ath` matching a presented
- * token, whose `cnf.jkt` must be the proof key); a failure answers `401 invalid_dpop_proof`. A bearer
- * instance token (`Authorization: Bearer ey…`) answers 401, as the cloud does with `bearer_compat` off.
+ * the signature, `htm`, `htu` equal to the literal address asked for, `iat` within ±60 s, `jti` not
+ * reused, `ath` matching a presented token, whose `cnf.jkt` must be the proof key); a failure answers
+ * `invalid_dpop_proof` (400 from the token endpoint, else 401). The `client_credentials` token request
+ * and `POST /api/v1/instances` must carry a proof, and at the token endpoint the proof key must be the
+ * client assertion's key. Tokens are looked up in the store of tokens a fake minted: one presented as
+ * a bearer, or an unknown one, answers `401 invalid_token`, as the cloud does with `bearer_compat` off.
  * With `nonce` set, a proof without that nonce gets the nonce challenge: `400 use_dpop_nonce` from
  * the token endpoint, `401 use_dpop_nonce` with `WWW-Authenticate` from everything else, and a
  * `DPoP-Nonce` header either way.
@@ -101,6 +104,9 @@ export const assertionKidOf = (request: FakeCloudRequest): string =>
  * key whose client assertion minted it (`frameleaf_kid`). `overrides` replaces claims, to mint a
  * token bound to the wrong key.
  */
+/** Every access token a fake cloud minted: the token store a bearer or unknown token is looked up in. */
+const mintedTokens = new Set<string>();
+
 export const mintToken = (request: FakeCloudRequest, name = 'api-token', overrides: Record<string, unknown> = {}) => {
   const claims = {
     name,
@@ -110,7 +116,9 @@ export const mintToken = (request: FakeCloudRequest, name = 'api-token', overrid
     ...overrides,
   };
   const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
-  return `${part({ alg: 'EdDSA', typ: 'at+jwt' })}.${part(claims)}.${Buffer.from(name).toString('base64url')}`;
+  const token = `${part({ alg: 'EdDSA', typ: 'at+jwt' })}.${part(claims)}.${Buffer.from(name).toString('base64url')}`;
+  mintedTokens.add(token);
+  return token;
 };
 
 /** A successful token answer (`token_type` `DPoP`) bound to the request's proof key. */
@@ -119,7 +127,8 @@ export const tokenAnswer = (request: FakeCloudRequest, name = 'api-token', expir
   body: { access_token: mintToken(request, name), token_type: 'DPoP', expires_in: expiresIn },
 });
 
-const proofProblem = (proof: string, method: string, url: string, seen: Map<string, number>, now: number) => {
+/** `htu` is compared with the literal address asked for (`expectedHtu`), never re-normalised. */
+const proofProblem = (proof: string, method: string, expectedHtu: string, seen: Map<string, number>, now: number) => {
   const parts = proof.split('.');
   if (parts.length !== 3) {
     return { problem: 'not a compact JWS' };
@@ -148,8 +157,7 @@ const proofProblem = (proof: string, method: string, url: string, seen: Map<stri
   if (!valid) {
     return { problem: 'signature' };
   }
-  const htu = new URL(url);
-  if (claims.htm !== method || claims.htu !== `${htu.protocol}//${htu.host}${htu.pathname}`) {
+  if (claims.htm !== method || claims.htu !== expectedHtu) {
     return { problem: 'htm or htu' };
   }
   if (typeof claims.iat !== 'number' || Math.abs(claims.iat - now / 1000) > 60) {
@@ -208,17 +216,42 @@ export const startFakeCloud = async (): Promise<FakeCloud> => {
     };
 
     const authorization = incoming.headers.authorization ?? '';
-    // a bearer instance token (a JWT) is refused; the link and initial access tokens stay bearer
-    if (/^Bearer ey/.test(authorization)) {
+    // an instance token presented as a bearer is refused (the cloud with bearer_compat off); the link
+    // and initial access tokens are not in the token store and stay bearer
+    if (authorization.startsWith('Bearer ') && mintedTokens.has(authorization.slice('Bearer '.length))) {
       return refuse(401, 'invalid_token');
     }
     const proofHeader = incoming.headers.dpop;
+    const clientCredentials = tokenEndpoint && request.form().get('grant_type') === 'client_credentials';
+    // FC-66: the instance token request and the registration always carry a proof
+    if (
+      typeof proofHeader !== 'string' &&
+      (clientCredentials || (request.method === 'POST' && path === '/api/v1/instances'))
+    ) {
+      return refuse(tokenEndpoint ? 400 : 401, 'invalid_dpop_proof');
+    }
     if (typeof proofHeader === 'string') {
-      const checked = proofProblem(proofHeader, request.method, request.url, seenJti, Date.now());
+      // the address asked for, without its query: a literal, not the client's normalisation
+      const checked = proofProblem(proofHeader, request.method, `${fake.url}${path}`, seenJti, Date.now());
       if (!checked.proof) {
-        return refuse(401, 'invalid_dpop_proof');
+        return refuse(tokenEndpoint ? 400 : 401, 'invalid_dpop_proof');
+      }
+      if (clientCredentials) {
+        let assertionKid: unknown;
+        try {
+          assertionKid = assertionKidOf(request);
+        } catch {
+          assertionKid = undefined;
+        }
+        // the proof key and the client assertion key must be one key
+        if (assertionKid !== checked.proof.jkt) {
+          return refuse(400, 'invalid_dpop_proof');
+        }
       }
       const token = dpopTokenOf(request);
+      if (token && !mintedTokens.has(token)) {
+        return refuse(401, 'invalid_token');
+      }
       if (token) {
         const ath = createHash('sha256').update(token, 'ascii').digest('base64url');
         if (checked.proof.claims.ath !== ath || tokenClaims(token)?.cnf?.jkt !== checked.proof.jkt) {

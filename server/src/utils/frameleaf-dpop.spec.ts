@@ -159,6 +159,8 @@ describe('DPoP for Frameleaf Cloud instance tokens (FL-178)', () => {
       ],
       [401, undefined, 'DPoP algs="EdDSA", error="use_dpop_nonce"', true],
       [401, 'invalid_dpop_proof', 'DPoP error="invalid_dpop_proof"', false],
+      [401, undefined, 'DPoP error=use_dpop_nonce', false],
+      [401, undefined, 'DPoP error="use_dpop_nonce_later"', false],
       [401, 'invalid_token', null, false],
       [403, 'use_dpop_nonce', null, false],
       [500, 'use_dpop_nonce', null, false],
@@ -168,13 +170,38 @@ describe('DPoP for Frameleaf Cloud instance tokens (FL-178)', () => {
   });
 
   describe('isUsableNonce', () => {
-    it('accepts NQCHAR nonces and ignores anything else', () => {
-      expect(isUsableNonce('eyJ7S_zG.eyJH0-Z.HX4w-7v')).toBe(true);
-      expect(isUsableNonce('')).toBe(false);
+    it.each([
+      // RFC 9449 section 8 example
+      'eyJ7S_zG.eyJH0-Z.HX4w-7v',
+      // 32 random bytes, base64url, with - and _
+      'hJ3k-Qx_9vLm2Rt8Yw-Pz_0aB1cD2eF3gH4iJ5kL6mN',
+      '-_-_',
+      'a',
+      '!',
+      '~',
+      'nonce]with[brackets',
+      '#$%&()*+,/:;<=>?@^`{|}',
+      'x'.repeat(512),
+    ])('keeps the NQCHAR nonce %s', (nonce) => {
+      expect(isUsableNonce(nonce)).toBe(true);
+    });
+
+    it.each([
+      ['a quote', 'quote"d'],
+      ['a backslash', String.raw`back\slash`],
+      ['a space', 'has space'],
+      ['a tab', 'tab\there'],
+      ['a non-ASCII character', 'caf\u00E9'],
+      ['a DEL', 'del\u007F'],
+      ['an empty value', ''],
+      ['more than 512 characters', 'x'.repeat(513)],
+    ])('ignores a nonce with %s', (_reason, nonce) => {
+      expect(isUsableNonce(nonce)).toBe(false);
+    });
+
+    it('ignores a missing nonce', () => {
       expect(isUsableNonce(null)).toBe(false);
-      expect(isUsableNonce('has space')).toBe(false);
-      expect(isUsableNonce('quote"d')).toBe(false);
-      expect(isUsableNonce('x'.repeat(513))).toBe(false);
+      expect(isUsableNonce(undefined)).toBe(false);
     });
   });
 
