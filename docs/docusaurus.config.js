@@ -7,7 +7,8 @@ const prism = require('prism-react-renderer');
 const config = {
   title: 'Frameleaf',
   tagline: 'Self-hosted photo and video management solution',
-  url: 'https://docs.frameleaf.app',
+  // FL-173: no owned documentation host is configured yet (see .github/workflows/docs-deploy.yml).
+  url: 'https://docs.immich.app',
   baseUrl: '/',
   onBrokenLinks: 'throw',
   favicon: 'img/favicon.png',
@@ -90,10 +91,6 @@ const config = {
           className: 'rounded-none',
         },
         items: [
-          {
-            type: 'custom-versionSwitcher',
-            position: 'right',
-          },
           {
             href: 'https://github.com/Frameleaf/frameleaf-app',
             position: 'right',

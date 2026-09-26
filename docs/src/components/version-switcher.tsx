@@ -18,8 +18,8 @@ export default function VersionSwitcher(): JSX.Element {
         const archiveVersions = await response.json();
 
         const allVersions = [
-          { label: 'Next', url: 'https://docs.main.preview.frameleaf.app' },
-          { label: 'Latest', url: 'https://docs.frameleaf.app' },
+          { label: 'Next', url: 'https://docs.main.preview.immich.app' },
+          { label: 'Latest', url: 'https://docs.immich.app' },
           ...archiveVersions,
         ].map(({ label, url, rootPath }) => ({
           label,
