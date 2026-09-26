@@ -162,8 +162,16 @@
    * timeline bucket over the network. A real ArrowRight/ArrowLeft press (or button click) that lands
    * before that lookup resolves must not be dropped as if there were no such neighbour: it is queued
    * here and replayed by the `$effect` below once the lookup settles for this same asset.
+   *
+   * `queuedAt` bounds how long a queued press stays valid (see `PENDING_NAVIGATION_TTL_MS`): a lookup
+   * that only settles long after the press is no longer "the same interaction" as far as the person is
+   * concerned, and replaying it then would move them without a fresh keypress or click.
    */
-  let pendingNavigation = $state<{ order: 'previous' | 'next'; forAssetId: string } | undefined>();
+  let pendingNavigation = $state<{ order: 'previous' | 'next'; forAssetId: string; queuedAt: number } | undefined>();
+
+  /** FL-148: see `pendingNavigation`'s doc comment; ~1.5s is long enough to ride out a normal bucket
+   * fetch but short enough that a press this stale no longer reads as "the same interaction". */
+  const PENDING_NAVIGATION_TTL_MS = 1500;
 
   /**
    * FL-148: a second arrow press (or click) that arrives while the first navigation is still in
@@ -172,6 +180,30 @@
    * including the neighbour-not-loaded queueing above - once the in-flight one settles.
    */
   let queuedWhileBusy: 'previous' | 'next' | undefined;
+
+  /**
+   * FL-148: the single guard both the ArrowLeft/ArrowRight shortcut and the two replay paths below
+   * check - the same conditions `NextAssetAction`/`PreviousAssetAction` used to be conditionally
+   * rendered under. A press queued before the neighbour resolved (or before a prior navigation
+   * finished) must be re-checked against this at replay time too: the person may have opened the
+   * editor, entered face-edit mode, started a slideshow, or the caller may have turned navigation off,
+   * in the meantime, and a stale press must not swap the asset out from under any of those.
+   */
+  const canNavigateByKey = () =>
+    $slideshowState === SlideshowState.None &&
+    showNavigation &&
+    !assetViewerManager.isShowEditor &&
+    !assetViewerManager.isFaceEditMode;
+
+  // FL-148 P1: the moment any of those guards turns false, drop whatever was queued - it must not
+  // survive into the editor, face-edit mode or a slideshow just because its neighbour or its
+  // in-flight navigation happened to resolve after the person moved on.
+  $effect(() => {
+    if (!canNavigateByKey()) {
+      pendingNavigation = undefined;
+      queuedWhileBusy = undefined;
+    }
+  });
 
   let isPlayingOriginalVideo = $state($alwaysLoadOriginalVideo);
   let slideshowStartAssetId = $state<string>();
@@ -373,7 +405,7 @@
         // FL-148: the neighbour lookup for this asset has not resolved yet - queue the latest intent
         // rather than silently dropping it; the replay effect below fires once it does (or does
         // nothing further if there truly is no such neighbour).
-        pendingNavigation = { order, forAssetId: asset.id };
+        pendingNavigation = { order, forAssetId: asset.id, queuedAt: Date.now() };
         return;
       }
     }
@@ -429,6 +461,12 @@
         }
         const queuedOrder = queuedWhileBusy;
         queuedWhileBusy = undefined;
+        // FL-148 P1: re-check the same guard navigateAssetByKey checks before the initial press - the
+        // editor, face-edit mode or a slideshow may have opened while the first navigation was still
+        // in flight, and this queued press must not fire into that state.
+        if (!canNavigateByKey()) {
+          return;
+        }
         navigateAsset(queuedOrder);
       });
   };
@@ -444,8 +482,18 @@
     if (target === undefined) {
       return;
     }
-    const { order } = pendingNavigation;
+    const { order, queuedAt } = pendingNavigation;
     pendingNavigation = undefined;
+    // FL-148 P2: a lookup that only settles well after the press is no longer "the same interaction" -
+    // require a fresh press instead of jumping the person with no recent input of their own.
+    if (Date.now() - queuedAt > PENDING_NAVIGATION_TTL_MS) {
+      return;
+    }
+    // FL-148 P1: re-check the same guard navigateAssetByKey checks before the initial press - the
+    // editor, face-edit mode or a slideshow may have opened while the neighbour was still loading.
+    if (!canNavigateByKey()) {
+      return;
+    }
     navigateAsset(order);
   });
 
@@ -470,18 +518,13 @@
    * FL-148: the ArrowLeft/ArrowRight shortcuts used to live only inside `NextAssetAction` /
    * `PreviousAssetAction`, which are conditionally rendered on `nextAsset`/`previousAsset` already
    * being resolved - so while that (async) lookup was still in flight the keypress had no listener to
-   * reach at all. Binding the shortcut here, unconditionally, keeps it always reachable; it reproduces
-   * the same visibility guards those components rendered under so it does nothing when the on-screen
-   * buttons would not have been there either (in a slideshow, the editor, or face-edit mode, or with
-   * navigation turned off for this viewer instance).
+   * reach at all. Binding the shortcut here, unconditionally, keeps it always reachable; `canNavigateByKey`
+   * reproduces the same visibility guards those components rendered under (see its doc comment) so it
+   * does nothing when the on-screen buttons would not have been there either, and the two replay paths
+   * above re-check it too, since a queued press can outlive the state it was made in.
    */
   const navigateAssetByKey = (order: 'previous' | 'next') => {
-    if (
-      $slideshowState !== SlideshowState.None ||
-      !showNavigation ||
-      assetViewerManager.isShowEditor ||
-      assetViewerManager.isFaceEditMode
-    ) {
+    if (!canNavigateByKey()) {
       return;
     }
     navigateAsset(order);
