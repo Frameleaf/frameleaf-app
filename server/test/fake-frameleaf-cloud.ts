@@ -39,9 +39,12 @@ export type FakeCloudRequest = {
   form: () => URLSearchParams;
   /** The verified DPoP proof, when the request carried one. */
   dpop: FakeDpopProof | null;
+  /** The token store of the fake cloud that received the request: every token it minted. */
+  tokens: Set<string>;
 };
 
-export type FakeCloudAnswer = { status: number; body?: unknown; headers?: Record<string, string> };
+/** An answer: `body` is sent as JSON, `raw` as it is (with its own `content-type` in `headers`). */
+export type FakeCloudAnswer = { status: number; body?: unknown; raw?: string; headers?: Record<string, string> };
 
 export type FakeCloud = {
   url: string;
@@ -100,9 +103,6 @@ export const assertionKidOf = (request: FakeCloudRequest): string =>
  * key whose client assertion minted it (`frameleaf_kid`). `overrides` replaces claims, to mint a
  * token bound to the wrong key.
  */
-/** Every access token a fake cloud minted: the token store a bearer or unknown token is looked up in. */
-const mintedTokens = new Set<string>();
-
 export const mintToken = (request: FakeCloudRequest, name = 'api-token', overrides: Record<string, unknown> = {}) => {
   const claims = {
     name,
@@ -113,7 +113,8 @@ export const mintToken = (request: FakeCloudRequest, name = 'api-token', overrid
   };
   const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const token = `${part({ alg: 'EdDSA', typ: 'at+jwt' })}.${part(claims)}.${Buffer.from(name).toString('base64url')}`;
-  mintedTokens.add(token);
+  // kept in the store of the fake cloud that minted it, where a bearer or unknown token is looked up
+  request.tokens.add(token);
   return token;
 };
 
@@ -169,6 +170,7 @@ const proofProblem = (proof: string, method: string, expectedHtu: string, seen: 
 export const startFakeCloud = async (): Promise<FakeCloud> => {
   const fake = { requests: [], routes: new Map(), nonce: null, refusals: [] } as unknown as FakeCloud;
   const seenJti = new Map<string, number>();
+  const mintedTokens = new Set<string>();
   fake.on = (route, handler) => fake.routes.set(route, handler);
   fake.discovery = () => ({
     version: 1,
@@ -191,11 +193,12 @@ export const startFakeCloud = async (): Promise<FakeCloud> => {
       json: () => JSON.parse(body),
       form: () => new URLSearchParams(body),
       dpop: null,
+      tokens: mintedTokens,
     };
     fake.requests.push(request);
-    const send = ({ status, body: payload, headers }: FakeCloudAnswer) => {
-      response.writeHead(status, { ...headers, 'content-type': 'application/json' });
-      response.end(payload === undefined ? '' : JSON.stringify(payload));
+    const send = ({ status, body: payload, raw, headers }: FakeCloudAnswer) => {
+      response.writeHead(status, { 'content-type': 'application/json', ...headers });
+      response.end(raw ?? (payload === undefined ? '' : JSON.stringify(payload)));
     };
     const tokenEndpoint = path === '/id/token';
     const refuse = (status: number, code: string, headers: Record<string, string> = {}) => {

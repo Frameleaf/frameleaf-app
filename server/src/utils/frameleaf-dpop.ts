@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { base64url } from 'src/utils/frameleaf-cloud.js';
+import { MlAdmissionRefusal } from 'src/enum.js';
+import { FrameleafCloudError, base64url } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * RFC 9449 (DPoP) for Frameleaf Cloud instance tokens (FL-178, the app side of FC-66). The cloud
@@ -50,7 +51,7 @@ export const isUsableNonce = (value: string | null | undefined): value is string
   }
   for (const char of value) {
     const code = char.codePointAt(0) ?? 0;
-    if (code < 0x21 || code > 0x7E || code === 0x22 || code === 0x5C) {
+    if (code < 0x21 || code > 0x7e || code === 0x22 || code === 0x5c) {
       return false;
     }
   }
@@ -116,8 +117,28 @@ export const isNonceChallenge = (
   if (code === USE_DPOP_NONCE) {
     return true;
   }
-  return /(?:^|[\s,])error\s*=\s*"use_dpop_nonce"/i.test(wwwAuthenticate ?? '');
+  // the quoted-string or the bare token form of the auth-param (RFC 7235 section 2.1), the value
+  // ending at the closing quote, or at a delimiter or the end (never `use_dpop_nonce_other`)
+  return /(?:^|[\s,])error\s*=\s*(?:"use_dpop_nonce"|use_dpop_nonce(?=[\s,;]|$))/i.test(wwwAuthenticate ?? '');
 };
+
+/**
+ * The token endpoint answered with a token response this server parsed, but will not use: not
+ * DPoP-bound, or bound to (or minted for) another key (FL-178). Thrown only by `accessToken`, after
+ * the answer passed `tokenResponseSchema`, so it proves the cloud checked the client assertion and
+ * issued a token for that key. Any other failure, including a 200 that is not a token response (a
+ * captive portal's HTML, invalid JSON, an oversized body), is a plain `FrameleafCloudError`.
+ */
+export class BoundTokenRefusedError extends FrameleafCloudError {
+  constructor(problem: string) {
+    super(
+      MlAdmissionRefusal.CloudUnavailable,
+      200,
+      `Frameleaf Cloud issued a token this server will not use: ${problem}`,
+    );
+    this.name = 'BoundTokenRefusedError';
+  }
+}
 
 /**
  * Why an issued token must not be used with `signer`, or null (FL-178, FC-66). The token type must

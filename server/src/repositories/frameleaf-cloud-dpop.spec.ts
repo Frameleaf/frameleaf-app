@@ -8,7 +8,7 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafCloudError, FrameleafDiscoveryDocument } from 'src/utils/frameleaf-cloud.js';
-import { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
+import { BoundTokenRefusedError, FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
 import {
   FakeCloud,
   FakeCloudRequest,
@@ -125,11 +125,27 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
         }),
       ]) {
         cloud.on('POST /id/token', answer);
-        await expect(mint()).rejects.toThrow(/token this server will not use/);
+        const error = await mint().catch((error_: unknown) => error_);
+        expect(error).toBeInstanceOf(BoundTokenRefusedError);
+        expect((error as Error).message).toMatch(/token this server will not use/);
       }
       cloud.on('POST /id/token', (request) => tokenAnswer(request));
       await mint();
       expect(tokenRequests()).toHaveLength(4);
+    });
+
+    it('never marks a success status that is not a token response as an issued token', async () => {
+      for (const answer of [
+        { status: 200, raw: '<html>portal</html>', headers: { 'content-type': 'text/html' } },
+        { status: 200, raw: '{"access_token": ' },
+        { status: 200, body: { hello: 'portal' } },
+        { status: 200, raw: `{"pad":"${'x'.repeat(300 * 1024)}"}` },
+      ]) {
+        cloud.on('POST /id/token', () => answer);
+        const error = await mint().catch((error_: unknown) => error_);
+        expect(error).toBeInstanceOf(FrameleafCloudError);
+        expect(error).not.toBeInstanceOf(BoundTokenRefusedError);
+      }
     });
 
     it('keeps tokens per key, and drops a token of a key a rotation replaced', async () => {

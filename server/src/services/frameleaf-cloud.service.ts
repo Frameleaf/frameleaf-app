@@ -64,7 +64,7 @@ import {
   cloudErrorCode,
   storeAddress,
 } from 'src/utils/frameleaf-cloud.js';
-import { USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop.js';
+import { BoundTokenRefusedError, USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
@@ -836,6 +836,10 @@ export class FrameleafCloudService extends BaseService {
     }
 
     const now = Date.now();
+    // FL-178: this check-in succeeded, so the cloud accepts the current key again: a relink the
+    // key_retired path asked for is no longer needed. A relink the cloud commanded, or one after a
+    // closed key recovery, stays until the server is linked again.
+    const keyRelinkResolved = link.heartbeat?.relinkReason === 'key' && !link.heartbeat.keyRecovery?.closed;
     let next: FrameleafCloudLink = {
       ...link,
       lastContactAt: new Date(now).toISOString(),
@@ -848,6 +852,7 @@ export class FrameleafCloudService extends BaseService {
         lastFailureAt: undefined,
         cloneSuspected: response.cloneSuspected,
         nextAt: this.after(now, nextHeartbeatDelay(response.nextHeartbeatSec)),
+        ...(keyRelinkResolved && { relinkRequested: undefined, relinkReason: undefined }),
       },
     };
     if (response.servicesChanged) {
@@ -954,9 +959,13 @@ export class FrameleafCloudService extends BaseService {
     return error instanceof FrameleafCloudError && (error.oauth?.error ?? cloudErrorCode(error)) === 'invalid_client';
   }
 
-  /** The token endpoint answered success, but the token it issued was refused here (FL-178). */
+  /**
+   * The token endpoint issued a parsed token response this server refused (FL-178). Only
+   * `BoundTokenRefusedError` means that: any other failure with a 2xx status (HTML from a captive
+   * portal, invalid JSON, an oversized body) says nothing about whether the cloud checked the key.
+   */
   private isIssuedButRefused(error: unknown): boolean {
-    return error instanceof FrameleafCloudError && error.status !== null && error.status >= 200 && error.status < 300;
+    return error instanceof BoundTokenRefusedError;
   }
 
   // ------------------------------------------------------------------ commands (FL-155)
@@ -1062,8 +1071,9 @@ export class FrameleafCloudService extends BaseService {
   /**
    * Ask the administrators to link this server again: on the cloud's `relink` command, or when every
    * instance route answers 401 `key_retired` (FL-177). Nothing on this server is removed. `relinkReason`
-   * records why; a `key` reason is kept when a command arrives later, since only the key reason lets a
-   * later `key_retired` skip asking about a candidate.
+   * records why. A commanded relink always wins and stays until the server is linked again; a `key`
+   * reason lets later `key_retired` check-ins stay quiet, and a later check-in that succeeds clears it
+   * (FL-178), so a passing `key_retired` leaves no stale relink request behind.
    */
   private requireRelink(link: FrameleafCloudLink, why: 'command' | 'key'): FrameleafCloudLink {
     this.notify({
@@ -1083,7 +1093,7 @@ export class FrameleafCloudService extends BaseService {
         ...link.heartbeat,
         failures: link.heartbeat?.failures ?? 0,
         relinkRequested: true,
-        relinkReason: link.heartbeat?.relinkReason === 'key' ? 'key' : why,
+        relinkReason: why === 'command' || link.heartbeat?.relinkReason === 'command' ? 'command' : 'key',
       },
     };
   }
