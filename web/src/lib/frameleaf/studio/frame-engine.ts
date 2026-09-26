@@ -201,14 +201,14 @@ const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
     if (!services.stageDraft) {
       return Promise.resolve({ status: 'rejected', reason: 'forbidden' } as const);
     }
-    const ids = Array.isArray(commandIds) ? commandIds.filter((id): id is string => typeof id === 'string') : [];
-    // Each count only when it is a whole count; anything else is left out rather than trusted. A graph
-    // version without a valid base keeps its position.
-    const base = isCount(baseRevision) ? baseRevision : undefined;
-    if (isCount(graphVersion)) {
-      return services.stageDraft(graph, ids, base, graphVersion);
+    // Protocol 3: an editor draft names the revision and the host graph version it was loaded from,
+    // both whole counts. Without them it could not be judged as the editor's, so it is refused
+    // rather than staged as anything else (FL-174).
+    if (!isCount(baseRevision) || !isCount(graphVersion)) {
+      return Promise.resolve({ status: 'rejected', reason: 'invalid' } as const);
     }
-    return base === undefined ? services.stageDraft(graph, ids) : services.stageDraft(graph, ids, base);
+    const ids = Array.isArray(commandIds) ? commandIds.filter((id): id is string => typeof id === 'string') : [];
+    return services.stageDraft(graph, ids, baseRevision, graphVersion);
   },
   reloadProject: (services) => services.reloadProject(),
   saveWorkspace: (services, [layout]) =>

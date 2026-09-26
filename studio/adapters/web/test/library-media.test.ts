@@ -6,16 +6,26 @@ import {
   associateMediaWithProject,
   createMedia,
   createProject,
+  deleteMedia,
+  getMedia,
   getMediaForProject,
   getProject,
   getProjectMediaIds,
+  getProjectsUsingMedia,
+  removeMediaFromProject,
 } from '@/infrastructure/storage'
-import { projectJsonPath } from '@/infrastructure/storage/workspace-fs/paths'
+import { writeJsonAtomic } from '@/infrastructure/storage/workspace-fs/fs-primitives'
+import { projectJsonPath, projectMediaLinksPath } from '@/infrastructure/storage/workspace-fs/paths'
 import { setWorkspaceRoot } from '@/infrastructure/storage/workspace-fs/root'
 import { createProjectObject } from '@/features/projects/utils/project-helpers'
 import { validateProjectMediaReferences } from '@/features/timeline/utils/media-validation'
 import type { StudioAssetRef } from '@frameleaf/host/host-contract'
-import { createLibraryMediaSeeder, followRetiredImports } from '../src/library-media'
+import {
+  createLibraryMediaSeeder,
+  followRetiredImports,
+  retireProject,
+  type LibraryMediaSeeder,
+} from '../src/library-media'
 import { VirtualWorkspace } from '../src/virtual-workspace'
 
 // Folder handles for imported files live in IndexedDB, which jsdom does not have; none are used here.
@@ -115,9 +125,24 @@ const graphWith = (id: string): Project => {
   } as unknown as Project
 }
 
+const deferred = <T>() => {
+  let resolve: (value: T) => void = () => {}
+  const promise = new Promise<T>((done) => (resolve = done))
+  return { promise, resolve }
+}
+
+/** Let the watcher's reads run. */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+/** Freecut's `deleteMediaFromProject`: unlink, then free the record once no project links it. */
+const freecutRelease = async (projectId: string, mediaId: string) => {
+  await removeMediaFromProject(projectId, mediaId)
+  if ((await getProjectsUsingMedia(mediaId)).length === 0) await deleteMedia(mediaId)
+}
+
 /** Let the write listener's relinking finish. */
 const eventually = async (check: () => Promise<boolean>) => {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
     if (await check()) return true
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -222,6 +247,7 @@ describe('library media across editor remounts', () => {
       media,
       retired: new Set(['fl-p']),
       current: () => 'fl-p-m1',
+      release: vi.fn(async () => undefined),
       onError,
     })
 
@@ -243,5 +269,97 @@ describe('library media across editor remounts', () => {
     expect(associate).not.toHaveBeenCalled()
     expect(onError).not.toHaveBeenCalled()
     media.dispose()
+  })
+
+  it('forgets media the person removes and frees it from replaced mounts, so it never comes back', async () => {
+    await createMedia(imported(IMPORTED, 'wave.mp4'))
+    // As after a remount: the replaced mount's project and the current one both link the import.
+    await associateMediaWithProject('fl-p', IMPORTED)
+    await associateMediaWithProject('fl-p-m1', IMPORTED)
+    const media = createLibraryMediaSeeder({
+      workspace,
+      projectId: () => 'fl-p-m1',
+      onChange: () => undefined,
+    })
+    const release = vi.fn(freecutRelease)
+    const onError = vi.fn()
+    const stop = followRetiredImports({
+      workspace,
+      media,
+      retired: new Set(['fl-p']),
+      current: () => 'fl-p-m1',
+      release,
+      onError,
+    })
+    await tick()
+    await tick()
+
+    // The person removes it from the bin: Freecut unlinks it from the current project only, and keeps
+    // the record because the replaced project still links it.
+    await removeMediaFromProject('fl-p-m1', IMPORTED)
+    expect(await eventually(async () => (await getMedia(IMPORTED)) === undefined)).toBe(true)
+    expect(release).toHaveBeenCalledWith('fl-p', IMPORTED)
+    expect(await getProjectMediaIds('fl-p')).not.toContain(IMPORTED)
+
+    // A late import in the replaced instance carries its own media, not the removed one.
+    await createMedia(imported(LATE, 'late.mp4'))
+    await associateMediaWithProject('fl-p', LATE)
+    expect(await eventually(async () => (await getProjectMediaIds('fl-p-m1')).includes(LATE))).toBe(
+      true,
+    )
+    expect(await getProjectMediaIds('fl-p-m1')).not.toContain(IMPORTED)
+
+    // Nor does the next remount, even from a project that still names it.
+    await associateMediaWithProject('fl-p', IMPORTED)
+    await media.associate('fl-p-m2', 'fl-p')
+    expect(await getProjectMediaIds('fl-p-m2')).toEqual(expect.arrayContaining([LATE]))
+    expect(await getProjectMediaIds('fl-p-m2')).not.toContain(IMPORTED)
+
+    // Imported again, it is the person's again.
+    media.remember(IMPORTED)
+    await media.associate('fl-p-m3', 'fl-p')
+    expect(await getProjectMediaIds('fl-p-m3')).toContain(IMPORTED)
+    expect(onError).not.toHaveBeenCalled()
+    stop()
+    media.dispose()
+  })
+
+  it('runs one association at a time per replaced project, with one more for a burst', async () => {
+    const running = deferred<void>()
+    const media: LibraryMediaSeeder = {
+      seed: vi.fn(async () => undefined),
+      associate: vi.fn(() => running.promise),
+      forget: vi.fn(),
+      remember: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const stop = followRetiredImports({
+      workspace,
+      media,
+      retired: new Set(['fl-p']),
+      current: () => 'fl-p-m1',
+      release: vi.fn(async () => undefined),
+      onError: vi.fn(),
+    })
+    const root = workspace.handle()
+    for (let write = 0; write < 3; write += 1) {
+      await writeJsonAtomic(root, projectMediaLinksPath('fl-p'), { version: '1.0', mediaIds: [] })
+    }
+    expect(media.associate).toHaveBeenCalledTimes(1)
+    running.resolve()
+    expect(await eventually(async () => vi.mocked(media.associate).mock.calls.length === 2)).toBe(
+      true,
+    )
+    await tick()
+    expect(media.associate).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
+  it('follows only the most recently replaced mounts', () => {
+    const retired = new Set<string>()
+    for (const projectId of ['p', 'p-m1', 'p-m2', 'p-m3', 'p-m4']) retireProject(retired, projectId)
+    expect([...retired]).toEqual(['p-m2', 'p-m3', 'p-m4'])
+    retireProject(retired, 'p-m5', 1)
+    expect([...retired]).toEqual(['p-m5'])
   })
 })
