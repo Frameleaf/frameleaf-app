@@ -37,8 +37,8 @@ describe(LicenseAdminController.name, () => {
     expect(status).toBe(400);
     expect(service.activate).not.toHaveBeenCalled();
 
-    await request(ctx.getHttpServer()).put('/admin/license/activate').send({ key: 'FL-S8NL-49G8-J58U' });
-    expect(service.activate.mock.calls[0][1]).toEqual({ key: 'FL-S8NL-49G8-J58U' });
+    await request(ctx.getHttpServer()).put('/admin/license/activate').send({ key: 'FL-S8NL-49G8-J583' });
+    expect(service.activate.mock.calls[0][1]).toEqual({ key: 'FL-S8NL-49G8-J583' });
   });
 });
 

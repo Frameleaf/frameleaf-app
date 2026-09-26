@@ -16,8 +16,8 @@ import { authStub } from 'test/fixtures/auth.stub.js';
 import { makeLicenseSigner, signLicenseCertificate } from 'test/fixtures/frameleaf-license.fixture.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
-const SERVER_KEY = 'FL-S8NL-49G8-J58U';
-const PERSONAL_KEY = 'FL-IC8Q-BT2Q-8ELH';
+const SERVER_KEY = 'FL-S8NL-49G8-J583';
+const PERSONAL_KEY = 'FL-IC8Q-BT2Q-8EL6';
 
 describe(FrameleafLicenseService.name, () => {
   let sut: FrameleafLicenseService;

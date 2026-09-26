@@ -65,17 +65,46 @@ export type ProductKeyCheck =
   | { valid: true; key: string; kind: ProductKeyKind; last4: string }
   | { valid: false; key: string; reason: 'empty' | 'format' | 'symbols' | 'kind' | 'check' | 'upstream' };
 
+/** The kind symbol's value in the check: `S` is its alphabet index (16); `I` has the fixed value 8. */
+const KEY_KIND_VALUES: Record<string, number> = { S: 16, I: 8 };
+
+const KEY_CHECK_MODULUS = 32;
+
+/** Symbols to values for the check: the kind first (S 16, I 8), then alphabet indexes. */
+const keySymbolValues = (symbols: string): number[] => {
+  const kind = KEY_KIND_VALUES[symbols[0]];
+  if (kind === undefined) {
+    throw new Error('a licence key starts with S or I');
+  }
+  return [kind, ...[...symbols.slice(1)].map((symbol) => KEY_ALPHABET.indexOf(symbol))];
+};
+
 /**
- * The mod-32 check symbol over the 11 symbols after `FL-`. The kind symbol (S or I) is weighted by
- * its character code, since `I` is not in the alphabet; the others by alphabet index and position.
- * The same rule as the cloud's `license-key.mjs`.
+ * Luhn mod 32 sum: walking from the rightmost value leftwards, every second value is doubled,
+ * starting with the rightmost when `doubleRightmost` (generation) or with the one left of it
+ * (validation, where the rightmost is the check). A doubled value v counts as
+ * `Math.floor(2v / 32) + (2v % 32)`.
+ */
+const luhnSum = (values: readonly number[], doubleRightmost: boolean): number => {
+  let sum = 0;
+  let double = doubleRightmost;
+  for (let index = values.length - 1; index >= 0; index--) {
+    const value = values[index];
+    sum += double ? Math.floor((2 * value) / KEY_CHECK_MODULUS) + ((2 * value) % KEY_CHECK_MODULUS) : value;
+    double = !double;
+  }
+  return sum;
+};
+
+/**
+ * The check-symbol algorithm, Luhn mod 32 (as-built decision #40; frameleaf-cloud
+ * `packages/contracts/src/licence/key-format.ts`, `licenseKeyCheckSymbol`): over the 11 values of
+ * the kind and the ten body symbols, check = (32 − (sum mod 32)) mod 32, mapped back to the
+ * alphabet. It catches every single-symbol substitution and most adjacent transpositions.
  */
 export const keyCheckSymbol = (body: string) => {
-  let sum = body.codePointAt(0) ?? 0;
-  for (let index = 1; index < body.length; index++) {
-    sum += (KEY_ALPHABET.indexOf(body[index]) + 1) * (index + 1);
-  }
-  return KEY_ALPHABET[sum % 32];
+  const sum = luhnSum(keySymbolValues(body), true);
+  return KEY_ALPHABET[(KEY_CHECK_MODULUS - (sum % KEY_CHECK_MODULUS)) % KEY_CHECK_MODULUS];
 };
 
 /** Uppercases, strips separators and re-hyphenates into FL-XXXX-XXXX-XXXX (system-data.mjs:684-690). */
@@ -95,7 +124,9 @@ export const normalizeProductKey = (input: string) => {
  */
 export const validateProductKey = (input: string): ProductKeyCheck => {
   const raw = input.trim().toUpperCase();
-  if (/^IM(CL|SV)-/.test(raw)) {
+  // upstream product keys are detected on the symbols alone, whatever separators surround them
+  const compactRaw = raw.replaceAll(/[^A-Z0-9]/g, '');
+  if (compactRaw.startsWith('IMCL') || compactRaw.startsWith('IMSV')) {
     return { valid: false, key: raw, reason: 'upstream' };
   }
   const key = normalizeProductKey(input);
