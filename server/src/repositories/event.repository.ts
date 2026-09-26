@@ -145,6 +145,14 @@ type EventMap = {
   // websocket events
   WebsocketConnect: [{ userId: string }];
 
+  /**
+   * FL-160: an own-memory cloud backup key was loaded on one worker and is handed to the others, which
+   * keep it in memory only. Server-to-server over the event bus; never stored, logged or sent to a client.
+   */
+  CloudBackupKeyShare: [{ key: string }];
+  /** FL-160: a worker needs the own-memory cloud backup key; a worker holding it shares it again. */
+  CloudBackupKeyRequest: [];
+
   /** FL-155: tell every administrator once per `dedupeDays` (at most 30) for the same `dedupeKey`. */
   AdminNotify: [AdminNotice];
 };

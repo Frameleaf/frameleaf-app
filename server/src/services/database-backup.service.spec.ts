@@ -663,6 +663,8 @@ describe(DatabaseBackupService.name, () => {
         `immich-db-backup-${DateTime.fromISO('2025-07-27T11:01:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg14.5.sql.gz`,
         'immich-db-backup-1753789649000.sql.gz',
         `immich-db-backup-${DateTime.fromISO('2025-07-29T11:01:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg14.5.sql.gz`,
+        // FL-160: a cloud backup run's leftover dump is not a restore point
+        'cloud-backup-immich-db-backup-20250730T110116-v1.234.5-pg14.5.sql.gz',
       ]);
       mocks.storage.stat.mockResolvedValue({ size: 1024 } as any);
 

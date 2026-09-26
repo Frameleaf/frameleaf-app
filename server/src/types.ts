@@ -863,6 +863,51 @@ export type FrameleafMlSuspension = {
   since: string;
 };
 
+/** FL-160: who generated a cloud backup bucket key and where it is kept. */
+export type CloudBackupKeyMode = 'server' | 'own-stored' | 'own-memory';
+
+/** FL-160: where cloud backups are stored. `managed` waits for Frameleaf Cloud backup grants (FC-33). */
+export type CloudBackupTarget = 'managed' | 'byo-s3';
+
+/** FL-160: how the last cloud backup run went. Counts are files, not assets. */
+export type FrameleafCloudBackupRun = {
+  operationId: string;
+  status: 'running' | 'waiting-for-key' | 'completed' | 'failed' | 'cancelled';
+  startedAt: string;
+  finishedAt?: string;
+  uploaded: number;
+  skipped: number;
+  missing: number;
+  bytesUploaded: number;
+  manifestKey?: string;
+  error?: string;
+};
+
+/**
+ * FL-160: this server's cloud backup claim. Never holds the key: `keyFingerprint` only lets a key file
+ * be matched to the bucket. The key is a 0600 file under the identity directory (`server`,
+ * `own-stored`) or held in memory only (`own-memory`).
+ */
+export type FrameleafCloudBackup = {
+  target: CloudBackupTarget;
+  /** The claimed bucket's address, `<endpoint>/<bucket>`: the index key in `cloud_backup_object`. */
+  bucketRef: string;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  instanceId: string;
+  claimedAt: string;
+  keyMode: CloudBackupKeyMode;
+  keyFingerprint: string;
+  /** Set once the first run filled the object index from the bucket listing. */
+  reconciledAt?: string;
+  lastRun?: FrameleafCloudBackupRun;
+  lastSuccessAt?: string;
+  lastManifestKey?: string;
+  /** The last run's checks of the bucket (listing and claim) that reached the provider. */
+  lastCheckAt?: string;
+};
+
 export type FrameleafCloudPermissions = {
   allowRemoteEnable: boolean;
   allowBackupTrigger: boolean;
@@ -1028,6 +1073,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafPricing]: FrameleafPricingState;
   [SystemMetadataKey.FrameleafBoot]: FrameleafBoot;
   [SystemMetadataKey.FrameleafMlSuspension]: FrameleafMlSuspension;
+  [SystemMetadataKey.FrameleafCloudBackup]: FrameleafCloudBackup;
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.FrameleafCloudDescriptionQueue]: FrameleafCloudDescriptionQueue;

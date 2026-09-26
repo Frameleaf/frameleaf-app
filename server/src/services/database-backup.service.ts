@@ -41,6 +41,7 @@ import { getConfig } from 'src/utils/config.js';
 import {
   UnsupportedPostgresError,
   findDatabaseBackupVersion,
+  isCloudBackupDumpName,
   isFailedDatabaseBackupName,
   isValidDatabaseBackupName,
   isValidDatabaseRoutineBackupName,
@@ -398,7 +399,8 @@ export class DatabaseBackupService {
     const timezone = DateTime.local().zoneName;
 
     const validFiles = files
-      .filter((fn) => isValidDatabaseBackupName(fn))
+      // FL-160: a cloud backup run's own temporary dump is never offered for a restore
+      .filter((fn) => isValidDatabaseBackupName(fn) && !isCloudBackupDumpName(fn))
       .toSorted((a, b) => (a.startsWith('uploaded-') === b.startsWith('uploaded-') ? a.localeCompare(b) : 1))
       .toReversed();
 
