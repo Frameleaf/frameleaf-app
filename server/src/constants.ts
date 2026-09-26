@@ -237,6 +237,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'Linking this server to a Frameleaf account: status, the device-code link, the check-in and what Frameleaf Cloud may ask this server to do. Nothing is contacted until an administrator starts linking, and an unset FRAMELEAF_CLOUD_URL is never replaced by a default host.',
   [ApiTag.FrameleafLicense]:
     'Frameleaf licence certificates: activation by key or offline file, refresh with a grace period, and the entitlements cloud-connected features read. Self-hosted features never depend on a licence.',
+  [ApiTag.FrameleafCloudBackup]:
+    'Cloud backup to one bucket per server: the claim, the SSE-C bucket key in one of three key modes (never returned after the recovery kit) and content-addressed runs that upload each unique file once.',
   [ApiTag.FrameleafCloudMl]:
     'Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback.',
   [ApiTag.Integrity]: 'Endpoints for viewing and managing integrity reports.',

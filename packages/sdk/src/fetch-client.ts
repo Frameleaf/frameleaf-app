@@ -54,6 +54,98 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type CloudBackupActiveRunDto = {
+    operationId: string;
+    phase: CloudBackupRunPhase;
+    /** 0 to 100 */
+    progress: number;
+    skipped: number;
+    state: CloudBackupRunState;
+    uploaded: number;
+};
+export type CloudBackupLastRunDto = {
+    bytesUploaded: number;
+    error: string | null;
+    finishedAt: string | null;
+    /** Files that were not on disk */
+    missing: number;
+    operationId: string;
+    /** Files already in the bucket */
+    skipped: number;
+    startedAt: string;
+    status: CloudBackupLastRunStatus;
+    /** New or changed files uploaded */
+    uploaded: number;
+};
+export type CloudBackupStatusResponseDto = {
+    activeRun: (CloudBackupActiveRunDto) | null;
+    bucket: string | null;
+    claimedAt: string | null;
+    /** A bucket is claimed and cloud backup is on */
+    configured: boolean;
+    endpoint: string | null;
+    instanceId: string | null;
+    keyFingerprint: string | null;
+    /** The key is available to this server; false in own-memory mode until unlocked */
+    keyLoaded: boolean;
+    keyMode: (CloudBackupKeyMode) | null;
+    lastManifestKey: string | null;
+    lastRun: (CloudBackupLastRunDto) | null;
+    lastSuccessAt: string | null;
+    /** Frameleaf-managed storage can be chosen; false until Frameleaf Cloud offers backup storage */
+    managedAvailable: boolean;
+    region: string | null;
+    target: CloudBackupTargetSetting;
+    /** Unique files this server has in the bucket and their size */
+    usage: {
+        bytes: number;
+        objects: number;
+    } | null;
+};
+export type CloudBackupCheckResponseDto = {
+    /** What the check found, in plain words */
+    message: string;
+    /** The bucket can be claimed for this server */
+    ok: boolean;
+    state: CloudBackupBucketState;
+};
+export type CloudBackupS3Dto = {
+    /** Access key ID */
+    accessKeyId: string;
+    /** An empty bucket dedicated to this server */
+    bucket: string;
+    /** Storage address (HTTPS) */
+    endpoint: string;
+    /** Region; empty reads it from the storage address */
+    region?: string;
+    /** Secret access key; empty uses the one stored for the same address, bucket and access key */
+    secretAccessKey: string;
+};
+export type CloudBackupCheckDto = {
+    s3: CloudBackupS3Dto;
+};
+export type CloudBackupGeneratedKeyDto = {
+    createdAt: string;
+    /** The key fingerprint that matches a key file to its bucket */
+    fingerprint: string;
+    /** The new bucket key (base64). Shown once, for the recovery kit; never returned again */
+    key: string;
+    /** The key as the recovery kit writes it */
+    recoveryCode: string;
+};
+export type CloudBackupUnlockDto = {
+    /** The key file, the base64 key or the recovery code. Kept in memory only */
+    key: string;
+};
+export type CloudBackupSetupDto = {
+    /** own-memory only: "I understand" that a lost key makes every backup permanently unreadable */
+    acknowledgement?: string;
+    /** The bucket key: the key file, the base64 key or the recovery code. Never returned */
+    key: string;
+    keyMode: CloudBackupKeyMode;
+    s3?: CloudBackupS3Dto;
+    target: CloudBackupTarget;
+};
 export type CloudLinkPendingDto = {
     expiresAt: string;
     /** How often this server asks whether the code was approved */
@@ -416,6 +508,34 @@ export type AdminConfigFFmpegDto = {
     /** Two pass */
     twoPass: boolean;
 };
+export type AdminConfigFrameleafCloudBackupIncludeDto = {
+    /** Also back up transcoded videos */
+    encodedVideo: boolean;
+    /** Also back up thumbnails and previews */
+    thumbs: boolean;
+};
+export type AdminConfigFrameleafCloudBackupS3Dto = {
+    /** Access key ID */
+    accessKeyId: string;
+    /** Bucket name */
+    bucket: string;
+    /** Storage address of your own S3-compatible bucket (HTTPS) */
+    endpoint: string;
+    /** Region; empty reads it from the storage address or uses us-east-1 */
+    region: string;
+    /** Secret access key (write-only; empty preserves the existing secret) */
+    secretAccessKey: string;
+    /** Read-only indicator that a secret access key is stored. Set by the server; ignored on write. */
+    secretAccessKeyConfigured?: boolean;
+};
+export type AdminConfigFrameleafCloudBackupDto = {
+    /** Back up to the claimed bucket (set up from Settings › Frameleaf Cloud › Cloud backup) */
+    enabled: boolean;
+    include: AdminConfigFrameleafCloudBackupIncludeDto;
+    keyMode: CloudBackupKeyMode;
+    s3: AdminConfigFrameleafCloudBackupS3Dto;
+    target: CloudBackupTargetSetting;
+};
 export type AdminConfigFrameleafCloudAutoDescribeDto = {
     /** Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap */
     dailyBudgetUsd: number;
@@ -449,6 +569,7 @@ export type AdminConfigFrameleafSignInDto = {
     showOnLocalLogin: boolean;
 };
 export type AdminConfigFrameleafCloudDto = {
+    cloudBackup?: AdminConfigFrameleafCloudBackupDto;
     cloudMl: AdminConfigFrameleafCloudMlDto;
     signIn?: AdminConfigFrameleafSignInDto;
 };
@@ -10339,6 +10460,140 @@ export function unlinkAllOAuthAccountsAdmin(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Turn cloud backup off
+ */
+export function turnOffCloudBackup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get the cloud backup status
+ */
+export function getCloudBackupStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup", {
+        ...opts
+    }));
+}
+/**
+ * Check a bucket for cloud backup
+ */
+export function checkCloudBackupBucket({ cloudBackupCheckDto }: {
+    cloudBackupCheckDto: CloudBackupCheckDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupCheckResponseDto;
+    }>("/admin/cloud/backup/check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupCheckDto
+    })));
+}
+/**
+ * Generate a bucket key
+ */
+export function generateCloudBackupKey(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: CloudBackupGeneratedKeyDto;
+    }>("/admin/cloud/backup/key", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Load the backup key into memory
+ */
+export function unlockCloudBackupKey({ cloudBackupUnlockDto }: {
+    cloudBackupUnlockDto: CloudBackupUnlockDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/key/unlock", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupUnlockDto
+    })));
+}
+/**
+ * Back up now
+ */
+export function startCloudBackupRun(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/runs", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Cancel a backup run
+ */
+export function cancelCloudBackupRun({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>(`/admin/cloud/backup/runs/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Pause a backup run
+ */
+export function pauseCloudBackupRun({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>(`/admin/cloud/backup/runs/${encodeURIComponent(id)}/pause`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Resume a backup run
+ */
+export function resumeCloudBackupRun({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>(`/admin/cloud/backup/runs/${encodeURIComponent(id)}/resume`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Set up cloud backup
+ */
+export function setupCloudBackup({ cloudBackupSetupDto }: {
+    cloudBackupSetupDto: CloudBackupSetupDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/setup", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupSetupDto
+    })));
+}
+/**
  * Check in with Frameleaf Cloud now
  */
 export function checkInCloud(opts?: Oazapfts.RequestOpts) {
@@ -19519,6 +19774,47 @@ export enum UserAvatarColor {
     Gray = "gray",
     Amber = "amber"
 }
+export enum CloudBackupRunPhase {
+    Database = "database",
+    Reconcile = "reconcile",
+    Assets = "assets",
+    Profiles = "profiles",
+    Manifest = "manifest",
+    Done = "done"
+}
+export enum CloudBackupRunState {
+    Queued = "queued",
+    Running = "running",
+    Pausing = "pausing",
+    Paused = "paused",
+    Cancelling = "cancelling"
+}
+export enum CloudBackupKeyMode {
+    Server = "server",
+    OwnStored = "own-stored",
+    OwnMemory = "own-memory"
+}
+export enum CloudBackupLastRunStatus {
+    Running = "running",
+    WaitingForKey = "waiting-for-key",
+    Completed = "completed",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum CloudBackupTargetSetting {
+    Off = "off",
+    Managed = "managed",
+    ByoS3 = "byo-s3"
+}
+export enum CloudBackupBucketState {
+    Empty = "empty",
+    Claimed = "claimed",
+    NotEmpty = "not-empty"
+}
+export enum CloudBackupTarget {
+    Managed = "managed",
+    ByoS3 = "byo-s3"
+}
 export enum CloudHeartbeatField {
     Version = "version",
     BootId = "bootId",
@@ -19717,7 +20013,8 @@ export enum ClassificationRuleAction {
 }
 export enum ConfigCredential {
     SmtpPassword = "smtp-password",
-    OauthClientSecret = "oauth-client-secret"
+    OauthClientSecret = "oauth-client-secret",
+    CloudBackupS3SecretKey = "cloud-backup-s3-secret-key"
 }
 export enum SystemConfigHistoryCredentialChange {
     Replaced = "replaced",
@@ -19866,7 +20163,8 @@ export enum MediaOperationKind {
     PreservationVerify = "preservation_verify",
     PreservationReview = "preservation_review",
     PreservationRestore = "preservation_restore",
-    StudioExportPublish = "studio_export_publish"
+    StudioExportPublish = "studio_export_publish",
+    CloudBackup = "cloud_backup"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -20277,6 +20575,9 @@ export enum Permission {
     FrameleafAccountUpdate = "frameleafAccount.update",
     AdminCloudMlRead = "adminCloudMl.read",
     AdminCloudMlUpdate = "adminCloudMl.update",
+    AdminCloudBackupRead = "adminCloudBackup.read",
+    AdminCloudBackupUpdate = "adminCloudBackup.update",
+    AdminCloudBackupRun = "adminCloudBackup.run",
     ServerLicenseRead = "serverLicense.read",
     ServerLicenseUpdate = "serverLicense.update",
     ServerLicenseDelete = "serverLicense.delete",

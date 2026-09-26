@@ -92,6 +92,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000630-AddWorkflowRunStep',
   '2100000000640-AddAssetFilePathIndex',
   '2100000000650-AddMlCloudModelChoice',
+  '2100000000670-AddCloudBackupTables',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

@@ -15,6 +15,9 @@ import { AssetRestorationRepository } from 'src/repositories/asset-restoration.r
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
+import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
+import { CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -157,6 +160,9 @@ export const repositories = [
   FrameleafAccountRepository,
   HardwareProbeRepository,
   InstanceIdentityRepository,
+  CloudBackupStoreRepository,
+  CloudBackupIndexRepository,
+  CloudBackupKeyRepository,
   MediaRepository,
   MemoryRepository,
   MetadataRepository,

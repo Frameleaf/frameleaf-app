@@ -601,6 +601,12 @@ export class MediaOperationService {
       throw new BadRequestException('Scan the library again from Libraries');
     }
 
+    // FL-160: a backup run is started again with "Back up now", which checks the claim and the key
+    // first; only new or changed files upload, so nothing is lost by not copying the old run.
+    if (operation.kind === MediaOperationKind.CloudBackup) {
+      throw new BadRequestException('Back up again from Settings › Frameleaf Cloud › Cloud backup');
+    }
+
     if (operation.kind === MediaOperationKind.ICloudSync) {
       return this.retryICloudSync(auth, operation);
     }

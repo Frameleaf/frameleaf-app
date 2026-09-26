@@ -54,11 +54,16 @@ export type ConfigHistoryEntry = {
 export type ConfigHistory = { entries: ConfigHistoryEntry[] };
 
 /** Where each write-only credential lives, and the flag an administrator reads for it. */
-export const CREDENTIAL_CONFIG_PATHS = ['notifications.smtp.transport.password', 'oauth.clientSecret'] as const;
+export const CREDENTIAL_CONFIG_PATHS = [
+  'notifications.smtp.transport.password',
+  'oauth.clientSecret',
+  'frameleafCloud.cloudBackup.s3.secretAccessKey',
+] as const;
 
 const CREDENTIAL_FLAG_PATHS = new Set([
   'notifications.smtp.transport.passwordConfigured',
   'oauth.clientSecretConfigured',
+  'frameleafCloud.cloudBackup.s3.secretAccessKeyConfigured',
 ]);
 
 const SERVER_MANAGED = new Set<string>(SERVER_MANAGED_CONFIG_PATHS);
@@ -237,6 +242,7 @@ export const appendConfigHistory = (
 export const CREDENTIAL_TITLES: Record<string, string> = {
   'smtp-password': 'email server password',
   'oauth-client-secret': 'OAuth client secret',
+  'cloud-backup-s3-secret-key': 'cloud backup secret access key',
   // FL-177 removed this credential; entries recorded before still read in plain words
   'frameleaf-oidc-client-secret': 'Sign in with Frameleaf client secret',
 };
