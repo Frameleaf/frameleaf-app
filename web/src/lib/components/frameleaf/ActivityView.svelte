@@ -2,6 +2,7 @@
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import CloudWorkRows from '$lib/components/frameleaf/CloudWorkRows.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import {
     ACTIVITY_FILTERS,
@@ -10,6 +11,7 @@
     activityStatusText,
     buildActivityList,
     formatActivityDuration,
+    isUnfinishedCloudWork,
     matchesActivityFilter,
     type ActivityFilter,
     type ActivityItem,
@@ -17,6 +19,7 @@
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import '$lib/frameleaf/tokens.css';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
   import { studioBundleDownloadPath } from '$lib/frameleaf/studio/bundles';
   import { Route } from '$lib/route';
@@ -71,13 +74,16 @@
   const theme = $derived(themeManager.value === Theme.Dark ? 'dark' : 'light');
   let announcement = $state('');
 
+  // FL-164: an administrator sees the server's cloud backup operations and restores in progress as
+  // read-only background work below the filters, not among their own jobs; finished, they list here.
+  const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
   const items = $derived(
     buildActivityList({
       operations: activitySession.operations,
       uploads: $uploadAssetsStore,
       downloads: [...downloadManager.assets.entries()],
       bulk: librarySession.session.operations,
-    }),
+    }).filter((item) => !isAdmin || !isUnfinishedCloudWork(item)),
   );
   const counts = $derived(activityCounts(items));
   const visible = $derived(items.filter((item) => matchesActivityFilter(item, filter)));
@@ -352,6 +358,10 @@
         <p>{$t('frameleaf_activity_empty_help_finished')}</p>
       {/if}
     </div>
+  {/if}
+
+  {#if isAdmin && (filter === 'all' || filter === 'running')}
+    <CloudWorkRows />
   {/if}
 
   <div class="fla-list">

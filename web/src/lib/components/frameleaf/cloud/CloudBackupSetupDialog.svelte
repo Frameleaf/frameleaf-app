@@ -10,6 +10,10 @@
    * also types "I understand". A generated key is made by the server and shown once, in the kit. The
    * key goes to this server only to claim the bucket (and, in the stored modes, to keep); it is never
    * sent to Frameleaf Cloud, and it is forgotten here when the dialog closes.
+   *
+   * FL-164: Frameleaf-managed storage is chosen by default once this server is linked: Frameleaf Cloud
+   * makes the bucket and the server claims it. With a generated key, the Recovery kit step also offers
+   * an encrypted copy with Frameleaf, protected by a passphrase only the administrator knows (escrow).
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -21,8 +25,10 @@
     backupKeyFile,
     bucketSettingsErrors,
     createBackupKey,
+    isEscrowPassphraseValid,
     isOwnMemoryAcknowledged,
     keyFileName,
+    managedBucketName,
     recoveryKitText,
     type BackupKey,
   } from '$lib/frameleaf/cloud-backup';
@@ -34,6 +40,7 @@
     CloudBackupTarget,
     generateCloudBackupKey,
     setupCloudBackup,
+    storeCloudBackupEscrow,
     type CloudBackupGeneratedKeyDto,
     type CloudBackupStatusResponseDto,
   } from '@immich/sdk';
@@ -52,16 +59,19 @@
   type Props = {
     open: boolean;
     instanceId: string;
+    /** The account's data region, which names the managed bucket (`fl-<region>-<instanceId>`). */
+    dataRegion?: string | null;
     managedAvailable: boolean;
     onDone: (status: CloudBackupStatusResponseDto) => void;
   };
 
-  let { open = $bindable(), instanceId, managedAvailable, onDone }: Props = $props();
+  let { open = $bindable(), instanceId, dataRegion = null, managedAvailable, onDone }: Props = $props();
 
   type Step = 'destination' | 'key' | 'kit' | 'claim';
 
   let step = $state(0);
-  let target = $state<'managed' | 'byo'>('byo');
+  // svelte-ignore state_referenced_locally
+  let target = $state<'managed' | 'byo'>(managedAvailable ? 'managed' : 'byo');
   let settings = $state({ endpoint: 'https://', bucket: '', accessKeyId: '', secretAccessKey: '' });
   let probe = $state<{ ok: boolean; message: string } | null>(null);
   let checking = $state(false);
@@ -73,6 +83,8 @@
   let savedKey = $state(false);
   let typed = $state('');
   let kitSaved = $state(false);
+  let escrow = $state(false);
+  let passphrase = $state({ first: '', second: '' });
   let busy = $state(false);
   let failure = $state('');
   let claim = $state<{ ok: boolean; message: string; status?: CloudBackupStatusResponseDto } | null>(null);
@@ -87,9 +99,11 @@
   const serverKey = $derived(keyMode === CloudBackupKeyMode.Server);
   const steps = $derived<Step[]>(['destination', 'key', ...(serverKey ? (['kit'] as const) : []), 'claim']);
   const current = $derived(steps[step]);
-  // Your own bucket is the only destination that can be chosen until Frameleaf-managed storage is offered.
   const errors = $derived(bucketSettingsErrors(settings));
-  const bucketName = $derived(settings.bucket.trim());
+  const bucketName = $derived(
+    target === 'managed' ? managedBucketName(dataRegion, instanceId) : settings.bucket.trim(),
+  );
+  const escrowValid = $derived(!escrow || isEscrowPassphraseValid(passphrase.first, passphrase.second));
   const stepLabels: Record<Step, string> = $derived({
     destination: $t('frameleaf_cloud_backup_step_destination'),
     key: $t('frameleaf_cloud_backup_step_key'),
@@ -100,7 +114,7 @@
   const canContinue = $derived.by(() => {
     switch (current) {
       case 'destination': {
-        return target === 'byo' && Object.keys(errors).length === 0 && !!probe?.ok;
+        return target === 'managed' ? managedAvailable : Object.keys(errors).length === 0 && !!probe?.ok;
       }
       case 'key': {
         return (
@@ -109,7 +123,7 @@
         );
       }
       case 'kit': {
-        return kitSaved;
+        return kitSaved && escrowValid;
       }
       case 'claim': {
         return !!claim?.ok;
@@ -214,16 +228,30 @@
     }
     busy = true;
     try {
-      const status = await setupCloudBackup({
+      let status = await setupCloudBackup({
         cloudBackupSetupDto: {
-          target: CloudBackupTarget.ByoS3,
-          s3: s3(),
+          ...(target === 'managed'
+            ? { target: CloudBackupTarget.Managed }
+            : { target: CloudBackupTarget.ByoS3, s3: s3() }),
           keyMode,
           key,
           ...(keyMode === CloudBackupKeyMode.OwnMemory && { acknowledgement: typed }),
         },
       });
-      claim = { ok: true, message: $t('frameleaf_cloud_backup_claimed'), status };
+      let message = $t('frameleaf_cloud_backup_claimed');
+      if (serverKey && escrow) {
+        // the bucket is claimed either way; a copy that could not be stored is said, not hidden
+        try {
+          status = await storeCloudBackupEscrow({ cloudBackupEscrowDto: { passphrase: passphrase.first } });
+          message = $t('frameleaf_cloud_backup_claimed_with_escrow');
+        } catch (error) {
+          message = $t('frameleaf_cloud_backup_escrow_failed', {
+            values: { error: getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed') },
+          });
+        }
+      }
+      passphrase = { first: '', second: '' };
+      claim = { ok: true, message, status };
     } catch (error) {
       claim = { ok: false, message: getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed') };
     } finally {
@@ -384,6 +412,39 @@
     {/if}
   {:else if current === 'kit'}
     <RecoveryKitPanel {kit} saved={kitSaved} onSavedChange={(saved) => (kitSaved = saved)} />
+    <CloudToggleRow
+      label={$t('frameleaf_cloud_backup_escrow_toggle')}
+      help={$t('frameleaf_cloud_backup_escrow_toggle_help')}
+      checked={escrow}
+      disabled={!managedAvailable}
+      reason={$t('frameleaf_cloud_backup_escrow_needs_link')}
+      onChange={(value) => (escrow = value)}
+    />
+    {#if escrow}
+      <div class="fc-form">
+        <label class="fc-stack">
+          {$t('frameleaf_cloud_backup_escrow_passphrase')}
+          <input
+            type="password"
+            autocomplete="new-password"
+            value={passphrase.first}
+            oninput={(event) => (passphrase = { ...passphrase, first: event.currentTarget.value })}
+          />
+        </label>
+        <label class="fc-stack">
+          {$t('frameleaf_cloud_backup_escrow_passphrase_repeat')}
+          <input
+            type="password"
+            autocomplete="new-password"
+            value={passphrase.second}
+            oninput={(event) => (passphrase = { ...passphrase, second: event.currentTarget.value })}
+          />
+        </label>
+        {#if !escrowValid && passphrase.second}
+          <small class="cc-error">{$t('frameleaf_cloud_backup_escrow_passphrase_invalid')}</small>
+        {/if}
+      </div>
+    {/if}
   {:else}
     <p>{$t('frameleaf_cloud_backup_claim_body', { values: { marker: BUCKET_MARKER } })}</p>
     <dl class="fc-facts">

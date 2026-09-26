@@ -4,17 +4,27 @@
    * (design/frameleaf/template/src/FrameleafCloud.jsx) on the server's real backup agent. Not set up:
    * what it does and "Set up cloud backup". Set up: the bucket, the key mode and fingerprint (never the
    * key), storage used, the last run and the run in progress with "Back up now"; in own-memory mode a
-   * banner while the key is not loaded, with Unlock; and turning it off. Schedule, retention,
-   * verification, restore and escrow arrive with CLD-302 (FL-164).
+   * banner while the key is not loaded, with Unlock; and turning it off.
+   *
+   * FL-164 (CLD-302): Frameleaf-managed storage with its allowance and read-only state, the escrow and
+   * last check facts, Verify and Restore…, the Schedule & retention card (ordinary settings, saved with
+   * the settings bar) and the Restore section.
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import CloudBackupRestoreSection from '$lib/components/frameleaf/cloud/CloudBackupRestoreSection.svelte';
   import CloudBackupSetupDialog from '$lib/components/frameleaf/cloud/CloudBackupSetupDialog.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
-  import { endpointHost, readBackupKeyFile } from '$lib/frameleaf/cloud-backup';
+  import {
+    BACKUP_SCHEDULES,
+    RETENTION_FIELDS,
+    endpointHost,
+    readBackupKeyFile,
+    retentionValue,
+  } from '$lib/frameleaf/cloud-backup';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -26,21 +36,27 @@
     CloudBackupLastRunStatus,
     CloudBackupRunState,
     CloudBackupTargetSetting,
+    CloudBackupTask,
+    CloudBackupVerifyDepth,
+    CloudBackupVerifyStatus,
     getCloudBackupStatus,
     startCloudBackupRun,
     turnOffCloudBackup,
     unlockCloudBackupKey,
+    verifyCloudBackup,
     type CloudBackupStatusResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiCertificateOutline,
+    mdiCheckCircleOutline,
     mdiClose,
     mdiCloudUploadOutline,
     mdiContentDuplicate,
     mdiKeyOutline,
     mdiLinkVariant,
     mdiLockOutline,
+    mdiRestore,
     mdiServerOutline,
     mdiUpload,
   } from '@mdi/js';
@@ -78,9 +94,9 @@
     return stop;
   });
 
-  // While a run is queued or running, read its progress again; the timer goes with the run or the page.
+  // While a run or a restore is queued or running, read its progress again; the timer goes with it.
   $effect(() => {
-    if (!status?.activeRun) {
+    if (!status?.activeRun && !status?.activeRestore) {
       return;
     }
     const timer = setInterval(() => void load(), ACTIVE_POLL_MS);
@@ -91,6 +107,10 @@
   const settingsDraft = getSystemConfigDraft();
   const include = $derived(settingsDraft?.draft.frameleafCloud?.cloudBackup?.include);
   const includeBaseline = $derived(settingsDraft?.baseline.frameleafCloud?.cloudBackup?.include);
+  // FL-164: the schedule and retention are ordinary settings too
+  const backupDraft = $derived(settingsDraft?.draft.frameleafCloud?.cloudBackup);
+  /** What was typed into each retention input, kept while it is not a valid number yet. */
+  let retentionTyped = $state<Record<string, string>>({});
   const configDisabled = $derived(featureFlagsManager.value.configFile);
 
   const linked = $derived(cloudManager.status?.state === 'linked');
@@ -105,6 +125,17 @@
     [CloudBackupKeyMode.OwnMemory]: 'frameleaf_cloud_backup_mode_own_memory',
   };
 
+  const managed = $derived(status?.managed ?? null);
+  const readOnly = $derived(!!managed?.readOnly);
+  const task = $derived(active?.task ?? CloudBackupTask.Backup);
+
+  /** A run in progress reads as what it does: backing up, checking the files or cleaning up. */
+  const taskWords: Record<CloudBackupTask, Translations> = {
+    [CloudBackupTask.Backup]: 'frameleaf_cloud_backup_run_running',
+    [CloudBackupTask.Verify]: 'frameleaf_cloud_backup_run_verifying',
+    [CloudBackupTask.Prune]: 'frameleaf_cloud_backup_run_pruning',
+  };
+
   const runWords: Record<CloudBackupRunState, Translations> = {
     [CloudBackupRunState.Queued]: 'frameleaf_cloud_backup_run_queued',
     [CloudBackupRunState.Running]: 'frameleaf_cloud_backup_run_running',
@@ -114,11 +145,14 @@
   };
 
   const headerStatus = $derived.by((): { key: Translations; tone: 'ok' | 'warning' | 'running' } => {
-    if (locked || active?.state === CloudBackupRunState.Paused) {
+    if (locked || readOnly || active?.state === CloudBackupRunState.Paused) {
       return { key: 'frameleaf_cloud_backup_status_paused', tone: 'warning' };
     }
     if (active) {
-      return { key: runWords[active.state], tone: 'running' };
+      return {
+        key: active.state === CloudBackupRunState.Running ? taskWords[active.task] : runWords[active.state],
+        tone: 'running',
+      };
     }
     return { key: 'frameleaf_cloud_backup_status_on', tone: 'ok' };
   });
@@ -144,6 +178,23 @@
   };
 
   const backUpNow = () => act(() => startCloudBackupRun(), $t('frameleaf_cloud_backup_queued'));
+
+  /** "Verify": fetch and check this week's sample of the backed-up files now. */
+  const verify = () =>
+    act(
+      () => verifyCloudBackup({ cloudBackupVerifyDto: { depth: CloudBackupVerifyDepth.Sample } }),
+      $t('frameleaf_cloud_backup_verify_queued'),
+    );
+
+  const showRestore = () => document.querySelector('#fc-restore-title')?.scrollIntoView({ block: 'start' });
+
+  const setRetention = (field: (typeof RETENTION_FIELDS)[number]['field'], typed: string) => {
+    retentionTyped = { ...retentionTyped, [field]: typed };
+    const value = retentionValue(field, typed);
+    if (value !== null && backupDraft) {
+      backupDraft.retention[field] = value;
+    }
+  };
 
   const turnOff = async () => {
     if (await act(() => turnOffCloudBackup(), $t('frameleaf_cloud_backup_turned_off'))) {
@@ -261,6 +312,15 @@
       </div>
     </CloudCard>
   {:else}
+    {#if readOnly}
+      <CloudBanner tone="warning" icon={mdiLockOutline} title={$t('frameleaf_cloud_backup_read_only_title')}>
+        {$t('frameleaf_cloud_backup_read_only_body')}
+      </CloudBanner>
+    {:else if managed?.refusal}
+      <CloudBanner tone="warning" title={$t('frameleaf_cloud_backup_refused_title')}>
+        {managed.refusal}
+      </CloudBanner>
+    {/if}
     {#if locked}
       <CloudBanner tone="danger" icon={mdiLockOutline} title={$t('frameleaf_cloud_backup_locked_title')}>
         {$t('frameleaf_cloud_backup_locked_body')}
@@ -278,9 +338,11 @@
       title={status.target === CloudBackupTargetSetting.Managed
         ? $t('frameleaf_cloud_backup_managed')
         : $t('frameleaf_cloud_backup_own_bucket')}
-      description={$t('frameleaf_cloud_backup_own_bucket_description', {
-        values: { host: endpointHost(status.endpoint) },
-      })}
+      description={status.target === CloudBackupTargetSetting.Managed
+        ? $t('frameleaf_cloud_backup_managed_description')
+        : $t('frameleaf_cloud_backup_own_bucket_description', {
+            values: { host: endpointHost(status.endpoint) },
+          })}
       status={$t(headerStatus.key)}
       tone={headerStatus.tone}
     >
@@ -293,8 +355,58 @@
         <dd>{status.keyMode ? $t(modeTitle[status.keyMode]) : '—'}</dd>
         <dt>{$t('frameleaf_cloud_backup_key_fingerprint')}</dt>
         <dd><code>{status.keyFingerprint ?? '—'}</code></dd>
+        {#if status.keyMode === CloudBackupKeyMode.Server}
+          <dt>{$t('frameleaf_cloud_backup_escrow')}</dt>
+          <dd>
+            {status.escrow.stored ? $t('frameleaf_cloud_backup_escrow_on') : $t('frameleaf_cloud_backup_escrow_off')}
+          </dd>
+        {/if}
+        <dt>{$t('frameleaf_cloud_backup_last_verified')}</dt>
+        <dd>
+          {#if status.lastVerify}
+            {formatWhen(status.lastVerify.at)}
+            {#if status.lastVerify.status === CloudBackupVerifyStatus.Degraded}
+              · {$t('frameleaf_cloud_backup_verify_degraded', {
+                values: { count: status.lastVerify.missing + status.lastVerify.mismatched },
+              })}
+            {:else if status.lastVerify.status === CloudBackupVerifyStatus.Failed}
+              · {$t('frameleaf_cloud_backup_verify_failed')}
+            {/if}
+          {:else}
+            —
+          {/if}
+        </dd>
       </dl>
-      {#if status.usage}
+      {#if managed}
+        {@const used = managed.usedBytes ?? status.usage?.bytes ?? 0}
+        {@const allowance = managed.allowanceBytes ?? managed.quotaBytes}
+        <div class="fc-meter">
+          <div class="fc-meter-label">
+            <span>{$t('frameleaf_cloud_backup_storage_used_label')}</span>
+            <strong>
+              {$t('frameleaf_cloud_backup_storage_of', {
+                values: { used: getByteUnitString(used), allowance: getByteUnitString(allowance) },
+              })}
+            </strong>
+          </div>
+          <div
+            class="fc-meter-track"
+            class:is-high={allowance > 0 && used / allowance >= 0.9}
+            role="meter"
+            aria-label={$t('frameleaf_cloud_backup_storage_used_label')}
+            aria-valuemin={0}
+            aria-valuemax={allowance}
+            aria-valuenow={used}
+          >
+            <span style:width="{allowance > 0 ? Math.min(100, Math.round((used / allowance) * 100)) : 0}%"></span>
+          </div>
+        </div>
+        {#if managed.extraBlocks}
+          <p class="fc-muted">
+            {$t('frameleaf_cloud_backup_extra_blocks', { values: { count: managed.extraBlocks } })}
+          </p>
+        {/if}
+      {:else if status.usage}
         <p class="fc-muted">
           {$t('frameleaf_cloud_backup_storage_used', {
             values: { size: getByteUnitString(status.usage.bytes), files: status.usage.objects },
@@ -337,11 +449,21 @@
         {/if}
         {#if active}
           <p class="fc-muted" role="status">
-            {active.state === CloudBackupRunState.Queued
-              ? $t('frameleaf_cloud_backup_progress_queued')
-              : $t('frameleaf_cloud_backup_progress_running', {
-                  values: { progress: Math.round(active.progress), uploaded: active.uploaded },
-                })}
+            {#if active.state === CloudBackupRunState.Queued}
+              {$t('frameleaf_cloud_backup_progress_queued')}
+            {:else if task === CloudBackupTask.Verify}
+              {$t('frameleaf_cloud_backup_progress_verifying', {
+                values: { progress: Math.round(active.progress), checked: active.checked },
+              })}
+            {:else if task === CloudBackupTask.Prune}
+              {$t('frameleaf_cloud_backup_progress_pruning')}
+            {:else if active.progress === 0}
+              {$t('frameleaf_cloud_backup_progress_starting')}
+            {:else}
+              {$t('frameleaf_cloud_backup_progress_running', {
+                values: { progress: Math.round(active.progress), uploaded: active.uploaded },
+              })}
+            {/if}
           </p>
           {#if active.state === CloudBackupRunState.Running}
             <progress
@@ -355,12 +477,71 @@
         {/if}
       </div>
       <div class="fc-actions">
-        <Button variant="primary" disabled={busy || locked || !!active || !entitled} onclick={() => void backUpNow()}>
+        <Button
+          variant="primary"
+          disabled={busy || locked || readOnly || !!active || !!status.activeRestore || !entitled}
+          onclick={() => void backUpNow()}
+        >
           <Icon icon={mdiUpload} size="18" />
           {active ? $t(runWords[active.state]) : $t('frameleaf_cloud_backup_back_up_now')}
         </Button>
+        <Button disabled={busy || locked || !!active || !!status.activeRestore} onclick={() => void verify()}>
+          <Icon icon={mdiCheckCircleOutline} size="18" />
+          {active?.task === CloudBackupTask.Verify
+            ? $t('frameleaf_cloud_backup_verifying')
+            : $t('frameleaf_cloud_backup_verify')}
+        </Button>
+        <Button onclick={showRestore}>
+          <Icon icon={mdiRestore} size="18" />
+          {$t('frameleaf_cloud_backup_restore_button')}
+        </Button>
       </div>
     </CloudCard>
+
+    <CloudBackupRestoreSection {status} {formatWhen} onStatus={(next) => (status = next)} />
+
+    {#if backupDraft}
+      <CloudCard
+        title={$t('frameleaf_cloud_backup_schedule_title')}
+        description={$t('frameleaf_cloud_backup_schedule_description')}
+      >
+        <label class="fc-stack">
+          {$t('frameleaf_cloud_backup_schedule_run')}
+          <select
+            value={backupDraft.schedule.cronExpression}
+            disabled={configDisabled}
+            onchange={(event) => (backupDraft.schedule.cronExpression = event.currentTarget.value)}
+          >
+            {#each BACKUP_SCHEDULES as schedule (schedule.cron)}
+              <option value={schedule.cron}>{$t(schedule.labelKey)}</option>
+            {/each}
+            {#if !BACKUP_SCHEDULES.some((schedule) => schedule.cron === backupDraft.schedule.cronExpression)}
+              <option value={backupDraft.schedule.cronExpression}>{backupDraft.schedule.cronExpression}</option>
+            {/if}
+          </select>
+          <small class="fc-muted">{$t('frameleaf_cloud_backup_schedule_help')}</small>
+        </label>
+        {#each RETENTION_FIELDS as { field, labelKey, unitKey, min, max } (field)}
+          {@const typed = retentionTyped[field]}
+          <label class="fc-stack">
+            {$t(labelKey)}
+            <span class="fc-input-unit">
+              <input
+                type="number"
+                {min}
+                {max}
+                step="1"
+                disabled={configDisabled}
+                aria-invalid={typed !== undefined && retentionValue(field, typed) === null}
+                value={typed ?? String(backupDraft.retention[field])}
+                oninput={(event) => setRetention(field, event.currentTarget.value)}
+              />
+              <span>{$t(unitKey)}</span>
+            </span>
+          </label>
+        {/each}
+      </CloudCard>
+    {/if}
 
     {#if include}
       <CloudCard
@@ -402,6 +583,7 @@
   <CloudBackupSetupDialog
     bind:open={setupOpen}
     {instanceId}
+    dataRegion={cloudManager.status?.dataRegion ?? null}
     managedAvailable={status.managedAvailable}
     onDone={(next) => {
       status = next;
