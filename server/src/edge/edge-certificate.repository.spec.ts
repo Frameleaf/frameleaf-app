@@ -9,7 +9,7 @@ import { automock } from 'test/utils.js';
 const FIXTURES = join(import.meta.dirname, '../../test/fixtures/frameleaf-edge');
 const fixture = (name: string) => readFile(join(FIXTURES, name), 'utf8');
 
-const NAMES = ['*.u225vlzhsdlhwh4l.frameleaf-direct.net', 'u225vlzhsdlhwh4l.frameleaf-direct.net'];
+const NAMES = ['*.u225vlzhsdlhwh4l.frameleaf.net', 'u225vlzhsdlhwh4l.frameleaf.net'];
 const ACCOUNT = 'https://acme.test/acme/acct/1';
 
 /**
