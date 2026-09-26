@@ -103,7 +103,7 @@ describe(FrameleafCloudService.name, () => {
           ...answer,
           instanceId,
           oidc: { ...answer.oidc, issuer: `${cloud.url}/id`, clientId: instanceId },
-          services: { relayOrigin: 'https://r.label.frameleaf-direct.test' },
+          services: { relayOrigin: 'https://r.label.frameleaf.test' },
           owner: { accountId: 'account-1', email: 'owner@example.test', dataRegion: 'eu' },
         },
       };

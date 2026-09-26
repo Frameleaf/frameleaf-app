@@ -1387,7 +1387,7 @@ function RemoteAccess({ state, run, onNavigate, onBuy, draft, onSettingChange, e
             <CopyValue value={remote.publicUrl} label="public address" />
             <Facts
               rows={[
-                ["Certificate", `*.${label}.frameleaf-direct.net`],
+                ["Certificate", `*.${label}.frameleaf.net`],
                 ["Renews", `Automatically · current one expires ${day(remote.certificateExpires)}`],
                 ["Issued to", "This server only; the private key never leaves it"],
               ]}

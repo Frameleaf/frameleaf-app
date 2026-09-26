@@ -260,7 +260,7 @@ export function Login({
   oauthProvider = "Authentik",
   error: externalError = "",
   via: initialVia = "lan",
-  relayUrl = "https://r.k3v9q2m7x4a8d1fh.frameleaf-direct.net",
+  relayUrl = "https://r.k3v9q2m7x4a8d1fh.frameleaf.net",
 }) {
   const ids = useId();
   const later = useTimer();

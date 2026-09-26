@@ -26,7 +26,7 @@ describe(AppController.name, () => {
       // FL-161: the Frameleaf apps also find the server's instance id, public address and sign-in here
       const wellKnown = {
         api: { endpoint: '/api' },
-        frameleaf: { instanceId: 'instance-1', publicUrl: 'https://r.k3v9.frameleaf-direct.net', signIn: true },
+        frameleaf: { instanceId: 'instance-1', publicUrl: 'https://r.k3v9.frameleaf.net', signIn: true },
       };
       service.getWellKnown.mockResolvedValue(wellKnown);
 

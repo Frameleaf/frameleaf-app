@@ -355,7 +355,7 @@ describe(ServerService.name, () => {
                 instanceId: 'instance-1',
                 oidc: { issuer: 'https://id.frameleaf.cloud', clientId: 'instance-1' },
                 services: {
-                  relayOrigin: 'https://r.k3v9.frameleaf-direct.net',
+                  relayOrigin: 'https://r.k3v9.frameleaf.net',
                   publicUrl: 'https://photos.example.com/',
                 },
               }
