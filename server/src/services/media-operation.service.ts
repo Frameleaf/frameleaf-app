@@ -50,6 +50,7 @@ import {
   parseBulkResult,
   parseBulkSnapshot,
 } from 'src/utils/bulk-operation.js';
+import { cloudMlJobActivity, cloudMlJobCanPause } from 'src/utils/cloud-ml-job.js';
 import {
   EditOperationEdit,
   JOB_QUEUE_CLAIMANT,
@@ -252,6 +253,7 @@ export const mapOperation = (
   settings: asObject(operation.settings),
   estimate: mapEstimate(operation.estimate),
   bulk: mapBulkSummary(operation),
+  cloudJob: cloudMlJobActivity(operation),
   progress: operation.progress,
   processedUnits: String(operation.processedUnits ?? 0),
   totalUnits: operation.totalUnits === null || operation.totalUnits === undefined ? null : String(operation.totalUnits),
@@ -263,7 +265,7 @@ export const mapOperation = (
   errorCode: operation.errorCode,
   cancelRequestedAt: asIso(operation.cancelRequestedAt),
   cancelAcknowledgedAt: asIso(operation.cancelAcknowledgedAt),
-  pausable: isPausableMediaOperationKind(operation.kind as MediaOperationKind),
+  pausable: isPausableMediaOperationKind(operation.kind as MediaOperationKind) && cloudMlJobCanPause(operation),
   pauseRequestedAt: asIso(operation.pauseRequestedAt),
   startedAt: asIso(operation.startedAt),
   finishedAt: asIso(operation.finishedAt),
@@ -525,6 +527,11 @@ export class MediaOperationService {
       throw new BadRequestException('This kind of job cannot be paused');
     }
 
+    // FL-162: a job started on Frameleaf Cloud runs, and meters, there whatever this server does
+    if (!cloudMlJobCanPause(operation)) {
+      throw new BadRequestException('A job running on Frameleaf Cloud cannot pause; cancel it to stop it');
+    }
+
     if (operation.status === MediaOperationStatus.Paused) {
       return this.present(auth, operation);
     }
@@ -619,6 +626,12 @@ export class MediaOperationService {
       throw new BadRequestException(
         'An administrator describes these photos again from Frameleaf Cloud processing, where the estimate comes first',
       );
+    }
+
+    // FL-162: a Frameleaf Cloud job spends the AI Wallet at the price its owner confirmed; running it
+    // again takes a fresh estimate and a fresh confirmation, never a copy of the old one
+    if (operation.kind === MediaOperationKind.CloudMlJob) {
+      throw new BadRequestException('Estimate this job again from where you started it; nothing is sent without that');
     }
 
     if (operation.kind === MediaOperationKind.ICloudSync) {

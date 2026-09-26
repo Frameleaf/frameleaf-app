@@ -184,6 +184,15 @@ const LIST_COLUMNS = [
   'updateId',
 ] as const;
 
+/** FL-162: one confirmed Frameleaf Cloud job, as a person's monthly spend counts it. */
+export type CloudMlJobSpendRow = {
+  status: MediaOperationStatus;
+  remoteJobId: string | null;
+  result: unknown;
+  holdUsd: number | null;
+  settledUsd: number | null;
+};
+
 /**
  * Durable media operations (FL-43, FL-104).
  *
@@ -1439,6 +1448,139 @@ export class MediaOperationRepository {
         .limit(limit)
         .execute() as unknown as Promise<MediaOperation[]>
     );
+  }
+
+  /**
+   * FL-162: finished Frameleaf Cloud jobs whose cloud job was admitted but whose settled cost is not
+   * recorded yet, oldest first. The settle pass reads each one's cost once and writes it to the result;
+   * `maxReads` bounds how often a job whose cost never comes is asked about, and only jobs finished
+   * since `since` are asked about at all.
+   */
+  listCloudMlJobsAwaitingCost(options: { limit: number; maxReads: number; since: Date }): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('kind', '=', MediaOperationKind.CloudMlJob)
+        .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .where('remoteJobId', 'is not', null)
+        .where('finishedAt', '>=', options.since)
+        .where(sql<string>`"result" ->> 'cost'`, 'is', null)
+        .where(sql<number>`coalesce(("result" ->> 'costReads')::int, 0)`, '<', options.maxReads)
+        .orderBy('finishedAt', 'asc')
+        .limit(options.limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
+  }
+
+  /**
+   * FL-162: finished cloud ML jobs whose cloud job was never acknowledged. A job is acknowledged only
+   * after its result is published, so a crash or a failed `DELETE` between the two leaves it here for
+   * the cleanup pass, which acknowledges it; nothing is cancelled.
+   */
+  listUnacknowledgedCloudMlJobs(limit: number): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('kind', '=', MediaOperationKind.CloudMlJob)
+        .where('status', '=', MediaOperationStatus.Completed)
+        .where('remoteJobId', 'is not', null)
+        .where('remoteReleasedAt', 'is', null)
+        // the least-tried first, so a job the cloud keeps refusing never holds up the others
+        .orderBy(sql`coalesce(("result" ->> 'ackAttempts')::int, 0)`, 'asc')
+        .orderBy('finishedAt', 'asc')
+        .limit(limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
+  }
+
+  /**
+   * FL-162: the Frameleaf Cloud jobs one person confirmed since `since`, with what each was settled at
+   * (its accounting row), its hold, and enough of its state to count a job still running.
+   */
+  async listCloudMlJobSpend(userId: string, since: Date): Promise<CloudMlJobSpendRow[]> {
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .leftJoin('ml_workload_accounting', (join) =>
+        join
+          .on(sql<boolean>`"ml_workload_accounting"."jobId" = "media_operation"."id"::text`)
+          .on('ml_workload_accounting.jobName', '=', MediaOperationKind.CloudMlJob),
+      )
+      .select([
+        'media_operation.status',
+        'media_operation.remoteJobId',
+        'media_operation.result',
+        sql<number | null>`("media_operation"."snapshot" -> 'approved' ->> 'holdUsd')::double precision`.as('holdUsd'),
+        'ml_workload_accounting.costUsd as settledUsd',
+      ])
+      .where('media_operation.kind', '=', MediaOperationKind.CloudMlJob)
+      .where(sql<boolean>`"media_operation"."snapshot" -> 'consent' ->> 'acceptedBy' = ${userId}`)
+      // this month's jobs, and any earlier one still holding the AI Wallet
+      .where((eb) =>
+        eb.or([
+          eb('media_operation.createdAt', '>=', since),
+          eb('media_operation.status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES]),
+        ]),
+      )
+      .execute();
+    return rows as unknown as CloudMlJobSpendRow[];
+  }
+
+  /** FL-162: the snapshots of unfinished cloud ML jobs, for the prepared inputs they still need. */
+  async listUnfinishedCloudMlJobSnapshots(): Promise<unknown[]> {
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select('snapshot')
+      .where('kind', '=', MediaOperationKind.CloudMlJob)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .execute();
+    return rows.map((row) => row.snapshot);
+  }
+
+  /**
+   * FL-162: cloud ML jobs cancelled before anything was sent (no cloud job), which the cleanup pass has
+   * not put right yet: a cancel of a job no worker held lands without a step, so its version and its
+   * prepared files are reconciled afterwards.
+   */
+  listUnreconciledCancelledCloudMlJobs(options: { limit: number; since: Date }): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('kind', '=', MediaOperationKind.CloudMlJob)
+        .where('status', '=', MediaOperationStatus.Cancelled)
+        .where('remoteJobId', 'is', null)
+        .where('finishedAt', '>=', options.since)
+        .where(sql<string>`coalesce("result" ->> 'reconciled', 'false')`, '=', 'false')
+        .orderBy('finishedAt', 'asc')
+        .limit(options.limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
+  }
+
+  /**
+   * FL-162: create a job together with the rows it binds, in one transaction. `bind` writes those rows
+   * with the transaction it is given and answers with the job to insert; `after` runs in the same
+   * transaction once the job exists. Either everything lands or nothing does.
+   */
+  async createWithin<T>(
+    bind: (trx: Kysely<DB>) => Promise<{ operation: MediaOperationCreate; value: T }>,
+    after: (trx: Kysely<DB>, created: MediaOperation, value: T) => Promise<void>,
+  ): Promise<{ operation: MediaOperation; value: T }> {
+    const done = await this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
+      const { operation, value } = await bind(trx);
+      const created = (await trx
+        .insertInto('media_operation')
+        .values(operation)
+        .returningAll()
+        .executeTakeFirstOrThrow()) as unknown as MediaOperation;
+      await after(trx, created, value);
+      return { operation: created, value };
+    });
+    this.changed(done.operation as unknown as MediaOperationChange);
+    return done;
   }
 
   async markRemoteReleased(id: string): Promise<void> {

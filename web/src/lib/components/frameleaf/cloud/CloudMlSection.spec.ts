@@ -42,6 +42,7 @@ const cloudConfig = (enabled = false, modelName?: string) =>
         startWith: 'local',
         autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
         faces: { enabled: false },
+        spenders: [],
       },
     },
   }) as unknown as AdminConfigDto;
@@ -106,6 +107,31 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     sdkMock.getCloudMlStatus.mockResolvedValue(status());
     sdkMock.getCloudMlSettlements.mockResolvedValue({ items: [] });
     sdkMock.getHardwareCheck.mockRejectedValue(new Error('not checked'));
+    sdkMock.searchUsersAdmin.mockResolvedValue([]);
+  });
+
+  it('lets an administrator allow a person to spend the AI Wallet, with an optional monthly limit', async () => {
+    sdkMock.searchUsersAdmin.mockResolvedValue([
+      { id: 'user-2', name: 'Robin', email: 'robin@example.test', isAdmin: false, deletedAt: null },
+      { id: 'admin-1', name: 'Alex', email: 'alex@example.test', isAdmin: true, deletedAt: null },
+    ] as never);
+    const store = useDraft(true);
+    render(CloudMlSection);
+
+    const select = await screen.findByLabelText(/Allow someone else/);
+    // administrators always may, so only Robin is offered
+    await vi.waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(2));
+    await fireEvent.change(select, { target: { value: 'user-2' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(store.draft.frameleafCloud.cloudMl.spenders).toEqual([{ userId: 'user-2', monthlyCapUsd: null }]);
+
+    await fireEvent.change(screen.getByLabelText('Monthly limit for Robin · robin@example.test'), {
+      target: { value: '25' },
+    });
+    expect(store.draft.frameleafCloud.cloudMl.spenders).toEqual([{ userId: 'user-2', monthlyCapUsd: 25 }]);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop allowing Robin · robin@example.test' }));
+    expect(store.draft.frameleafCloud.cloudMl.spenders).toEqual([]);
   });
 
   it('asks to link the server first and keeps the toggle off until then', async () => {

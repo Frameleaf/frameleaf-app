@@ -25,6 +25,11 @@ export enum AssetRestorationMode {
   Faithful = 'faithful',
   /** Rebuilds fine detail and may invent texture; for very small sources. */
   Creative = 'creative',
+  /**
+   * FL-162: Smooth motion, frame interpolation for slow motion or a higher frame rate. It is its own
+   * job on Frameleaf Cloud (never a restoration request to a worker), and its result is a new version.
+   */
+  SmoothMotion = 'smooth_motion',
 }
 
 export const AssetRestorationModeSchema = z
@@ -230,6 +235,10 @@ const AssetRestorationResponseSchema = z
     status: AssetRestorationStatusSchema,
     mode: AssetRestorationModeSchema,
     upscale: z.int(),
+    smoothMotionFactor: z
+      .int()
+      .nullable()
+      .describe('Smooth motion: how many frames each source frame became (2, 4 or 8); null for a restoration'),
     keepGrain: z.boolean(),
     workload: MlWorkloadSchema,
     destinationId: z.uuidv4().nullable().describe('The bound destination, or null once an administrator removed it'),

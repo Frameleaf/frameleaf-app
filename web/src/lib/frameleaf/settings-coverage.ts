@@ -183,6 +183,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'cloudMl.routing[id]',
   },
   {
+    pattern: 'frameleafCloud.cloudMl.spenders',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/CloudMlSpendersCard.svelte',
+    evidence: 'cloudMl.spenders',
+  },
+  {
     pattern: 'frameleafCloud.cloudMl.startWith',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte',

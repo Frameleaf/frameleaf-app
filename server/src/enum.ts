@@ -379,6 +379,10 @@ export enum Permission {
 
   AdminCloudMlRead = 'adminCloudMl.read',
   AdminCloudMlUpdate = 'adminCloudMl.update',
+  /** FL-162: estimate and confirm a Frameleaf Cloud restoration or Smooth motion job for your own media. */
+  CloudMlJobCreate = 'cloudMlJob.create',
+  /** FL-162: read your own Frameleaf Cloud jobs. */
+  CloudMlJobRead = 'cloudMlJob.read',
 
   /** FL-160: read the cloud backup status. */
   AdminCloudBackupRead = 'adminCloudBackup.read',
@@ -557,6 +561,11 @@ export enum SystemMetadataKey {
   FrameleafCloudDescriptionQueue = 'frameleaf-cloud-description-queue',
   /** FL-163: the backfill estimates an administrator was shown, which queueing a backfill reads back. */
   FrameleafCloudDescriptionEstimates = 'frameleaf-cloud-description-estimates',
+  /**
+   * FL-162: the Frameleaf Cloud job estimates owners were shown and have not confirmed yet (or confirmed,
+   * with the job they started), which confirming a job reads back. Each names its prepared inputs.
+   */
+  FrameleafCloudMlJobEstimates = 'frameleaf-cloud-ml-job-estimates',
   IntegrityChecksumCheckpoint = 'integrity-checksum-checkpoint',
   /**
    * FL-34: whether "hide sensitive detections from the library" was on the last time the server
@@ -1327,6 +1336,12 @@ export enum MediaOperationKind {
    * records the estimate, the cloud job and every photo's input, and the job is polled until it ends.
    */
   CloudDescriptionBatch = 'cloud_description_batch',
+  /**
+   * FL-162 (`CLD-202`): a Frameleaf Cloud restoration, upscaling or Smooth motion job for one asset,
+   * preview or full. The snapshot pins the prepared inputs, model, request, estimate and consent; the
+   * result records the cloud job, so a restart resumes it by its id and never submits it twice.
+   */
+  CloudMlJob = 'cloud_ml_job',
   /**
    * A cloud backup run (FL-160): the database dump, then every original, sidecar and profile image by
    * SHA-256 into the claimed bucket (each unique file uploaded once), then the run's manifest. It
@@ -2363,6 +2378,8 @@ export enum DatabaseLock {
    * enrols, issues certificates and listens, however many containers run one.
    */
   FrameleafEdge = 963,
+  /** FL-162: the kept Frameleaf Cloud job estimates change one at a time, so a confirmation is taken once. */
+  FrameleafCloudMlJobEstimates = 970,
 }
 
 export enum MaintenanceAction {
@@ -2938,6 +2955,7 @@ export enum ApiTag {
   Faces = 'Faces',
   FrameleafCloud = 'Frameleaf Cloud (admin)',
   FrameleafCloudMl = 'Frameleaf Cloud processing (admin)',
+  FrameleafCloudJobs = 'Frameleaf Cloud jobs',
   FrameleafCloudBackup = 'Frameleaf Cloud backup (admin)',
   FrameleafLicense = 'Frameleaf licence',
   Integrity = 'Integrity (admin)',

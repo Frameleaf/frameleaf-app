@@ -12,6 +12,7 @@ import {
   type CloudBackupStatusResponseDto,
 } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
+import type { ActivityProgressStage } from '$lib/frameleaf/activity';
 
 /** The marker that claims a bucket for one server. */
 export const BUCKET_MARKER = 'frameleaf-backup.json';
@@ -233,8 +234,11 @@ export const LIBRARY_RESTORE_STEPS: ReadonlyArray<{ titleKey: Translations; deta
   { titleKey: 'frameleaf_cloud_restore_step_thumbnails', detailKey: 'frameleaf_cloud_restore_step_thumbnails_detail' },
 ];
 
-/** The prototype's stage model (activity-feed.mjs): what a person sees a job as. */
-export type CloudWorkStage = 'queued' | 'starting' | 'running' | 'paused';
+/**
+ * The prototype's stage model (activity-feed.mjs): what a person sees a job as. Background work is only
+ * ever in progress, so it uses Activity's In progress stages (FL-162), the same words and order.
+ */
+export type CloudWorkStage = ActivityProgressStage;
 
 /** One read-only row of Activity's background work: a cloud backup operation or restore in progress. */
 export type CloudWorkRow = {

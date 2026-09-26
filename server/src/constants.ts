@@ -241,6 +241,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'Cloud backup to one bucket per server: the claim, the SSE-C bucket key in one of three key modes (never returned after the recovery kit) and content-addressed runs that upload each unique file once.',
   [ApiTag.FrameleafCloudMl]:
     'Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback.',
+  [ApiTag.FrameleafCloudJobs]:
+    'Restoration, upscaling and Smooth motion on Frameleaf Cloud for your own media: an estimate from metered GPU time, a confirmation with consent, then a durable job in Activity. Nothing is sent without that confirmation.',
   [ApiTag.Integrity]: 'Endpoints for viewing and managing integrity reports.',
   [ApiTag.Jobs]:
     'Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed.',
