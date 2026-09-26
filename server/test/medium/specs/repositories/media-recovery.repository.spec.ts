@@ -138,7 +138,6 @@ describe(MediaRecoveryRepository.name, () => {
       leaseToken,
       ownerId,
       includeHidden: false,
-      recoverExternalAsManaged: false,
     };
     const candidate = (await sut.findCandidates(ownerId, verified))[0];
     const reserveInput = {
@@ -469,12 +468,7 @@ describe(MediaRecoveryRepository.name, () => {
     'commits verified reuse while retaining outbox %j for finalization',
     async ({ pendingJobs }) => {
       const context = await arrange();
-      const libraryId = randomUUID();
-      await db
-        .updateTable('asset')
-        .set({ isExternal: true, libraryId, isOffline: false })
-        .where('id', '=', context.assetId)
-        .execute();
+      await db.updateTable('asset').set({ isOffline: false }).where('id', '=', context.assetId).execute();
       await sql`UPDATE immich_fork.icloud_resource SET "expectedTarget" = NULL, "promotedPath" = NULL WHERE id = ${context.authority.resourceId}::uuid`.execute(
         db,
       );
@@ -508,8 +502,8 @@ describe(MediaRecoveryRepository.name, () => {
           .where('id', '=', context.assetId)
           .executeTakeFirst(),
       ).toEqual({
-        isExternal: true,
-        libraryId,
+        isExternal: false,
+        libraryId: null,
         originalPath: candidate.originalPath,
       });
       expect(
@@ -525,6 +519,77 @@ describe(MediaRecoveryRepository.name, () => {
       ).toEqual({ status: 'committed', pendingJobs, stagingPath: '/stage/good.jpg' });
     },
   );
+  describe('an external original (owner decision, FL-69)', () => {
+    const external = async () => {
+      const context = await arrange();
+      const libraryId = randomUUID();
+      await db
+        .updateTable('asset')
+        .set({ isExternal: true, libraryId, isOffline: false })
+        .where('id', '=', context.assetId)
+        .execute();
+      await sql`UPDATE immich_fork.icloud_resource SET "expectedTarget" = NULL, "promotedPath" = NULL WHERE id = ${context.authority.resourceId}::uuid`.execute(
+        db,
+      );
+      const candidate = (await sut.findCandidates(context.authority.ownerId, verified))[0];
+      const row = () => db.selectFrom('asset').selectAll().where('id', '=', context.assetId).executeTakeFirstOrThrow();
+      return { context, candidate, before: await row(), row };
+    };
+
+    it('is never reused, repaired or converted', async () => {
+      const { context, candidate, before, row } = await external();
+      for (const outcome of ['reused', 'repaired-missing', 'imported'] as const) {
+        expect(
+          await sut.reserve({ ...context.reserveInput, candidate, outcome, proposedPath: candidate.originalPath }),
+        ).toBeUndefined();
+      }
+      expect(await row()).toEqual(before);
+    });
+
+    it('stays untouched while the item is imported as a new managed asset beside it', async () => {
+      const { context, candidate, before, row } = await external();
+      const reservation = await sut.reserve({
+        ...context.reserveInput,
+        candidate: undefined,
+        outcome: 'imported',
+        matchedExternalAssetId: candidate.id,
+      });
+      expect(reservation?.target).toMatchObject({ updateId: null, matchedExternalAssetId: candidate.id });
+      const result = await sut.commit({ ...context.commitInput, reservation: reservation! });
+      expect(result).toEqual({ outcome: 'imported', assetId: reservation!.target.assetId });
+      expect(result.assetId).not.toBe(context.assetId);
+
+      expect(await row()).toEqual(before);
+      expect(
+        await db
+          .selectFrom('asset')
+          .select(['ownerId', 'isExternal', 'libraryId', 'originalPath', 'checksum', 'checksumAlgorithm'])
+          .where('id', '=', result.assetId!)
+          .executeTakeFirst(),
+      ).toEqual({
+        ownerId: context.authority.ownerId,
+        isExternal: false,
+        libraryId: null,
+        originalPath: reservation!.promotedPath,
+        checksum: verified.sha256,
+        checksumAlgorithm: 'sha256',
+      });
+      const checksum = await sql<{
+        evidence: { source: string };
+      }>`SELECT evidence FROM immich_fork.asset_checksum WHERE "assetId" = ${result.assetId}::uuid`.execute(db);
+      expect(checksum.rows[0].evidence.source).toBe('icloud-recovery');
+      const resource = await sql<{
+        assetId: string;
+        verification: { outcome: string; matchedExternalAssetId: string };
+      }>`SELECT "assetId", verification FROM immich_fork.icloud_resource WHERE id = ${context.authority.resourceId}::uuid`.execute(
+        db,
+      );
+      expect(resource.rows[0]).toMatchObject({
+        assetId: result.assetId,
+        verification: { outcome: 'imported', matchedExternalAssetId: context.assetId },
+      });
+    });
+  });
   it('does not treat an earlier successful commit as proof that the file is still healthy', async () => {
     const context = await arrange();
     await sut.commit(context.commitInput);
