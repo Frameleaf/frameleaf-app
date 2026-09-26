@@ -107,9 +107,7 @@ describe(EdgeCertificateRepository.name, () => {
 
     expect(result).toEqual({ certificate, key, accountUrl: ACCOUNT });
     expect(onAccount).toHaveBeenCalledWith(ACCOUNT);
-    expect(ca.orders).toEqual([
-      { identifiers: NAMES.map((value) => ({ type: 'dns', value })), profile: 'tlsserver' },
-    ]);
+    expect(ca.orders).toEqual([{ identifiers: NAMES.map((value) => ({ type: 'dns', value })), profile: 'tlsserver' }]);
     // two values under one record (the wildcard and the bare label), both valid DNS-01 digests
     expect(set).toHaveLength(2);
     expect(set.every((value) => /^[\w-]{43}$/.test(value))).toBe(true);

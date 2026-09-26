@@ -10,7 +10,6 @@ import { ImmichHeader } from 'src/enum.js';
 import { stripFrameleafHeaders } from 'src/middleware/frameleaf-via.middleware.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { type FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import {
   HSTS_HEADER,
   MAX_CONNECTIONS,
@@ -19,6 +18,7 @@ import {
   TEARDOWN_MS,
   addressBucket,
 } from 'src/utils/frameleaf-remote-access.js';
+import { type FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 
 /** How one connection reached the edge worker: the via tag and the visitor's own address. */
 export type EdgeArrival = { via: FrameleafVia; clientIp: string; host: string | null };
@@ -173,11 +173,14 @@ export class EdgeProxyService {
       return;
     }
     this.server.closeIdleConnections();
-    const deadline = setTimeout(() => {
-      for (const socket of this.sockets) {
-        socket.destroy();
-      }
-    }, Math.max(0, timeoutMs - 250));
+    const deadline = setTimeout(
+      () => {
+        for (const socket of this.sockets) {
+          socket.destroy();
+        }
+      },
+      Math.max(0, timeoutMs - 250),
+    );
     deadline.unref();
     await new Promise<void>((resolve) => {
       const check = setInterval(() => {

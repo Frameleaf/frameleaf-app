@@ -93,7 +93,7 @@ describe(EdgeDirectService.name, () => {
     return socket;
   };
 
-  it('tags a peer on the advertised LAN address\'s subnet as lan', () => {
+  it("tags a peer on the advertised LAN address's subnet as lan", () => {
     arrive('192.168.1.20', LAN_NAME);
     expect(proxy.accept).toHaveBeenCalledWith(expect.anything(), {
       via: 'lan',

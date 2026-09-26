@@ -134,18 +134,14 @@ import {
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
 import { CLOUD_BACKUP_DUMP_PREFIX, isCloudBackupDumpName } from 'src/utils/database-backups.js';
-import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
-import {
-  BackupGrantResponse,
-  backupGrantProblem,
-  managedBackupRefusal,
-} from 'src/utils/frameleaf-cloud-backup.js';
+import { BackupGrantResponse, backupGrantProblem, managedBackupRefusal } from 'src/utils/frameleaf-cloud-backup.js';
 import {
   CLONE_SUSPECTED_NOTICE,
   identityDirectory,
   loadInstanceIdentity,
   readCloudLink,
 } from 'src/utils/frameleaf-cloud-gateway.js';
+import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 const KIND = MediaOperationKind.CloudBackup;
@@ -1309,7 +1305,7 @@ export class CloudBackupService {
     if (marker.instanceId !== metadata.instanceId) {
       throw new Error('This bucket is now claimed by another Frameleaf server. Set up cloud backup again.');
     }
-    return { metadata, settings, connection, bucketKey, readOnly };
+    return { bucketRef: metadata.bucketRef, metadata, settings, connection, bucketKey, readOnly };
   }
 
   /** Your own bucket, as the settings name it; it must still be the bucket this server claimed. */
@@ -2506,7 +2502,7 @@ export class CloudBackupService {
       return this.manifestCache.manifest;
     }
     const kept = await this.index.listKeptManifests(metadata.bucketRef);
-    if (!kept.some((manifest) => manifest.key === key)) {
+    if (kept.every((manifest) => manifest.key !== key)) {
       throw new NotFoundException('This backup is not one of the kept backups.');
     }
     const bucketKey = await this.requireKeyForRequest(metadata);
