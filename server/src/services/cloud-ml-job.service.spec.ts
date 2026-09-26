@@ -717,7 +717,8 @@ describe(CloudMlJobService.name, () => {
       mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue(month);
 
       const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
-      // 1.50 settled + 3.00 held by the running job; the cancelled one sent nothing; + 2.00 for this job
+      // 1.50 settled + 3.00 held by the running job; the cancelled one sent nothing; + 2.20 for this job
+      // (its 2.00 hold, with room for a reseal up to 10 % higher)
       expect(estimate.permission).toEqual({
         canConfirm: true,
         reason: null,
@@ -1415,7 +1416,11 @@ describe(CloudMlJobService.name, () => {
     });
 
     it('puts a full render cancelled while queued back up for review, once', async () => {
-      rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, status: AssetRestorationStatus.Accepted });
+      rows.set(RESTORATION_ID, {
+        ...rows.get(RESTORATION_ID)!,
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: OPERATION_ID,
+      });
       const cancelled = {
         ...claimed(),
         snapshot: { ...created!.snapshot, stage: 'full' },
@@ -1434,6 +1439,50 @@ describe(CloudMlJobService.name, () => {
         expect.objectContaining({ reconciled: true }),
       );
       expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+    });
+
+    it('never resets a version a later full render owns when reconciling an old cancel', async () => {
+      rows.set(RESTORATION_ID, {
+        ...rows.get(RESTORATION_ID)!,
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: 'a-later-job',
+      });
+      const cancelled = {
+        ...claimed(),
+        snapshot: { ...created!.snapshot, stage: 'full' },
+        status: MediaOperationStatus.Cancelled,
+        claimToken: null,
+        remoteJobId: null,
+      } as unknown as MediaOperation;
+      mocks.mediaOperation.listUnreconciledCancelledCloudMlJobs.mockResolvedValue([cancelled]);
+
+      await sut.cleanup(now);
+
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: 'a-later-job',
+      });
+      expect(mocks.mediaOperation.setFinishedResult).toHaveBeenCalledWith(
+        OPERATION_ID,
+        expect.objectContaining({ reconciled: true }),
+      );
+    });
+
+    it('records a job the cloud no longer knows as released, so it is not read again', async () => {
+      const failed = {
+        ...claimed({ phase: CloudMlJobPhase.Started, job: runningRecord(), cancelSent: true }),
+        status: MediaOperationStatus.Failed,
+        claimToken: null,
+        remoteJobId: JOB_ID,
+      } as unknown as MediaOperation;
+      mocks.mediaOperation.getUnreleasedRemoteOperations.mockResolvedValue([failed]);
+      mocks.frameleafCloudMl.getJobView.mockRejectedValue(
+        new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 404, 'Not found'),
+      );
+
+      await sut.releaseUnwatched();
+
+      expect(mocks.mediaOperation.markRemoteReleased).toHaveBeenCalledWith(OPERATION_ID);
     });
 
     it('keeps a prepared copy an unfinished job still needs', async () => {

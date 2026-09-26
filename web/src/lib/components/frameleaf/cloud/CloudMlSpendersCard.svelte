@@ -71,7 +71,7 @@
       return;
     }
     const amount = value.trim() === '' ? null : Number(value);
-    const monthlyCapUsd = amount === null || !Number.isFinite(amount) ? null : Math.max(0, amount);
+    const monthlyCapUsd = amount === null || !Number.isFinite(amount) ? null : Math.min(100_000, Math.max(0, amount));
     cloudMl.spenders = spenders.map((entry) => (entry.userId === userId ? { ...entry, monthlyCapUsd } : entry));
   };
 </script>
@@ -108,7 +108,7 @@
                       type="number"
                       min="0"
                       max="100000"
-                      step="1"
+                      step="0.01"
                       value={spender.monthlyCapUsd ?? ''}
                       placeholder={$t('admin.frameleaf_cloud_ml_spenders_no_cap')}
                       aria-label={$t('admin.frameleaf_cloud_ml_spenders_cap_for', {

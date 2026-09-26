@@ -1500,7 +1500,9 @@ export class MediaOperationRepository {
     const rows = await this.db
       .selectFrom('media_operation')
       .leftJoin('ml_workload_accounting', (join) =>
-        join.on(sql<boolean>`"ml_workload_accounting"."jobId" = "media_operation"."id"::text`),
+        join
+          .on(sql<boolean>`"ml_workload_accounting"."jobId" = "media_operation"."id"::text`)
+          .on('ml_workload_accounting.jobName', '=', MediaOperationKind.CloudMlJob),
       )
       .select([
         'media_operation.status',
@@ -1511,7 +1513,13 @@ export class MediaOperationRepository {
       ])
       .where('media_operation.kind', '=', MediaOperationKind.CloudMlJob)
       .where(sql<boolean>`"media_operation"."snapshot" -> 'consent' ->> 'acceptedBy' = ${userId}`)
-      .where('media_operation.createdAt', '>=', since)
+      // this month's jobs, and any earlier one still holding the AI Wallet
+      .where((eb) =>
+        eb.or([
+          eb('media_operation.createdAt', '>=', since),
+          eb('media_operation.status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES]),
+        ]),
+      )
       .execute();
     return rows as unknown as CloudMlJobSpendRow[];
   }
