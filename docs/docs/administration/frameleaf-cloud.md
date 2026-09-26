@@ -144,3 +144,22 @@ Only new or changed files upload: a photo you have twice is stored once, a secon
 A run records where it is every 25 photos. The administrator who started it can pause, resume or cancel it in Activity, and a run interrupted by a restart carries on with the same manifest. A run that fails is retried once; if it fails again, administrators are told once a day. The status card shows the last run, the last complete backup and the storage used.
 
 **Turn off backup…** stops backing up. The bucket, its backups and the key are kept, so the backups stay readable with the key file or recovery kit.
+
+## Restoration and Smooth motion on Frameleaf Cloud
+
+Restoration and Smooth motion can run on Frameleaf Cloud when the server is linked, cloud processing is turned on and its terms are accepted. Nothing is sent without a confirmation for that job: choosing Frameleaf Cloud in the editor's restoration panel, or asking for Smooth motion on a video, opens an estimate first. A job that Frameleaf Cloud cannot run or finish stops and says why; it never moves to this server or another computer by itself, and a job for this server never moves to Frameleaf Cloud.
+
+The estimate shows:
+
+- the model, on a slider from lighter to heavier, with its GPU class, rate and start fee. Choosing another model estimates again;
+- a range from the typical to the high-end cost, start fees included. Cost is metered GPU time × the model's rate plus one start fee per worker; long videos run in chunks on up to five workers, each with its own start fee;
+- an estimate per photo or per minute, which is never a fixed price;
+- the amount held from AI credit (the high-end estimate) and the AI credit available.
+
+An estimate holds for 15 minutes. After that, or when the model is withdrawn or the cloud processing terms change, the job is estimated again and must be confirmed again. Confirming names the terms version shown with the estimate. When there is not enough AI credit, or the daily limit or a budget would be passed, the estimate says so and nothing is sent; a lighter model is never chosen for you.
+
+Every job is a preview first. For a restoration, the preview is a small area of a photo or a short clip of a video; for Smooth motion (2×, 4× or 8× the frames), a short clip. Review the preview before and after, then accept it to run the whole file with the same model and settings, which is its own estimate and confirmation. The result is saved as a new version; the original is never changed.
+
+What leaves this server is a copy made for the job with its metadata removed: EXIF, GPS, XMP and IPTC tags, titles, dates and chapters are stripped, and only the picture (and a video's first audio track) is kept. Files are uploaded to storage that Frameleaf Cloud names for the job, results are checked against their SHA-256 checksums before they are kept, and the server asks Frameleaf Cloud to delete the job's files once it has them.
+
+The job shows in Activity with its stage (Queued, Starting, Running, Paused, Done, Failed or Cancelled), the model, the estimate, what was metered so far, the amount held and, once Frameleaf Cloud settles it, what was charged. A job that fails on Frameleaf Cloud's side is not charged. Cancelling a running job stops it on Frameleaf Cloud and charges only the GPU time used; a job can be paused only before it starts. A job survives a restart of this server and carries on from where Frameleaf Cloud reports it.

@@ -63,7 +63,8 @@ tested against what the cloud publishes (FL-177).
   merged): `ml/job-{queued,running,completed,failed,settled-budget}.json`,
   `ml/rejected/job-view-{cost-above-hold,cost-lines-mismatch,cost-not-charged-total,cost-provider-details,provider-details,unknown-status}.json`,
   every file of `ml/storage/` and `ml/storage/rejected/`, and `errors/{inputs-missing,job-active,job-ended,upload-closed}.json`.
-  Every other `ml/` and `errors/` file this app already copied was compared with that commit and is unchanged. The
+  Every other `ml/` and `errors/` file this app already copied was compared with that commit and is unchanged, and
+  every `ml/` and `errors/` fixture is unchanged again at `423d04d` (the storage contract's publication). The
   contracts are `packages/contracts/src/ml/{jobs,storage,gateway}.ts`; `server/src/utils/frameleaf-cloud.ts`
   (`jobViewSchema`, `jobCostSchema`, `uploadTargetSchema`, `jobResultSchema`, and `jobAdmittedSchema.uploads`) reads
   them.
