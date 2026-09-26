@@ -3,7 +3,9 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { SystemConfig } from 'src/config.js';
+import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { readFrameleafCloudConfig } from 'src/dtos/config.dto.js';
+import { ChecksumAlgorithm } from 'src/enum.js';
 import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { assertNoLiveHandoffLeases, releaseTransientHandoffLeases } from 'src/repositories/fork-handoff-leases.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -838,8 +840,8 @@ export class ForkSchemaRepository {
    * table) continue to ignore these rows until normalization runs and upserts
    * over them. Upload and integrity evidence never overwrite existing rows;
    * recovery replaces ambiguous historical digests with bytes re-verified at
-   * action time, and an external-library scan replaces them with the bytes it
-   * just read (an external original's own checksum is only a path checksum).
+   * action time. External-library originals are recorded separately, by
+   * `recordExternalScanChecksums`.
    */
   async recordAssetChecksums(input: {
     assetId: string;
@@ -847,7 +849,7 @@ export class ForkSchemaRepository {
     sha256: Buffer;
     sizeInBytes: number;
     path: string;
-    source: 'upload' | 'integrity' | 'recovery' | 'external-scan';
+    source: 'upload' | 'integrity' | 'recovery';
   }): Promise<void> {
     await sql`
       INSERT INTO immich_fork.asset_checksum
@@ -871,8 +873,69 @@ export class ForkSchemaRepository {
         evidence = EXCLUDED.evidence,
         "verifiedAt" = EXCLUDED."verifiedAt",
         "updatedAt" = EXCLUDED."updatedAt"
-      WHERE ${input.source} IN ('recovery', 'external-scan')
+      WHERE ${input.source} = 'recovery'
     `.execute(this.db);
+  }
+
+  /**
+   * FL-69: the digests of an external-library original, read by a Library Care scan while the file was
+   * present and intact. Its own checksum is only a path checksum, so these are what a moved copy is
+   * verified against. They are recorded only while the asset still has that path checksum and the path
+   * the bytes were read from; a recovery or relink that finished meanwhile is never overwritten with the
+   * old path's bytes. The asset row is share-locked so such a change waits for this write, and an
+   * unchanged file does not rewrite the row.
+   *
+   * These rows carry `evidence.source = 'external-scan'` and are read only to verify a Library Care copy:
+   * duplicate pre-checks, the untracked-file restore and sync never treat bytes on an external mount as
+   * a managed copy (see `EXTERNAL_SCAN_CHECKSUM`).
+   */
+  async recordExternalScanChecksums(input: {
+    assetId: string;
+    sha1: Buffer;
+    sha256: Buffer;
+    sizeInBytes: number;
+    path: string;
+  }): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      const current = await sql`
+        SELECT 1 FROM public.asset
+        WHERE id = ${input.assetId}::uuid
+          AND "checksumAlgorithm" = ${ChecksumAlgorithm.sha1Path}::asset_checksum_algorithm_enum
+          AND "originalPath" = ${input.path}
+        FOR SHARE
+      `.execute(trx);
+      if (current.rows.length === 0) {
+        return;
+      }
+      await sql`
+        INSERT INTO immich_fork.asset_checksum
+          ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+        VALUES (
+          ${input.assetId}::uuid,
+          ${input.sha1},
+          ${input.sha256},
+          ${input.sizeInBytes},
+          ARRAY[${input.path}]::text[],
+          1,
+          jsonb_build_object('source', ${EXTERNAL_SCAN_CHECKSUM}::text),
+          now(),
+          now()
+        )
+        ON CONFLICT ("assetId") DO UPDATE SET
+          sha1 = EXCLUDED.sha1,
+          sha256 = EXCLUDED.sha256,
+          "sizeInBytes" = EXCLUDED."sizeInBytes",
+          "verifiedPaths" = EXCLUDED."verifiedPaths",
+          "linkCount" = EXCLUDED."linkCount",
+          evidence = EXCLUDED.evidence,
+          "verifiedAt" = EXCLUDED."verifiedAt",
+          "updatedAt" = EXCLUDED."updatedAt"
+        -- only its own earlier reads: upload, integrity and recovery evidence is never replaced here
+        WHERE asset_checksum.evidence ->> 'source' = ${EXTERNAL_SCAN_CHECKSUM}
+          AND (asset_checksum.sha1, asset_checksum.sha256, asset_checksum."sizeInBytes")
+            IS DISTINCT FROM (EXCLUDED.sha1, EXCLUDED.sha256, EXCLUDED."sizeInBytes")
+      `.execute(trx);
+    });
   }
 
   /**
@@ -903,6 +966,7 @@ export class ForkSchemaRepository {
       WHERE asset."ownerId" = ${ownerId}::uuid
         AND checksum.sha1 IN (${digests})
         AND asset.checksum <> checksum.sha1
+        AND checksum.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
     `.execute(this.db);
 
     return result.rows;
@@ -915,6 +979,7 @@ export class ForkSchemaRepository {
       INNER JOIN public.asset asset ON asset.id = checksum."assetId"
       WHERE asset."ownerId" = ${ownerId}::uuid
         AND (checksum.sha1 = ${sha1} OR checksum.sha256 = ${sha256})
+        AND checksum.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
       LIMIT 1
     `.execute(this.db);
     return result.rows.length > 0;
