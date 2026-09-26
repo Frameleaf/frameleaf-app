@@ -289,6 +289,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+      packages: read
     defaults:
       run:
         working-directory: ./e2e
@@ -322,6 +323,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         if: ${{ !cancelled() }}
+      # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
+      # Deploy workflow on fork/main); without it the server base compiles from source on every run.
+      - name: Login to owned GHCR namespace for the build cache
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Start Docker Compose
         id: docker
         run: docker compose up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
@@ -383,6 +392,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+      packages: read
     defaults:
       run:
         working-directory: ./e2e
@@ -414,6 +424,14 @@ jobs:
       - name: Install Playwright Browsers
         run: pnpm exec playwright install chromium --only-shell
         if: ${{ !cancelled() }}
+      # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
+      # Deploy workflow on fork/main); without it the server base compiles from source on every run.
+      - name: Login to owned GHCR namespace for the build cache
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Docker build
         id: docker
         run: docker compose up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
