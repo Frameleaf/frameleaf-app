@@ -1,0 +1,8 @@
+{
+  "code": "estimate-mismatch",
+  "message": "This job doesn't match its estimate. Get a new estimate and try again.",
+  "retryable": false,
+  "refusal": "model-mismatch",
+  "detail": "used",
+  "requestId": "req_01J8ZK3M4N5P6Q7X"
+}
