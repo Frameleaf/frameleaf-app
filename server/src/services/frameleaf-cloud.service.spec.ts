@@ -521,6 +521,60 @@ describe(FrameleafCloudService.name, () => {
       expect(last.json().bootId).toBe(restarted);
     });
 
+    it('handles the golden heartbeat answer and acknowledges exactly as the golden ack (FC-19)', async () => {
+      const answer = cloudContractFixture('instance/heartbeat-response.json');
+      const commandId = answer.commands[0].id;
+      let ack: unknown;
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: answer }));
+      cloud.on(`POST /api/v1/instance/commands/${commandId}/ack`, (request) => {
+        ack = request.json();
+        return { status: 204 };
+      });
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      // backup.run is allowed by default and fails here: the ack is the golden one, word for word
+      expect(ack).toEqual(cloudContractFixture('instance/command-ack.json'));
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:notice:maintenance-2026-10-01' }),
+      );
+      // the golden pricing is the bundled 2026-09-25.1: the bundle stays in force, nothing new is kept
+      expect(metadata.get(SystemMetadataKey.FrameleafPricing)).toBeUndefined();
+      const sent = cloud.requests.find(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
+      const golden = cloudContractFixture('instance/heartbeat-request.json');
+      expect(Object.keys(sent)).toEqual(Object.keys(golden));
+      for (const key of ['health', 'remoteAccess', 'permissions'] as const) {
+        expect(Object.keys(sent[key])).toEqual(Object.keys(golden[key]));
+      }
+    });
+
+    it('asks for a new link when every instance route answers key_retired, without revoking (FC-19)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 401,
+        body: cloudContractFixture('errors/key-retired.json'),
+      }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Failed);
+
+      expect(storedLink()).toMatchObject({
+        status: 'linked',
+        heartbeat: { failures: 1, relinkRequested: true },
+        lastError: expect.stringContaining('Link the server again'),
+      });
+      await expect(sut.getStatus()).resolves.toMatchObject({ state: 'linked', relinkRequested: true });
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({
+          dedupeKey: 'frameleaf-cloud:relink',
+          description: expect.stringContaining('no longer accepts this server’s key'),
+        }),
+      );
+      expect(mocks.adminAudit.create).not.toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.CloudRevoked }),
+      ]);
+    });
+
     it('treats invalid_token as a token to mint again, never as a revoke (FL-177)', async () => {
       cloud.on('POST /api/v1/instance/heartbeat', () => ({
         status: 401,
