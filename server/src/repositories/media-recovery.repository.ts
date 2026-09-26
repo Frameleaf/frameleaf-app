@@ -72,6 +72,8 @@ export type RecoveryCandidate = {
   damaged: boolean;
   matchesContent: boolean;
   identityConflict: boolean;
+  /** Why the asset is Locked, when it is (FL-34) */
+  lockReason: AssetLockReason | null;
 };
 export type RecoveryTarget = {
   assetId: string;
@@ -132,24 +134,7 @@ export class MediaRecoveryRepository {
     mappedId?: string | null,
   ) {
     const phase = await getForkSchemaPhase(db);
-    const preference = await db
-      .selectFrom('user_metadata')
-      .select('value')
-      .where('userId', '=', ownerId)
-      .where('key', '=', UserMetadataKey.Preferences)
-      .forShare()
-      .executeTakeFirst();
-    const preferences = preference?.value as
-      { privacy?: { suppression?: { tagIds?: string[]; personIds?: string[]; petIds?: string[] } } } | undefined;
-    const suppression = preferences?.privacy?.suppression;
-    const hidden = hiddenContentAssetIdExists(sql`a.id`, {
-      userId: ownerId,
-      scope: 'owned',
-      includeNsfw: true,
-      tagIds: suppression?.tagIds ?? [],
-      personIds: suppression?.personIds ?? [],
-      petIds: suppression?.petIds ?? [],
-    });
+    const hidden = await this.hiddenFilter(db, ownerId);
     const rows = await sql<RecoveryCandidate>`
       SELECT a.id, a."ownerId", a."updateId", a."originalPath", a.checksum, a."checksumAlgorithm",
         a."originalFileName", a.type, a."isExternal", a."libraryId", a."deletedAt", a.status, a."isOffline",
@@ -165,6 +150,7 @@ export class MediaRecoveryRepository {
         END AS "matchesContent",
         (to_jsonb(a)->>'physicalOriginalFileId') AS "physicalOriginalFileId", p."physicalFileId" AS "forkPhysicalFileId", e."fileSizeInByte"::float8 AS "sizeInBytes",
         (EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = a.id) OR ${hidden}) AS hidden,
+        (SELECT l.reason FROM public.asset_lock l WHERE l."assetId" = a.id) AS "lockReason",
         EXISTS (SELECT 1 FROM ${sql.id(readsForkSidecar(phase) ? 'immich_fork' : 'public', 'asset_health')} h
           WHERE h."assetId" = a.id AND h.category IN ('missing', 'corrupt') AND h."resolvedAt" IS NULL
           AND h.status NOT IN ('resolved', 'relinked', 'trashed')) AS damaged
@@ -172,11 +158,9 @@ export class MediaRecoveryRepository {
       LEFT JOIN immich_fork.asset_checksum s ON s."assetId" = a.id
       LEFT JOIN immich_fork.asset_physical_file p ON p."assetId" = a.id
       WHERE a."ownerId" = ${ownerId}::uuid AND a.id IN (
-        SELECT id FROM public.asset WHERE "ownerId" = ${ownerId}::uuid AND checksum IN (${verified.sha1}, ${verified.sha256})
-          AND "checksumAlgorithm" IN (${ChecksumAlgorithm.sha1File}, ${ChecksumAlgorithm.sha256File})
-        UNION SELECT "assetId" FROM immich_fork.asset_checksum WHERE sha1 = ${verified.sha1} OR sha256 = ${verified.sha256}
+        ${this.contentMatchIds(ownerId, verified)}
         UNION SELECT ${mappedId ?? null}::uuid)
-      ORDER BY (a.id = ${mappedId ?? null}::uuid) DESC NULLS LAST, a.id LIMIT 33
+      ORDER BY (a.id = ${mappedId ?? null}::uuid) DESC NULLS LAST, a."isExternal", a.id LIMIT 33
     `.execute(db);
     return rows.rows;
   }
@@ -416,10 +400,13 @@ export class MediaRecoveryRepository {
               status: AssetStatus.Active,
             })
             .execute();
-          if (input.sourceHidden) {
+          const inherited = target.matchedExternalAssetId
+            ? await this.inheritedProtection(trx, input.ownerId, target.matchedExternalAssetId)
+            : undefined;
+          if (input.sourceHidden || inherited) {
             await trx
               .insertInto('asset_lock')
-              .values({ assetId, reason: AssetLockReason.Marked, lockedBy: null })
+              .values({ assetId, reason: inherited ?? AssetLockReason.Marked, lockedBy: null })
               .onConflict((oc) => oc.column('assetId').doNothing())
               .execute();
           }
@@ -537,8 +524,62 @@ export class MediaRecoveryRepository {
    * evidence only (FL-69), so it never stands in the way of importing the managed copy.
    */
   private async hasManagedMatch(trx: Kysely<DB>, ownerId: string, verified: Pick<VerifiedMedia, 'sha1' | 'sha256'>) {
-    const matches = await this.candidates(trx, ownerId, verified);
-    return matches.some(({ isExternal }) => !isExternal);
+    // its own query: the candidate list is capped, and many external copies must not push a managed match out
+    const { rows } = await sql`SELECT 1 FROM public.asset a
+      WHERE a."ownerId" = ${ownerId}::uuid AND NOT a."isExternal" AND a.id IN (${this.contentMatchIds(ownerId, verified)})
+      LIMIT 1`.execute(trx);
+    return rows.length > 0;
+  }
+
+  /** The owner's assets whose own content checksum, or a recorded digest, is one of these digests. */
+  private contentMatchIds(ownerId: string, verified: Pick<VerifiedMedia, 'sha1' | 'sha256'>) {
+    return sql`SELECT id FROM public.asset WHERE "ownerId" = ${ownerId}::uuid AND checksum IN (${verified.sha1}, ${verified.sha256})
+          AND "checksumAlgorithm" IN (${ChecksumAlgorithm.sha1File}, ${ChecksumAlgorithm.sha256File})
+        UNION SELECT "assetId" FROM immich_fork.asset_checksum WHERE sha1 = ${verified.sha1} OR sha256 = ${verified.sha256}`;
+  }
+
+  /** Besides a lock, what hides an owner's asset from a session that is not unlocked: nsfw or suppression. */
+  private async hiddenFilter(db: Kysely<DB>, ownerId: string) {
+    const preference = await db
+      .selectFrom('user_metadata')
+      .select('value')
+      .where('userId', '=', ownerId)
+      .where('key', '=', UserMetadataKey.Preferences)
+      .forShare()
+      .executeTakeFirst();
+    const preferences = preference?.value as
+      { privacy?: { suppression?: { tagIds?: string[]; personIds?: string[]; petIds?: string[] } } } | undefined;
+    const suppression = preferences?.privacy?.suppression;
+    return hiddenContentAssetIdExists(sql`a.id`, {
+      userId: ownerId,
+      scope: 'owned',
+      includeNsfw: true,
+      tagIds: suppression?.tagIds ?? [],
+      personIds: suppression?.personIds ?? [],
+      petIds: suppression?.petIds ?? [],
+    });
+  }
+
+  /**
+   * FL-69: the protection a managed copy takes from the hidden external original it matches, so a copy
+   * never shows what the original hides. A Locked original passes on its lock reason. One hidden by
+   * sensitive content or suppression is locked as marked, since those come from the original's own
+   * detections, tags and people, which a new copy does not have yet. Undefined when the original is
+   * visible or gone.
+   */
+  private async inheritedProtection(
+    trx: Kysely<DB>,
+    ownerId: string,
+    externalAssetId: string,
+  ): Promise<AssetLockReason | undefined> {
+    const hidden = await this.hiddenFilter(trx, ownerId);
+    const { rows } = await sql<{ lockReason: AssetLockReason | null; hidden: boolean }>`
+      SELECT (SELECT l.reason FROM public.asset_lock l WHERE l."assetId" = a.id) AS "lockReason", ${hidden} AS hidden
+      FROM public.asset a WHERE a.id = ${externalAssetId}::uuid AND a."ownerId" = ${ownerId}::uuid FOR SHARE OF a`.execute(
+      trx,
+    );
+    const row = rows[0];
+    return row?.lockReason ?? (row?.hidden ? AssetLockReason.Marked : undefined);
   }
 
   private async lockAuthority(trx: Kysely<DB>, ownerId: string, checksum: Buffer): Promise<ForkSchemaPhase> {
