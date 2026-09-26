@@ -178,7 +178,7 @@ export class FrameleafRemoteAccessService extends BaseService {
         body: { hostname: check.host },
       });
     });
-    await this.saveHostname(answer, previous !== check.host);
+    await this.saveHostname(answer, previous !== check.host, check.host);
     // the new hostname is in place before the old one goes, so a failure never leaves neither
     if (previous && previous !== check.host) {
       await this.removeAtCloud(cloudUrl, link, previous).catch((error: unknown) => {
@@ -215,7 +215,7 @@ export class FrameleafRemoteAccessService extends BaseService {
         body: { hostname: host },
       });
     });
-    await this.saveHostname(answer, false);
+    await this.saveHostname(answer, false, host);
     this.logger.log(`Custom hostname ${host} checked by ${auth.user.id}: ${answer.state}`);
     return this.getStatus(Date.now(), hostnameProblem(answer));
   }
@@ -227,10 +227,8 @@ export class FrameleafRemoteAccessService extends BaseService {
     if (!host) {
       return this.getStatus();
     }
-    const { cloudUrl, link, linked } = await readCloudLink(this.linkDeps);
-    if (cloudUrl && linked && link?.instanceId) {
-      await this.removeAtCloud(cloudUrl, link as FrameleafCloudLink & { instanceId: string }, host);
-    }
+    // this server stops using it first; telling Frameleaf Cloud is best effort (it releases the
+    // hostname on unlink too, and an unverified claim expires on its own)
     const { oldConfig, newConfig } = await this.updateConfigExclusively((next) => {
       next.frameleafCloud.remoteAccess = {
         ...next.frameleafCloud.remoteAccess,
@@ -239,6 +237,12 @@ export class FrameleafRemoteAccessService extends BaseService {
       };
     });
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    const { cloudUrl, link, linked } = await readCloudLink(this.linkDeps);
+    if (cloudUrl && linked && link?.instanceId) {
+      await this.removeAtCloud(cloudUrl, link as FrameleafCloudLink & { instanceId: string }, host).catch(
+        (error: unknown) => this.logger.warn(`Frameleaf Cloud was not told that ${host} was removed: ${error}`),
+      );
+    }
     this.logger.log(`Custom hostname ${host} removed by ${auth.user.id}`);
     return this.getStatus();
   }
@@ -262,7 +266,10 @@ export class FrameleafRemoteAccessService extends BaseService {
   }
 
   /** Keep what Frameleaf Cloud said about the hostname; "Use my domain" falls back while it is not verified. */
-  private async saveHostname(answer: RemoteHostname, changed: boolean) {
+  private async saveHostname(answer: RemoteHostname, changed: boolean, host: string) {
+    if (answer.hostname !== host) {
+      throw new ServiceUnavailableException('Frameleaf Cloud answered for another hostname. Try again.');
+    }
     const status = hostnameStatus(answer.state);
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
       const remote = config.frameleafCloud.remoteAccess;
@@ -338,10 +345,11 @@ export class FrameleafRemoteAccessService extends BaseService {
     if (settings.mode === 'relay-and-direct') {
       checks.push({
         id: 'direct',
+        // listening only: reachability from the internet is not tested from here
         ok: listening,
         detail: settings.portMapping
-          ? `Waiting for the router to open port ${settings.directPort}`
-          : `Forward external port ${settings.directPort} on your router to port ${state?.direct.port} here`,
+          ? `Listening; waiting for the router to open port ${settings.directPort}`
+          : `Listening; forward external port ${settings.directPort} on your router to port ${state?.direct.port} here`,
       });
     }
 

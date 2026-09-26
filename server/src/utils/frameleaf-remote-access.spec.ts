@@ -17,6 +17,7 @@ import {
   enrollResponseSchema,
   enrollmentProblem,
   heartbeatEndpoints,
+  hostAddresses,
   hostnameProblem,
   hostnameStatus,
   ipv4Name,
@@ -355,6 +356,33 @@ describe('frameleaf remote access (FL-165)', () => {
       expect(classify('100.64.9.5', tailnetName, { advertised: ['100.64.0.1'] })).toBe('wan');
       const tailnet = { advertised: ['100.64.0.1'], trustedLanCidrs: ['100.64.0.0/10'] };
       expect(classify('100.64.9.5', tailnetName, tailnet)).toBe('lan');
+    });
+
+    it('advertises only FRAMELEAF_LOCAL_URL in a container, and never a bridge interface', () => {
+      const interfaces = [
+        { name: 'eth0', address: '192.168.1.10', family: 'IPv4' as const, internal: false },
+        { name: 'eth0', address: '2001:db8::10', family: 'IPv6' as const, internal: false },
+        { name: 'docker0', address: '172.17.0.1', family: 'IPv4' as const, internal: false },
+        { name: 'br-5f2c', address: '172.18.0.1', family: 'IPv4' as const, internal: false },
+        { name: 'lo', address: '127.0.0.1', family: 'IPv4' as const, internal: true },
+      ];
+      const none = { lanAddresses: [], ipv6Addresses: [] };
+      // in a container: a hostname (or no) FRAMELEAF_LOCAL_URL advertises nothing, never the bridge
+      const container = { interfaces, defaultInterfaces: ['eth0'], inContainer: true };
+      expect(hostAddresses({ ...container, localUrl: 'http://photos.home.arpa:2283' })).toEqual(none);
+      expect(hostAddresses({ ...container, localUrl: null })).toEqual(none);
+      expect(hostAddresses({ ...container, localUrl: 'http://192.168.1.10:2283' })).toEqual({
+        lanAddresses: ['192.168.1.10'],
+        ipv6Addresses: [],
+      });
+      // bare metal: the default-route interface only
+      const host = { interfaces, inContainer: false, localUrl: null };
+      expect(hostAddresses({ ...host, defaultInterfaces: ['eth0'] })).toEqual({
+        lanAddresses: ['192.168.1.10'],
+        ipv6Addresses: ['2001:db8::10'],
+      });
+      // a bridge is never advertised, even when a default route uses it
+      expect(hostAddresses({ ...host, defaultInterfaces: ['docker0', 'br-5f2c'] })).toEqual(none);
     });
 
     it('checks that a certificate and its key belong together', () => {

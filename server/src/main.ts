@@ -46,6 +46,9 @@ class Workers {
   /** FL-165: when the edge worker last started, and how often in a row it failed. */
   edgeStartedAt = 0;
   edgeFailures = 0;
+  /** FL-165: set when this supervisor stops the edge worker itself; any other exit is a failure. */
+  edgeStopRequested = false;
+  edgeRestartTimer?: NodeJS.Timeout;
 
   /**
    * Boot all enabled workers
@@ -154,6 +157,7 @@ class Workers {
     this.workers[name] = { kill };
     if (name === ImmichWorker.Edge) {
       this.edgeStartedAt = Date.now();
+      this.edgeStopRequested = false;
     }
   }
 
@@ -165,6 +169,8 @@ class Workers {
     // restart immich server
     if (exitCode === ExitCode.AppRestart || this.restarting) {
       this.restarting = true;
+      // a pending edge restart would race the bootstrap that starts it again
+      clearTimeout(this.edgeRestartTimer);
 
       console.info(`${name} worker shutdown for restart`);
       delete this.workers[name];
@@ -174,6 +180,7 @@ class Workers {
       const edge = this.workers[ImmichWorker.Edge];
       if (edge && name !== ImmichWorker.Edge && !this.stoppingEdge) {
         this.stoppingEdge = true;
+        this.edgeStopRequested = true;
         void edge.kill('SIGTERM');
       }
 
@@ -187,19 +194,21 @@ class Workers {
       return;
     }
 
-    // FL-165: the edge worker ending takes nothing else down. Stopped on purpose (exit 0, or a
-    // signal) it stays stopped; failing, it starts again on its own, waiting 1 s, then 2 s, 4 s … up
-    // to a minute while it keeps failing (a minute of running resets that)
+    // FL-165: the edge worker ending takes nothing else down. Stopped by this supervisor it stays
+    // stopped; ending any other way (an error, a crash, a kill from outside) it starts again on its
+    // own, waiting 1 s, then 2 s, 4 s … up to a minute while it keeps failing (a minute of running
+    // resets that)
     if (name === ImmichWorker.Edge) {
       delete this.workers[name];
-      if (exitCode === 0 || exitCode === null) {
+      if (this.edgeStopRequested) {
         return;
       }
       const ranMs = Date.now() - this.edgeStartedAt;
       this.edgeFailures = ranMs > 60_000 ? 1 : this.edgeFailures + 1;
       const delay = Math.min(60_000, 1000 * 2 ** (this.edgeFailures - 1));
       console.error(`edge worker exited with code ${exitCode}; starting it again in ${delay / 1000} s`);
-      setTimeout(() => {
+      clearTimeout(this.edgeRestartTimer);
+      this.edgeRestartTimer = setTimeout(() => {
         if (!this.restarting && !this.workers[ImmichWorker.Edge]) {
           this.startWorker(ImmichWorker.Edge);
         }
@@ -220,6 +229,7 @@ class Workers {
     }
     // FL-165: the edge worker is a process of its own; it must not outlive the server and keep the port
     if (Object.hasOwn(this.workers, ImmichWorker.Edge) && name !== ImmichWorker.Edge) {
+      this.edgeStopRequested = true;
       void this.workers[ImmichWorker.Edge]!.kill('SIGTERM');
     }
 

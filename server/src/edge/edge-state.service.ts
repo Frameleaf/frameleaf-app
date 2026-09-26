@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { isEqual } from 'lodash-es';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -19,7 +19,7 @@ import { EdgeDirectService } from 'src/edge/edge-direct.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { DatabaseLock, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DatabaseRepository, type HeldLock } from 'src/repositories/database.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
@@ -46,6 +46,7 @@ import {
   dnsTxtPutResponseSchema,
   enrollResponseSchema,
   enrollmentProblem,
+  hostAddresses,
   nextRenewalCheck,
   remoteEndpoints,
   renewalDue,
@@ -108,7 +109,7 @@ export class EdgeStateService {
   private timer?: NodeJS.Timeout;
   private running: Promise<void> | null = null;
   private stopped = false;
-  private holdsLock = false;
+  private lock: HeldLock | null = null;
   private readonly bootId = randomUUID();
   private served: string | null = null;
   private lastWritten: { state: Omit<FrameleafRemoteAccess, 'updatedAt'>; at: number } | null = null;
@@ -149,6 +150,8 @@ export class EdgeStateService {
     await Promise.race([this.running, sleep(Math.max(0, timeoutMs / 2)).then(() => {})]);
     await this.direct.stop(Math.max(250, timeoutMs - (Date.now() - started)));
     this.proxy.destroy();
+    await this.lock?.release();
+    this.lock = null;
   }
 
   /** One pass of the loop; a pass already running is not started twice. */
@@ -230,9 +233,16 @@ export class EdgeStateService {
   }
 
   private async reconcile(now: number) {
-    if (!this.holdsLock) {
-      this.holdsLock = await this.databaseRepository.tryLock(DatabaseLock.FrameleafEdge);
-      if (!this.holdsLock) {
+    // the lock lives on a connection of its own; it is checked on every pass, and a lost connection
+    // (the lock went with it) stops serving at once, before another edge worker can take over
+    if (this.lock && !(await this.lock.verify())) {
+      this.logger.warn('This edge worker lost the edge lock; it stops serving remote access');
+      this.lock = null;
+      await this.stopServing();
+    }
+    if (!this.lock) {
+      this.lock = await this.databaseRepository.holdLock(DatabaseLock.FrameleafEdge);
+      if (!this.lock) {
         // another edge worker serves remote access
         return;
       }
@@ -398,14 +408,9 @@ export class EdgeStateService {
     // the direct listener, with the certificates in hand
     const addresses = this.addresses();
     const trustedLanCidrs = this.configRepository.getEnv().frameleafCloud.trustedLanCidrs;
-    // Inside a container, its own interface addresses are on a bridge that other containers (a
-    // reverse proxy passing TLS through, for example) share: those never make an arrival `lan`.
-    // Only the address the administrator named in FRAMELEAF_LOCAL_URL does.
-    const localUrl = this.configRepository.getEnv().frameleafCloud.localUrl;
-    const advertised =
-      this.inContainer() && !localUrl
-        ? []
-        : addresses.lanAddresses.filter((address) => isHomeAddress(address, trustedLanCidrs));
+    // only FRAMELEAF_LOCAL_URL's address, or on bare metal the default-route interface's (never a
+    // container bridge that other containers, such as a TLS-passthrough proxy, share)
+    const advertised = addresses.lanAddresses.filter((address) => isHomeAddress(address, trustedLanCidrs));
     if (this.stopped) {
       return;
     }
@@ -764,27 +769,38 @@ export class EdgeStateService {
    * host's own interfaces.
    */
   private addresses(): { lanAddresses: string[]; ipv6Addresses: string[] } {
-    const lanAddresses: string[] = [];
-    const ipv6Addresses: string[] = [];
-    const localUrl = this.configRepository.getEnv().frameleafCloud.localUrl;
-    const localHost = localUrl ? new URL(localUrl).hostname : null;
-    for (const entries of Object.values(networkInterfaces())) {
-      for (const entry of entries ?? []) {
-        if (entry.internal) {
-          continue;
-        }
-        if (entry.family === 'IPv4') {
-          lanAddresses.push(entry.address);
-        } else {
-          ipv6Addresses.push(entry.address.split('%', 1)[0]);
+    const interfaces = Object.entries(networkInterfaces()).flatMap(([name, entries]) =>
+      (entries ?? []).map(({ address, family, internal }) => ({ name, address, family, internal })),
+    );
+    return hostAddresses({
+      localUrl: this.configRepository.getEnv().frameleafCloud.localUrl,
+      inContainer: this.inContainer(),
+      interfaces,
+      defaultInterfaces: this.defaultInterfaces(),
+    });
+  }
+
+  /** The interfaces the default routes use (Linux `/proc/net/route` and `ipv6_route`). Specs replace it. */
+  defaultInterfaces = (): string[] => {
+    const names = new Set<string>();
+    try {
+      for (const line of readFileSync('/proc/net/route', 'utf8').split('\n').slice(1)) {
+        const [name, destination] = line.trim().split(/\s+/);
+        if (destination === '00000000' && name) {
+          names.add(name);
         }
       }
+      for (const line of readFileSync('/proc/net/ipv6_route', 'utf8').split('\n')) {
+        const fields = line.trim().split(/\s+/);
+        if (fields[0] === '0'.repeat(32) && fields[1] === '00' && fields[9] && fields[9] !== 'lo') {
+          names.add(fields[9]);
+        }
+      }
+    } catch {
+      // not Linux: no LAN names are published unless FRAMELEAF_LOCAL_URL names the address
     }
-    if (localHost && isIP(localHost) === 4) {
-      return { lanAddresses: [localHost], ipv6Addresses };
-    }
-    return { lanAddresses, ipv6Addresses };
-  }
+    return [...names];
+  };
 
   /** Write the state when it changed, or at least every 20 seconds, so the API sees the edge worker is alive. */
   private async writeState(state: Omit<FrameleafRemoteAccess, 'updatedAt'>, now: number) {

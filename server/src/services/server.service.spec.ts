@@ -50,16 +50,20 @@ describe(ServerService.name, () => {
       },
     };
     const candidates = [
-      { kind: 'local', uri: 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443' },
-      { kind: 'relay', uri: 'https://r.u225vlzhsdlhwh4l.frameleaf.net' },
+      { kind: 'local', uri: 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443', relay: false },
+      { kind: 'relay', uri: 'https://r.u225vlzhsdlhwh4l.frameleaf.net', relay: true },
     ];
-    const setup = (remoteAccess: Record<string, unknown>, updatedAt = new Date().toISOString()) => {
+    const setup = (
+      remoteAccess: Record<string, unknown>,
+      updatedAt = new Date().toISOString(),
+      relay = { connected: true },
+    ) => {
       const env = mockEnvData({});
       mocks.config.getEnv.mockReturnValue({ ...env, frameleafCloud: { ...env.frameleafCloud, url: CLOUD } });
       const metadata = new Map<string, unknown>([
         [SystemMetadataKey.FrameleafCloudLink, { status: 'linked', cloudUrl: CLOUD, instanceId: 'instance-1' }],
         [SystemMetadataKey.SystemConfig, { frameleafCloud: { remoteAccess } }],
-        [SystemMetadataKey.FrameleafRemoteAccess, { status: 'ready', updatedAt, names, candidates }],
+        [SystemMetadataKey.FrameleafRemoteAccess, { status: 'ready', updatedAt, names, candidates, relay }],
       ]);
       mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve((metadata.get(key) ?? null) as never));
     };
@@ -96,12 +100,18 @@ describe(ServerService.name, () => {
       await expect(sut.getConnections()).resolves.toMatchObject({ publicUrl: 'https://photos.example.com' });
     });
 
+    it('publishes no relay address and no relay candidate until the relay is connected', async () => {
+      setup({ enabled: true }, new Date().toISOString(), { connected: false });
+      await expect(sut.getConnections()).resolves.toEqual({
+        instanceId: 'instance-1',
+        publicUrl: null,
+        connections: [candidates[0]],
+      });
+    });
+
     it('drops the candidates of an edge worker that stopped reporting', async () => {
       setup({ enabled: true }, new Date(Date.now() - 5 * 60 * 1000).toISOString());
-      await expect(sut.getConnections()).resolves.toMatchObject({
-        publicUrl: 'https://r.u225vlzhsdlhwh4l.frameleaf.net',
-        connections: [],
-      });
+      await expect(sut.getConnections()).resolves.toMatchObject({ publicUrl: null, connections: [] });
     });
   });
 

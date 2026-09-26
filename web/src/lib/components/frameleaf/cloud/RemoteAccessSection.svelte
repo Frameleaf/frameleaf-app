@@ -141,7 +141,7 @@
     }
     const tested = remote?.lastTestChecks.find((check) => check.id === 'direct');
     return tested?.ok
-      ? { label: $t('frameleaf_remote_direct_ready'), tone: 'ok' as const }
+      ? { label: $t('frameleaf_remote_direct_listening'), tone: 'ok' as const }
       : { label: $t('frameleaf_remote_direct_not_tested'), tone: 'muted' as const };
   });
 

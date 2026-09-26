@@ -425,6 +425,24 @@ export class SystemConfigService extends BaseService {
 
     resolveCredentials(dto, oldConfig);
 
+    // FL-165: remote access itself (the switch, connection, port, published address and custom
+    // hostname) changes only through Settings › Frameleaf Cloud › Remote access
+    // (`PUT admin/cloud/remote`, which needs `adminRemoteAccess.update` and keeps the link in step)
+    // and the hostname's DNS check. A whole-settings save, import or history restore keeps the stored
+    // values, so it can neither turn remote access on nor be refused over them.
+    if (dto.frameleafCloud?.remoteAccess) {
+      const stored = oldConfig.frameleafCloud.remoteAccess;
+      dto.frameleafCloud.remoteAccess = {
+        ...dto.frameleafCloud.remoteAccess,
+        enabled: stored.enabled,
+        mode: stored.mode,
+        directPort: stored.directPort,
+        portMapping: stored.portMapping,
+        publicUrl: stored.publicUrl,
+        customHostname: stored.customHostname,
+      };
+    }
+
     // The two timestamp fields below are server-managed (set by this service,
     // by the cost modal's defer endpoint, or by the re-queue trigger).
     // Inbound writes must not be allowed to clobber them — always overwrite
