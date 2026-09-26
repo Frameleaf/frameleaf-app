@@ -15,6 +15,7 @@
     type ActivityItem,
   } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+  import { cloudCostFacts } from '$lib/frameleaf/cloud-jobs';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import '$lib/frameleaf/tokens.css';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
@@ -400,6 +401,18 @@
               .join(' · ')}
           </p>
 
+          {#if item.cloud}
+            <!-- FL-162: a Frameleaf Cloud job's model and cost (prototype CloudCost). -->
+            <dl class="fla-cost" aria-label={$t('frameleaf_activity_cloud_cost')}>
+              {#each cloudCostFacts(item.cloud, item.stage) as fact (fact.labelKey)}
+                <div>
+                  <dt>{$t(fact.labelKey)}</dt>
+                  <dd>{fact.valueKey ? $t(fact.valueKey) : fact.value}</dd>
+                </div>
+              {/each}
+            </dl>
+          {/if}
+
           {#if item.running || item.paused || item.progress !== null}
             <div
               class="fla-progress"
@@ -425,6 +438,11 @@
               · <span class="fla-error">{item.error}</span>
             {/if}
           </p>
+          {#if item.cloud && item.stage === 'starting'}
+            <p class="fla-status">
+              {$t('frameleaf_activity_cloud_start_note', { values: { workers: item.cloud.plannedWorkers } })}
+            </p>
+          {/if}
           {#if item.bulk && item.bulk.retried > 0}
             <p class="fla-status">{$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}</p>
           {/if}
@@ -750,6 +768,27 @@
   }
   .fla-error {
     color: var(--fl-danger);
+  }
+  /* Frameleaf Cloud cost facts on a job (activity.css) */
+  .fla-cost {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin: 2px 0 6px;
+    font-size: var(--fl-font-small);
+    font-variant-numeric: tabular-nums;
+  }
+  .fla-cost div {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+  }
+  .fla-cost dt {
+    color: var(--fl-muted);
+    white-space: nowrap;
+  }
+  .fla-cost dd {
+    margin: 0;
   }
   .fla-progress {
     height: 6px;
