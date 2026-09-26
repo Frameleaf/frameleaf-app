@@ -37,7 +37,7 @@ import {
   VideoContainer,
   VideoContainerSchema,
 } from 'src/enum.js';
-import { CLOUD_DESCRIPTION_DEFAULT_MODEL, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
+import { isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 
 const { Admin, User, Public } = ConfigVisibility;
 
@@ -192,9 +192,11 @@ const frameleafCloudDefaults = {
     },
     startWith: 'local' as 'local' | 'cloud',
     // The model slider's saved position per kind of work; empty = the heaviest that runs well here.
-    // Descriptions start at the licensed cloud default (FL-146), never the local Qwen2.5-VL-3B.
+    // Descriptions start at the web catalogue's licensed cloud default (FL-146), never the local
+    // Qwen2.5-VL-3B. This is the slider's own catalogue name and is never sent to Frameleaf Cloud:
+    // cloud jobs name the routed model SKU or the catalogue's marked default (FL-183).
     models: {
-      descriptions: CLOUD_DESCRIPTION_DEFAULT_MODEL,
+      descriptions: 'qwen3.5-9b@1',
       upscale: '',
       restoration: '',
       studio: '',

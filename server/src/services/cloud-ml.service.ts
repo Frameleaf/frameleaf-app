@@ -34,16 +34,18 @@ import {
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  CloudCatalog,
   CloudErrorCode,
   CloudProbeFacts,
   CloudUsage,
   CloudWallet,
   FrameleafCloudError,
+  catalogDefaults,
   cloudAddressProblem,
   cloudErrorCode,
   cloudFactsFromCapabilities,
-  isLocalOnlyModel,
   knownWorkloads,
+  offeredCatalogModels,
   stepUpUrl,
   workloadForCatalogEntry,
 } from 'src/utils/frameleaf-cloud.js';
@@ -280,23 +282,42 @@ export class CloudMlService extends BaseService {
     return value && cloudUrl && !cloudAddressProblem(cloudUrl, 'account address', value) ? value : null;
   }
 
-  /** The models Frameleaf Cloud offers now, for the model picker. Retired models are left out. */
+  /**
+   * The models Frameleaf Cloud offers now, for the model picker (FL-183: the FC-34 catalogue). The
+   * model's identity is its SKU (`id`) and revision (`fingerprint`); `name` is the catalogue label and
+   * `description` its display-only model and GPU names, never sent back. Prices are per metered
+   * second. Entries the contract refuses, and local-only models, are left out.
+   */
   async getCatalog(): Promise<CloudMlCatalogResponseDto> {
     const gateway = await this.requireGateway();
     const catalog = await this.callCloud(() => this.frameleafCloudMlRepository.getCatalog(gateway));
+    this.warnRefusedEntries(catalog);
     return {
-      models: catalog.models
-        .filter((model) => !model.retired && !isLocalOnlyModel(model.id))
-        .map((model) => ({
-          id: model.id,
-          workload: workloadForCatalogEntry(model.workload, model.mode),
-          name: model.name,
-          description: model.description,
-          fingerprint: model.fingerprint,
-          pricingUnit: model.pricing?.unit ?? null,
-          priceUsd: model.pricing?.usd ?? null,
-        })),
+      models: offeredCatalogModels(catalog).map((model) => ({
+        id: model.sku,
+        workload: workloadForCatalogEntry(model.workload, model.mode),
+        name: model.label,
+        description: [
+          `${model.display.model}, ${model.display.gpu}`,
+          `Start fee ${model.rate.startFeeUsd} USD per worker`,
+          model.notice,
+        ]
+          .filter(Boolean)
+          .join('. '),
+        fingerprint: model.rev,
+        pricingUnit: 'second',
+        priceUsd: model.rate.perSecondUsd,
+      })),
     };
+  }
+
+  /** A catalogue entry the contract refuses is never offered; say so once per read. */
+  private warnRefusedEntries(catalog: CloudCatalog | null) {
+    if (catalog && catalog.refused > 0) {
+      this.logger.warn(
+        `Frameleaf Cloud's catalogue has ${catalog.refused} ${catalog.refused === 1 ? 'problem' : 'problems'} this server does not accept: a refused entry is not offered, and a group marking two defaults has none`,
+      );
+    }
   }
 
   /** Every consent recorded for the Frameleaf Cloud destination, newest first. */
@@ -331,6 +352,7 @@ export class CloudMlService extends BaseService {
     if (resolution.state === CloudConnectionState.Ready && rows.length > 0) {
       const since = new Date(Date.now() - CLOUD_ML_USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
       const usage = await this.frameleafCloudMlRepository.getUsage(resolution.gateway, since).catch(() => null);
+      this.warnRefusedUsage(usage);
       for (const item of usage?.items ?? []) {
         details.set(item.jobId, item);
       }
@@ -364,10 +386,21 @@ export class CloudMlService extends BaseService {
     const gateway = await this.requireGateway();
     const since = new Date(Date.now() - CLOUD_ML_USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const usage = await this.callCloud(() => this.frameleafCloudMlRepository.getUsage(gateway, since));
+    // FL-183: an item the contract refuses is left out and logged; every other settlement still applies
+    this.warnRefusedUsage(usage);
     const settled = await this.mlDestinationRepository.applySettlements(
       usage.items.map((item) => ({ cloudJobId: item.jobId, costUsd: item.settledUsd, credits: item.credits })),
     );
     return { settled };
+  }
+
+  /** A usage item the contract refuses is not applied from the report; say so once per read. */
+  private warnRefusedUsage(usage: CloudUsage | null) {
+    if (usage && usage.refused > 0) {
+      this.logger.warn(
+        `Frameleaf Cloud reported ${usage.refused} usage ${usage.refused === 1 ? 'item' : 'items'} this server does not accept; ${usage.refused === 1 ? 'its settlement is' : 'their settlements are'} not applied from this report`,
+      );
+    }
   }
 
   /**
@@ -425,13 +458,16 @@ export class CloudMlService extends BaseService {
         this.frameleafCloudMlRepository.getHardware(gateway).catch(() => null),
         this.frameleafCloudMlRepository.getCatalog(gateway).catch(() => null),
       ]);
-      // Local-only models (FL-146) never count as offered, even if a catalogue lists them.
-      const usableModels = (catalog?.models ?? []).filter((model) => !model.retired && !isLocalOnlyModel(model.id));
-      const modelIds = usableModels.map((model) => model.id);
+      this.warnRefusedEntries(catalog);
+      // Local-only models (FL-146) never count as offered, even if a catalogue lists them. The model
+      // SKU is the cloud's model identity (FL-183), so `modelIds` and a saved route hold it.
+      const usableModels = offeredCatalogModels(catalog);
+      const modelIds = usableModels.map((model) => model.sku);
       const modelWorkloads = Object.fromEntries(
-        usableModels.map((model) => [model.id, workloadForCatalogEntry(model.workload, model.mode)]),
+        usableModels.map((model) => [model.sku, workloadForCatalogEntry(model.workload, model.mode)]),
       );
-      const facts = cloudFactsFromCapabilities(capabilities, modelIds, modelWorkloads);
+      // FC-34: the model the catalogue marks per group is what unrouted work uses; none is guessed
+      const facts = cloudFactsFromCapabilities(capabilities, modelIds, modelWorkloads, catalogDefaults(usableModels));
       // FL-181 (P1): `restoration` is one wire workload for both modes, so the capability alone
       // cannot tell faithful and creative apart; a mode is only offered once the catalogue itself
       // names a usable model for it. A catalogue that could not be read (`catalog` is null) offers

@@ -136,11 +136,20 @@ describe('Frameleaf Cloud local-only models (FL-146)', () => {
     expect(defaults.frameleafCloud.cloudMl.models.descriptions).not.toBe(
       defaults.machineLearning.imageDescription.modelName,
     );
-    expect(cloudModelFor(MlWorkload.Enrichment, '')).toBe('qwen3.5-9b@1');
-    expect(cloudModelFor(MlWorkload.Enrichment, defaults.machineLearning.imageDescription.modelName)).toBe(
-      'qwen3.5-9b@1',
+  });
+
+  it('names the routed model or the catalogue default for cloud work, never a configured name (FL-183)', () => {
+    // A cloud job names the routed SKU or the catalogue's marked default, never a configured name.
+    expect(cloudModelFor(MlWorkload.Enrichment, '', { defaultModels: {} })).toBeNull();
+    expect(cloudModelFor(MlWorkload.Enrichment, null, { defaultModels: { descriptions: 'ms_K6WT70CS' } })).toBe(
+      'ms_K6WT70CS',
     );
-    expect(cloudModelFor(MlWorkload.Enrichment, 'qwen3.5-27b@1')).toBe('qwen3.5-27b@1');
-    expect(cloudModelFor(MlWorkload.Upscale, null)).toBeNull();
+    // a local-only choice is refused, never swapped for the default
+    expect(
+      cloudModelFor(MlWorkload.Enrichment, 'Qwen/Qwen2.5-VL-3B-Instruct', {
+        defaultModels: { descriptions: 'ms_K6WT70CS' },
+      }),
+    ).toBeNull();
+    expect(cloudModelFor(MlWorkload.Upscale, null, null)).toBeNull();
   });
 });
