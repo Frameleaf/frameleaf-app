@@ -12,6 +12,7 @@ import {
   errorEnvelopeSchema,
   refusalFromCloudError,
   stepUpUrl,
+  storeAddress,
   usageSchema,
   walletResponseSchema,
 } from 'src/utils/frameleaf-cloud.js';
@@ -106,6 +107,11 @@ describe(discoveryProblem.name, () => {
           },
         });
         expect(discoveryProblem('https://api.frameleaf.cloud', document)).toBeNull();
+        // FC-19 final (383f815): the account site's store, a sibling too (as-built decision #29)
+        expect(storeAddress('https://api.frameleaf.cloud', document.store)).toBe(
+          'https://account.frameleaf.cloud/store',
+        );
+        expect(storeAddress('https://api.frameleaf.example', document.store)).toBeNull();
         // the same document under another configured cloud is refused as a whole
         expect(discoveryProblem('https://api.frameleaf.example', document)).toMatch(/is not on frameleaf\.example/);
       },
@@ -116,6 +122,13 @@ describe(discoveryProblem.name, () => {
       expect(
         cloudAddressProblem('https://api.frameleaf.cloud', 'sign-in issuer', 'https://id.frameleaf.cloud'),
       ).toBeNull();
+    });
+
+    it('drops a store address that is not a URL without failing discovery', () => {
+      const document = discoverySchema.parse({ ...production, store: 'not a url' });
+      expect(document.store).toBeUndefined();
+      expect(storeAddress('https://api.frameleaf.cloud', undefined)).toBeNull();
+      expect(storeAddress('https://api.frameleaf.cloud', 'http://account.frameleaf.cloud/store')).toBeNull();
     });
 
     it('keeps refusing every other host', () => {

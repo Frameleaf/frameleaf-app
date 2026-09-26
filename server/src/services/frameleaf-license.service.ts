@@ -27,7 +27,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, storeAddress } from 'src/utils/frameleaf-cloud.js';
 import {
   BUNDLED_PRICING,
   LicenseSigningKey,
@@ -161,7 +161,7 @@ export class FrameleafLicenseService extends BaseService {
    * call.
    */
   async getProducts(): Promise<LicenseProductsResponseDto> {
-    const storeUrl = this.storeUrl();
+    const storeUrl = await this.storeUrl();
     const pricing = effectivePricing(await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafPricing));
     return {
       currency: 'USD',
@@ -177,10 +177,21 @@ export class FrameleafLicenseService extends BaseService {
     };
   }
 
-  /** The store is `/store` on the Frameleaf Cloud address this server was deployed with, or none. */
-  private storeUrl(): string | null {
+  /**
+   * The store (FL-177, as-built decision #29): the one discovery names (`store`, on the account site),
+   * as the link last recorded it or as this process already holds discovery, else `/store` on the
+   * Frameleaf Cloud address this server was deployed with; none when that is unset. Either way it must
+   * pass the cloud address rule. Nothing is fetched here.
+   */
+  private async storeUrl(): Promise<string | null> {
     const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
-    return cloudUrl ? `${cloudUrl}/store` : null;
+    if (!cloudUrl) {
+      return null;
+    }
+    const { link } = await readCloudLink(this.gatewayDeps());
+    const recorded = link?.cloudUrl === cloudUrl ? storeAddress(cloudUrl, link.store) : null;
+    const held = storeAddress(cloudUrl, this.frameleafCloudRepository.peekDiscovery(cloudUrl)?.store);
+    return recorded ?? held ?? `${cloudUrl}/store`;
   }
 
   // ------------------------------------------------------------------ server key and file

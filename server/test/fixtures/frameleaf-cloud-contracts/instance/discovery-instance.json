@@ -3,6 +3,7 @@
   "validFor": 86400,
   "issuer": "https://id.frameleaf.cloud",
   "api": "https://api.frameleaf.cloud",
+  "store": "https://account.frameleaf.cloud/store",
   "ml": { "eu": "https://ml.eu.frameleaf.cloud", "na": "https://ml.na.frameleaf.cloud" },
   "endpoints": {
     "heartbeat": "https://api.frameleaf.cloud/v1/instance/heartbeat",
