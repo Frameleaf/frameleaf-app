@@ -29,6 +29,7 @@ describe('Media health transactional relink audit', () => {
       'CREATE TABLE public.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, checksum bytea, path text UNIQUE, "sizeInBytes" bigint, type text)',
       "CREATE TABLE immich_fork.state (id integer PRIMARY KEY, phase text); INSERT INTO immich_fork.state VALUES (1, 'dual-write')",
       'CREATE TABLE immich_fork.migration_audit (name text, status text)',
+      'CREATE TABLE immich_fork.backfill_progress (kind varchar(32) PRIMARY KEY, cursor text, "claimToken" text)',
       'CREATE TABLE immich_fork.asset_storage_reservation ("assetId" uuid, status text)',
       'CREATE TABLE immich_fork.asset_checksum ("assetId" uuid PRIMARY KEY, sha1 bytea, sha256 bytea, "sizeInBytes" bigint, "verifiedPaths" text[], "linkCount" integer, evidence jsonb, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
       'CREATE TABLE immich_fork.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, type text, checksum bytea, "sizeInBytes" bigint, "canonicalPath" text UNIQUE, "createdAt" timestamptz NOT NULL, "updatedAt" timestamptz NOT NULL)',
@@ -258,13 +259,54 @@ describe('Media health transactional relink audit', () => {
     const { expectedLibraryId: _, ...input } = await arrange(false);
     await sql`UPDATE immich_fork.state SET phase='legacy'`.execute(db);
     expect(await sut.relinkManagedAsset(input)).toBe(true);
+    const physical = await sql<{
+      id: string;
+      path: string;
+    }>`SELECT id, path FROM public.physical_file WHERE path=${input.originalPath}`.execute(db);
+    expect(physical.rows).toEqual([{ id: expect.any(String), path: input.originalPath }]);
     expect(
-      (await sql<{ path: string }>`SELECT path FROM public.physical_file WHERE path=${input.originalPath}`.execute(db))
-        .rows,
-    ).toEqual([{ path: input.originalPath }]);
+      await db
+        .selectFrom('asset')
+        .select(['originalPath', 'checksum', 'checksumAlgorithm', 'physicalOriginalFileId'])
+        .where('id', '=', input.assetId)
+        .executeTakeFirst(),
+    ).toEqual({
+      originalPath: input.originalPath,
+      checksum: input.sha256,
+      checksumAlgorithm: 'sha256',
+      physicalOriginalFileId: physical.rows[0].id,
+    });
+    expect(
+      (
+        await sql<{
+          sha1: Buffer;
+          sha256: Buffer;
+          evidence: { source: string };
+        }>`SELECT sha1, sha256, evidence FROM immich_fork.asset_checksum WHERE "assetId"=${input.assetId}::uuid`.execute(
+          db,
+        )
+      ).rows,
+    ).toEqual([{ sha1: input.sha1, sha256: input.sha256, evidence: { source: 'recovery' } }]);
     for (const table of ['physical_file', 'asset_physical_file']) {
       expect((await sql`SELECT 1 FROM ${sql.id('immich_fork', table)}`.execute(db)).rows).toEqual([]);
     }
+  });
+  it('refuses a legacy-phase relink once a storage or checksum backfill has started', async () => {
+    const { expectedLibraryId: _, ...input } = await arrange(false);
+    // a paused backfill: its cursor would resume past this asset and never write its new mapping
+    await sql`INSERT INTO immich_fork.backfill_progress (kind, cursor) VALUES ('storage', ${input.assetId})`.execute(
+      db,
+    );
+    await sql`UPDATE immich_fork.state SET phase='legacy'`.execute(db);
+    expect(await sut.relinkManagedAsset(input)).toBe(false);
+    expect(
+      await db.selectFrom('asset').select('originalPath').where('id', '=', input.assetId).executeTakeFirst(),
+    ).toEqual({ originalPath: input.expectedOriginalPath });
+  });
+  it('refuses a relink when there is no fork schema', async () => {
+    const input = await arrange();
+    await sql`DROP TABLE immich_fork.state`.execute(db);
+    expect(await sut.relinkExternalAsset(input)).toBe(false);
   });
   it.each(['inactive', 'failed'])('refuses a relink in the %s phase', async (phase) => {
     const input = await arrange();
