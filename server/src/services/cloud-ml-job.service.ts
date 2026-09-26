@@ -600,7 +600,8 @@ export class CloudMlJobService {
     }
     const rows = await this.mediaOperationRepository.listCloudMlJobSpend(auth.user.id, cloudMlJobMonthStart(now));
     const spent = cloudMlJobSpentUsd(rows);
-    const within = spent + holdUsd <= spender.monthlyCapUsd + 1e-9;
+    // a job the queue held past its estimate may be resealed up to 10 % higher: the limit keeps room for it
+    const within = spent + holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE <= spender.monthlyCapUsd + 1e-9;
     return {
       canConfirm: within,
       reason: within ? null : 'monthly-cap',
@@ -1069,7 +1070,7 @@ export class CloudMlJobService {
     }
     // a 4xx other than a timeout or a rate limit (the job is unknown, the request refused) never passes
     const status = error instanceof FrameleafCloudError ? error.status : null;
-    if (status !== null && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    if (status !== null && status >= 400 && status < 500 && ![401, 408, 429].includes(status)) {
       return false;
     }
     const failures = run.result.transientFailures + 1;
@@ -1923,6 +1924,11 @@ export class CloudMlJobService {
       });
     }
     await this.removeJobFiles(snapshot);
+    // put right here, so the cleanup pass never reconciles it again (and never touches a later job)
+    await this.mediaOperationRepository.setFinishedResult(operation.id, {
+      ...run.result,
+      reconciled: true,
+    } as unknown as Record<string, unknown>);
     this.logger.log(`Frameleaf Cloud job ${operation.id} cancelled by its owner`);
   }
 
@@ -2011,6 +2017,8 @@ export class CloudMlJobService {
       if (!finished.released) {
         continue;
       }
+      // idempotent; covers a job the cloud no longer knows (404), which no acknowledgement recorded
+      await this.mediaOperationRepository.markRemoteReleased(operation.id);
       try {
         const snapshot = parseCloudMlJobSnapshot(operation.snapshot);
         const statuses = STAGE_STATUSES[snapshot.stage];
@@ -2043,6 +2051,17 @@ export class CloudMlJobService {
         const snapshot = parseCloudMlJobSnapshot(operation.snapshot);
         const statuses = STAGE_STATUSES[snapshot.stage];
         const from = [statuses.running, this.queuedStatus({ snapshot })];
+        // only the version this job still owns: a later accept or preview has its own job
+        const row = await this.restorationRepository.get(snapshot.restorationId);
+        const owner = snapshot.stage === 'full' ? row?.fullOperationId : row?.previewOperationId;
+        if (owner !== operation.id) {
+          await this.removeJobFiles(snapshot);
+          await this.mediaOperationRepository.setFinishedResult(operation.id, {
+            ...result,
+            reconciled: true,
+          } as unknown as Record<string, unknown>);
+          continue;
+        }
         await (snapshot.stage === 'full'
           ? this.restorationRepository.transition(snapshot.restorationId, from, {
               status: AssetRestorationStatus.PreviewReady,
@@ -2774,11 +2793,10 @@ export class CloudMlJobService {
     if (ready) {
       return ready;
     }
-    const failed = this.preparingFailed.get(dir);
-    if (failed) {
+    if (this.preparingFailed.has(dir)) {
       this.preparingFailed.delete(dir);
       throw new BadRequestException(
-        `This video could not be prepared for Frameleaf Cloud (${failed}). Nothing was sent; try again.`,
+        'This video could not be prepared for Frameleaf Cloud. Nothing was sent; try again.',
       );
     }
     if (!this.preparing.has(dir)) {
