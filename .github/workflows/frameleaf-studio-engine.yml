@@ -53,6 +53,10 @@ jobs:
           cp studio/engine/frameleaf-build.json "$RUNNER_TEMP/frameleaf-build-first.json"
       - name: Frameleaf adapter tests and editor build (FL-88, FL-92)
         run: |
+          # The adapter compiles host modules from web/src, whose tsconfig extends the SvelteKit
+          # config that `svelte-kit sync` generates. This job has no web workspace, so stand in for it.
+          mkdir -p web/.svelte-kit
+          test -f web/.svelte-kit/tsconfig.json || echo '{}' > web/.svelte-kit/tsconfig.json
           node studio/tools/adapter.mjs test
           node studio/tools/adapter.mjs build
           test -f web/static/studio-engine/manifest.json
