@@ -333,6 +333,12 @@ export interface ILibraryBulkIdsJob {
 
 export interface IDeleteFilesJob extends IBaseJob {
   files: Array<string | null | undefined>;
+  /**
+   * FL-169: set when the removal of this asset queued the job inside its transaction. Its files go
+   * only once the asset no longer exists: if the removal rolled back after the job was queued, every
+   * file is kept, including ones no remaining row is counted as referencing.
+   */
+  removedAssetId?: string;
 }
 
 export interface IDeferrableJob extends IEntityJob {

@@ -14,6 +14,17 @@ type PhysicalFile = Selectable<PhysicalFileTable>;
 
 export const PHYSICAL_FILE_HANDOFF_REFUSAL = 'Shared files cannot change during database handoff';
 
+/**
+ * Takes the transaction-scoped advisory lock that guards one file path against concurrent reference
+ * changes (see `deleteUnreferencedPath`). Released on commit or rollback. The key is derived in JS
+ * rather than via `hashtext` so every caller agrees on it without depending on an undocumented
+ * Postgres builtin. A caller taking several paths takes them in sorted order.
+ */
+export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> => {
+  const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
+  await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
+};
+
 export type PhysicalNormalizationAsset = {
   id: string;
   checksum: Buffer;
@@ -967,15 +978,9 @@ export class PhysicalFileRepository {
     );
   }
 
-  /**
-   * Advisory lock guarding one path against concurrent reference changes.
-   * Transaction-scoped, so it is released on commit or rollback. The key is
-   * derived in JS rather than via `hashtext` so every caller agrees on it
-   * without depending on an undocumented Postgres builtin.
-   */
+  /** Advisory lock guarding one path against concurrent reference changes (`lockFilePath`). */
   private async lockPath(trx: Transaction<DB>, path: string): Promise<void> {
-    const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
-    await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
+    await lockFilePath(trx, path);
   }
 
   // Every caller changes which rows reference a file (or deletes it), so it is refused while a
@@ -997,12 +1002,29 @@ export class PhysicalFileRepository {
    *
    * The physical_file row is cleaned up in the same transaction, so a failed
    * unlink leaves both the file and its row intact.
+   *
+   * FL-169: `removedAssetId` names an asset whose removal queued this delete inside its transaction
+   * while holding this path's lock. Holding the lock here means that transaction has ended; if the
+   * asset still exists it rolled back, and the path is kept even when no counted row names it (a
+   * video duplicate frame, a storage reservation, a develop revision output).
    */
   async deleteUnreferencedPath(
     path: string,
     unlink: () => Promise<void>,
+    options: { removedAssetId?: string } = {},
   ): Promise<{ deleted: boolean; references: number }> {
     return this.withPathLock(path, async (trx) => {
+      if (options.removedAssetId) {
+        const kept = await trx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', '=', asUuid(options.removedAssetId))
+          .executeTakeFirst();
+        if (kept) {
+          return { deleted: false, references: 1 };
+        }
+      }
+
       const physicalFile = await trx
         .selectFrom('physical_file')
         .select(['id'])

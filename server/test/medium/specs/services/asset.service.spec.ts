@@ -1,6 +1,15 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
+import { randomBytes } from 'node:crypto';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetMetadataKey, AssetStatus, AssetVisibility, JobName, SharedLinkType } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetMetadataKey,
+  AssetStatus,
+  AssetVisibility,
+  JobName,
+  JobStatus,
+  SharedLinkType,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
@@ -12,6 +21,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
@@ -22,7 +32,7 @@ import { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getActiveForkKyselyDB, getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -270,7 +280,7 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [thumbnailPath, previewPath, sidecarPath, asset.originalPath] },
+        data: { files: [thumbnailPath, previewPath, sidecarPath, asset.originalPath], removedAssetId: asset.id },
       });
     });
 
@@ -352,7 +362,7 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [thumbnailPath, previewPath] },
+        data: { files: [thumbnailPath, previewPath], removedAssetId: asset.id },
       });
     });
 
@@ -369,6 +379,187 @@ describe(AssetService.name, () => {
       expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalledWith(
         expect.objectContaining({ name: JobName.FileDelete }),
       );
+    });
+
+    describe('file cleanup that survives a failure (FL-169)', () => {
+      let forkDatabase: Kysely<DB>;
+
+      beforeAll(async () => {
+        forkDatabase = await getActiveForkKyselyDB();
+      });
+
+      const fileDeletes = (ctx: ReturnType<typeof setup>['ctx']) =>
+        ctx
+          .getMock(JobRepository)
+          .queue.mock.calls.flatMap(([job]) => (job.name === JobName.FileDelete ? [job.data.files] : []));
+
+      it('keeps the asset when its file cleanup cannot be queued, and a retry deletes it', async () => {
+        const { sut, ctx } = setup(forkDatabase);
+        const queue = ctx.getMock(JobRepository).queue;
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+        const thumbnailPath = `/path/to/${asset.id}-thumbnail.jpg`;
+        await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: thumbnailPath });
+        queue.mockRejectedValueOnce(new Error('redis unavailable'));
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow(
+          'redis unavailable',
+        );
+        await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ id: asset.id });
+
+        queue.mockResolvedValue();
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toBeUndefined();
+        expect(fileDeletes(ctx).at(-1)).toEqual([thumbnailPath, asset.originalPath]);
+      });
+
+      it('has queued the files when a step after the removal fails', async () => {
+        const { sut, ctx } = setup(forkDatabase);
+        const queue = ctx.getMock(JobRepository).queue;
+        queue.mockResolvedValue();
+        ctx.getMock(EventRepository).emit.mockRejectedValue(new Error('listener failed'));
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toBeUndefined();
+        expect(fileDeletes(ctx)).toEqual([[asset.originalPath]]);
+      });
+
+      it('holds its files until the removal commits, so a FileDelete that starts early still deletes them', async () => {
+        const { sut, ctx } = setup(forkDatabase);
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+        const unlink = vi.fn(async () => {});
+        let deletion: Promise<{ deleted: boolean; references: number }> | undefined;
+        ctx.getMock(JobRepository).queue.mockImplementation(async (job) => {
+          if (job.name !== JobName.FileDelete) {
+            return;
+          }
+          // the FileDelete worker picks the job up before the removal's transaction has committed
+          const state = { settled: false };
+          deletion = new PhysicalFileRepository(forkDatabase)
+            .deleteUnreferencedPath(asset.originalPath, unlink, { removedAssetId: job.data.removedAssetId })
+            .finally(() => {
+              state.settled = true;
+            });
+          for (let attempt = 0; attempt < 100 && !state.settled; attempt++) {
+            const { rows } = await sql<{ waiting: number }>`
+              SELECT count(*)::int AS waiting FROM pg_locks
+              WHERE locktype = 'advisory' AND NOT granted
+                AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            `.execute(forkDatabase);
+            if (rows[0].waiting > 0) {
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        });
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        // without the path lock it would have counted the removed row as a reference and kept the file
+        await expect(deletion).resolves.toEqual({ deleted: true, references: 0 });
+        expect(unlink).toHaveBeenCalledOnce();
+      });
+
+      it('never releases an original another asset still uses', async () => {
+        const { sut, ctx } = setup(forkDatabase);
+        const queue = ctx.getMock(JobRepository).queue;
+        queue.mockResolvedValue();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+        await ctx.newAsset({ ownerId: user.id, originalPath: asset.originalPath });
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        expect(fileDeletes(ctx)).toEqual([[asset.originalPath]]);
+        const unlink = vi.fn(async () => {});
+        await expect(
+          new PhysicalFileRepository(forkDatabase).deleteUnreferencedPath(asset.originalPath, unlink),
+        ).resolves.toMatchObject({ deleted: false });
+        expect(unlink).not.toHaveBeenCalled();
+      });
+
+      const addDevelopRevision = async (assetId: string, ownerId: string) => {
+        const masterPath = `/data/develop/${assetId}-master.tif`;
+        await sql`
+          INSERT INTO immich_fork.asset_develop_revision ("assetId", "ownerId", revision, recipe, "masterPath")
+          VALUES (${assetId}::uuid, ${ownerId}::uuid, 1, '{}'::jsonb, ${masterPath})
+        `.execute(forkDatabase);
+        return masterPath;
+      };
+
+      const addRestoration = async (assetId: string, ownerId: string) => {
+        const resultPath = `/data/restorations/${assetId}-result.jpg`;
+        const previewAfterPath = `/data/restorations/${assetId}-after.jpg`;
+        await sql`
+          INSERT INTO public.asset_restoration
+            ("assetId", "ownerId", revision, mode, workload, "destinationKind", "destinationName", "sourceType",
+             "sourceChecksum", "sourceWidth", "sourceHeight", "previewRegion", "resultPath", "previewAfterPath")
+          VALUES (${assetId}::uuid, ${ownerId}::uuid, 1, 'restore', 'restoration', 'local', 'This server', 'IMAGE',
+             ${randomBytes(20)}, 100, 100, '{}'::jsonb, ${resultPath}, ${previewAfterPath})
+        `.execute(forkDatabase);
+        return [resultPath, previewAfterPath];
+      };
+
+      it('keeps every listed file when the removal rolls back after its cleanup was queued', async () => {
+        const { sut, ctx } = setup(forkDatabase);
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+        const thumbnailPath = `/path/to/${asset.id}-thumbnail.jpg`;
+        await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: thumbnailPath });
+        // no row is counted as referencing a develop output, so only the removed asset can keep it
+        const developPath = await addDevelopRevision(asset.id, user.id);
+        let queued: { files: Array<string | null | undefined>; removedAssetId?: string } | undefined;
+        ctx.getMock(JobRepository).queue.mockImplementation(async (job) => {
+          if (job.name === JobName.FileDelete) {
+            // the job reached the queue, then the removal's transaction failed and rolled back
+            queued = job.data;
+            throw new Error('commit failed');
+          }
+        });
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow('commit failed');
+
+        await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ id: asset.id });
+        expect(queued?.removedAssetId).toBe(asset.id);
+        expect(queued?.files).toEqual(expect.arrayContaining([thumbnailPath, developPath, asset.originalPath]));
+        const physical = new PhysicalFileRepository(forkDatabase);
+        const unlink = vi.fn(async () => {});
+        for (const file of queued!.files as string[]) {
+          await expect(
+            physical.deleteUnreferencedPath(file, unlink, { removedAssetId: queued!.removedAssetId }),
+          ).resolves.toMatchObject({ deleted: false });
+        }
+        expect(unlink).not.toHaveBeenCalled();
+      });
+
+      it('releases the outputs of restorations and develop revisions, whose rows go with the asset', async () => {
+        const { sut, ctx } = setup(forkDatabase);
+        ctx.getMock(JobRepository).queue.mockResolvedValue();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+        const restorationPaths = await addRestoration(asset.id, user.id);
+        const developPath = await addDevelopRevision(asset.id, user.id);
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        const [files] = fileDeletes(ctx);
+        expect(files).toEqual(expect.arrayContaining([...restorationPaths, developPath, asset.originalPath]));
+        const revisions = await sql`
+          SELECT 1 FROM immich_fork.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid
+        `.execute(forkDatabase);
+        expect(revisions.rows).toEqual([]);
+        const unlink = vi.fn(async () => {});
+        for (const file of [...restorationPaths, developPath]) {
+          await expect(
+            new PhysicalFileRepository(forkDatabase).deleteUnreferencedPath(file, unlink, { removedAssetId: asset.id }),
+          ).resolves.toEqual({ deleted: true, references: 0 });
+        }
+      });
     });
   });
 
