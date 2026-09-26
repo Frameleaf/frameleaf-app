@@ -13,7 +13,7 @@ import {
 const fixed = {
   getRandomValues: <T extends ArrayBufferView | null>(array: T): T => {
     if (array) {
-      new Uint8Array(array.buffer).fill(7);
+      new Uint8Array(array.buffer, array.byteOffset, array.byteLength).fill(7);
     }
     return array;
   },
@@ -68,6 +68,7 @@ describe('cloud backup keys in the browser (FL-160)', () => {
     ).toEqual({});
     expect(
       bucketSettingsErrors({
+        // eslint-disable-next-line unicorn/prefer-https -- an HTTP storage address is what is being refused
         endpoint: 'http://s3.example.test',
         bucket: 'Family',
         accessKeyId: ' ',
