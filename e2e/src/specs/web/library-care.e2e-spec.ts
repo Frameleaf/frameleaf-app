@@ -222,7 +222,9 @@ test.describe('Library Care', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openMissingMedia(page);
 
-    const account = page.getByRole('combobox', { name: 'Account' });
+    // Exact: the Command Center's "Account or library scope" select (CommandCenter.jsx:680) also
+    // contains the word.
+    const account = page.getByRole('combobox', { name: 'Account', exact: true });
     await expect(account.getByRole('option')).toHaveText(['All accounts', 'Immich Admin', 'Jamie']);
     await expect(account).toHaveValue('all');
 
