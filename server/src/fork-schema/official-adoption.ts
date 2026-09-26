@@ -156,7 +156,8 @@ export async function applyAdoptionForkFollowUps(db: Kysely<any>): Promise<{ fac
   return { faceDecisions: Number(faceDecisions.numAffectedRows ?? 0) };
 }
 
-type StepCounter = { relations: readonly string[]; query: string };
+/** A count query; `fallback` counts instead while `relations` do not exist yet. */
+type StepCounter = { relations: readonly string[]; query: string; fallback?: StepCounter };
 
 const count = (relations: readonly string[], query: string): StepCounter => ({ relations, query });
 
@@ -175,8 +176,11 @@ const peopleWithoutThumbnail = count(
 
 /**
  * References to Locked assets that the cover repairs replace. 2100000000290 and 2100000000300 read
- * Locked as the official Locked folder (`visibility = locked`); 2100000000320 reads it as a lock
- * record (`asset_lock`), so its counters are keyed on the lock records.
+ * Locked as the official Locked folder (`visibility = locked`). 2100000000320 reads it as a lock
+ * record (`asset_lock`), which that step creates: after it, its counters read the lock records;
+ * before it, they read the assets it is about to lock in an official library, the Locked folder with
+ * the other members of its stacks and the video parts of those live photos. (An official library
+ * has no Frameleaf sensitive marks, the only other source of its locks.)
  */
 const lockedReferences = (locked: { relations: readonly string[]; ids: string }) => ({
   lockedAlbumCovers: count(
@@ -198,14 +202,28 @@ const lockedReferences = (locked: { relations: readonly string[]; ids: string })
     `SELECT count(*)::int AS count FROM public.pet WHERE "featuredAssetId" IN (${locked.ids})`,
   ),
 });
+/** A member of the Locked folder, or of a stack that has one. */
+const TO_LOCK = `(member.visibility::text = 'locked' OR member."stackId" IN (
+  SELECT "stackId" FROM public.asset WHERE visibility::text = 'locked' AND "stackId" IS NOT NULL
+))`;
 const lockedFolderReferences = lockedReferences({
   relations: ['public.asset'],
   ids: `SELECT id FROM public.asset WHERE visibility::text = 'locked'`,
 });
-const lockRecordReferences = lockedReferences({
-  relations: ['public.asset_lock'],
-  ids: `SELECT "assetId" FROM public.asset_lock`,
+const toLockReferences = lockedReferences({
+  relations: ['public.asset'],
+  ids: `SELECT member.id FROM public.asset member WHERE ${TO_LOCK}
+     UNION SELECT member."livePhotoVideoId" FROM public.asset member
+     WHERE member."livePhotoVideoId" IS NOT NULL AND ${TO_LOCK}`,
 });
+const lockRecordReferences = Object.fromEntries(
+  Object.entries(
+    lockedReferences({
+      relations: ['public.asset_lock'],
+      ids: `SELECT "assetId" FROM public.asset_lock`,
+    }),
+  ).map(([key, counter]) => [key, { ...counter, fallback: toLockReferences[key as keyof typeof toLockReferences] }]),
+);
 
 /**
  * What each adoption migration that changes or deletes existing official data touched, as row counts
@@ -259,7 +277,7 @@ export const ADOPTION_STEP_COUNTERS: Readonly<Record<string, Readonly<Record<str
   },
 };
 
-/** Counts for one step; a counter whose tables do not exist yet reads `null`. */
+/** Counts for one step; a counter whose tables (and fallback's tables) do not exist yet reads `null`. */
 export async function countAdoptionStep(
   db: Kysely<any>,
   name: string,
@@ -269,13 +287,18 @@ export async function countAdoptionStep(
     return undefined;
   }
   const result: Record<string, number | null> = {};
-  for (const [key, { relations, query }] of Object.entries(counters)) {
-    const present = await sql<{ present: boolean }>`
-      SELECT bool_and(to_regclass(relation) IS NOT NULL) AS present FROM unnest(${[...relations]}::text[]) AS relation
-    `.execute(db);
-    result[key] = present.rows[0]?.present
-      ? ((await sql.raw<{ count: number }>(query).execute(db)).rows[0]?.count ?? 0)
-      : null;
+  for (const [key, counter] of Object.entries(counters)) {
+    result[key] = null;
+    for (let candidate: StepCounter | undefined = counter; candidate; candidate = candidate.fallback) {
+      const present = await sql<{ present: boolean }>`
+        SELECT bool_and(to_regclass(relation) IS NOT NULL) AS present
+        FROM unnest(${[...candidate.relations]}::text[]) AS relation
+      `.execute(db);
+      if (present.rows[0]?.present) {
+        result[key] = (await sql.raw<{ count: number }>(candidate.query).execute(db)).rows[0]?.count ?? 0;
+        break;
+      }
+    }
   }
   return result;
 }

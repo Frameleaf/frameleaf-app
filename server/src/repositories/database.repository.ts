@@ -1258,7 +1258,8 @@ export class DatabaseRepository extends ForkHandoffRepository {
       `.execute(transaction);
       const previous = completed.rows[0];
       if (previous) {
-        return { adopted: false, applied: previous.details?.applied ?? [] };
+        const applied = previous.details?.applied;
+        return { adopted: false, applied: Array.isArray(applied) ? applied : [] };
       }
       const state = stateResult.rows[0];
       if (!state || state.active || state.phase !== 'inactive' || state.schemaVersion !== '1') {

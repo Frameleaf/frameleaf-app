@@ -79,8 +79,11 @@ and OCR sync counts are exact. `albumsWithoutCover` and `peopleWithoutThumbnail`
 include rows that already had no cover or thumbnail. The `locked…` reference counts
 (album covers, featured faces, shared-space person covers and pet covers that point at a
 Locked asset) show how many references the repair released, but not whether each one got
-a replacement or was cleared. `2100000000290` and `2100000000300` count Locked-folder
-assets, and `2100000000320` counts assets with a lock record.
+a replacement or was cleared. `2100000000290` and `2100000000300` count references to
+Locked-folder assets. `2100000000320` creates the lock records. Before it runs, its
+counts cover the assets it is about to lock in an official library: the Locked folder,
+the other members of those stacks, and the video parts of those live photos. After it
+runs, they cover assets with a lock record.
 
 ### Changes adoption makes to existing official data
 
