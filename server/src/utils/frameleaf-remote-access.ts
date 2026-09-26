@@ -14,10 +14,10 @@ import { isHomeAddress } from 'src/utils/frameleaf-sign-in.js';
 
 /**
  * Remote access through Frameleaf Cloud (FL-165, CLD-102; cloud `docs/remote-access.md` and the
- * `packages/contracts` `remote/*` schemas). Pure functions only, shared by the edge worker and the
- * API: the instance label and names, the enrolment and DNS TXT answers, the custom hostname rules and
- * records, connection candidates, the public URL, the certificate renewal window and the retry
- * backoff.
+ * `packages/contracts` `remote/*` schemas), shared by the edge worker and the API: the instance label
+ * and names, the enrolment and DNS TXT answers, the custom hostname rules and records, connection
+ * candidates, the public URL, the certificate renewal window and the retry backoff. Everything is a
+ * pure function except `remoteAccessUnavailable`, which reads the link and licence it is given.
  *
  * The direct domain comes from the enrolment answer (`domain`), else from discovery
  * (`remote.directDomain`); `DEFAULT_DIRECT_DOMAIN` is only the documented default.
