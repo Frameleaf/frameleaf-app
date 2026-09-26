@@ -555,19 +555,19 @@ Run `node packages/cli/dist/index.js migrate --help` for the full list. The step
 > ⚠️ Always follow [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) backup plan for your precious photos and videos!
 
 > [!NOTE]
-> Frameleaf installation is covered [above](#frameleaf-container-installation). The full documentation is at https://help.frameleaf.ai/.
+> Frameleaf installation is covered [above](#frameleaf-container-installation). The full documentation is at https://help.frameleaf.app/.
 
 ## Links
 
 - [iCloud Photos Sync user guide](docs/docs/guides/icloud-photos-sync.md)
 - [iCloud Photos Sync administrator setup](docs/docs/guides/icloud-photos-server-setup.md)
 - [Recover missing or corrupt media](docs/docs/guides/media-recovery.md)
-- [Documentation](https://help.frameleaf.ai/)
-- [About](https://help.frameleaf.ai/overview/quick-start)
-- [Installation](https://help.frameleaf.ai/install/requirements)
+- [Documentation](https://help.frameleaf.app/)
+- [About](https://help.frameleaf.app/overview/quick-start)
+- [Installation](https://help.frameleaf.app/install/requirements)
 - [Features](#features)
-- [Translations](https://help.frameleaf.ai/developer/translations)
-- [Contributing](https://help.frameleaf.ai/overview/support-the-project)
+- [Translations](https://help.frameleaf.app/developer/translations)
+- [Contributing](https://help.frameleaf.app/overview/support-the-project)
 
 ## Features
 
@@ -606,7 +606,7 @@ Run `node packages/cli/dist/index.js migrate --help` for the full list. The step
 
 ## Translations
 
-Read more about translations [here](https://help.frameleaf.ai/developer/translations).
+Read more about translations [here](https://help.frameleaf.app/developer/translations).
 
 ## Contributors
 

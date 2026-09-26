@@ -7,9 +7,9 @@ const prism = require('prism-react-renderer');
 const config = {
   title: 'Frameleaf',
   tagline: 'Self-hosted photo and video management solution',
-  // FL-188: the owned documentation host is help.frameleaf.ai (see .github/workflows/docs-deploy.yml
+  // FL-188: the owned documentation host is help.frameleaf.app (see .github/workflows/docs-deploy.yml
   // for the deployment automation status).
-  url: 'https://help.frameleaf.ai',
+  url: 'https://help.frameleaf.app',
   baseUrl: '/',
   onBrokenLinks: 'throw',
   favicon: 'img/favicon.png',

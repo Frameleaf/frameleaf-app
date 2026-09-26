@@ -4,8 +4,8 @@ We appreciate every contribution, and we're happy about every new contributor.
 
 ## Getting started
 
-To get started quickly, follow the [development setup guide](https://help.frameleaf.ai/developer/setup). If you prefer, you can also use [Devcontainers](https://help.frameleaf.ai/developer/devcontainers).
-The [developer documentation](https://help.frameleaf.ai/developer/architecture) covers Frameleaf's architecture, database migrations, the use of OpenAPI and more.
+To get started quickly, follow the [development setup guide](https://help.frameleaf.app/developer/setup). If you prefer, you can also use [Devcontainers](https://help.frameleaf.app/developer/devcontainers).
+The [developer documentation](https://help.frameleaf.app/developer/architecture) covers Frameleaf's architecture, database migrations, the use of OpenAPI and more.
 
 ## General
 
