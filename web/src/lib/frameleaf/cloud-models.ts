@@ -1,51 +1,67 @@
 /**
- * Frameleaf Cloud model choice per workload (FL-186). The model a cloud job names is the SKU saved on
- * its workload route (`ml_workload_route.modelId`, `PUT ml-destinations/routes/{workload}`); with none
- * saved, the model Frameleaf Cloud's catalogue recommends for the workload (and restoration mode) in
- * this region. The catalogue (`GET admin/cloud/ml/catalog`) is the only list of cloud models; this
- * module never names one itself.
+ * Frameleaf Cloud model choice per model group (FL-186). The model a cloud job names is the SKU an
+ * administrator chose for its group (`GET`/`PUT admin/cloud/ml/models`), whatever its workload's route
+ * points at; with none chosen, the model Frameleaf Cloud's catalogue recommends for the group in this
+ * region. Groups are the catalogue's own: one per cloud workload, restoration once per mode, and Studio
+ * AI twice (speech to text and captions, and speech). The catalogue (`GET admin/cloud/ml/catalog`) is
+ * the only list of cloud models; this module never names one itself.
  */
 import type { RoutedWorkload } from '$lib/frameleaf/cloud-ml';
 import {
   CloudMlConnection,
+  CloudMlModelGroup,
   getCloudMlCatalog,
-  getMlWorkloadRoutes,
+  getCloudMlModelChoices,
   MlWorkload,
+  type CloudMlModelChoiceDto,
   type CloudMlModelDto,
   type CloudMlStatusResponseDto,
-  type MlWorkloadRouteDto,
 } from '@immich/sdk';
 
+export type CloudModelGroupRow = {
+  group: CloudMlModelGroup;
+  /** The app workload whose cloud jobs use this group. */
+  workload: MlWorkload;
+};
+
 /**
- * The workloads a routed kind of work in Where each job runs covers. Faithful and creative restoration
- * are separate workloads, each with its own model; Studio AI is one workload.
+ * The model groups a routed kind of work in Where each job runs covers: faithful and creative
+ * restoration each have their own, and Studio AI has one for speech to text and captions and one for
+ * speech.
  */
-export const cloudWorkloadsFor = (row: RoutedWorkload): MlWorkload[] => {
+export const cloudModelGroupsFor = (row: RoutedWorkload): CloudModelGroupRow[] => {
   switch (row) {
     case 'descriptions': {
-      return [MlWorkload.Enrichment];
+      return [{ group: CloudMlModelGroup.Descriptions, workload: MlWorkload.Enrichment }];
     }
     case 'upscale': {
-      return [MlWorkload.Upscale];
+      return [{ group: CloudMlModelGroup.Upscale, workload: MlWorkload.Upscale }];
     }
     case 'restoration': {
-      return [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative];
+      return [
+        { group: CloudMlModelGroup.RestorationFaithful, workload: MlWorkload.RestorationFaithful },
+        { group: CloudMlModelGroup.RestorationCreative, workload: MlWorkload.RestorationCreative },
+      ];
     }
     case 'studio': {
-      return [MlWorkload.StudioAi];
+      return [
+        { group: CloudMlModelGroup.Transcription, workload: MlWorkload.StudioAi },
+        { group: CloudMlModelGroup.Tts, workload: MlWorkload.StudioAi },
+      ];
     }
     case 'interpolation': {
-      return [MlWorkload.Interpolation];
+      return [{ group: CloudMlModelGroup.Interpolation, workload: MlWorkload.Interpolation }];
     }
   }
 };
 
-/** Studio AI never takes a catalogue default: an administrator always chooses its model. */
-export const takesCatalogDefault = (workload: MlWorkload) => workload !== MlWorkload.StudioAi;
+/** Studio AI never takes a catalogue default: an administrator always chooses its models. */
+export const takesCatalogDefault = (group: CloudMlModelGroup) =>
+  group !== CloudMlModelGroup.Transcription && group !== CloudMlModelGroup.Tts;
 
-/** The catalogue models for exactly one workload, lightest first (the catalogue's own rank). */
-export const catalogModelsFor = (models: readonly CloudMlModelDto[], workload: MlWorkload): CloudMlModelDto[] =>
-  models.filter((model) => model.workload === workload).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+/** The catalogue models of exactly one group, lightest first (the catalogue's own rank). */
+export const catalogModelsFor = (models: readonly CloudMlModelDto[], group: CloudMlModelGroup): CloudMlModelDto[] =>
+  models.filter((model) => model.group === group).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
 
 export type CloudModelChoice =
   /** An administrator chose this model. */
@@ -57,60 +73,54 @@ export type CloudModelChoice =
   /** No model is chosen and the catalogue recommends none: jobs are refused until one is chosen. */
   | { kind: 'none' };
 
-/** What a workload's cloud jobs use now, exactly as admission decides it. */
+/** What a group's cloud jobs use now, exactly as admission decides it. */
 export const cloudModelChoice = (
   models: readonly CloudMlModelDto[],
-  workload: MlWorkload,
+  group: CloudMlModelGroup,
   modelId: string | null | undefined,
 ): CloudModelChoice => {
   if (modelId) {
     const model = models.find((entry) => entry.id === modelId);
     return model ? { kind: 'chosen', model } : { kind: 'missing', id: modelId };
   }
-  const recommended = takesCatalogDefault(workload) ? models.find((entry) => entry.isDefault) : undefined;
+  const recommended = takesCatalogDefault(group) ? models.find((entry) => entry.isDefault) : undefined;
   return recommended ? { kind: 'default', model: recommended } : { kind: 'none' };
 };
 
-/** The route of one workload, when it runs on the given Frameleaf Cloud destination. */
-export const cloudRouteFor = (
-  routes: readonly MlWorkloadRouteDto[],
-  workload: MlWorkload,
-  cloudDestinationId: string | null | undefined,
-): MlWorkloadRouteDto | null => {
-  if (!cloudDestinationId) {
-    return null;
-  }
-  return routes.find((route) => route.workload === workload && route.destinationId === cloudDestinationId) ?? null;
-};
+/** The chosen model SKU of each group; a group without one uses the catalogue default. */
+export type CloudModelChoices = Partial<Record<CloudMlModelGroup, string | null>>;
+
+export const choicesByGroup = (choices: readonly CloudMlModelChoiceDto[]): CloudModelChoices =>
+  Object.fromEntries(choices.map((choice) => [choice.group, choice.modelId]));
 
 export type CloudModelData = {
   /** The catalogue's models, or null when Frameleaf Cloud is not ready or could not be read. */
   catalog: CloudMlModelDto[] | null;
-  /** Frameleaf Cloud is ready, but its catalogue could not be read. */
+  /** Frameleaf Cloud is linked, but its catalogue could not be read. */
   catalogFailed: boolean;
-  routes: MlWorkloadRouteDto[];
+  choices: CloudModelChoices;
 };
 
-const readRoutes = async (): Promise<MlWorkloadRouteDto[]> => {
+const readChoices = async (): Promise<CloudModelChoices> => {
   try {
-    return (await getMlWorkloadRoutes()).routes;
+    return choicesByGroup((await getCloudMlModelChoices()).choices);
   } catch {
-    return [];
+    return {};
   }
 };
 
 /**
- * The routes and, once Frameleaf Cloud is ready and added as a destination, its catalogue. The
- * catalogue is only read then: before that the gateway is not reachable and there is nothing to route.
+ * The chosen models and, once Frameleaf Cloud answers, its catalogue. Before the server is linked the
+ * gateway is not reachable and there is nothing to choose from.
  */
 export const loadCloudModelData = async (status: CloudMlStatusResponseDto | null): Promise<CloudModelData> => {
-  const routes = await readRoutes();
-  if (status?.connection !== CloudMlConnection.Ready || !status.destination) {
-    return { catalog: null, catalogFailed: false, routes };
+  const choices = await readChoices();
+  if (status?.connection !== CloudMlConnection.Ready) {
+    return { catalog: null, catalogFailed: status?.connection === CloudMlConnection.Unavailable, choices };
   }
   try {
-    return { catalog: (await getCloudMlCatalog()).models, catalogFailed: false, routes };
+    return { catalog: (await getCloudMlCatalog()).models, catalogFailed: false, choices };
   } catch {
-    return { catalog: null, catalogFailed: true, routes };
+    return { catalog: null, catalogFailed: true, choices };
   }
 };

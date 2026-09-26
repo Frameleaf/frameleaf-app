@@ -1,10 +1,11 @@
 import {
   CloudMlConnection,
+  CloudMlModelGroup,
   MlWorkload,
   type AdminConfigDto,
+  type CloudMlModelChoiceDto,
   type CloudMlModelDto,
   type CloudMlStatusResponseDto,
-  type MlWorkloadRouteDto,
 } from '@immich/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
@@ -56,13 +57,20 @@ const useDraft = (enabled: boolean, routing: Partial<Routing> = {}) => {
 };
 
 const status = (connection: CloudMlConnection) => ({ connection }) as CloudMlStatusResponseDto;
-/** Frameleaf Cloud ready and added as the destination `cloud-1`. */
-const cloudReady = () =>
-  ({ connection: CloudMlConnection.Ready, destination: { id: 'cloud-1' } }) as CloudMlStatusResponseDto;
+/** Frameleaf Cloud linked and answering. */
+const cloudReady = () => ({ connection: CloudMlConnection.Ready, destination: null }) as CloudMlStatusResponseDto;
 
-const model = (id: string, workload: MlWorkload, name: string, rank: number, isDefault = false): CloudMlModelDto => ({
+const model = (
+  id: string,
+  workload: MlWorkload,
+  group: CloudMlModelGroup,
+  name: string,
+  rank: number,
+  isDefault = false,
+): CloudMlModelDto => ({
   id,
   workload,
+  group,
   name,
   rank,
   isDefault,
@@ -73,27 +81,37 @@ const model = (id: string, workload: MlWorkload, name: string, rank: number, isD
 });
 
 const catalog: CloudMlModelDto[] = [
-  model('ms_DESCBEST', MlWorkload.Enrichment, 'Descriptions · Best', 2),
-  model('ms_DESCFAST', MlWorkload.Enrichment, 'Descriptions · Fast', 1, true),
-  model('ms_RESTFAIT', MlWorkload.RestorationFaithful, 'Restoration · Faithful', 1, true),
-  model('ms_RESTCREA', MlWorkload.RestorationCreative, 'Restoration · Creative', 1),
+  model('ms_DESCBEST', MlWorkload.Enrichment, CloudMlModelGroup.Descriptions, 'Descriptions · Best', 2),
+  model('ms_DESCFAST', MlWorkload.Enrichment, CloudMlModelGroup.Descriptions, 'Descriptions · Fast', 1, true),
+  model('ms_DESCHUGE', MlWorkload.Enrichment, CloudMlModelGroup.Descriptions, 'Descriptions · Huge', 3),
+  model(
+    'ms_RESTFAIT',
+    MlWorkload.RestorationFaithful,
+    CloudMlModelGroup.RestorationFaithful,
+    'Restoration · Faithful',
+    1,
+    true,
+  ),
+  model(
+    'ms_RESTCREA',
+    MlWorkload.RestorationCreative,
+    CloudMlModelGroup.RestorationCreative,
+    'Restoration · Creative',
+    1,
+  ),
   // Frameleaf Cloud never marks a Studio AI default; were one marked, it is still not used.
-  model('ms_STUDIOVO', MlWorkload.StudioAi, 'Studio · Voice', 1, true),
+  model('ms_STUDIOWD', MlWorkload.StudioAi, CloudMlModelGroup.Transcription, 'Studio · Words', 1, true),
+  model('ms_STUDIOVO', MlWorkload.StudioAi, CloudMlModelGroup.Tts, 'Studio · Voice', 1),
 ];
 
-const route = (
-  workload: MlWorkload,
-  destinationId: string | null,
-  modelId: string | null = null,
-): MlWorkloadRouteDto => ({
-  workload,
-  destinationId,
+const choice = (group: CloudMlModelGroup, modelId: string | null = null): CloudMlModelChoiceDto => ({
+  group,
   modelId,
 });
 
-const useCloudModels = (routes: MlWorkloadRouteDto[]) => {
+const useCloudModels = (choices: CloudMlModelChoiceDto[] = []) => {
   sdkMock.getCloudMlStatus.mockResolvedValue(cloudReady());
-  sdkMock.getMlWorkloadRoutes.mockResolvedValue({ routes });
+  sdkMock.getCloudMlModelChoices.mockResolvedValue({ choices });
   sdkMock.getCloudMlCatalog.mockResolvedValue({ models: catalog });
 };
 
@@ -156,18 +174,18 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
     expect(store.draft.frameleafCloud!.cloudMl.startWith).toBe('cloud');
   });
 
-  describe('Frameleaf Cloud model per workload (FL-186)', () => {
-    it('lists the catalogue models of a cloud-routed workload, uses the recommended one, and saves a chosen SKU', async () => {
+  describe('Frameleaf Cloud model per model group (FL-186)', () => {
+    it('lists the catalogue models of a group, uses the recommended one, and saves a chosen SKU on its own', async () => {
       useDraft(true, { descriptions: 'both' });
-      useCloudModels([route(MlWorkload.Enrichment, 'cloud-1')]);
-      sdkMock.setMlWorkloadRoute
-        .mockResolvedValueOnce({ routes: [route(MlWorkload.Enrichment, 'cloud-1', 'ms_DESCBEST')] })
-        .mockResolvedValueOnce({ routes: [route(MlWorkload.Enrichment, 'cloud-1')] });
+      useCloudModels();
+      sdkMock.setCloudMlModelChoice
+        .mockResolvedValueOnce({ choices: [choice(CloudMlModelGroup.Descriptions, 'ms_DESCBEST')] })
+        .mockResolvedValueOnce({ choices: [choice(CloudMlModelGroup.Descriptions)] });
       render(WorkloadRoutingTable);
 
       const group = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' });
-      // lightest first, only this workload's models
-      expect(radioValues(group)).toEqual(['ms_DESCFAST', 'ms_DESCBEST']);
+      // lightest first, only this group's models
+      expect(radioValues(group)).toEqual(['ms_DESCFAST', 'ms_DESCBEST', 'ms_DESCHUGE']);
       expect(within(group).getByRole('radio', { name: /Descriptions · Fast: .*Recommended/ })).toBeChecked();
       expect(within(group).getByText(/Used until you choose another model\./)).toBeInTheDocument();
       expect(within(group).getAllByText(/\$0\.0600 per minute of GPU time/).length).toBeGreaterThan(0);
@@ -175,35 +193,61 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
       expect(screen.queryByRole('group', { name: 'Frameleaf Cloud model for Enhance & upscale' })).toBeNull();
 
       await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Best/ }));
-      expect(sdkMock.setMlWorkloadRoute).toHaveBeenCalledWith({
-        workload: MlWorkload.Enrichment,
-        mlWorkloadRouteUpdateDto: { destinationId: 'cloud-1', modelId: 'ms_DESCBEST' },
-      });
+      // the choice shows at once, and the group stays usable while it is saved
+      expect(within(group).getByRole('radio', { name: /Descriptions · Best/ })).toBeChecked();
+      expect(group).not.toBeDisabled();
+      await vi.waitFor(() =>
+        expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledWith({
+          group: CloudMlModelGroup.Descriptions,
+          cloudMlModelChoiceUpdateDto: { modelId: 'ms_DESCBEST' },
+        }),
+      );
       expect(
         await screen.findByText(
           'Descriptions & tags now uses Descriptions · Best on Frameleaf Cloud. Each job still shows its cost first.',
         ),
       ).toBeInTheDocument();
-      expect(within(group).getByRole('radio', { name: /Descriptions · Best/ })).toBeChecked();
+      // the choice is not the route: no route is written
+      expect(sdkMock.setMlWorkloadRoute).not.toHaveBeenCalled();
 
       await fireEvent.click(
         within(group).getByRole('button', { name: 'Use the recommended model (Descriptions · Fast)' }),
       );
-      expect(sdkMock.setMlWorkloadRoute).toHaveBeenLastCalledWith({
-        workload: MlWorkload.Enrichment,
-        mlWorkloadRouteUpdateDto: { destinationId: 'cloud-1', modelId: null },
-      });
+      await vi.waitFor(() =>
+        expect(sdkMock.setCloudMlModelChoice).toHaveBeenLastCalledWith({
+          group: CloudMlModelGroup.Descriptions,
+          cloudMlModelChoiceUpdateDto: { modelId: null },
+        }),
+      );
       expect(
         await screen.findByText('Descriptions & tags now uses the model Frameleaf Cloud recommends.'),
       ).toBeInTheDocument();
     });
 
-    it('gives faithful and creative restoration their own pickers, each with only its own mode', async () => {
-      useDraft(true, { restoration: 'cloud' });
-      useCloudModels([
-        route(MlWorkload.RestorationFaithful, 'cloud-1'),
-        route(MlWorkload.RestorationCreative, 'cloud-1'),
-      ]);
+    it('saves only the latest of several quick choices, so arrow keys move freely', async () => {
+      useDraft(true, { descriptions: 'cloud' });
+      useCloudModels();
+      sdkMock.setCloudMlModelChoice.mockResolvedValue({
+        choices: [choice(CloudMlModelGroup.Descriptions, 'ms_DESCHUGE')],
+      });
+      render(WorkloadRoutingTable);
+
+      const group = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' });
+      await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Best/ }));
+      await fireEvent.click(within(group).getByRole('radio', { name: /Descriptions · Huge/ }));
+
+      await vi.waitFor(() => expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalled());
+      expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledTimes(1);
+      expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledWith({
+        group: CloudMlModelGroup.Descriptions,
+        cloudMlModelChoiceUpdateDto: { modelId: 'ms_DESCHUGE' },
+      });
+    });
+
+    it('offers the chosen cloud model for a Both workload whatever its route, restoration per mode', async () => {
+      // No route points at Frameleaf Cloud: a job the person sends there still uses these choices.
+      useDraft(true, { restoration: 'both' });
+      useCloudModels([choice(CloudMlModelGroup.RestorationFaithful, 'ms_RESTFAIT')]);
       render(WorkloadRoutingTable);
 
       const faithful = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Restoration (faithful)' });
@@ -218,24 +262,42 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
           'Frameleaf Cloud recommends no model for this work in this region. Choose one; these jobs are refused until you do.',
         ),
       ).toBeInTheDocument();
+      expect(sdkMock.getMlWorkloadRoutes).not.toHaveBeenCalled();
     });
 
-    it('always asks for a Studio AI model, and asks to route work to Frameleaf Cloud before choosing one', async () => {
-      useDraft(true, { studio: 'cloud', interpolation: 'both' });
-      useCloudModels([route(MlWorkload.StudioAi, 'cloud-1'), route(MlWorkload.Interpolation, 'lan-1')]);
+    it('gives Studio AI a speech to text and a speech model, and always asks for them', async () => {
+      useDraft(true, { studio: 'cloud' });
+      useCloudModels([choice(CloudMlModelGroup.Tts, 'ms_STUDIOVO')]);
       render(WorkloadRoutingTable);
 
-      const studio = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Transcripts & captions' });
-      expect(within(studio).getByRole('radio')).not.toBeChecked();
-      expect(within(studio).getByText(/^Choose a Frameleaf Cloud model for Studio AI\./)).toBeInTheDocument();
+      const words = await screen.findByRole('group', {
+        name: 'Frameleaf Cloud model for Speech to text and captions',
+      });
+      const voice = screen.getByRole('group', { name: 'Frameleaf Cloud model for Speech' });
+      expect(radioValues(words)).toEqual(['ms_STUDIOWD']);
+      expect(radioValues(voice)).toEqual(['ms_STUDIOVO']);
+      expect(within(voice).getByRole('radio')).toBeChecked();
+      expect(within(words).getByRole('radio')).not.toBeChecked();
+      expect(within(words).getByText(/^Choose a Frameleaf Cloud model for Studio AI\./)).toBeInTheDocument();
+    });
+
+    it('reads the catalogue once cloud processing is turned on on this page', async () => {
+      const store = useDraft(false, { descriptions: 'both' });
+      useCloudModels();
+      render(WorkloadRoutingTable);
+
+      await vi.waitFor(() => expect(sdkMock.getCloudMlStatus).toHaveBeenCalled());
+      expect(sdkMock.getCloudMlCatalog).not.toHaveBeenCalled();
+      store.draft.frameleafCloud!.cloudMl.enabled = true;
       expect(
-        screen.getByText('Route Smooth motion to Frameleaf Cloud in Processing destinations to choose its model.'),
+        await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' }),
       ).toBeInTheDocument();
+      expect(sdkMock.getCloudMlCatalog).toHaveBeenCalledTimes(1);
     });
 
     it('says when the Frameleaf Cloud model list cannot be read', async () => {
       useDraft(true, { descriptions: 'cloud' });
-      useCloudModels([route(MlWorkload.Enrichment, 'cloud-1')]);
+      useCloudModels();
       sdkMock.getCloudMlCatalog.mockRejectedValue(new Error('unavailable'));
       render(WorkloadRoutingTable);
 

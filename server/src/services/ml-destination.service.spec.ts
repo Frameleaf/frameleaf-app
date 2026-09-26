@@ -514,91 +514,27 @@ describe(MlDestinationService.name, () => {
 
     it('routes to a consented cloud destination and removes a route with null', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
-      await sut.setRoute(MlWorkload.Enrichment, {
-        destinationId: mlDestinationStub.frameleafCloudConsented.id,
-        modelId: 'describe-large',
-      });
+      await sut.setRoute(MlWorkload.Enrichment, { destinationId: mlDestinationStub.frameleafCloudConsented.id });
       expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(
         MlWorkload.Enrichment,
         mlDestinationStub.frameleafCloudConsented.id,
-        'describe-large',
       );
 
       await sut.setRoute(MlWorkload.Enrichment, { destinationId: null });
       expect(mocks.mlDestination.clearRoute).toHaveBeenCalledWith(MlWorkload.Enrichment);
     });
 
-    it('refuses a model outside the Frameleaf Cloud catalogue, and a model on a local destination (FL-159)', async () => {
+    it('moves a route without touching the chosen Frameleaf Cloud model (FL-186)', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
-      await expect(
-        sut.setRoute(MlWorkload.Enrichment, {
-          destinationId: mlDestinationStub.frameleafCloudConsented.id,
-          modelId: 'unknown-model',
-        }),
-      ).rejects.toThrow(/not in the Frameleaf Cloud catalogue/);
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
-      await expect(
-        sut.setRoute(MlWorkload.Face, { destinationId: mlDestinationStub.local.id, modelId: 'describe-large' }),
-      ).rejects.toThrow(/Only Frameleaf Cloud/);
-      expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
-    });
-
-    it('routes a catalogue SKU to exactly the workload and mode the catalogue places it in (FL-186)', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
-      const cloudId = mlDestinationStub.frameleafCloudConsented.id;
-
-      await sut.setRoute(MlWorkload.RestorationCreative, { destinationId: cloudId, modelId: 'restore-creative' });
-      expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(
-        MlWorkload.RestorationCreative,
-        cloudId,
-        'restore-creative',
-      );
-
-      // a model of the other restoration mode, or of another workload, is refused
-      await expect(
-        sut.setRoute(MlWorkload.RestorationCreative, { destinationId: cloudId, modelId: 'restore-faithful' }),
-      ).rejects.toThrow(
-        'The model restore-faithful does not run restoration-creative in the Frameleaf Cloud catalogue',
-      );
-      await expect(
-        sut.setRoute(MlWorkload.Enrichment, { destinationId: cloudId, modelId: 'restore-faithful' }),
-      ).rejects.toThrow('The model restore-faithful does not run enrichment in the Frameleaf Cloud catalogue');
-      expect(mocks.mlDestination.setRoute).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps the routed model when the route is saved without one, and clears it with null (FL-186)', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
-      const cloudId = mlDestinationStub.frameleafCloudConsented.id;
-      mocks.mlDestination.getRoute.mockResolvedValue({
-        workload: MlWorkload.Enrichment,
-        destinationId: cloudId,
-        modelId: 'describe-large',
-        updatedAt: new Date(),
-      });
-
-      await sut.setRoute(MlWorkload.Enrichment, { destinationId: cloudId });
-      expect(mocks.mlDestination.getRoute).toHaveBeenCalledWith(MlWorkload.Enrichment);
-      expect(mocks.mlDestination.setRoute).toHaveBeenLastCalledWith(MlWorkload.Enrichment, cloudId, 'describe-large');
-
-      await sut.setRoute(MlWorkload.Enrichment, { destinationId: cloudId, modelId: null });
-      expect(mocks.mlDestination.setRoute).toHaveBeenLastCalledWith(MlWorkload.Enrichment, cloudId, null);
-    });
-
-    it('drops a model routed to another destination when the route moves to Frameleaf Cloud (FL-186)', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
-      mocks.mlDestination.getRoute.mockResolvedValue({
-        workload: MlWorkload.Enrichment,
-        destinationId: 'another-destination',
-        modelId: 'describe-large',
-        updatedAt: new Date(),
-      });
-
       await sut.setRoute(MlWorkload.Enrichment, { destinationId: mlDestinationStub.frameleafCloudConsented.id });
-      expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(
-        MlWorkload.Enrichment,
-        mlDestinationStub.frameleafCloudConsented.id,
-        null,
-      );
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      await sut.setRoute(MlWorkload.Enrichment, { destinationId: mlDestinationStub.local.id });
+
+      expect(mocks.mlDestination.setRoute).toHaveBeenLastCalledWith(MlWorkload.Enrichment, mlDestinationStub.local.id);
+      // the model choice lives apart from the route: moving the route never reads, sets or clears it
+      expect(mocks.mlDestination.getCloudModelChoice).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.setCloudModelChoice).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.clearCloudModelChoice).not.toHaveBeenCalled();
     });
 
     it('lists every workload, unrouted ones with a null destination', async () => {
@@ -813,7 +749,6 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(
         MlWorkload.RestorationFaithful,
         mlDestinationStub.lan.id,
-        null,
       );
     });
   });

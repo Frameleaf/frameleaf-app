@@ -91,6 +91,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000620-FrameleafCloudMlDestination',
   '2100000000630-AddWorkflowRunStep',
   '2100000000640-AddAssetFilePathIndex',
+  '2100000000650-AddMlCloudModelChoice',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

@@ -137,9 +137,32 @@ export class MlWorkloadRouteTable {
   @ForeignKeyColumn(() => MlDestinationTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' })
   destinationId!: string;
 
-  /** FL-159: the Frameleaf Cloud catalogue model chosen for this workload, or null for none. */
+  /**
+   * FL-159: the Frameleaf Cloud catalogue model chosen for this workload. No longer read or written
+   * since FL-186 (`ml_cloud_model_choice` holds the choice); kept so the column is not dropped.
+   */
   @Column({ type: 'text', nullable: true })
   modelId!: string | null;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+}
+
+/**
+ * The Frameleaf Cloud model an administrator chose for each model group (FL-186, migration
+ * 2100000000650-AddMlCloudModelChoice): `descriptions`, `upscale`, `restoration-faithful`,
+ * `restoration-creative`, `interpolation`, `transcription` and `tts`, keyed as the catalogue keys its
+ * defaults. A cloud job reads its group's row whatever its workload's route points at; a group without
+ * a row uses the catalogue's default.
+ */
+@Table('ml_cloud_model_choice')
+export class MlCloudModelChoiceTable {
+  @PrimaryColumn({ type: 'text' })
+  modelGroup!: string;
+
+  /** The catalogue model SKU (`ms_…`). */
+  @Column({ type: 'text' })
+  modelId!: string;
 
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;

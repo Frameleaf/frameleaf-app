@@ -190,9 +190,9 @@ const frameleafCloudDefaults = {
       interpolation: 'local' as 'local' | 'both' | 'cloud',
     },
     startWith: 'local' as 'local' | 'cloud',
-    // FL-186: the Frameleaf Cloud model of each workload is not a setting. It is the catalogue SKU saved
-    // on the workload's route (`ml_workload_route.modelId`), else the catalogue's marked default; a
-    // `models` key saved by an earlier version is dropped when the configuration is read.
+    // FL-186: the Frameleaf Cloud model is not a setting. It is the catalogue SKU chosen per model group
+    // (`ml_cloud_model_choice`, `PUT admin/cloud/ml/models/{group}`), else the catalogue's marked
+    // default; a `models` key saved by an earlier version is dropped when the configuration is read.
     autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
     faces: { enabled: false as const },
   },

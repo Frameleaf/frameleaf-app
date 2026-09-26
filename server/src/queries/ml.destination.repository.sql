@@ -52,6 +52,27 @@ delete from "ml_workload_route"
 where
   "workload" = $1
 
+-- MlDestinationRepository.getCloudModelChoices
+select
+  *
+from
+  "ml_cloud_model_choice"
+order by
+  "modelGroup" asc
+
+-- MlDestinationRepository.getCloudModelChoice
+select
+  "modelId"
+from
+  "ml_cloud_model_choice"
+where
+  "modelGroup" = $1
+
+-- MlDestinationRepository.clearCloudModelChoice
+delete from "ml_cloud_model_choice"
+where
+  "modelGroup" = $1
+
 -- MlDestinationRepository.getSettlements
 select
   "cloudJobId",

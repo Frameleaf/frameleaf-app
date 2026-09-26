@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { MlDestinationResponseSchema } from 'src/dtos/ml-destination.dto.js';
 import { MlWorkloadSchema } from 'src/enum.js';
+import { CLOUD_MODEL_GROUPS } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Frameleaf Cloud processing administration (FL-159, CLD-201). Customer copy says "Frameleaf Cloud";
@@ -68,6 +69,13 @@ const CloudMlStatusResponseSchema = z
   })
   .meta({ id: 'CloudMlStatusResponseDto' });
 
+const CloudMlModelGroupSchema = z
+  .enum(CLOUD_MODEL_GROUPS)
+  .describe(
+    'What a Frameleaf Cloud model is chosen for: a cloud workload, restoration per mode, and Studio AI speech to text (transcription) and speech (tts)',
+  )
+  .meta({ id: 'CloudMlModelGroup' });
+
 const CloudMlModelSchema = z
   .object({
     id: z.string(),
@@ -79,6 +87,9 @@ const CloudMlModelSchema = z
     fingerprint: z.string(),
     pricingUnit: z.string().nullable().describe('What one price unit is (for example an image or a video minute)'),
     priceUsd: z.number().meta({ format: 'double' }).nullable().describe('Price per unit, USD'),
+    group: CloudMlModelGroupSchema.nullable().describe(
+      'The group this model is chosen for, or null for one this server does not know',
+    ),
     rank: z.int().describe("Position on its workload's ladder, 1 = lightest"),
     isDefault: z
       .boolean()
@@ -93,6 +104,35 @@ const CloudMlCatalogResponseSchema = z
     models: z.array(CloudMlModelSchema).describe('Models Frameleaf Cloud offers now; retired models are left out'),
   })
   .meta({ id: 'CloudMlCatalogResponseDto' });
+
+const CloudMlModelChoiceSchema = z
+  .object({
+    group: CloudMlModelGroupSchema,
+    modelId: z
+      .string()
+      .nullable()
+      .describe('The chosen catalogue model SKU, or null when the group uses the catalogue default'),
+  })
+  .meta({ id: 'CloudMlModelChoiceDto' });
+
+const CloudMlModelChoicesResponseSchema = z
+  .object({
+    choices: z.array(CloudMlModelChoiceSchema).describe('Every model group, in a fixed order'),
+  })
+  .meta({ id: 'CloudMlModelChoicesResponseDto' });
+
+const CloudMlModelChoiceUpdateSchema = z
+  .object({
+    modelId: z
+      .string()
+      .min(1)
+      .max(200)
+      .nullable()
+      .describe('A catalogue model SKU of exactly this group; null uses the catalogue default'),
+  })
+  .meta({ id: 'CloudMlModelChoiceUpdateDto' });
+
+const CloudMlModelGroupParamSchema = z.object({ group: CloudMlModelGroupSchema });
 
 const CloudMlDestinationCreateSchema = z
   .object({
@@ -151,6 +191,9 @@ const CloudMlSettlementsResponseSchema = z
 export class CloudMlStatusResponseDto extends createZodDto(CloudMlStatusResponseSchema) {}
 export class CloudMlWalletDto extends createZodDto(CloudMlWalletSchema) {}
 export class CloudMlCatalogResponseDto extends createZodDto(CloudMlCatalogResponseSchema) {}
+export class CloudMlModelChoicesResponseDto extends createZodDto(CloudMlModelChoicesResponseSchema) {}
+export class CloudMlModelChoiceUpdateDto extends createZodDto(CloudMlModelChoiceUpdateSchema) {}
+export class CloudMlModelGroupParamDto extends createZodDto(CloudMlModelGroupParamSchema) {}
 export class CloudMlModelDto extends createZodDto(CloudMlModelSchema) {}
 export class CloudMlDestinationCreateDto extends createZodDto(CloudMlDestinationCreateSchema) {}
 export class CloudMlConsentHistoryResponseDto extends createZodDto(CloudMlConsentHistoryResponseSchema) {}
