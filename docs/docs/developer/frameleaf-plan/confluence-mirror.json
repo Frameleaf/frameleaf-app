@@ -73,19 +73,19 @@
       "version": 4
     },
     {
-      "bytes": 30901,
+      "bytes": 36112,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-26T23:05:50.743Z",
-      "readbackResult": "FL-164/FL-165: markdown read-back of version 5 begins with the header carrying SHA-256 334985d9, 30901 bytes, the FL-164 commits 005602a75b and deb8d86c62 and the FL-165 commit a181f68ca8, brought together in the local merge 0d93fc873f, committed locally on codex/FL-44-merge (not pushed), on top of the FL-190/FL-191 revision at a3a4012815 (kept as the source-at-commit backlink, since these commits are not pushed), the added FL-164/FL-165 Jira links and the rest of the existing FL-190/FL-191/FL-160/FL-161/FL-156/FL-170 chain unchanged; the live version 4 was unchanged since its FL-190 read-back. Body matches the posted HEAD source exactly: 'Remote access security' opens with the new Workers-and-endpoints paragraph, and 'Cloud backup' carries the new Schedule and retention, Checking the backups, Frameleaf-managed storage, Key escrow, Restoring and Disaster recovery subsections plus the reworded run/status-card text, except that the markdown export drops the same-page anchor link markup (text kept) for 'Remote access security', 'Frameleaf-managed storage', 'Key escrow', 'Plan and licence' and 'Unlinking', the same known round-trip limitation as prior read-backs; no user-authored additions.",
+      "readbackAt": "2026-09-26T23:31:44.012Z",
+      "readbackResult": "FL-162: markdown read-back of version 6 begins with the header carrying SHA-256 caf7d17d, 36112 bytes, the FL-162 commits d18b52a372, ae9dc308fa, 0802ee9d88, cc64968cd0 and 97ca4c6d30 brought together with FL-164 and FL-165 in the local merge dfa356ca1b, committed locally on codex/FL-44-merge (not pushed), on top of the FL-190/FL-191 revision at a3a4012815 (kept as the source-at-commit backlink, since these commits are not pushed), the added FL-162 Jira link and the rest of the existing FL-164/FL-165/FL-190/FL-191/FL-160/FL-161/FL-156/FL-170 chain unchanged; the live version 5 was unchanged since its FL-164/FL-165 read-back (its header still carried SHA-256 334985d9). Published as HTML because a markdown replacement is refused for the Implementation plan smart link. Body matches the posted source exactly: the new 'Restoration and Smooth motion on Frameleaf Cloud' section closes the page, and the Cloud backup Activity paragraph places runs, checks, clean-ups and restores in the Background work group at the end of In progress with finished ones under Recent, except that the markdown export drops the same-page anchor link markup (text kept) for 'Remote access security', 'Frameleaf-managed storage', 'Key escrow', 'Plan and licence', 'Unlinking' and 'Disaster recovery', the same known round-trip limitation as prior read-backs; no user-authored additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "codex/FL-44-merge",
-      "sourceCommit": "72d1b7d622554c36d731f4360584c1e9638412cc",
-      "sourceSha256": "334985d9073faca521d7c884b6b4cd561b1ce76c361e3139780868b4f7392eb6",
-      "sourceState": "committed-fl-164-fl-165-cloud-backup-and-remote-access-2026-09-26",
+      "sourceCommit": "dfa356ca1bc0c37a98c691ddd94ed989516b21bb",
+      "sourceSha256": "caf7d17d7385d03a644572d7bed2d2f5d1aa44cb0ca7138a3846f016372b602c",
+      "sourceState": "committed-fl-162-cloud-restoration-jobs-merge-2026-09-26",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 5
+      "version": 6
     },
     {
       "bytes": 12350,
