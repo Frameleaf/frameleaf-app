@@ -302,9 +302,11 @@ describe(FrameleafLicenseService.name, () => {
     it('removes the key, deactivating it with the cloud, and keeps the plan', async () => {
       cloud.on('POST /api/v1/licenses/deactivate', () => ({ status: 200, body: {} }));
       const status = await sut.removeKey(authStub.admin);
+      // shape matches the golden licence/deactivate-request.json fixture (FL-184, FC-22 final)
       expect(cloud.requests.find(({ path }) => path === '/api/v1/licenses/deactivate')?.json()).toMatchObject({
         activationId: 'act-1',
         licenseId: 'lic-1',
+        fingerprint: { instanceId: instanceId() },
       });
       expect(status).toMatchObject({
         key: null,

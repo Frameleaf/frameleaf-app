@@ -1,0 +1,28 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://id.frameleaf.cloud/token",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "DPoP": "<compact JWS: header and payload below, signed by the instance key>"
+    },
+    "form": {
+      "grant_type": "client_credentials",
+      "client_id": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+      "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      "client_assertion": "<compact JWS by the instance key, header kid>",
+      "resource": "https://api.frameleaf.cloud",
+      "scope": "instance"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "Cache-Control": "no-store"
+  },
+  "body": {
+    "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIiwidHlwIjoiYXQrand0In0.eyJzdWIiOiIwMTkyZjFiMC0xYTJiLTdjM2QtOGU0Zi01YTZiN2M4ZDllMGYifQ.c2lnbmF0dXJl",
+    "expires_in": 600,
+    "token_type": "DPoP",
+    "scope": "instance"
+  }
+}
