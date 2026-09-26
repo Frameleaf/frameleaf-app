@@ -258,6 +258,18 @@ where
 -- AssetRepository.deleteAll
 begin
 SELECT
+  stack.id
+FROM
+  public.stack stack
+  LEFT JOIN public.asset primary_asset ON primary_asset.id = stack."primaryAssetId"
+WHERE
+  stack."ownerId" = $1::uuid
+  OR primary_asset."ownerId" = $2::uuid
+ORDER BY
+  stack.id
+FOR UPDATE OF
+  stack
+SELECT
   asset.id,
   coalesce(
     mapping."upstreamPath",

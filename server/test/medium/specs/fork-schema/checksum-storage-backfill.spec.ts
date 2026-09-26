@@ -578,6 +578,8 @@ describe('checksum and physical-storage normalization', () => {
       files: [],
       videoDuplicateFramePaths: [],
       derivedPaths: [],
+      // FL-179: and every storage move it releases, none here
+      pendingMoves: [],
     });
     const remaining = await sql<{ count: number }>`
       SELECT count(*)::int AS count FROM immich_fork.asset_storage_reservation WHERE "assetId" = ${assetId}::uuid
