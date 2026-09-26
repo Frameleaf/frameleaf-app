@@ -115,3 +115,32 @@ On **Licence**, copy this server's instance ID, download the licence file for it
 ### Personal supporter keys
 
 Anyone can activate their own `FL-I…` key under **Your preferences → Supporter** or on **Support Frameleaf**, and hide the supporter badge there. A person's key is tied to this server and to their account.
+
+## Cloud backup
+
+**Settings › Frameleaf Cloud › Cloud backup** backs up this server's originals and database to a bucket that only this server uses. Setup needs a linked server with cloud backup in its plan. Frameleaf-managed storage is not available yet; for now use your own bucket on any S3-compatible provider that supports customer-provided encryption keys (SSE-C), such as Wasabi. The storage address must use HTTPS. Frameleaf addresses the bucket by path (`<storage address>/<bucket>`), so on Amazon S3 use the bucket's regional endpoint, for example `https://s3.eu-central-1.amazonaws.com`; a bucket in another region is refused with a message saying so. Amazon S3 turns SSE-C off by default on new buckets: allow it in the bucket's default encryption settings (remove SSE-C from the blocked encryption types) before you check the bucket. A server clock that is off is refused by the provider too; keep the server's time synchronised.
+
+Setup has four steps:
+
+1. **Destination.** Enter the storage address, an empty bucket, and an access key for it. **Check bucket** lists the bucket and writes, reads back and deletes a test file encrypted with a throwaway key, so a provider that does not apply SSE-C is refused before anything is claimed. The secret access key is stored on this server as a write-only setting and is never shown again.
+2. **Encryption key.** Every file is encrypted by the provider with a key for this bucket; the provider keeps only a check value, never the key.
+   - **Generate a key for me:** this server creates the key and keeps it next to its identity, in a file only the server can read (`cloud-backup-<fingerprint>.key` in the identity folder).
+   - **I'll maintain my own key:** the key is created in your browser. Download the key file and confirm it is saved somewhere other than this server before you continue. With **Keep a copy on this server** on, the server keeps a copy in the same kind of file and backups run unattended. With it off, the key is never saved: after every restart backups wait until someone loads the key again (**Unlock**), and you type "I understand" first, because a lost key makes every backup in the bucket permanently unreadable.
+3. **Recovery kit** (generated keys only). The kit holds the key as a recovery code and is shown once. Download or print it and keep it offline; the server never shows the key again.
+4. **Claim bucket.** The server writes `frameleaf-backup.json` holding its instance ID, encrypted like everything else. A bucket that holds another server's claim, a claim made with a different key, or any other files is refused. Setting up again with the same bucket and key keeps its backups.
+
+The key is never part of the settings, a database dump, a log or an answer from the server, and it is never sent to Frameleaf Cloud.
+
+### What a run backs up
+
+**Back up now** starts a run, which shows in Activity. A run backs up, in this order:
+
+- a fresh database dump, as `db/<file>`; the bucket keeps the seven most recent dumps and the dump of the newest complete backup;
+- every original, sidecar and profile image, each unique file once as `o/<sha256>`. Locked and trashed photos are included; files in external libraries are not. Thumbnails, previews and transcoded videos are left out unless you include them in the settings;
+- a manifest of the run, `m/<time>.json.gz`, naming every photo's files by checksum.
+
+Only new or changed files upload: a photo you have twice is stored once, a second run with nothing changed uploads no files, and a file that changed is uploaded under its new checksum. A checksum on record is trusted only while the file is unchanged at the path it was verified at; anything else is hashed again. A file is read once while it uploads and must match the checksum it is stored under, or it is left for the next run. The manifest is written as the run's last step, streamed from what the run recorded, and never written twice. Each run checks the bucket's claim first: a bucket that was emptied, recreated or claimed by another server is refused until cloud backup is set up again, and setting up an emptied or recreated bucket again starts from its new listing. Nothing on this server is changed or removed by a run, except its own temporary database dump once it is in the bucket.
+
+A run records where it is every 25 photos. The administrator who started it can pause, resume or cancel it in Activity, and a run interrupted by a restart carries on with the same manifest. A run that fails is retried once; if it fails again, administrators are told once a day. The status card shows the last run, the last complete backup and the storage used.
+
+**Turn off backup…** stops backing up. The bucket, its backups and the key are kept, so the backups stay readable with the key file or recovery kit.

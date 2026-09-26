@@ -4,6 +4,7 @@ import { cloneDeep, defaultsDeep } from 'lodash-es';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
+import { CloudBackupKeyModeSchema, CloudBackupTargetSettingSchema } from 'src/dtos/cloud-backup.dto.js';
 import {
   AudioCodec,
   AudioCodecSchema,
@@ -199,6 +200,16 @@ const frameleafCloudDefaults = {
     // default; a `models` key saved by an earlier version is dropped when the configuration is read.
     autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
     faces: { enabled: false as const },
+  },
+  // FL-160: cloud backup is off until an administrator sets it up (Settings › Frameleaf Cloud › Cloud
+  // backup), which claims the bucket. The bucket key is never part of the configuration: it is a 0600
+  // file under the identity directory, or held in memory only.
+  cloudBackup: {
+    enabled: false,
+    target: 'off' as 'off' | 'managed' | 'byo-s3',
+    s3: { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '' },
+    keyMode: 'server' as 'server' | 'own-stored' | 'own-memory',
+    include: { thumbs: false, encodedVideo: false },
   },
 };
 
@@ -532,6 +543,40 @@ const AdminConfigFrameleafCloudSchema = z
           .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
       })
       .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
+    cloudBackup: z
+      .object({
+        enabled: configBool.describe(
+          'Back up to the claimed bucket (set up from Settings › Frameleaf Cloud › Cloud backup)',
+        ),
+        target: CloudBackupTargetSettingSchema,
+        s3: z
+          .object({
+            endpoint: emptyOrUrl('The storage address must be empty or a valid URL').describe(
+              'Storage address of your own S3-compatible bucket (HTTPS)',
+            ),
+            region: z.string().max(64).describe('Region; empty reads it from the storage address or uses us-east-1'),
+            bucket: z.string().max(63).describe('Bucket name'),
+            accessKeyId: z.string().max(256).describe('Access key ID'),
+            // FL-160: write-only, like the SMTP password (FL-67). mapAdminConfig() returns '' and a save
+            // that sends '' back keeps the stored secret for the same address, bucket and access key.
+            // Replace or clear it through /admin/config/credentials/cloud-backup-s3-secret-key.
+            secretAccessKey: z.string().describe('Secret access key (write-only; empty preserves the existing secret)'),
+            secretAccessKeyConfigured: z
+              .boolean()
+              .optional()
+              .describe('Read-only indicator that a secret access key is stored. Set by the server; ignored on write.'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupS3Dto' }),
+        keyMode: CloudBackupKeyModeSchema,
+        include: z
+          .object({
+            thumbs: configBool.describe('Also back up thumbnails and previews'),
+            encodedVideo: configBool.describe('Also back up transcoded videos'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupIncludeDto' }),
+      })
+      .default(frameleafCloudDefaults.cloudBackup)
+      .meta({ id: 'AdminConfigFrameleafCloudBackupDto' }),
   })
   .meta({ id: 'AdminConfigFrameleafCloudDto' });
 
@@ -1215,6 +1260,17 @@ export function mapAdminConfig(config: SystemConfig): AdminConfigDto {
       ...config.oauth,
       clientSecret: '',
       clientSecretConfigured: config.oauth.clientSecret.length > 0,
+    },
+    frameleafCloud: {
+      ...config.frameleafCloud,
+      cloudBackup: {
+        ...config.frameleafCloud.cloudBackup,
+        s3: {
+          ...config.frameleafCloud.cloudBackup.s3,
+          secretAccessKey: '',
+          secretAccessKeyConfigured: config.frameleafCloud.cloudBackup.s3.secretAccessKey.length > 0,
+        },
+      },
     },
   };
 }

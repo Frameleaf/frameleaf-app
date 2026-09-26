@@ -416,6 +416,21 @@ export const adminConfigDefaults = {
       autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
       faces: { enabled: false },
     },
+    // FL-160: cloud backup is off until it is set up; the secret is write-only.
+    cloudBackup: {
+      enabled: false,
+      target: 'off',
+      s3: {
+        endpoint: '',
+        region: '',
+        bucket: '',
+        accessKeyId: '',
+        secretAccessKey: '',
+        secretAccessKeyConfigured: false,
+      },
+      keyMode: 'server',
+      include: { thumbs: false, encodedVideo: false },
+    },
   },
   smartAlbums: {
     enabled: false,
