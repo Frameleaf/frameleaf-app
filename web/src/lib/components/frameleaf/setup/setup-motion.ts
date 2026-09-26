@@ -43,7 +43,13 @@ export const staggerIn = (node: HTMLElement) => {
       { duration: reduced ? 200 : 420, delay: 120 + index * 170 },
     ),
   );
-  return { destroy: () => runs.forEach((run) => run?.cancel()) };
+  return {
+    destroy: () => {
+      for (const run of runs) {
+        run?.cancel();
+      }
+    },
+  };
 };
 
 /**
@@ -107,11 +113,17 @@ export const logoIntro = (node: HTMLElement, onSettled?: () => void) => {
       );
     }
   }
-  const last = running.filter(Boolean).at(-1);
+  const last = running.findLast(Boolean);
   if (last) {
     last.onfinish = () => onSettled?.();
   } else {
     onSettled?.();
   }
-  return { destroy: () => running.forEach((run) => run?.cancel()) };
+  return {
+    destroy: () => {
+      for (const run of running) {
+        run?.cancel();
+      }
+    },
+  };
 };

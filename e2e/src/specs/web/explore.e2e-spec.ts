@@ -1,4 +1,4 @@
-import { LoginResponseDto, updatePerson } from '@immich/sdk';
+import { AssetMediaResponseDto, LoginResponseDto, updateAsset, updatePerson } from '@immich/sdk';
 import { expect, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 
@@ -9,13 +9,14 @@ import { asBearerAuth, utils } from 'src/utils.js';
  */
 test.describe('Explore', () => {
   let admin: LoginResponseDto;
+  let first: AssetMediaResponseDto;
 
   test.beforeAll(async () => {
     utils.initSdk();
     await utils.resetDatabase();
     admin = await utils.adminSetup();
 
-    const first = await utils.createAsset(admin.accessToken, {
+    first = await utils.createAsset(admin.accessToken, {
       assetData: { filename: 'sunset.png' },
       fileCreatedAt: '2026-08-02T18:00:00.000Z',
     });
@@ -107,6 +108,30 @@ test.describe('Explore', () => {
   });
 
   test('Best Photos without quality scores says so instead of ranking by stars (FL-50)', async ({ context, page }) => {
+    // Uploads are scored locally in the background (BestPhotosScore follows thumbnail generation and
+    // face detection), so this library already has scores. Give one item five stars, let every job
+    // that could score it finish, then clear the scores: a rated library with nothing scored.
+    await updateAsset({ id: first.id, updateAssetDto: { rating: 5 } }, { headers: asBearerAuth(admin.accessToken) });
+    for (const queue of [
+      'sidecar',
+      'metadataExtraction',
+      'thumbnailGeneration',
+      'faceDetection',
+      'backgroundTask',
+    ] as const) {
+      await utils.waitForQueueFinish(admin.accessToken, queue);
+    }
+    const client = await utils.connectDatabase();
+    await client.query(`DO $$
+      BEGIN
+        IF to_regclass('public.asset_best_photo_score') IS NOT NULL THEN
+          DELETE FROM public.asset_best_photo_score;
+        END IF;
+        IF to_regclass('immich_fork.asset_best_photo_score') IS NOT NULL THEN
+          DELETE FROM immich_fork.asset_best_photo_score;
+        END IF;
+      END $$;`);
+
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/best-photos');
     await expect(page.getByText('No best photos have been scored yet.')).toBeVisible();

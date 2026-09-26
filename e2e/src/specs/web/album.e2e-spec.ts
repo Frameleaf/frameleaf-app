@@ -69,7 +69,8 @@ test.describe('Album', () => {
     await mapButton.click();
     await page.waitForURL(`/map?albumId=${mapAlbum.id}`);
 
-    const mapMarker = page.getByRole('img', { name: /^Open item/ }).first();
+    // MapView.jsx:579-582: a single item's marker is a button named "Open <file name>, <place>".
+    const mapMarker = page.getByRole('button', { name: /^Open thompson-springs\.jpg/ }).first();
     await expect(mapMarker).toBeVisible();
 
     // MapView.jsx in album scope keeps the settings sheet, whose switches narrow the album's items.
