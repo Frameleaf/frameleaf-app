@@ -99,9 +99,19 @@ export const mlDestinationStub = {
       spentTodayUsd: 0,
       limits: {},
       catalogEtag: 'catalog-1',
-      modelIds: ['describe-large', 'restore-faithful'],
-      // FL-181: this catalogue offers only a faithful restoration model, none creative.
-      modelWorkloads: { 'describe-large': MlWorkload.Enrichment, 'restore-faithful': MlWorkload.RestorationFaithful },
+      modelIds: ['describe-large', 'restore-faithful', 'restore-creative'],
+      // FL-181: one model per restoration mode, each placed by its own catalogue mode.
+      modelWorkloads: {
+        'describe-large': MlWorkload.Enrichment,
+        'restore-faithful': MlWorkload.RestorationFaithful,
+        'restore-creative': MlWorkload.RestorationCreative,
+      },
+      // FL-183 (FC-34): the model the catalogue marks per group, used when no model is routed.
+      defaultModels: {
+        descriptions: 'describe-large',
+        'restoration:faithful': 'restore-faithful',
+        'restoration:creative': 'restore-creative',
+      },
       refusal: null,
     },
   }),

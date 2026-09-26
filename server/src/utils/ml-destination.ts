@@ -382,18 +382,20 @@ const evaluateCloudAdmission = (
       `${destination.name}: the model ${modelId} runs on this server only and is never sent to Frameleaf Cloud`,
     );
   }
-  if (modelId && !facts.modelIds.includes(modelId)) {
+  // FL-183 (FC-34): the routed model, else the catalogue's marked default for this work's group
+  const model = cloudModelFor(workload, modelId, facts);
+  if (model && !facts.modelIds.includes(model)) {
     return refuse(
       MlAdmissionRefusal.ModelMismatch,
-      `${destination.name}: the model ${modelId} is not in the Frameleaf Cloud catalogue any more`,
+      `${destination.name}: the model ${model} is not in the Frameleaf Cloud catalogue any more`,
     );
   }
   // FL-181 (P1): `restoration` is one wire workload for both modes, so a model in the catalogue is
   // not proof it serves the mode asked for; the catalogue's own mode for that model must match.
-  if (modelId && isRestorationWorkload(workload) && facts.modelWorkloads[modelId] !== workload) {
+  if (model && isRestorationWorkload(workload) && facts.modelWorkloads[model] !== workload) {
     return refuse(
       MlAdmissionRefusal.ModelMismatch,
-      `${destination.name}: the model ${modelId} does not run ${workload} in the Frameleaf Cloud catalogue`,
+      `${destination.name}: the model ${model} does not run ${workload} in the Frameleaf Cloud catalogue`,
     );
   }
   const available = facts.balanceUsd - facts.heldUsd;
@@ -416,6 +418,14 @@ const evaluateCloudAdmission = (
     return refuse(
       MlAdmissionRefusal.WorkloadNotServed,
       `${destination.name}: Frameleaf Cloud does not offer ${workload} to this account right now`,
+    );
+  }
+  // FL-183 (FC-34): with no routed model and no default marked for this region and licence, the
+  // administrator picks one; no other model is ever chosen in its place
+  if (!model) {
+    return refuse(
+      MlAdmissionRefusal.ModelMismatch,
+      `${destination.name}: Frameleaf Cloud recommends no model for ${workload} in this region; choose one in Where each job runs`,
     );
   }
   return null;
@@ -593,7 +603,9 @@ export const selectMlDestination = async (
     workload: request.workload,
     endpoint: endpoint as MlEndpoint,
     cloudModelId:
-      destination.kind === MlDestinationKind.FrameleafCloud ? cloudModelFor(request.workload, modelId) : null,
+      destination.kind === MlDestinationKind.FrameleafCloud
+        ? cloudModelFor(request.workload, modelId, probe.cloud)
+        : null,
     record: (usage: MlUsage) => {
       void mlDestinationRepository
         .recordAccounting({

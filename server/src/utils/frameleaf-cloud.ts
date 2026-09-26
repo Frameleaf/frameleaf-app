@@ -319,6 +319,12 @@ export const catalogEntrySchema = z
      * published; `no` (a licence forbidding commercial hosted use) refuses the entry.
      */
     licence: z.strictObject({ name: displayText(80), commercialHosted: z.enum(['yes', 'conditions']) }).optional(),
+    /**
+     * FC-34 (cloud decision 2026-09-26): the model the cloud recommends for its group, the workload
+     * (and, for restoration, the mode) in this region. At most one model per group carries it; none
+     * does when the recommended model is not available to this region or licence.
+     */
+    default: z.boolean().optional(),
   })
   .superRefine((entry, context) => {
     const hasMode = entry.mode !== undefined && entry.mode !== null;
@@ -334,13 +340,24 @@ export const catalogEntrySchema = z
     notice: entry.notice ?? null,
     mode: entry.mode ?? null,
     licence: entry.licence ?? null,
+    default: entry.default === true,
   }));
 export type CloudCatalogEntry = z.infer<typeof catalogEntrySchema>;
 
 /**
+ * The catalogue group a model belongs to for its default (FC-34): its cloud workload, and for
+ * restoration its mode too (`restoration:faithful`, `restoration:creative`). The region is the
+ * gateway's own, so it is never part of the key.
+ */
+export const catalogGroupKey = (workload: string, mode: CloudRestorationMode | null): string =>
+  mode ? `${workload}:${mode}` : workload;
+
+/**
  * `GET /v2/catalog` (FC-34 `CatalogResponse`): only what this server may run now. Every entry is
  * checked on its own against `catalogEntrySchema`; one that fails is left out and counted in
- * `refused`, so a single bad entry never hides the rest and is never offered.
+ * `refused`, so a single bad entry never hides the rest and is never offered. A group that marks more
+ * than one default (FC-34 allows at most one) keeps its models but loses every default mark, and
+ * counts once in `refused`: this server never guesses which of them the cloud meant.
  */
 export const catalogSchema = z
   .object({
@@ -358,7 +375,22 @@ export const catalogSchema = z
         refused++;
       }
     }
-    return { etag, models: accepted, refused };
+    const defaultsPerGroup = new Map<string, number>();
+    for (const model of accepted) {
+      if (model.default) {
+        const key = catalogGroupKey(model.workload, model.mode);
+        defaultsPerGroup.set(key, (defaultsPerGroup.get(key) ?? 0) + 1);
+      }
+    }
+    const conflicting = new Set([...defaultsPerGroup].filter(([, count]) => count > 1).map(([key]) => key));
+    refused += conflicting.size;
+    return {
+      etag,
+      models: accepted.map((model) =>
+        conflicting.has(catalogGroupKey(model.workload, model.mode)) ? { ...model, default: false } : model,
+      ),
+      refused,
+    };
   });
 export type CloudCatalog = z.infer<typeof catalogSchema>;
 
@@ -368,6 +400,16 @@ export type CloudCatalog = z.infer<typeof catalogSchema>;
  */
 export const offeredCatalogModels = (catalog: Pick<CloudCatalog, 'models'> | null): CloudCatalogEntry[] =>
   (catalog?.models ?? []).filter((model) => !isLocalOnlyModel(model.sku) && !isLocalOnlyModel(model.display.model));
+
+/**
+ * The default model SKU of each catalogue group (`catalogGroupKey`) among `models` (FC-34): only a
+ * model the catalogue marks and this server offers. A group without one has no entry, and nothing
+ * else is ever picked in its place.
+ */
+export const catalogDefaults = (models: readonly CloudCatalogEntry[]): Record<string, string> =>
+  Object.fromEntries(
+    models.filter((model) => model.default).map((model) => [catalogGroupKey(model.workload, model.mode), model.sku]),
+  );
 
 /**
  * `GET /v2/consent/current` (FC-34 `ConsentCurrent`): the disclosure the region asks for now and
@@ -417,28 +459,42 @@ export const consentRecordedSchema = z.object({
 export type CloudConsentRecorded = z.infer<typeof consentRecordedSchema>;
 
 /**
- * `GET /v2/usage?since=<ISO 8601>` (FL-177, as-built decision #24; FC-66 `UsageItem`). Models and
- * compute are opaque SKUs (`modelSku`, `computeSku`). Strict, as the contract is: an item carrying a
- * model id (or any other field) refuses the whole answer, so no settlement is applied from it.
+ * One `GET /v2/usage` item (FL-177, as-built decision #24; FC-66 `UsageItem`). Models and compute
+ * are opaque SKUs (`modelSku`, `computeSku`). Strict, as the contract is: an item carrying a model id
+ * (or any other field) is refused.
  */
-export const usageSchema = z.object({
-  items: z
-    .array(
-      z.strictObject({
-        jobId: z.uuid(),
-        clientRef: z.string().max(200).nullable(),
-        settledUsd: gatewayUsd(),
-        credits: z.number().nullable(),
-        settledAt: gatewayTimestamp(),
-        // What the settlement is made of (metered GPU time, start fees per worker), when reported.
-        modelSku: modelSkuSchema.nullable(),
-        computeSku: computeSkuSchema.nullable(),
-        gpuSeconds: z.number().min(0).nullable(),
-        workers: z.number().int().min(0).nullable(),
-        estimateUsd: gatewayUsd().nullable(),
-      }),
-    )
-    .max(1000),
+export const usageItemSchema = z.strictObject({
+  jobId: z.uuid(),
+  clientRef: z.string().max(200).nullable(),
+  settledUsd: gatewayUsd(),
+  credits: z.number().nullable(),
+  settledAt: gatewayTimestamp(),
+  // What the settlement is made of (metered GPU time, start fees per worker), when reported.
+  modelSku: modelSkuSchema.nullable(),
+  computeSku: computeSkuSchema.nullable(),
+  gpuSeconds: z.number().min(0).nullable(),
+  workers: z.number().int().min(0).nullable(),
+  estimateUsd: gatewayUsd().nullable(),
+});
+export type CloudUsageItem = z.infer<typeof usageItemSchema>;
+
+/**
+ * `GET /v2/usage?since=<ISO 8601>`. Every item is checked on its own, as catalogue entries are: one
+ * that fails is left out and counted in `refused` (so its settlement is not applied from it), and
+ * every other settlement is still applied, so one bad item never stops the budget from counting.
+ */
+export const usageSchema = z.object({ items: z.array(z.unknown()).max(1000) }).transform(({ items }) => {
+  const accepted: CloudUsageItem[] = [];
+  let refused = 0;
+  for (const item of items) {
+    const parsed = usageItemSchema.safeParse(item);
+    if (parsed.success) {
+      accepted.push(parsed.data);
+    } else {
+      refused++;
+    }
+  }
+  return { items: accepted, refused };
 });
 export type CloudUsage = z.infer<typeof usageSchema>;
 
@@ -750,6 +806,11 @@ export const refusalFromCloudError = (
   status: number | null,
   envelope: CloudErrorEnvelope | null,
 ): MlAdmissionRefusal => {
+  if (status === 403 && envelope?.code === CloudErrorCode.CloneSuspected) {
+    // FL-183, as FL-185's token path: the cloud suspects a copy of this server, so it is unavailable
+    // to this server until that clears, whatever `refusal` the envelope names
+    return MlAdmissionRefusal.CloudUnavailable;
+  }
   if (envelope?.refusal && CLOUD_REFUSALS.has(envelope.refusal)) {
     return envelope.refusal as MlAdmissionRefusal;
   }
@@ -781,8 +842,7 @@ export const refusalFromCloudError = (
           // the link is gone: the cloud is unavailable to this server, whatever was asked
           return MlAdmissionRefusal.CloudUnavailable;
         }
-        case CloudErrorCode.RegionMismatch:
-        case CloudErrorCode.CloneSuspected: {
+        case CloudErrorCode.RegionMismatch: {
           // FC-34: the gateway refuses this server itself, never for want of consent
           return MlAdmissionRefusal.DestinationUnhealthy;
         }
@@ -838,6 +898,15 @@ export class FrameleafCloudError extends Error {
 /** The error code of a failed cloud call: the envelope's `code`, else the OAuth `error`. */
 export const cloudErrorCode = (error: unknown): string | null =>
   error instanceof FrameleafCloudError ? (error.envelope?.code ?? error.oauth?.error ?? null) : null;
+
+/**
+ * The ML gateway itself (not the token endpoint, FL-185) answered 403 `clone_suspected` (FC-34
+ * `MlInstanceGuard`): Frameleaf Cloud suspects a copy of this server.
+ */
+export const isGatewayCloneSuspected = (error: unknown): error is FrameleafCloudError =>
+  error instanceof FrameleafCloudError &&
+  error.status === 403 &&
+  error.envelope?.code === CloudErrorCode.CloneSuspected;
 
 /**
  * The account-app page a `403 step-up-required` answer links to (`data.url`), when it is an https
@@ -897,6 +966,13 @@ export type CloudProbeFacts = {
    * models apart.
    */
   modelWorkloads: Record<string, MlWorkload | null>;
+  /**
+   * FC-34: the model SKU the catalogue marks as the default of each group (`catalogGroupKey`:
+   * `descriptions`, `restoration:faithful`, …), among the models offered. Admission uses it when no
+   * model is routed; a group without one refuses. Absent on facts stored before FL-183, which
+   * therefore name no default.
+   */
+  defaultModels?: Record<string, string>;
   refusal: { refusal: MlAdmissionRefusal; detail: string } | null;
 };
 
@@ -907,22 +983,58 @@ export type CloudProbeFacts = {
  * taken from a Frameleaf Cloud catalogue, never routed or configured there, and admission refuses a
  * cloud job for them. They stay available on this server and home-network workers.
  */
-const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small|qwen2\.5-vl-3b/i;
-export const isLocalOnlyModel = (id: string | null | undefined): boolean => !!id && LOCAL_ONLY_MODEL.test(id);
+const LOCAL_ONLY_MODEL = /nllbclip|musicgensmall|qwen25vl3b/;
 
 /**
- * The Frameleaf Cloud model a kind of work uses when none is chosen (FL-146), matching the web
- * catalogue's `CLOUD_DEFAULT_MODELS`: descriptions use Qwen3.5 9B (Apache-2.0). Cloud work never
- * falls back to the local description setting (`machineLearning.imageDescription.modelName`).
+ * Whether `id` (a model id, or a catalogue display name such as "Qwen2.5 VL 3B") names a local-only
+ * model. Letters and digits alone are compared, lower-cased, so spaces, dots, hyphens, slashes and
+ * underscores never hide one.
  */
-export const CLOUD_DESCRIPTION_DEFAULT_MODEL = 'qwen3.5-9b@1';
+export const isLocalOnlyModel = (id: string | null | undefined): boolean =>
+  !!id && LOCAL_ONLY_MODEL.test(id.toLowerCase().replaceAll(/[^\da-z]/g, ''));
 
-/** The model a Frameleaf Cloud job for `workload` names: the chosen one, or the licensed default. */
-export const cloudModelFor = (workload: MlWorkload, chosen: string | null | undefined): string | null => {
-  if (chosen && !isLocalOnlyModel(chosen)) {
-    return chosen;
+/**
+ * The catalogue group a Frameleaf Cloud job for `workload` takes its default from (FC-34), or null
+ * when there is none to take: Studio AI spans two cloud workloads (`transcription`, `tts`), so it
+ * always names its model, and work the cloud never runs has no group.
+ */
+export const cloudDefaultGroupFor = (workload: MlWorkload): string | null => {
+  const cloudId = cloudWorkloadIdFor(workload);
+  if (!cloudId) {
+    return null;
   }
-  return workload === MlWorkload.Enrichment ? CLOUD_DESCRIPTION_DEFAULT_MODEL : null;
+  switch (workload) {
+    case MlWorkload.RestorationFaithful: {
+      return catalogGroupKey(cloudId, 'faithful');
+    }
+    case MlWorkload.RestorationCreative: {
+      return catalogGroupKey(cloudId, 'creative');
+    }
+    default: {
+      return catalogGroupKey(cloudId, null);
+    }
+  }
+};
+
+/**
+ * The model a Frameleaf Cloud job for `workload` names (FL-183, FC-34): the one an administrator
+ * chose (never a local-only one), else the model the catalogue marks as its group's default at the
+ * last check, else null. A null answer is refused at admission; no model name or other model is ever
+ * put in its place.
+ */
+export const cloudModelFor = (
+  workload: MlWorkload,
+  chosen: string | null | undefined,
+  facts: Pick<CloudProbeFacts, 'defaultModels'> | null | undefined,
+): string | null => {
+  if (chosen) {
+    return isLocalOnlyModel(chosen) ? null : chosen;
+  }
+  const group = cloudDefaultGroupFor(workload);
+  if (!group) {
+    return null;
+  }
+  return facts?.defaultModels?.[group] ?? null;
 };
 
 /** FC-34: the server reads `active` alone, which already includes a grace period (`state: grace`). */
@@ -932,6 +1044,7 @@ export const cloudFactsFromCapabilities = (
   capabilities: CloudCapabilities,
   modelIds: string[],
   modelWorkloads: Record<string, MlWorkload | null> = {},
+  defaultModels: Record<string, string> = {},
 ): CloudProbeFacts => ({
   region: capabilities.region,
   consentRequiredVersion: capabilities.consent.requiredVersion,
@@ -946,6 +1059,7 @@ export const cloudFactsFromCapabilities = (
   catalogEtag: capabilities.catalogEtag,
   modelIds,
   modelWorkloads,
+  defaultModels,
   refusal: null,
 });
 
