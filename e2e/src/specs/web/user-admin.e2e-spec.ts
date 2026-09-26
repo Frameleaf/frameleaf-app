@@ -47,7 +47,7 @@ test.describe('User Administration', () => {
     await page.goto(usersManager);
     await page.getByRole('button', { name: 'Create account', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Create account' });
-    await dialog.getByLabel('Email').fill('user@immich.cloud');
+    await dialog.getByLabel('Email').fill('user@example.com');
     await dialog.getByLabel('Initial password', { exact: true }).fill('password');
     await dialog.getByLabel('Confirm password').fill('password');
     await dialog.getByLabel('Name', { exact: true }).fill('Immich User');
@@ -64,7 +64,7 @@ test.describe('User Administration', () => {
 
     const user = await utils.userSetup(admin.accessToken, {
       name: 'Admin 2',
-      email: 'admin2@immich.cloud',
+      email: 'admin2@example.com',
       password: 'password',
     });
 
@@ -93,7 +93,7 @@ test.describe('User Administration', () => {
 
     const user = await utils.userSetup(admin.accessToken, {
       name: 'Admin 2',
-      email: 'admin2@immich.cloud',
+      email: 'admin2@example.com',
       password: 'password',
       isAdmin: true,
     });
@@ -126,7 +126,7 @@ test.describe('User Administration', () => {
       await page.getByRole('button', { name: 'Create account', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Create account' });
       await dialog.getByLabel('Name', { exact: true }).fill('PIN User');
-      await dialog.getByLabel('Email').fill('pin-user@immich.cloud');
+      await dialog.getByLabel('Email').fill('pin-user@example.com');
       await dialog.getByLabel('Initial password', { exact: true }).fill('password');
       await dialog.getByLabel('Confirm password').fill('password');
       await dialog.getByLabel('Initial six-digit PIN', { exact: true }).fill('123456');
@@ -139,7 +139,7 @@ test.describe('User Administration', () => {
       await expect(page.getByText('PIN is set', { exact: true })).toBeVisible();
 
       const { accessToken } = await login({
-        loginCredentialDto: { email: 'pin-user@immich.cloud', password: 'password' },
+        loginCredentialDto: { email: 'pin-user@example.com', password: 'password' },
       });
       // throws unless the server accepts it: the PIN given at creation unlocks the session
       await unlockAuthSession({ sessionUnlockDto: { pinCode: '123456' } }, { headers: asBearerAuth(accessToken) });
@@ -151,7 +151,7 @@ test.describe('User Administration', () => {
       await utils.setAuthCookies(context, admin.accessToken);
       const user = await utils.userSetup(admin.accessToken, {
         name: 'Quota User',
-        email: 'quota-user@immich.cloud',
+        email: 'quota-user@example.com',
         password: 'password',
       });
 
@@ -189,7 +189,7 @@ test.describe('User Administration', () => {
       await utils.setAuthCookies(context, admin.accessToken);
       const user = await utils.userSetup(admin.accessToken, {
         name: 'Leaving User',
-        email: 'leaving-user@immich.cloud',
+        email: 'leaving-user@example.com',
         password: 'password',
       });
 
@@ -201,7 +201,7 @@ test.describe('User Administration', () => {
       ).toBeVisible();
       const confirm = dialog.getByRole('button', { name: 'Delete account', exact: true });
       await expect(confirm).toBeDisabled();
-      await dialog.getByLabel('Type the account email to confirm').fill('leaving-user@immich.cloud');
+      await dialog.getByLabel('Type the account email to confirm').fill('leaving-user@example.com');
       await confirm.click();
       await expect(dialog).toHaveCount(0);
 
@@ -244,7 +244,7 @@ test.describe('User Administration', () => {
       await utils.setAuthCookies(context, admin.accessToken);
       const user = await utils.userSetup(admin.accessToken, {
         name: 'Forgetful User',
-        email: 'forgetful-user@immich.cloud',
+        email: 'forgetful-user@example.com',
         password: 'password',
       });
 
@@ -263,7 +263,7 @@ test.describe('User Administration', () => {
       await expect(dialog).toHaveCount(0);
 
       const session = await login({
-        loginCredentialDto: { email: 'forgetful-user@immich.cloud', password: temporary },
+        loginCredentialDto: { email: 'forgetful-user@example.com', password: temporary },
       });
       expect(session.shouldChangePassword).toBe(true);
     });
@@ -274,7 +274,7 @@ test.describe('User Administration', () => {
       await utils.setAuthCookies(context, admin.accessToken);
       const user = await utils.userSetup(admin.accessToken, {
         name: 'PIN Reset User',
-        email: 'pin-reset-user@immich.cloud',
+        email: 'pin-reset-user@example.com',
         password: 'password',
       });
 
@@ -307,7 +307,7 @@ test.describe('User Administration', () => {
         {
           userAdminCreateDto: {
             name: 'Created PIN User',
-            email: 'created-pin-user@immich.cloud',
+            email: 'created-pin-user@example.com',
             password: 'password',
             pinCode: '123456',
           },

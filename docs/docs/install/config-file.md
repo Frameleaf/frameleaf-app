@@ -7,17 +7,17 @@ sidebar_position: 100
 A config file can be provided as an alternative to the UI configuration.
 
 :::note Interaction with the web UI
-While the config file does not need to include all keys from the below example, specifying `IMMICH_CONFIG_FILE` will disable the ability to edit other properties from the Immich web UI.
+While the config file does not need to include all keys from the below example, specifying `IMMICH_CONFIG_FILE` will disable the ability to edit other properties from the Frameleaf web UI.
 :::
 
 ### Step 1 - Create a new config file
 
-In JSON format, create a new config file (e.g. `immich-config.json`) and put it in a location mounted in the container that can be accessed by Immich.
+In JSON format, create a new config file (e.g. `frameleaf-config.json`) and put it in a location mounted in the container that can be accessed by Frameleaf.
 YAML-formatted config files are also supported.
 The default configuration looks like this:
 
 <details>
-<summary>immich-config.json</summary>
+<summary>frameleaf-config.json</summary>
 
 ```json
 {
@@ -154,9 +154,9 @@ The default configuration looks like this:
     "urls": ["http://immich-machine-learning:3003"]
   },
   "map": {
-    "darkStyle": "https://tiles.immich.cloud/v1/style/dark.json",
+    "darkStyle": "https://tiles.frameleaf.cloud/v1/style/dark.json",
     "enabled": true,
-    "lightStyle": "https://tiles.immich.cloud/v1/style/light.json"
+    "lightStyle": "https://tiles.frameleaf.cloud/v1/style/light.json"
   },
   "metadata": {
     "faces": {
@@ -271,7 +271,7 @@ It is recommended to reuse this variable in your `docker-compose.yml`:
 
 ```yaml
 volumes:
-  - ./immich-config.json:${IMMICH_CONFIG_FILE}
+  - ./frameleaf-config.json:${IMMICH_CONFIG_FILE}
 ```
 
 :::

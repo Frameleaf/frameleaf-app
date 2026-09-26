@@ -28,7 +28,7 @@ import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getFilenameExtension } from 'src/utils/file.js';
 import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
-import { getExternalDomain, isNsfwHidingEnabled } from 'src/utils/misc.js';
+import { isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { isEqualObject } from 'src/utils/object.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
@@ -377,7 +377,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.TEST_EMAIL,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
       },
       customTemplate: tempTemplate!,
@@ -406,7 +406,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.WELCOME,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
         username: user.email,
         password,
@@ -453,7 +453,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.ALBUM_INVITE,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         albumId: album.id,
         albumName: album.albumName,
         senderName,
@@ -510,7 +510,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.ALBUM_UPDATE,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         albumId: album.id,
         albumName: album.albumName,
         recipientName: user.name,

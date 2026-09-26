@@ -65,7 +65,7 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     createdAt: z
       .string()
       .meta({ format: 'date-time' })
-      .describe('The UTC timestamp when the asset was originally uploaded to Immich.'),
+      .describe('The UTC timestamp when the asset was originally uploaded to Frameleaf.'),
     ownerId: z.uuidv4().describe('Owner user ID'),
     owner: UserResponseSchema.optional(),
     libraryId: z

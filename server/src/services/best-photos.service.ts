@@ -277,7 +277,7 @@ export class BestPhotosService {
     const aestheticScore = clamp(normalizedThumbnailScore * 0.85 + subjectScore * 0.15 - screenshotPenalty);
     const diversityScore = 0.5;
 
-    // scoreVersion 1 is a local deterministic heuristic. Future versions can use Immich ML-service hooks.
+    // scoreVersion 1 is a local deterministic heuristic. Future versions can use ML-service hooks.
     const score = clamp(0.45 * aestheticScore + 0.3 * technicalScore + 0.15 * subjectScore + 0.1 * diversityScore);
 
     return {

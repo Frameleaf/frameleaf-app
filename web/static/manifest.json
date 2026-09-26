@@ -1,6 +1,6 @@
 {
   "background_color": "#ffffff",
-  "description": "Frameleaf, self-hosted photo and video backup built on Immich, directly from your mobile phone.",
+  "description": "Frameleaf, self-hosted photo and video backup directly from your mobile phone.",
   "dir": "auto",
   "display": "standalone",
   "icons": [

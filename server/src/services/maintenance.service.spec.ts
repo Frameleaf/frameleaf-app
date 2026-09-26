@@ -167,7 +167,7 @@ describe(MaintenanceService.name, () => {
       ).rejects.toThrowError('Not in maintenance mode');
     });
 
-    it('should generate a login url with JWT', async () => {
+    it('should generate a login path with JWT when the server has no public address (FL-190)', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
         isMaintenanceMode: true,
         secret: 'secret',
@@ -181,12 +181,23 @@ describe(MaintenanceService.name, () => {
           username: '',
         }),
       ).resolves.toEqual(
-        expect.stringMatching(
-          /^https:\/\/my.immich.app\/maintenance\?token=[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*$/,
-        ),
+        expect.stringMatching(/^\/maintenance\?token=[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*$/),
       );
 
       expect(mocks.systemMetadata.get).toHaveBeenCalledTimes(2);
+    });
+
+    it('should generate a login url on the external domain', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        server: { externalDomain: 'https://photos.example.com' },
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start },
+      });
+
+      await expect(sut.createLoginUrl({ username: '' })).resolves.toEqual(
+        expect.stringMatching(/^https:\/\/photos\.example\.com\/maintenance\?token=[\w-]+\.[\w-]+\.[\w-]+$/),
+      );
     });
 
     it('should use the given secret', async () => {

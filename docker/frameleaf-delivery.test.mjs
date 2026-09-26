@@ -448,6 +448,7 @@ const historicalRecords = new Set([
 const guardNeedleFiles = new Set([
   "scripts/frameleaf-branding.mjs",
   "scripts/frameleaf-branding.test.mjs",
+  "scripts/frameleaf-upstream-logo-hashes.json",
 ]);
 const historicalRecord = (file) =>
   historicalRecords.has(file) || guardNeedleFiles.has(file);

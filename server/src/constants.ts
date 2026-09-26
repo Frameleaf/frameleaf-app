@@ -12,7 +12,7 @@ import {
   VideoCodec,
 } from 'src/enum.js';
 
-export const IMMICH_SERVER_START = 'Immich Server is listening';
+export const IMMICH_SERVER_START = 'Frameleaf Server is listening';
 
 /**
  * FL-71: jobs whose data must never be kept or logged: the signup notice carries the new account's
@@ -213,8 +213,8 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.Albums]: 'An album is a collection of assets that can be shared with other users or via shared links.',
   [ApiTag.Analytics]:
     'Library analytics: counts, sizes, dated history and processing outcomes for the whole server, one account or one external library. Everything is computed and kept on this server; nothing is sent elsewhere.',
-  [ApiTag.ApiKeys]: 'An api key can be used to programmatically access the Immich API.',
-  [ApiTag.Assets]: 'An asset is an image or video that has been uploaded to Immich.',
+  [ApiTag.ApiKeys]: 'An api key can be used to programmatically access the Frameleaf API.',
+  [ApiTag.Assets]: 'An asset is an image or video that has been uploaded to Frameleaf.',
   [ApiTag.AssetFiles]: 'An asset file is a file associated with an asset, including edited versions, thumbnails, etc.',
   [ApiTag.Authentication]: 'Endpoints related to user authentication, including OAuth.',
   [ApiTag.AuthenticationAdmin]: 'Administrative endpoints related to authentication.',
@@ -223,7 +223,7 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.ConfigUser]: 'The system configuration properties that are visible to logged in users.',
   [ApiTag.ConfigAdmin]: 'Endpoints to view and modify the full system configuration.',
   [ApiTag.ConfigPublic]: 'The system configuration properties that are visible to everyone.',
-  [ApiTag.DatabaseBackups]: 'Manage backups of the Immich database.',
+  [ApiTag.DatabaseBackups]: 'Manage backups of the Frameleaf database.',
   [ApiTag.Deprecated]: 'Deprecated endpoints that are planned for removal in the next major release.',
   [ApiTag.Documents]:
     'A document is a photo with recognized text. Its lines, and the values suggested from them, can be corrected or dismissed by the owner; corrections are kept apart from the recognized text and survive reading the photo again.',
@@ -248,7 +248,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'An external library is made up of input file paths or expressions that are scanned for asset files. Discovered files are automatically imported. Assets much be unique within a library, but can be duplicated across libraries. Each user has a default upload library, and can have one or more external libraries.',
   [ApiTag.LivePhoto]:
     'Endpoints for finding and reassembling separated live photos (a still image and its paired motion video).',
-  [ApiTag.Maintenance]: 'Maintenance mode allows you to put Immich in a read-only state to perform various operations.',
+  [ApiTag.Maintenance]:
+    'Maintenance mode allows you to put Frameleaf in a read-only state to perform various operations.',
   [ApiTag.Map]:
     'Map endpoints include supplemental functionality related to geolocation, such as reverse geocoding and retrieving map markers for assets with geolocation data.',
   [ApiTag.MediaHealth]: 'Media health utilities identify missing and corrupt source files.',
@@ -258,7 +259,7 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.Memories]:
     'A memory is a specialized collection of assets with dedicated viewing implementations in the web and mobile clients. A memory includes fields related to visibility and are automatically generated per user via a background job.',
   [ApiTag.Notifications]:
-    'A notification is a specialized message sent to users to inform them of important events. Currently, these notifications are only shown in the Immich web application.',
+    'A notification is a specialized message sent to users to inform them of important events. Currently, these notifications are only shown in the Frameleaf web application.',
   [ApiTag.NotificationsAdmin]: 'Notification administrative endpoints.',
   [ApiTag.Partners]: 'A partner is a link with another user that allows sharing of assets between two users.',
   [ApiTag.People]:

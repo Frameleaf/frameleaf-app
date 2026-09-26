@@ -252,8 +252,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   map: {
     enabled: true,
-    lightStyle: 'https://tiles.immich.cloud/v1/style/light.json',
-    darkStyle: 'https://tiles.immich.cloud/v1/style/dark.json',
+    lightStyle: 'https://tiles.frameleaf.cloud/v1/style/light.json',
+    darkStyle: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
   },
   nightlyTasks: {
     startTime: '00:00',
