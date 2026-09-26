@@ -97,8 +97,16 @@ const blank = (text) => text.replaceAll(/[^\n]/g, " ");
 const REGEX_PRECEDES = new Set([..."(,=:[!&|?{};+-*%<>~^", ""]);
 
 /**
+ * A `//` right after `:`, `>` or a word character is text, not a comment: a URL scheme
+ * (`https://…`), JSX text right after a tag (`<Text>//…`) or a path. Code never starts a line
+ * comment there.
+ */
+const NOT_BEFORE_LINE_COMMENT = /[:>\w]/;
+
+/**
  * Removes JavaScript/TypeScript comments, keeping line numbers. String, template and regular
- * expression literals are skipped whole, so a `//` or `/*` inside them is never taken for a comment.
+ * expression literals are skipped whole, so a `//` or `/*` inside them is never taken for a comment;
+ * nor is a `//` in JSX text such as `<Text>Visit https://example.test</Text>`.
  */
 export function stripScriptComments(text) {
   let out = "";
@@ -107,7 +115,11 @@ export function stripScriptComments(text) {
   while (index < text.length) {
     const char = text[index];
     const next = text[index + 1];
-    if (char === "/" && next === "/") {
+    if (
+      char === "/" &&
+      next === "/" &&
+      !NOT_BEFORE_LINE_COMMENT.test(text[index - 1] ?? "")
+    ) {
       const end = text.indexOf("\n", index);
       const stop = end === -1 ? text.length : end;
       out += blank(text.slice(index, stop));
@@ -153,10 +165,36 @@ export function stripScriptComments(text) {
   return out;
 }
 
-/** Removes Python comments and docstrings (a triple-quoted string that starts a line). */
+/**
+ * The lines (0-based) where a docstring can start: the first statement of the module, or the first
+ * statement after a `def`/`class` header (whose last line ends with `:`).
+ */
+function docstringLines(text) {
+  const lines = text.split("\n");
+  const significant = (line) =>
+    line.trim() !== "" && !line.trim().startsWith("#");
+  const result = new Set();
+  const first = lines.findIndex(significant);
+  if (first !== -1) result.add(first);
+  for (const [index, line] of lines.entries()) {
+    if (!/^\s*(?:async\s+def|def|class)\b/.test(line)) continue;
+    // The header may span lines (a long signature); it ends at the first line ending with `:`.
+    let end = index;
+    while (end < lines.length && !/:\s*(?:#.*)?$/.test(lines[end])) end += 1;
+    const body = lines.findIndex(
+      (candidate, at) => at > end && significant(candidate),
+    );
+    if (body !== -1) result.add(body);
+  }
+  return result;
+}
+
+/** Removes Python comments and docstrings (see `docstringLines`); other strings are kept. */
 export function stripPythonComments(text) {
+  const docstrings = docstringLines(text);
   let out = "";
   let index = 0;
+  let line = 0;
   let lineStart = true;
   while (index < text.length) {
     const char = text[index];
@@ -172,7 +210,8 @@ export function stripPythonComments(text) {
       const end = text.indexOf(triple, index + 3);
       const stop = end === -1 ? text.length : end + 3;
       const literal = text.slice(index, stop);
-      out += lineStart ? blank(literal) : literal;
+      out += lineStart && docstrings.has(line) ? blank(literal) : literal;
+      line += literal.split("\n").length - 1;
       index = stop;
       lineStart = false;
       continue;
@@ -182,14 +221,20 @@ export function stripPythonComments(text) {
       while (end < text.length && text[end] !== char && text[end] !== "\n") {
         end += text[end] === "\\" ? 2 : 1;
       }
-      out += text.slice(index, end + 1);
+      const literal = text.slice(index, end + 1);
+      out += literal;
       index = end + 1;
-      lineStart = false;
+      if (literal.endsWith("\n")) {
+        line += 1;
+        lineStart = true;
+      } else lineStart = false;
       continue;
     }
     out += char;
-    if (char === "\n") lineStart = true;
-    else if (!/\s/.test(char)) lineStart = false;
+    if (char === "\n") {
+      lineStart = true;
+      line += 1;
+    } else if (!/\s/.test(char)) lineStart = false;
     index += 1;
   }
   return out;
