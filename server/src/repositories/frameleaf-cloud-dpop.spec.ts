@@ -167,6 +167,7 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
 
   describe('api and ml calls', () => {
     it('send Authorization: DPoP and a proof with ath over the token, htm and htu without the query', async () => {
+      cloud.on('GET /ml-eu/v2/usage', () => ({ status: 200, body: {} }));
       const token = await mint();
       await repository.requestJson(z.unknown(), {
         url: `${cloud.url}/ml-eu/v2/usage?since=2026-09-01T00%3A00%3A00.000Z`,
@@ -290,7 +291,8 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
     });
 
     it('keep a nonce per origin', async () => {
-      const other = await startFakeCloud();
+      // another origin that accepts the tokens this cloud issued, as an ML region does
+      const other = await startFakeCloud({ tokens: cloud.tokens });
       try {
         other.on('POST /v1/other', () => ({ status: 200, body: {} }));
         cloud.nonce = 'origin-a';

@@ -56,6 +56,8 @@ export type FakeCloud = {
   nonce: string | null;
   /** Answers sent before any route ran (proof refusals and nonce challenges), for assertions. */
   refusals: Array<{ path: string; status: number; code: string }>;
+  /** Every access token this fake minted, or accepts from the fake whose store it shares. */
+  tokens: Set<string>;
   close: () => Promise<void>;
 };
 
@@ -167,10 +169,20 @@ const proofProblem = (proof: string, method: string, expectedHtu: string, seen: 
   return { proof: { header, claims, jkt: ed25519Thumbprint(jwk) } };
 };
 
-export const startFakeCloud = async (): Promise<FakeCloud> => {
-  const fake = { requests: [], routes: new Map(), nonce: null, refusals: [] } as unknown as FakeCloud;
+/**
+ * `tokens` shares another fake's token store, as an ML region accepts the tokens the cloud's token
+ * endpoint issued on its own origin.
+ */
+export const startFakeCloud = async ({ tokens }: { tokens?: Set<string> } = {}): Promise<FakeCloud> => {
+  const mintedTokens = tokens ?? new Set<string>();
+  const fake = {
+    requests: [],
+    routes: new Map(),
+    nonce: null,
+    refusals: [],
+    tokens: mintedTokens,
+  } as unknown as FakeCloud;
   const seenJti = new Map<string, number>();
-  const mintedTokens = new Set<string>();
   fake.on = (route, handler) => fake.routes.set(route, handler);
   fake.discovery = () => ({
     version: 1,
