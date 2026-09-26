@@ -1,0 +1,7 @@
+{
+  "code": "upload-closed",
+  "message": "This job no longer takes uploads.",
+  "retryable": false,
+  "requestId": "req_01J8ZK3M4N5P6Q81",
+  "refusal": "request-invalid"
+}
