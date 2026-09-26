@@ -28,9 +28,9 @@ const repository = path.resolve(
 
 /** The product name as a word, in title or upper case (`IMMICH_*` variables continue with `_`). */
 export const NAME = /\bImmich\b|\bIMMICH\b/g;
-/** Immich's own sites: immich.app and its subdomains, and the immich-app GitHub organisation. */
+/** Immich's own sites: immich.app and its subdomains, and the immich-app GitHub organisation (and its raw files). */
 export const SITES =
-  /(?<![\w-])(?:[a-z0-9-]+\.)*immich\.app\b|github\.com\/immich-app\b/gi;
+  /(?<![\w-])(?:[a-z0-9-]+\.)*immich\.app\b|(?:github|githubusercontent)\.com\/immich-app\b/gi;
 /** Any spelling at all; translation values are all user-visible. */
 export const ANY = /immich/gi;
 
