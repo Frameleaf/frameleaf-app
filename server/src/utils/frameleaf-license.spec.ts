@@ -510,16 +510,22 @@ describe('frameleaf-license (FL-156)', () => {
     it('reads the golden entitlements-response’s certificates the same way as its summary', () => {
       // licence/entitlements-response.json carries the same plan and key certificates as
       // certificates/valid-active-key.json and certificate-claims-key.json, at a time (context.now,
-      // 60 s after their shared iat) both are active.
+      // 60 s after their shared iat) both are active. The response is `{certificates, summary}`
+      // (the contract's strict EntitlementsResponse) and names no instance, so the certificates are
+      // checked as the server they were issued to (their `iid` and `cnf.jkt`).
       const golden = cloudContractFixture<{
-        instanceId: string;
         certificates: string[];
         summary: { state: string; entitlements: string[]; licenseKid: string };
       }>('licence/entitlements-response.json');
       const claims = cloudContractFixture<FrameleafLicenseClaims>('licence/certificate-claims-plan.json');
       const now = claims.iat * 1000 + 60_000;
       const licenses = golden.certificates.map((certificate) => {
-        const result = verifyLicenseCertificate(certificate, { keys: goldenKeys, instanceId: golden.instanceId, now });
+        const result = verifyLicenseCertificate(certificate, {
+          keys: goldenKeys,
+          instanceId: claims.iid,
+          jkt: claims.cnf?.jkt,
+          now,
+        });
         expect(result.ok).toBe(true);
         return result.ok ? asStoredLicense(result.claims, result.kid) : null;
       });

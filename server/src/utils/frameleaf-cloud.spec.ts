@@ -247,15 +247,16 @@ describe('error envelope (FL-177, as-built decisions #15–#18)', () => {
   });
 
   it.each([
-    ['errors/key-retired.json', 401, CloudErrorCode.KeyRetired, MlAdmissionRefusal.CloudUnavailable],
-    ['errors/nonce-invalid.json', 400, CloudErrorCode.NonceInvalid, MlAdmissionRefusal.CloudUnavailable],
-    ['errors/rotation-rate-limited.json', 429, 'rate-limited', MlAdmissionRefusal.QuotaExceeded],
+    ['errors/key-retired.json', 401, CloudErrorCode.KeyRetired, MlAdmissionRefusal.CloudUnavailable, null],
+    ['errors/nonce-invalid.json', 400, CloudErrorCode.NonceInvalid, MlAdmissionRefusal.CloudUnavailable, null],
+    ['errors/rotation-rate-limited.json', 429, 'rate-limited', MlAdmissionRefusal.QuotaExceeded, null],
     // FL-184 (FC-66, FC-22 final fixtures): a bad DPoP proof answered by the token endpoint or an API
-    // call, mapped like every other 401 that is not key_retired or entitlement-missing.
-    ['errors/invalid-dpop-proof.json', 401, 'invalid_dpop_proof', MlAdmissionRefusal.DestinationUnhealthy],
-  ])('reads the golden %s envelope (FC-19)', (name, status, code, refusal) => {
+    // call, mapped like every other 401 that is not key_retired or entitlement-missing. The golden
+    // envelope names why the proof was refused (`detail: replayed`).
+    ['errors/invalid-dpop-proof.json', 401, 'invalid_dpop_proof', MlAdmissionRefusal.DestinationUnhealthy, 'replayed'],
+  ])('reads the golden %s envelope (FC-19)', (name, status, code, refusal, detail) => {
     const envelope = errorEnvelopeSchema.parse(cloudContractFixture(name));
-    expect(envelope).toMatchObject({ code, refusal: null, detail: null, data: null, requestId: expect.any(String) });
+    expect(envelope).toMatchObject({ code, refusal: null, detail, data: null, requestId: expect.any(String) });
     expect(envelope.message).not.toBe('');
     expect(refusalFromCloudError(status, envelope)).toBe(refusal);
   });
