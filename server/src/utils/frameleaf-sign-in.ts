@@ -1,8 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { BlockList, isIP } from 'node:net';
-import { type ClientAuth, ClientSecretPost } from 'openid-client';
+import { type ClientAuth } from 'openid-client';
 import type { IncomingHttpHeaders } from 'node:http';
-import type { SystemConfig } from 'src/config.js';
 import type { OAuthConfig, OAuthProfile } from 'src/repositories/oauth.repository.js';
 import type { FrameleafCloudLink } from 'src/types.js';
 import { OAuthTokenEndpointAuthMethod } from 'src/enum.js';
@@ -16,8 +15,8 @@ import { cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
  *
  * - issuer and client from the link (`clientId` = this server's instance id);
  * - scope `openid email profile`, role claim `frameleaf_role`, no storage label claim;
- * - client authentication by a `private_key_jwt` assertion signed with this server's identity key,
- *   or the write-only client secret when the cloud registered the server with one;
+ * - client authentication by a `private_key_jwt` assertion signed with this server's identity key
+ *   only; Frameleaf Cloud never issues a client secret to a server (FL-177);
  * - PKCE S256 when the issuer advertises it (the OAuth repository does that).
  */
 
@@ -59,7 +58,12 @@ export const frameleafCallbackUrl = (value: string): string => {
   return value;
 };
 
-/** `admin` or `user` from the `frameleaf_role` claim, or null when the cloud sent neither. */
+/**
+ * `admin` or `user` from the `frameleaf_role` claim, or null when the cloud sent neither. It is
+ * applied on every Sign in with Frameleaf to every linked account (FL-177, as-built decision #32).
+ * `frameleaf_access` (`owner`, `admin`, `editor`, `viewer`) is informational in this version: nothing
+ * on this server is granted from it beyond what `frameleaf_role` grants.
+ */
 export const frameleafRole = (profile: OAuthProfile): 'admin' | 'user' | null => {
   const value = profile[FRAMELEAF_ROLE_CLAIM as keyof OAuthProfile];
   return value === 'admin' || value === 'user' ? value : null;
@@ -73,44 +77,36 @@ export const signInClient = (link: FrameleafCloudLink | null, linked: boolean) =
  * The runtime `OAuthConfig` for Sign in with Frameleaf, or null when the server is not configured
  * or not linked. Nothing here reads the `oauth.*` settings.
  */
-export const frameleafOAuthConfig = async (
-  deps: CloudGatewayDeps,
-  config: SystemConfig,
-): Promise<OAuthConfig | null> => {
+export const frameleafOAuthConfig = async (deps: CloudGatewayDeps): Promise<OAuthConfig | null> => {
   const { cloudUrl, link, linked } = await readCloudLink(deps);
   const client = signInClient(link, linked);
   // the issuer must be the configured cloud's, like every address the cloud hands over
   if (!cloudUrl || !client || cloudAddressProblem(cloudUrl, 'sign-in issuer', client.issuer)) {
     return null;
   }
-  const clientSecret = config.frameleafCloud.signIn?.clientSecret ?? '';
-  let clientAuth: ClientAuth;
-  if (clientSecret) {
-    clientAuth = ClientSecretPost(clientSecret);
-  } else {
-    const identity = await loadInstanceIdentity(deps);
-    clientAuth = (as, _client, body) => {
-      const now = Math.floor(Date.now() / 1000);
-      body.set('client_id', client.clientId);
-      body.set('client_assertion_type', 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer');
-      body.set(
-        'client_assertion',
-        deps.instanceIdentityRepository.signJws(identity.kid, {
-          iss: client.clientId,
-          sub: client.clientId,
-          aud: as.token_endpoint ?? as.issuer,
-          jti: randomUUID(),
-          iat: now,
-          exp: now + 120,
-        }),
-      );
-    };
-  }
+  const identity = await loadInstanceIdentity(deps);
+  // FL-177 (as-built decision #10): the key is the only client credential; no client secret exists
+  const clientAuth: ClientAuth = (as, _client, body) => {
+    const now = Math.floor(Date.now() / 1000);
+    body.set('client_id', client.clientId);
+    body.set('client_assertion_type', 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer');
+    body.set(
+      'client_assertion',
+      deps.instanceIdentityRepository.signJws(identity.kid, {
+        iss: client.clientId,
+        sub: client.clientId,
+        aud: as.token_endpoint ?? as.issuer,
+        jti: randomUUID(),
+        iat: now,
+        exp: now + 120,
+      }),
+    );
+  };
   return {
     clientId: client.clientId,
-    clientSecret: clientSecret || undefined,
     issuerUrl: client.issuer,
     accountManagementUrl: '',
+    // RP-initiated logout uses the issuer's advertised end_session_endpoint (frameleafLogoutUrl)
     endSessionEndpoint: '',
     mobileOverrideEnabled: false,
     mobileRedirectUri: '',
@@ -125,6 +121,29 @@ export const frameleafOAuthConfig = async (
     allowInsecureRequests: cloudUrl.startsWith('http://'),
     clientAuth,
   };
+};
+
+/**
+ * FL-177 (as-built decision #32): where signing out sends a person who signed in with Frameleaf, so
+ * their Frameleaf session ends too (RP-initiated logout): the issuer's advertised
+ * `end_session_endpoint` with `client_id` and, when the session kept its ID token, `id_token_hint`.
+ * Null when the issuer advertises none, or advertises one outside the configured cloud.
+ */
+export const frameleafLogoutUrl = (
+  cloudUrl: string,
+  endSessionEndpoint: string | null | undefined,
+  clientId: string,
+  idToken?: string | null,
+): string | null => {
+  if (!endSessionEndpoint || cloudAddressProblem(cloudUrl, 'sign-in logout endpoint', endSessionEndpoint)) {
+    return null;
+  }
+  const url = new URL(endSessionEndpoint);
+  url.searchParams.set('client_id', clientId);
+  if (idToken) {
+    url.searchParams.set('id_token_hint', idToken);
+  }
+  return url.href;
 };
 
 /** The audiences a logout token names, read without verifying it (only to pick the provider). */

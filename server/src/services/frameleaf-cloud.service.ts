@@ -39,28 +39,33 @@ import {
   HEARTBEAT_FAILURE_NOTICE_THRESHOLD,
   HEARTBEAT_FIELDS,
   HeartbeatResponse,
+  InstanceRegistration,
   KEY_RETIRE_HOURS,
+  LINK_REFUSAL_MESSAGES,
   SLOW_DOWN_SECONDS,
   accountLabelOf,
   buildHeartbeat,
-  clientRegistrationSchema,
   commandPermission,
   deviceAuthorizationSchema,
   heartbeatResponseSchema,
   instanceRegistrationSchema,
   keyNonceSchema,
   linkEndpoints,
+  linkRefusalOf,
   linkTokenSchema,
   nextHeartbeatDelay,
   permissionsOf,
-  redirectUris,
 } from 'src/utils/frameleaf-cloud-link.js';
-import { FrameleafCloudError, FrameleafDiscoveryDocument, cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
+import {
+  CloudErrorCode,
+  FrameleafCloudError,
+  FrameleafDiscoveryDocument,
+  cloudAddressProblem,
+  cloudErrorCode,
+  storeAddress,
+} from 'src/utils/frameleaf-cloud.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import { handlePromiseError } from 'src/utils/misc.js';
-
-/** One process start: the cloud's clone rule compares these between check-ins. */
-const BOOT_ID = randomUUID();
 
 /** Capabilities this build announces when it registers (instance contract step 4). */
 const INSTANCE_CAPABILITIES = ['heartbeat', 'commands', 'license', 'oidc'];
@@ -84,7 +89,7 @@ const emptyLink = (cloudUrl: string, previous?: FrameleafCloudLink | null): Fram
  *
  * - Nothing is contacted until an administrator starts linking, or `FRAMELEAF_LINK_TOKEN` is set.
  *   An unset `FRAMELEAF_CLOUD_URL` means "not configured"; no default host is ever used.
- * - The device code, link token and initial access token are never returned or kept after use.
+ * - The device code and link token are never returned or kept after use; no cloud secret is stored.
  * - The heartbeat sends exactly `HEARTBEAT_FIELDS`; cloud commands run only when the matching
  *   instance-side toggle allows them, and no command or revoke deletes local data.
  * - Unlink and cloud-side revoke clear the link and switch cloud-connected features off.
@@ -126,6 +131,7 @@ export class FrameleafCloudService extends BaseService {
       lastContactAt: linked ? (link.lastContactAt ?? null) : null,
       pending: link?.status === 'pending' && link.pending ? this.mapPending(link.pending) : null,
       linkResult: link?.status === 'pending' ? 'pending' : (link?.lastLinkResult ?? null),
+      linkRefusal: link?.status === 'unlinked' ? (link.lastLinkRefusal ?? null) : null,
       permissions: permissionsOf(link),
       revoked: link?.status === 'revoked' ? (link.revoked ?? null) : null,
       lastError: link?.lastError ?? null,
@@ -224,7 +230,11 @@ export class FrameleafCloudService extends BaseService {
           current.pending.deviceCode === link.pending?.deviceCode && error instanceof FrameleafCloudError;
         await this.saveLink(
           approved && error.status !== null && error.status < 500
-            ? { ...emptyLink(cloudUrl, current), lastError: `Linking did not finish: ${message}` }
+            ? {
+                ...emptyLink(cloudUrl, current),
+                lastError: `Linking did not finish: ${message}`,
+                lastLinkRefusal: linkRefusalOf(error) ?? undefined,
+              }
             : {
                 ...current,
                 lastError: message,
@@ -327,8 +337,11 @@ export class FrameleafCloudService extends BaseService {
 
   /**
    * Register this server with the link token from the device flow, or headlessly with
-   * `FRAMELEAF_LINK_TOKEN` (sent as `X-Frameleaf-Link-Token`), then complete dynamic client
-   * registration. The initial access token is used once and never kept.
+   * `FRAMELEAF_LINK_TOKEN` (sent as `X-Frameleaf-Link-Token`). The server names its own UUIDv7
+   * `instanceId` (as-built decision #4); Frameleaf Cloud registers the Sign in with Frameleaf client
+   * itself, so this server never runs dynamic client registration and sends no redirect URIs
+   * (decisions #7–#9). A refusal the contract names comes back in words an administrator can act on
+   * (`LINK_REFUSAL_MESSAGES`).
    */
   async completeLink(
     cloudUrl: string,
@@ -341,51 +354,51 @@ export class FrameleafCloudService extends BaseService {
     const permissions = permissionsOf(previous);
     const { name } = await this.serverIdentity();
 
-    const registration = await this.frameleafCloudRepository.requestJson(instanceRegistrationSchema, {
-      method: 'POST',
-      url: endpoints.instances,
-      ...('linkToken' in source
-        ? { bearer: source.linkToken }
-        : { headers: { 'X-Frameleaf-Link-Token': source.headlessToken } }),
-      body: {
-        name,
-        version: serverVersion.toString(),
-        platform: this.platform(),
-        jwk: { ...identity.publicJwk, kid: identity.kid },
-        bootId: BOOT_ID,
-        capabilities: INSTANCE_CAPABILITIES,
-        permissions,
-      },
-    });
-
-    const { oidc } = registration;
-    for (const [name, value] of [
-      ['sign-in issuer', oidc.issuer],
-      ['client registration endpoint', oidc.registrationEndpoint],
-    ] as const) {
-      const problem = value ? cloudAddressProblem(cloudUrl, name, value) : null;
-      if (problem) {
-        throw new ServiceUnavailableException(
-          `Frameleaf Cloud answered with an address this server will not use: ${problem}`,
-        );
-      }
-    }
-    if (oidc.initialAccessToken) {
-      const origins = await this.publicOrigins(registration.services);
-      await this.frameleafCloudRepository.requestJson(clientRegistrationSchema, {
+    let registration: InstanceRegistration;
+    try {
+      registration = await this.frameleafCloudRepository.requestJson(instanceRegistrationSchema, {
         method: 'POST',
-        url: oidc.registrationEndpoint ?? endpoints.registration,
-        bearer: oidc.initialAccessToken,
+        url: endpoints.instances,
+        ...('linkToken' in source
+          ? { bearer: source.linkToken }
+          : { headers: { 'X-Frameleaf-Link-Token': source.headlessToken } }),
         body: {
-          client_id: oidc.clientId,
-          client_name: name,
-          token_endpoint_auth_method: 'private_key_jwt',
-          jwks: { keys: [{ ...identity.publicJwk, kid: identity.kid, use: 'sig', alg: 'EdDSA' }] },
-          grant_types: ['authorization_code', 'client_credentials'],
-          response_types: ['code'],
-          redirect_uris: redirectUris(origins),
+          instanceId: identity.instanceId,
+          name,
+          version: serverVersion.toString(),
+          platform: this.platform(),
+          jwk: { ...identity.publicJwk, kid: identity.kid },
+          bootId: await this.bootId(),
+          capabilities: INSTANCE_CAPABILITIES,
+          permissions,
         },
       });
+    } catch (error) {
+      const refusal = linkRefusalOf(error);
+      if (refusal && error instanceof FrameleafCloudError) {
+        throw new FrameleafCloudError(
+          error.refusal,
+          error.status,
+          LINK_REFUSAL_MESSAGES[refusal],
+          error.envelope,
+          error.oauth,
+        );
+      }
+      throw error;
+    }
+
+    const { oidc } = registration;
+    const problem = cloudAddressProblem(cloudUrl, 'sign-in issuer', oidc.issuer);
+    if (problem) {
+      throw new ServiceUnavailableException(
+        `Frameleaf Cloud answered with an address this server will not use: ${problem}`,
+      );
+    }
+    if (registration.instanceId !== identity.instanceId) {
+      // a cloud from before as-built decision #4 names its own id; it is the one it knows this server by
+      this.logger.warn(
+        `Frameleaf Cloud registered this server as ${registration.instanceId}, not as its own instance ID`,
+      );
     }
 
     const at = new Date().toISOString();
@@ -403,12 +416,12 @@ export class FrameleafCloudService extends BaseService {
       oidc: {
         issuer: oidc.issuer,
         clientId: oidc.clientId,
-        registrationEndpoint: oidc.registrationEndpoint,
         scope: oidc.scope,
         roleClaim: oidc.roleClaim,
         storageLabelClaim: oidc.storageLabelClaim,
       },
       services: registration.services,
+      store: storeAddress(cloudUrl, document.store) ?? undefined,
       desired: { remoteAccess: false, cloudBackup: false },
       heartbeat: { failures: 0, nextAt: this.after(Date.now(), nextHeartbeatDelay(null)) },
       usedLinkTokens: previous?.usedLinkTokens,
@@ -498,8 +511,10 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
-   * Cloud-side revoke or local unlink: clear the credential and cached tokens, mark the link, and
-   * switch remote access, cloud processing and cloud backup off. Nothing local is deleted.
+   * Cloud-side revoke or local unlink: clear the credential and cached tokens, mark the link, remove
+   * the Frameleaf Cloud plan certificate, and switch remote access, cloud processing and cloud backup
+   * off. Supporter key certificates stay (they work without a link); no photo, account or other local
+   * data is deleted.
    */
   private async clearLink(
     cloudUrl: string,
@@ -519,15 +534,30 @@ export class FrameleafCloudService extends BaseService {
     };
     await this.saveLink(next, 'link');
     await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlWallet);
+    await this.removePlanCertificate();
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
       config.frameleafCloud.cloudMl.enabled = false;
-      // FL-158: the sign-in client is gone with the link, and no secret of it remains here
-      config.frameleafCloud.signIn = { ...config.frameleafCloud.signIn, clientSecret: '' };
     });
     if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
       await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     }
     await this.endFrameleafSignIns();
+  }
+
+  /**
+   * FL-177 (as-built decision #12): the plan belongs to the link, so its certificate goes with it. A
+   * supporter key's certificate is kept. A failure is logged; the plan then ages out on its own.
+   */
+  private async removePlanCertificate() {
+    try {
+      const store = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+      if (store?.plan) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafLicense, { ...store, plan: null });
+        await this.broadcast('license');
+      }
+    } catch (error) {
+      this.logger.error(`Could not remove the Frameleaf Cloud plan from this server: ${error}`);
+    }
   }
 
   /**
@@ -564,6 +594,8 @@ export class FrameleafCloudService extends BaseService {
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
   async onBootstrap(): Promise<void> {
     const { url: cloudUrl, linkToken } = this.configRepository.getEnv().frameleafCloud;
+    await this.startBoot();
+    await this.forgetSignInClientSecret();
     this.cronRepository.create({
       name: 'frameleafHeartbeat',
       expression: '* * * * *',
@@ -600,9 +632,68 @@ export class FrameleafCloudService extends BaseService {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(`FRAMELEAF_LINK_TOKEN did not link this server: ${message}`);
         const current = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
-        await this.saveLink({ ...current, lastError: `The link token did not work: ${message}` }, 'link');
+        await this.saveLink(
+          {
+            ...current,
+            lastError: `The link token did not work: ${message}`,
+            lastLinkRefusal: linkRefusalOf(error) ?? undefined,
+          },
+          'link',
+        );
       }
     });
+  }
+
+  /**
+   * FL-177 (as-built decision #14): a new boot id each time the server starts, kept in system
+   * metadata so every worker (the API one for registration and "Check in now", this one for
+   * scheduled check-ins) sends the same value. Two values alternating then only ever means two
+   * servers, which is what the cloud's clone rule looks for.
+   */
+  private async startBoot() {
+    try {
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafBoot, {
+        bootId: randomUUID(),
+        startedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      this.logger.warn(`Could not record this server's boot id: ${error}`);
+    }
+  }
+
+  /** The boot id of this server start; created here only when no worker recorded one yet. */
+  async bootId(): Promise<string> {
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafBoot);
+    if (stored?.bootId) {
+      return stored.bootId;
+    }
+    const boot = { bootId: randomUUID(), startedAt: new Date().toISOString() };
+    await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafBoot, boot);
+    return boot.bootId;
+  }
+
+  /**
+   * FL-177 (as-built decision #10): Sign in with Frameleaf authenticates with this server's key only,
+   * and the client secret setting is gone. A secret an earlier version saved is removed from the
+   * stored settings once, so no cloud secret stays on the server. A configuration file is left to the
+   * administrator who owns it.
+   */
+  private async forgetSignInClientSecret() {
+    try {
+      if (this.configRepository.getEnv().configFile) {
+        return;
+      }
+      const stored = await this.systemMetadataRepository.get(SystemMetadataKey.SystemConfig);
+      const signIn = stored?.frameleafCloud?.signIn as Record<string, unknown> | undefined;
+      if (!signIn || !Object.hasOwn(signIn, 'clientSecret')) {
+        return;
+      }
+      // saving writes the settings back from the current schema, which has no client secret
+      await this.updateConfigExclusively(() => {});
+      this.logger.log('Removed the unused Sign in with Frameleaf client secret an earlier version saved');
+    } catch (error) {
+      this.logger.warn(`Could not remove the unused Sign in with Frameleaf client secret: ${error}`);
+    }
   }
 
   // ------------------------------------------------------------------ heartbeat (FL-155)
@@ -658,7 +749,7 @@ export class FrameleafCloudService extends BaseService {
     }
     return buildHeartbeat({
       version: serverVersion.toString(),
-      bootId: BOOT_ID,
+      bootId: await this.bootId(),
       uptimeSec: process.uptime(),
       health: { database: 'ok', storage, jobs: 'ok' },
       endpoints: [],
@@ -681,6 +772,27 @@ export class FrameleafCloudService extends BaseService {
         body: await this.buildHeartbeatPayload(link),
       });
     } catch (error) {
+      if (cloudErrorCode(error) === CloudErrorCode.KeyRetired) {
+        // FL-177 (FC-19): the token was minted with a key the cloud retired or revoked. A candidate
+        // key the cloud may hold after a lost rotation answer is tried first; otherwise only a new
+        // link helps, which the administrators are asked for. The link itself is not revoked.
+        if (link.heartbeat?.relinkRequested || link.heartbeat?.keyRecovery?.closed) {
+          // already waiting for a new link: no candidate lock, no discovery, no repeated warning
+          await this.recordHeartbeatFailure(link, error);
+          return JobStatus.Failed;
+        }
+        const recovered = await this.tryCandidateKey(cloudUrl, link);
+        const current = (await this.readLink(cloudUrl)) ?? link;
+        let next = current;
+        if (!recovered) {
+          // FL-175: an open recovery after a damaged key ends here too, with its own notice and audit
+          next = (await this.keyRecoveryOpen())
+            ? await this.keyRecoveryClosed(current)
+            : this.requireRelink(current, 'key');
+        }
+        await this.recordHeartbeatFailure(next, error);
+        return JobStatus.Failed;
+      }
       if (this.isRevocation(error)) {
         // a rotation whose answer was lost may have left the cloud holding the candidate key; only
         // invalid_client can mean that, an explicit instance-revoked never does
@@ -710,6 +822,8 @@ export class FrameleafCloudService extends BaseService {
     let next: FrameleafCloudLink = {
       ...link,
       lastContactAt: new Date(now).toISOString(),
+      // FL-177: the store discovery names now (none when it stops naming one)
+      store: storeAddress(cloudUrl, document.store) ?? undefined,
       lastError: undefined,
       heartbeat: {
         ...link.heartbeat,
@@ -804,18 +918,23 @@ export class FrameleafCloudService extends BaseService {
     }
   }
 
-  /** A token or check-in refusal that means the cloud ended this server's link. */
+  /**
+   * A token or check-in refusal that means the cloud ended this server's link: `invalid_client` at
+   * the token endpoint, or `instance_revoked` (`instance-revoked` from earlier drafts too). An
+   * `invalid_token` (FL-177) only means the access token was not accepted: any 401 drops the cached
+   * tokens and the next call mints a new one, so it is never a revoke.
+   */
   private isRevocation(error: unknown): boolean {
     if (!(error instanceof FrameleafCloudError) || (error.status !== 401 && error.status !== 403)) {
       return false;
     }
-    const code = error.oauth?.error ?? error.envelope?.code ?? '';
-    return ['invalid_client', 'instance-revoked', 'instance_revoked'].includes(code);
+    const code = error.oauth?.error ?? cloudErrorCode(error) ?? '';
+    return ['invalid_client', CloudErrorCode.InstanceRevoked, 'instance-revoked'].includes(code);
   }
 
   /** The token endpoint refused this server's key (not an explicit revoke). */
   private isInvalidClient(error: unknown): boolean {
-    return error instanceof FrameleafCloudError && (error.oauth?.error ?? error.envelope?.code) === 'invalid_client';
+    return error instanceof FrameleafCloudError && (error.oauth?.error ?? cloudErrorCode(error)) === 'invalid_client';
   }
 
   // ------------------------------------------------------------------ commands (FL-155)
@@ -883,7 +1002,8 @@ export class FrameleafCloudService extends BaseService {
         throw new Error('cloud backup is not set up on this server');
       }
       case CloudCommandType.SecretRotate: {
-        // no client secret is kept: tokens come from the key, so dropping cached tokens is the rotation
+        // FL-177 (as-built decision #10): no client secret exists; tokens come from the key, so the rotation
+        // is dropping the cached tokens and discovery
         this.frameleafCloudRepository.forget();
         return link;
       }
@@ -892,20 +1012,31 @@ export class FrameleafCloudService extends BaseService {
         return link;
       }
       case CloudCommandType.Relink: {
-        this.notify({
-          level: NotificationLevel.Warning,
-          title: 'Link this server to Frameleaf again',
-          description:
-            'Frameleaf Cloud asked for this server to be linked again. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.',
-          dedupeKey: 'frameleaf-cloud:relink',
-          dedupeDays: 1,
-        });
-        return {
-          ...link,
-          heartbeat: { ...link.heartbeat, failures: link.heartbeat?.failures ?? 0, relinkRequested: true },
-        };
+        return this.requireRelink(link, 'command');
       }
     }
+  }
+
+  /**
+   * Ask the administrators to link this server again: on the cloud's `relink` command, or when every
+   * instance route answers 401 `key_retired` (FL-177). Nothing on this server is removed.
+   */
+  private requireRelink(link: FrameleafCloudLink, why: 'command' | 'key'): FrameleafCloudLink {
+    this.notify({
+      level: NotificationLevel.Warning,
+      title: 'Link this server to Frameleaf again',
+      description: `${
+        why === 'key'
+          ? 'Frameleaf Cloud no longer accepts this server’s key.'
+          : 'Frameleaf Cloud asked for this server to be linked again.'
+      } Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.`,
+      dedupeKey: 'frameleaf-cloud:relink',
+      dedupeDays: 1,
+    });
+    return {
+      ...link,
+      heartbeat: { ...link.heartbeat, failures: link.heartbeat?.failures ?? 0, relinkRequested: true },
+    };
   }
 
   /**
@@ -1316,19 +1447,7 @@ export class FrameleafCloudService extends BaseService {
 
   private async serverIdentity() {
     const config = await this.getConfig({ withCache: true });
-    return { name: config.server.name?.trim() || 'Frameleaf server', externalDomain: config.server.externalDomain };
-  }
-
-  /** Public origins the Sign in with Frameleaf callbacks are registered on. */
-  private async publicOrigins(services: Record<string, unknown>): Promise<string[]> {
-    const { externalDomain } = await this.serverIdentity();
-    const origins: string[] = [];
-    for (const value of [services.relayOrigin, services.publicUrl, externalDomain]) {
-      if (typeof value === 'string' && value) {
-        origins.push(value);
-      }
-    }
-    return origins;
+    return { name: config.server.name?.trim() || 'Frameleaf server' };
   }
 
   private platform() {

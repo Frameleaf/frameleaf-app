@@ -5,10 +5,6 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import FrameleafSignInSection from './FrameleafSignInSection.svelte';
 
-vi.mock(import('$lib/managers/system-config-manager.svelte'), () => ({
-  systemConfigManager: { value: { frameleafCloud: { signIn: { clientSecretConfigured: false } } } } as never,
-}));
-
 const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusResponseDto => ({
   state: CloudLinkState.Unlinked,
   configured: true,
@@ -21,6 +17,7 @@ const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusRes
   lastContactAt: null,
   pending: null,
   linkResult: null,
+  linkRefusal: null,
   permissions: { allowRemoteEnable: false, allowBackupTrigger: true, allowEntitlementRefresh: true },
   revoked: null,
   lastError: null,
@@ -72,6 +69,8 @@ describe('FrameleafSignInSection (FL-158)', () => {
     expect(screen.getByRole('button', { name: 'Link to Frameleaf' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Your own OpenID provider' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Link your own account' })).toBeInTheDocument();
+    // FL-177: the server's key is the only client credential; there is no secret to enter
+    expect(screen.queryByText(/client secret/i)).toBeNull();
   });
 
   it('shows the provider, client ID and linked accounts once linked, and turns the home button on', async () => {

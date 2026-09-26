@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
-import { AdminAuditAction, SystemMetadataKey } from 'src/enum.js';
+import { AdminAuditAction, DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -273,6 +273,93 @@ describe(FrameleafAuthService.name, () => {
       mocks.user.getByEmail.mockResolvedValue(existing as never);
       mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'someone-else' } as never);
       await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('already linked');
+    });
+
+    describe('frameleaf_role on every sign-in (FL-177, as-built decision #32)', () => {
+      const signInLinked = async (user: ReturnType<typeof UserFactory.create>) => {
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({
+          userId: user.id,
+          sub: 'fl-sub',
+          autoRegistered: false,
+        } as never);
+        mocks.user.get.mockResolvedValue(user as never);
+        mocks.user.update.mockImplementation((id, change) => Promise.resolve({ ...user, ...change, id } as never));
+        return sut.callback(callbackDto, {}, loginDetails);
+      };
+
+      it('takes administration away from a linked account the cloud demoted', async () => {
+        const user = UserFactory.create({ isAdmin: true });
+        mocks.user.getAdmins.mockResolvedValue([user, UserFactory.create({ isAdmin: true })] as never);
+        idClaims.frameleaf_role = 'user';
+
+        await signInLinked(user);
+        expect(mocks.user.update).toHaveBeenCalledWith(user.id, { isAdmin: false });
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ userId: user.id, actorId: null, action: AdminAuditAction.AdminRevoked }),
+        ]);
+      });
+
+      it('makes a linked account an administrator when the cloud promotes it', async () => {
+        const user = UserFactory.create({ isAdmin: false });
+        idClaims.frameleaf_role = 'admin';
+
+        await signInLinked(user);
+        expect(mocks.user.update).toHaveBeenCalledWith(user.id, { isAdmin: true });
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ userId: user.id, action: AdminAuditAction.AdminGranted }),
+        ]);
+      });
+
+      it('never demotes the last administrator, so the server stays manageable', async () => {
+        const user = UserFactory.create({ isAdmin: true });
+        mocks.user.getAdmins.mockResolvedValue([user] as never);
+        idClaims.frameleaf_role = 'user';
+
+        await expect(signInLinked(user)).resolves.toMatchObject({ userId: user.id });
+        expect(mocks.user.update).not.toHaveBeenCalled();
+      });
+
+      it('never leaves the server without an administrator when two are demoted at once (FL-177 review)', async () => {
+        const first = UserFactory.create({ isAdmin: true });
+        const second = UserFactory.create({ isAdmin: true });
+        const users = new Map([
+          [first.id, first],
+          [second.id, second],
+        ]);
+        // a real advisory lock serialises its holders; the mock does the same
+        let queue: Promise<unknown> = Promise.resolve();
+        mocks.database.withLock.mockImplementation((_lock, callback) => {
+          const run = queue.then(() => callback());
+          queue = run.catch(() => {});
+          return run as never;
+        });
+        mocks.user.getAdmins.mockImplementation(() =>
+          Promise.resolve([...users.values()].filter((user) => user.isAdmin) as never),
+        );
+        mocks.user.update.mockImplementation(async (id, change) => {
+          // yield between the count and the write, where an unlocked demotion would interleave
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          const next = { ...users.get(id)!, ...change } as typeof first;
+          users.set(id, next);
+          return next as never;
+        });
+        const applyRole = (user: typeof first) =>
+          (sut as unknown as { applyRole: (user: unknown, role: 'user') => Promise<unknown> }).applyRole(user, 'user');
+
+        await Promise.all([applyRole(first), applyRole(second)]);
+        expect([...users.values()].filter((user) => user.isAdmin)).toHaveLength(1);
+        expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.FrameleafRoleChange, expect.any(Function));
+      });
+
+      it('grants nothing from frameleaf_access, and changes nothing without frameleaf_role', async () => {
+        const user = UserFactory.create({ isAdmin: false });
+        delete idClaims.frameleaf_role;
+        idClaims.frameleaf_access = 'owner';
+
+        await signInLinked(user);
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.frameleafAccount.touchLink).toHaveBeenCalledWith(user.id, expect.objectContaining({ role: null }));
+      });
     });
 
     it('does not finish when the cloud refuses the client assertion', async () => {
