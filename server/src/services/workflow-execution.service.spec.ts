@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { Mocked, vitest } from 'vitest';
 import { JobName, JobStatus, WorkflowResult, WorkflowRunErrorCode, WorkflowType } from 'src/enum.js';
 import { AlbumService } from 'src/services/album.service.js';
+import { AssetService } from 'src/services/asset.service.js';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { newUuid } from 'test/small.factory.js';
@@ -662,6 +663,82 @@ describe(WorkflowExecutionService.name, () => {
       expect(mocks.workflow.updateStepConfig).toHaveBeenCalledWith(workflowId, filterId, {
         allowedTypes: ['IMAGE'],
         seen: 1,
+      });
+    });
+
+    describe('a step whose changes were written (FL-169)', () => {
+      it('resumes after the step, not at it, when reading the changes back fails', async () => {
+        setup();
+        mocks.plugin.callMethod.mockResolvedValueOnce({ changes: { asset: { isFavorite: true } } });
+        // the first read loads the trigger data; the read after the write fails
+        mocks.workflow.getForAssetV1
+          .mockResolvedValueOnce({ id: assetId, ownerId } as never)
+          .mockRejectedValueOnce(new Error('database unavailable'));
+        const update = vitest.spyOn(AssetService.prototype, 'update').mockResolvedValue({} as never);
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
+
+        expect(update).toHaveBeenCalledOnce();
+        expect(mocks.plugin.callMethod).toHaveBeenCalledOnce();
+        expect(mocks.workflow.log).toHaveBeenCalledWith(
+          expect.objectContaining({ errorCode: WorkflowRunErrorCode.StepFailed, workflowStepId: filterId }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.WorkflowAssetTrigger,
+          data: expect.objectContaining({ attempt: 1, fromStepId: webhookId }),
+        });
+      });
+
+      it('resumes after the step when saving its own config fails', async () => {
+        setup();
+        mocks.plugin.callMethod.mockResolvedValueOnce({ config: { allowedTypes: ['IMAGE'] } });
+        mocks.workflow.updateStepConfig.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledOnce();
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.WorkflowAssetTrigger,
+          data: expect.objectContaining({ attempt: 1, fromStepId: webhookId }),
+        });
+      });
+
+      it('queues no retry when the last step fails after its changes were written', async () => {
+        setup();
+        mocks.plugin.callMethod.mockResolvedValueOnce({}).mockResolvedValueOnce({ config: { url: 'https://x.test' } });
+        mocks.workflow.updateStepConfig.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledTimes(2);
+        expect(mocks.workflow.log).toHaveBeenCalledWith(
+          expect.objectContaining({ errorCode: WorkflowRunErrorCode.StepFailed, workflowStepId: webhookId }),
+        );
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('queues no retry when a halting step fails after its changes were written', async () => {
+        setup();
+        mocks.plugin.callMethod.mockResolvedValueOnce({ config: { seen: 1 }, workflow: { continue: false } });
+        mocks.workflow.updateStepConfig.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledOnce();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('still runs a step again when writing its changes failed', async () => {
+        setup();
+        mocks.plugin.callMethod.mockResolvedValueOnce({ changes: { asset: { isFavorite: true } } });
+        vitest.spyOn(AssetService.prototype, 'update').mockRejectedValue(new Error('update refused'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.WorkflowAssetTrigger,
+          data: expect.objectContaining({ attempt: 1, fromStepId: filterId }),
+        });
       });
     });
 
