@@ -579,6 +579,45 @@ export const heartbeatEndpoints = (candidates: FrameleafRemoteConnection[]) =>
 export const edgeStateCurrent = (state: Pick<FrameleafRemoteAccess, 'updatedAt'> | null, now = Date.now()) =>
   !!state && now - Date.parse(state.updatedAt) < EDGE_STATE_STALE_MS;
 
+// ------------------------------------------------------------------ this host's addresses
+
+/** Interfaces that are never the home network: container bridges, virtual machines, tunnels. */
+const VIRTUAL_INTERFACE =
+  /^(?:docker|br-|veth|virbr|vnet|cni|flannel|cali|weave|vxlan|kube|lxc|lxd|podman|tun|tap|wg|zt|tailscale|vmnet|vboxnet|utun)/;
+
+export type HostInterface = { name: string; address: string; family: 'IPv4' | 'IPv6'; internal: boolean };
+
+/**
+ * The addresses this server publishes LAN (and IPv6) names for, which are also the only addresses
+ * that can make a direct arrival `lan`:
+ *
+ * - `FRAMELEAF_LOCAL_URL`, when its host is an IPv4 address, is the one LAN address;
+ * - otherwise, in a container, none: its own interfaces are on a bridge other containers share;
+ * - otherwise (bare metal) the addresses of the default-route interface, never a container bridge,
+ *   virtual machine or tunnel interface.
+ */
+export const hostAddresses = (input: {
+  localUrl: string | null;
+  inContainer: boolean;
+  interfaces: HostInterface[];
+  defaultInterfaces: string[];
+}): { lanAddresses: string[]; ipv6Addresses: string[] } => {
+  const localHost = input.localUrl ? new URL(input.localUrl).hostname : null;
+  if (localHost && isIP(localHost) === 4) {
+    return { lanAddresses: [localHost], ipv6Addresses: [] };
+  }
+  if (input.inContainer) {
+    return { lanAddresses: [], ipv6Addresses: [] };
+  }
+  const usable = input.interfaces.filter(
+    (entry) => !entry.internal && !VIRTUAL_INTERFACE.test(entry.name) && input.defaultInterfaces.includes(entry.name),
+  );
+  return {
+    lanAddresses: usable.filter((entry) => entry.family === 'IPv4').map((entry) => entry.address),
+    ipv6Addresses: usable.filter((entry) => entry.family === 'IPv6').map((entry) => entry.address.split('%', 1)[0]),
+  };
+};
+
 // ------------------------------------------------------------------ arrivals
 
 /**

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
-import type { Socket } from 'node:net';
 import tls, { type SecureContext, type TLSSocket } from 'node:tls';
+import type { Socket } from 'node:net';
 import type { FrameleafRemoteEnrollment } from 'src/types.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';

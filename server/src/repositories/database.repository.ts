@@ -253,6 +253,9 @@ export const probes: Record<VectorIndex, number> = {
   [VectorIndex.VideoMomentFrame]: 1,
 };
 
+/** FL-165: a session advisory lock held on its own reserved connection (`DatabaseRepository.holdLock`). */
+export type HeldLock = { verify: () => Promise<boolean>; release: () => Promise<void> };
+
 @Injectable()
 export class DatabaseRepository extends ForkHandoffRepository {
   private readonly asyncLock = new AsyncLock();
@@ -1442,6 +1445,62 @@ export class DatabaseRepository extends ForkHandoffRepository {
 
   tryLock(lock: DatabaseLock): Promise<boolean> {
     return this.db.connection().execute(async (connection) => this.acquireTryLock(lock, connection));
+  }
+
+  /**
+   * FL-165: take a session advisory lock on a connection reserved for as long as it is held, so the
+   * pool can never hand that session to other work or close it unnoticed. Resolves null when another
+   * session holds the lock. `verify` asks, on the same connection, whether this session still holds
+   * it (false when the connection was lost); `release` unlocks and returns the connection.
+   */
+  async holdLock(lock: DatabaseLock): Promise<HeldLock | null> {
+    let settle!: (held: HeldLock | null) => void;
+    const result = new Promise<HeldLock | null>((resolve) => (settle = resolve));
+    let finish!: () => void;
+    const done = new Promise<void>((resolve) => (finish = resolve));
+    const reserved = this.db
+      .connection()
+      .execute(async (connection) => {
+        if (!(await this.acquireTryLock(lock, connection))) {
+          settle(null);
+          return;
+        }
+        let lost = false;
+        settle({
+          verify: async () => {
+            if (lost) {
+              return false;
+            }
+            try {
+              const { rows } = await sql<{ held: boolean }>`
+                SELECT EXISTS (
+                  SELECT 1 FROM pg_locks
+                  WHERE locktype = 'advisory' AND objid = ${lock} AND pid = pg_backend_pid() AND granted
+                ) AS held`.execute(connection);
+              lost = !rows[0]?.held;
+            } catch {
+              lost = true;
+            }
+            if (lost) {
+              finish();
+            }
+            return !lost;
+          },
+          release: async () => {
+            finish();
+            await reserved;
+          },
+        });
+        await done;
+        if (!lost) {
+          await this.releaseLock(lock, connection).catch(() => {});
+        }
+      })
+      .catch((error: unknown) => {
+        this.logger.warn(`A held database lock ended: ${error}`);
+        settle(null);
+      });
+    return result;
   }
 
   isBusy(lock: DatabaseLock): boolean {

@@ -111,7 +111,7 @@ The server container runs a third worker next to `api` and `microservices`: **ed
 
 - Without `FRAMELEAF_CLOUD_URL`, a linked server, an active (or in-grace) remote access plan and **Allow remote access** switched on in Settings → Frameleaf Cloud → Remote access, it serves nothing and contacts nothing. It only reads the settings every 10 seconds.
 - Exactly one edge worker serves at a time, however many containers run one: the one holding the edge lock in the database. Any other waits.
-- It proxies every remote request to the API on this host (`127.0.0.1:IMMICH_PORT`, or `IMMICH_HOST` when that names an address), marking how it arrived with the per-boot `FRAMELEAF_EDGE_SECRET`. Without that secret it serves nothing: remote visitors are never let in as if they were at home.
+- It proxies every remote request to the API at `IMMICH_HOST:IMMICH_PORT` (`127.0.0.1` when `IMMICH_HOST` is unset or a wildcard address), marking how it arrived with the per-boot `FRAMELEAF_EDGE_SECRET`. Without that secret it serves nothing: remote visitors are never let in as if they were at home. A container that runs the edge worker without the API must set `IMMICH_HOST` to the API container's address and share its `FRAMELEAF_EDGE_SECRET`.
 
 ### What it does once remote access is on
 
@@ -141,11 +141,11 @@ The page shows the exact values for your server. **Check DNS** asks Frameleaf Cl
 
 ### Connections and the public address
 
-`GET /api/server/connections` lists the ways to reach the server, in the order apps should try them: local (LAN names), WAN and IPv6 (in **Relay and direct** mode), the verified custom hostname, then the relay. `/api/server/config` and `/.well-known/immich` publish the public address. The check-in with Frameleaf Cloud reports the same list and whether the relay and direct connections are up.
+`GET /api/server/connections` lists the ways to reach the server, in the order apps should try them: local (LAN names), WAN and IPv6 (in **Relay and direct** mode), the verified custom hostname, then the relay. `/api/server/config` and `/.well-known/immich` publish the public address. The relay name and the custom hostname both reach the server through the relay, so they are published (as candidates and as the public address) only while the relay is connected; LAN names are published whenever the listener runs. The check-in with Frameleaf Cloud reports the same list and whether the relay and direct connections are up.
 
 **Test connection** on the Remote access page checks the certificate, that the HTTPS listener is running, and that a request through it reaches the server, and shows what the relay and router reported last.
 
-The relay tunnel and automatic router port mapping arrive in later versions; until then remote visitors reach the server through direct connections only.
+**Not yet available:** the relay tunnel and automatic router port mapping arrive in later versions. Until then, with the default **Relay only** connection, the server cannot be reached from outside the home network at all: only its LAN names work, and no public address is published. With **Relay and direct** and a port you forward yourself, visitors can reach the listener directly on your public address.
 
 ## API
 

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
-import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import tls from 'node:tls';
+import type { AddressInfo } from 'node:net';
 import { EdgeDirectService } from 'src/edge/edge-direct.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';

@@ -54,6 +54,7 @@ describe(EdgeStateService.name, () => {
   let proxy: { destroy: any };
   let env: { url: string | null; secret: string | null };
   let calls: Array<{ method: string; url: string; body: unknown }>;
+  let lockHeld: boolean;
   let wildcard: { certificate: string; key: string };
   let custom: { certificate: string; key: string };
   const now = Date.UTC(2026, 8, 26, 12);
@@ -90,7 +91,10 @@ describe(EdgeStateService.name, () => {
       metadata.set(key, value);
       return Promise.resolve();
     });
-    mocks.database.tryLock.mockResolvedValue(true);
+    lockHeld = true;
+    mocks.database.holdLock.mockImplementation(() =>
+      Promise.resolve({ verify: () => Promise.resolve(lockHeld), release: vi.fn(() => Promise.resolve()) }),
+    );
     mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ instanceId: INSTANCE_ID, kid: 'kid-1' } as never);
     mocks.instanceIdentity.currentSigner.mockReturnValue({ kid: 'kid-1' } as never);
     mocks.frameleafCloud.discovery.mockResolvedValue({
@@ -150,6 +154,7 @@ describe(EdgeStateService.name, () => {
     );
     sut.wait = () => Promise.resolve();
     sut.inContainer = () => true;
+    sut.defaultInterfaces = () => [];
   });
 
   afterEach(async () => {
@@ -193,7 +198,7 @@ describe(EdgeStateService.name, () => {
     });
 
     it('leaves remote access to the edge worker that holds the lock', async () => {
-      mocks.database.tryLock.mockResolvedValue(false);
+      mocks.database.holdLock.mockResolvedValue(null);
       await sut.tick(now);
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
       expect(mocks.frameleafCloud.requestJson).not.toHaveBeenCalled();
@@ -358,6 +363,17 @@ describe(EdgeStateService.name, () => {
       expect(direct.stop).toHaveBeenCalled();
       await expect(certificates.read(identityDir, 'wildcard')).resolves.toBeNull();
       expect(remoteState()!.names).toBeUndefined();
+    });
+
+    it('stops serving when the edge lock was lost with its connection', async () => {
+      issueWith(wildcard);
+      await sut.tick(now);
+      expect(direct.listening).toBe(true);
+      lockHeld = false;
+      mocks.database.holdLock.mockResolvedValue(null);
+      await sut.tick(now + 10_000);
+      expect(direct.stop).toHaveBeenCalled();
+      expect(direct.listening).toBe(false);
     });
 
     it('keeps the certificates when only the entitlement lapsed', async () => {

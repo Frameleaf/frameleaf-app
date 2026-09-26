@@ -31,7 +31,13 @@ export const resolvePublicUrl = async (
   if (!linked) {
     return undefined;
   }
-  const custom = remote?.publicUrl === 'custom' ? verifiedCustomHost(remote) : null;
+  // FL-165: the custom hostname reaches this server through the relay only, so it goes into links
+  // only while the edge worker reports the relay connected
+  let custom = remote?.publicUrl === 'custom' ? verifiedCustomHost(remote) : null;
+  if (custom) {
+    const state = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
+    custom = edgeStateCurrent(state) && state?.relay.connected ? custom : null;
+  }
   return (custom && `https://${custom}`) || httpsOrigin(link?.services?.publicUrl) || undefined;
 };
 
@@ -44,9 +50,15 @@ export type RemoteAccessPublication = {
 
 /**
  * FL-165: what this server publishes for remote access (`/server/config`, `/.well-known/immich` and
- * `GET server/connections`): while it is linked and remote access is on, `https://r.<label>.<domain>`
- * or the verified custom hostname when "Use my domain" is chosen, and the connection candidates the
- * edge worker reported; otherwise the address Frameleaf Cloud published for the link, if any.
+ * `GET server/connections`), while it is linked and remote access is on:
+ *
+ * - the connection candidates the edge worker reported, but the relay name and the custom hostname
+ *   (both reach this server through the relay) only while the relay is connected;
+ * - the public address, `https://r.<label>.<domain>` or the verified custom hostname when "Use my
+ *   domain" is chosen, likewise only while the relay is connected, so no address is published that
+ *   does not answer yet.
+ *
+ * Otherwise the address Frameleaf Cloud published for the link, if any.
  */
 export const remoteAccessPublication = async (
   remote: RemoteSettings,
@@ -61,13 +73,19 @@ export const remoteAccessPublication = async (
     ? await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess)
     : null;
   const names = state?.names && state.names.instanceId === link.instanceId ? state.names : null;
-  if (!names) {
-    return { instanceId: link.instanceId, publicUrl: frameleafPublicUrl(link), connections: [] };
+  // candidates are only as good as the edge worker's last report
+  const current = !!names && edgeStateCurrent(state, now);
+  const relayConnected = current && !!state?.relay.connected;
+  if (!names || !relayConnected) {
+    return {
+      instanceId: link.instanceId,
+      publicUrl: frameleafPublicUrl(link),
+      connections: current ? (state?.candidates ?? []).filter((candidate) => !candidate.relay) : [],
+    };
   }
   return {
     instanceId: link.instanceId,
     publicUrl: remotePublicUrl(names, remote),
-    // candidates are only as good as the edge worker's last report
-    connections: edgeStateCurrent(state, now) ? (state?.candidates ?? []) : [],
+    connections: state?.candidates ?? [],
   };
 };
