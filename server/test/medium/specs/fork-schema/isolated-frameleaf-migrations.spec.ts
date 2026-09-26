@@ -370,4 +370,41 @@ describe('Frameleaf public migrations after the certified cutover', () => {
     `.execute(db);
     expect(auditAgain.rows[0]!.count).toBe(1);
   });
+
+  it('records faces removed while handed over at the return even without a Frameleaf ledger (FL-180)', async () => {
+    const user = await mediumFactory.userWithClusterGroup(db);
+    await db.insertInto('user').values(user).execute();
+    const asset = mediumFactory.assetInsert({ ownerId: user.id });
+    await db.insertInto('asset').values(asset).execute();
+    const face = await sql<{ id: string }>`
+      INSERT INTO public.asset_face
+        ("assetId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2",
+         "deletedAt")
+      VALUES (${asset.id!}::uuid, 200, 100, 20, 10, 60, 50, now())
+      RETURNING id
+    `.execute(db);
+    const faceId = face.rows[0]!.id;
+    await cutOver();
+    // A library cut over without the Frameleaf public ledger: nothing for the migrations to extend.
+    await sql`DELETE FROM immich_fork.migration_audit WHERE phase = 'ledger-cutover'`.execute(db);
+    await repository.reapplyPostCertifiedResidue();
+    const ledgerBefore = await officialLedger();
+    const removals = async () => {
+      const result = await sql<{ action: string; ownerId: string }>`
+        SELECT action, "ownerId" FROM immich_fork.face_correction WHERE "faceId" = ${faceId}::uuid
+      `.execute(db);
+      return result.rows;
+    };
+
+    await expect(repository.applyIsolatedFrameleafMigrations('return')).resolves.toEqual({
+      applied: [],
+      pending: [],
+      skipped: 'no-frameleaf-schema',
+    });
+    expect(await removals()).toEqual([{ action: 'remove', ownerId: user.id }]);
+    expect(await officialLedger()).toEqual(ledgerBefore);
+
+    await repository.applyIsolatedFrameleafMigrations('return');
+    expect(await removals()).toHaveLength(1);
+  });
 });
