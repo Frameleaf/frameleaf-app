@@ -380,7 +380,7 @@ export type AccountOption = { value: LibraryCareOwner; name: string | null };
 
 /**
  * The Account select (UtilitiesManager.jsx:158-172): "All accounts" and then every account by name,
- * the administrator's own included. Somebody who is not an administrator reviews only their own
+ * the administrator's own first. Somebody who is not an administrator reviews only their own
  * findings, so they are offered only themselves. `name: null` is "All accounts".
  */
 export const accountOptions = (
@@ -391,7 +391,9 @@ export const accountOptions = (
   if (!isAdmin) {
     return [{ value: self.id, name: self.name }];
   }
-  const everyone = users.some(({ id }) => id === self.id) ? users : [self, ...users];
+  // The signed-in administrator comes first, then the other accounts (UtilitiesManager.jsx:270-276:
+  // taylor, then jamie and emma), whatever order the server listed them in.
+  const everyone = [self, ...users.filter(({ id }) => id !== self.id)];
   return [{ value: 'all', name: null }, ...everyone.map(({ id, name }) => ({ value: id, name }))];
 };
 
