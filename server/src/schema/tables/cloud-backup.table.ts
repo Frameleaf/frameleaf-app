@@ -49,6 +49,10 @@ export class CloudBackupManifestTable {
   @Column({ type: 'text' })
   key!: string;
 
+  /** The database dump (`db/<file>`) this manifest names; kept in the bucket while the manifest is. */
+  @Column({ type: 'text', nullable: true })
+  databaseKey!: string | null;
+
   /** The `media_operation` of kind `cloud_backup` writing this manifest. */
   @Column({ type: 'uuid', nullable: true })
   operationId!: string | null;

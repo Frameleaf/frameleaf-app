@@ -520,8 +520,13 @@ fingerprint, entitlements{remoteAccess,cloudMl,cloudBackup,supporter}, refresh, 
   `adminCloudBackup.read|update|run`; `MediaOperationKind.CloudBackup` is pausable and resumable and retried once, a run
   with no own-memory key waits (requeued every minute, admins told once a day) instead of failing, a final failure
   notifies admins once a day. Runs read internal assets only (`isExternal = false`, active and trashed, Locked
-  included). Not in this slice: schedule, retention, verification, escrow, restore and the Activity progress stages
-  (CLD-302), and the managed grant and key rotation (FC-33).
+  included). Review fixes: the manifest is streamed (paged entries → gzip → multipart) and never rewritten once complete
+  (the `done` checkpoint precedes deleting its entries); a new claim clears the bucket's index and every reconcile drops
+  rows the listing lacks; each run re-reads the claim marker; dumps named by a complete manifest (`databaseKey`) are
+  never pruned; stored key files are written and read back before the claim (rename fallback where hard links fail) and
+  removed only when that setup created them and the claim failed; a checksum is trusted only when `verifiedPaths` holds
+  the original's path; restarted workers ask the others for an own-memory key. Not in this slice: schedule, retention,
+  verification, escrow, restore and the Activity progress stages (CLD-302), and the managed grant and key rotation (FC-33).
 - ★ **CLD-302 Cloud backup: schedule, retention, verification, managed storage, escrow and restore**.
   Anchors: `cloud-backup.service.ts`, `server/src/commands/cloud-backup.command.ts` (new),
   `web/src/lib/components/frameleaf/cloud/CloudBackupRestoreDialog.svelte` (new). AC: cron under

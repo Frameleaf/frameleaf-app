@@ -266,8 +266,9 @@ export const signingRegion = (endpoint: string, configured: string) => {
     return configured.trim();
   }
   try {
-    const match = /(?:^|\.)s3[.-]([\da-z-]+)\./.exec(new URL(endpoint).hostname);
-    if (match && match[1] !== 'amazonaws') {
+    // s3.<region>.…, s3-<region>.…, s3.dualstack.<region>.… and <bucket>.s3.<region>.…
+    const match = /(?:^|\.)s3(?:[.-]dualstack)?[.-]([\da-z-]+)\./.exec(new URL(endpoint).hostname);
+    if (match && match[1] !== 'amazonaws' && match[1] !== 'dualstack') {
       return match[1];
     }
   } catch {

@@ -99,12 +99,82 @@ describe(CloudBackupIndexRepository.name, () => {
     await sut.upsertEntries(created.id, [entry]);
     await sut.upsertEntries(created.id, [{ ...entry, sha256: sha('b') }]);
 
-    await expect(sut.getEntries(created.id)).resolves.toEqual([{ ...entry, sha256: sha('b') }]);
+    await expect(sut.getEntriesPage(created.id, null, 100)).resolves.toEqual([{ ...entry, sha256: sha('b') }]);
+    await expect(sut.getEntriesPage(created.id, entry.fileKey, 100)).resolves.toEqual([]);
 
     await sut.finishManifest(created.id, { status: 'complete', assetCount: 1, fileCount: 1, bytes: 100 });
     await sut.deleteEntries(created.id);
-    await expect(sut.getEntries(created.id)).resolves.toEqual([]);
+    await expect(sut.getEntriesPage(created.id, null, 100)).resolves.toEqual([]);
     await expect(sut.getManifest(created.id)).resolves.toMatchObject({ status: 'complete' });
+  });
+
+  it('forgets a bucket, and drops rows its listing did not touch since a point in time', async () => {
+    const { sut } = setup();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    await sut.record(bucket, [
+      { sha256: sha('gone'), size: 1, etag: null },
+      { sha256: sha('kept'), size: 2, etag: null },
+    ]);
+
+    const since = await sut.currentTime();
+    await sut.record(bucket, [{ sha256: sha('kept'), size: 2, etag: '"k"' }]);
+    await expect(sut.pruneUnseen(bucket, since)).resolves.toBe(1);
+    await expect(sut.getExisting(bucket, [sha('gone'), sha('kept')])).resolves.toEqual(new Set([sha('kept')]));
+
+    await sut.deleteBucket(bucket);
+    await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
+  });
+
+  it('lists the dumps complete manifests name', async () => {
+    const { sut } = setup();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const complete = await sut.createManifest({ bucket, key: 'm/1.json.gz', operationId: randomUUID() });
+    const running = await sut.createManifest({ bucket, key: 'm/2.json.gz', operationId: randomUUID() });
+    await sut.setManifestDatabase(complete.id, 'db/one.sql.gz');
+    await sut.setManifestDatabase(running.id, 'db/two.sql.gz');
+    await sut.finishManifest(complete.id, { status: 'complete' });
+
+    await expect(sut.listManifestDatabaseKeys(bucket)).resolves.toEqual(new Set(['db/one.sql.gz']));
+  });
+
+  it('ends the running manifests whose run is over or gone, with their files, and keeps the others', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const operation = async (status: string) => {
+      const { rows } = await sql<{ id: string }>`
+        INSERT INTO media_operation ("ownerId", kind, destination, label, snapshot, settings, status)
+        VALUES (${user.id}::uuid, 'cloud_backup', 'local', 'Cloud backup', '{}'::jsonb, '{}'::jsonb, ${status})
+        RETURNING id
+      `.execute(defaultDatabase);
+      return rows[0].id;
+    };
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const active = await sut.createManifest({ bucket, key: 'm/a.json.gz', operationId: await operation('rendering') });
+    const paused = await sut.createManifest({ bucket, key: 'm/p.json.gz', operationId: await operation('paused') });
+    const failed = await sut.createManifest({ bucket, key: 'm/f.json.gz', operationId: await operation('failed') });
+    const gone = await sut.createManifest({ bucket, key: 'm/g.json.gz', operationId: randomUUID() });
+    const file = {
+      fileKey: 'x:original',
+      assetId: null,
+      ownerId: null,
+      role: 'original',
+      path: '/x',
+      sha256: sha('x'),
+      size: 1,
+      mtime: null,
+    };
+    for (const manifest of [active, failed]) {
+      await sut.upsertEntries(manifest.id, [file]);
+    }
+
+    await expect(sut.endAbandonedManifests()).resolves.toBeGreaterThanOrEqual(2);
+
+    await expect(sut.getManifest(active.id)).resolves.toMatchObject({ status: 'running' });
+    await expect(sut.getManifest(paused.id)).resolves.toMatchObject({ status: 'running' });
+    await expect(sut.getManifest(failed.id)).resolves.toMatchObject({ status: 'failed' });
+    await expect(sut.getManifest(gone.id)).resolves.toMatchObject({ status: 'failed' });
+    await expect(sut.getEntriesPage(failed.id, null, 10)).resolves.toEqual([]);
+    await expect(sut.getEntriesPage(active.id, null, 10)).resolves.toHaveLength(1);
   });
 
   it('lists every asset with its checksum, Locked and trashed ones included, never deleted ones', async () => {
@@ -126,6 +196,11 @@ describe(CloudBackupIndexRepository.name, () => {
       VALUES (${plain.id}::uuid, ${Buffer.alloc(20, 1)}, ${Buffer.from(sha('plain'), 'hex')}, 100, ${[plain.originalPath]}, 1)`.execute(
       defaultDatabase,
     );
+    // verified at another path (the file moved since): the checksum is not vouched for at this one
+    await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount")
+      VALUES (${trashed.id}::uuid, ${Buffer.alloc(20, 2)}, ${Buffer.from(sha('moved'), 'hex')}, 100, ${['/data/elsewhere.jpg']}, 1)`.execute(
+      defaultDatabase,
+    );
     await ctx.newAssetFile({ assetId: plain.id, type: AssetFileType.Sidecar, path: '/data/library/plain.xmp' });
     await ctx.newAssetFile({ assetId: plain.id, type: AssetFileType.Thumbnail, path: '/data/thumbs/plain.webp' });
 
@@ -138,9 +213,17 @@ describe(CloudBackupIndexRepository.name, () => {
     expect(listed.map(({ id }) => id).toSorted()).toEqual([plain.id, locked.id, trashed.id].toSorted());
     expect(listed.map(({ id }) => id)).not.toContain(deleted.id);
     const plainRow = listed.find(({ id }) => id === plain.id)!;
-    expect(plainRow).toMatchObject({ sha256: sha('plain'), checksumSize: 100 });
+    expect(plainRow).toMatchObject({ sha256: sha('plain'), checksumSize: 100, checksumPathVerified: true });
+    expect(listed.find(({ id }) => id === trashed.id)).toMatchObject({
+      sha256: sha('moved'),
+      checksumPathVerified: false,
+    });
     expect(plainRow.files).toEqual([{ type: AssetFileType.Sidecar, path: '/data/library/plain.xmp' }]);
-    expect(listed.find(({ id }) => id === locked.id)).toMatchObject({ sha256: null, files: [] });
+    expect(listed.find(({ id }) => id === locked.id)).toMatchObject({
+      sha256: null,
+      checksumPathVerified: false,
+      files: [],
+    });
 
     const withThumbs = (await mine(true)).find(({ id }) => id === plain.id)!;
     expect(withThumbs.files.map(({ type }) => type).toSorted()).toEqual(

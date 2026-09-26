@@ -11,6 +11,7 @@
   import { downloadBlob } from '$lib/utils';
   import { Icon } from '@immich/ui';
   import { mdiDownloadOutline, mdiFileDocumentOutline } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -23,20 +24,36 @@
 
   const download = () => downloadBlob(new Blob([kit], { type: 'text/plain' }), 'frameleaf-recovery-kit.txt');
 
-  /** Prints the kit alone, from a hidden frame that is removed again. */
+  let printFrame: HTMLIFrameElement | undefined;
+  const removePrintFrame = () => {
+    printFrame?.remove();
+    printFrame = undefined;
+  };
+
+  /**
+   * Prints the kit alone, from a hidden frame. Browsers that print asynchronously still need the frame
+   * while the dialog is open, so it is removed after printing (or when this panel goes away).
+   */
   const print = () => {
+    removePrintFrame();
     const frame = document.createElement('iframe');
     frame.style.display = 'none';
     document.body.append(frame);
+    printFrame = frame;
     const printed = frame.contentDocument;
-    if (printed) {
-      const pre = printed.createElement('pre');
-      pre.textContent = kit;
-      printed.body.append(pre);
-      frame.contentWindow?.print();
+    const view = frame.contentWindow;
+    if (!printed || !view) {
+      removePrintFrame();
+      return;
     }
-    frame.remove();
+    const pre = printed.createElement('pre');
+    pre.textContent = kit;
+    printed.body.append(pre);
+    view.addEventListener('afterprint', removePrintFrame, { once: true });
+    view.print();
   };
+
+  onDestroy(removePrintFrame);
 </script>
 
 <CloudBanner tone="warning" title={$t('frameleaf_cloud_backup_kit_once_title')}>
