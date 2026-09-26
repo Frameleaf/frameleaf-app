@@ -118,7 +118,15 @@ export type RemovedAsset = {
 
 export type AssetMovePathType = AssetPathType | AssetFileType;
 
-export type AssetPendingMove = { pathType: AssetMovePathType; oldPath: string; newPath: string };
+/** A recorded move; `stagedPath` is where a copy across filesystems is staged (`getStagedMovePath`). */
+export type AssetPendingMove = { pathType: AssetMovePathType; oldPath: string; newPath: string; stagedPath: string };
+
+/**
+ * FL-179: where a move across filesystems stages its copy, beside the new path and named by the move's
+ * record, so a copy left by an interrupted move is found from the record: the next attempt of the move
+ * replaces it, and a removal of the asset releases it.
+ */
+export const getStagedMovePath = (to: string, moveId: string) => `${to}.${moveId}.moving`;
 
 /** The path types whose moves `moveFile` commits: the asset's original and its own unedited files. */
 export const ASSET_MOVE_PATH_TYPES: ReadonlySet<string> = new Set<string>([
@@ -146,8 +154,10 @@ export type AssetFileMove = {
  * - `changed`: the asset's row names another path now; nothing was moved.
  * - `deferred`: rows that cannot change now name the file (a handoff runs, or a normalization has it
  *   reserved); nothing was moved and the move stays recorded.
+ * - `mismatched`: the asset's Frameleaf mapping names another path than its row; nothing was moved and
+ *   the move stays recorded until the two agree again (a relink or verification repairs them).
  */
-export type AssetFileMoveResult = 'moved' | 'failed' | 'removed' | 'changed' | 'deferred';
+export type AssetFileMoveResult = 'moved' | 'failed' | 'removed' | 'changed' | 'deferred' | 'mismatched';
 
 /** The filesystem side of a move, run by `moveFile` while it holds the move's locks. */
 export type AssetFileMoveOperations = {
@@ -1616,6 +1626,9 @@ export class AssetRepository {
         await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();
         return 'removed';
       }
+      if (current.mappingDisagrees) {
+        return 'mismatched';
+      }
       if (current.path !== move.from) {
         // Another writer changed the file. Unless an earlier attempt left the file elsewhere, the
         // recorded move is dropped.
@@ -1658,7 +1671,16 @@ export class AssetRepository {
     tx: Kysely<DB>,
     move: AssetFileMove,
     forkSchema: boolean,
-  ): Promise<{ path: string | null; physicalFile: boolean; forkReferenced: boolean; reserved: boolean } | undefined> {
+  ): Promise<
+    | {
+        path: string | null;
+        physicalFile: boolean;
+        forkReferenced: boolean;
+        reserved: boolean;
+        mappingDisagrees: boolean;
+      }
+    | undefined
+  > {
     const asset = await tx
       .selectFrom('asset')
       .select(['id', 'originalPath'])
@@ -1683,7 +1705,7 @@ export class AssetRepository {
 
     const physical = await tx.selectFrom('physical_file').select('id').where('path', '=', move.from).executeTakeFirst();
     if (!forkSchema) {
-      return { path, physicalFile: !!physical, forkReferenced: false, reserved: false };
+      return { path, physicalFile: !!physical, forkReferenced: false, reserved: false, mappingDisagrees: false };
     }
 
     const { rows } = await sql<{ mapped: string | null; referenced: boolean; reserved: boolean }>`
@@ -1700,11 +1722,16 @@ export class AssetRepository {
         ) AS reserved
     `.execute(tx);
     const fork = rows[0];
-    // after cutover a removal releases the mapped path, so the asset is only at `from` when both agree
-    if (move.pathType === AssetPathType.Original && fork.mapped && fork.mapped !== asset.originalPath) {
-      path = null;
-    }
-    return { path, physicalFile: !!physical, forkReferenced: fork.referenced, reserved: fork.reserved };
+    // after cutover a removal releases the mapped path, so the file can move only while both agree
+    const mappingDisagrees =
+      move.pathType === AssetPathType.Original && !!fork.mapped && fork.mapped !== asset.originalPath;
+    return {
+      path,
+      physicalFile: !!physical,
+      forkReferenced: fork.referenced,
+      reserved: fork.reserved,
+      mappingDisagrees,
+    };
   }
 
   /** Points every row that names `from` at `to`, under the path locks of both. */
@@ -1771,7 +1798,7 @@ export class AssetRepository {
     const videoEditPaths = await this.getReleasableVideoEditPaths([id], tx);
     const pendingMoves = await tx
       .selectFrom('move_history')
-      .select(['pathType', 'oldPath', 'newPath'])
+      .select(['id', 'pathType', 'oldPath', 'newPath'])
       .where('entityId', '=', asUuid(id))
       .where('pathType', 'in', [...ASSET_MOVE_PATH_TYPES] as AssetMovePathType[])
       .execute();
@@ -1792,7 +1819,12 @@ export class AssetRepository {
       restorationPaths,
       derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? [])])],
       ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),
-      pendingMoves: pendingMoves.map((move) => ({ ...move, pathType: move.pathType as AssetMovePathType })),
+      pendingMoves: pendingMoves.map(({ id: moveId, pathType, oldPath, newPath }) => ({
+        pathType: pathType as AssetMovePathType,
+        oldPath,
+        newPath,
+        stagedPath: getStagedMovePath(newPath, moveId),
+      })),
     };
   }
 

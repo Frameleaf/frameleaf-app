@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
@@ -718,11 +718,12 @@ describe(AssetService.name, () => {
           const { user } = await ctx.newUser();
           const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
           const movedPath = `/data/library/${asset.id}-moved.jpg`;
-          await recordMove(asset.id, asset.originalPath, movedPath);
+          const moveId = await recordMove(asset.id, asset.originalPath, movedPath);
 
           await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
 
-          expect(fileDeletes(ctx)).toEqual([[asset.originalPath, movedPath]]);
+          // and a copy an interrupted move across filesystems staged beside the new path
+          expect(fileDeletes(ctx)).toEqual([[asset.originalPath, movedPath, `${movedPath}.${moveId}.moving`]]);
           await expect(movesOf(asset.id)).resolves.toEqual([]);
         });
 
@@ -1086,6 +1087,51 @@ describe(AssetService.name, () => {
 
           expect(rename).not.toHaveBeenCalled();
           await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: asset.originalPath });
+          await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
+        });
+
+        it('defers a move while a normalization has the asset reserved, and keeps it recorded', async () => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          await sql`
+            INSERT INTO immich_fork.asset_storage_reservation
+              ("assetId", token, "sourcePath", "upstreamPath", "temporaryPath", status)
+            VALUES (${asset.id}::uuid, ${randomUUID()}::uuid, ${asset.originalPath},
+              ${`/data/upstream/${asset.id}.jpg`}, ${`/data/upstream/${asset.id}.tmp`}, 'reserved')
+          `.execute(forkDatabase);
+          const to = `/data/library/${asset.id}-reserved.jpg`;
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+          const rename = vi.fn(renamed);
+
+          await expect(
+            repository.moveFile(originalMove(asset, moveId, to), { rename, finish: noop, undo: noop }),
+          ).resolves.toBe('deferred');
+
+          expect(rename).not.toHaveBeenCalled();
+          await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: asset.originalPath });
+          await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
+        });
+
+        it('keeps the move recorded, moving nothing, while the mapping names another file', async () => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          await sql`
+            INSERT INTO immich_fork.asset_physical_file ("assetId", "upstreamPath")
+            VALUES (${asset.id}::uuid, ${`/data/upstream/${asset.id}.jpg`})
+          `.execute(forkDatabase);
+          const to = `/data/library/${asset.id}-mismatched.jpg`;
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+          const rename = vi.fn(renamed);
+
+          await expect(
+            repository.moveFile(originalMove(asset, moveId, to), { rename, finish: noop, undo: noop }),
+          ).resolves.toBe('mismatched');
+
+          expect(rename).not.toHaveBeenCalled();
           await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
         });
 

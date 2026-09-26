@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetPathType, type PathType } from 'src/enum.js';
+import { AssetFileType, AssetPathType, type PathType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 
@@ -36,6 +36,15 @@ export class MoveRepository {
   @GenerateSql({ params: [DummyValue.UUID] })
   delete(id: string) {
     return this.db.deleteFrom('move_history').where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+  }
+
+  /** FL-179: the assets' storage moves that are recorded but not finished, for the nightly retry. */
+  getPendingAssetMoves() {
+    return this.db
+      .selectFrom('move_history')
+      .select(['entityId', 'pathType'])
+      .where('pathType', 'in', [...Object.values(AssetPathType), ...Object.values(AssetFileType)])
+      .execute();
   }
 
   async cleanMoveHistory(): Promise<void> {

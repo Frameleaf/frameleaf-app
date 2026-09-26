@@ -212,6 +212,30 @@ export class StorageTemplateService extends BaseService {
     return JobStatus.Success;
   }
 
+  /**
+   * FL-179: storage moves that are still recorded (deferred during a handoff or a normalization, or
+   * interrupted) are queued again as part of the nightly database cleanup; each finds its record and
+   * finishes, or drops it once the asset is gone or uses another file.
+   */
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  async onNightlyDatabaseCleanup() {
+    try {
+      const pending = await this.moveRepository.getPendingAssetMoves();
+      const originals = new Set<string>();
+      const generated = new Set<string>();
+      for (const { entityId, pathType } of pending) {
+        const isTemplateMove = pathType === AssetPathType.Original || pathType === AssetFileType.Sidecar;
+        (isTemplateMove ? originals : generated).add(entityId);
+      }
+      await this.jobRepository.queueAll([
+        ...[...originals].map((id) => ({ name: JobName.StorageTemplateMigrationSingle as const, data: { id } })),
+        ...[...generated].map((id) => ({ name: JobName.AssetFileMigration as const, data: { id } })),
+      ]);
+    } catch (error: any) {
+      this.logger.warn(`Pending storage moves deferred: ${error}`);
+    }
+  }
+
   @OnEvent({ name: 'AssetDelete' })
   async handleMoveHistoryCleanup({ assetId }: ArgOf<'AssetDelete'>) {
     this.logger.debug(`Cleaning up move history for asset ${assetId}`);
@@ -235,13 +259,15 @@ export class StorageTemplateService extends BaseService {
         return;
       }
 
+      // the sidecar follows the original, never ahead of it
+      let moved = true;
       try {
         const isSharedNonCanonical =
           physicalOriginalFileId &&
           !(await this.physicalFileRepository.isOriginalCanonical(id, physicalOriginalFileId));
 
         if (!isSharedNonCanonical) {
-          const moved = await this.storageCore.moveFile({
+          moved = await this.storageCore.moveFile({
             entityId: id,
             pathType: AssetPathType.Original,
             oldPath,
@@ -256,7 +282,8 @@ export class StorageTemplateService extends BaseService {
         }
 
         const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;
-        if (sidecarPath) {
+        // FL-179: an original whose move was deferred or failed keeps its sidecar beside it
+        if (sidecarPath && moved) {
           await this.storageCore.moveFile({
             entityId: id,
             pathType: AssetFileType.Sidecar,
