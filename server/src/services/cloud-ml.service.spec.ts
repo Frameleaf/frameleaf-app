@@ -15,6 +15,13 @@ import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
+/** The identity key's signer (FL-178): the key the ML token is bound to and every proof is signed with. */
+const identitySigner = {
+  kid: 'kid-1',
+  publicJwk: { kty: 'OKP' as const, crv: 'Ed25519' as const, x: 'x' },
+  sign: () => 'header.payload.signature',
+};
+
 const capabilities = {
   protocol: 'frameleaf-cloud-v2' as const,
   region: 'eu',
@@ -88,7 +95,8 @@ describe(CloudMlService.name, () => {
       api: 'https://api.cloud.test',
       ml: { eu: 'https://ml.eu.cloud.test' },
     });
-    mocks.frameleafCloud.accessToken.mockResolvedValue('ml-token');
+    mocks.instanceIdentity.currentSigner.mockReturnValue(identitySigner);
+    mocks.frameleafCloud.accessToken.mockResolvedValue({ accessToken: 'ml-token', signer: identitySigner });
     mocks.frameleafCloudMl.ping.mockResolvedValue();
     mocks.frameleafCloudMl.getCapabilities.mockResolvedValue(capabilities);
     mocks.frameleafCloudMl.getHardware.mockResolvedValue({
@@ -205,7 +213,7 @@ describe(CloudMlService.name, () => {
       expect(metadata.get(SystemMetadataKey.FrameleafMlWallet)).toMatchObject({ balanceUsd: 12, heldUsd: 2 });
       expect(mocks.frameleafCloudMl.getCapabilities).toHaveBeenCalledWith({
         url: 'https://ml.eu.cloud.test',
-        bearer: 'ml-token',
+        token: { accessToken: 'ml-token', signer: identitySigner },
       });
     });
 

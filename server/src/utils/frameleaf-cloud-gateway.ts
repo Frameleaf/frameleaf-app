@@ -85,11 +85,12 @@ export const readCloudLink = async (
 };
 
 /**
- * Resolve the regional processing gateway and a short-lived bearer for it (FL-159): the configured
+ * Resolve the regional processing gateway and a short-lived token for it (FL-159): the configured
  * `FRAMELEAF_CLOUD_URL`, the link record written by linking the server (FL-155), discovery for the
- * account's data region, and a `client_credentials` token minted with this server's key
- * (`resource` = the regional gateway). No outbound call happens unless the server is configured and
- * linked; every failure is a refusal of Frameleaf Cloud, never a fallback.
+ * account's data region, and a `client_credentials` token minted with this server's current key
+ * (`resource` = the regional gateway), DPoP-bound to that key, which signs every call's proof
+ * (FL-178). No outbound call happens unless the server is configured and linked; every failure is a
+ * refusal of Frameleaf Cloud, never a fallback.
  */
 export const resolveCloudGateway = async (deps: CloudGatewayDeps): Promise<CloudGatewayResolution> => {
   const { cloudUrl, link, linked } = await readCloudLink(deps);
@@ -124,11 +125,14 @@ export const resolveCloudGateway = async (deps: CloudGatewayDeps): Promise<Cloud
         link,
       };
     }
-    const identity = await loadInstanceIdentity(deps);
-    const bearer = await deps.frameleafCloudRepository.accessToken(document, link.instanceId, gatewayUrl, (claims) =>
-      deps.instanceIdentityRepository.signJws(identity.kid, claims),
+    await loadInstanceIdentity(deps);
+    const token = await deps.frameleafCloudRepository.accessToken(
+      document,
+      link.instanceId,
+      gatewayUrl,
+      deps.instanceIdentityRepository.currentSigner(),
     );
-    return { state: CloudConnectionState.Ready, gateway: { url: gatewayUrl, bearer }, region: link.dataRegion, link };
+    return { state: CloudConnectionState.Ready, gateway: { url: gatewayUrl, token }, region: link.dataRegion, link };
   } catch (error) {
     if (error instanceof FrameleafCloudError) {
       return { state: CloudConnectionState.Unavailable, refusal: error.refusal, detail: error.message, link };
