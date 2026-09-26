@@ -39,7 +39,7 @@ export const CLONE_SUSPECTED_NOTICE = Object.freeze({
   level: NotificationLevel.Warning,
   title: 'Two servers are using this server’s identity',
   description:
-    'Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity directory. Cloud backup and cloud processing pause until this is resolved: the account owner can confirm this server in the Frameleaf account, or it clears on its own after 24 hours without a restart.',
+    'Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity folder. Cloud backup and cloud processing pause until this is resolved: the account owner can confirm this server in the Frameleaf account, or it clears on its own after 24 hours without a restart.',
   dedupeKey: 'frameleaf-cloud:clone-suspected',
   dedupeDays: 1,
 });
@@ -47,6 +47,13 @@ export const CLONE_SUSPECTED_NOTICE = Object.freeze({
 /** Why cloud processing is refused while Frameleaf Cloud suspects a copy of this server (FL-185). */
 export const ML_CLONE_SUSPENDED_DETAIL =
   'Frameleaf Cloud paused cloud processing because this server’s identity is in use in two places. It resumes when Frameleaf Cloud clears this.';
+
+/**
+ * How long a recorded ML suspension blocks every ML token request before one probe is allowed (FL-185):
+ * the cloud's own suspicion clears after 24 hours without a `bootId` change, so a suspension a missed
+ * check-in never cleared cannot block cloud processing for good. A refused probe records it again.
+ */
+export const ML_SUSPENSION_PROBE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /** The OAuth error the token endpoint answers an ML token request with while it suspects a copy. */
 const CLONE_SUSPECTED_ERROR = 'clone_suspected';
@@ -162,7 +169,9 @@ export const readCloudLink = async (
  *
  * FL-185: while Frameleaf Cloud suspects a copy of this server, no ML token is requested at all (no
  * retry, no backoff) and the refusal says why. A `clone_suspected` answer to the token request records
- * that state, which survives a restart, and tells the administrators; a check-in clears it.
+ * that state, which survives a restart, and tells the administrators; a check-in clears it. After
+ * `ML_SUSPENSION_PROBE_AFTER_MS` one ML token request is allowed: a token clears the suspension, a new
+ * refusal records it again from now.
  */
 export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<CloudGatewayResolution> => {
   const { cloudUrl, link, linked } = await readCloudLink(deps);
@@ -186,13 +195,26 @@ export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<Clo
     };
   }
 
-  if (await readMlSuspension(deps, cloudUrl, link.instanceId)) {
-    return {
-      state: CloudConnectionState.Unavailable,
-      refusal: MlAdmissionRefusal.CloudUnavailable,
-      detail: ML_CLONE_SUSPENDED_DETAIL,
-      link,
-    };
+  const suspendedRefusal: CloudGatewayResolution = {
+    state: CloudConnectionState.Unavailable,
+    refusal: MlAdmissionRefusal.CloudUnavailable,
+    detail: ML_CLONE_SUSPENDED_DETAIL,
+    link,
+  };
+  const suspension = await readMlSuspension(deps, cloudUrl, link.instanceId);
+  let probing = false;
+  if (suspension) {
+    if (Date.now() - Date.parse(suspension.since) < ML_SUSPENSION_PROBE_AFTER_MS) {
+      return suspendedRefusal;
+    }
+    // one probe a day: claim it first, so other admissions keep waiting whatever the probe meets
+    try {
+      await recordMlSuspension(deps, cloudUrl, link.instanceId);
+    } catch (error) {
+      deps.logger.warn(`Could not record the cloud processing suspension: ${error}`);
+      return suspendedRefusal;
+    }
+    probing = true;
   }
 
   try {
@@ -213,28 +235,35 @@ export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<Clo
       gatewayUrl,
       deps.instanceIdentityRepository.currentSigner(),
     );
+    if (probing) {
+      // the cloud issued an ML token again, so it no longer suspects a copy
+      try {
+        await clearMlSuspension(deps);
+      } catch (error) {
+        deps.logger.warn(`Could not clear the cloud processing suspension: ${error}`);
+      }
+    }
     return { state: CloudConnectionState.Ready, gateway: { url: gatewayUrl, token }, region: link.dataRegion, link };
   } catch (error) {
     if (isCloneSuspectedRefusal(error)) {
-      await recordMlSuspension(deps, cloudUrl, link.instanceId);
-      // a check-in that already reported the suspicion has told the administrators
-      if (!link.heartbeat?.cloneSuspected) {
+      // the refusal stands even when the suspension cannot be written; the next admission asks again
+      try {
+        await recordMlSuspension(deps, cloudUrl, link.instanceId);
+      } catch (recordError) {
+        deps.logger.warn(`Could not record the cloud processing suspension: ${recordError}`);
+      }
+      // a new suspicion always notifies (the dedupe key keeps repeats out); a refused daily probe is not new
+      if (!probing) {
         try {
           await deps.eventRepository.emit('AdminNotify', {
             type: NotificationType.SystemMessage,
             ...CLONE_SUSPECTED_NOTICE,
           });
         } catch (notifyError) {
-          // the suspension is recorded and the refusal says why; only the notice is missing
           deps.logger.warn(`Could not notify administrators: ${notifyError}`);
         }
       }
-      return {
-        state: CloudConnectionState.Unavailable,
-        refusal: MlAdmissionRefusal.CloudUnavailable,
-        detail: ML_CLONE_SUSPENDED_DETAIL,
-        link,
-      };
+      return suspendedRefusal;
     }
     if (error instanceof FrameleafCloudError) {
       return { state: CloudConnectionState.Unavailable, refusal: error.refusal, detail: error.message, link };
