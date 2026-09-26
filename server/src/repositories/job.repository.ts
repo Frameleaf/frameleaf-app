@@ -605,6 +605,10 @@ export class JobRepository {
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
       }
+      case JobName.WorkflowAssetTrigger: {
+        // FL-179: one job per execution, so a replayed run that queues its automatic retry again adds none
+        return item.data.executionId ? { jobId: `workflow-${item.data.executionId}` } : null;
+      }
       case JobName.AssetDevelopRender: {
         // The automatic retry of a failed render waits before it is claimed (FL-64).
         return item.data.delay ? { delay: item.data.delay } : null;

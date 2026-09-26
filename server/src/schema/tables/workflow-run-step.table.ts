@@ -28,6 +28,7 @@ export class WorkflowRunStepTable {
   @Column({ type: 'boolean', default: false })
   halted!: Generated<boolean>;
 
-  @CreateDateColumn()
+  /** Indexed for the nightly cleanup, which removes rows by age. */
+  @CreateDateColumn({ index: true })
   createdAt!: Generated<Timestamp>;
 }

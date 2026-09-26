@@ -12931,6 +12931,10 @@
       "identity": "public.workflow.workflow_pkey"
     },
     {
+      "definition": "CREATE INDEX \"workflow_run_step_createdAt_idx\" ON public.workflow_run_step USING btree (\"createdAt\")",
+      "identity": "public.workflow_run_step.workflow_run_step_createdAt_idx"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX workflow_run_step_pkey ON public.workflow_run_step USING btree (\"executionId\", \"stepId\")",
       "identity": "public.workflow_run_step.workflow_run_step_pkey"
     },
