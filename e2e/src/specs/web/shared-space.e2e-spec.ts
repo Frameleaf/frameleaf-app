@@ -28,7 +28,7 @@ test.describe('Shared spaces', () => {
     owner = await utils.adminSetup();
     editor = await utils.userSetup(owner.accessToken, {
       name: 'Eddie Editor',
-      email: 'space-editor@immich.cloud',
+      email: 'space-editor@example.com',
       password: 'password',
     });
     await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(editor.accessToken) });
@@ -169,7 +169,7 @@ test.describe('Shared spaces', () => {
   test('invites through a named recipient group after reviewing it (FL-55)', async ({ context, page }) => {
     const reviewer = await utils.userSetup(owner.accessToken, {
       name: 'Rita Recipient',
-      email: 'space-recipient@immich.cloud',
+      email: 'space-recipient@example.com',
       password: 'password',
     });
     const space = await utils.createAlbum(owner.accessToken, { albumName: 'Group space', kind: AlbumKind.Space });

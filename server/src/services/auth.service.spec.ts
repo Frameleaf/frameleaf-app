@@ -1338,7 +1338,7 @@ describe(AuthService.name, () => {
         loginDetails,
       );
 
-      expect(mocks.user.getByEmail).toHaveBeenCalledWith('test@immich.cloud');
+      expect(mocks.user.getByEmail).toHaveBeenCalledWith('test@example.com');
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { oauthId: profile.sub });
     });
 
@@ -1584,7 +1584,7 @@ describe(AuthService.name, () => {
     it('should sync the profile picture', async () => {
       const fileId = newUuid();
       const user = UserFactory.create({ oauthId: 'oauth-id' });
-      const profile = OAuthProfileFactory.create({ picture: 'https://auth.immich.cloud/profiles/1.jpg' });
+      const profile = OAuthProfileFactory.create({ picture: 'https://auth.example.com/profiles/1.jpg' });
       const pictureBytes = new Uint8Array([1, 2, 3, 4, 5]);
 
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
@@ -1616,7 +1616,7 @@ describe(AuthService.name, () => {
 
     it('should not update the user when thumbnail processing fails on the OAuth picture', async () => {
       const user = UserFactory.create({ oauthId: 'oauth-id' });
-      const profile = OAuthProfileFactory.create({ picture: 'https://auth.immich.cloud/profiles/1.jpg' });
+      const profile = OAuthProfileFactory.create({ picture: 'https://auth.example.com/profiles/1.jpg' });
 
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
       mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile });
@@ -1646,7 +1646,7 @@ describe(AuthService.name, () => {
         profile: OAuthProfileFactory.create({
           sub: oauthId,
           email: user.email,
-          picture: 'https://auth.immich.cloud/profiles/1.jpg',
+          picture: 'https://auth.example.com/profiles/1.jpg',
         }),
       });
       mocks.user.getByOAuthId.mockResolvedValue(user);

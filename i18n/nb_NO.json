@@ -239,7 +239,7 @@
     "map_enable_description": "Aktiver kartfunksjoner",
     "map_gps_settings": "Kart & GPS Innstillinger",
     "map_gps_settings_description": "Administrer innstillinger for kart og GPS (Reversert geokoding)",
-    "map_implications": "Kartfunksjonen er avhengig av en ekstern bilde tjeneste (tiles.immich.cloud)",
+    "map_implications": "Kartfunksjonen er avhengig av en ekstern bilde tjeneste (tiles.frameleaf.cloud)",
     "map_light_style": "Lys stil",
     "map_manage_reverse_geocoding_settings": "Administrer instillinger for <link>Omvendt Geokoding</link>",
     "map_reverse_geocoding": "Omvendt geokoding",

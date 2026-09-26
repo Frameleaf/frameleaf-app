@@ -239,7 +239,7 @@
     "map_enable_description": "เปิดใช้งานแผนที่",
     "map_gps_settings": "การตั้งค่าแผนที่และ GPS",
     "map_gps_settings_description": "จัดการการตั้งค่าแผนที่และ GPS (Reverse Geocoding)",
-    "map_implications": "ฟีเจอร์แผนที่ต้องการบริการแผ่นแผนที่จากภายนอก (tiles.immich.cloud)",
+    "map_implications": "ฟีเจอร์แผนที่ต้องการบริการแผ่นแผนที่จากภายนอก (tiles.frameleaf.cloud)",
     "map_light_style": "แบบสว่าง",
     "map_manage_reverse_geocoding_settings": "จัดการการตั้งค่า<link>แปลงพิกัดภูมิศาสตร์ </link>",
     "map_reverse_geocoding": "ประมวลผลชื่อทางภูมิศาสตร์",

@@ -239,7 +239,7 @@
     "map_enable_description": "Включить функции карты",
     "map_gps_settings": "Настройки карты и GPS",
     "map_gps_settings_description": "Управление настройками карты и GPS (обратного геокодирования)",
-    "map_implications": "Функция отображения объектов на карте использует внешний сервис плиток (tiles.immich.cloud)",
+    "map_implications": "Функция отображения объектов на карте использует внешний сервис плиток (tiles.frameleaf.cloud)",
     "map_light_style": "Светлый стиль",
     "map_manage_reverse_geocoding_settings": "Управление настройками <link>обратного геокодирования</link>",
     "map_reverse_geocoding": "Обратное геокодирование",

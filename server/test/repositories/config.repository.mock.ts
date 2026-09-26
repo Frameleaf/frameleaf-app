@@ -39,7 +39,8 @@ export const envData: EnvData = {
   },
 
   versionCheck: {
-    url: 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases',
+    url: 'https://api.frameleaf.cloud/v1/releases/latest',
+    fallbackUrl: 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases',
   },
 
   network: {

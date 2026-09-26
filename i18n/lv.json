@@ -206,7 +206,7 @@
     "map_enable_description": "Iespējot kartes funkcijas",
     "map_gps_settings": "Kartes un GPS iestatījumi",
     "map_gps_settings_description": "Karšu un GPS (apgrieztās ģeokodēšanas) iestatījumu pārvaldība",
-    "map_implications": "Kartes funkcija izmanto ārējo kartes fragmentu pakalpojumu (tiles.immich.cloud)",
+    "map_implications": "Kartes funkcija izmanto ārējo kartes fragmentu pakalpojumu (tiles.frameleaf.cloud)",
     "map_light_style": "Gaišais stils",
     "map_manage_reverse_geocoding_settings": "<link>Reversās ģeokodēšanas</link> iestatījumu pārvaldība",
     "map_reverse_geocoding": "Reversā ģeokodēšana",

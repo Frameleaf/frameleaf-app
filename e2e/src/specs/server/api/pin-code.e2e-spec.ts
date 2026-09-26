@@ -27,11 +27,11 @@ describe('/auth/pin-code', () => {
     // old PIN no longer unlocks anything
     it('should lock previously unlocked sessions and retire the old PIN', async () => {
       const user = await utils.userSetup(admin.accessToken, {
-        email: 'pin-reset@immich.cloud',
+        email: 'pin-reset@example.com',
         name: 'PIN Reset',
         password,
       });
-      const otherDevice = await login({ loginCredentialDto: { email: 'pin-reset@immich.cloud', password } });
+      const otherDevice = await login({ loginCredentialDto: { email: 'pin-reset@example.com', password } });
 
       const setup = await request(app)
         .post('/auth/pin-code')
@@ -82,7 +82,7 @@ describe('/auth/pin-code', () => {
     // FL-67: the reset is refused with a wrong account password and nothing is locked
     it('should refuse a reset with the wrong password', async () => {
       const user = await utils.userSetup(admin.accessToken, {
-        email: 'pin-reset-wrong@immich.cloud',
+        email: 'pin-reset-wrong@example.com',
         name: 'PIN Reset Wrong',
         password,
       });
