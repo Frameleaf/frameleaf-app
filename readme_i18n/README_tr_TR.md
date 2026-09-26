@@ -49,13 +49,13 @@
 ## Bağlantılar
 
 - [Resmi Belgeler](https://docs.immich.app/)
-- [Giriş](https://docs.immich.app/overview/introduction)
-- [Kurulum](https://docs.immich.app/install/requirements)
+- [Giriş](https://help.frameleaf.ai/overview/quick-start)
+- [Kurulum](https://help.frameleaf.ai/install/requirements)
 - [Yol Haritası](https://immich.app/roadmap)
 - [Demo](#demo)
 - [Özellikler](#özellikler)
-- [Çeviriler](https://docs.immich.app/developer/translations)
-- [Katkı Sağlama Rehberi](https://docs.immich.app/overview/support-the-project)
+- [Çeviriler](https://help.frameleaf.ai/developer/translations)
+- [Katkı Sağlama Rehberi](https://help.frameleaf.ai/overview/support-the-project)
 
 ## Demo
 

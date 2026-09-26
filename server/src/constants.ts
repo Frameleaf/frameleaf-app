@@ -50,9 +50,9 @@ export const JOBS_NOT_RETRIED: ReadonlySet<JobName> = new Set([
 
 export const ErrorMessages = {
   InconsistentMediaLocation:
-    'Detected an inconsistent media location. For more information, see https://docs.immich.app/errors#inconsistent-media-location',
-  SchemaDrift: `Detected schema drift. For more information, see https://docs.immich.app/errors#schema-drift`,
-  TypeOrmUpgrade: 'Invalid upgrade path. For more information, see https://docs.immich.app/errors/#typeorm-upgrade',
+    'Detected an inconsistent media location. For more information, see https://help.frameleaf.ai/administration/system-integrity',
+  SchemaDrift: `Detected schema drift. For more information, see https://help.frameleaf.ai/administration/server-commands`,
+  TypeOrmUpgrade: 'Invalid upgrade path. For more information, see https://help.frameleaf.ai',
 };
 
 export const POSTGRES_VERSION_RANGE = '>=14.0.0';

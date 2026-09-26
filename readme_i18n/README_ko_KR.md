@@ -51,13 +51,13 @@
 ## 링크
 
 - [문서](https://docs.immich.app)
-- [소개](https://docs.immich.app/overview/introduction)
-- [설치](https://docs.immich.app/install/requirements)
+- [소개](https://help.frameleaf.ai/overview/quick-start)
+- [설치](https://help.frameleaf.ai/install/requirements)
 - [로드맵](https://immich.app/roadmap)
 - [데모](#데모)
 - [기능](#기능)
-- [번역](https://docs.immich.app/developer/translations)
-- [기여](https://docs.immich.app/overview/support-the-project)
+- [번역](https://help.frameleaf.ai/developer/translations)
+- [기여](https://help.frameleaf.ai/overview/support-the-project)
 
 ## 데모
 
@@ -104,7 +104,7 @@
 
 ## 번역
 
-번역에 대한 자세한 정보는 [이곳](https://docs.immich.app/developer/translations)에서 확인하세요.
+번역에 대한 자세한 정보는 [이곳](https://help.frameleaf.ai/developer/translations)에서 확인하세요.
 
 <a href="https://hosted.weblate.org/engage/immich/">
 <img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="번역 현황" />
