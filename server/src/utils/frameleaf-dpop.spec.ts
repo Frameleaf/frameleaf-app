@@ -1,6 +1,6 @@
 import { createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { base64url, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { base64url, ed25519Thumbprint, tokenResponseSchema } from 'src/utils/frameleaf-cloud.js';
 import {
   Ed25519PublicJwk,
   FrameleafKeySigner,
@@ -13,6 +13,7 @@ import {
   jwsSigningInput,
   signClientAssertion,
 } from 'src/utils/frameleaf-dpop.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
 /** A signer over a fresh Ed25519 key, built the way `InstanceIdentityRepository` builds one. */
 const newSigner = (): FrameleafKeySigner => {
@@ -247,6 +248,58 @@ describe('DPoP for Frameleaf Cloud instance tokens (FL-178)', () => {
     it('refuses a token it cannot read', () => {
       expect(boundTokenProblem({ access_token: 'opaque', token_type: 'DPoP' }, signer)).toMatch(/not a JWT/);
       expect(boundTokenProblem({ access_token: 'a.!!!.c', token_type: 'DPoP' }, signer)).toMatch(/not a JWT/);
+    });
+  });
+
+  describe('golden fixtures (FL-184, FC-66 final)', () => {
+    // packages/contracts fixtures/instance/dpop-proof-token.json: the token request's proof, no ath.
+    const tokenProof = cloudContractFixture<{
+      header: { typ: string; alg: string; jwk: Ed25519PublicJwk };
+      payload: { jti: string; htm: string; htu: string; iat: number; nonce?: string; ath?: string };
+    }>('instance/dpop-proof-token.json');
+    // packages/contracts fixtures/instance/dpop-proof-api.json: an api/ml call's proof, with ath.
+    const apiProof = cloudContractFixture<typeof tokenProof>('instance/dpop-proof-api.json');
+
+    it('builds a token-request proof with the same header and claim shape as the golden fixture', () => {
+      const signer = newSigner();
+      const proof = createDpopProof(
+        signer,
+        { htm: tokenProof.payload.htm, htu: tokenProof.payload.htu, nonce: tokenProof.payload.nonce },
+        tokenProof.payload.iat * 1000,
+      );
+      const { header, claims } = decode(proof);
+      expect(Object.keys(header)).toEqual(Object.keys(tokenProof.header));
+      expect(header).toMatchObject({ typ: 'dpop+jwt', alg: 'EdDSA' });
+      expect(Object.keys(claims).sort()).toEqual(Object.keys(tokenProof.payload).sort());
+      expect(claims).toMatchObject({
+        htm: tokenProof.payload.htm,
+        htu: tokenProof.payload.htu,
+        iat: tokenProof.payload.iat,
+        nonce: tokenProof.payload.nonce,
+      });
+      expect(claims).not.toHaveProperty('ath');
+    });
+
+    it('builds an api-call proof with ath and the same claim shape as the golden fixture', () => {
+      const signer = newSigner();
+      const proof = createDpopProof(
+        signer,
+        { htm: apiProof.payload.htm, htu: apiProof.payload.htu, nonce: apiProof.payload.nonce, accessToken: 'tok' },
+        apiProof.payload.iat * 1000,
+      );
+      const { claims } = decode(proof);
+      expect(Object.keys(claims).sort()).toEqual(Object.keys(apiProof.payload).sort());
+      expect(claims.ath).toBe(dpopAth('tok'));
+    });
+
+    it('reads the golden token-response-dpop.json as a valid token response, and refuses it as unbound', () => {
+      // instance/token-response-dpop.json (FC-66): a shape example whose JWT carries no cnf, so any
+      // signer refuses to use it (boundTokenProblem), matching the accessToken() BoundTokenRefusedError
+      // path in frameleaf-cloud.repository.ts.
+      const response = tokenResponseSchema.parse(cloudContractFixture('instance/token-response-dpop.json'));
+      expect(response).toMatchObject({ token_type: 'DPoP', expires_in: 600 });
+      const signer = newSigner();
+      expect(boundTokenProblem(response, signer)).toMatch(/cnf\.jkt/);
     });
   });
 });

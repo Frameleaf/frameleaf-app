@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/heartbeat",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS: header and payload below, signed by the instance key>",
+      "Content-Type": "application/json"
+    },
+    "note": "the proof carries no nonce for this origin, or one older than 10 minutes"
+  },
+  "status": 401,
+  "headers": {
+    "WWW-Authenticate": "DPoP error=\"use_dpop_nonce\"",
+    "DPoP-Nonce": "AljIAxsuUF8ZNxTTTtqPkWk9XluZizc-A7gYLBvl48o"
+  },
+  "body": {
+    "code": "use_dpop_nonce",
+    "message": "Retry with the DPoP-Nonce from this response.",
+    "retryable": true,
+    "requestId": "req_01J8ZK3M4N5P6Q7S"
+  }
+}

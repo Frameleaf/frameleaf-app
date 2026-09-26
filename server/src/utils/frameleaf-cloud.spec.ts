@@ -225,11 +225,63 @@ describe('error envelope (FL-177, as-built decisions #15–#18)', () => {
     ['errors/key-retired.json', 401, CloudErrorCode.KeyRetired, MlAdmissionRefusal.CloudUnavailable],
     ['errors/nonce-invalid.json', 400, CloudErrorCode.NonceInvalid, MlAdmissionRefusal.CloudUnavailable],
     ['errors/rotation-rate-limited.json', 429, 'rate-limited', MlAdmissionRefusal.QuotaExceeded],
+    // FL-184 (FC-66, FC-22 final fixtures): a bad DPoP proof answered by the token endpoint or an API
+    // call, mapped like every other 401 that is not key_retired or entitlement-missing.
+    ['errors/invalid-dpop-proof.json', 401, 'invalid_dpop_proof', MlAdmissionRefusal.DestinationUnhealthy],
   ])('reads the golden %s envelope (FC-19)', (name, status, code, refusal) => {
     const envelope = errorEnvelopeSchema.parse(cloudContractFixture(name));
     expect(envelope).toMatchObject({ code, refusal: null, detail: null, data: null, requestId: expect.any(String) });
     expect(envelope.message).not.toBe('');
     expect(refusalFromCloudError(status, envelope)).toBe(refusal);
+  });
+
+  it('reads the golden invalid-dpop-proof envelope’s detail (FL-184, FL-178)', () => {
+    const envelope = errorEnvelopeSchema.parse(cloudContractFixture('errors/invalid-dpop-proof.json'));
+    expect(envelope).toMatchObject({ code: 'invalid_dpop_proof', retryable: false, detail: 'replayed' });
+  });
+
+  it.each([
+    ['errors/estimate-mismatch.json', 409, MlAdmissionRefusal.ModelMismatch],
+    ['errors/request-invalid.json', 422, MlAdmissionRefusal.RequestInvalid],
+  ])('takes the golden %s envelope’s explicit refusal over the status (FL-184, FC-66)', (name, status, refusal) => {
+    const envelope = errorEnvelopeSchema.parse(cloudContractFixture(name));
+    expect(envelope.refusal).toBe(refusal);
+    expect(refusalFromCloudError(status, envelope)).toBe(refusal);
+  });
+
+  // FL-184: licence-domain envelopes (FC-22) carry no `refusal` — the licence service reads their
+  // `code` and `message` directly (see frameleaf-license.service.ts `activateWithCloud`), rather than
+  // going through the ML admission map these other envelopes exercise.
+  it.each([
+    [
+      'errors/license-not-found.json',
+      'license_not_found',
+      "We couldn't find that licence key. Check it and try again.",
+    ],
+    [
+      'errors/activation-limit.json',
+      'activation_limit',
+      'This key is already active on another server. Deactivate it there or in your Frameleaf account, then try again.',
+    ],
+    ['errors/activation-rate-limited.json', 'rate-limited', 'Too many activation attempts. Try again later.'],
+  ])('reads the golden %s licence envelope (FL-184, FC-22)', (name, code, message) => {
+    const envelope = errorEnvelopeSchema.parse(cloudContractFixture(name));
+    expect(envelope).toMatchObject({ code, message, refusal: null, requestId: expect.any(String) });
+  });
+
+  it('carries the activation-limit envelope’s data object untouched (FL-184)', () => {
+    const envelope = errorEnvelopeSchema.parse(cloudContractFixture('errors/activation-limit.json'));
+    expect(envelope.data).toMatchObject({
+      activationId: expect.any(String),
+      instanceName: 'Basement NAS',
+      activatedAt: expect.any(String),
+    });
+    expect(envelope.retryable).toBe(false);
+  });
+
+  it('marks the golden activation-rate-limited envelope retryable (FL-184)', () => {
+    const envelope = errorEnvelopeSchema.parse(cloudContractFixture('errors/activation-rate-limited.json'));
+    expect(envelope.retryable).toBe(true);
   });
 
   it('keeps the code when one field has another shape, so a daily cap is never misread', () => {
