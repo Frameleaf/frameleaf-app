@@ -149,7 +149,7 @@ describe(FrameleafLicenseService.name, () => {
           certificate: certificate({
             ent: ['SUPPORTER_SERVER'],
             lic_exp: null,
-            lic: { id: 'lic-1', last4: 'J58U', kind: 'server' },
+            lic: { id: 'lic-1', last4: 'J583', kind: 'server' },
           }),
           activationId: 'act-1',
         },
@@ -167,14 +167,14 @@ describe(FrameleafLicenseService.name, () => {
       expect(status).toMatchObject({
         state: 'active',
         kind: 'server',
-        keyHint: 'J58U',
+        keyHint: 'J583',
         licensed: true,
         entitlements: { supporter: true, remoteAccess: false },
-        key: { kind: 'server', source: 'key', keyHint: 'J58U', expiresAt: null },
+        key: { kind: 'server', source: 'key', keyHint: 'J583', expiresAt: null },
       });
       expect(JSON.stringify(store())).not.toContain(SERVER_KEY);
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
-        expect.objectContaining({ action: AdminAuditAction.LicenseActivated, detail: 'J58U' }),
+        expect.objectContaining({ action: AdminAuditAction.LicenseActivated, detail: 'J583' }),
       ]);
       expect(cloud.requests.some(({ path }) => path.includes('futo'))).toBe(false);
     });
@@ -470,7 +470,7 @@ describe(FrameleafLicenseService.name, () => {
           certificate: certificate({
             ent: ['SUPPORTER_INDIVIDUAL'],
             lic_exp: null,
-            lic: { kind: 'individual', last4: '8ELH' },
+            lic: { kind: 'individual', last4: '8EL6' },
           }),
           activationId: 'act-9',
         },
@@ -482,18 +482,18 @@ describe(FrameleafLicenseService.name, () => {
 
       await expect(sut.activateUserSupporter(authStub.user1, { key: PERSONAL_KEY })).resolves.toEqual({
         kind: 'individual',
-        keyHint: '8ELH',
+        keyHint: '8EL6',
         activatedAt: new Date('2026-09-25T12:00:00.000Z'),
       });
       const body = await signedActivation(cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!);
       expect(body.fingerprint.user).toMatch(/^[\da-f]{64}$/);
       expect(mocks.frameleafUserLicense.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: authStub.user1.user.id, keyHint: '8ELH', binding: body.fingerprint.user }),
+        expect.objectContaining({ userId: authStub.user1.user.id, keyHint: '8EL6', binding: body.fingerprint.user }),
       );
       expect(JSON.stringify(mocks.frameleafUserLicense.upsert.mock.calls)).not.toContain(PERSONAL_KEY);
       expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(authStub.user1.user.id, {
         key: UserMetadataKey.License,
-        value: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T12:00:00.000Z' },
+        value: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T12:00:00.000Z' },
       });
     });
 
