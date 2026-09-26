@@ -135,9 +135,7 @@
     busy = true;
     failure = '';
     try {
-      onStatus(
-        await restoreCloudBackup({ cloudBackupRestoreDto: { manifestKey: chosen.key, scope, assetIds } }),
-      );
+      onStatus(await restoreCloudBackup({ cloudBackupRestoreDto: { manifestKey: chosen.key, scope, assetIds } }));
       notice = $t('frameleaf_cloud_restore_queued');
       confirm = '';
     } catch (error) {
