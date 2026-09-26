@@ -45,7 +45,7 @@ services:
     devices:
       - /dev/dri:/dev/dri
 
-  vaapi-wsl: # use this for VAAPI if you're running Immich in WSL2
+  vaapi-wsl: # use this for VAAPI if you're running Frameleaf in WSL2
     devices:
       - /dev/dri:/dev/dri
       - /dev/dxg:/dev/dxg

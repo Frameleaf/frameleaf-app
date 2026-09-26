@@ -699,7 +699,7 @@ describe(DatabaseBackupService.name, () => {
       mocks.storage.readdir.mockResolvedValue([]);
       mocks.process.spawn.mockReturnValue(mockSpawn(0, 'data', ''));
       mocks.process.spawnDuplexStream.mockImplementation(() => mockDuplex()('command', 0, 'data', ''));
-      mocks.process.fork.mockImplementation(() => mockSpawn(0, 'Immich Server is listening', ''));
+      mocks.process.fork.mockImplementation(() => mockSpawn(0, 'Frameleaf Server is listening', ''));
       mocks.storage.rename.mockResolvedValue();
       mocks.storage.unlink.mockResolvedValue();
       mocks.storage.createPlainReadStream.mockReturnValue(Readable.from(mockData()));

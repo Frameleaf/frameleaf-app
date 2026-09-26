@@ -36,6 +36,8 @@ jobs:
         run: pnpm --filter @immich/scripts test
       - name: Validate Frameleaf workflow contracts
         run: node --test scripts/frameleaf-workflows.test.mjs
+      - name: Validate Frameleaf branding
+        run: node --test scripts/frameleaf-branding.test.mjs
       - name: Validate Frameleaf documentation and Jira coverage
         run: |
           node scripts/frameleaf-documentation-coverage.mjs

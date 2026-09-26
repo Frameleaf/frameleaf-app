@@ -121,7 +121,7 @@ Once this is done, you can continue to step 3 of "Basic Setup".
 
 ##### QSV
 
-1. Unraid > Docker > (Stop) Immich container > Edit
+1. Unraid > Docker > (Stop) Frameleaf container > Edit
 2. Scroll down and select `Add another Path, Port, Variable, Label or Device`
 3. In the drop-down menu, select `Device` and an entry with any name and the value `/dev/dri`.
 4. Continue to step 4 of "Basic Setup".

@@ -6,7 +6,7 @@ sidebar_position: 90
 
 :::caution
 
-To change environment variables, you must recreate the Immich containers.
+To change environment variables, you must recreate the Frameleaf containers.
 Just restarting the containers does not replace the environment within the container!
 
 In order to recreate the container using docker compose, run `docker compose up -d`.
@@ -39,7 +39,7 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 | `IMMICH_CONFIG_FILE`                | Path to config file                                                                                                                                                  |                              | server                   | api, microservices |
 | `IMMICH_HELMET_FILE`                | Path to a json file with [helmet](https://www.npmjs.com/package/helmet) options. Set to `false` to disable. Set to `true` to use `server/helmet.json`<sup>\*3</sup>. |           `false`            | server                   | api                |
 | `NO_COLOR`                          | Set to `true` to disable color-coded log output                                                                                                                      |           `false`            | server, machine learning |                    |
-| `CPU_CORES`                         | Number of cores available to the Immich server                                                                                                                       | auto-detected CPU core count | server                   |                    |
+| `CPU_CORES`                         | Number of cores available to the Frameleaf server                                                                                                                    | auto-detected CPU core count | server                   |                    |
 | `IMMICH_API_METRICS_PORT`           | Unused: metrics are permanently disabled                                                                                                                             |            `8081`            | server                   | api                |
 | `IMMICH_MICROSERVICES_METRICS_PORT` | Unused: metrics are permanently disabled                                                                                                                             |            `8082`            | server                   | microservices      |
 | `IMMICH_PROCESS_INVALID_IMAGES`     | When `true`, generate thumbnails for invalid images                                                                                                                  |                              | server                   | microservices      |
@@ -51,7 +51,7 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 \*1: `TZ` should be set to a `TZ identifier` from [this list][tz-list]. For example, `TZ="Etc/UTC"`.
 `TZ` is used by `exiftool` as a fallback in case the timezone cannot be determined from the image metadata. It is also used for logfile timestamps and cron job execution.
 
-\*2: This path is where the Immich code looks for the files, which is internal to the docker container. Setting it to a path on your host will certainly break things, you should use the `UPLOAD_LOCATION` variable instead.
+\*2: This path is where the Frameleaf code looks for the files, which is internal to the docker container. Setting it to a path on your host will certainly break things, you should use the `UPLOAD_LOCATION` variable instead.
 
 \*3: The [default configuration](https://helmetjs.github.io/#content-security-policy) sets `upgrade-insecure-requests`, which tells the browser to upgrade all requests to HTTPS. This breaks on HTTP-only deployments. If you cannot use HTTPS, you should use a custom helmet config file with `"upgrade-insecure-requests": null`.
 
@@ -142,14 +142,14 @@ Information on the current workers can be found [here](/administration/jobs-work
 
 \*2: If not provided, the appropriate extension to use is auto-detected at startup by inspecting the database. When multiple extensions are installed, the order of preference is VectorChord, pgvector.
 
-\*3: Uses either [`postgresql.ssd.conf`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/postgres/postgresql.ssd.conf) or [`postgresql.hdd.conf`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/postgres/postgresql.hdd.conf) which mainly controls the Postgres `effective_io_concurrency` setting to allow for concurrenct IO on SSDs and sequential IO on HDDs.
+\*3: Uses either [`postgresql.ssd.conf`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/postgres/postgresql.ssd.conf) or [`postgresql.hdd.conf`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/postgres/postgresql.hdd.conf) from the database image, which mainly controls the Postgres `effective_io_concurrency` setting to allow for concurrent IO on SSDs and sequential IO on HDDs.
 
 :::info
 
-All `DB_` variables must be provided to all Immich workers, including `api` and `microservices`.
+All `DB_` variables must be provided to all Frameleaf workers, including `api` and `microservices`.
 
 `DB_URL` must be in the format `postgresql://immichdbusername:immichdbpassword@postgreshost:postgresport/immichdatabasename`.
-You can require SSL by adding `?sslmode=require` to the end of the `DB_URL` string, or require SSL and skip certificate verification by adding `?sslmode=require&uselibpqcompat=true`. This allows both immich and `pg_dumpall` (the utility used for database backups) to [properly connect](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string#tcp-connections) to your database.
+You can require SSL by adding `?sslmode=require` to the end of the `DB_URL` string, or require SSL and skip certificate verification by adding `?sslmode=require&uselibpqcompat=true`. This allows both Frameleaf and `pg_dumpall` (the utility used for database backups) to [properly connect](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string#tcp-connections) to your database.
 
 When `DB_URL` is defined, the `DB_HOSTNAME`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` and `DB_DATABASE_NAME` database variables are ignored.
 
@@ -168,7 +168,7 @@ When `DB_URL` is defined, the `DB_HOSTNAME`, `DB_PORT`, `DB_USERNAME`, `DB_PASSW
 | `REDIS_DBINDEX`  | Redis DB index |   `0`   | server     |
 
 :::info
-All `REDIS_` variables must be provided to all Immich workers, including `api` and `microservices`.
+All `REDIS_` variables must be provided to all Frameleaf workers, including `api` and `microservices`.
 
 `REDIS_URL` must start with `ioredis://` and then include a `base64` encoded JSON string for the configuration.
 More information can be found in the upstream [ioredis] documentation.
@@ -205,41 +205,45 @@ Redis (Sentinel) URL example JSON before encoding:
 
 ## Machine Learning
 
-| Variable                                                    | Description                                                                                                                                                  |           Default            | Containers       |
-| :---------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------: | :--------------- |
-| `MACHINE_LEARNING_MODEL_TTL`                                | Inactivity time (s) before a model is unloaded (disabled if \<= 0)                                                                                           |            `300`             | machine learning |
-| `MACHINE_LEARNING_MODEL_TTL_POLL_S`                         | Interval (s) between checks for the model TTL (disabled if \<= 0)                                                                                            |             `10`             | machine learning |
-| `MACHINE_LEARNING_CACHE_FOLDER`                             | Directory where models are downloaded                                                                                                                        |           `/cache`           | machine learning |
-| `MACHINE_LEARNING_REQUEST_THREADS`<sup>\*1</sup>            | Thread count of the request thread pool (disabled if \<= 0)                                                                                                  |     number of CPU cores      | machine learning |
-| `MACHINE_LEARNING_MODEL_INTER_OP_THREADS`                   | Number of parallel model operations                                                                                                                          |             `1`              | machine learning |
-| `MACHINE_LEARNING_MODEL_INTRA_OP_THREADS`                   | Number of threads for each model operation                                                                                                                   |             `2`              | machine learning |
-| `MACHINE_LEARNING_WORKERS`<sup>\*2</sup>                    | Number of worker processes to spawn                                                                                                                          |             `1`              | machine learning |
-| `MACHINE_LEARNING_HTTP_KEEPALIVE_TIMEOUT_S`<sup>\*3</sup>   | HTTP Keep-alive time in seconds                                                                                                                              |             `2`              | machine learning |
-| `MACHINE_LEARNING_WORKER_TIMEOUT`                           | Maximum time (s) of unresponsiveness before a worker is killed                                                                                               | `300` (`900` if using ROCm)  | machine learning |
-| `MACHINE_LEARNING_PRELOAD__CLIP__TEXTUAL`                   | Comma-separated list of (textual) CLIP model(s) to preload and cache                                                                                         |                              | machine learning |
-| `MACHINE_LEARNING_PRELOAD__CLIP__VISUAL`                    | Comma-separated list of (visual) CLIP model(s) to preload and cache                                                                                          |                              | machine learning |
-| `MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__RECOGNITION` | Comma-separated list of (recognition) facial recognition model(s) to preload and cache                                                                       |                              | machine learning |
-| `MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__DETECTION`   | Comma-separated list of (detection) facial recognition model(s) to preload and cache                                                                         |                              | machine learning |
-| `MACHINE_LEARNING_PRELOAD__OCR__RECOGNITION`                | Comma-separated list of (recognition) OCR model(s) to preload and cache                                                                                      |                              | machine learning |
-| `MACHINE_LEARNING_PRELOAD__OCR__DETECTION`                  | Comma-separated list of (detection) OCR model(s) to preload and cache                                                                                        |                              | machine learning |
-| `MACHINE_LEARNING_ANN`                                      | Enable ARM-NN hardware acceleration if supported                                                                                                             |            `True`            | machine learning |
-| `MACHINE_LEARNING_ANN_FP16_TURBO`                           | Execute operations in FP16 precision: increasing speed, reducing precision (applies only to ARM-NN)                                                          |           `False`            | machine learning |
-| `MACHINE_LEARNING_ANN_TUNING_LEVEL`                         | ARM-NN GPU tuning level (1: rapid, 2: normal, 3: exhaustive)                                                                                                 |             `2`              | machine learning |
-| `MACHINE_LEARNING_DEVICE_IDS`<sup>\*4</sup>                 | Device IDs to use in multi-GPU environments                                                                                                                  |             `0`              | machine learning |
-| `MACHINE_LEARNING_MAX_BATCH_SIZE__FACIAL_RECOGNITION`       | Set the maximum number of faces that will be processed at once by the facial recognition model                                                               | None (`1` if using OpenVINO) | machine learning |
-| `MACHINE_LEARNING_MAX_BATCH_SIZE__OCR`                      | Set the maximum number of boxes that will be processed at once by the OCR model                                                                              |             `6`              | machine learning |
-| `MACHINE_LEARNING_RKNN`                                     | Enable RKNN hardware acceleration if supported                                                                                                               |            `True`            | machine learning |
-| `MACHINE_LEARNING_RKNN_THREADS`                             | How many threads of RKNN runtime should be spun up while inferencing.                                                                                        |             `1`              | machine learning |
-| `MACHINE_LEARNING_MODEL_ARENA`                              | Pre-allocates CPU memory to avoid memory fragmentation                                                                                                       |             true             | machine learning |
-| `MACHINE_LEARNING_OPENVINO_PRECISION`                       | If set to FP16, uses half-precision floating-point operations for faster inference with reduced accuracy (one of [`FP16`, `FP32`], applies only to OpenVINO) |            `FP32`            | machine learning |
+| Variable                                                    | Description                                                                                                                                                  |             Default              | Containers       |
+| :---------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------: | :--------------- |
+| `MACHINE_LEARNING_MODEL_TTL`                                | Inactivity time (s) before a model is unloaded (disabled if \<= 0)                                                                                           |              `300`               | machine learning |
+| `MACHINE_LEARNING_MODEL_TTL_POLL_S`                         | Interval (s) between checks for the model TTL (disabled if \<= 0)                                                                                            |               `10`               | machine learning |
+| `MACHINE_LEARNING_CACHE_FOLDER`                             | Directory where models are downloaded                                                                                                                        |             `/cache`             | machine learning |
+| `MACHINE_LEARNING_MODEL_SOURCE_URL`<sup>\*5</sup>           | Hub-compatible host that serves the `frameleaf/<model>` repositories for smart search and face recognition                                                   | `https://models.frameleaf.cloud` | machine learning |
+| `MACHINE_LEARNING_MODEL_SOURCE_TOKEN`<sup>\*5</sup>         | Token sent to a custom model source that needs authentication; never logged                                                                                  |                                  | machine learning |
+| `MACHINE_LEARNING_REQUEST_THREADS`<sup>\*1</sup>            | Thread count of the request thread pool (disabled if \<= 0)                                                                                                  |       number of CPU cores        | machine learning |
+| `MACHINE_LEARNING_MODEL_INTER_OP_THREADS`                   | Number of parallel model operations                                                                                                                          |               `1`                | machine learning |
+| `MACHINE_LEARNING_MODEL_INTRA_OP_THREADS`                   | Number of threads for each model operation                                                                                                                   |               `2`                | machine learning |
+| `MACHINE_LEARNING_WORKERS`<sup>\*2</sup>                    | Number of worker processes to spawn                                                                                                                          |               `1`                | machine learning |
+| `MACHINE_LEARNING_HTTP_KEEPALIVE_TIMEOUT_S`<sup>\*3</sup>   | HTTP Keep-alive time in seconds                                                                                                                              |               `2`                | machine learning |
+| `MACHINE_LEARNING_WORKER_TIMEOUT`                           | Maximum time (s) of unresponsiveness before a worker is killed                                                                                               |   `300` (`900` if using ROCm)    | machine learning |
+| `MACHINE_LEARNING_PRELOAD__CLIP__TEXTUAL`                   | Comma-separated list of (textual) CLIP model(s) to preload and cache                                                                                         |                                  | machine learning |
+| `MACHINE_LEARNING_PRELOAD__CLIP__VISUAL`                    | Comma-separated list of (visual) CLIP model(s) to preload and cache                                                                                          |                                  | machine learning |
+| `MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__RECOGNITION` | Comma-separated list of (recognition) facial recognition model(s) to preload and cache                                                                       |                                  | machine learning |
+| `MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__DETECTION`   | Comma-separated list of (detection) facial recognition model(s) to preload and cache                                                                         |                                  | machine learning |
+| `MACHINE_LEARNING_PRELOAD__OCR__RECOGNITION`                | Comma-separated list of (recognition) OCR model(s) to preload and cache                                                                                      |                                  | machine learning |
+| `MACHINE_LEARNING_PRELOAD__OCR__DETECTION`                  | Comma-separated list of (detection) OCR model(s) to preload and cache                                                                                        |                                  | machine learning |
+| `MACHINE_LEARNING_ANN`                                      | Enable ARM-NN hardware acceleration if supported                                                                                                             |              `True`              | machine learning |
+| `MACHINE_LEARNING_ANN_FP16_TURBO`                           | Execute operations in FP16 precision: increasing speed, reducing precision (applies only to ARM-NN)                                                          |             `False`              | machine learning |
+| `MACHINE_LEARNING_ANN_TUNING_LEVEL`                         | ARM-NN GPU tuning level (1: rapid, 2: normal, 3: exhaustive)                                                                                                 |               `2`                | machine learning |
+| `MACHINE_LEARNING_DEVICE_IDS`<sup>\*4</sup>                 | Device IDs to use in multi-GPU environments                                                                                                                  |               `0`                | machine learning |
+| `MACHINE_LEARNING_MAX_BATCH_SIZE__FACIAL_RECOGNITION`       | Set the maximum number of faces that will be processed at once by the facial recognition model                                                               |   None (`1` if using OpenVINO)   | machine learning |
+| `MACHINE_LEARNING_MAX_BATCH_SIZE__OCR`                      | Set the maximum number of boxes that will be processed at once by the OCR model                                                                              |               `6`                | machine learning |
+| `MACHINE_LEARNING_RKNN`                                     | Enable RKNN hardware acceleration if supported                                                                                                               |              `True`              | machine learning |
+| `MACHINE_LEARNING_RKNN_THREADS`                             | How many threads of RKNN runtime should be spun up while inferencing.                                                                                        |               `1`                | machine learning |
+| `MACHINE_LEARNING_MODEL_ARENA`                              | Pre-allocates CPU memory to avoid memory fragmentation                                                                                                       |               true               | machine learning |
+| `MACHINE_LEARNING_OPENVINO_PRECISION`                       | If set to FP16, uses half-precision floating-point operations for faster inference with reduced accuracy (one of [`FP16`, `FP32`], applies only to OpenVINO) |              `FP32`              | machine learning |
 
 \*1: It is recommended to begin with this parameter when changing the concurrency levels of the machine learning service and then tune the other ones.
 
 \*2: Since each process duplicates models in memory, changing this is not recommended unless you have abundant memory to go around.
 
-\*3: For scenarios like HPA in K8S. https://github.com/immich-app/immich/discussions/12064
+\*3: For scenarios like HPA in K8S.
 
 \*4: Using multiple GPUs requires `MACHINE_LEARNING_WORKERS` to be set greater than 1. A single device is assigned to each worker in round-robin priority.
+
+\*5: Smart search and face recognition models are downloaded from the model source: `MACHINE_LEARNING_MODEL_SOURCE_URL` if set, otherwise `HF_ENDPOINT` if set (an existing Hub mirror keeps working), otherwise the Frameleaf model mirror at `https://models.frameleaf.cloud`. The machine learning service logs which source it uses at startup. The source keeps the Hugging Face layout (`/{org}/{repo}/resolve/{revision}/{path}` and `/api/models/{org}/{repo}/revision/{revision}`), so you can point it at your own mirror or an offline copy. A Hugging Face token (`HF_TOKEN`) is only sent when the source is `huggingface.co`; any other source gets no token unless you set `MACHINE_LEARNING_MODEL_SOURCE_TOKEN`. No usage statistics are sent to any host. If the source does not serve a model you choose, loading it fails with an error naming the model and the source; the service never falls back to another host. Image descriptions (on by default) and NSFW detection (off by default) do not use this source: their models come from `huggingface.co`, or from `HF_ENDPOINT` if set. To keep them off `huggingface.co`, set `HF_ENDPOINT` to your own mirror, or fill the model cache yourself and set `HF_HUB_OFFLINE=1`.
 
 :::info
 

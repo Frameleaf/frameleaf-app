@@ -4,7 +4,7 @@ Status: implementation backlog, not a release or a claim of completed parity. Pr
 
 ## Read this first
 
-Frameleaf will be a complete photo and video library with a restrained, dark-first creative workspace and a full Freecut-based Studio. Existing Immich and fork capabilities must survive the redesign. The current React prototype is design evidence; production remains Svelte, NestJS/PostgreSQL, Python ML, and native Flutter. Rewriting production as the prototype is not approved.
+Frameleaf will be a complete photo and video library with a restrained, dark-first creative workspace and a full Freecut-based Studio. Existing upstream and fork capabilities must survive the redesign. The current React prototype is design evidence; production remains Svelte, NestJS/PostgreSQL, Python ML, and native Flutter. Rewriting production as the prototype is not approved.
 
 This plan supersedes chronological planning notes where they conflict. Explicit subsequent owner decisions take precedence. The source audits remain the preservation baseline; historical checkmarks are not release evidence. Read the [agent execution instructions](01-agent-execution.md), then the assigned issue and its source paths in the consolidated backlog.
 
@@ -38,7 +38,7 @@ The preserved dirty-checkout evidence includes the following unreviewed implemen
 
 ### Identity and presentation
 
-Use Frameleaf throughout customer-facing web, native apps, PWA, emails, installation, help and release assets. Retain “Built on Immich” attribution in README/About and required notices. Preserve compatibility-sensitive protocol paths, database identities and released migration semantics. New native app IDs and signing are separate from upstream identities. Do not rename every internal `immich` occurrence mechanically.
+Use Frameleaf throughout customer-facing web, native apps, PWA, emails, installation, help and release assets. Retain the upstream-project attribution in README/About and required notices. Preserve compatibility-sensitive protocol paths, database identities and released migration semantics. New native app IDs and signing are separate from upstream identities. Do not rename every internal `immich` occurrence mechanically.
 
 The user-supplied seven-SVG kit in `design/frameleaf/brand-kit` is the authoritative artwork. Preserve originals and record platform derivatives; earlier generated PNGs are references, not release masters. Follow the committed [design handoff](https://github.com/Frameleaf/frameleaf-app/blob/2fbab9c61f948edf392fad88167a51180fa9d8db/design/frameleaf/README.md), [brand preservation contract](06-brand-assets.md), manifest and file hashes for actual variants, theme contrast and platform export requirements. Source preservation does not establish web/native integration or release qualification.
 

@@ -2,12 +2,12 @@
   /**
    * Support and feedback (S-3): the prototype's `HelpFeedback` (`design/frameleaf/template/src/
    * SystemPanels.jsx:226-315`) — a list of help rows and the third-party notices — in place of the
-   * upstream modal's "Official Immich Resources".
+   * upstream modal's list of the upstream project's resources.
    *
    * The help rows use the addresses this installation is configured with (`FRAMELEAF_DOCS_URL`,
    * `FRAMELEAF_SUPPORT_URL`, … validated https by the server, FL-135) and a row without one is left
-   * out; nothing falls back to another project's sites. The Immich project's resources stay listed under "Built on Immich", as the
-   * attribution requires.
+   * out; nothing falls back to another project's sites. FL-190: the upstream attribution lives on the
+   * About screen only, so this dialog names neither the upstream project nor its sites.
    */
   import AcknowledgementsList from '$lib/components/frameleaf/AcknowledgementsList.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -83,32 +83,11 @@
     ).filter((row) => row.href),
   );
 
-  const upstream: Row[] = $derived([
-    // FL-135: attribution only — the Immich project's documentation and source. The archived
-    // documentation of "this version" is not linked (Frameleaf's version is not an Immich release),
-    // and the Immich community is not offered as help with Frameleaf.
-    {
-      id: 'immich-documentation',
-      icon: mdiBookOpenOutline,
-      title: 'documentation',
-      text: 'frameleaf_help_immich_documentation_text',
-      href: 'https://docs.immich.app/overview/introduction',
-    },
-    {
-      id: 'immich-source',
-      icon: mdiGithub,
-      title: 'frameleaf_help_source',
-      text: 'frameleaf_help_immich_source_text',
-      href: 'https://github.com/immich-app/immich/',
-    },
-  ]);
-
   // Name, what Frameleaf uses it for, and its licence; versions come from this server. Everything
   // else Frameleaf credits (Studio's Freecut editor, models, voices, fonts, assets) follows in the
   // acknowledgements list, with its licence text.
   const notices: { name: string; role: string; licence: string; version?: string; href?: string }[] = $derived(
     [
-      { name: 'Immich', role: $t('frameleaf_help_notice_immich'), licence: 'AGPL-3.0', version: info.version },
       { name: 'Node.js', role: $t('frameleaf_help_notice_runtime'), licence: 'MIT', version: info.nodejs },
       { name: 'libvips', role: $t('frameleaf_help_notice_images'), licence: 'LGPL-2.1', version: info.libvips },
       {
@@ -146,12 +125,6 @@
   <ul class="help-list">
     {#each rows as row, index (row.id)}
       {@render link(row, index === 0)}
-    {/each}
-  </ul>
-  <h3>{$t('frameleaf_help_built_on')}</h3>
-  <ul class="help-list">
-    {#each upstream as row, index (row.id)}
-      {@render link(row, rows.length === 0 && index === 0)}
     {/each}
     <li>
       <details class="help-notices">
@@ -197,12 +170,6 @@
     padding: 0;
     display: grid;
     gap: 4px;
-  }
-  h3 {
-    margin: 16px 0 8px;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    font-weight: 600;
   }
   .help-link {
     display: flex;

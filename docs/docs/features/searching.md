@@ -3,13 +3,13 @@ import TabItem from '@theme/TabItem';
 
 # Searching
 
-Immich uses Postgres as its search database for both metadata and contextual CLIP search.
+Frameleaf uses Postgres as its search database for both metadata and contextual CLIP search.
 
 Contextual CLIP search is powered by the [VectorChord](https://github.com/tensorchord/VectorChord) extension, utilizing machine learning models like [CLIP](https://openai.com/research/clip) to provide relevant search results. This allows for freeform searches without requiring specific keywords in the image or video metadata.
 
 ## Advanced Search Filters
 
-In addition, Immich offers advanced search functionality, allowing you to find specific content using customizable search filters. These filters include location, one or more faces, specific albums, and more. You can try out the search filters on the [Demo site](https://demo.immich.app).
+In addition, Frameleaf offers advanced search functionality, allowing you to find specific content using customizable search filters. These filters include location, one or more faces, specific albums, and more. Open the filter panel from the search bar to try them.
 
 You can search the following types of content:
 
@@ -31,11 +31,9 @@ You can search the following types of content:
 
 To browse the photos that show text, and to correct what was read, see [Documents](./documents.md).
 
-<img src={require('./img/advanced-search-filters.webp').default} width="70%" title='Advanced search filters' />
-
 ## Ask Search
 
-AJ Taylor's maintained fork adds a local Ask Search experience for Google Photos-like discovery without handing your media library to a cloud photo service.
+Frameleaf adds a local Ask Search experience for Google Photos-like discovery without handing your media library to a cloud photo service.
 
 Ask Search accepts normal phrases such as:
 
@@ -45,11 +43,11 @@ Ask Search accepts normal phrases such as:
 - `favorite videos since 2020`
 - `photos from April 2024`
 
-The server turns these phrases into existing Immich search filters. Smart Search-style prompts can be combined with filters for dates, named months, relative time ranges, favorites, media type, places, and matched people. Receipt, document, and screenshot prompts use metadata/OCR-oriented search instead.
+The server turns these phrases into existing Frameleaf search filters. Smart Search-style prompts can be combined with filters for dates, named months, relative time ranges, favorites, media type, places, and matched people. Receipt, document, and screenshot prompts use metadata/OCR-oriented search instead.
 
-When a named person can be resolved to one of your Immich people, Ask Search uses the real person filter. If a person name looks like a person reference but cannot be matched, the search still runs semantically and explains that the person match is approximate.
+When a named person can be resolved to one of your Frameleaf people, Ask Search uses the real person filter. If a person name looks like a person reference but cannot be matched, the search still runs semantically and explains that the person match is approximate.
 
-Ask Search runs against your local Immich server and your configured machine-learning setup. It is meant for discovery, not as a Google Photos account sync. For importing full Google Photos exports, use Google Takeout with an import tool such as `immich-go`.
+Ask Search runs against your local Frameleaf server and your configured machine-learning setup. It is meant for discovery, not as a Google Photos account sync. For importing full Google Photos exports, use Google Takeout with [Import Google Photos](/features/google-photos-import).
 
 ### Full path or folder
 
@@ -67,9 +65,9 @@ The default search model is fast, but there are many other options that can prov
 
 The first step of choosing the right model for you is to know which languages your users will search in.
 
-If your users will only search in English, then the [CLIP][huggingface-clip] section is the first place to look. This is a curated list of the models that generally perform the best for their size class. The models here are ordered from higher to lower quality. This means that the top models will generally rank the most relevant results higher and have a higher capacity to understand descriptive, detailed, and/or niche queries. The models are also generally ordered from larger to smaller, so consider the impact on memory usage, job processing and search speed when deciding on one. The smaller models in this list are not too different in quality and many times faster.
+If your users will only search in English, then the English table below is the first place to look. It lists the models that generally perform the best for their size class. The models here are ordered from higher to lower quality. This means that the top models will generally rank the most relevant results higher and have a higher capacity to understand descriptive, detailed, and/or niche queries. The models are also generally ordered from larger to smaller, so consider the impact on memory usage, job processing and search speed when deciding on one. The smaller models in this list are not too different in quality and many times faster.
 
-[Multilingual models][huggingface-multilingual-clip] are also available so users can search in their native language. Use these models if you expect non-English searches to be common. They can be separated into two search patterns:
+Multilingual models, compared by language in the tables below, are also available so users can search in their native language. Use these models if you expect non-English searches to be common. They can be separated into two search patterns:
 
 - `nllb` models expect the search query to be in the language specified in the user settings
 - `xlm` and `siglip2` models understand search text regardless of the current language setting
@@ -81,10 +79,10 @@ For more details, check the tables below to see how they compare in memory usage
 Once you've chosen a model, follow these steps:
 
 1. Copy the name of the model (e.g. `ViT-B-16-SigLIP__webli`)
-2. Go to the [Smart Search settings][smart-search-settings]
+2. Go to the Smart Search settings (**Administration > Settings > Machine Learning Settings > Smart Search**)
 3. Paste the model name into the Model Name section
 4. Save the settings
-5. Go to the [Job Status page][job-status-page]
+5. Go to the Job Status page (**Administration > Job Queues**)
 6. Click "All" next to "Smart Search" to begin re-processing your assets with the new model
 7. (Optional) Confirm that the logs for the server and machine learning service don't have relevant errors
 
@@ -95,7 +93,7 @@ Please note that memory and execution time values are only _estimates_: actual u
 <details>
 <summary>Reference</summary>
 
-Memory and execution time estimates were obtained without acceleration on a 7800x3D processor running bare metal Linux. All testing and evaluation was done at f32 precision (the default in Immich).
+Memory and execution time estimates were obtained without acceleration on a 7800x3D processor running bare metal Linux. All testing and evaluation was done at f32 precision (the default in Frameleaf).
 
 **Execution Time (ms)**: After warming up the model with one pass, the mean execution time of 100 passes with the same input.
 
@@ -1225,8 +1223,3 @@ Memory and execution time estimates were obtained without acceleration on a 7800
 :::note
 Feel free to make a feature request if there's a model you want to use that we don't currently support.
 :::
-
-[huggingface-clip]: https://huggingface.co/collections/immich-app/clip-654eaefb077425890874cd07
-[huggingface-multilingual-clip]: https://huggingface.co/collections/immich-app/multilingual-clip-654eb08c2382f591eeb8c2a7
-[smart-search-settings]: https://my.immich.app/admin/system-settings?isOpen=machine-learning+smart-search
-[job-status-page]: https://my.immich.app/admin/queues

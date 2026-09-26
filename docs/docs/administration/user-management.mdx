@@ -3,7 +3,7 @@ import UserCreate from '/docs/partials/_user-create.md';
 
 # User Management
 
-Immich supports multiple users, each with their own library.
+Frameleaf supports multiple users, each with their own library.
 
 ## Register the Admin User
 
@@ -19,13 +19,9 @@ Immich supports multiple users, each with their own library.
 This option is only available if an SMTP server has been configured in the administrator settings.
 :::
 
-Admin can send a welcome email if the Email option is set, you can learn here how to set up the SMTP server in Immich.
+Admin can send a welcome email if the Email option is set, you can learn here how to set up the SMTP server in Frameleaf.
 
-<img
-  src={require('./img/send-user-email-notification.webp').default}
-  width="40%"
-  title="Send user email notification"
-/>
+When you create the user, turn on **Send welcome email** in the new user dialog.
 
 ## Set Storage Quota For User
 
@@ -41,8 +37,6 @@ The system administrator can see the usage quota percentage of all users in Serv
 External libraries don't take up space from the storage quota.
 :::
 
-<img src={require('./img/user-quota-size.webp').default} width="80%" title="Set Quota Size" />
-
 ## Set Storage Label For User
 
 The admin can add a custom label for each user, so instead of `upload/{userId}/your-template` it will be `upload/{custom_user_label}/your-template`.  
@@ -51,17 +45,13 @@ To apply a storage template, go to the `Administration > Users`, then click on t
 To apply the Storage Label to previously uploaded assets, run the Storage Migration Job.
 :::
 
-<img src={require('./img/user-storage-label.webp').default} width="40%" title="Delete User" />
-
 ## Password Reset
-
-<img src={require('./img/user-edit-menu.webp').default} width="80%" title="Customize Delete User" />
 
 To reset a user's password, go to `Administration > Users`, then click on the context menu button next to the user, then click "Reset Password". The user's password will be reset to a random password and they have to change it next time they sign in.
 
 ## Delete a User
 
-If you need to remove a user from Immich, go to `Administration > Users`, then click on the context menu button next to the user. The user account will immediately become disabled and their library and all associated data will be removed after 7 days by default.
+If you need to remove a user from Frameleaf, go to `Administration > Users`, then click on the context menu button next to the user. The user account will immediately become disabled and their library and all associated data will be removed after 7 days by default.
 
 ### Delete Delay
 
@@ -75,5 +65,3 @@ The user deletion job runs at midnight to check for users that are ready for del
 You can choose to delete a user immediately by checking the box
 `Queue user and assets for immediate deletion` in the deletion process, this will immediately remove the user and all assets.
 This cannot be undone and the files cannot be recovered.
-
-<img src={require('./img/immediately-remove-user.webp').default} width="40%" title="Customize Delete User" />

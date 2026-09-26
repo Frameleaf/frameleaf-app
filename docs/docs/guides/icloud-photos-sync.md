@@ -1,12 +1,12 @@
 # iCloud Photos Sync
 
-Import your iCloud Photos library into Immich from **Utilities → iCloud Photos Sync**. Downloads run on the server and continue when you close the browser. You can import available Apple edits, preserve Live Photos, and recover matching Immich files that are missing or damaged.
+Import your iCloud Photos library into Frameleaf from **Utilities → iCloud Photos Sync**. Downloads run on the server and continue when you close the browser. You can import available Apple edits, preserve Live Photos, and recover matching Frameleaf files that are missing or damaged.
 
-This is a one-way import. It does not write changes back to Apple or delete Immich photos when you delete them from iCloud. Disconnecting leaves your imported Immich photos in place.
+This is a one-way import. It does not write changes back to Apple or delete Frameleaf photos when you delete them from iCloud. Disconnecting leaves your imported Frameleaf photos in place.
 
 ## Before you start
 
-Your administrator must enable the connector using the [server setup guide](icloud-photos-server-setup.md). If the page says sync is not enabled, account sign-in alone cannot enable it. Use an HTTPS address for Immich.
+Your administrator must enable the connector using the [server setup guide](icloud-photos-server-setup.md). If the page says sync is not enabled, account sign-in alone cannot enable it. Use an HTTPS address for Frameleaf.
 
 Have your Apple account password and a trusted Apple device available. Enable **Access iCloud Data on the Web** on that device. Advanced Data Protection may require you to approve web access again when it expires. This connector supports trusted-device verification codes; SMS verification is not supported.
 
@@ -26,14 +26,14 @@ Passwords and verification codes clear after submission. The server stores an en
 
 ## Choose import settings
 
-| Setting                                                                  | What it does                                                                                                                                                    |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Import available Apple-edited versions and stack them with originals** | Imports available finished edits as separate assets in an Immich Stack with the original. Enabled by default.                                                   |
-| **Import hidden source media**                                           | Includes Apple Hidden media. Requires an unlocked elevated Immich session when saving. Imported hidden media uses Immich Locked privacy. Off by default.        |
-| **Allow damaged external-library matches to become managed assets**      | Allows a verified recovery copy to become Immich-managed media while preserving the existing asset ID. It does not overwrite the external file. Off by default. |
-| **Interval (hours)**                                                     | Sets the interval between scheduled runs; default 24 hours.                                                                                                     |
-| **Concurrent downloads**                                                 | Sets the number of concurrent downloads for this connection; default 1, maximum 4, also subject to server limits.                                               |
-| **Staging budget (bytes)**                                               | Reserves space for downloads and recovery copies; default 20 GiB (`21474836480` bytes). This is separate from your account's media quota.                       |
+| Setting                                                                  | What it does                                                                                                                                                       |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Import available Apple-edited versions and stack them with originals** | Imports available finished edits as separate assets in a Stack with the original. Enabled by default.                                                              |
+| **Import hidden source media**                                           | Includes Apple Hidden media. Requires an unlocked elevated Frameleaf session when saving. Imported hidden media uses Locked privacy. Off by default.               |
+| **Allow damaged external-library matches to become managed assets**      | Allows a verified recovery copy to become Frameleaf-managed media while preserving the existing asset ID. It does not overwrite the external file. Off by default. |
+| **Interval (hours)**                                                     | Sets the interval between scheduled runs; default 24 hours.                                                                                                        |
+| **Concurrent downloads**                                                 | Sets the number of concurrent downloads for this connection; default 1, maximum 4, also subject to server limits.                                                  |
+| **Staging budget (bytes)**                                               | Reserves space for downloads and recovery copies; default 20 GiB (`21474836480` bytes). This is separate from your account's media quota.                          |
 
 Save changed settings before running. If you reduce the selection, downloaded recovery copies may remain in staging until they can be safely finalized. They still count toward capacity.
 
@@ -41,7 +41,7 @@ Save changed settings before running. If you reduce the selection, downloaded re
 
 The connector compares file contents using hashes. A renamed file can still be the same photo; matching names alone do not establish a match. An initial download may be necessary to identify an exact duplicate.
 
-| Existing Immich media                                                              | Result                                                                                                                    |
+| Existing Frameleaf media                                                           | Result                                                                                                                    |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Same content and healthy file                                                      | Reuses the existing asset instead of importing another copy.                                                              |
 | Matching saved content hash, but missing, corrupt, unreadable, or offline media    | Downloads and validates the matching resource, then repairs the existing asset when safe. Its ID and associations remain. |
@@ -50,23 +50,23 @@ The connector compares file contents using hashes. A renamed file can still be t
 | Damaged external-library match without managed-recovery permission                 | Requires review and retains the recovery copy.                                                                            |
 | Uncertain identity, unsupported media, or conflicting privacy/relationship choices | Requires review rather than claiming success.                                                                             |
 
-A database checksum alone is not enough to skip recovery: the connector verifies the destination file. A previously imported photo can therefore be fetched again if its Immich copy later becomes missing or corrupt. Failed validation never counts as a repair.
+A database checksum alone is not enough to skip recovery: the connector verifies the destination file. A previously imported photo can therefore be fetched again if its Frameleaf copy later becomes missing or corrupt. Failed validation never counts as a repair.
 
 See [Recover missing or corrupt media](media-recovery.md) for the full workflow and how to review results.
 
 ## Apple edits and Stacks
 
-When edit import is enabled, an available Apple-edited photo or video becomes a separate Immich asset grouped with its original using **Stacks**. Open the Stack to view its members and access the original. The current Apple edit can become the displayed member when that does not override your manual Stack choice or local work.
+When edit import is enabled, an available Apple-edited photo or video becomes a separate Frameleaf asset grouped with its original using **Stacks**. Open the Stack to view its members and access the original. The current Apple edit can become the displayed member when that does not override your manual Stack choice or local work.
 
-For example, an original photo and Apple's cropped version appear together in a Stack. A later Apple edit adds another available version. Reverting in Apple removes the current edit preference; it does not delete your original, older imported versions, or independent Immich edits.
+For example, an original photo and Apple's cropped version appear together in a Stack. A later Apple edit adds another available version. Reverting in Apple removes the current edit preference; it does not delete your original, older imported versions, or independent Frameleaf edits.
 
-Apple's finished image/video is imported; its adjustment recipe is not converted into Immich editing instructions. Separate Apple photos that share identical original bytes keep their source relationships and distinct edits, although their original may reuse one destination asset.
+Apple's finished image/video is imported; its adjustment recipe is not converted into Frameleaf editing instructions. Separate Apple photos that share identical original bytes keep their source relationships and distinct edits, although their original may reuse one destination asset.
 
 Up to **20 distinct retained Apple edit versions per source photo** can be admitted. A new version above that ceiling requires review; existing versions are preserved. Repeatedly choosing Retry does not bypass the limit. Ask your administrator for help reviewing retained versions before removing anything.
 
 ## Live Photos and RAW alternatives
 
-A Live Photo contains a still image, such as JPG or HEIC, and a short movie. The connector uses Apple source identities to link these through Immich's native Live Photo relationship. The movie becomes the still's motion component rather than a separate timeline item.
+A Live Photo contains a still image, such as JPG or HEIC, and a short movie. The connector uses Apple source identities to link these through Frameleaf's native Live Photo relationship. The movie becomes the still's motion component rather than a separate timeline item.
 
 If only the movie is missing or corrupt, the connector can recover that component without replacing the healthy still. General pairing of files already imported outside this connector remains available under **Utilities → Relink live photos**.
 
@@ -78,9 +78,9 @@ Source album names, nesting, and memberships are kept where reliable source info
 
 A complete source inventory can remove a membership managed by that connection. It does not remove an independently managed membership or delete your local albums. Source album deletion does not delete destination photos.
 
-Favorites, hidden status, and capture dates are supported. Metadata locks and tracked local changes remain authoritative; missing source data does not erase destination values. On the first sync of an existing asset, a source favorite can replace Immich's default false value because an earlier untracked manual false cannot be distinguished from that default. Later comparisons use the saved sync history.
+Favorites, hidden status, and capture dates are supported. Metadata locks and tracked local changes remain authoritative; missing source data does not erase destination values. On the first sync of an existing asset, a source favorite can replace Frameleaf's default false value because an earlier untracked manual false cannot be distinguished from that default. Later comparisons use the saved sync history.
 
-Source captions, locations, and timezone fields are not currently supported by the verified adapter. Existing extracted or locally entered values are preserved. Unhiding a photo in Apple does not automatically remove an Immich privacy choice.
+Source captions, locations, and timezone fields are not currently supported by the verified adapter. Existing extracted or locally entered values are preserved. Unhiding a photo in Apple does not automatically remove a Frameleaf privacy choice.
 
 ## Monitor, pause, and resume
 

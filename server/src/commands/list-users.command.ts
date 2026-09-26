@@ -3,7 +3,7 @@ import { CliService } from 'src/services/cli.service.js';
 
 @Command({
   name: 'list-users',
-  description: 'List Immich users',
+  description: 'List Frameleaf users',
 })
 export class ListUsersCommand extends CommandRunner {
   constructor(private service: CliService) {

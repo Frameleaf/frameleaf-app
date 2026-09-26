@@ -310,11 +310,11 @@ Use the **Custom vocabulary** to teach the model your hobby's nouns. Examples:
 
 ### Identity injection — tuning and limits
 
-Identity injection pulls named recognized faces from Immich's facial-recognition pipeline into the description prompt.
+Identity injection pulls named recognized faces from Frameleaf's facial-recognition pipeline into the description prompt.
 
 **How it works under the hood:**
 
-1. For each asset being described, Immich queries the visible named faces on that asset.
+1. For each asset being described, Frameleaf queries the visible named faces on that asset.
 2. Faces above **Min face confidence** are taken (currently always passes — see note below), up to **Max names**.
 3. Each name and its position in the frame are added to the prompt as a list:
 
@@ -338,7 +338,7 @@ Identity injection pulls named recognized faces from Immich's facial-recognition
 **Controls:**
 
 - **Min face confidence** (default 0.7) filters out low-confidence face matches before injection. Raise to 0.8 if you see misidentifications leak through; lower to 0.6 if you see correctly-named faces failing to surface.
-  - _Note: Immich's current schema doesn't store a per-face recognition score — named faces are treated as user-curated ground truth (confidence = 1.0). This control is therefore an on/off knob: setting it above 1.0 suppresses all identity hints without disabling injection. The threshold will become meaningful once per-face scores are stored._
+  - _Note: Frameleaf's current schema doesn't store a per-face recognition score — named faces are treated as user-curated ground truth (confidence = 1.0). This control is therefore an on/off knob: setting it above 1.0 suppresses all identity hints without disabling injection. The threshold will become meaningful once per-face scores are stored._
 - **Max names** (default 5) caps how many recognized people are passed in a single prompt. Reduce to 1–2 for crowd photos where you only want the central subjects. Raise to 10–15 for sports teams, weddings, and other large-group photos where you want everyone named.
 
 **Post-validator behavior:**
@@ -352,7 +352,7 @@ Identity injection pulls named recognized faces from Immich's facial-recognition
 
 ### Advanced prompt template (raw override)
 
-The Advanced sub-accordion exposes the raw template Immich would otherwise build from the structured controls.
+The Advanced sub-accordion exposes the raw template Frameleaf would otherwise build from the structured controls.
 
 > [!CAUTION]
 > Most users should not enable this. The structured controls (style, vocabulary, look-for, custom instructions, indicators) compose into the same template at runtime, with safer defaults. Use raw mode only when you need something the structured controls can't express — for example, changing the order of sections, removing rules entirely, or asking for a different JSON shape.
@@ -440,7 +440,7 @@ Modern vision-language models can technically take multiple images in a single i
 - works with every model in the curated dropdown (Qwen, Phi, even Florence in fallback),
 - preserves cross-frame context (the model literally sees the timeline in one view).
 
-The trade-off is per-cell resolution. For typical Immich use, that's an acceptable cost.
+The trade-off is per-cell resolution. For typical Frameleaf use, that's an acceptable cost.
 
 ### Smart-album tag tuning
 
@@ -709,4 +709,4 @@ Iterate the custom instructions in 30-minute cycles: edit, save, re-queue a hand
 - [Image Enrichment](./image-enrichment.md) — the underlying description and NSFW pipeline.
 - [Facial Recognition](./facial-recognition.md) — required for identity injection.
 - [ML Hardware Acceleration](./ml-hardware-acceleration.md) — picking the right hardware profile.
-- [Tags](./tags.md) — how the generated tags interact with the rest of Immich.
+- [Tags](./tags.md) — how the generated tags interact with the rest of Frameleaf.

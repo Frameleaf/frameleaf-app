@@ -15,7 +15,6 @@
     children,
     footer,
     hero,
-    attribution = false,
     keypad = 'auto',
     wide = false,
   }: {
@@ -24,7 +23,6 @@
     children?: Snippet;
     footer?: Snippet;
     hero?: 'summit' | 'cabin';
-    attribution?: boolean;
     keypad?: 'auto' | 'always' | 'never';
     /** The prototype's `AuthShell wide` (onboarding): a wider single pane. */
     wide?: boolean;
@@ -70,16 +68,9 @@
       {@render children?.()}
     </div>
 
-    {#if footer || attribution}
-      <footer class="auth-foot">
-        {#if attribution}
-          <span
-            >{$t('frameleaf_auth_built_on')}
-            <a href="https://immich.app" target="_blank" rel="noreferrer">Immich</a></span
-          >
-        {/if}
-        {#if footer}{@render footer()}{/if}
-      </footer>
+    {#if footer}
+      <!-- FL-190: no upstream attribution here; it lives on the About screen only. -->
+      <footer class="auth-foot">{@render footer()}</footer>
     {/if}
   </div>
 

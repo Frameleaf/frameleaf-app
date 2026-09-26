@@ -427,17 +427,18 @@
       "version": 2
     },
     {
-      "bytes": 15200,
+      "bytes": 16189,
       "category": "features",
       "id": "61440280",
       "source": "docs/docs/features/fork-privacy-suite.md",
-      "sourceSha256": "3a8c44cdedd7bc145f2f1098a0d20b641ebb9185fff226ae31e02dea96f66980",
+      "sourceCommit": "4c696b02046a16548eba610d410a1d0a9ccba386",
+      "sourceSha256": "b0f7b51742f49526404eb084e748d43753e81d4c765d98879cd7897d33045787",
       "title": "Feature Reference \u2014 Fork Privacy Suite",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Fork+Privacy+Suite",
-      "verification": "FL-159 Confluence page read back at version 5 with source hash 3a8c44cd and 15200 bytes in the header; compared with version 4 (which matched source bdec0d0d apart from the usual Confluence link rewrites and markdown normalization), the only differences are the header and the three Telemetry and Automatic Reporting lines that now say Frameleaf Cloud / every machine-learning image; no RunPod reference remains on the page.",
+      "verification": "FL-192 Confluence page read back at version 6 with source hash b0f7b517, 16189 bytes and commit 4c696b0204 on master/frameleaf-implementation in the header, with the source-at-commit backlink and FL-192 and FL-159 links; the live version 5 was unchanged since its FL-159 read-back, and compared with it the only differences are the header, the version-check line (off by default, Frameleaf's release feed only) and the new list of where each download comes from under Telemetry and Automatic Reporting; the Confluence links are kept.",
       "verified": true,
-      "verifiedAt": "2026-09-25T16:27:29.416Z",
-      "version": 5
+      "verifiedAt": "2026-09-26T16:22:10.000Z",
+      "version": 6
     },
     {
       "bytes": 3750,
@@ -453,17 +454,18 @@
       "verifiedAt": "2026-09-23T14:10:06.000Z"
     },
     {
-      "bytes": 15103,
+      "bytes": 15667,
       "category": "features",
       "id": "61374970",
       "source": "docs/docs/features/image-enrichment.md",
-      "sourceSha256": "73970170cae1681c7f8dcd30facaa4a3dbd8db3676dc8f9661531a141ccde712",
+      "sourceCommit": "92e00e4ef466fe0d8d3e92dc7d1d45a972b15672",
+      "sourceSha256": "f4988f89936e8cda74e06e1ba3b506da2fe7136289913bdf73151412b9dc358a",
       "title": "Feature Reference \u2014 Image Enrichment",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374970/Feature+Reference+Image+Enrichment",
-      "verification": "FL-159 Confluence page read back at version 5 with source hash 73970170 and 15103 bytes in the header; compared with version 4 (which matched source 91eafee3 apart from the usual Confluence link rewrites), the only differences are the header, the fallback sentence in Descriptions and Tags and the Frameleaf Cloud destination bullet and sentence under Fallback model behavior; no RunPod reference remains on the page.",
+      "verification": "FL-189 Confluence page read back at version 6 with source hash f4988f89, 15667 bytes and commit 92e00e4ef4 on master/frameleaf-implementation in the header, with the source-at-commit backlink and FL-189 and FL-159 links; compared with version 5 (source 73970170), the only differences are the header and the new paragraph after the OpenVINO note in Hardware and Model Notes, on the descriptions slider's white and green stops, whose Hardware acceleration link reads back as a GitHub link to ml-hardware-acceleration.md#model-licences-and-frameleaf-cloud; the Confluence implementation-plan link is kept.",
       "verified": true,
-      "verifiedAt": "2026-09-25T16:29:41.087Z",
-      "version": 5
+      "verifiedAt": "2026-09-26T16:04:30.000Z",
+      "version": 6
     },
     {
       "bytes": 3873,
@@ -1035,19 +1037,19 @@
       "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 131506,
+      "bytes": 133370,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "3b2417062b8fee3910dd63abfb41c7a626f09f376db4468339ddcf60b8fc5ffb",
+      "sourceSha256": "45ba8a479940e1f7ec4a597f9d9e35c7d408cf1594ad72098fb49a842124dbf3",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 17,
+      "version": 18,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "9e3a9a1fa76ef5ecf5041a8326381ffe07ffd180",
-      "sourceState": "committed-fl-160-what-is-backed-up-note-2026-09-26",
-      "readbackResult": "Markdown read-back of version 17 begins with the header carrying SHA-256 3b241706, 131506 bytes, commit 9e3a9a1fa7 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-160 commit 9e3a9a1fa7 on top of the FL-160 merge 8d0d0ad30a, the source-at-commit backlink, FL-160, FL-163, FL-161, FL-186, FL-183, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the What is backed up card sentence in the FL-160 note under CLD-301, except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
-      "readbackAt": "2026-09-26T14:49:10.000Z"
+      "sourceCommit": "92e00e4ef466fe0d8d3e92dc7d1d45a972b15672",
+      "sourceState": "committed-fl-189-model-sliders-merged-2026-09-26",
+      "readbackResult": "Markdown read-back of version 18 begins with the header carrying SHA-256 45ba8a47, 133370 bytes, commit 92e00e4ef4 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-189 commits 8e1cd53c96 and e5a69d880e merged in 92e00e4ef4 on top of the FL-160 revision, the source-at-commit backlink, FL-189, FL-160, FL-163, FL-161, FL-186, FL-183, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; the live version 17 was unchanged since its read-back, so no user additions were lost; body matches the posted source including the FL-189 local stops in Model choice per model group and the FL-186, FL-189 as-built note under CLD-201, except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
+      "readbackAt": "2026-09-26T16:13:10.000Z"
     }
   ],
   "spaceId": "61374475",

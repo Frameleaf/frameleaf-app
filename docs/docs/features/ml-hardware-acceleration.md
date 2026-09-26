@@ -52,7 +52,14 @@ Some models may run on your own hardware but are never offered on Frameleaf Clou
 | `nllb-clip` search models (base and large, every variant)      | CC-BY-NC-4.0                                    | Local only      |
 | MusicGen-small (`Xenova/musicgen-small`)                       | CC-BY-NC-4.0                                    | Local only      |
 
-Choose the Frameleaf Cloud model for each kind of work in **Where each job runs**. When none is chosen, jobs use the model Frameleaf Cloud recommends for your region; if it recommends none, and always for Studio AI, cloud jobs are refused until you choose one. Every model the cloud tier offers is licensed Apache-2.0, MIT or for commercial hosted use.
+Choose the models for each kind of work in **Where each job runs** or on the **Models** card of Cloud processing. Each kind of work has one slider, from lighter to heavier models:
+
+- **White** stops run on this server's processor and **green** stops fit its GPU, as the last Hardware & GPU check found it. Without a check every stop is white; run the check to see which fit. A model that needs more GPU memory than you have, or CUDA on a GPU that does not use it, is crossed out with the reason.
+- **Blue** stops run on Frameleaf Cloud only, with the price per minute of GPU time.
+
+Descriptions and tags is the only kind of work with a model for this server on the slider. Choosing a white or green stop changes the description model setting, saved with the settings bar like the Machine learning settings. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback model and any model typed as a custom name stay in the Machine learning settings. Restoration and Studio AI workers bring their own models, and upscale and smooth motion run on Frameleaf Cloud only, so their sliders have blue stops only.
+
+A blue stop is saved at once. When no Frameleaf Cloud model is chosen, jobs use the model Frameleaf Cloud recommends for your region; if it recommends none, and always for Studio AI, cloud jobs are refused until you choose one. Choosing on one side never changes the other, and where each job runs still follows its setting: work set to **Local only** shows its blue stops crossed out, and work set to **Cloud only** its white and green stops. Every model the cloud tier offers is licensed Apache-2.0, MIT or for commercial hosted use.
 
 ## Prerequisites
 
@@ -129,7 +136,7 @@ Choose the Frameleaf Cloud model for each kind of work in **Where each job runs*
 
 You can confirm the device is being recognized and used by checking its utilization. There are many tools to display this, such as `nvtop` for NVIDIA or Intel, `intel_gpu_top` for Intel, and `radeontop` for AMD.
 
-You can also check the logs of the `immich-machine-learning` container. When a Smart Search or Face Detection job begins, or when you search with text in Immich, you should either see a log for `Available ORT providers` containing the relevant provider (e.g. `CUDAExecutionProvider` in the case of CUDA), or a `Loaded ANN model` log entry without errors in the case of ARM NN.
+You can also check the logs of the `immich-machine-learning` container. When a Smart Search or Face Detection job begins, or when you search with text in Frameleaf, you should either see a log for `Available ORT providers` containing the relevant provider (e.g. `CUDAExecutionProvider` in the case of CUDA), or a `Loaded ANN model` log entry without errors in the case of ARM NN.
 
 #### Single Compose File
 

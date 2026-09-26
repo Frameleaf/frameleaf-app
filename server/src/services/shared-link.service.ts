@@ -305,10 +305,14 @@ export class SharedLinkService extends BaseService {
       ? `/api/assets/${assetId}/thumbnail?key=${sharedLink.key.toString('base64url')}`
       : '/feature-panel.png';
 
+    // FL-190: the image needs an absolute address; without one the tag is left out, never pointed at
+    // another project's host.
+    const base = getExternalDomain(config.server, defaultDomain) ?? (await this.getPublicUrl(config.server));
+
     return {
       title: sharedLink.album ? sharedLink.album.albumName : 'Public Share',
       description: sharedLink.description || `${assetCount} shared photos & videos`,
-      imageUrl: new URL(imagePath, getExternalDomain(config.server, defaultDomain)).href,
+      imageUrl: base ? new URL(imagePath, base).href : undefined,
     };
   }
 

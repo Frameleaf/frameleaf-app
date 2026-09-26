@@ -224,7 +224,7 @@ describe(CloudBackupService.name, () => {
       getEntriesPage: vi.fn().mockResolvedValue([]),
       deleteEntries: vi.fn().mockResolvedValue(undefined),
       deleteBucket: vi.fn().mockResolvedValue(undefined),
-      currentTime: vi.fn().mockResolvedValue(new Date('2026-09-26T02:59:00.000Z')),
+      currentTime: vi.fn().mockResolvedValue('2026-09-26T02:59:00.123456+00:00'),
       pruneUnseen: vi.fn().mockResolvedValue(0),
       setManifestDatabase: vi.fn().mockResolvedValue(undefined),
       getLatestManifestDatabaseKey: vi.fn().mockResolvedValue(null),
@@ -788,7 +788,7 @@ describe(CloudBackupService.name, () => {
 
       await sut.run(operationOf(), 'claim-1');
 
-      expect(index.pruneUnseen).toHaveBeenCalledWith(ref, new Date('2026-09-26T02:59:00.000Z'));
+      expect(index.pruneUnseen).toHaveBeenCalledWith(ref, '2026-09-26T02:59:00.123456+00:00');
       expect(index.currentTime.mock.invocationCallOrder[0]).toBeLessThan(
         orderOf(store.listAll, ([, prefix]) => prefix === 'o/'),
       );
