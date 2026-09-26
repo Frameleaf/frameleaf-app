@@ -33,6 +33,7 @@ describe('websocket origin allow-list (FL-161)', () => {
     expect(websocketOriginAllowed('https://evil.example', { hosts, origins })).toBe(false);
     expect(websocketOriginAllowed('null', { hosts, origins })).toBe(false);
     expect(websocketOriginAllowed('https://photos.example.com.evil.example', { hosts, origins })).toBe(false);
+    // eslint-disable-next-line unicorn/prefer-https -- the page's own host over plain HTTP is another origin, refused
     expect(websocketOriginAllowed('http://photos.example.com', { hosts, origins })).toBe(false);
     expect(websocketOriginAllowed('http://192.168.1.10:9999', { hosts, origins })).toBe(false);
   });

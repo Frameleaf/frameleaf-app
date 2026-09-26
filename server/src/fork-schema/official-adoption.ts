@@ -364,8 +364,8 @@ export const ADOPTION_STEP_COUNTERS: Readonly<Record<string, Readonly<Record<str
     ),
     plaintextPasswordLinks: count(
       ['public.shared_link'],
-      `SELECT count(*)::int AS count FROM public.shared_link
-       WHERE password IS NOT NULL AND password <> '' AND password !~ '^\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}$'`,
+      String.raw`SELECT count(*)::int AS count FROM public.shared_link
+       WHERE password IS NOT NULL AND password <> '' AND password !~ '^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$'`,
     ),
   },
 };
