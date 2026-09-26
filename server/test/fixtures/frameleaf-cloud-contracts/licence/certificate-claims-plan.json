@@ -1,0 +1,31 @@
+{
+  "iss": "https://id.frameleaf.cloud",
+  "aud": "frameleaf-server",
+  "sub": "0192a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+  "iid": "0192a1b2-c3d4-7e5f-9a6b-000000000001",
+  "cnf": {
+    "jkt": "Xj3gtXILdiQF1FeweQax-XIzrYotSJ6ToTJmOc04wRE"
+  },
+  "ent": [
+    "CLOUD",
+    "REMOTE_ACCESS",
+    "CLOUD_BACKUP",
+    "CLOUD_ML"
+  ],
+  "lim": {
+    "relay_mbps": 8,
+    "relay_gb_month": 200,
+    "backup_bytes": 1000000000000,
+    "instances": 3
+  },
+  "lic_exp": 1790640000,
+  "upd": {
+    "after": 86400,
+    "url": "https://api.frameleaf.cloud/v1/licenses/refresh"
+  },
+  "grace_days": 7,
+  "iat": 1790380800,
+  "nbf": 1790380800,
+  "exp": 1790985600,
+  "jti": "0192a1b2-c3d4-7e5f-8a6b-0000000000c1"
+}
