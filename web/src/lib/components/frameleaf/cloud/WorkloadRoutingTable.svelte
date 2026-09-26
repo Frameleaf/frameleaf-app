@@ -58,6 +58,8 @@
   let notice = $state('');
   /** The catalogue was read for the current linked and turned-on state. */
   let modelsRequested = false;
+  /** Only the latest read is shown, whatever order the answers arrive in. */
+  let modelsLoad = 0;
 
   onMount(() => {
     void getCloudMlStatus()
@@ -85,13 +87,20 @@
   $effect(() => {
     if (!showModels || !cloudOn) {
       modelsRequested = false;
+      modelsLoad += 1;
       return;
     }
     if (modelsRequested) {
       return;
     }
     modelsRequested = true;
-    void loadCloudModelData(status).then((next) => (models = next));
+    modelsLoad += 1;
+    const load = modelsLoad;
+    void loadCloudModelData(status).then((next) => {
+      if (load === modelsLoad) {
+        models = next;
+      }
+    });
   });
 
   const setRoute = (id: string, mode: RouteMode) => {

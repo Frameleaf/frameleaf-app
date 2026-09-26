@@ -25,7 +25,7 @@
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiAlertOutline, mdiCloudOutline, mdiStarOutline } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -92,7 +92,11 @@
         wanted = null;
       }
     } catch (error) {
-      wanted = null;
+      // Only the choice that failed goes back to the saved model; a newer one made meanwhile is kept
+      // and gets its own save next, so the latest choice is never lost to an earlier failure.
+      if (wanted?.id === next) {
+        wanted = null;
+      }
       handleError(error, $t('admin.frameleaf_cloud_model_error_save', { values: { name } }));
     } finally {
       saving = false;
@@ -108,6 +112,24 @@
     timer = setTimeout(() => void flush(), SAVE_DELAY_MS);
   };
 
+  let fieldset = $state<HTMLFieldSetElement>();
+
+  /** Go back to the recommendation; focus moves to its radio, since the button goes away. */
+  const useRecommended = async () => {
+    if (!recommended) {
+      return;
+    }
+    const target = recommended.id;
+    choose(null);
+    await tick();
+    const radios = fieldset?.querySelectorAll<HTMLInputElement>(':scope input[type="radio"]') ?? [];
+    for (const radio of radios) {
+      if (radio.value === target) {
+        radio.focus();
+      }
+    }
+  };
+
   onDestroy(() => {
     // A choice made just before the picker closes is still saved.
     if (timer !== undefined) {
@@ -117,7 +139,7 @@
   });
 </script>
 
-<fieldset class="ms" data-group={group} aria-busy={saving}>
+<fieldset class="ms" data-group={group} aria-busy={saving} bind:this={fieldset}>
   <legend class="ms-legend">{$t('admin.frameleaf_cloud_model_for', { values: { name } })}</legend>
   {#if models.length === 0}
     <p class="ms-readout is-none" role="status">
@@ -186,7 +208,7 @@
       </p>
     {/if}
     {#if recommended && shownModelId !== null && shownModelId !== recommended.id}
-      <button type="button" class="fc-link" onclick={() => choose(null)}>
+      <button type="button" class="fc-link" onclick={useRecommended}>
         {$t('admin.frameleaf_cloud_model_use_recommended', { values: { model: recommended.name } })}
       </button>
     {/if}

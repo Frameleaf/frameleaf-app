@@ -92,6 +92,7 @@ describe(WorkerInventoryService.name, () => {
       Promise.resolve([mlDestinationStub.local, mlDestinationStub.lan, cloudUnlinked].find((row) => row.id === id)),
     );
     mocks.mlDestination.getSpend.mockResolvedValue(0);
+    mocks.mlDestination.getCloudModelChoices.mockResolvedValue([]);
     mocks.job.getJobCounts.mockResolvedValue(counts(0, 0));
     mocks.job.isPaused.mockResolvedValue(false);
 
@@ -105,6 +106,38 @@ describe(WorkerInventoryService.name, () => {
       mocks.job as never,
       renderWorkers as unknown as RenderWorkerService,
     );
+  });
+
+  it('admits Frameleaf Cloud work with the chosen model, and names the Studio AI model still missing (FL-186)', async () => {
+    const facts = mlDestinationStub.frameleafCloudConsented.lastProbeCloud!;
+    const workloads = [MlWorkload.Enrichment, MlWorkload.StudioAi];
+    const cloud = {
+      ...mlDestinationStub.frameleafCloudConsented,
+      workloads,
+      lastProbeWorkloads: workloads,
+      lastProbeCloud: {
+        ...facts,
+        defaultModels: {},
+        modelIds: [...facts.modelIds, 'studio-words'],
+        modelGroups: { ...facts.modelGroups, 'studio-words': 'transcription' },
+      },
+    };
+    mocks.mlDestination.getAll.mockResolvedValue([cloud]);
+    mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
+      { modelGroup: 'descriptions', modelId: 'describe-large', updatedAt: new Date() },
+      { modelGroup: 'transcription', modelId: 'studio-words', updatedAt: new Date() },
+    ]);
+
+    const inventory = await sut.getInventory();
+
+    const admission = inventory.entries.find((entry) => entry.id === cloud.id)!.admission;
+    expect(admission.find(({ workload }) => workload === MlWorkload.Enrichment)).toMatchObject({ admitted: true });
+    expect(admission.find(({ workload }) => workload === MlWorkload.StudioAi)).toEqual({
+      workload: MlWorkload.StudioAi,
+      admitted: false,
+      refusal: MlAdmissionRefusal.ModelMismatch,
+      detail: 'Frameleaf Cloud: choose a Frameleaf Cloud model for Studio AI speech in Where each job runs',
+    });
   });
 
   it('lists every ML destination with its role, routes and admission, and never contacts a worker', async () => {

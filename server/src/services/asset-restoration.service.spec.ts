@@ -128,6 +128,7 @@ describe(AssetRestorationService.name, () => {
     ]);
     // No library routes by default; the FL-72 case below sets one.
     mocks.mlDestination.getRoutes.mockResolvedValue([]);
+    mocks.mlDestination.getCloudModelChoices.mockResolvedValue([]);
     mocks.mlDestination.getThroughput.mockResolvedValue({ sampleCount: 0, bytesSent: 0, durationMs: 0, spentUsd: 0 });
     mocks.machineLearning.probe.mockResolvedValue({
       ...mlProbeStub.healthy,
@@ -178,6 +179,23 @@ describe(AssetRestorationService.name, () => {
   });
 
   describe('getOptions', () => {
+    it('offers Frameleaf Cloud for a mode once a model is chosen where the catalogue marks no default (FL-186)', async () => {
+      const facts = mlDestinationStub.frameleafCloudConsented.lastProbeCloud!;
+      const cloud = { ...mlDestinationStub.frameleafCloudConsented, lastProbeCloud: { ...facts, defaultModels: {} } };
+      mocks.mlDestination.getAll.mockResolvedValue([cloud]);
+      mocks.mlDestination.getSpend.mockResolvedValue(0);
+      const request = { mode: AssetRestorationMode.Creative, upscale: 2 as const };
+
+      const unchosen = await sut.getOptions(authStub.user1, asset.id, request);
+      expect(unchosen.destinations[0]).toMatchObject({ available: false, refusal: MlAdmissionRefusal.ModelMismatch });
+
+      mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
+        { modelGroup: 'restoration-creative', modelId: 'restore-creative', updatedAt: new Date() },
+      ]);
+      const chosen = await sut.getOptions(authStub.user1, asset.id, request);
+      expect(chosen.destinations[0]).toMatchObject({ available: true, refusal: null });
+    });
+
     it('lists every destination with the admission verdict from the persisted probe and a per-destination estimate', async () => {
       mocks.mlDestination.getThroughput.mockImplementation((id: string) =>
         Promise.resolve(

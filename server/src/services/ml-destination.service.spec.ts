@@ -54,6 +54,7 @@ describe(MlDestinationService.name, () => {
     );
     mocks.mlDestination.setRoute.mockResolvedValue();
     mocks.mlDestination.clearRoute.mockResolvedValue();
+    mocks.mlDestination.getCloudModelChoices.mockResolvedValue([]);
     mocks.mlDestination.create.mockImplementation((row) =>
       Promise.resolve({ ...mlDestinationStub.local, ...row, id: 'created' } as never),
     );
@@ -816,6 +817,42 @@ describe(MlDestinationService.name, () => {
       // The LAN worker allows restoration and its last probe reported it.
       expect(restoration.available).toBe(true);
       expect(restoration.routedDestinationId).toBeNull();
+    });
+
+    it('counts Frameleaf Cloud for Studio AI only once both its speech to text and speech models are chosen (FL-186)', async () => {
+      const facts = mlDestinationStub.frameleafCloudConsented.lastProbeCloud!;
+      const workloads = [MlWorkload.Enrichment, MlWorkload.StudioAi];
+      const cloud = {
+        ...mlDestinationStub.frameleafCloudConsented,
+        workloads,
+        lastProbeWorkloads: workloads,
+        lastProbeCloud: {
+          ...facts,
+          defaultModels: {},
+          modelIds: [...facts.modelIds, 'studio-words', 'studio-voice'],
+          modelGroups: { ...facts.modelGroups, 'studio-words': 'transcription', 'studio-voice': 'tts' },
+        },
+      };
+      mocks.mlDestination.getAll.mockResolvedValue([cloud]);
+      mocks.mlDestination.getSpend.mockResolvedValue(0);
+      const studioOn = async () => (await sut.getCapabilities()).studio.transcriptionWorker;
+      const enrichmentOn = async () =>
+        (await sut.getCapabilities()).workloads.find((entry) => entry.workload === MlWorkload.Enrichment)!.available;
+
+      mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
+        { modelGroup: 'transcription', modelId: 'studio-words', updatedAt: new Date() },
+      ]);
+      expect(await studioOn()).toBe(false);
+      // no default for descriptions and none chosen: nothing to send
+      expect(await enrichmentOn()).toBe(false);
+
+      mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
+        { modelGroup: 'transcription', modelId: 'studio-words', updatedAt: new Date() },
+        { modelGroup: 'tts', modelId: 'studio-voice', updatedAt: new Date() },
+        { modelGroup: 'descriptions', modelId: 'describe-large', updatedAt: new Date() },
+      ]);
+      expect(await studioOn()).toBe(true);
+      expect(await enrichmentOn()).toBe(true);
     });
 
     describe('render worker (FL-42)', () => {
