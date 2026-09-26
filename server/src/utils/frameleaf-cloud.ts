@@ -62,13 +62,33 @@ export const discoveryProblem = (cloudUrl: string, document: FrameleafDiscoveryD
   return null;
 };
 
+/** Second-level labels country registries sell names under (`co.uk`, `com.au`, `ne.jp`, …). */
+const REGISTRY_SECOND_LEVELS: ReadonlySet<string> = new Set([
+  'ac',
+  'co',
+  'com',
+  'edu',
+  'go',
+  'gob',
+  'gov',
+  'ltd',
+  'me',
+  'ne',
+  'net',
+  'nic',
+  'or',
+  'org',
+  'plc',
+]);
+
 /**
  * The cloud domain whose sibling subdomains an address may use (FL-177, as-built decision #1), or
  * null. Frameleaf Cloud serves discovery on `api.frameleaf.cloud` and its issuer on
  * `id.frameleaf.cloud`, so with `FRAMELEAF_CLOUD_URL=https://api.frameleaf.cloud` the cloud domain is
  * `frameleaf.cloud`. Only a configured host of at least three labels has one (its first label
  * removed): an apex such as `frameleaf.cloud` already covers its subdomains, and dropping a label
- * from a two-label host would reach a public suffix. An IP address never has one.
+ * from a two-label host would reach a public suffix. The same holds for a country's registry
+ * domain (`frameleaf.co.uk` never widens to `co.uk`). An IP address never has one.
  */
 export const cloudDomainOf = (hostname: string): string | null => {
   const host = hostname.toLowerCase().replace(/\.$/, '');
@@ -79,7 +99,11 @@ export const cloudDomainOf = (hostname: string): string | null => {
   if (labels.length < 3 || labels.some((label) => !label)) {
     return null;
   }
-  return labels.slice(1).join('.');
+  const domain = labels.slice(1);
+  if (domain.length === 2 && domain[1].length === 2 && REGISTRY_SECOND_LEVELS.has(domain[0])) {
+    return null;
+  }
+  return domain.join('.');
 };
 
 /**
@@ -287,6 +311,13 @@ export enum CloudErrorCode {
   InstanceRevoked = 'instance_revoked',
   /** The access token was not accepted (expired or unknown); a new one is minted on the next call. */
   InvalidToken = 'invalid_token',
+  /**
+   * FC-19: 401 on every instance route for a token minted with a retired or revoked key (tokens
+   * carry the key as `frameleaf_kid`). Only a new link helps.
+   */
+  KeyRetired = 'key_retired',
+  /** FC-19: the key rotation nonce is unknown, used or expired; ask for a new one. */
+  NonceInvalid = 'nonce_invalid',
   /** The account has no entitlement for what was asked. */
   EntitlementMissing = 'entitlement-missing',
   /** `POST /v1/instances`: this server's instance id is registered with another key. */
@@ -350,6 +381,10 @@ export const refusalFromCloudError = (
   const code = envelope?.code ?? '';
   switch (status) {
     case 401: {
+      if (code === CloudErrorCode.KeyRetired) {
+        // the server has to be linked again before Frameleaf Cloud answers it at all
+        return MlAdmissionRefusal.CloudUnavailable;
+      }
       return code === CloudErrorCode.EntitlementMissing
         ? MlAdmissionRefusal.EntitlementMissing
         : MlAdmissionRefusal.DestinationUnhealthy;

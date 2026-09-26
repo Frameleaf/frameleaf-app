@@ -8,6 +8,7 @@ import {
   cloudDomainOf,
   cloudErrorCode,
   discoveryProblem,
+  discoverySchema,
   errorEnvelopeSchema,
   refusalFromCloudError,
   stepUpUrl,
@@ -91,6 +92,25 @@ describe(discoveryProblem.name, () => {
       endpoints: { heartbeat: 'https://api.frameleaf.cloud/v1/instance/heartbeat' },
     };
 
+    it.each(['instance/discovery.json', 'instance/discovery-instance.json'])(
+      'reads the golden %s and accepts every address in it (api., id., ml. siblings)',
+      (name) => {
+        const document = discoverySchema.parse(cloudContractFixture(name));
+        expect(document).toMatchObject({
+          issuer: 'https://id.frameleaf.cloud',
+          api: 'https://api.frameleaf.cloud',
+          ml: { eu: 'https://ml.eu.frameleaf.cloud', na: 'https://ml.na.frameleaf.cloud' },
+          endpoints: {
+            heartbeat: 'https://api.frameleaf.cloud/v1/instance/heartbeat',
+            mlGrant: 'https://id.frameleaf.cloud/token',
+          },
+        });
+        expect(discoveryProblem('https://api.frameleaf.cloud', document)).toBeNull();
+        // the same document under another configured cloud is refused as a whole
+        expect(discoveryProblem('https://api.frameleaf.example', document)).toMatch(/is not on frameleaf\.example/);
+      },
+    );
+
     it('accepts id., api. and ml. under FRAMELEAF_CLOUD_URL=https://api.frameleaf.cloud', () => {
       expect(discoveryProblem('https://api.frameleaf.cloud', production)).toBeNull();
       expect(
@@ -118,6 +138,9 @@ describe(discoveryProblem.name, () => {
       expect(cloudDomainOf('localhost')).toBeNull();
       expect(cloudDomainOf('127.0.0.1')).toBeNull();
       expect(cloudDomainOf('[::1]')).toBeNull();
+      expect(cloudDomainOf('frameleaf.co.uk')).toBeNull();
+      expect(cloudDomainOf('api.frameleaf.co.uk')).toBe('frameleaf.co.uk');
+      expect(cloudAddressProblem('https://frameleaf.co.uk', 'issuer', 'https://id.attacker.co.uk')).toMatch(/not on/);
       expect(cloudAddressProblem('https://frameleaf.cloud', 'issuer', 'https://id.other.cloud')).toMatch(/not on/);
       expect(cloudAddressProblem('http://127.0.0.1:8080', 'issuer', 'http://1.0.0.1:8080')).toMatch(/not on/);
     });
@@ -158,6 +181,17 @@ describe('error envelope (FL-177, as-built decisions #15–#18)', () => {
     const envelope = errorEnvelopeSchema.parse(cloudContractFixture('errors/use-dpop-nonce.json'));
     expect(envelope).toMatchObject({ code: 'use_dpop_nonce', retryable: true, refusal: null, data: null });
     expect(refusalFromCloudError(401, envelope)).toBe(MlAdmissionRefusal.DestinationUnhealthy);
+  });
+
+  it.each([
+    ['errors/key-retired.json', 401, CloudErrorCode.KeyRetired, MlAdmissionRefusal.CloudUnavailable],
+    ['errors/nonce-invalid.json', 400, CloudErrorCode.NonceInvalid, MlAdmissionRefusal.CloudUnavailable],
+    ['errors/rotation-rate-limited.json', 429, 'rate-limited', MlAdmissionRefusal.QuotaExceeded],
+  ])('reads the golden %s envelope (FC-19)', (name, status, code, refusal) => {
+    const envelope = errorEnvelopeSchema.parse(cloudContractFixture(name));
+    expect(envelope).toMatchObject({ code, refusal: null, detail: null, data: null, requestId: expect.any(String) });
+    expect(envelope.message).not.toBe('');
+    expect(refusalFromCloudError(status, envelope)).toBe(refusal);
   });
 
   it('keeps the code when one field has another shape, so a daily cap is never misread', () => {
