@@ -1,0 +1,63 @@
+{
+  "etag": "\"cat-eu-invalid-two-defaults\"",
+  "models": [
+    {
+      "sku": "ms_NME7RZQ1",
+      "workload": "descriptions",
+      "rank": 1,
+      "label": "Descriptions · Light",
+      "display": {
+        "model": "Qwen3.5-4B",
+        "gpu": "L40S-class, 48 GB"
+      },
+      "computeSku": "cs_KGECTVQ0",
+      "rate": {
+        "perSecondUsd": 0.001301,
+        "startFeeUsd": 0.2
+      },
+      "eta": {
+        "p50Sec": 60,
+        "p90Sec": 180
+      },
+      "limits": {
+        "maxInputs": 1000,
+        "maxInputBytes": 52428800
+      },
+      "rev": "mr_7Q2K9V0X4N1M",
+      "licence": {
+        "name": "Apache-2.0",
+        "commercialHosted": "yes"
+      },
+      "default": true
+    },
+    {
+      "sku": "ms_K6WT70CS",
+      "workload": "descriptions",
+      "rank": 2,
+      "label": "Descriptions · Standard",
+      "display": {
+        "model": "Qwen3.5-9B",
+        "gpu": "L40S-class, 48 GB"
+      },
+      "computeSku": "cs_KGECTVQ0",
+      "rate": {
+        "perSecondUsd": 0.0013,
+        "startFeeUsd": 0.02
+      },
+      "eta": {
+        "p50Sec": 45,
+        "p90Sec": 70
+      },
+      "limits": {
+        "maxInputs": 1000,
+        "maxInputBytes": 52428800
+      },
+      "rev": "mr_B2H147RBJBQ0",
+      "licence": {
+        "name": "Apache-2.0",
+        "commercialHosted": "yes"
+      },
+      "default": true
+    }
+  ]
+}
