@@ -58,7 +58,7 @@ test.describe('Registration', () => {
     await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
     await page.getByRole('button', { name: 'Create account', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Create account' });
-    await dialog.getByLabel('Email').fill('user@immich.cloud');
+    await dialog.getByLabel('Email').fill('user@example.com');
     await dialog.getByLabel('Initial password').fill('password');
     await dialog.getByLabel('Confirm password').fill('password');
     await dialog.getByLabel('Name').fill('Immich User');
@@ -70,7 +70,7 @@ test.describe('Registration', () => {
 
     // login
     await page.goto('/auth/login?autoLaunch=0');
-    await page.getByLabel('Email', { exact: true }).fill('user@immich.cloud');
+    await page.getByLabel('Email', { exact: true }).fill('user@example.com');
     await page.getByLabel('Password', { exact: true }).fill('password');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
@@ -83,7 +83,7 @@ test.describe('Registration', () => {
 
     // login with new password
     await expect(page).toHaveURL('/auth/login?autoLaunch=0');
-    await page.getByLabel('Email', { exact: true }).fill('user@immich.cloud');
+    await page.getByLabel('Email', { exact: true }).fill('user@example.com');
     await page.getByLabel('Password', { exact: true }).fill('new-password');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 

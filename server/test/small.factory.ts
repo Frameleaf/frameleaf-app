@@ -88,7 +88,7 @@ const authUserFactory = (authUser: Partial<AuthUser> = {}) => {
     id = newUuid(),
     isAdmin = false,
     name = 'Test User',
-    email = 'test@immich.cloud',
+    email = 'test@example.com',
     quotaUsageInBytes = 0,
     quotaSizeInBytes = null,
   } = authUser;
@@ -110,7 +110,7 @@ const userAdminFactory = (user: Partial<UserAdmin> = {}) => {
   const {
     id = newUuid(),
     name = 'Test User',
-    email = 'test@immich.cloud',
+    email = 'test@example.com',
     profileImagePath = '',
     profileChangedAt = newDate(),
     storageLabel = null,
