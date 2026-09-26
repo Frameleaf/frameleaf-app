@@ -1,6 +1,6 @@
 A command-line interface for the self-hosted Frameleaf photo library.
 
-See the [CLI documentation](https://help.frameleaf.ai/features/command-line-interface).
+See the [CLI documentation](https://help.frameleaf.app/features/command-line-interface).
 
 # For developers
 
