@@ -288,7 +288,7 @@ app.add_middleware(BearerAuthMiddleware, expected_token=_expected_token)
 
 @app.get("/")
 async def root() -> ORJSONResponse:
-    return ORJSONResponse({"message": "Immich ML"})
+    return ORJSONResponse({"message": "Frameleaf ML"})
 
 
 @app.get("/ping")

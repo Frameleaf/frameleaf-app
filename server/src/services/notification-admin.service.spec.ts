@@ -124,6 +124,37 @@ describe(NotificationService.name, () => {
       });
     });
 
+    it('should never link to the Frameleaf Cloud relay address (FL-190)', async () => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        frameleafCloud: { ...env.frameleafCloud, url: 'https://api.frameleaf.cloud' },
+      });
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.email.verifySmtp.mockResolvedValue(true);
+      mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+      mocks.email.sendEmail.mockResolvedValue({ messageId: 'message-1', response: '' });
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.FrameleafCloudLink
+            ? {
+                status: 'linked',
+                cloudUrl: 'https://api.frameleaf.cloud',
+                instanceId: 'instance-1',
+                services: { relayOrigin: 'https://r.k3v9.frameleaf-direct.net' },
+              }
+            : null) as never,
+        ),
+      );
+
+      await sut.sendTestEmail('', smtpTransport.notifications.smtp);
+
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith({
+        template: EmailTemplate.TEST_EMAIL,
+        data: { baseUrl: undefined, displayName: userStub.admin.name },
+      });
+    });
+
     it('should never link to a Frameleaf Cloud address while the server is not linked (FL-190)', async () => {
       const env = mockEnvData({});
       mocks.config.getEnv.mockReturnValue({
