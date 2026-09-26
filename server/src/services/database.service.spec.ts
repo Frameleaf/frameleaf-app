@@ -319,12 +319,19 @@ describe(DatabaseService.name, () => {
       expect(mocks.database.runOfficialMigrations).not.toHaveBeenCalled();
     });
 
-    it.each(['isolated', 'official-origin'] as const)('runs official then fork migrations in %s mode', async (mode) => {
+    it.each([
+      ['isolated', ['official', 'frameleaf', 'fork']],
+      ['official-origin', ['official', 'fork']],
+    ] as const)('runs official then fork migrations in %s mode', async (mode, expected) => {
       const migrationOrder: string[] = [];
       mocks.database.detectMigrationMode.mockResolvedValue(mode);
       mocks.database.runOfficialMigrations.mockImplementation(() => {
         migrationOrder.push('official');
         return Promise.resolve();
+      });
+      mocks.database.applyIsolatedFrameleafMigrations.mockImplementation(() => {
+        migrationOrder.push('frameleaf');
+        return Promise.resolve({ applied: [], pending: [], skipped: null });
       });
       mocks.database.runForkMigrations.mockImplementation(() => {
         migrationOrder.push('fork');
@@ -333,9 +340,72 @@ describe(DatabaseService.name, () => {
 
       await expect(sut.onBootstrap()).resolves.toBeUndefined();
 
-      expect(migrationOrder).toEqual(['official', 'fork']);
+      expect(migrationOrder).toEqual(expected);
       expect(mocks.database.runMigrations).not.toHaveBeenCalled();
     });
+
+    it('applies newer Frameleaf migrations to a library past the cutover at startup (FL-180)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+      mocks.database.applyIsolatedFrameleafMigrations.mockResolvedValue({
+        applied: ['2100000000610-AddClassificationRule'],
+        pending: ['2100000000610-AddClassificationRule'],
+        skipped: null,
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.database.applyIsolatedFrameleafMigrations).toHaveBeenCalledExactlyOnceWith('startup');
+      expect(mocks.logger.log).toHaveBeenCalledWith(
+        'Frameleaf migration "2100000000610-AddClassificationRule" succeeded',
+      );
+    });
+
+    it('leaves newer Frameleaf migrations of a handed-over library to the return (FL-180)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+      mocks.database.applyIsolatedFrameleafMigrations.mockResolvedValue({
+        applied: [],
+        pending: ['2100000000610-AddClassificationRule'],
+        skipped: 'awaiting-return',
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('fork-handoff prepare-fork'));
+      expect(mocks.database.runForkMigrations).toHaveBeenCalledOnce();
+    });
+
+    it('says a ready library needs activation before its newer Frameleaf migrations run (FL-180)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+      mocks.database.applyIsolatedFrameleafMigrations.mockResolvedValue({
+        applied: [],
+        pending: ['2100000000610-AddClassificationRule'],
+        skipped: 'awaiting-activation',
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('ready to active'));
+    });
+
+    it('fails startup before the fork migrations when a Frameleaf migration fails (FL-180)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+      mocks.database.applyIsolatedFrameleafMigrations.mockRejectedValue(new Error('synthetic Frameleaf failure'));
+
+      await expect(sut.onBootstrap()).rejects.toThrow('synthetic Frameleaf failure');
+
+      expect(mocks.database.runForkMigrations).not.toHaveBeenCalled();
+    });
+
+    it.each(['legacy', 'fresh', 'official-origin'] as const)(
+      'never applies Frameleaf migrations outside the ledger in %s mode (FL-180)',
+      async (mode) => {
+        mocks.database.detectMigrationMode.mockResolvedValue(mode);
+
+        await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+        expect(mocks.database.applyIsolatedFrameleafMigrations).not.toHaveBeenCalled();
+      },
+    );
 
     it('reports an official-origin library that still awaits adoption without adopting it (FL-44)', async () => {
       mocks.database.detectMigrationMode.mockResolvedValue('official-origin');

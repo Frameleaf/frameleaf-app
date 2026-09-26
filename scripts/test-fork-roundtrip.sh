@@ -524,7 +524,35 @@ phase official-operations-before-restart src/specs/server/fork-schema-roundtrip.
 stop_official
 start_official
 phase official-operations-after-restart src/specs/server/fork-schema-roundtrip.e2e-spec.ts
+# FL-180: make this library look as if it had been cut over on a version without
+# 2100000000610-AddClassificationRule: its tables and its cutover ledger row go. The return must
+# apply it again as a Frameleaf-recorded change and leave the certified official ledger alone.
+psql_sql -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+DROP TABLE public.classification_match;
+DROP TABLE public.classification_rule;
+DELETE FROM immich_fork.migration_audit
+WHERE name = '2100000000610-AddClassificationRule' AND phase = 'ledger-cutover';
+COMMIT;
+SQL
 return_to_fork "$STATE_DIR/origin-v3.1.0-to-fork.json"
+psql_sql -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+BEGIN
+  IF to_regclass('public.classification_rule') IS NULL OR to_regclass('public.classification_match') IS NULL THEN
+    RAISE EXCEPTION 'the return did not apply 2100000000610-AddClassificationRule';
+  END IF;
+  IF (SELECT count(*) FROM immich_fork.migration_audit
+      WHERE name = '2100000000610-AddClassificationRule' AND phase = 'frameleaf-public'
+        AND status = 'applied' AND details->>'context' = 'return') <> 1 THEN
+    RAISE EXCEPTION 'the return did not record 2100000000610-AddClassificationRule exactly once';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.kysely_migrations WHERE name LIKE '2100%') THEN
+    RAISE EXCEPTION 'a Frameleaf migration was recorded in the official ledger';
+  END IF;
+END
+$$;
+SQL
 phase fork-return src/specs/server/fork-schema-roundtrip.e2e-spec.ts
 fi
 fi

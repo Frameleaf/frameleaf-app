@@ -128,13 +128,7 @@ export const assertWorkflowDataPreserved = (before: WorkflowCompatibility, after
  * Returns the number of face decisions carried over.
  */
 export async function applyAdoptionForkFollowUps(db: Kysely<any>): Promise<{ faceDecisions: number }> {
-  await indexMlAccountingJobs(db);
-  await addRenderSessionOutputEvidence(db);
-  await sql`
-    ALTER TABLE public.pet_observation
-      ADD COLUMN IF NOT EXISTS "sourceChecksum" bytea,
-      ADD COLUMN IF NOT EXISTS "staleAt" timestamp with time zone
-  `.execute(db);
+  await applyFrameleafSchemaForkFollowUps(db);
   const faceDecisions = await sql`
     INSERT INTO immich_fork.face_correction
       ("ownerId", "actorId", action, "faceId", "assetId", "assetChecksum", "boxX1", "boxY1", "boxX2", "boxY2",
@@ -152,8 +146,94 @@ export async function applyAdoptionForkFollowUps(db: Kysely<any>): Promise<{ fac
         WHERE recorded."faceId" = face.id AND recorded.action = 'remove'
       )
   `.execute(db);
-  await indexMlAccountingCloudJobs(db);
   return { faceDecisions: Number(faceDecisions.numAffectedRows ?? 0) };
+}
+
+/**
+ * FL-180: the face-decision carry-over of 0000000000175 for a library returning from the official
+ * server. On a library cut over before 0000000000175 existed, the return boot runs 0000000000175
+ * before `prepare-fork` applies the post-certified residue (`asset_face.personGroupId`, from
+ * 1787148183729-ClusterGroups) and the newer Frameleaf migrations (`asset_face.correctedAt`, from
+ * 2100000000100), so it returns early and records nothing. `prepare-fork` repeats it here, after both:
+ *
+ * - a soft-deleted face (removed in Frameleaf before the cutover, or in the official app while handed
+ *   over) becomes the owner's `remove` decision unless that face already has one, and
+ * - a face moved by a person (`correctedAt`, where that column exists) becomes the owner's `reassign`
+ *   decision unless that face has any decision at all, so a later decision is never overridden.
+ *
+ * Exactly the rows 0000000000175 writes, and only those still missing: running it again adds
+ * nothing. Does nothing while `immich_fork.face_correction` or the person-group columns are
+ * missing. Returns the number of decisions recorded.
+ */
+export async function carryOverEarlierFaceDecisions(db: Kysely<any>): Promise<number> {
+  const inputs = await sql<{ name: string }>`
+    SELECT 'immich_fork.face_correction' AS name WHERE to_regclass('immich_fork.face_correction') IS NOT NULL
+    UNION ALL
+    SELECT table_name || '.' || column_name FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND (table_name, column_name) IN (('asset_face', 'correctedAt'), ('asset_face', 'personGroupId'), ('person', 'personGroupId'))
+  `.execute(db);
+  const present = new Set(inputs.rows.map(({ name }) => name));
+  if (
+    !present.has('immich_fork.face_correction') ||
+    !present.has('asset_face.personGroupId') ||
+    !present.has('person.personGroupId')
+  ) {
+    return 0;
+  }
+  const decidedAt = present.has('asset_face.correctedAt') ? sql`face."correctedAt"` : sql`NULL::timestamptz`;
+  const result = await sql`
+    INSERT INTO immich_fork.face_correction
+      ("ownerId", "actorId", action, "faceId", "assetId", "assetChecksum", "boxX1", "boxY1", "boxX2", "boxY2",
+       "fromPersonId", "toPersonId", "toPersonName", "createdAt")
+    SELECT asset."ownerId", asset."ownerId",
+      CASE WHEN face."deletedAt" IS NOT NULL THEN 'remove' ELSE 'reassign' END,
+      face.id, face."assetId", asset.checksum,
+      face."boundingBoxX1"::float8 / face."imageWidth", face."boundingBoxY1"::float8 / face."imageHeight",
+      face."boundingBoxX2"::float8 / face."imageWidth", face."boundingBoxY2"::float8 / face."imageHeight",
+      CASE WHEN face."deletedAt" IS NOT NULL THEN face."personGroupId" END,
+      CASE WHEN face."deletedAt" IS NULL THEN face."personGroupId" END,
+      CASE WHEN face."deletedAt" IS NULL THEN person.name END,
+      COALESCE(face."deletedAt", ${decidedAt})
+    FROM public.asset_face face
+    INNER JOIN public.asset asset ON asset.id = face."assetId"
+    LEFT JOIN public.person person ON person."ownerId" = asset."ownerId" AND person."personGroupId" = face."personGroupId"
+    WHERE (face."deletedAt" IS NOT NULL OR ${decidedAt} IS NOT NULL)
+      AND face."imageWidth" > 0 AND face."imageHeight" > 0
+      AND CASE
+        WHEN face."deletedAt" IS NOT NULL THEN NOT EXISTS (
+          SELECT 1 FROM immich_fork.face_correction recorded
+          WHERE recorded."faceId" = face.id AND recorded.action = 'remove'
+        )
+        ELSE NOT EXISTS (SELECT 1 FROM immich_fork.face_correction recorded WHERE recorded."faceId" = face.id)
+      END
+  `.execute(db);
+  return Number(result.numAffectedRows ?? 0);
+}
+
+/**
+ * The structural parts of released `immich_fork` migrations that act only on a Frameleaf public
+ * table or column: 0000000000170, 0000000000172 and 0000000000201 as released, and the
+ * `pet_observation` statement of 0000000000176. Each is idempotent and does nothing while its table
+ * is missing. They are repeated wherever Frameleaf public migrations are applied after the
+ * `immich_fork` migrations already ran: adoption (FL-44) and a library past the certified cutover
+ * that receives newer Frameleaf public migrations (FL-180). A fork migration of that kind must be
+ * added here.
+ */
+export async function applyFrameleafSchemaForkFollowUps(db: Kysely<any>): Promise<void> {
+  await indexMlAccountingJobs(db);
+  await addRenderSessionOutputEvidence(db);
+  await sql`
+    DO $$
+    BEGIN
+      IF to_regclass('public.pet_observation') IS NOT NULL THEN
+        ALTER TABLE public.pet_observation ADD COLUMN IF NOT EXISTS "sourceChecksum" bytea;
+        ALTER TABLE public.pet_observation ADD COLUMN IF NOT EXISTS "staleAt" timestamp with time zone;
+      END IF;
+    END
+    $$
+  `.execute(db);
+  await indexMlAccountingCloudJobs(db);
 }
 
 /** A count query; `fallback` counts instead while `relations` do not exist yet. */
