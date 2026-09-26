@@ -8,9 +8,8 @@
    *   the store link, refresh and "remove from this server" (the plan only).
    * - Plan cards with the licensed-server price struck through when the server is licensed. AI
    *   credit is never discounted.
-   * - Owner decision on FL-146 (2026-09-25): cloud backup is usage based and is not part of a plan, so
-   *   the cards do not list "1 TB encrypted cloud backup" as the prototype's sample data did; backup
-   *   is shown as its own item priced from `CLOUD_BACKUP_PRICING`.
+   * - Owner decision (2026-09-25): every plan includes 1 TB of cloud backup, listed on the cards as in
+   *   the prototype; more storage is sold in 1 TB blocks, priced from `CLOUD_BACKUP_PRICING`.
    * - Checkout happens in the store the server was deployed with; with none configured the cards
    *   say purchasing is not available yet (FL-172). The simulated "Preview other plan states" is
    *   prototype-only and left out.
@@ -253,6 +252,7 @@
               {@render price(item.priceUsd, item.period)}
               <ul>
                 <li>{$t('frameleaf_plan_feature_remote')}</li>
+                <li>{$t('frameleaf_plan_feature_backup', { values: { size: CLOUD_BACKUP_PRICING.includedTb } })}</li>
                 <li>{$t('frameleaf_plan_feature_servers')}</li>
                 {#if item.id === 'cloud-annual'}
                   <li>{$t('frameleaf_plan_feature_two_months')}</li>
@@ -274,8 +274,12 @@
         </div>
         <p class="fc-note">
           <Icon icon={mdiCloudUploadOutline} size="16" />
-          {$t('frameleaf_plan_backup_separate', {
-            values: { price: formatUsd(CLOUD_BACKUP_PRICING.usdPerTbMonth), minimum: CLOUD_BACKUP_PRICING.minimumTb },
+          {$t('frameleaf_plan_backup_extra', {
+            values: {
+              included: CLOUD_BACKUP_PRICING.includedTb,
+              price: formatUsd(CLOUD_BACKUP_PRICING.usdPerTbMonth * CLOUD_BACKUP_PRICING.blockTb),
+              block: CLOUD_BACKUP_PRICING.blockTb,
+            },
           })}
         </p>
         <div class="fc-actions">

@@ -108,10 +108,11 @@ const LicenseProductsResponseSchema = z
       .describe('AI credit top-ups the store accepts; credit is never discounted'),
     backup: z
       .object({
+        includedTb: z.number().meta({ format: 'double' }),
+        blockTb: z.number().meta({ format: 'double' }),
         usdPerTbMonth: z.number().meta({ format: 'double' }),
-        minimumTb: z.number().meta({ format: 'double' }),
       })
-      .describe('Cloud backup is usage based, not part of a plan'),
+      .describe('Cloud backup a plan includes, and the blocks and monthly rate for more'),
   })
   .meta({ id: 'LicenseProductsResponseDto' });
 

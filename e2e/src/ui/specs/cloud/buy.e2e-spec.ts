@@ -14,10 +14,10 @@ const products = (storeUrl: string | null) => ({
   licensedDiscount: 0.2,
   storeUrl,
   credit: { minimumUsd: 20, maximumUsd: 500 },
-  backup: { usdPerTbMonth: 7.99, minimumTb: 1 },
+  backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
   products: [
-    ['cloud-monthly', 'plan', 'month', 6],
-    ['cloud-annual', 'plan', 'year', 60],
+    ['cloud-monthly', 'plan', 'month', 9.99],
+    ['cloud-annual', 'plan', 'year', 99.9],
     ['supporter-server', 'supporter', 'one-time', 100],
     ['supporter-individual', 'supporter', 'one-time', 25],
   ].map(([id, kind, period, priceUsd]) => ({
@@ -74,7 +74,7 @@ test.describe('Support Frameleaf', () => {
     await page.goto('/buy');
 
     await expect(page.getByRole('heading', { name: 'Support Frameleaf' })).toBeVisible();
-    await expect(page.getByText('$60')).toBeVisible();
+    await expect(page.getByText('$99.90')).toBeVisible();
     // Two plans and two supporter keys, plus the AI credit note an administrator sees under the
     // credit packs (design/frameleaf/template/src/AuthScreens.jsx, the "AI credit" card).
     await expect(page.getByText('Purchasing isn’t available on this server yet.')).toHaveCount(5);
