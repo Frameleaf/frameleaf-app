@@ -5,17 +5,17 @@ sidebar_position: 65
 # One-Click [Cloud Service]
 
 :::note
-This version of Immich is provided via cloud service providers' one-click marketplaces. Hosting costs are set by the cloud service providers.
+The one-click marketplace apps below are provided by cloud service providers and install the upstream server, not Frameleaf. Hosting costs are set by the cloud service providers.
 Support for these are provided by the individual cloud service providers.
 
-**Please report issues to the corresponding [Github Repository][github].**
+**Report issues to the corresponding cloud service provider.**
 :::
 
 ## Installation
 
-Go to the provider's marketplace and choose Immich, then follow the provided instructions.
+Go to the provider's marketplace and choose the upstream server's app, then follow the provided instructions.
 
-## One-Click Immich marketplace providers
+## One-click marketplace providers
 
 ### DigitalOcean
 
@@ -27,6 +27,4 @@ https://www.vultr.com/marketplace/apps/immich
 
 ## Issues
 
-For issues, open an issue on the associated [GitHub Repository][github].
-
-[github]: https://github.com/immich-app/immich/
+For issues, contact the cloud service provider that published the app.

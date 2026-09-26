@@ -12,10 +12,10 @@ The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with
 | `enable-maintenance-mode`  | Enable maintenance mode                                       |
 | `enable-oauth-login`       | Enable OAuth login                                            |
 | `disable-oauth-login`      | Disable OAuth login                                           |
-| `list-users`               | List Immich users                                             |
+| `list-users`               | List Frameleaf users                                          |
 | `grant-admin`              | Grant admin privileges to a user (by email)                   |
 | `revoke-admin`             | Revoke admin privileges from a user (by email)                |
-| `version`                  | Print Immich version                                          |
+| `version`                  | Print Frameleaf version                                       |
 | `change-media-location`    | Change database file paths to align with a new media location |
 | `schema-check`             | Verify database migrations and check for schema drift         |
 
@@ -33,7 +33,7 @@ Found Admin:
 - ID=e65e6f88-2a30-4dbe-8dd9-1885f4889b53
 - OAuth ID=
 - Email=admin@example.com
-- Name=Immich Admin
+- Name=Frameleaf Admin
 ? Please choose a new password (optional) immich-is-cool
 ? Invalidate existing sessions? Yes
 The admin password has been updated.
@@ -67,7 +67,7 @@ immich-admin enable-maintenance-mode
 Maintenance mode has been enabled.
 
 Log in using the following URL:
-https://my.immich.app/maintenance?token=<token>
+https://photos.example.com/maintenance?token=<token>
 ```
 
 Enable OAuth login
@@ -92,7 +92,7 @@ immich-admin list-users
   {
     id: 'e65e6f88-2a30-4dbe-8dd9-1885f4889b53',
     email: 'immich@example.com',
-    name: 'Immich Admin',
+    name: 'Frameleaf Admin',
     storageLabel: 'admin',
     externalPath: null,
     profileImagePath: 'upload/profile/e65e6f88-2a30-4dbe-8dd9-1885f4889b53/e65e6f88-2a30-4dbe-8dd9-1885f4889b53.jpg',
@@ -122,7 +122,7 @@ immich-admin revoke-admin
 Admin access has been revoked from user@example.com
 ```
 
-Print Immich Version
+Print Frameleaf Version
 
 ```
 immich-admin version
@@ -156,6 +156,6 @@ Migrations are up to date
 No schema drift detected
 ```
 
-Downgrading to upstream Immich
+Downgrading to the upstream server
 
-There is no `immich-admin` command for downgrading to upstream. The previously documented `schema-revert-to-upstream` CLI was removed (several fork migrations had empty `down()` stubs that silently reported success while leaving fork-only tables intact). See [Reverting Back to Upstream Immich](../features/revert-to-upstream.md) for the supported `pg_restore`-from-backup procedure.
+There is no `immich-admin` command for downgrading to upstream. The previously documented `schema-revert-to-upstream` CLI was removed (several Frameleaf migrations had empty `down()` stubs that reported success while leaving Frameleaf-only tables intact). See [Reverting back to the upstream server](../features/revert-to-upstream.md) for the supported `pg_restore`-from-backup procedure.

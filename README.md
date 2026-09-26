@@ -1,9 +1,6 @@
 <p align="center"> 
   <br/>
   <a href="https://opensource.org/license/agpl-v3"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg?color=3F51B5&style=for-the-badge&label=License&logoColor=000000&labelColor=ececec" alt="License: AGPLv3"></a>
-  <a href="https://discord.immich.app">
-    <img src="https://img.shields.io/discord/979116623879368755.svg?label=Discord&logo=Discord&style=for-the-badge&logoColor=000000&labelColor=ececec" alt="Discord"/>
-  </a>
   <br/>
   <br/>
 </p>
@@ -15,11 +12,11 @@
 
 # Frameleaf
 
-Frameleaf is a privacy-first, AI-aware self-hosted photo and video platform with Google Photos-like discovery for family libraries, built on [Immich](https://github.com/immich-app/immich).
+Frameleaf is a privacy-first, AI-aware self-hosted photo and video platform with Google Photos-like discovery for family libraries.
 
-This repository is a maintained downstream fork of Immich for home-lab users who want more control over privacy, storage, search, and local ML-powered image enrichment.
+This repository is maintained for home-lab users who want more control over privacy, storage, search, and local ML-powered image enrichment.
 
-It is designed for users who want to keep the Immich-based workflows they already know, while adding Frameleaf features for:
+It is designed for users who want to keep the workflows they already know, while adding Frameleaf features for:
 
 - PIN-gated sensitive media hiding
 - Optional NSFW/sensitive-content detection
@@ -40,17 +37,17 @@ It is designed for users who want to keep the Immich-based workflows they alread
 - A "Best Photos" view for locally ranked high-quality images
 - **Server-to-server migration** that moves a user's whole library between servers, resumably, and audits the result
 
-This fork is actively maintained and kept up to date with upstream Immich while preserving the additional features documented below.
+Frameleaf is actively maintained and kept up to date with the upstream project while preserving the additional features documented below.
 
 > [!CAUTION]
-> This is a downstream fork, not upstream Immich. It includes database changes and fork-only features that are not part of `immich-app/immich`.
+> Frameleaf is not the upstream project. It includes database changes and Frameleaf-only features that the upstream project does not have.
 >
-> Compatibility-certified 3.x releases can hand a converted database to the exact matching official Immich image and later return to a compatible fork while fork-owned sidecars remain dormant. Official plugin and workflow rows stay in the official tables and are not migrated by the fork. See [Switching Between the Fork and Official Immich](docs/docs/features/switching-between-fork-and-official.md) for the versioned procedure and required release gates. Always back up both the database and media library before switching.
+> Compatibility-certified 3.x releases can hand a converted database to the exact matching official upstream image and later return to a compatible fork while fork-owned sidecars remain dormant. Official plugin and workflow rows stay in the official tables and are not migrated by the fork. See [Switching between Frameleaf and the upstream server](docs/docs/features/switching-between-fork-and-official.md) for the versioned procedure and required release gates. Always back up both the database and media library before switching.
 
 > [!IMPORTANT]
 > **Before upgrading,** read [Configurable Descriptions, Identity, Videos, and Smart Albums](docs/docs/features/descriptions-and-smart-albums.md). The ML description pipeline in this fork has a recommended setup order, a dependency on Enhanced Video Duplicate Detection for video descriptions, and a curated model dropdown that may not include your existing model. Following the guide saves you from re-queueing your whole library more than once. New in this release: video descriptions via composite frame grids, a free-form "custom instructions" prompt field, and stronger identity-injection wording that names every detected person.
 
-Start with the [fork privacy suite guide](docs/docs/features/fork-privacy-suite.md) for setup notes, recommended rollout steps, physical deduplication guidance, and differences from upstream Immich.
+Start with the [fork privacy suite guide](docs/docs/features/fork-privacy-suite.md) for setup notes, recommended rollout steps, physical deduplication guidance, and differences from the upstream project.
 
 ## Frameleaf container installation
 
@@ -62,7 +59,7 @@ For contributing and delivery workflows, read the [Frameleaf development guide](
 
 ## Why This Fork Exists
 
-Immich is already excellent. This fork adds features aimed at real home-lab and family-library workflows where users often need more than a standard photo timeline.
+The upstream project is already excellent. Frameleaf adds features aimed at real home-lab and family-library workflows where users often need more than a standard photo timeline.
 
 Common use cases include:
 
@@ -182,7 +179,7 @@ Smart albums are disabled by default. See the [configurable descriptions, identi
 
 ## Nested Albums and Folder Organization
 
-Upstream Immich albums are a single flat list. This fork lets you organize them into **nested folders**, so a large family library can be grouped the way you actually think about it — for example, `2024 ▸ Summer ▸ Beach Trip` — instead of scrolling one long alphabetical wall of albums.
+Upstream albums are a single flat list. This fork lets you organize them into **nested folders**, so a large family library can be grouped the way you actually think about it — for example, `2024 ▸ Summer ▸ Beach Trip` — instead of scrolling one long alphabetical wall of albums.
 
 - **Folders within folders** — nest albums to any depth and group related albums together by year, event, trip, person, or however you like
 - **Drag-and-drop organization** — drag one album onto another to nest it, or drag to reorder; works in both the album grid and the album tree
@@ -304,7 +301,7 @@ The result is better duplicate detection for real-world video libraries, especia
 
 When you review duplicates, this fork suggests keeping the **original** version of a photo instead of whichever copy happens to be the largest file.
 
-Apple devices capture in **HEIC**, and many cameras shoot **RAW** (DNG and similar). When those originals get re-saved or shared, they often become larger JPGs that look bigger on disk but are actually a lower-quality re-encode. Upstream Immich would suggest keeping that bigger JPG; this fork knows the native original is the better one to keep.
+Apple devices capture in **HEIC**, and many cameras shoot **RAW** (DNG and similar). When those originals get re-saved or shared, they often become larger JPGs that look bigger on disk but are actually a lower-quality re-encode. The upstream project would suggest keeping that bigger JPG; this fork knows the native original is the better one to keep.
 
 - Prefers native originals when choosing which duplicate to keep — **RAW first, then HEIC/HEIF**, then everything else
 - Wins even when the JPG copy is larger in file size
@@ -554,58 +551,23 @@ Run `node packages/cli/dist/index.js migrate --help` for the full list. The step
 <img src="design/frameleaf/references/desktop-dark.jpg" title="Frameleaf library">
 <br/>
 
-<p align="center">
-  <a href="readme_i18n/README_ca_ES.md">Català</a>
-  <a href="readme_i18n/README_es_ES.md">Español</a>
-  <a href="readme_i18n/README_fr_FR.md">Français</a>
-  <a href="readme_i18n/README_it_IT.md">Italiano</a>
-  <a href="readme_i18n/README_ja_JP.md">日本語</a>
-  <a href="readme_i18n/README_ko_KR.md">한국어</a>
-  <a href="readme_i18n/README_de_DE.md">Deutsch</a>
-  <a href="readme_i18n/README_nl_NL.md">Nederlands</a>
-  <a href="readme_i18n/README_tr_TR.md">Türkçe</a>
-  <a href="readme_i18n/README_zh_CN.md">简体中文</a>
-  <a href="readme_i18n/README_zh_TW.md">正體中文</a>
-  <a href="readme_i18n/README_uk_UA.md">Українська</a>
-  <a href="readme_i18n/README_ru_RU.md">Русский</a>
-  <a href="readme_i18n/README_bg_BG.md">Български</a>
-  <a href="readme_i18n/README_pt_BR.md">Português Brasileiro</a>
-  <a href="readme_i18n/README_sv_SE.md">Svenska</a>
-  <a href="readme_i18n/README_ar_JO.md">العربية</a>
-  <a href="readme_i18n/README_vi_VN.md">Tiếng Việt</a>
-  <a href="readme_i18n/README_th_TH.md">ภาษาไทย</a>
-  <a href="readme_i18n/README_ml_IN.md">മലയാളം</a>
-</p>
-
 > [!WARNING]
 > ⚠️ Always follow [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) backup plan for your precious photos and videos!
 
 > [!NOTE]
-> Frameleaf installation is covered [above](#frameleaf-container-installation). The upstream Immich documentation, including general installation guides, is at https://immich.app/.
+> Frameleaf installation is covered [above](#frameleaf-container-installation). The full documentation is at https://help.frameleaf.ai/.
 
 ## Links
 
 - [iCloud Photos Sync user guide](docs/docs/guides/icloud-photos-sync.md)
 - [iCloud Photos Sync administrator setup](docs/docs/guides/icloud-photos-server-setup.md)
 - [Recover missing or corrupt media](docs/docs/guides/media-recovery.md)
-- [Upstream documentation](https://docs.immich.app/)
+- [Documentation](https://help.frameleaf.ai/)
 - [About](https://help.frameleaf.ai/overview/quick-start)
 - [Installation](https://help.frameleaf.ai/install/requirements)
-- [Roadmap](https://immich.app/roadmap)
-- [Demo](#demo)
 - [Features](#features)
 - [Translations](https://help.frameleaf.ai/developer/translations)
 - [Contributing](https://help.frameleaf.ai/overview/support-the-project)
-
-## Demo
-
-Access the upstream Immich demo [here](https://demo.immich.app); it does not include Frameleaf features. For the mobile app, you can use `https://demo.immich.app` for the `Server Endpoint URL`.
-
-### Login credentials
-
-| Email           | Password |
-| --------------- | -------- |
-| demo@immich.app | demo     |
 
 ## Features
 
@@ -646,20 +608,16 @@ Access the upstream Immich demo [here](https://demo.immich.app); it does not inc
 
 Read more about translations [here](https://help.frameleaf.ai/developer/translations).
 
-<a href="https://hosted.weblate.org/engage/immich/">
-<img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="Translation status" />
-</a>
-
 ## Repository activity
 
 ![Activities](https://repobeats.axiom.co/api/embed/9e86d9dc3ddd137161f2f6d2e758d7863b1789cb.svg "Repobeats analytics image")
 
 ## Contributors
 
-<a href="https://github.com/immich-app/immich/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=immich-app/immich" width="100%"/>
+<a href="https://github.com/Frameleaf/frameleaf-app/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Frameleaf/frameleaf-app" width="100%"/>
 </a>
 
 ## Attribution and licence
 
-Frameleaf is built on [Immich](https://github.com/immich-app/immich) and the work of its contributors. Immich and Frameleaf are available as open source under the terms of the [GNU AGPL v3 License](LICENSE).
+Frameleaf is built on [Immich](https://github.com/immich-app/immich) and the work of its contributors, and is available as open source under the terms of the [GNU AGPL v3 License](LICENSE).

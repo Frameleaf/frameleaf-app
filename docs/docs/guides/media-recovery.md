@@ -1,8 +1,8 @@
 # Recover missing or corrupt media
 
-Use **Utilities → Review missing media** and **Utilities → Review corrupt media** to investigate files Immich can no longer read. If the same original is available in iCloud, [iCloud Photos Sync](icloud-photos-sync.md) can also provide a validated recovery copy.
+Use **Utilities → Review missing media** and **Utilities → Review corrupt media** to investigate files Frameleaf can no longer read. If the same original is available in iCloud, [iCloud Photos Sync](icloud-photos-sync.md) can also provide a validated recovery copy.
 
-A missing-file report means Immich cannot access the file it expects. It does not prove somebody deleted it. Storage moves, unavailable storage, permissions, and changed paths can also make a file unreadable.
+A missing-file report means Frameleaf cannot access the file it expects. It does not prove somebody deleted it. Storage moves, unavailable storage, permissions, and changed paths can also make a file unreadable.
 
 ## Start with storage access
 
@@ -35,9 +35,9 @@ If only a Live Photo movie is damaged, it can recover independently of the still
 
 ## Managed and external libraries
 
-Managed assets are stored by Immich. External-library assets refer to files you manage separately.
+Managed assets are stored by Frameleaf. External-library assets refer to files you manage separately.
 
-External recovery is off by default. **Allow damaged external-library matches to become managed assets** permits a verified matching copy to be stored under Immich's management while retaining the existing asset identity. The original external path is not overwritten. Without that setting, a damaged external match remains a review item and the staged recovery copy is preserved.
+External recovery is off by default. **Allow damaged external-library matches to become managed assets** permits a verified matching copy to be stored under Frameleaf's management while retaining the existing asset identity. The original external path is not overwritten. Without that setting, a damaged external match remains a review item and the staged recovery copy is preserved.
 
 Importing hidden Apple media and recovery involving Locked/suppressed destinations require the applicable privacy permission. The internally hidden movie component of an ordinary Live Photo is different from a private Locked asset.
 
@@ -52,7 +52,7 @@ Importing hidden Apple media and recovery involving Locked/suppressed destinatio
 | Requires review           | Identity, privacy, external recovery, or another safety condition prevented automatic completion. Inspect the reason.                    |
 | Resolved                  | The applicable finding has been resolved. Open the asset and verify the expected media.                                                  |
 
-The corrupt-media tool can move revalidated corrupt assets to Immich Trash after its PIN and typed-confirmation flow. That is not a recovery action. iCloud sync does not automatically restore intentionally trashed assets. Review the destination's current state before retrying a recovery.
+The corrupt-media tool can move revalidated corrupt assets to the Trash after its PIN and typed-confirmation flow. That is not a recovery action. iCloud sync does not automatically restore intentionally trashed assets. Review the destination's current state before retrying a recovery.
 
 ## Why do the counts differ?
 

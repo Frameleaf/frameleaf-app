@@ -125,8 +125,8 @@ const config = {
             title: 'Community',
             items: [
               {
-                label: 'Built on Immich',
-                href: 'https://github.com/immich-app/immich',
+                label: 'Discussions',
+                href: 'https://github.com/Frameleaf/frameleaf-app/discussions',
               },
             ],
           },
