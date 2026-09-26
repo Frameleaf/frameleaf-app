@@ -44,6 +44,12 @@ const CloudMlWalletSchema = z
     spentTodayUsd: z.number().meta({ format: 'double' }).describe('Spent today, USD'),
     topUpUrl: z.string().nullable().describe('Where to add credit; only when Frameleaf Cloud returned one'),
     autoTopUp: z.boolean().describe('Automatic top-up with the payment method saved on the account'),
+    settingsUrl: z
+      .string()
+      .nullable()
+      .describe(
+        'Where the account owner raises the daily cap or turns on automatic top-up, when Frameleaf Cloud named it; this server can only lower the cap or turn automatic top-up off',
+      ),
     updatedAt: z.string().describe('When this balance was read'),
   })
   .meta({ id: 'CloudMlWalletDto' });
@@ -117,7 +123,8 @@ const CloudMlSettlementSchema = z
     costUsd: z.number().meta({ format: 'double' }).describe('The settled charge, USD'),
     credits: z.number().meta({ format: 'double' }).nullable().describe('Credits the charge used, when reported'),
     finishedAt: z.string(),
-    modelId: z.string().nullable().describe('The catalogue model the job used, when reported'),
+    modelSku: z.string().nullable().describe('The catalogue model SKU the job used, when reported'),
+    computeSku: z.string().nullable().describe('The compute SKU the job ran on, when reported'),
     gpuSeconds: z.number().meta({ format: 'double' }).nullable().describe('Metered GPU time, seconds, when reported'),
     workers: z.number().int().nullable().describe('Workers the job ran on (each paid a start fee), when reported'),
     estimateUsd: z.number().meta({ format: 'double' }).nullable().describe('The estimate shown before the job, USD'),

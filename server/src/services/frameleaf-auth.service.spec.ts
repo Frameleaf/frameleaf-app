@@ -275,6 +275,61 @@ describe(FrameleafAuthService.name, () => {
       await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('already linked');
     });
 
+    describe('frameleaf_role on every sign-in (FL-177, as-built decision #32)', () => {
+      const signInLinked = async (user: ReturnType<typeof UserFactory.create>) => {
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({
+          userId: user.id,
+          sub: 'fl-sub',
+          autoRegistered: false,
+        } as never);
+        mocks.user.get.mockResolvedValue(user as never);
+        mocks.user.update.mockImplementation((id, change) => Promise.resolve({ ...user, ...change, id } as never));
+        return sut.callback(callbackDto, {}, loginDetails);
+      };
+
+      it('takes administration away from a linked account the cloud demoted', async () => {
+        const user = UserFactory.create({ isAdmin: true });
+        mocks.user.getAdmins.mockResolvedValue([user, UserFactory.create({ isAdmin: true })] as never);
+        idClaims.frameleaf_role = 'user';
+
+        await signInLinked(user);
+        expect(mocks.user.update).toHaveBeenCalledWith(user.id, { isAdmin: false });
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ userId: user.id, actorId: null, action: AdminAuditAction.AdminRevoked }),
+        ]);
+      });
+
+      it('makes a linked account an administrator when the cloud promotes it', async () => {
+        const user = UserFactory.create({ isAdmin: false });
+        idClaims.frameleaf_role = 'admin';
+
+        await signInLinked(user);
+        expect(mocks.user.update).toHaveBeenCalledWith(user.id, { isAdmin: true });
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ userId: user.id, action: AdminAuditAction.AdminGranted }),
+        ]);
+      });
+
+      it('never demotes the last administrator, so the server stays manageable', async () => {
+        const user = UserFactory.create({ isAdmin: true });
+        mocks.user.getAdmins.mockResolvedValue([user] as never);
+        idClaims.frameleaf_role = 'user';
+
+        await expect(signInLinked(user)).resolves.toMatchObject({ userId: user.id });
+        expect(mocks.user.update).not.toHaveBeenCalled();
+      });
+
+      it('grants nothing from frameleaf_access, and changes nothing without frameleaf_role', async () => {
+        const user = UserFactory.create({ isAdmin: false });
+        delete idClaims.frameleaf_role;
+        idClaims.frameleaf_access = 'owner';
+
+        await signInLinked(user);
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.frameleafAccount.touchLink).toHaveBeenCalledWith(user.id, expect.objectContaining({ role: null }));
+      });
+    });
+
     it('does not finish when the cloud refuses the client assertion', async () => {
       cloud.on('POST /id/token', () => ({ status: 401, body: { error: 'invalid_client' } }));
       await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('did not finish');

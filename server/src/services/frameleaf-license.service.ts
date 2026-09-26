@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -88,6 +88,9 @@ const refreshResponseSchema = z.object({
 });
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
+/** How long a signed activation from an unlinked server may be used (the token assertions' limit). */
+const ACTIVATION_PROOF_TTL_SECONDS = 120;
 
 /**
  * Frameleaf licence certificates replace the inherited product key (FL-156, CLD-003).
@@ -464,8 +467,11 @@ export class FrameleafLicenseService extends BaseService {
   // ------------------------------------------------------------------ helpers
 
   /**
-   * `POST /v1/licenses/activate {key, fingerprint {instanceId, jkt}, instanceName}`: with this
-   * server's token when linked, otherwise as the public, rate-limited activation.
+   * `POST /v1/licenses/activate {key, fingerprint {instanceId, jkt}, instanceName}`. A linked server
+   * sends it as JSON with its instance token. An unlinked server has no token, so the body travels as
+   * a compact JWS signed by this server's identity key (`application/jose`, header `kid` = the `jkt`),
+   * with `aud` (the activation address), `iat`, `exp` and `jti` so a copy cannot be replayed; the
+   * cloud binds the certificate to that key (FL-177, as-built decision #28).
    */
   private async activateWithCloud(key: string, extra: { user?: string }) {
     const { cloudUrl, linked, link } = await readCloudLink(this.gatewayDeps());
@@ -480,15 +486,32 @@ export class FrameleafLicenseService extends BaseService {
     try {
       const token = linked ? await this.apiToken(cloudUrl, instanceId) : null;
       const document = token?.document ?? (await this.frameleafCloudRepository.discovery(cloudUrl));
+      const url = `${document.api.replace(/\/+$/, '')}/v1/licenses/activate`;
+      const body = {
+        key,
+        fingerprint: { instanceId, jkt: identity.kid, ...extra },
+        instanceName: config.server.name?.trim() || 'Frameleaf server',
+      };
+      if (token) {
+        return await this.frameleafCloudRepository.requestJson(certificateResponseSchema, {
+          method: 'POST',
+          url,
+          bearer: token.bearer,
+          body,
+        });
+      }
+      const issuedAt = Math.floor(Date.now() / 1000);
+      const proof = this.instanceIdentityRepository.signJws(identity.kid, {
+        ...body,
+        aud: url,
+        iat: issuedAt,
+        exp: issuedAt + ACTIVATION_PROOF_TTL_SECONDS,
+        jti: randomUUID(),
+      });
       return await this.frameleafCloudRepository.requestJson(certificateResponseSchema, {
         method: 'POST',
-        url: `${document.api.replace(/\/+$/, '')}/v1/licenses/activate`,
-        bearer: token?.bearer,
-        body: {
-          key,
-          fingerprint: { instanceId, jkt: identity.kid, ...extra },
-          instanceName: config.server.name?.trim() || 'Frameleaf server',
-        },
+        url,
+        raw: { contentType: 'application/jose', body: proof },
       });
     } catch (error) {
       if (error instanceof FrameleafCloudError) {

@@ -1,3 +1,4 @@
+import { importJWK, jwtVerify } from 'jose';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +9,7 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
-import { FakeCloud, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
+import { FakeCloud, FakeCloudRequest, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { makeLicenseSigner, signLicenseCertificate } from 'test/fixtures/frameleaf-license.fixture.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -39,6 +40,28 @@ describe(FrameleafLicenseService.name, () => {
       instanceId: instanceId(),
       accountId: 'account-1',
     });
+
+  /**
+   * FL-177 (as-built decision #28): an unlinked server's activation travels as a compact JWS signed by
+   * its identity key (`kid` = the `jkt`), bound to the activation address and short-lived.
+   */
+  const signedActivation = async (request: FakeCloudRequest) => {
+    expect(request.headers['content-type']).toBe('application/jose');
+    expect(request.headers.authorization).toBeUndefined();
+    const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as {
+      kid: string;
+      publicJwk: Record<string, string>;
+    };
+    const { payload, protectedHeader } = await jwtVerify(
+      request.body,
+      await importJWK({ ...identity.publicJwk }, 'EdDSA'),
+      { audience: `${cloud.url}/api/v1/licenses/activate` },
+    );
+    expect(protectedHeader).toMatchObject({ alg: 'EdDSA', kid: identity.kid });
+    expect(payload.exp! - payload.iat!).toBeLessThanOrEqual(120);
+    expect(payload.jti).toEqual(expect.any(String));
+    return payload as Record<string, any>;
+  };
 
   const serveToken = () =>
     cloud.on('POST /id/token', () => ({ status: 200, body: { access_token: 'api-token', expires_in: 600 } }));
@@ -128,10 +151,10 @@ describe(FrameleafLicenseService.name, () => {
       const status = await sut.activate(authStub.admin, { key: SERVER_KEY });
 
       const request = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!;
-      expect(request.headers.authorization).toBeUndefined();
-      expect(request.json()).toMatchObject({
+      const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string };
+      await expect(signedActivation(request)).resolves.toMatchObject({
         key: SERVER_KEY,
-        fingerprint: { instanceId: instanceId(), jkt: expect.any(String) },
+        fingerprint: { instanceId: instanceId(), jkt: identity.kid },
         instanceName: expect.any(String),
       });
       expect(status).toMatchObject({
@@ -159,6 +182,23 @@ describe(FrameleafLicenseService.name, () => {
       await sut.activate(authStub.admin, { key: SERVER_KEY });
       const request = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!;
       expect(request.headers.authorization).toBe('Bearer api-token');
+      // a linked server sends the plain JSON body; its token already proves who it is
+      expect(request.headers['content-type']).toBe('application/json');
+      expect(request.json()).toMatchObject({ key: SERVER_KEY, fingerprint: { instanceId: instanceId() } });
+    });
+
+    it('never activates without the identity key’s signature when not linked (FL-177)', async () => {
+      cloud.on('POST /api/v1/licenses/activate', (request) =>
+        request.headers['content-type'] === 'application/jose'
+          ? {
+              status: 200,
+              body: { certificate: certificate({ ent: ['SUPPORTER_SERVER'], lic_exp: null, lic: { kind: 'server' } }) },
+            }
+          : { status: 401, body: { code: 'unauthorized', message: 'Sign the activation.' } },
+      );
+      await expect(sut.activate(authStub.admin, { key: SERVER_KEY })).resolves.toMatchObject({ kind: 'server' });
+      const request = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!;
+      expect(request.body.split('.')).toHaveLength(3);
     });
 
     it('refuses a certificate for another server or signed by an unknown key', async () => {
@@ -383,7 +423,7 @@ describe(FrameleafLicenseService.name, () => {
         keyHint: '8ELH',
         activatedAt: new Date('2026-09-25T12:00:00.000Z'),
       });
-      const body = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!.json();
+      const body = await signedActivation(cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!);
       expect(body.fingerprint.user).toMatch(/^[\da-f]{64}$/);
       expect(mocks.frameleafUserLicense.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ userId: authStub.user1.user.id, keyHint: '8ELH', binding: body.fingerprint.user }),

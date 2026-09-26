@@ -68,7 +68,7 @@ export class CloudMlAdminController {
     operationId: 'updateCloudMlWallet',
     summary: 'Change the AI Wallet daily cap or automatic top-up',
     description:
-      'Changes the daily spending cap or automatic top-up on the linked Frameleaf account. Payment details stay on frameleaf.cloud.',
+      'Lowers the daily spending cap or turns automatic top-up off on the linked Frameleaf account. Raising the cap or turning automatic top-up on is done by the account owner in the Frameleaf account; Frameleaf Cloud refuses it here with 403. Payment details stay on frameleaf.cloud.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   updateWallet(@Body() dto: CloudMlWalletUpdateDto): Promise<CloudMlWalletDto> {
