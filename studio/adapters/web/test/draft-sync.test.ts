@@ -9,6 +9,8 @@ import {
   saveMayStart,
   sendEditorDraft,
   shouldReloadFromHost,
+  editsLostOnRemount,
+  reportLost,
   shouldResendDraft,
   supersededEditLost,
   type DraftSendState,
@@ -429,6 +431,8 @@ class CommandFrame {
     const next = `e${(this.counter += 1)}`
     this.parent.set(next, this.files.get(mount.projectId) ?? '')
     this.files.set(mount.projectId, next)
+    // `watchDrafts` accepted the write: a draft the host has not taken yet.
+    this.state.writePending = true
   }
 
   /** `watchDrafts` sends what the mount wrote. */
@@ -495,7 +499,8 @@ class CommandFrame {
       graphVersion: update.version,
     })
     if (outcome === 'remount') {
-      if (supersededEditLost(this.state)) this.lost += 1
+      const replaced = this.state.mount.generation
+      if (editsLostOnRemount(this.state, false) && reportLost(this.state, replaced)) this.lost += 1
       const projectId = `p-m${this.state.mount.generation + 1}`
       beginMount(this.state, projectId, update.revision, update.version)
       this.state.hostContent = update.graph
@@ -548,6 +553,7 @@ describe('host commands and editor drafts (FL-174)', () => {
     frame.answer()
     await settle()
     expect(frame.state).toMatchObject({ pendingSend: true, pendingSuperseded: true })
+    expect(supersededEditLost(frame.state)).toBe(true)
 
     // The update: the editor does not show c2, so it remounts to it. e1 is gone and the person is told.
     frame.update()
@@ -567,16 +573,16 @@ describe('host commands and editor drafts (FL-174)', () => {
     frame.assertCommandsKept()
   })
 
-  it('tells the person when the refusal arrives after the remount already replaced the editor', async () => {
+  it('tells the person once when the remount replaces an edit whose refusal is still on its way', async () => {
     const frame = new CommandFrame()
     frame.edit()
     frame.send()
     await settle()
     frame.command()
     frame.arrive()
-    frame.update() // the remount happens before the answer arrives
-    expect(frame.lost).toBe(0)
-    frame.answer()
+    frame.update() // the remount happens before the answer arrives: e1 was never taken
+    expect(frame.lost).toBe(1)
+    frame.answer() // the refusal of the same mount's edit is not told again
     await settle()
     expect(frame.lost).toBe(1)
     expect(frame.state.pendingSend).toBe(false)
@@ -682,5 +688,395 @@ describe('host commands and editor drafts (FL-174)', () => {
       expect(frame.hostGraph).toBe(frame.files.get(frame.state.mount.projectId))
       frame.assertCommandsKept()
     }
+  })
+})
+
+type ModelUpdate = { graph: string; version: number; revision: number; draftHeld: boolean }
+
+/**
+ * FL-174, the whole loop: the project session, the server, and the editor frame with Freecut's own
+ * behaviour, every step interleavable.
+ *
+ * - **Server.** Another window may save at any time (`external`); this tab learns of it only by a
+ *   refused save (a conflict), a take over or a Reload.
+ * - **Session.** Commands and undo stage the host's own graph and advance `graphVersion`, as do
+ *   Reload, a restore and a take over that finds a moved head with no draft. Autosave stores the
+ *   draft when its base is the head and turns into a conflict otherwise. The lease can be lost and
+ *   taken over; a conflict or a lost lease holds the person's edits (`draftHeld`). Editor drafts
+ *   follow the session's rules: refused when superseded, otherwise they join the draft, carried over
+ *   the editor's own saves it has not heard of.
+ * - **Frame.** One global timeline store, dirty until a save lands. Saves start through the gate and
+ *   land later, in order, in the file of the instance that started them; a landed write of the
+ *   current mount becomes a draft after a timer. An update remounts or confirms as `update()` does,
+ *   and a remount is asynchronous: the old instance stays on screen, and editable, until the new one
+ *   is seeded and rendered, and the new one saves nothing until its timeline has loaded.
+ *
+ * Every graph knows its parent. Two properties:
+ * - the host's graph always descends from the latest graph the host put in place itself;
+ * - every edit the person makes is either taken by the host (an ancestor of a graph it accepted) or
+ *   its editor instance told the person its edits were lost. Nothing disappears silently.
+ */
+class StudioModel {
+  parent = new Map<string, string>()
+  private counter = 0
+
+  server = { revision: 3, graph: 'r3' }
+  host = {
+    revision: 3,
+    graph: 'r3',
+    draft: null as string | null,
+    draftBase: 3,
+    draftFromEditor: false,
+    graphVersion: 0,
+    status: 'saved' as 'saved' | 'conflict' | 'lease-lost',
+  }
+  /** The editor's own saves, base → stored revision (`followEditorSaves` in the session). */
+  editorSaves = new Map<number, number>()
+  lastReplacement = 'r3'
+  accepted: string[] = []
+
+  state: DraftSendState = {
+    hostContent: 'r3',
+    mount: { generation: 0, projectId: 'p', revision: 3, graphVersion: 0, loaded: true },
+    pendingSend: false,
+    pendingSuperseded: false,
+    disposed: false,
+  }
+  files = new Map<string, string>([['p', 'r3']])
+  store = 'r3'
+  dirty = false
+  /** The instance on screen: what the person edits and what Freecut's saves are started for. */
+  live: EditorMount = this.state.mount
+  seeding: { mount: EditorMount; graph: string } | null = null
+  pendingSaves: Array<{ projectId: string; content: string }> = []
+  sendTimers: EditorMount[] = []
+  edits = new Map<string, number>()
+  lostMounts = new Set<number>()
+  updates: ModelUpdate[] = []
+  arrivals: Array<{
+    graph: string
+    base: number
+    version: number
+    resolve: (answer: StageAnswer) => void
+  }> = []
+  answers: Array<() => void> = []
+
+  private node(prefix: string, parent: string) {
+    const id = `${prefix}${(this.counter += 1)}`
+    this.parent.set(id, parent)
+    return id
+  }
+
+  get hostGraph() {
+    return this.host.draft ?? this.host.graph
+  }
+
+  private post() {
+    this.updates.push({
+      graph: this.hostGraph,
+      version: this.host.graphVersion,
+      revision: this.host.revision,
+      draftHeld: this.host.draft !== null && this.host.status !== 'saved',
+    })
+  }
+
+  private replaceWith(graph: string, revision: number) {
+    this.host.draft = null
+    this.host.graph = graph
+    this.host.revision = revision
+    this.host.graphVersion += 1
+    this.lastReplacement = graph
+    this.editorSaves.clear()
+  }
+
+  /* Host and server */
+
+  /** A canonical command (`c`) or undo (`u`): the host's own graph, staged as its draft. */
+  hostChange(kind: 'c' | 'u') {
+    if (this.host.status !== 'saved') return
+    const graph = this.node(kind, this.hostGraph)
+    if (this.host.draft === null) this.host.draftBase = this.host.revision
+    this.host.draft = graph
+    this.host.draftFromEditor = false
+    this.host.graphVersion += 1
+    this.lastReplacement = graph
+    this.post()
+  }
+
+  save() {
+    if (this.host.draft === null || this.host.status !== 'saved') return
+    if (this.host.draftBase !== this.server.revision) {
+      this.host.status = 'conflict'
+      this.post()
+      return
+    }
+    this.server = { revision: this.server.revision + 1, graph: this.host.draft }
+    if (this.host.draftFromEditor) this.editorSaves.set(this.host.draftBase, this.server.revision)
+    this.host.graph = this.host.draft
+    this.host.revision = this.server.revision
+    this.host.draft = null
+    this.post()
+  }
+
+  external() {
+    this.server = {
+      revision: this.server.revision + 1,
+      graph: this.node('x', this.server.graph),
+    }
+  }
+
+  loseLease() {
+    if (this.host.status !== 'saved') return
+    this.host.status = 'lease-lost'
+    this.post()
+  }
+
+  takeOver() {
+    if (this.host.status !== 'lease-lost') return
+    if (this.host.draft !== null) {
+      this.host.status = this.server.revision === this.host.draftBase ? 'saved' : 'conflict'
+    } else {
+      if (this.server.revision !== this.host.revision)
+        this.replaceWith(this.server.graph, this.server.revision)
+      this.host.status = 'saved'
+    }
+    this.post()
+  }
+
+  /** The person's Reload: the draft is discarded and the head replaces what the editor shows. */
+  reload() {
+    this.replaceWith(this.server.graph, this.server.revision)
+    this.host.status = 'saved'
+    this.post()
+  }
+
+  restore() {
+    if (this.host.status !== 'saved' || this.host.draft !== null) return
+    if (this.server.revision !== this.host.revision) return
+    const graph = this.node('s', this.server.graph)
+    this.server = { revision: this.server.revision + 1, graph }
+    this.replaceWith(graph, this.server.revision)
+    this.post()
+  }
+
+  private follow(base: number) {
+    let revision = base
+    while (this.editorSaves.has(revision)) revision = this.editorSaves.get(revision)!
+    return revision
+  }
+
+  /** The session judges the oldest editor draft as it arrives; the answer travels back later. */
+  arrive() {
+    const arrival = this.arrivals.shift()
+    if (!arrival) return
+    let answer: StageAnswer = { status: 'staged' }
+    if (arrival.version < this.host.graphVersion) {
+      answer = { status: 'rejected', reason: 'superseded' }
+    } else {
+      const base = this.host.draft === null ? this.host.revision : this.host.draftBase
+      this.host.draftBase = Math.min(base, this.follow(arrival.base))
+      this.host.draft = arrival.graph
+      this.host.draftFromEditor = true
+      this.accepted.push(arrival.graph)
+      this.post()
+    }
+    this.answers.push(() => arrival.resolve(answer))
+  }
+
+  answer() {
+    this.answers.shift()?.()
+  }
+
+  /* Editor frame */
+
+  edit() {
+    if (!this.live.loaded) return
+    const graph = this.node('e', this.store)
+    this.store = graph
+    this.dirty = true
+    this.edits.set(graph, this.live.generation)
+  }
+
+  startSave() {
+    if (!this.dirty || !saveMayStart(this.state, this.live.projectId)) return
+    this.pendingSaves.push({ projectId: this.live.projectId, content: this.store })
+  }
+
+  landSave() {
+    const save = this.pendingSaves.shift()
+    if (!save) return
+    this.files.set(save.projectId, save.content)
+    if (save.projectId === this.live.projectId && save.content === this.store) this.dirty = false
+    const mount = this.state.mount
+    if (save.projectId === mount.projectId && acceptsWrite(this.state, mount)) {
+      this.state.writePending = true
+      this.sendTimers.push(mount)
+    }
+  }
+
+  fireSend() {
+    const mount = this.sendTimers.shift()
+    if (mount) this.send(mount)
+  }
+
+  private send(mount: EditorMount) {
+    void sendEditorDraft(this.state, mount, {
+      read: (from) => Promise.resolve(JSON.stringify(this.files.get(from.projectId) ?? null)),
+      contentOf: String,
+      stage: (graph, base, version) =>
+        new Promise<StageAnswer>((resolve) =>
+          this.arrivals.push({ graph: String(graph), base, version, resolve }),
+        ),
+      dirty: () => undefined,
+      lost: () => this.lostMounts.add(mount.generation),
+    })
+  }
+
+  update() {
+    const update = this.updates.shift()
+    if (!update) return
+    const current = this.files.get(this.state.mount.projectId) ?? ''
+    const outcome = reconcileHostGraph(this.state, {
+      incoming: update.graph,
+      current,
+      draftHeld: update.draftHeld,
+      graphVersion: update.version,
+    })
+    if (outcome === 'remount') {
+      const replaced = this.state.mount
+      const lost = editsLostOnRemount(this.state, this.sendTimers.length > 0 || this.dirty)
+      this.sendTimers = []
+      const mount = beginMount(
+        this.state,
+        `p-m${replaced.generation + 1}`,
+        update.revision,
+        update.version,
+      )
+      this.state.hostContent = update.graph
+      if (lost && reportLost(this.state, replaced.generation))
+        this.lostMounts.add(replaced.generation)
+      this.seeding = { mount, graph: update.graph }
+    } else if (outcome === 'echo') {
+      this.state.hostContent = update.graph
+      confirmEcho(this.state, update.graph, current, update.revision)
+    }
+    if (shouldResendDraft({ pending: this.state.pendingSend, online: true, hasLease: true }))
+      this.send(this.state.mount)
+  }
+
+  /** The remount's seeding finishes and the new instance renders (the end of `remount`). */
+  seed() {
+    const seeding = this.seeding
+    if (!seeding) return
+    this.seeding = null
+    if (seeding.mount !== this.state.mount) return
+    this.files.set(seeding.mount.projectId, seeding.graph)
+    if (this.dirty && reportLost(this.state, this.live.generation))
+      this.lostMounts.add(this.live.generation)
+    this.live = seeding.mount
+  }
+
+  /** The rendered instance's timeline loads: the store holds the seeded graph. */
+  hydrate() {
+    if (this.live !== this.state.mount || this.live.loaded || this.seeding) return
+    this.store = this.files.get(this.live.projectId) ?? this.store
+    this.dirty = false
+    loadFinished(this.state, this.live.projectId, true)
+  }
+
+  /* Properties */
+
+  descends(content: string, ancestor: string): boolean {
+    for (let at: string | undefined = content; at !== undefined; at = this.parent.get(at)) {
+      if (at === ancestor) return true
+    }
+    return false
+  }
+
+  assertHostChangeKept() {
+    expect(this.descends(this.hostGraph, this.lastReplacement)).toBe(true)
+  }
+
+  assertNoEditDisappeared() {
+    for (const [edit, generation] of this.edits) {
+      const kept = this.accepted.some((graph) => this.descends(graph, edit))
+      if (!kept) expect(this.lostMounts.has(generation), `edit ${edit}`).toBe(true)
+    }
+  }
+
+  private get busy() {
+    return (
+      this.updates.length +
+        this.arrivals.length +
+        this.answers.length +
+        this.pendingSaves.length +
+        this.sendTimers.length >
+        0 ||
+      this.seeding !== null ||
+      (this.live.loaded === false && this.live === this.state.mount)
+    )
+  }
+
+  /** Deliver everything in flight, then save and send what the person has on screen. */
+  async drain() {
+    for (let round = 0; round < 500; round += 1) {
+      this.update()
+      this.arrive()
+      this.answer()
+      this.seed()
+      this.hydrate()
+      this.landSave()
+      this.fireSend()
+      await settle()
+      this.assertHostChangeKept()
+      if (this.busy) continue
+      if (!this.dirty) return
+      this.startSave()
+    }
+    throw new Error('the model did not settle')
+  }
+}
+
+describe('the Studio host and editor under every interleaving (FL-174)', () => {
+  it('keeps the host’s own graph and never loses an edit without telling the person', async () => {
+    let seed = 0x5afe
+    const random = () => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648
+      return seed / 2_147_483_648
+    }
+    let lostAtAll = 0
+    for (let run = 0; run < 150; run += 1) {
+      const model = new StudioModel()
+      for (let step = 0; step < 80; step += 1) {
+        const pick = Math.floor(random() * 20)
+        if (pick <= 2) model.edit()
+        else if (pick === 3) model.startSave()
+        else if (pick === 4) model.landSave()
+        else if (pick === 5) model.fireSend()
+        else if (pick === 6) model.arrive()
+        else if (pick === 7) model.answer()
+        else if (pick === 8) model.update()
+        else if (pick === 9) model.seed()
+        else if (pick === 10) model.hydrate()
+        else if (pick === 11) model.hostChange('c')
+        else if (pick === 12) model.hostChange('u')
+        else if (pick === 13) model.save()
+        else if (pick === 14 && random() < 0.3) model.external()
+        else if (pick === 15 && random() < 0.3) model.loseLease()
+        else if (pick === 16) model.takeOver()
+        else if (pick === 17 && random() < 0.3) model.reload()
+        else if (pick === 18 && random() < 0.3) model.restore()
+        await settle()
+        model.assertHostChangeKept()
+      }
+      await model.drain()
+      model.assertHostChangeKept()
+      model.assertNoEditDisappeared()
+      // Settled: the editor shows the host's latest graph, at its version.
+      expect(model.state.mount.graphVersion).toBe(model.host.graphVersion)
+      lostAtAll += model.lostMounts.size
+    }
+    // The interleavings reach the lost-edit path, so the second property is exercised.
+    expect(lostAtAll).toBeGreaterThan(0)
   })
 })

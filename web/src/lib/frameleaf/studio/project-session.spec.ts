@@ -817,6 +817,55 @@ describe('studio project session', () => {
       expect(last()).toMatchObject({ status: 'dirty', hasDraft: true, project: { graph: { fresh: true } } });
     });
 
+    it('never takes an editor draft for the host’s own graph', async () => {
+      const session = create();
+      await session.open();
+      expect(session.stageEditor({ step: 1 }, ['editor.save'], 3, 0)).toBe('staged');
+      expect(last().project.graphVersion).toBe(0);
+      session.stage({ command: true }, ['clip.add'], [command as never]);
+      expect(last().project.graphVersion).toBe(1);
+      expect(session.stageEditor({ step: 2 }, ['editor.save'], 3, 0)).toBe('superseded');
+      expect(last().project).toMatchObject({ graph: { command: true }, graphVersion: 1 });
+    });
+
+    it('refuses a late editor draft after a take over finds a moved head and no draft', async () => {
+      const session = create();
+      await session.open();
+      api.acquireLease.mockRejectedValueOnce(
+        httpError(409, { reason: 'lease-held', lease: lease({ heldByYou: false, heldByAnother: true }) }),
+      );
+      await timers.fire((timer) => timer.ms === 30_000);
+      expect(last()).toMatchObject({ status: 'lease-lost', hasDraft: false });
+
+      api.get.mockResolvedValue(
+        detail({
+          revision: 5,
+          envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { theirs: true } },
+        }),
+      );
+      expect(await session.takeOver()).toBe(true);
+      expect(last()).toMatchObject({
+        status: 'saved',
+        project: { revision: 5, graph: { theirs: true }, graphVersion: 1 },
+      });
+      // Made on revision 3 before the editor reloaded to the head: never staged over it.
+      expect(session.stageEditor({ late: true }, ['editor.save'], 3, 0)).toBe('superseded');
+      expect(last()).toMatchObject({ hasDraft: false, project: { graph: { theirs: true } } });
+      expect(session.stageEditor({ next: true }, ['editor.save'], 5, 1)).toBe('staged');
+    });
+
+    it('keeps the version when a take over finds the head where this tab left it', async () => {
+      const session = create();
+      await session.open();
+      api.acquireLease.mockRejectedValueOnce(
+        httpError(409, { reason: 'lease-held', lease: lease({ heldByYou: false, heldByAnother: true }) }),
+      );
+      await timers.fire((timer) => timer.ms === 30_000);
+      expect(await session.takeOver()).toBe(true);
+      expect(last().project).toMatchObject({ revision: 3, graphVersion: 0 });
+      expect(session.stageEditor({ kept: true }, ['editor.save'], 3, 0)).toBe('staged');
+    });
+
     it('never advances the version for the editor’s own drafts, their saves or a take over', async () => {
       api.save.mockResolvedValue(saved(4));
       const session = create();

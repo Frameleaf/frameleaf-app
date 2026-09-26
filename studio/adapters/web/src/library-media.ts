@@ -146,6 +146,10 @@ export interface LibraryMediaSeeder {
    * imported inside the editor (FL-174). Without it an imported file leaves the bin on a remount.
    */
   associate(projectId: string, from?: string): Promise<void>
+  /** The person removed this media from the bin (FL-174): no remount or late import links it again. */
+  forget(mediaId: string): void
+  /** The media is in the current bin again (imported again, or linked again by Freecut). */
+  remember(mediaId: string): void
   /** Stop probing and release every registered URL. */
   dispose(): void
 }
@@ -159,6 +163,8 @@ export function createLibraryMediaSeeder(options: {
 }): LibraryMediaSeeder {
   const { workspace, projectId, onChange } = options
   const seeded = new Set<string>()
+  /** Removed from the bin by the person; never carried to another mount. */
+  const removed = new Set<string>()
   const controller = new AbortController()
   let probing: Promise<void> = Promise.resolve()
 
@@ -228,8 +234,16 @@ export function createLibraryMediaSeeder(options: {
       if (from && from !== target) {
         for (const id of await getProjectMediaIds(from)) ids.add(id)
       }
-      for (const id of ids) await associateMediaWithProject(target, id)
+      for (const id of ids) {
+        if (!removed.has(id)) await associateMediaWithProject(target, id)
+      }
       onChange()
+    },
+    forget(mediaId) {
+      removed.add(mediaId)
+    },
+    remember(mediaId) {
+      removed.delete(mediaId)
     },
     dispose() {
       controller.abort()
@@ -239,29 +253,111 @@ export function createLibraryMediaSeeder(options: {
   }
 }
 
+/** How many replaced mounts are followed for late imports (FL-174); older ones are let go. */
+export const RETIRED_MOUNTS_FOLLOWED = 3
+
+/** Record a replaced mount's project id, keeping only the most recent `RETIRED_MOUNTS_FOLLOWED`. */
+export function retireProject(
+  retired: Set<string>,
+  projectId: string,
+  keep = RETIRED_MOUNTS_FOLLOWED,
+): void {
+  retired.delete(projectId)
+  retired.add(projectId)
+  for (const oldest of retired) {
+    if (retired.size <= keep) break
+    retired.delete(oldest)
+  }
+}
+
 /**
- * Media the person imports inside the editor is linked to the current mount's project (FL-174). An
- * import still running in a replaced instance links it to that instance's project after the remount
- * carried the links over; this carries it again, so the bin and Freecut's orphaned-clip check of the
- * current mount see it. Writes to the current mount's own links are never replayed. Returns the
- * unsubscribe.
+ * Keep the bin of the current editor mount whole across remounts (FL-174).
+ *
+ * - **Late imports.** Media the person imports inside the editor is linked to the current mount's
+ *   project. An import still running in a replaced instance links it to that instance's project
+ *   after the remount carried the links over; this carries it again, so the bin and Freecut's
+ *   orphaned-clip check of the current mount see it. Bursts of writes to one replaced project run
+ *   one association at a time, with at most one more after it.
+ * - **Removals.** When the person removes media from the current bin, it is forgotten (no remount or
+ *   late import links it again) and unlinked from every followed replaced project through `release`,
+ *   Freecut's own removal, which frees the record once no project links it. Otherwise the replaced
+ *   projects' links would keep it alive and bring it back.
+ *
+ * Writes to the current mount's links are never carried anywhere. Returns the unsubscribe.
  */
 export function followRetiredImports(options: {
   workspace: VirtualWorkspace
   media: LibraryMediaSeeder
-  /** Project ids of replaced editor mounts. */
+  /** Project ids of replaced editor mounts (bounded by `retireProject`). */
   retired: ReadonlySet<string>
   current: () => string
+  /** Unlink `mediaId` from `projectId` and free the record once nothing links it. */
+  release: (projectId: string, mediaId: string) => Promise<void>
   onError: (error: unknown) => void
 }): () => void {
-  const { workspace, media, retired, current, onError } = options
+  const { workspace, media, retired, current, release, onError } = options
+  const pathOf = (projectId: string) => projectMediaLinksPath(projectId).join('/')
+
+  const running = new Set<string>()
+  const again = new Set<string>()
+  const carry = (projectId: string) => {
+    if (running.has(projectId)) {
+      again.add(projectId)
+      return
+    }
+    running.add(projectId)
+    void (async () => {
+      do {
+        again.delete(projectId)
+        const target = current()
+        if (target !== projectId && retired.has(projectId)) await media.associate(target, projectId)
+      } while (again.has(projectId))
+    })()
+      .catch(onError)
+      .finally(() => running.delete(projectId))
+  }
+
+  /** The current mount's links as last read, per mount project, to tell a removal from an addition. */
+  const known = new Map<string, Set<string>>()
+  const reconcile = async (projectId: string) => {
+    const now = new Set(await getProjectMediaIds(projectId))
+    const before = known.get(projectId)
+    // Only the current mount's links are compared; a replaced mount's are let go.
+    known.clear()
+    known.set(projectId, now)
+    if (!before) return
+    for (const id of now) {
+      if (!before.has(id)) media.remember(id)
+    }
+    for (const id of before) {
+      if (now.has(id)) continue
+      media.forget(id)
+      for (const retiredId of [...retired]) {
+        if (!(await getProjectMediaIds(retiredId)).includes(id)) continue
+        // Already freed, or freed by Freecut meanwhile: nothing left to release.
+        await release(retiredId, id).catch(() => undefined)
+      }
+    }
+  }
+  // Reads run in order, so each compares with the one before it.
+  let reconciling: Promise<void> = Promise.resolve()
+  const track = (projectId: string) => {
+    reconciling = reconciling.then(() => reconcile(projectId)).catch(onError)
+  }
+  track(current())
+
   return workspace.onWrite((path) => {
     const written = path.join('/')
-    for (const projectId of retired) {
-      if (written !== projectMediaLinksPath(projectId).join('/')) continue
-      const target = current()
-      if (target !== projectId) void media.associate(target, projectId).catch(onError)
+    const target = current()
+    if (written === pathOf(target)) {
+      track(target)
       return
+    }
+    for (const projectId of retired) {
+      if (written === pathOf(projectId)) {
+        carry(projectId)
+        return
+      }
     }
   })
 }

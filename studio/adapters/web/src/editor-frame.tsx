@@ -55,18 +55,20 @@ import {
   acceptsWrite,
   beginMount,
   confirmEcho,
+  editsLostOnRemount,
   loadFinished,
   reconcileHostGraph,
+  reportLost,
   saveMayStart,
   sendEditorDraft,
   shouldResendDraft,
-  supersededEditLost,
   type DraftSendState,
   type EditorMount,
 } from './draft-sync'
 import {
   createLibraryMediaSeeder,
   followRetiredImports,
+  retireProject,
   type LibraryMediaSeeder,
 } from './library-media'
 import { canonicalJson } from './canonical-commands'
@@ -157,6 +159,8 @@ interface Session extends DraftSendState {
    * its media to that instance's project; `watchImports` carries it to the current one (FL-174).
    */
   retiredProjectIds: Set<string>
+  /** The mount generation whose editor instance is on screen; a remount renders a new one last. */
+  renderedGeneration: number
 }
 
 let session: Session | null = null
@@ -316,6 +320,8 @@ function watchDrafts(state: Session) {
       const mount = state.mount
       if (path.join('/') !== projectJsonPath(mount.projectId).join('/')) return
       if (!acceptsWrite(state, mount)) return
+      // Work the host has not taken yet; a remount before it is taken reports it lost (FL-174).
+      state.writePending = true
       if (pending) clearTimeout(pending)
       pending = mountTimer(state, () => void sendDraft(state, mount), 250)
     }),
@@ -340,7 +346,7 @@ function sendDraft(state: Session, mount: EditorMount): Promise<void> {
   })
 }
 
-/** Tell the person an edit made on a graph the host has since replaced was not kept (FL-174). */
+/** Tell the person edits the host never took were not kept when the editor was replaced (FL-174). */
 function notifySuperseded(state: Session) {
   const message = state.context.strings?.editSuperseded
   if (message) post({ type: 'notify', message, tone: 'error' })
@@ -354,6 +360,13 @@ function watchImports(state: Session) {
       media: state.media,
       retired: state.retiredProjectIds,
       current: () => state.mount.projectId,
+      // Freecut's own removal: unlinks the media and frees its record once no project links it.
+      release: async (projectId, mediaId) => {
+        const { importMediaLibraryService } =
+          await import('@/features/timeline/deps/media-library-service')
+        const { mediaLibraryService } = await importMediaLibraryService()
+        await mediaLibraryService.deleteMediaFromProject(projectId, mediaId)
+      },
       onError: (error) =>
         post({
           type: 'notify',
@@ -423,25 +436,37 @@ function onLoadFinished(state: Session, projectId: string, error: unknown) {
  * own project file and are never sent.
  */
 async function remount(state: Session, context: StudioHostContext, incoming: string) {
+  const replaced = state.mount
+  // Edits the old instance made that the host never took are lost with it; the person is told once
+  // (FL-174). Asked before the timers that would have sent them are cancelled.
+  const lost = editsLostOnRemount(
+    state,
+    state.mountTimers.size > 0 || useTimelineSettingsStore.getState().isDirty,
+  )
   for (const timer of state.mountTimers) clearTimeout(timer)
   state.mountTimers.clear()
-  const previous = state.mount.projectId
-  const lost = supersededEditLost(state)
   const mount = beginMount(
     state,
-    `${state.engineProjectId}-m${state.mount.generation + 1}`,
+    `${state.engineProjectId}-m${replaced.generation + 1}`,
     context.project.revision,
     graphVersionOf(context),
   )
-  state.retiredProjectIds.add(previous)
+  retireProject(state.retiredProjectIds, replaced.projectId)
   state.hostContent = incoming
   usePlaybackStore.getState().pause()
-  if (lost) notifySuperseded(state)
+  if (lost && reportLost(state, replaced.generation)) notifySuperseded(state)
   await seedProject(state, mount)
+  if (state.disposed) return
   // Before the new instance renders, so its bin and its orphaned-clip check at load already see the
-  // media the person imported inside the editor, not only the library selection (FL-174).
-  await state.media.associate(mount.projectId, previous)
-  if (state.mount !== mount) return
+  // media the person imported inside the editor, not only the library selection (FL-174). Done even
+  // when a newer remount has begun: that one carries this mount's links on from here.
+  await state.media.associate(mount.projectId, replaced.projectId)
+  if (state.disposed || state.mount !== mount) return
+  // The instance on screen until now stayed editable while this one was seeded; edits it made since
+  // can no longer be saved (the persistence gate refuses a replaced mount) and go with it.
+  if (useTimelineSettingsStore.getState().isDirty && reportLost(state, state.renderedGeneration))
+    notifySuperseded(state)
+  state.renderedGeneration = mount.generation
   state.render()
 }
 
@@ -514,6 +539,7 @@ async function mount(context: StudioHostContext): Promise<void> {
     unsubscribe: [],
     mountTimers: new Set(),
     retiredProjectIds: new Set(),
+    renderedGeneration: 0,
     pendingSend: false,
     pendingSuperseded: false,
     disposed: false,
