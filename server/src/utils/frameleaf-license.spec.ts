@@ -14,6 +14,7 @@ import {
   nextRefreshAt,
   verifyLicenseCertificate,
 } from 'src/utils/frameleaf-license.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { makeLicenseSigner, signLicenseCertificate } from 'test/fixtures/frameleaf-license.fixture.js';
 
 const active = makeLicenseSigner('active');
@@ -210,20 +211,60 @@ describe('frameleaf-license (FL-156)', () => {
   });
 
   describe(checkLicenseKey.name, () => {
-    it.each([
-      ['FL-S8NL-49G8-J58U', 'server', 'J58U'],
-      ['fl-ic8q-bt2q-8elh', 'individual', '8ELH'],
-    ])('accepts %s', (key, kind, last4) => {
-      expect(checkLicenseKey(key)).toEqual({ valid: true, key: key.toUpperCase(), kind, last4 });
+    // Fixtures ported from frameleaf-cloud (FL-182, decision #40): the Luhn mod 32 check symbol,
+    // see server/test/fixtures/frameleaf-cloud-contracts/licence/check-symbol/SOURCE.md.
+    const valid = cloudContractFixture<{
+      keys: Array<{ key: string; kind: 'server' | 'individual'; last4: string }>;
+      pair: { body: string; server: string; individual: string };
+    }>('licence/check-symbol/valid.json');
+    const substitutions = cloudContractFixture<{ reason: string; substitutions: Array<{ input: string }> }>(
+      'licence/check-symbol/substitutions.json',
+    );
+    const transpositions = cloudContractFixture<{ reason: string; transpositions: Array<{ input: string }> }>(
+      'licence/check-symbol/transpositions.json',
+    );
+    const upstream = cloudContractFixture<{ reason: string; inputs: string[] }>('licence/check-symbol/upstream.json');
+
+    it.each(valid.keys)('accepts $key', ({ key, kind, last4 }) => {
+      expect(checkLicenseKey(key)).toEqual({ valid: true, key, kind, last4 });
+    });
+
+    it('accepts fl-ic8q-bt2q-8el6 lower case (trim and upper case only)', () => {
+      expect(checkLicenseKey('fl-ic8q-bt2q-8el6')).toEqual({
+        valid: true,
+        key: 'FL-IC8Q-BT2Q-8EL6',
+        kind: 'individual',
+        last4: '8EL6',
+      });
+    });
+
+    it('gives the same body a different check symbol for each kind', () => {
+      expect(checkLicenseKey(valid.pair.server)).toMatchObject({ valid: true, kind: 'server' });
+      expect(checkLicenseKey(valid.pair.individual)).toMatchObject({ valid: true, kind: 'individual' });
+    });
+
+    it('refuses every single-symbol substitution of a valid key', () => {
+      for (const { input } of substitutions.substitutions) {
+        expect(checkLicenseKey(input)).toEqual({ valid: false, reason: substitutions.reason });
+      }
+    });
+
+    it('refuses every adjacent transposition of a valid key', () => {
+      for (const { input } of transpositions.transpositions) {
+        expect(checkLicenseKey(input)).toEqual({ valid: false, reason: transpositions.reason });
+      }
+    });
+
+    it('refuses upstream product keys as upstream, not as a typo', () => {
+      for (const input of upstream.inputs) {
+        expect(checkLicenseKey(input)).toEqual({ valid: false, reason: upstream.reason });
+      }
     });
 
     it.each([
-      ['FL-S8NL-49G8-J58V', 'check'],
       ['FL-X8NL-49G8-J58U', 'kind'],
       ['FL-S8NL-49G8-J58O', 'symbols'],
       ['FL-S8NL-49G8', 'format'],
-      ['IMSV-AAAA-BBBB-CCCC-DDDD', 'upstream'],
-      ['IMCL-AAAA-BBBB-CCCC-DDDD', 'upstream'],
     ])('refuses %s (%s)', (key, reason) => {
       expect(checkLicenseKey(key)).toEqual({ valid: false, reason });
     });
