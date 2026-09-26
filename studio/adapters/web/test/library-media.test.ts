@@ -134,7 +134,13 @@ const deferred = <T>() => {
 /** Let the watcher's reads run. */
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-/** Freecut's `deleteMediaFromProject`: unlink, then free the record once no project links it. */
+/**
+ * Freecut's `deleteMediaFromProject` (`media-library-service.ts`), step for step on the same storage
+ * calls: unlink, then free the record once no project links it (`cleanupMediaIfUnreferenced`). The
+ * real service is not loaded here: importing it starts its OPFS, proxy, transcription and worker
+ * services, which jsdom cannot host, and its cleanup of those caches is not what this test is about.
+ * The frame passes the real one (`editor-frame.tsx`).
+ */
 const freecutRelease = async (projectId: string, mediaId: string) => {
   await removeMediaFromProject(projectId, mediaId)
   if ((await getProjectsUsingMedia(mediaId)).length === 0) await deleteMedia(mediaId)
@@ -324,6 +330,52 @@ describe('library media across editor remounts', () => {
     media.dispose()
   })
 
+  it('keeps a removal that lands while a remount is linking the bin', async () => {
+    await createMedia(imported(IMPORTED, 'wave.mp4'))
+    await associateMediaWithProject('fl-p', IMPORTED)
+    const media = createLibraryMediaSeeder({
+      workspace,
+      projectId: () => 'fl-p-m1',
+      onChange: () => undefined,
+    })
+    // The person removes it from the new bin the moment it is linked there.
+    const stop = workspace.onWrite((path) => {
+      if (path.join('/') === projectMediaLinksPath('fl-p-m1').join('/')) media.forget(IMPORTED)
+    })
+    await media.associate('fl-p-m1', 'fl-p')
+    stop()
+    expect(await getProjectMediaIds('fl-p-m1')).not.toContain(IMPORTED)
+    media.dispose()
+  })
+
+  it('counts a removal made before the first read of the bin as a removal', async () => {
+    await createMedia(imported(IMPORTED, 'wave.mp4'))
+    await associateMediaWithProject('fl-p', IMPORTED)
+    const media = createLibraryMediaSeeder({
+      workspace,
+      projectId: () => 'fl-p-m1',
+      onChange: () => undefined,
+    })
+    await media.associate('fl-p-m1', 'fl-p')
+    const release = vi.fn(freecutRelease)
+    const stop = followRetiredImports({
+      workspace,
+      media,
+      retired: new Set(['fl-p']),
+      current: () => 'fl-p-m1',
+      release,
+      onError: vi.fn(),
+    })
+    // No tick: the removal lands before the watcher has read the current bin.
+    await removeMediaFromProject('fl-p-m1', IMPORTED)
+    expect(await eventually(async () => release.mock.calls.length > 0)).toBe(true)
+    expect(release).toHaveBeenCalledWith('fl-p', IMPORTED)
+    await media.associate('fl-p-m2', 'fl-p-m1')
+    expect(await getProjectMediaIds('fl-p-m2')).not.toContain(IMPORTED)
+    stop()
+    media.dispose()
+  })
+
   it('runs one association at a time per replaced project, with one more for a burst', async () => {
     const running = deferred<void>()
     const media: LibraryMediaSeeder = {
@@ -331,6 +383,7 @@ describe('library media across editor remounts', () => {
       associate: vi.fn(() => running.promise),
       forget: vi.fn(),
       remember: vi.fn(),
+      linked: vi.fn(() => new Set<string>()),
       dispose: vi.fn(),
     }
     const stop = followRetiredImports({
