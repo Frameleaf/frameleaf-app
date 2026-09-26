@@ -35,13 +35,13 @@ where
 
 -- CloudBackupIndexRepository.currentTime
 select
-  now() as "now"
+  to_json(now()) as "now"
 
 -- CloudBackupIndexRepository.pruneUnseen
 delete from "cloud_backup_object"
 where
   "bucket" = $1
-  and "lastSeenAt" < $2
+  and "lastSeenAt" < $2::timestamptz
 
 -- CloudBackupIndexRepository.getUsage
 select

@@ -237,7 +237,7 @@
     "map_enable_description": "Gaitu maparen ezaugarriak",
     "map_gps_settings": "Mapa eta GPS Konfigurazioa",
     "map_gps_settings_description": "Kudeatu mapa eta GPS (alderantzizko geokodeketa) ezarpenak",
-    "map_implications": "Maparen funtzioak kanpoko fitxa-zerbitzu batean oinarritzen da (tiles.immich.cloud)",
+    "map_implications": "Maparen funtzioak kanpoko fitxa-zerbitzu batean oinarritzen da (tiles.frameleaf.cloud)",
     "map_light_style": "Zuri estiloa",
     "map_manage_reverse_geocoding_settings": "Kudeatu <link>Alderantzizko geokodeketa</link> ezarpenak",
     "map_reverse_geocoding": "Alderantziko geokodeketa",

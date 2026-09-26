@@ -212,7 +212,7 @@
     "map_enable_description": "नकाशी सुविधा सक्षम करा",
     "map_gps_settings": "नकाशा आणि जीपीएस सेटिंग्ज",
     "map_gps_settings_description": "मानचित्र व GPS (रिव्हर्स ज्योकोडिंग) सेटिंग्ज व्यवस्थापित करा",
-    "map_implications": "मानचित्र वैशिष्ट्य बाह्य टाइल सेवेशी (tiles.immich.cloud) अवलंबून आहे",
+    "map_implications": "मानचित्र वैशिष्ट्य बाह्य टाइल सेवेशी (tiles.frameleaf.cloud) अवलंबून आहे",
     "map_light_style": "उजळ शैली",
     "map_manage_reverse_geocoding_settings": "<link>रिव्हर्स जिओकोडिंग</link> सेटिंग्ज व्यवस्थापित करा",
     "map_reverse_geocoding": "रिव्हर्स जिओकोडिंग",

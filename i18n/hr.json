@@ -239,7 +239,7 @@
     "map_enable_description": "Omogući značajke karte",
     "map_gps_settings": "Postavke karte i GPS-a",
     "map_gps_settings_description": "Upravljajte postavkama karte i GPS-a (obrnutog geokodiranja)",
-    "map_implications": "Značajka karte se oslanja na vanjsku uslugu pločica (tiles.immich.cloud)",
+    "map_implications": "Značajka karte se oslanja na vanjsku uslugu pločica (tiles.frameleaf.cloud)",
     "map_light_style": "Svijetli stil",
     "map_manage_reverse_geocoding_settings": "Upravljajte postavkama <link>Obrnutog geokodiranja</link>",
     "map_reverse_geocoding": "Obrnuto Geokodiranje",

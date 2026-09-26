@@ -239,7 +239,7 @@
     "map_enable_description": "ম্যাপ ফিচারগুলো সক্রিয় করুন (Enable map features)",
     "map_gps_settings": "ম্যাপ এবং জিপিএস সেটিংস (Map & GPS Settings)",
     "map_gps_settings_description": "ম্যাপ এবং জিপিএস (রিভার্স জিওকোডিং) সেটিংস পরিচালনা করুন (Manage Map & GPS (Reverse Geocoding) Settings)",
-    "map_implications": "ম্যাপ ফিচারটি একটি বাহ্যিক টাইল সার্ভিসের (tiles.immich.cloud) উপর নির্ভর করে",
+    "map_implications": "ম্যাপ ফিচারটি একটি বাহ্যিক টাইল সার্ভিসের (tiles.frameleaf.cloud) উপর নির্ভর করে",
     "map_light_style": "লাইট স্টাইল (Light style)",
     "map_manage_reverse_geocoding_settings": "<link>রিভার্স জিওকোডিং</link> সংক্রান্ত ব্যবস্থা পরিচালনা করুন",
     "map_reverse_geocoding": "রিভার্স জিওকোডিং (Reverse Geocoding)",

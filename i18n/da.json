@@ -236,7 +236,7 @@
     "map_enable_description": "Aktivér kortfunktioner",
     "map_gps_settings": "Kort- og GPS-indstillinger",
     "map_gps_settings_description": "Håndter indstillinger for Kort og GPS (Omvendt Geokodning)",
-    "map_implications": "Kortfunktionen afhænger af en ekstern tile-service (tiles.immich.cloud)",
+    "map_implications": "Kortfunktionen afhænger af en ekstern tile-service (tiles.frameleaf.cloud)",
     "map_light_style": "Lyst tema",
     "map_manage_reverse_geocoding_settings": "Håndtér indstillinger for <link>Omvendt Geokoding</link>",
     "map_reverse_geocoding": "Omvendt geokodning",

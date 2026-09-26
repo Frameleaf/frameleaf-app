@@ -231,7 +231,7 @@
     "map_enable_description": "ನಕ್ಷೆ ವೈಶಿಷ್ಟ್ಯಗಳನ್ನು ಸಕ್ರಿಯಗೊಳಿಸಿ",
     "map_gps_settings": "ನಕ್ಷೆ ಮತ್ತು GPS ಸೆಟ್ಟಿಂಗ್‌ಗಳು",
     "map_gps_settings_description": "ನಕ್ಷೆ ಮತ್ತು GPS (ರಿವರ್ಸ್ ಜಿಯೋಕೋಡಿಂಗ್) ಸೆಟ್ಟಿಂಗ್‌ಗಳನ್ನು ನಿರ್ವಹಿಸಿ",
-    "map_implications": "ನಕ್ಷೆಯ ವೈಶಿಷ್ಟ್ಯವು ಬಾಹ್ಯ ಟೈಲ್ ಸೇವೆಯನ್ನು ಅವಲಂಬಿಸಿದೆ (tiles.immich.cloud)",
+    "map_implications": "ನಕ್ಷೆಯ ವೈಶಿಷ್ಟ್ಯವು ಬಾಹ್ಯ ಟೈಲ್ ಸೇವೆಯನ್ನು ಅವಲಂಬಿಸಿದೆ (tiles.frameleaf.cloud)",
     "map_light_style": "ಬೆಳಕಿನ ಶೈಲಿ",
     "map_manage_reverse_geocoding_settings": "<link>ರಿವರ್ಸ್ Reverse Geocoding</link> ಸೆಟ್ಟಿಂಗ್‌ಗಳನ್ನು ನಿರ್ವಹಿಸಿ",
     "map_reverse_geocoding": "ರಿವರ್ಸ್ ಜಿಯೋಕೋಡಿಂಗ್",

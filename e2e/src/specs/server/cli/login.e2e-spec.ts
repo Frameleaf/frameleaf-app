@@ -34,7 +34,7 @@ describe(`immich login`, () => {
     const { stdout, stderr, exitCode } = await immichCli(['login', app, apiKey.secret]);
     expect(stdout.split('\n')).toEqual([
       'Logging in to http://127.0.0.1:2285/api',
-      'Logged in as admin@immich.cloud',
+      'Logged in as admin@example.com',
       'Wrote auth info to /tmp/immich/auth.yml',
     ]);
     expect(stderr).toBe('');
@@ -52,7 +52,7 @@ describe(`immich login`, () => {
     expect(stdout.split('\n')).toEqual([
       'Logging in to http://127.0.0.1:2285',
       'Discovered API at http://127.0.0.1:2285/api',
-      'Logged in as admin@immich.cloud',
+      'Logged in as admin@example.com',
       'Wrote auth info to /tmp/immich/auth.yml',
     ]);
     expect(stderr).toBe('');

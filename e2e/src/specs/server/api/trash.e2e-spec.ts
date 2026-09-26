@@ -486,7 +486,7 @@ describe('/trash', () => {
 
     it("should not review another account's items", async () => {
       const other = await utils.userSetup(admin.accessToken, {
-        email: 'trash-other@immich.cloud',
+        email: 'trash-other@example.com',
         name: 'Other',
         password: 'password',
       });

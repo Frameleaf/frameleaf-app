@@ -106,11 +106,6 @@ div[class^='announcementBar_'] {
   font-weight: 450;
 }
 
-/* workaround for version switcher PR 15894 */
-div[class*='navbar__items'] > li:has(a[class*='version-switcher-34ab39']) {
-  display: none;
-}
-
 code {
   font-weight: 500;
   font-family: 'GoogleSansCode';

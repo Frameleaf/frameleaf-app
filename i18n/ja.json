@@ -239,7 +239,7 @@
     "map_enable_description": "地図表示機能を有効にします",
     "map_gps_settings": "地図・GPS設定",
     "map_gps_settings_description": "地図とGPS(逆ジオコーディング)の設定を管理します",
-    "map_implications": "地図表示機能は外部のタイルサービス(tiles.immich.cloud)に依存します",
+    "map_implications": "地図表示機能は外部のタイルサービス(tiles.frameleaf.cloud)に依存します",
     "map_light_style": "ライトモード",
     "map_manage_reverse_geocoding_settings": "<link>逆ジオコーディング</link>の設定を管理します",
     "map_reverse_geocoding": "逆ジオコーディング",

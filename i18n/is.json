@@ -187,7 +187,7 @@
     "map_enable_description": "Virkja kortamöguleika",
     "map_gps_settings": "Kort & GPS stillingar",
     "map_gps_settings_description": "Sýsla með Kort og GPS (afturvirk landkóðun)",
-    "map_implications": "Kortaeiginleikinn krefst utanaðkomandi þjónustu (tiles.immich.cloud)",
+    "map_implications": "Kortaeiginleikinn krefst utanaðkomandi þjónustu (tiles.frameleaf.cloud)",
     "map_light_style": "Ljós ásjá",
     "map_manage_reverse_geocoding_settings": "Sýsla með <link>Afturvirka Landkóðun</link>",
     "map_reverse_geocoding": "Afturvirk Landkóðun",

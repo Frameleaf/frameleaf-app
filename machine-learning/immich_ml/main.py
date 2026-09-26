@@ -24,10 +24,10 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from immich_ml.models import get_model_deps
-from immich_ml.models.base import InferenceModel
+from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.transforms import decode_pil
 
-from .config import PreloadModelData, log, settings
+from .config import PreloadModelData, log, model_source, settings
 from .hardware_report import container_report
 from .models.cache import ModelCache
 from .schemas import (
@@ -57,6 +57,8 @@ last_called: float | None = None
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     global thread_pool
+    source_url, source_setting = model_source()
+    log.info(f"Downloading Frameleaf models from {source_url} ({source_setting}).")
     log.info(
         (
             "Created in-memory cache with unloading "
@@ -456,6 +458,9 @@ async def load(model: InferenceModel) -> InferenceModel:
 
     try:
         return await run(_load, model)
+    except ModelUnavailableError as error:
+        # A missing model is a configuration problem; clearing the cache and retrying cannot fix it.
+        raise HTTPException(503, str(error)) from error
     except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile):
         log.warning(f"Failed to load {model.model_type.replace('_', ' ')} model '{model.model_name}'. Clearing cache.")
         model.clear_cache()

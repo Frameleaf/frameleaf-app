@@ -118,20 +118,24 @@ export class CloudBackupIndexRepository {
     await this.db.deleteFrom('cloud_backup_object').where('bucket', '=', bucket).execute();
   }
 
-  /** The database's clock, which stamps `lastSeenAt`. */
+  /**
+   * The database's clock, which stamps `lastSeenAt`, as ISO 8601 text with its microseconds. A `Date`
+   * keeps only milliseconds, so a row stamped earlier in the same millisecond would not compare as
+   * before it and would survive `pruneUnseen`.
+   */
   @GenerateSql()
-  async currentTime(): Promise<Date> {
-    const row = await this.db.selectNoFrom(sql<Date>`now()`.as('now')).executeTakeFirstOrThrow();
-    return new Date(row.now);
+  async currentTime(): Promise<string> {
+    const row = await this.db.selectNoFrom(sql<string>`to_json(now())`.as('now')).executeTakeFirstOrThrow();
+    return row.now;
   }
 
   /** Forget objects the bucket listing no longer holds: every row the listing did not touch since `since`. */
   @GenerateSql({ params: [DummyValue.STRING, DummyValue.DATE] })
-  async pruneUnseen(bucket: string, since: Date): Promise<number> {
+  async pruneUnseen(bucket: string, since: string): Promise<number> {
     const result = await this.db
       .deleteFrom('cloud_backup_object')
       .where('bucket', '=', bucket)
-      .where('lastSeenAt', '<', since)
+      .where('lastSeenAt', '<', sql<Date>`${since}::timestamptz`)
       .executeTakeFirst();
     return Number(result.numDeletedRows);
   }

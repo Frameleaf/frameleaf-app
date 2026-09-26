@@ -239,7 +239,7 @@
     "map_enable_description": "Omogoči funkcije zemljevida",
     "map_gps_settings": "Nastavitve zemljevida in GPS",
     "map_gps_settings_description": "Upravljajte nastavitve zemljevida in GPS (povratno geokodiranje)",
-    "map_implications": "Funkcija zemljevida se opira na zunanjo storitev ploščic (tiles.immich.cloud)",
+    "map_implications": "Funkcija zemljevida se opira na zunanjo storitev ploščic (tiles.frameleaf.cloud)",
     "map_light_style": "Svetli način",
     "map_manage_reverse_geocoding_settings": "Upravljanje nastavitev <link>Povratno geokodiranje</link>",
     "map_reverse_geocoding": "Povratno geokodiranje",
