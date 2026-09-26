@@ -17,7 +17,7 @@ import immich_ml.sessions.ann.loader
 import immich_ml.sessions.rknn as rknn
 from immich_ml.sessions.ort import OrtSession
 
-from ..config import DEFAULT_MODEL_SOURCE_URL, clean_name, log, settings
+from ..config import clean_name, log, model_source_token, model_source_url, settings
 from ..schemas import ModelFormat, ModelIdentity, ModelSession, ModelTask, ModelType
 from ..sessions.ann import AnnSession
 
@@ -31,10 +31,6 @@ _MISSING_MODEL_STATUSES = {401, 403, 404, 410}
 
 class ModelUnavailableError(RuntimeError):
     """The configured model source does not serve the requested model."""
-
-
-def model_source_url() -> str:
-    return settings.model_source_url.rstrip("/")
 
 
 def _is_missing_model(error: BaseException) -> bool:
@@ -113,8 +109,8 @@ class InferenceModel(ABC):
                 local_dir=self.cache_dir,
                 ignore_patterns=ignored_patterns.get(self.model_format, []),
                 endpoint=endpoint,
-                # The Frameleaf mirror is public; never forward a Hugging Face token to it.
-                token=False if endpoint == DEFAULT_MODEL_SOURCE_URL else None,
+                # A Hugging Face token only ever goes to huggingface.co (see model_source_token).
+                token=model_source_token(),
             )
         except Exception as error:
             if not _is_missing_model(error):

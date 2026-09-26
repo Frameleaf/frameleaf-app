@@ -864,6 +864,7 @@
     "machine_learning_availability_checks_timeout_description": "Timeout in milliseconds for availability checks",
     "machine_learning_clip_model": "CLIP model",
     "machine_learning_clip_model_description": "The name of a CLIP model listed <link>here</link>. Note that you must re-run the 'Smart Search' job for all images upon changing a model.",
+    "machine_learning_clip_model_description_unlinked": "The name of a CLIP model your model source provides. Note that you must re-run the 'Smart Search' job for all images upon changing a model.",
     "machine_learning_custom_fallback_model_hf_id": "Custom fallback model (Hugging Face ID)",
     "machine_learning_custom_model_hf_id": "Custom model (Hugging Face ID)",
     "machine_learning_custom_model_option": "Custom… (enter Hugging Face model ID)",
