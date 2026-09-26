@@ -627,6 +627,19 @@ describe(InstanceIdentityRepository.name, () => {
       await expect(access(join(dir, NEXT_KEY_FILE))).rejects.toThrow();
     });
 
+    it('does not start a rotation while a candidate the cloud may hold is open (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const pem = newPem();
+      await writeFile(join(dir, CANDIDATE_KEY_FILE), pem, { mode: 0o600 });
+      const pending = await repository.loadOrCreate(dir, identity);
+      const prove = vi.fn(() => Promise.resolve());
+      await expect(repository.rotate(pending, prove, 24)).rejects.toThrow('candidate key');
+      expect(prove).not.toHaveBeenCalled();
+      expect(await readFile(join(dir, CANDIDATE_KEY_FILE), 'utf8')).toBe(pem);
+      await expect(access(join(dir, NEXT_KEY_FILE))).rejects.toThrow();
+    });
+
     it('does not replace a next key of a rotation already under way (FL-175)', async () => {
       const repository = new InstanceIdentityRepository();
       const identity = await repository.loadOrCreate(dir, null);

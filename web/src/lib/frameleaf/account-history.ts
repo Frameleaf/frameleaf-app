@@ -116,7 +116,20 @@ export const describeAdminEvent = (
       return $t('frameleaf_account_history_cloud_permissions_changed');
     }
     case AdminAuditAction.CloudKeyRecoveryRotation: {
-      return $t('frameleaf_account_history_cloud_key_recovery_rotation');
+      switch (detail) {
+        case 'rotated': {
+          return $t('frameleaf_account_history_cloud_key_recovery_rotated');
+        }
+        case 'retrying': {
+          return $t('frameleaf_account_history_cloud_key_recovery_retrying');
+        }
+        case 'window-closed': {
+          return $t('frameleaf_account_history_cloud_key_recovery_window_closed');
+        }
+        default: {
+          return $t('frameleaf_account_history_cloud_key_recovery_rotation');
+        }
+      }
     }
     case AdminAuditAction.LicenseActivated: {
       return detail === 'file' || !detail

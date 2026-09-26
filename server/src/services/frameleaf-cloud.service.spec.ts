@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
+import { type KeyObject, createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,9 +20,16 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
+import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { FakeCloud, FakeCloudAnswer, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+/** The RFC 7638 kid of an Ed25519 private key. */
+const kidOf = (privateKey: KeyObject) => {
+  const jwk = createPublicKey(privateKey).export({ format: 'jwk' });
+  return ed25519Thumbprint({ kty: 'OKP', crv: 'Ed25519', x: jwk.x! });
+};
 
 const admin = { id: authStub.admin.user.id, name: 'Admin', isAdmin: true };
 
@@ -843,11 +850,12 @@ describe(FrameleafCloudService.name, () => {
       expect((metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).rotationNeeded).toBe(
         undefined,
       );
-      for (const detail of ['retrying', 'rotated']) {
-        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
-          expect.objectContaining({ action: AdminAuditAction.CloudKeyRecoveryRotation, detail }),
-        ]);
-      }
+      // one row per change of state, not one per attempt
+      const recoveryRows = mocks.adminAudit.create.mock.calls
+        .flatMap(([rows]) => rows as { action: string; detail: string | null }[])
+        .filter(({ action }) => action === AdminAuditAction.CloudKeyRecoveryRotation)
+        .map(({ detail }) => detail);
+      expect(recoveryRows).toEqual(['retrying', 'rotated']);
     });
 
     it('asks for the server to be linked again when the cloud refuses the recovery because the window closed (FL-175)', async () => {
@@ -961,7 +969,14 @@ describe(FrameleafCloudService.name, () => {
         expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
       });
 
-      it('without a code, treats any other 401 as a key the cloud no longer accepts', async () => {
+      it('without a code, backs off on a 401 other than invalid_client (clock skew)', async () => {
+        await setUp([{ status: 401, body: { error: 'invalid_grant', error_description: 'assertion not yet valid' } }]);
+        expect(rotateCalls()).toBe(1);
+        expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
+        expect(storedLink()?.heartbeat?.keyRecovery?.nextAttemptAt).toEqual(expect.any(String));
+      });
+
+      it('without a code, treats invalid_client as a key the cloud no longer accepts', async () => {
         await setUp([{ status: 401, body: { error: 'invalid_client' } }]);
         expect(rotateCalls()).toBe(1);
         expect(storedLink()?.heartbeat?.relinkRequested).toBe(true);
@@ -1005,6 +1020,138 @@ describe(FrameleafCloudService.name, () => {
       await sut.handleHeartbeat();
       await expect(access(join(identityDir, RETIRING_KEY_FILE))).rejects.toThrow();
       expect((metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).retiring).toBeUndefined();
+    });
+
+    const writeCandidate = async () => {
+      const privateKey = generateKeyPairSync('ed25519').privateKey;
+      await writeFile(join(identityDir, CANDIDATE_KEY_FILE), privateKey.export({ format: 'pem', type: 'pkcs8' }), {
+        mode: 0o600,
+      });
+      return kidOf(privateKey);
+    };
+
+    it('promotes a candidate the cloud holds instead of rotating again during a recovery (FL-175)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      const candidateKid = await writeCandidate();
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(after.kid).toBe(candidateKid);
+      expect(after.retiring?.kid).toBe(before.kid);
+      expect(after.candidate).toBeUndefined();
+      expect(after.rotationNeeded).toBeUndefined();
+      expect(storedLink()?.heartbeat?.keyRecovery).toBeUndefined();
+    });
+
+    it('rotates again during a recovery only after the cloud refused the candidate (FL-175)', async () => {
+      await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      const candidateKid = await writeCandidate();
+      cloud.on('POST /id/token', (request) =>
+        headerOf(request.form().get('client_assertion')!).kid === candidateKid
+          ? { status: 401, body: { error: 'invalid_client' } }
+          : { status: 200, body: { access_token: 'api-token', expires_in: 600 } },
+      );
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      const rotate = cloud.requests.find(({ path }) => path === '/api/v1/instance/keys/rotate')!.json();
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(after.kid).toBe(rotate.newJwk.kid);
+      expect(after.kid).not.toBe(candidateKid);
+      expect(after.rotationNeeded).toBeUndefined();
+      await expect(access(join(identityDir, CANDIDATE_KEY_FILE))).rejects.toThrow();
+    });
+
+    it('does not start a commanded rotation while a candidate is open (FL-175)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      await writeCandidate();
+      const pem = await readFile(join(identityDir, CANDIDATE_KEY_FILE), 'utf8');
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 200,
+        body: { commands: [{ id: 'k1', type: 'key.rotate' }] },
+      }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
+      cloud.on('POST /api/v1/instance/commands/k1/ack', () => ({ status: 200, body: {} }));
+      makeDue();
+      await sut.handleHeartbeat();
+
+      expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
+      const ack = cloud.requests.find(({ path }) => path === '/api/v1/instance/commands/k1/ack')!.json();
+      expect(ack.result).toBe('failed');
+      expect(await readFile(join(identityDir, CANDIDATE_KEY_FILE), 'utf8')).toBe(pem);
+      expect((metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).kid).toBe(before.kid);
+    });
+
+    it('retries a commanded rotation once with a fresh nonce on nonce_invalid (FL-175)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      const answers: FakeCloudAnswer[] = [{ status: 401, body: { code: 'nonce_invalid', message: 'reused' } }];
+      let nonces = 0;
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 200,
+        body: { commands: [{ id: 'k1', type: 'key.rotate' }] },
+      }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: `nonce-${++nonces}` } }));
+      cloud.on('POST /api/v1/instance/keys/rotate', () => answers.shift() ?? { status: 200, body: {} });
+      cloud.on('POST /api/v1/instance/commands/k1/ack', () => ({ status: 200, body: {} }));
+      makeDue();
+      await sut.handleHeartbeat();
+
+      const rotations = cloud.requests.filter(({ path }) => path === '/api/v1/instance/keys/rotate');
+      expect(rotations).toHaveLength(2);
+      expect(nonces).toBe(2);
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(after.kid).toBe(rotations[1].json().newJwk.kid);
+      expect(after.kid).not.toBe(before.kid);
+      const ack = cloud.requests.find(({ path }) => path === '/api/v1/instance/commands/k1/ack')!.json();
+      expect(ack.result).toBe('done');
+    });
+
+    it('ends the link as an expired key when the cloud refuses it during a recovery (FL-175)', async () => {
+      const since = Date.now() - 60 * 60 * 1000;
+      await writeFile(
+        join(identityDir, ROTATION_NEEDED_FILE),
+        JSON.stringify({ since: new Date(since).toISOString(), until: new Date(since + 24 * 60 * 60 * 1000) }),
+      );
+      cloud.on('POST /id/token', () => ({ status: 401, body: { error: 'invalid_client' } }));
+      sutForgetTokens();
+      makeDue();
+      await sut.handleHeartbeat();
+
+      expect(storedLink()).toMatchObject({
+        status: 'revoked',
+        revoked: { reason: 'This server’s identity key could not be replaced before its previous key expired.' },
+      });
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.CloudKeyRecoveryRotation, detail: 'window-closed' }),
+      ]);
+      await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).rejects.toThrow();
+    });
+
+    it('never schedules a recovery retry past the previous key’s window (FL-175)', async () => {
+      await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      const until = Date.now() + 10 * 60 * 1000;
+      await writeFile(
+        join(identityDir, ROTATION_NEEDED_FILE),
+        JSON.stringify({ since: new Date(until - 24 * 60 * 60 * 1000), until: new Date(until) }),
+      );
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      cloud.on('POST /api/v1/instance/keys/rotate', () => ({
+        status: 429,
+        body: { code: 'rate-limited', message: 'more than 3 rotations this hour' },
+        headers: { 'Retry-After': '3600' },
+      }));
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(Date.parse(storedLink()!.heartbeat!.keyRecovery!.nextAttemptAt!)).toBe(until);
     });
 
     const sutForgetTokens = () =>
