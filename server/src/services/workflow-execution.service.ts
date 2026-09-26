@@ -90,6 +90,8 @@ export const getAutomaticRetryExecutionId = (executionId: string): string => {
 
 export class WorkflowExecutionService extends BaseService {
   private jwtSecret!: string;
+  // FL-179: the missing step table is reported once per process
+  private runStepsMissingLogged = false;
 
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.PluginSync, workers: [ImmichWorker.Microservices] })
   async onPluginSync() {
@@ -430,6 +432,15 @@ export class WorkflowExecutionService extends BaseService {
    * FL-179: completed steps are kept long enough for a stalled job to be replayed, then forgotten
    * as part of the nightly database cleanup. A failure waits for the next night.
    */
+  /**
+   * FL-179: the startup migrations have run by now, so whether `workflow_run_step` exists is checked
+   * again rather than trusted from before them.
+   */
+  @OnEvent({ name: 'AppBootstrap' })
+  onBootstrapCheckRunSteps() {
+    this.workflowRepository.resetRunStepTable();
+  }
+
   @OnEvent({ name: 'NightlyDatabaseCleanup' })
   async onNightlyDatabaseCleanup() {
     try {
@@ -680,6 +691,12 @@ export class WorkflowExecutionService extends BaseService {
 
     // FL-179: the steps an earlier run of this same job completed before its worker stopped
     const { executionId } = job;
+    if (executionId && !this.runStepsMissingLogged && !(await this.workflowRepository.hasRunStepTable())) {
+      this.runStepsMissingLogged = true;
+      this.logger.warn(
+        'Workflow step progress is not recorded on this database (workflow_run_step is missing); a stalled run is replayed from its first step',
+      );
+    }
     const completedSteps = executionId
       ? await this.workflowRepository.getCompletedSteps(executionId)
       : new Map<string, { halted: boolean }>();

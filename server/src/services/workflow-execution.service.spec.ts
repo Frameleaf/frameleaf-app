@@ -848,9 +848,41 @@ describe(WorkflowExecutionService.name, () => {
       });
     });
 
+    describe('a database without the step table (FL-179)', () => {
+      it('runs every step, records nothing, and reports the missing table once', async () => {
+        setup();
+        mocks.workflow.hasRunStepTable.mockResolvedValue(false);
+        // the repository degrades the same way: nothing completed, nothing recorded
+        mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
+        mocks.workflow.completeStep.mockResolvedValue();
+        mocks.plugin.callMethod.mockResolvedValue({});
+
+        await sut.handleAssetTrigger({ workflowId, assetId, runId: newUuid(), executionId: newUuid() });
+        await sut.handleAssetTrigger({ workflowId, assetId, runId: newUuid(), executionId: newUuid() });
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledTimes(4);
+        expect(mocks.workflow.log).toHaveBeenCalledWith(expect.objectContaining({ result: WorkflowResult.Completed }));
+        const warnings = mocks.logger.warn.mock.calls.filter(([message]) =>
+          String(message).includes('workflow_run_step'),
+        );
+        expect(warnings).toHaveLength(1);
+      });
+
+      it('checks for the table again once the startup migrations have run', () => {
+        mocks.workflow.resetRunStepTable.mockReturnValue();
+        sut.onBootstrapCheckRunSteps();
+
+        expect(mocks.workflow.resetRunStepTable).toHaveBeenCalledOnce();
+      });
+    });
+
     describe('a stalled job replayed with the same data (FL-179)', () => {
       const runId = newUuid();
       const executionId = newUuid();
+
+      beforeEach(() => {
+        mocks.workflow.hasRunStepTable.mockResolvedValue(true);
+      });
 
       it('records each step it completes under the job’s execution id', async () => {
         setup();
