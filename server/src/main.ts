@@ -43,6 +43,10 @@ class Workers {
   /** FL-165: the edge worker was asked to stop for a restart. */
   stoppingEdge = false;
 
+  /** FL-165: when the edge worker last started, and how often in a row it failed. */
+  edgeStartedAt = 0;
+  edgeFailures = 0;
+
   /**
    * Boot all enabled workers
    */
@@ -148,6 +152,9 @@ class Workers {
     anyWorker.on('exit', (exitCode) => this.onExit(name, exitCode));
 
     this.workers[name] = { kill };
+    if (name === ImmichWorker.Edge) {
+      this.edgeStartedAt = Date.now();
+    }
   }
 
   onError(name: ImmichWorker, error: Error) {
@@ -177,6 +184,22 @@ class Workers {
         this.stoppingEdge = false;
       }
 
+      return;
+    }
+
+    // FL-165: the edge worker failing takes nothing else down; it starts again on its own, waiting
+    // 1 s, then 2 s, 4 s … up to a minute while it keeps failing (a minute of running resets that)
+    if (name === ImmichWorker.Edge) {
+      delete this.workers[name];
+      const ranMs = Date.now() - this.edgeStartedAt;
+      this.edgeFailures = ranMs > 60_000 ? 1 : this.edgeFailures + 1;
+      const delay = Math.min(60_000, 1000 * 2 ** (this.edgeFailures - 1));
+      console.error(`edge worker exited with code ${exitCode}; starting it again in ${delay / 1000} s`);
+      setTimeout(() => {
+        if (!this.restarting && !this.workers[ImmichWorker.Edge]) {
+          this.startWorker(ImmichWorker.Edge);
+        }
+      }, delay);
       return;
     }
 

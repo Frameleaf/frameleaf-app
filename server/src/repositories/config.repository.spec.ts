@@ -225,6 +225,11 @@ describe('getEnv', () => {
       expect(workers).toEqual(['api', 'microservices', 'edge']);
     });
 
+    it('runs the edge worker without the API only when it is included by name (FL-165)', () => {
+      process.env.IMMICH_WORKERS_INCLUDE = 'microservices,edge';
+      expect(getEnv().workers).toEqual(['microservices', 'edge']);
+    });
+
     it('should return included workers', () => {
       process.env.IMMICH_WORKERS_INCLUDE = 'api';
       const { workers } = getEnv();
@@ -234,7 +239,8 @@ describe('getEnv', () => {
     it('should excluded workers from defaults', () => {
       process.env.IMMICH_WORKERS_EXCLUDE = 'api';
       const { workers } = getEnv();
-      expect(workers).toEqual(['microservices', 'edge']);
+      // the edge worker follows the API unless it is included by name
+      expect(workers).toEqual(['microservices']);
     });
 
     it('should exclude workers from include list', () => {
@@ -253,7 +259,7 @@ describe('getEnv', () => {
     it('should remove whitespace from excluded workers before parsing', () => {
       process.env.IMMICH_WORKERS_EXCLUDE = 'api, microservices';
       const { workers } = getEnv();
-      expect(workers).toEqual(['edge']);
+      expect(workers).toEqual([]);
     });
 
     it('should remove whitespace from included and excluded workers before parsing', () => {

@@ -1,5 +1,5 @@
-import { X509Certificate, createHash } from 'node:crypto';
-import { isIP } from 'node:net';
+import { X509Certificate, createHash, createPrivateKey } from 'node:crypto';
+import { BlockList, isIP } from 'node:net';
 import z from 'zod';
 import type {
   FrameleafEdgeCertificate,
@@ -306,6 +306,15 @@ export const certificateFacts = (pem: string): Omit<FrameleafEdgeCertificate, 'r
   };
 };
 
+/** Whether a certificate was made for this private key (a pair written half-way does not match). */
+export const certificateMatchesKey = (certificatePem: string, keyPem: string): boolean => {
+  try {
+    return new X509Certificate(certificatePem).checkPrivateKey(createPrivateKey(keyPem));
+  } catch {
+    return false;
+  }
+};
+
 /** `POST /v1/remote/certs`: the facts only; the certificate and its key never leave this server. */
 export const certificateReport = (facts: Omit<FrameleafEdgeCertificate, 'reported'>) => ({
   serial: facts.serial,
@@ -521,6 +530,8 @@ export const buildCandidates = (input: {
   listenPort: number;
   lanAddresses: string[];
   ipv6Addresses: string[];
+  /** Whether the listener accepts IPv6 at all (bound to `::` or an IPv6 address). */
+  ipv6Listening?: boolean;
   publicIpv4?: string | null;
   trustedLanCidrs?: string[];
 }): FrameleafRemoteConnection[] => {
@@ -539,11 +550,12 @@ export const buildCandidates = (input: {
       candidates.push(connection('wan', name, settings.directPort));
     }
   }
-  if (direct) {
+  // IPv6 has no router mapping: the listener's own port is the one visitors connect to
+  if (direct && input.ipv6Listening) {
     for (const address of input.ipv6Addresses.filter((value) => isGlobalIpv6(value))) {
       const name = ipv6Name(enrollment, address);
       if (name) {
-        candidates.push(connection('ipv6', name, settings.directPort, { ipv6: true }));
+        candidates.push(connection('ipv6', name, input.listenPort, { ipv6: true }));
       }
     }
   }
@@ -591,23 +603,85 @@ export const addressBucket = (address: string | undefined | null): string => {
   return `${groups.slice(0, 4).join(':')}::/64`;
 };
 
+const normalizeAddress = (address: string | null | undefined): string | null => {
+  const value = (address ?? '').trim().replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, '');
+  if (isIP(value) === 4) {
+    return value;
+  }
+  return compressIpv6(value.split('%', 1)[0]);
+};
+
+/** A loopback peer: this host itself (the self-check), or a proxy that hides every visitor's address. */
+export const isLoopbackPeer = (address: string | null | undefined): boolean =>
+  /^127\.|^::1$/.test(normalizeAddress(address) ?? '');
+
+/** Whether an address is inside one of the given networks (only those). */
+const inCidrs = (address: string, cidrs: string[]): boolean => {
+  const family = isIP(address);
+  if (!family || cidrs.length === 0) {
+    return false;
+  }
+  const list = new BlockList();
+  for (const cidr of cidrs) {
+    const [network, prefix] = cidr.split('/', 2);
+    list.addSubnet(network, Number(prefix), isIP(network) === 6 ? 'ipv6' : 'ipv4');
+  }
+  return list.check(address, family === 6 ? 'ipv6' : 'ipv4');
+};
+
+/** Whether two addresses share a /24 (IPv4) or a /64 (IPv6). */
+export const sameSubnet = (a: string, b: string): boolean => {
+  const left = normalizeAddress(a);
+  const right = normalizeAddress(b);
+  if (!left || !right || isIP(left) !== isIP(right)) {
+    return false;
+  }
+  if (isIP(left) === 4) {
+    return left.split('.').slice(0, 3).join('.') === right.split('.').slice(0, 3).join('.');
+  }
+  return addressBucket(left) === addressBucket(right);
+};
+
 /**
- * How a direct connection arrived (instance contract "Via-header contract"): `lan` only when the peer
- * is on the home network (RFC 1918, ULA, loopback or `FRAMELEAF_TRUSTED_LAN_CIDRS`) *and* it asked
- * for one of this server's LAN names (SNI) whose address is itself on the home network. Anything else
- * is `wan`: the relay name, a custom hostname, a public address's name, no name at all, or a peer the
- * container only sees through a proxy on its own network. Being wrong in that direction only asks a
- * visitor to sign in with Frameleaf; the other direction would skip it.
+ * How a direct connection arrived (instance contract "Via-header contract"). `lan` needs all of:
+ *
+ * - the SNI names one of the LAN addresses this edge worker advertised (`advertised`) — the name alone
+ *   proves nothing, since a client chooses it;
+ * - the peer is on the home network (RFC 1918, ULA, loopback or `FRAMELEAF_TRUSTED_LAN_CIDRS`);
+ * - the peer shares that address's /24 (IPv4) or /64 (IPv6), or is inside `FRAMELEAF_TRUSTED_LAN_CIDRS`;
+ * - the peer is not the container's own gateway (`gateways`): behind Docker's userland proxy,
+ *   slirp4netns or a reverse proxy on the home network every visitor arrives from such an address, so
+ *   it counts as home only when an administrator listed it in `FRAMELEAF_TRUSTED_LAN_CIDRS`.
+ *
+ * A loopback peer is never `lan`: a proxy on the host can make every visitor look like one. Anything
+ * else is `wan`. Being wrong in that direction only asks a visitor to sign in with Frameleaf; the
+ * other direction would skip it.
  */
 export const classifyArrival = (input: {
   peer: string | undefined;
   servername: string | null | undefined;
   enrollment: Pick<FrameleafRemoteEnrollment, 'label' | 'domain'>;
   trustedLanCidrs: string[];
+  advertised: string[];
+  gateways?: string[];
 }): 'lan' | 'wan' => {
-  if (!isHomeAddress(input.peer, input.trustedLanCidrs)) {
+  const peer = normalizeAddress(input.peer);
+  const named = normalizeAddress(addressOfName(input.enrollment, input.servername));
+  if (!peer || !named) {
     return 'wan';
   }
-  const named = addressOfName(input.enrollment, input.servername);
-  return named && isHomeAddress(named, input.trustedLanCidrs) ? 'lan' : 'wan';
+  if (isLoopbackPeer(peer)) {
+    return 'wan';
+  }
+  const explicitlyTrusted = inCidrs(peer, input.trustedLanCidrs);
+  if (!isHomeAddress(peer, input.trustedLanCidrs)) {
+    return 'wan';
+  }
+  if ((input.gateways ?? []).some((gateway) => normalizeAddress(gateway) === peer) && !explicitlyTrusted) {
+    return 'wan';
+  }
+  if (!input.advertised.some((address) => normalizeAddress(address) === named)) {
+    return 'wan';
+  }
+  return sameSubnet(peer, named) || explicitlyTrusted ? 'lan' : 'wan';
 };

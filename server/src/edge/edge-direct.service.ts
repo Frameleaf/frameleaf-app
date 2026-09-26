@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
 import type { Socket } from 'node:net';
 import tls, { type SecureContext, type TLSSocket } from 'node:tls';
 import type { FrameleafRemoteEnrollment } from 'src/types.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { TEARDOWN_MS, classifyArrival } from 'src/utils/frameleaf-remote-access.js';
+import { TEARDOWN_MS, classifyArrival, isLoopbackPeer } from 'src/utils/frameleaf-remote-access.js';
 
 /** The certificates the listener serves: the wildcard, and the custom hostname's when there is one. */
 export type EdgeContexts = {
@@ -34,6 +35,8 @@ export class EdgeDirectService {
   private contexts: LoadedContexts | null = null;
   private enrollment: Pick<FrameleafRemoteEnrollment, 'label' | 'domain'> | null = null;
   private allowWan = false;
+  private advertised: string[] = [];
+  private gateways: string[] = [];
   private raw = new Set<Socket>();
   private listeningOn: { bind: string; port: number } | null = null;
 
@@ -54,6 +57,8 @@ export class EdgeDirectService {
     contexts: EdgeContexts;
     enrollment: Pick<FrameleafRemoteEnrollment, 'label' | 'domain'>;
     allowWan: boolean;
+    /** The LAN addresses this edge worker publishes names for; only those can make an arrival `lan`. */
+    advertised: string[];
   }) {
     const { contexts } = input;
     this.contexts = {
@@ -67,6 +72,8 @@ export class EdgeDirectService {
     };
     this.enrollment = input.enrollment;
     this.allowWan = input.allowWan;
+    this.advertised = input.advertised;
+    this.gateways = defaultGateways();
   }
 
   /** Listen on the configured address, once the certificates are configured. Resolves once listening. */
@@ -158,9 +165,12 @@ export class EdgeDirectService {
       servername,
       enrollment,
       trustedLanCidrs: this.configRepository.getEnv().frameleafCloud.trustedLanCidrs,
+      advertised: this.advertised,
+      gateways: this.gateways,
     });
-    if (via === 'wan' && !this.allowWan) {
-      // "Relay only": direct connections from outside the home are not served
+    // "Relay only": direct connections from outside the home are not served. A loopback peer (this
+    // server's own self-check) is served, tagged `wan`, so it must still sign in with Frameleaf.
+    if (via === 'wan' && !this.allowWan && !isLoopbackPeer(socket.remoteAddress)) {
       socket.destroy();
       return;
     }
@@ -171,3 +181,35 @@ export class EdgeDirectService {
     });
   }
 }
+
+const hexIpv4 = (hex: string) =>
+  [3, 2, 1, 0].map((index) => Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16)).join('.');
+
+/**
+ * This container's default gateways (Linux `/proc/net/route` and `/proc/net/ipv6_route`): the address
+ * every visitor appears to come from behind Docker's userland proxy or slirp4netns. Empty elsewhere.
+ */
+export const defaultGateways = (read: (file: string) => string = (file) => readFileSync(file, 'utf8')) => {
+  const gateways: string[] = [];
+  try {
+    for (const line of read('/proc/net/route').split('\n').slice(1)) {
+      const [, destination, gateway] = line.trim().split(/\s+/);
+      if (destination === '00000000' && gateway && gateway !== '00000000') {
+        gateways.push(hexIpv4(gateway));
+      }
+    }
+  } catch {
+    // not Linux, or no IPv4 routes
+  }
+  try {
+    for (const line of read('/proc/net/ipv6_route').split('\n')) {
+      const fields = line.trim().split(/\s+/);
+      if (fields[0] === '0'.repeat(32) && fields[1] === '00' && fields[4] && /[1-9a-f]/.test(fields[4])) {
+        gateways.push(fields[4].match(/.{4}/g)!.join(':').replaceAll(/(^|:)0{1,3}/g, '$1'));
+      }
+    }
+  } catch {
+    // no IPv6 routes
+  }
+  return gateways;
+};

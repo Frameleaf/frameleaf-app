@@ -39,6 +39,7 @@ import {
   TEARDOWN_MS,
   buildCandidates,
   certificateFacts,
+  certificateMatchesKey,
   certificateReport,
   challengeRecordName,
   dnsTxtPutResponseSchema,
@@ -51,6 +52,7 @@ import {
   verifiedCustomHost,
   wildcardNames,
 } from 'src/utils/frameleaf-remote-access.js';
+import { isHomeAddress } from 'src/utils/frameleaf-sign-in.js';
 
 type RemoteSettings = SystemConfig['frameleafCloud']['remoteAccess'];
 
@@ -108,7 +110,7 @@ export class EdgeStateService {
   private holdsLock = false;
   private readonly bootId = randomUUID();
   private served: string | null = null;
-  private lastWritten: { state: Omit<FrameleafRemoteAccess, 'updatedAt' | 'lastTest'>; at: number } | null = null;
+  private lastWritten: { state: Omit<FrameleafRemoteAccess, 'updatedAt'>; at: number } | null = null;
   private enrollRetry: { at: number; failures: number } | null = null;
   private reportAttempts = new Map<EdgeCertificateKind, number>();
   /** Specs replace the waits. */
@@ -188,7 +190,7 @@ export class EdgeStateService {
   }
 
   /** What remote access should be doing, from local state only. */
-  async desired(): Promise<EdgeDesired> {
+  async desired(now = Date.now()): Promise<EdgeDesired> {
     const { cloudUrl, link, linked } = await readCloudLink(this.gatewayDeps);
     if (!cloudUrl) {
       return {
@@ -214,7 +216,7 @@ export class EdgeStateService {
       return { serve: false, status: 'off', reason: 'Remote access is off.', removeCertificates: true, link };
     }
     const licenses = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
-    if (!entitlementFlags([licenses?.key, licenses?.plan]).remoteAccess) {
+    if (!entitlementFlags([licenses?.key, licenses?.plan], now).remoteAccess) {
       return {
         serve: false,
         status: 'idle',
@@ -237,7 +239,7 @@ export class EdgeStateService {
     }
 
     const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
-    const desired = await this.desired();
+    const desired = await this.desired(now);
     if (!desired.serve) {
       await this.idle(desired, previous, now);
       return;
@@ -256,7 +258,8 @@ export class EdgeStateService {
       await this.direct.stop();
       this.served = null;
     }
-    if (desired.removeCertificates && (previous?.certificate || previous?.customCertificate || !previous)) {
+    if (desired.removeCertificates) {
+      // every pass: removing files that are already gone costs nothing, and a pair left by a crash goes too
       await this.certificates.remove(identityDirectory(this.configRepository));
     }
     // an enrolment belongs to the link it was made for
@@ -392,8 +395,15 @@ export class EdgeStateService {
     }
 
     // the direct listener, with the certificates in hand
+    const addresses = this.addresses();
+    const trustedLanCidrs = this.configRepository.getEnv().frameleafCloud.trustedLanCidrs;
+    const advertised = addresses.lanAddresses.filter((address) => isHomeAddress(address, trustedLanCidrs));
+    if (this.stopped) {
+      return;
+    }
     if (wildcard.pair && Date.parse(wildcard.facts?.notAfter ?? '') > now) {
       const signature = JSON.stringify([
+        advertised,
         wildcard.facts?.serial,
         custom?.host,
         state.customCertificate?.serial,
@@ -406,6 +416,7 @@ export class EdgeStateService {
           contexts: { wildcard: wildcard.pair, custom },
           enrollment,
           allowWan: settings.mode === 'relay-and-direct',
+          advertised,
         });
         this.served = signature;
       }
@@ -428,8 +439,9 @@ export class EdgeStateService {
       enrollment,
       settings,
       listenPort: this.listenPort(),
-      ...this.addresses(),
-      trustedLanCidrs: this.configRepository.getEnv().frameleafCloud.trustedLanCidrs,
+      ...addresses,
+      ipv6Listening: this.ipv6Listening(),
+      trustedLanCidrs,
     });
     if (state.status === 'starting' && this.direct.listening) {
       state.status = 'ready';
@@ -551,6 +563,10 @@ export class EdgeStateService {
     if (pair) {
       try {
         const read = certificateFacts(pair.certificate);
+        // a crash between writing the key and the certificate leaves a pair that does not match
+        if (!certificateMatchesKey(pair.certificate, pair.key)) {
+          throw new Error('its key does not match');
+        }
         const byName = (a: string, b: string) => a.localeCompare(b);
         const covers = isEqual(read.names.toSorted(byName), names.toSorted(byName));
         facts = covers
@@ -721,6 +737,12 @@ export class EdgeStateService {
 
   // ------------------------------------------------------------------ state
 
+  /** Whether the listener takes IPv6 connections: bound to `::` or an IPv6 address. */
+  private ipv6Listening() {
+    const { bind } = this.configRepository.getEnv().frameleafCloud.edge;
+    return bind === '::' || isIP(bind) === 6;
+  }
+
   private listenPort() {
     return this.configRepository.getEnv().frameleafCloud.edge.port;
   }
@@ -753,20 +775,15 @@ export class EdgeStateService {
     return { lanAddresses, ipv6Addresses };
   }
 
-  /**
-   * Write the state when it changed, or at least every 20 seconds while this worker serves. The
-   * administrator's last self-check is kept as the API wrote it.
-   */
-  private async writeState(state: Omit<FrameleafRemoteAccess, 'updatedAt' | 'lastTest'>, now: number) {
+  /** Write the state when it changed, or at least every 20 seconds, so the API sees the edge worker is alive. */
+  private async writeState(state: Omit<FrameleafRemoteAccess, 'updatedAt'>, now: number) {
     const unchanged = this.lastWritten && isEqual(this.lastWritten.state, state);
-    if (unchanged && now - this.lastWritten!.at < STATE_REFRESH_MS) {
+    if (this.stopped || (unchanged && now - this.lastWritten!.at < STATE_REFRESH_MS)) {
       return;
     }
-    const current = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
     await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafRemoteAccess, {
       ...state,
       updatedAt: new Date(now).toISOString(),
-      ...(current?.lastTest && { lastTest: current.lastTest }),
     });
     this.lastWritten = { state, at: now };
   }
