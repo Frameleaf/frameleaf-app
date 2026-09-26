@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vite-plus/test'
 import {
   acceptsWrite,
   beginMount,
+  cancelMountTimer,
   confirmEcho,
   loadFinished,
   markLoaded,
   reconcileHostGraph,
+  releaseMountTimers,
   saveMayStart,
   sendEditorDraft,
   shouldReloadFromHost,
@@ -15,6 +17,7 @@ import {
   supersededEditLost,
   type DraftSendState,
   type EditorMount,
+  type MountTimer,
 } from '../src/draft-sync'
 
 const deferred = <T>() => {
@@ -1089,5 +1092,67 @@ describe('the Studio host and editor under every interleaving (FL-174)', () => {
     }
     // The interleavings reach the lost-edit path, so the second property is exercised.
     expect(lostAtAll).toBeGreaterThan(0)
+  })
+})
+
+describe('per-mount timers (FL-187)', () => {
+  /**
+   * `watchDrafts` and `watchDirty`'s own debounce, faithfully: a later write supersedes the timer
+   * before it, exactly as `if (pending) clearTimeout(pending); pending = mountTimer(...)` did before
+   * this story added `cancelMountTimer`. Every armed timer is cleared before the test ends, so none
+   * of it outlives the test.
+   */
+  const armAndSupersede = (timers: Set<MountTimer>, edits: number): MountTimer => {
+    let pending: MountTimer | null = null
+    for (let i = 0; i < edits; i += 1) {
+      cancelMountTimer(timers, pending)
+      const armed = setTimeout(() => timers.delete(armed), 250)
+      pending = armed
+      timers.add(armed)
+    }
+    return pending as MountTimer
+  }
+
+  it('drops a debounce a later write supersedes instead of leaving it tracked', () => {
+    const timers = new Set<MountTimer>()
+    const first = setTimeout(() => undefined, 1000)
+    timers.add(first)
+    const second = setTimeout(() => undefined, 1000)
+    cancelMountTimer(timers, first)
+    timers.add(second)
+    // Only the timer actually still pending is tracked; the superseded one left no trace.
+    expect(timers.size).toBe(1)
+    expect(timers.has(second)).toBe(true)
+    cancelMountTimer(timers, second)
+    expect(timers.size).toBe(0)
+  })
+
+  it('cancelling a timer twice, or one that already fired, is a no-op', () => {
+    const timers = new Set<MountTimer>()
+    cancelMountTimer(timers, null)
+    const timer = setTimeout(() => undefined, 1000)
+    timers.add(timer)
+    timers.delete(timer) // fired naturally, as `mountTimer` removes it before running
+    cancelMountTimer(timers, timer)
+    expect(timers.size).toBe(0)
+  })
+
+  it('N writes debounced into one send leave a single armed timer, not N', () => {
+    const timers = new Set<MountTimer>()
+    const last = armAndSupersede(timers, 20)
+    expect(timers.size).toBe(1)
+    expect(timers.has(last)).toBe(true)
+    releaseMountTimers(timers)
+  })
+
+  it('remounting N times, each superseding a pending timer, leaves nothing armed', () => {
+    const timers = new Set<MountTimer>()
+    for (let generation = 0; generation < 8; generation += 1) {
+      armAndSupersede(timers, 3)
+      // The remount itself releases whatever the replaced mount still had armed (`remount` calls this
+      // before starting the next mount).
+      releaseMountTimers(timers)
+    }
+    expect(timers.size).toBe(0)
   })
 })

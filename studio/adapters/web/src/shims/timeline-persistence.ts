@@ -38,11 +38,22 @@ export const timelineEditContent = (): string => {
  * same goes for a newer editor instance whose edits a replaced instance's late save marks clean. When
  * the stores changed during the save, the timeline is marked dirty again: the frame's settled save
  * then stores the edit, and a remount reports it if it cannot.
+ *
+ * The gate is judged again once the write finishes (FL-187), not only at the start: Freecut's own
+ * Ctrl+S and interval autosave call this for every save, and both read a normal return as success,
+ * whatever they show for it. A remount that replaces the mount while the write was in flight leaves
+ * this call still running; letting it return normally would read as a save that succeeded for a
+ * project the person is no longer looking at. When the mount has changed, the timeline is marked
+ * dirty at once, before the content is even compared, and nothing here reports success.
  */
 export async function saveTimeline(projectId: string): Promise<void> {
   if (!persistenceGate.mayStartSave(projectId)) return
   const before = timelineEditContent()
   await engineSaveTimeline(projectId)
+  if (!persistenceGate.mayStartSave(projectId)) {
+    useTimelineSettingsStore.getState().markDirty()
+    return
+  }
   if (timelineEditContent() !== before) useTimelineSettingsStore.getState().markDirty()
 }
 
