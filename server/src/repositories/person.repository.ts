@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type ExpressionBuilder, type Insertable, type Kysely, type Transaction, type Updateable, sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import { validate as isUuid } from 'uuid';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
@@ -545,6 +546,10 @@ export class PersonRepository {
 
   /** FL-38: deletes (or soft-deletes) a face only while it is still at `expectedRevision`. */
   async deleteFaceAtRevision(id: string, expectedRevision: string, { force }: { force: boolean }) {
+    // a revision is opaque to clients: one that is not a face's `updateId` matches nothing
+    if (!isUuid(expectedRevision)) {
+      return 0;
+    }
     const result = force
       ? await this.db
           .deleteFrom('asset_face')

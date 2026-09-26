@@ -79,14 +79,17 @@ export class ViewRepository {
    * adds these up the tree for a folder's total and size, so no folder needs its files fetched.
    */
   async getFolderSummary(userId: string, options?: HiddenContentQueryOptions): Promise<FolderSummaryRow[]> {
+    // the pattern is a literal, not a bound parameter: the grouped expression must be the selected one
+    // exactly, and two parameters with the same value are two different expressions to Postgres
+    const directoryPath = sql<string>`substring("asset"."originalPath", ${sql.lit(DIRECTORY_PATTERN)})`;
     const rows = await this.folderAssets(userId, options)
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select((eb) => [
-        eb.fn<string>('substring', ['asset.originalPath', eb.val(DIRECTORY_PATTERN)]).as('directoryPath'),
+        directoryPath.as('directoryPath'),
         eb.fn.countAll<string>().as('count'),
         sql<string>`coalesce(sum("asset_exif"."fileSizeInByte"), 0)`.as('size'),
       ])
-      .groupBy((eb) => eb.fn('substring', ['asset.originalPath', eb.val(DIRECTORY_PATTERN)]))
+      .groupBy(directoryPath)
       .orderBy('directoryPath', 'asc')
       .execute();
 

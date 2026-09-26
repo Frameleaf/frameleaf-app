@@ -193,9 +193,9 @@
       void loadServerData();
     }
     if (setup.flow === 'new') {
-      Promise.resolve()
-        .then(() => getPublicConfig())
-        .then((config) => (frameleafAvailable = config.frameleaf?.signInAvailable === true))
+      // A server without the Frameleaf block answers without `frameleaf`, which reads as unavailable.
+      getPublicConfig()
+        .then((config) => (frameleafAvailable = Boolean(config.frameleaf?.signInAvailable)))
         .catch(() => (frameleafAvailable = false));
     }
   });
@@ -265,7 +265,10 @@
     setup = goToStep(setup, target, context);
   };
 
-  /** The side effects a step needs before it can be left: creating or signing in the admin. */
+  /**
+   * The side effects a step needs before it can be left: creating or signing in the admin. Returns
+   * whether the caller still moves on (false when this already moved, or left setup).
+   */
   const leaveStep = async () => {
     if (current.id === 'admin-sign-in' && !signedIn) {
       const user = await login({ loginCredentialDto: { email: secrets.email.trim(), password: secrets.password } });
@@ -286,19 +289,33 @@
       await login({ loginCredentialDto: { email, password: secrets.password } });
       secrets.password = '';
       secrets.confirm = '';
-      await Promise.all([authManager.load(), serverConfigManager.loadServerConfig()]);
+      // The administrator exists, so this step is passed. Save the step after it before loading the
+      // session: signing in re-verifies the session and redraws the page (SessionPrivacyGuard), and
+      // setup then resumes from the saved copy at the library, not at the account form.
+      const created = goToStep(
+        { ...setup, choices: { ...setup.choices, accountCreated: true } },
+        setup.step + 1,
+        context,
+      );
+      saveLocalSetup(created);
+      // Take the step now too: if a later load fails, Continue must not try to create the admin again.
       signedIn = true;
-      choose({ accountCreated: true });
+      direction = 1;
+      setup = created;
       // Record the new-server flow now, not on the debounced save: a reload before that save would
       // otherwise resume this server as an existing library.
       try {
         await updateFrameleafSetup({
-          frameleafSetupUpdateDto: { flow: FrameleafSetupFlow.New, progress: toProgress(setup) },
+          frameleafSetupUpdateDto: { flow: FrameleafSetupFlow.New, progress: toProgress(created) },
         });
       } catch {
         // the server also reads one account with nothing uploaded as a new server
       }
+      // The server config first: the redrawn page reads it to send this administrator on to setup.
+      await serverConfigManager.loadServerConfig();
+      await authManager.load();
       await loadServerData();
+      return false;
     }
     return true;
   };
