@@ -95,9 +95,9 @@ export function layoutTimelineMonth(timelineManager: TimelineManager, month: Tim
  * model, so selection, navigation and live updates keep working by day; each day holds its share of
  * the month's positions, all measured from the month's first row.
  *
- * All (and Years when not shown as cards) over the Timeline's filling rows run the flow on across months instead
- * (`flow-support.svelte.ts`, FL-143); this per-month flow remains for them only with the upstream
- * row layouts, which cannot be resumed part-way through a row.
+ * All (and Years when not shown as cards) over the Timeline's filling rows run the flow on across
+ * months instead (`flow-support.svelte.ts`, FL-143); this per-month flow remains for them only with
+ * the upstream row layouts, which cannot be resumed part-way through a row.
  */
 function layoutGroupedMonth(timelineManager: TimelineManager, month: TimelineMonth) {
   const viewerAssets = month.timelineDays.flatMap((day) => day.viewerAssets);

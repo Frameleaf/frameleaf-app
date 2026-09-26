@@ -106,15 +106,15 @@ test.describe('Timeline', () => {
    * one month into the next, so only the library's last row may end short — and that at least one
    * row holds the end of one month and the start of the next.
    *
-   * The steps are small and every month the timeline has requested (within 500px) is loaded before
-   * the next step, so a month always loads while the row it finishes is still below the viewport,
+   * The steps are small (50px) and every month the timeline has requested (within 500px) is loaded
+   * before the next step, so a month always loads while the row it finishes is still below the viewport,
    * whatever order or timing the bucket responses have.
    */
   const expectRowsRunOn = async (page: Page) => {
     const lastId = assets.at(-1)!.id;
     let crossing = 0;
     let checked = 0;
-    for (let step = 0; step < 120 && (crossing === 0 || step < 8); step++) {
+    for (let step = 0; step < 240 && (crossing === 0 || step < 16); step++) {
       await expect.poll(() => flowUtils.skeletonsNear(page, 480)).toBe(0);
       const rows = await flowUtils.rowsOnScreen(page);
       const right = Math.max(...rows.map((row) => row.at(-1)!.right));
@@ -125,7 +125,7 @@ test.describe('Timeline', () => {
           crossing++;
         }
       }
-      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, 100));
+      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, 50));
     }
     expect(checked).toBeGreaterThan(0);
     // At least one row holds the end of one month and the start of the next.
