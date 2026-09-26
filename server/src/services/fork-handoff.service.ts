@@ -17,7 +17,31 @@ export class ForkHandoffService {
     private readonly migrationService: ForkSchemaMigrationService,
   ) {}
 
-  async prepareOfficial(): Promise<OfficialHandoffCheckpoint> {
+  /**
+   * FL-161: the handoff preflight for password-protected shared links. Their passwords are stored as
+   * bcrypt hashes the official server cannot compare, so those links stay locked (they never open
+   * without a password) until each password is set again on the official server. The handoff goes
+   * ahead only once the operator acknowledged that.
+   */
+  async sharedLinkPasswordPreflight(
+    options: { acknowledgeSharedLinkPasswords?: boolean } = {},
+  ): Promise<{ passwordProtectedLinks: number }> {
+    const passwordProtectedLinks = await this.databaseRepository.countPasswordProtectedSharedLinks();
+    if (passwordProtectedLinks > 0 && !options.acknowledgeSharedLinkPasswords) {
+      throw new Error(
+        `${passwordProtectedLinks} password-protected shared link(s) will stay locked on the official server: ` +
+          'their passwords are stored as hashes it cannot check. After the handoff, set a new password on each ' +
+          'of those links in the official app. Run prepare-official again with --acknowledge-shared-link-passwords ' +
+          'to continue.',
+      );
+    }
+    return { passwordProtectedLinks };
+  }
+
+  async prepareOfficial(
+    options: { acknowledgeSharedLinkPasswords?: boolean } = {},
+  ): Promise<OfficialHandoffCheckpoint> {
+    await this.sharedLinkPasswordPreflight(options);
     return this.databaseRepository.prepareOfficialHandoffCheckpoint();
   }
 

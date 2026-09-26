@@ -9,7 +9,10 @@ describe('fork handoff CLI', () => {
       officialImage: 'ghcr.io/immich-app/immich-server:v3.1.0',
       id: 'checkpoint-1',
     };
-    const service = { prepareOfficial: vi.fn().mockResolvedValue(checkpoint) } as unknown as ForkHandoffService;
+    const service = {
+      prepareOfficial: vi.fn().mockResolvedValue(checkpoint),
+      sharedLinkPasswordPreflight: vi.fn().mockResolvedValue({ passwordProtectedLinks: 0 }),
+    } as unknown as ForkHandoffService;
     const command = new ForkHandoffPrepareOfficialCommand(service);
     const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
@@ -19,6 +22,34 @@ describe('fork handoff CLI', () => {
     expect(output).toHaveBeenCalledWith(
       '{"id":"checkpoint-1","officialImage":"ghcr.io/immich-app/immich-server:v3.1.0"}\n',
     );
+  });
+
+  it('stops before the checkpoint while password-protected shared links are not acknowledged (FL-161)', async () => {
+    const service = {
+      prepareOfficial: vi.fn(),
+      sharedLinkPasswordPreflight: vi.fn().mockRejectedValue(new Error('2 password-protected shared link(s)')),
+    } as unknown as ForkHandoffService;
+    const command = new ForkHandoffPrepareOfficialCommand(service);
+
+    await expect(command.run([])).rejects.toThrow('2 password-protected shared link(s)');
+    expect(service.sharedLinkPasswordPreflight).toHaveBeenCalledWith({ acknowledgeSharedLinkPasswords: false });
+    expect(service.prepareOfficial).not.toHaveBeenCalled();
+  });
+
+  it('continues with --acknowledge-shared-link-passwords and says how many links stay locked (FL-161)', async () => {
+    const service = {
+      prepareOfficial: vi.fn().mockResolvedValue({ id: 'checkpoint-1' }),
+      sharedLinkPasswordPreflight: vi.fn().mockResolvedValue({ passwordProtectedLinks: 2 }),
+    } as unknown as ForkHandoffService;
+    const command = new ForkHandoffPrepareOfficialCommand(service);
+    const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const warning = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await command.run([], { acknowledgeSharedLinkPasswords: command.parseAcknowledgeSharedLinkPasswords() });
+
+    expect(service.prepareOfficial).toHaveBeenCalledWith({ acknowledgeSharedLinkPasswords: true });
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('2 password-protected shared link(s) stay locked'));
+    expect(output).toHaveBeenCalledWith('{"id":"checkpoint-1"}\n');
   });
 
   it.each([0, -1, 1.5, NaN, Infinity])(
