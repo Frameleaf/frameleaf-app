@@ -1936,6 +1936,141 @@ describe('TimelineManager', () => {
       expect(marchMonth.flowHandOff).toBeUndefined();
       expectOneGrid(timelineManager, [marchMonth, februaryMonth]);
     });
+
+    it('holds a change at a month far from the viewport, and lets go once it comes near', async () => {
+      const [marchMonth, februaryMonth, januaryMonth] = timelineManager.months;
+      await timelineManager.loadTimelineMonth(januaryMonth.yearMonth, { cancelable: false });
+      await settle();
+      expect(januaryMonth.flowLinkedTo).toBe(februaryMonth);
+      expect(januaryMonth.isInOrNearViewport).toBe(false);
+      const january = () => ({
+        carried: januaryMonth.flowCarried.map(({ viewerAsset }) => viewerAsset.id),
+        tiles: flowTiles([januaryMonth]).map(({ viewerAsset }) => ({ id: viewerAsset.id, ...viewerAsset.position })),
+      });
+      const before = january();
+      expect(before.carried.length).toBeGreaterThan(0);
+
+      clock += FLOW_SETTLE_MS + 1;
+      timelineManager.upsertAssets([
+        deriveLocalDateTimeFromFileCreatedAt({
+          ...timelineAssetFactory.build(),
+          fileCreatedAt: fromISODateTimeUTCToObject('2024-03-28T18:00:00.000Z'),
+        }),
+      ]);
+
+      // February, near the viewport, is laid out again; January, far below, is held and not touched.
+      expect(februaryMonth.flowHandOff).toBe(before.carried.length);
+      expect(january()).toEqual(before);
+
+      // Near the viewport (and still off screen), January is let go of and the grid joins up.
+      timelineManager.scrollTo(januaryMonth.top - 450);
+      expect(januaryMonth.isInOrNearViewport).toBe(true);
+      expect(februaryMonth.flowHandOff).toBeUndefined();
+      expectOneGrid(timelineManager, [marchMonth, februaryMonth, januaryMonth]);
+    });
+  });
+
+  describe('an All hold (FL-143)', () => {
+    let timelineManager: TimelineManager;
+    let clock: number;
+    const inMonth = (month: string, count: number) =>
+      Array.from({ length: count }, (_, index) =>
+        deriveLocalDateTimeFromFileCreatedAt({
+          ...timelineAssetFactory.build(),
+          ratio: 1.5,
+          fileCreatedAt: fromISODateTimeUTCToObject(`${month}-${String(28 - index).padStart(2, '0')}T12:00:00.000Z`),
+        }),
+      );
+    // At 1200 wide: March lays out two rows of three and hands its last two photos to February.
+    const buckets: Record<string, TimelineAsset[]> = {
+      '2024-03': inMonth('2024-03', 8),
+      '2024-02': inMonth('2024-02', 20),
+    };
+
+    beforeEach(async () => {
+      clock = 1_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => clock);
+      sdkMock.getTimeBuckets.mockResolvedValue(
+        Object.entries(buckets).map(([month, assets]) => ({ timeBucket: `${month}-01`, count: assets.length })),
+      );
+      sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) =>
+        Promise.resolve(toResponseDto(...buckets[timeBucket.slice(0, 7)])),
+      );
+      timelineManager = new TimelineManager();
+      let scrollTop = 0;
+      timelineManager.scrollableElement = {
+        get scrollTop() {
+          return scrollTop;
+        },
+        scrollTo({ top }: { top: number }) {
+          scrollTop = Math.max(0, top);
+        },
+        scrollBy(_x: number, y: number) {
+          scrollTop = Math.max(0, scrollTop + y);
+        },
+      } as unknown as HTMLElement;
+      timelineManager.setLayoutOptions({ fillRowWidth: true });
+      timelineManager.grouping = 'all';
+      await timelineManager.updateViewport({ width: 1200, height: 300 });
+      await vi.waitFor(() => expect(timelineManager.months[1].isLoaded).toBe(true));
+      await settle();
+    });
+
+    afterEach(() => {
+      vi.mocked(Date.now).mockRestore();
+    });
+
+    it('holds a removal at a settled month on screen, and lets go only once no row that changes is on screen', () => {
+      const [marchMonth, februaryMonth] = timelineManager.months;
+      expect(februaryMonth.flowLinkedTo).toBe(marchMonth);
+      expect(februaryMonth.flowCarried).toHaveLength(2);
+
+      clock += FLOW_SETTLE_MS + 1;
+      timelineManager.scrollTo(februaryMonth.top + 300);
+      const february = () =>
+        flowTiles([februaryMonth]).map(({ viewerAsset }) => ({
+          id: viewerAsset.id,
+          top: februaryMonth.findAssetAbsolutePosition(viewerAsset.id)!.top - timelineManager.scrollTop,
+          ...viewerAsset.position,
+        }));
+      const before = february();
+
+      // The first photo of March goes: March's natural last row is now one photo, but February keeps
+      // the two it carries, and March closes a short row of its own above them.
+      timelineManager.removeAssets([marchMonth.timelineDays[0].viewerAssets[0].id]);
+      expect(marchMonth.flowHandOff).toBe(2);
+      expect(february()).toEqual(before);
+
+      // February is off screen but near, and March's own short last row is on screen at the bottom
+      // edge: letting go would lay that row out again, so the hold stays.
+      timelineManager.scrollTo(100);
+      const march = () =>
+        flowTiles([marchMonth]).map(({ viewerAsset }) => ({
+          id: viewerAsset.id,
+          top: marchMonth.findAssetAbsolutePosition(viewerAsset.id)!.top,
+          ...viewerAsset.position,
+        }));
+      // March's own last row: the tiles March lays out itself, not the two February draws.
+      const lastRowTop = Math.max(
+        ...flowTiles([marchMonth])
+          .filter(({ viewerAsset }) => !viewerAsset.flowHost)
+          .map(({ viewerAsset }) => marchMonth.findAssetAbsolutePosition(viewerAsset.id)!.top),
+      );
+      const { top: windowTop, bottom: windowBottom } = timelineManager.visibleWindow;
+      expect(lastRowTop).toBeGreaterThan(windowTop);
+      expect(lastRowTop).toBeLessThan(windowBottom);
+      expect(februaryMonth.top).toBeGreaterThanOrEqual(windowBottom);
+      expect(februaryMonth.isInOrNearViewport).toBe(true);
+      const held = march();
+      timelineManager.updateViewportProximities();
+      expect(marchMonth.flowHandOff).toBe(2);
+      expect(march()).toEqual(held);
+
+      // At the top that row is off screen too: the rows run on.
+      timelineManager.scrollTo(0);
+      expect(marchMonth.flowHandOff).toBeUndefined();
+      expectOneFlow(timelineManager, [marchMonth, februaryMonth]);
+    });
   });
 
   describe('a later month of an All group loading under a settled last row (FL-143)', () => {

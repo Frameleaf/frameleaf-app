@@ -1,5 +1,6 @@
 import { justifiedFlowLayout, type JustifiedFlowLayout } from '$lib/frameleaf/justified-rows';
 import { cellGrid, type CellGridOptions } from '$lib/frameleaf/library-grid';
+import type { CommonPosition } from '$lib/utils/layout-utils';
 import type { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
 import type { FlowItem } from '../types';
@@ -244,6 +245,18 @@ function tailFor(manager: TimelineManager, month: TimelineMonth, carry: FlowItem
   return items.slice(layoutOf(manager, items, false).tailStart);
 }
 
+/** Where a month's handed-on tiles are drawn now, so a hold can put them back exactly. */
+type Handed = { items: FlowItem[]; places: { item: FlowItem; host?: TimelineMonth; position?: CommonPosition }[] };
+
+const handedOf = (month: TimelineMonth): Handed => ({
+  items: month.flowTail,
+  places: month.flowTail.map((item) => ({
+    item,
+    host: item.viewerAsset.flowHost,
+    position: item.viewerAsset.flowPosition,
+  })),
+});
+
 /** Whether handing on the last `handed.length` of `items` hands on exactly `handed`. */
 const holdKeeps = (items: FlowItem[], handed: FlowItem[]) =>
   items.length >= handed.length && sameItems(items.slice(items.length - handed.length), handed);
@@ -253,7 +266,7 @@ const holdKeeps = (items: FlowItem[], handed: FlowItem[]) =>
  * the same number of tiles as before (`handed`) and closes the rest itself. Returns whether the held
  * month still carries exactly what it carried, so it needs no layout at all.
  */
-function holdAt(manager: TimelineManager, index: number, handed: FlowItem[], now: number) {
+function holdAt(manager: TimelineManager, index: number, { items: handed, places }: Handed, now: number) {
   const previous = manager.months[index - 1];
   const items = itemsOf(previous, carryOf(previous));
   if (items.length < handed.length) {
@@ -266,7 +279,17 @@ function holdAt(manager: TimelineManager, index: number, handed: FlowItem[], now
   }
   previous.flowHandOff = handed.length;
   layoutFlowMonth(manager, index - 1, 'region', now);
-  return sameItems(previous.flowTail, handed);
+  if (!sameItems(previous.flowTail, handed)) {
+    return false;
+  }
+  // Laying the earlier month out again may have placed some of these tiles in its own rows first;
+  // they go back exactly where the held month draws them.
+  for (const { item, host, position } of places) {
+    if (host && position) {
+      item.viewerAsset.placeInFlow(host, item.day.timelineMonth, position);
+    }
+  }
+  return true;
 }
 
 /**
@@ -277,10 +300,10 @@ function relayoutChain(manager: TimelineManager, index: number, now: number) {
   const { months } = manager;
   for (let cursor = index; cursor < months.length; cursor++) {
     const current = months[cursor];
-    const before = current.flowTail;
+    const before = handedOf(current);
     layoutFlowMonth(manager, cursor, 'region', now);
     const next = months[cursor + 1];
-    if (!next || next.flowLinkedTo !== current || sameItems(before, current.flowTail)) {
+    if (!next || next.flowLinkedTo !== current || sameItems(before.items, current.flowTail)) {
       return;
     }
     if (holdsRipple(manager, next, now) && holdAt(manager, cursor + 1, before, now)) {
@@ -297,6 +320,11 @@ function runOn(manager: TimelineManager, index: number, now: number) {
   const { months } = manager;
   const previous = months[index - 1];
   const month = months[index];
+  const held = month.flowLinkedTo === previous && previous.flowHandOff !== undefined;
+  // The cheap refusals first: this runs as the viewport moves, and the tail below lays a month out.
+  if ((month.flowLinkedTo === previous && !held) || isProtected(manager, month, now)) {
+    return false;
+  }
   const natural = tailFor(manager, previous, carryOf(previous));
 
   if (month.flowLinkedTo === previous && sameItems(natural, previous.flowTail)) {
@@ -311,15 +339,21 @@ function runOn(manager: TimelineManager, index: number, now: number) {
     return false;
   }
 
-  // The previous month's last row (or the rows it closed while held) moves into this month's rows.
-  if (!mayMoveTail(manager, previous, [...natural.slice(0, 1), ...previous.flowTail.slice(0, 1)], now)) {
+  // The previous month's last row moves into this month's rows. While held, the previous month
+  // closed a last row of its own, which letting go lays out again: that row counts as well.
+  const moving = [...natural.slice(0, 1), ...previous.flowTail.slice(0, 1)];
+  if (held) {
+    const items = itemsOf(previous, carryOf(previous));
+    const lastLaid = items.length - previous.flowTail.length - 1;
+    if (lastLaid >= 0) {
+      moving.push(items[lastLaid]);
+    }
+  }
+  if (!mayMoveTail(manager, previous, moving, now)) {
     return false;
   }
   // This month's rows change, and every later month's whose carried row changes in turn, up to a
   // month that will hold the ripple.
-  if (isProtected(manager, month, now)) {
-    return false;
-  }
   let carry = natural;
   for (let cursor = index; cursor < months.length; cursor++) {
     const current = months[cursor];
@@ -358,9 +392,10 @@ function linkPending(manager: TimelineManager, now: number) {
       continue;
     }
     const pending = !month.flowLinkedTo;
-    // A held boundary is let go of once it comes near the viewport (and is still off screen).
+    // A held boundary is let go of once the held month comes near the viewport (while the rows that
+    // change are still off screen).
     const held = month.flowLinkedTo === previous && previous.flowHandOff !== undefined;
-    if (pending || (held && (month.isInOrNearViewport || previous.isInOrNearViewport))) {
+    if (pending || (held && month.isInOrNearViewport)) {
       changed = runOn(manager, index, now) || changed;
     }
   }
@@ -422,7 +457,7 @@ function reconcilePass(manager: TimelineManager, dirty: Set<TimelineMonth>) {
 
   let changed = false;
   let tailChanged = false;
-  let handedBefore: FlowItem[] = [];
+  let handedBefore: Handed = { items: [], places: [] };
   for (const [index, month] of months.entries()) {
     if (!month.isLoaded) {
       tailChanged = false;
@@ -441,9 +476,9 @@ function reconcilePass(manager: TimelineManager, dirty: Set<TimelineMonth>) {
       tailChanged = false;
       continue;
     }
-    const before = month.flowTail;
+    const before = handedOf(month);
     layoutFlowMonth(manager, index, dirty.has(month) ? 'setter' : 'region', now);
-    tailChanged = !sameItems(before, month.flowTail);
+    tailChanged = !sameItems(before.items, month.flowTail);
     handedBefore = before;
     changed = true;
   }

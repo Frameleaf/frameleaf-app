@@ -53,8 +53,9 @@ export class TimelineMonth {
   readonly yearMonth: TimelineYearMonth;
 
   /*
-   * All (and Years when not shown as cards) (FL-143): a group's rows run on from one month bucket into the next, as the
-   * prototype justifies the whole group as one flow. `internal/flow-support.svelte.ts` owns these.
+   * FL-143: in All (and Years when not shown as cards) and the Browse and Work grids, a group's rows
+   * run on from one month bucket into the next, as the prototype lays the whole group out as one
+   * flow. `internal/flow-support.svelte.ts` owns these.
    */
   /** The month this one's rows run on from: the month before it, once both are loaded. */
   flowLinkedTo: TimelineMonth | undefined = undefined;
