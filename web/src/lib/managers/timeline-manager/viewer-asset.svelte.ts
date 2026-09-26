@@ -4,6 +4,9 @@ import type { TimelineAsset } from './types';
 
 type FlowHost = { month: TimelineMonth; owner: TimelineMonth };
 
+const samePosition = (a: CommonPosition | undefined, b: CommonPosition | undefined) =>
+  a === b || (!!a && !!b && a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height);
+
 export class ViewerAsset {
   #position: CommonPosition | undefined = $state.raw();
   #host: FlowHost | undefined = $state.raw();
@@ -31,6 +34,11 @@ export class ViewerAsset {
   }
 
   set position(position: CommonPosition | undefined) {
+    // A flow lays a month out again whenever a neighbour changes (FL-143); a tile that did not move
+    // keeps its position, so it is not drawn again.
+    if (!this.#host && samePosition(this.#position, position)) {
+      return;
+    }
     this.#position = position;
     this.#host = undefined;
   }
@@ -47,6 +55,9 @@ export class ViewerAsset {
 
   /** Lay the tile out in a later month's rows: `position` is measured from `host`'s first row. */
   placeInFlow(host: TimelineMonth, owner: TimelineMonth, position: CommonPosition) {
+    if (this.#host?.month === host && this.#host.owner === owner && samePosition(this.#position, position)) {
+      return;
+    }
     this.#position = position;
     this.#host = { month: host, owner };
   }

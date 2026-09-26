@@ -30,6 +30,8 @@
      */
     onJump?: (month: { year: number; month: number }) => void;
     scrubberWidth?: number;
+    /** Whether the track is being dragged; bound by the timeline to hold back thumbnails meanwhile. */
+    dragging?: boolean;
   };
 
   let {
@@ -41,12 +43,12 @@
     onScrub,
     onJump,
     scrubberWidth = $bindable(),
+    dragging = $bindable(false),
   }: Props = $props();
 
   const MIN_YEAR_LABEL_GAP = 18;
 
   let track = $state<HTMLElement>();
-  let dragging = $state(false);
   let hover = $state<{ fraction: number; month: Marked } | null>(null);
 
   type Marked = ScrubberMonth & { start: number; end: number; center: number; key: string };

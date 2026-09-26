@@ -48,7 +48,7 @@
     mdiShieldLockOutline,
     mdiStar,
   } from '@mdi/js';
-  import { onDestroy, type Snippet } from 'svelte';
+  import { onDestroy, untrack, type Snippet } from 'svelte';
   import { DateTime } from 'luxon';
   import { locale, t } from 'svelte-i18n';
 
@@ -82,6 +82,12 @@
     overlay?: Snippet<[TimelineAsset]>;
     /** The hover quick actions this tile may offer; none are drawn without them. */
     quickActions?: TileQuickActions | null;
+    /**
+     * While set (the timeline's scrubber is being dragged), a tile drawn now waits for its thumbnail
+     * until it is cleared, so a drag across the library does not fetch every tile it passes. A tile
+     * whose thumbnail was already asked for keeps it.
+     */
+    deferImage?: boolean;
   };
 
   let {
@@ -102,7 +108,15 @@
     tabindex = 0,
     overlay,
     quickActions = null,
+    deferImage = false,
   }: Props = $props();
+
+  let imageRequested = $state(untrack(() => !deferImage));
+  $effect(() => {
+    if (!deferImage) {
+      imageRequested = true;
+    }
+  });
 
   const PREVIEW_DELAY = 300;
   const PRESS_DELAY = 400;
@@ -363,13 +377,22 @@
       }
     }}
   >
-    <ImageThumbnail
-      url={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
-      altText={title}
-      widthStyle="{imageWidth}px"
-      heightStyle="{imageHeight}px"
-      class="fl-tile-image"
-    />
+    {#if imageRequested}
+      <ImageThumbnail
+        url={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
+        altText={title}
+        widthStyle="{imageWidth}px"
+        heightStyle="{imageHeight}px"
+        class="fl-tile-image"
+      />
+    {:else}
+      <div
+        class={['fl-tile-image', 'bg-gray-300 dark:bg-gray-700']}
+        style:width="{imageWidth}px"
+        style:height="{imageHeight}px"
+        aria-hidden="true"
+      ></div>
+    {/if}
     {#if previewMode && previewSource}
       <video
         bind:this={videoElement}
