@@ -41,7 +41,12 @@ export type IsolatedFrameleafSkipReason =
   | 'no-frameleaf-schema'
   /** Handed over to the official server: the return applies them. */
   | 'awaiting-return'
-  /** A schema version 2 phase in which no Frameleaf public migration may run. */
+  /**
+   * `ready` at schema version 2: the library has not been activated (`ready` to `active`) yet. Until
+   * it is, these stay pending and the catalog check of the next cutover does not pass.
+   */
+  | 'awaiting-activation'
+  /** Any other schema version 2 phase in which no Frameleaf public migration may run. */
   | 'unexpected-phase';
 
 export type IsolatedFrameleafPlan = {
@@ -108,5 +113,8 @@ export const planIsolatedFrameleafMigrations = ({
   if (context === 'return' || state.phase === 'active') {
     return { pending, skipped: null };
   }
-  return { pending, skipped: state.phase === 'inactive' ? 'awaiting-return' : 'unexpected-phase' };
+  if (state.phase === 'inactive') {
+    return { pending, skipped: 'awaiting-return' };
+  }
+  return { pending, skipped: state.phase === 'ready' ? 'awaiting-activation' : 'unexpected-phase' };
 };

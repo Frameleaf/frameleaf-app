@@ -147,7 +147,7 @@ describe(createFrameleafPublicMigrationProvider, () => {
       await writeFile(join(unknownFolder, '9999999999999-Unknown.mjs'), 'export async function up() {}\n');
 
       await expect(createFrameleafPublicMigrationProvider(unknownFolder).getMigrations()).rejects.toThrow(
-        'Unknown migration in official migration folder: 9999999999999-Unknown',
+        `Unknown migration in the Frameleaf public migration folder (${unknownFolder}): 9999999999999-Unknown`,
       );
     } finally {
       await rm(unknownFolder, { recursive: true, force: true });

@@ -115,7 +115,7 @@ export function createFrameleafPublicMigrationProvider(migrationFolder: string):
         left.localeCompare(right),
       )) {
         if (classifyMigration(name) === 'unknown') {
-          throw new Error(`Unknown migration in official migration folder: ${name}`);
+          throw new Error(`Unknown migration in the Frameleaf public migration folder (${migrationFolder}): ${name}`);
         }
         if (GENERIC_LEGACY_FORK_MIGRATIONS.has(name)) {
           frameleafMigrations[name] = migration;
