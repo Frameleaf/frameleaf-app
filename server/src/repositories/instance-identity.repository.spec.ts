@@ -1,5 +1,5 @@
-import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
-import { access, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { createPublicKey, generateKeyPairSync, randomBytes, verify } from 'node:crypto';
+import { access, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,13 +9,21 @@ import {
   InstanceIdentityRepository,
   PROVEN_KEY_FILE,
   RETIRING_KEY_FILE,
+  SET_ASIDE_SUFFIX,
 } from 'src/repositories/instance-identity.repository.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 
 const decode = (part: string) => JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
 
-/** A `link()` that can fail like it does on SMB/CIFS or FUSE media mounts. */
-const fsControl = vi.hoisted(() => ({ linkError: null as string | null, chmodError: null as string | null }));
+/**
+ * A `link()` that can fail like it does on SMB/CIFS or FUSE media mounts, and a `readFile()` of one
+ * named file that can fail like an unreadable (EACCES) or vanished (ENOENT) file.
+ */
+const fsControl = vi.hoisted(() => ({
+  linkError: null as string | null,
+  chmodError: null as string | null,
+  readError: null as { file: string; code: string } | null,
+}));
 vi.mock('node:fs/promises', async (original) => {
   const actual = await original<typeof import('node:fs/promises')>();
   return {
@@ -28,6 +36,10 @@ vi.mock('node:fs/promises', async (original) => {
       fsControl.chmodError
         ? Promise.reject(Object.assign(new Error('chmod not supported'), { code: fsControl.chmodError }))
         : actual.chmod(path, mode),
+    readFile: (path: string, ...rest: unknown[]) =>
+      fsControl.readError && path.endsWith(`/${fsControl.readError.file}`)
+        ? Promise.reject(Object.assign(new Error('read refused'), { code: fsControl.readError.code }))
+        : Reflect.apply(actual.readFile, undefined, [path, ...rest]),
   };
 });
 
@@ -39,6 +51,7 @@ describe(InstanceIdentityRepository.name, () => {
   });
 
   afterEach(async () => {
+    fsControl.readError = null;
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -68,6 +81,22 @@ describe(InstanceIdentityRepository.name, () => {
     expect(first.kid).toBe(second.kid);
     const pem = await readFile(join(dir, INSTANCE_KEY_FILE), 'utf8');
     expect(pem).toContain('BEGIN PRIVATE KEY');
+    // the staging copies used to publish the key atomically are gone
+    expect(await readdir(dir)).toEqual([INSTANCE_KEY_FILE]);
+  });
+
+  it('creates the key in place where the file system cannot hard-link (EPERM)', async () => {
+    fsControl.linkError = 'EPERM';
+    try {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      expect((await stat(identity.keyFile)).mode & 0o777).toBe(0o600);
+      await expect(new InstanceIdentityRepository().loadOrCreate(dir, identity)).resolves.toMatchObject({
+        kid: identity.kid,
+      });
+    } finally {
+      fsControl.linkError = null;
+    }
+    expect(await readdir(dir)).toEqual([INSTANCE_KEY_FILE]);
   });
 
   it('refuses a key file that is not Ed25519', async () => {
@@ -151,12 +180,17 @@ describe(InstanceIdentityRepository.name, () => {
 
     it('discards a next key a crash left half written and keeps the current key (FL-175)', async () => {
       const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
-      await writeFile(join(dir, 'instance-key.next.pem'), newPem().slice(0, 40), { mode: 0o600 });
+      const partial = newPem().slice(0, 40);
+      await writeFile(join(dir, 'instance-key.next.pem'), partial, { mode: 0o600 });
 
       const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
       expect(again.kid).toBe(identity.kid);
       expect(again.candidate).toBeUndefined();
       await expect(access(join(dir, 'instance-key.next.pem'))).rejects.toThrow();
+      // set aside for an operator, not left where the next load would trip over it again
+      const setAside = join(dir, `instance-key.next.pem${SET_ASIDE_SUFFIX}`);
+      expect(await readFile(setAside, 'utf8')).toBe(partial);
+      expect((await stat(setAside)).mode & 0o777).toBe(0o600);
       await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
       await expect(access(join(dir, 'instance-key.candidate.json'))).rejects.toThrow();
       await expect(new InstanceIdentityRepository().loadOrCreate(dir, identity)).resolves.toMatchObject({
@@ -174,6 +208,115 @@ describe(InstanceIdentityRepository.name, () => {
       expect(again.candidate).toBeUndefined();
       await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
       await expect(access(join(dir, 'instance-key.candidate.json'))).rejects.toThrow();
+    });
+
+    it('sets aside a garbage candidate key, keeping its bytes because the cloud may hold it (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      const garbage = randomBytes(96);
+      await writeFile(join(dir, CANDIDATE_KEY_FILE), garbage, { mode: 0o600 });
+      await writeFile(
+        join(dir, 'instance-key.candidate.json'),
+        JSON.stringify({ kid: 'x', since: new Date().toISOString() }),
+        { mode: 0o600 },
+      );
+
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+      expect(again.kid).toBe(identity.kid);
+      expect(again.candidate).toBeUndefined();
+      await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
+      await expect(access(join(dir, 'instance-key.candidate.json'))).rejects.toThrow();
+      expect(await readFile(join(dir, `${CANDIDATE_KEY_FILE}${SET_ASIDE_SUFFIX}`))).toEqual(garbage);
+      // the next load is clean
+      await expect(new InstanceIdentityRepository().loadOrCreate(dir, identity)).resolves.not.toHaveProperty(
+        'candidate',
+      );
+    });
+
+    it('carries on with the current key when a next key vanishes before it is read (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      await writeFile(join(dir, 'instance-key.next.pem'), newPem(), { mode: 0o600 });
+      // a candidate sidecar whose key is missing is stale
+      await writeFile(join(dir, 'instance-key.candidate.json'), '{}', { mode: 0o600 });
+      fsControl.readError = { file: 'instance-key.next.pem', code: 'ENOENT' };
+
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+      expect(again.kid).toBe(identity.kid);
+      expect(again.candidate).toBeUndefined();
+      await expect(access(join(dir, `instance-key.next.pem${SET_ASIDE_SUFFIX}`))).rejects.toThrow();
+      await expect(access(join(dir, 'instance-key.candidate.json'))).rejects.toThrow();
+    });
+
+    it('moves nothing when a next or candidate key cannot be read for permissions (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      const pem = newPem();
+      for (const file of ['instance-key.next.pem', CANDIDATE_KEY_FILE]) {
+        await writeFile(join(dir, file), pem, { mode: 0o600 });
+        fsControl.readError = { file, code: 'EACCES' };
+        await expect(new InstanceIdentityRepository().loadOrCreate(dir, identity)).rejects.toMatchObject({
+          code: 'EACCES',
+        });
+        fsControl.readError = null;
+        expect(await readFile(join(dir, file), 'utf8')).toBe(pem);
+        await expect(access(join(dir, `${file}${SET_ASIDE_SUFFIX}`))).rejects.toThrow();
+        await rm(join(dir, file));
+      }
+      expect(await readFile(identity.keyFile, 'utf8')).toContain('BEGIN PRIVATE KEY');
+    });
+
+    it('never replaces or moves a current key that does not parse (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      const partial = (await readFile(identity.keyFile, 'utf8')).slice(0, 40);
+      for (const content of [partial, '']) {
+        await writeFile(identity.keyFile, content, { mode: 0o600 });
+        await expect(new InstanceIdentityRepository().loadOrCreate(dir, identity)).rejects.toThrow(
+          'is not a readable private key',
+        );
+        expect(await readFile(identity.keyFile, 'utf8')).toBe(content);
+        await expect(access(`${identity.keyFile}${SET_ASIDE_SUFFIX}`)).rejects.toThrow();
+      }
+    });
+
+    it('keeps the current key when a proven key no longer parses (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      await writeFile(join(dir, PROVEN_KEY_FILE), newPem().slice(0, 60), { mode: 0o600 });
+
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+      expect(again.kid).toBe(identity.kid);
+      expect(again.retiring).toBeUndefined();
+      await expect(access(join(dir, PROVEN_KEY_FILE))).rejects.toThrow();
+      await expect(access(join(dir, `${PROVEN_KEY_FILE}${SET_ASIDE_SUFFIX}`))).resolves.toBeUndefined();
+    });
+
+    it('sets aside a retiring key that no longer parses instead of failing the load (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const rotated = await repository.rotate(identity, () => Promise.resolve(), 24);
+      // a copy on a mount without hard links, cut short by a power failure
+      await rm(join(dir, RETIRING_KEY_FILE));
+      await writeFile(join(dir, RETIRING_KEY_FILE), 'garbage', { mode: 0o600 });
+
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, rotated);
+      expect(again.kid).toBe(rotated.kid);
+      expect(again.retiring).toBeUndefined();
+      await expect(access(join(dir, 'instance-key.retiring.json'))).rejects.toThrow();
+      await expect(access(join(dir, `${RETIRING_KEY_FILE}${SET_ASIDE_SUFFIX}`))).resolves.toBeUndefined();
+    });
+
+    it('has the whole new key on disk before the cloud is asked to register it (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const seen: string[] = [];
+      await repository.rotate(
+        identity,
+        async (newJwk) => {
+          const pem = await readFile(join(dir, 'instance-key.next.pem'));
+          const jwk = createPublicKey(pem).export({ format: 'jwk' });
+          seen.push(ed25519Thumbprint({ kty: 'OKP', crv: 'Ed25519', x: jwk.x! }), newJwk.kid);
+        },
+        24,
+      );
+      expect(seen).toHaveLength(2);
+      expect(seen[0]).toBe(seen[1]);
     });
 
     it('falls back to a 0600 copy when the file system cannot hard-link (EPERM)', async () => {
