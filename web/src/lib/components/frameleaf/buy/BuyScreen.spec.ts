@@ -20,6 +20,7 @@ const store = 'https://frameleaf.cloud.test/store';
 const products = (storeUrl: string | null = store): LicenseProductsResponseDto => ({
   currency: Currency.Usd,
   licensedDiscount: 0.2,
+  pricesVersion: '2026-09-25.1',
   storeUrl,
   credit: { minimumUsd: 20, maximumUsd: 500 },
   backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
@@ -122,6 +123,23 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     expect(await screen.findByText('$7.99')).toBeInTheDocument();
     expect(screen.getByText('$79.92')).toBeInTheDocument();
     expect(screen.getByLabelText('Regular price $9.99')).toBeInTheDocument();
+  });
+
+  it('takes the discount Frameleaf Cloud published off plans only, and says how much', async () => {
+    flags.value = { supporter: true, frameleafCloud: false };
+    sdkMock.getLicenseProducts.mockResolvedValue({
+      ...products(),
+      licensedDiscount: 0.25,
+      pricesVersion: '2026-10-01.2',
+    });
+    render(BuyScreen);
+
+    expect(await screen.findByText('$7.49')).toBeInTheDocument();
+    expect(screen.getByText('$74.93')).toBeInTheDocument();
+    expect(screen.getByText(/plan prices are 25% lower/)).toBeInTheDocument();
+    // supporter keys and extra backup keep their prices
+    expect(screen.getByText('$100')).toBeInTheDocument();
+    expect(screen.getByText(/More storage is \$9\.99\/month/)).toBeInTheDocument();
   });
 
   it('gives the discount for a personal supporter key and says so without calling the server licensed', async () => {

@@ -70,6 +70,7 @@ const products = (storeUrl: string | null = 'https://frameleaf.cloud.test/store'
   currency: Currency.Usd,
   credit: { minimumUsd: 20, maximumUsd: 500 },
   licensedDiscount: 0.2,
+  pricesVersion: '2026-09-25.1',
   storeUrl,
   backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
   products: [
@@ -334,6 +335,18 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(screen.getByText('$9.99').tagName).toBe('S');
       expect(screen.getByText(/\$79\.92/)).toBeInTheDocument();
       expect(screen.getByText(/AI credit is priced the same for everyone/)).toBeInTheDocument();
+    });
+
+    it('follows the discount Frameleaf Cloud published', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(
+        license({ licensed: true, key: keySlot, entitlements: { ...entitlements, supporter: true } }),
+      );
+      sdkMock.getLicenseProducts.mockResolvedValue({ ...products(), licensedDiscount: 0.25 });
+      render(PlanSection);
+
+      expect(await screen.findByText(/\$7\.49/)).toBeInTheDocument();
+      expect(screen.getByText(/\$74\.93/)).toBeInTheDocument();
+      expect(screen.getByText(/plans cost 25% less/)).toBeInTheDocument();
     });
 
     it('says purchasing is not available yet when no store is configured', async () => {

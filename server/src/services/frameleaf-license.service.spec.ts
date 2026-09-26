@@ -309,11 +309,12 @@ describe(FrameleafLicenseService.name, () => {
   });
 
   describe('products (FL-157, FL-172)', () => {
-    it('serves bundled USD prices and the store from FRAMELEAF_CLOUD_URL, with no outbound call', () => {
+    it('serves bundled USD prices and the store from FRAMELEAF_CLOUD_URL, with no outbound call', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      const products = sut.getProducts();
+      const products = await sut.getProducts();
       expect(products).toMatchObject({
         currency: 'USD',
+        pricesVersion: '2026-09-25.1',
         licensedDiscount: 0.2,
         storeUrl: `${cloud.url}/store`,
         backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
@@ -333,9 +334,27 @@ describe(FrameleafLicenseService.name, () => {
       fetchSpy.mockRestore();
     });
 
-    it('has no store link when Frameleaf Cloud is not set up', () => {
+    it('serves the plan discount Frameleaf Cloud last published, and no other price moves', async () => {
+      metadata.set(SystemMetadataKey.FrameleafPricing, {
+        current: { pricesVersion: '2026-10-01.2', licensedDiscountPercent: 25, effectiveFrom: '2026-10-01T00:00:00Z' },
+        // not in effect yet, so not served
+        pending: { pricesVersion: '2999-01-01.1', licensedDiscountPercent: 40, effectiveFrom: '2999-01-01T00:00:00Z' },
+      });
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const products = await sut.getProducts();
+      expect(products).toMatchObject({
+        pricesVersion: '2026-10-01.2',
+        licensedDiscount: 0.25,
+        backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
+      });
+      expect(products.products.find(({ id }) => id === 'cloud-monthly')?.priceUsd).toBe(9.99);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    });
+
+    it('has no store link when Frameleaf Cloud is not set up', async () => {
       cloudUrl = null;
-      const products = sut.getProducts();
+      const products = await sut.getProducts();
       expect(products.storeUrl).toBeNull();
       expect(products.products.every(({ storeUrl }) => storeUrl === null)).toBe(true);
     });

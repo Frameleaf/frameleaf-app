@@ -115,7 +115,7 @@ export class LicenseController {
       'Bundled plan and supporter prices in US dollars, the licensed-server discount, cloud backup pricing and the store this server was deployed with. Makes no outbound call.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  getProducts(): LicenseProductsResponseDto {
+  getProducts(): Promise<LicenseProductsResponseDto> {
     return this.service.getProducts();
   }
 }
