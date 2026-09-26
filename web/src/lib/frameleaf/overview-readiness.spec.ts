@@ -12,7 +12,6 @@ const destination = (id: string, kind: MlDestinationKind, status: MlDestinationH
 const route = (workload: MlWorkload, destinationId: string | null): MlWorkloadRouteDto => ({
   workload,
   destinationId,
-  modelId: null,
 });
 
 describe('Overview readiness (FL-71 CC-9)', () => {

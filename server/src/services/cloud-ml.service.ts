@@ -9,6 +9,8 @@ import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
   CloudMlDestinationCreateDto,
+  CloudMlModelChoiceUpdateDto,
+  CloudMlModelChoicesResponseDto,
   CloudMlSettlementsResponseDto,
   CloudMlStatusResponseDto,
   CloudMlWalletDto,
@@ -34,17 +36,22 @@ import {
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  CLOUD_MODEL_GROUPS,
   CloudCatalog,
   CloudErrorCode,
+  CloudModelGroup,
   CloudProbeFacts,
   CloudUsage,
   CloudWallet,
   FrameleafCloudError,
   catalogDefaults,
+  catalogGroupKey,
   cloudAddressProblem,
   cloudDefaultGroupFor,
   cloudErrorCode,
   cloudFactsFromCapabilities,
+  isCloudModelGroup,
+  isLocalOnlyModel,
   knownWorkloads,
   offeredCatalogModels,
   stepUpUrl,
@@ -296,9 +303,11 @@ export class CloudMlService extends BaseService {
     return {
       models: offeredCatalogModels(catalog).map((model) => {
         const workload = workloadForCatalogEntry(model.workload, model.mode);
+        const group = catalogGroupKey(model.workload, model.mode);
         return {
           id: model.sku,
           workload,
+          group: isCloudModelGroup(group) ? group : null,
           name: model.label,
           description: [
             `${model.display.model}, ${model.display.gpu}`,
@@ -317,6 +326,47 @@ export class CloudMlService extends BaseService {
         };
       }),
     };
+  }
+
+  /**
+   * The Frameleaf Cloud model an administrator chose for every model group (FL-186), null where the
+   * group uses the catalogue's default. Read from this server only; the cloud is not contacted.
+   */
+  async getModelChoices(): Promise<CloudMlModelChoicesResponseDto> {
+    const rows = await this.mlDestinationRepository.getCloudModelChoices();
+    const chosen = new Map(rows.map((row) => [row.modelGroup, row.modelId]));
+    return { choices: CLOUD_MODEL_GROUPS.map((group) => ({ group, modelId: chosen.get(group) ?? null })) };
+  }
+
+  /**
+   * Choose the Frameleaf Cloud model of one model group (FL-186), or go back to the catalogue's default
+   * with null. The SKU must be one the catalogue offers now for exactly this group: a faithful model is
+   * refused for creative restoration, and a speech model for speech to text. The choice holds whatever
+   * the workload's route points at, and a cloud job of this group names it.
+   */
+  async setModelChoice(
+    group: CloudModelGroup,
+    dto: CloudMlModelChoiceUpdateDto,
+  ): Promise<CloudMlModelChoicesResponseDto> {
+    if (dto.modelId === null) {
+      await this.mlDestinationRepository.clearCloudModelChoice(group);
+      return this.getModelChoices();
+    }
+    const modelId = dto.modelId;
+    if (isLocalOnlyModel(modelId)) {
+      throw new BadRequestException(`The model ${modelId} runs on this server only`);
+    }
+    const gateway = await this.requireGateway();
+    const catalog = await this.callCloud(() => this.frameleafCloudMlRepository.getCatalog(gateway));
+    const model = offeredCatalogModels(catalog).find((entry) => entry.sku === modelId);
+    if (!model) {
+      throw new BadRequestException(`The model ${modelId} is not in the Frameleaf Cloud catalogue`);
+    }
+    if (catalogGroupKey(model.workload, model.mode) !== group) {
+      throw new BadRequestException(`The model ${modelId} does not run ${group} in the Frameleaf Cloud catalogue`);
+    }
+    await this.mlDestinationRepository.setCloudModelChoice(group, modelId);
+    return this.getModelChoices();
   }
 
   /** A catalogue entry the contract refuses is never offered; say so once per read. */
@@ -468,14 +518,25 @@ export class CloudMlService extends BaseService {
       ]);
       this.warnRefusedEntries(catalog);
       // Local-only models (FL-146) never count as offered, even if a catalogue lists them. The model
-      // SKU is the cloud's model identity (FL-183), so `modelIds` and a saved route hold it.
+      // SKU is the cloud's model identity (FL-183), so `modelIds` and a model choice hold it.
       const usableModels = offeredCatalogModels(catalog);
       const modelIds = usableModels.map((model) => model.sku);
       const modelWorkloads = Object.fromEntries(
         usableModels.map((model) => [model.sku, workloadForCatalogEntry(model.workload, model.mode)]),
       );
-      // FC-34: the model the catalogue marks per group is what unrouted work uses; none is guessed
-      const facts = cloudFactsFromCapabilities(capabilities, modelIds, modelWorkloads, catalogDefaults(usableModels));
+      // FL-186: each model's catalogue group, so admission sends a model only for its own group
+      const modelGroups = Object.fromEntries(
+        usableModels.map((model) => [model.sku, catalogGroupKey(model.workload, model.mode)]),
+      );
+      // FC-34: the model the catalogue marks per group is what work without a chosen model uses; none
+      // is guessed
+      const facts = cloudFactsFromCapabilities(
+        capabilities,
+        modelIds,
+        modelWorkloads,
+        catalogDefaults(usableModels),
+        modelGroups,
+      );
       // FL-181 (P1): `restoration` is one wire workload for both modes, so the capability alone
       // cannot tell faithful and creative apart; a mode is only offered once the catalogue itself
       // names a usable model for it. A catalogue that could not be read (`catalog` is null) offers

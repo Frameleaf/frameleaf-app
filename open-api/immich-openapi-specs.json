@@ -762,6 +762,119 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/ml/models": {
+      "get": {
+        "description": "The Frameleaf Cloud model chosen for each model group, or null where the group uses the model the catalogue recommends. A cloud job reads its group whatever its workload is routed to.",
+        "operationId": "getCloudMlModelChoices",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlModelChoicesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the chosen Frameleaf Cloud models",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/ml/models/{group}": {
+      "put": {
+        "description": "Choose a catalogue model for one model group, checked against the catalogue for exactly that group, or null to use the model the catalogue recommends.",
+        "operationId": "setCloudMlModelChoice",
+        "parameters": [
+          {
+            "name": "group",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/CloudMlModelGroup"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudMlModelChoiceUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlModelChoicesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose the Frameleaf Cloud model of a model group",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/ml/settlements": {
       "get": {
         "description": "The charges Frameleaf Cloud settled for this server, newest first, as recorded against the jobs that incurred them.",
@@ -49964,6 +50077,53 @@
         ],
         "type": "object"
       },
+      "CloudMlModelChoiceDto": {
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/CloudMlModelGroup"
+          },
+          "modelId": {
+            "description": "The chosen catalogue model SKU, or null when the group uses the catalogue default",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "modelId"
+        ],
+        "type": "object"
+      },
+      "CloudMlModelChoiceUpdateDto": {
+        "properties": {
+          "modelId": {
+            "description": "A catalogue model SKU of exactly this group; null uses the catalogue default",
+            "maxLength": 200,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "modelId"
+        ],
+        "type": "object"
+      },
+      "CloudMlModelChoicesResponseDto": {
+        "properties": {
+          "choices": {
+            "description": "Every model group, in a fixed order",
+            "items": {
+              "$ref": "#/components/schemas/CloudMlModelChoiceDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "choices"
+        ],
+        "type": "object"
+      },
       "CloudMlModelDto": {
         "properties": {
           "description": {
@@ -49971,6 +50131,15 @@
           },
           "fingerprint": {
             "type": "string"
+          },
+          "group": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlModelGroup"
+              }
+            ],
+            "description": "The group this model is chosen for, or null for one this server does not know",
+            "nullable": true
           },
           "id": {
             "type": "string"
@@ -50012,6 +50181,7 @@
         "required": [
           "description",
           "fingerprint",
+          "group",
           "id",
           "isDefault",
           "name",
@@ -50021,6 +50191,19 @@
           "workload"
         ],
         "type": "object"
+      },
+      "CloudMlModelGroup": {
+        "description": "What a Frameleaf Cloud model is chosen for: a cloud workload, restoration per mode, and Studio AI speech to text (transcription) and speech (tts)",
+        "enum": [
+          "descriptions",
+          "upscale",
+          "restoration-faithful",
+          "restoration-creative",
+          "interpolation",
+          "transcription",
+          "tts"
+        ],
+        "type": "string"
       },
       "CloudMlSettlementDto": {
         "properties": {
@@ -60541,18 +60724,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
-          "modelId": {
-            "description": "Frameleaf Cloud catalogue model for this workload, or null",
-            "nullable": true,
-            "type": "string"
-          },
           "workload": {
             "$ref": "#/components/schemas/MlWorkload"
           }
         },
         "required": [
           "destinationId",
-          "modelId",
           "workload"
         ],
         "type": "object"
@@ -60564,13 +60741,6 @@
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "modelId": {
-            "description": "Frameleaf Cloud only: the catalogue model SKU this workload uses; omitted keeps the routed model, null uses the catalogue default",
-            "maxLength": 200,
-            "minLength": 1,
-            "nullable": true,
             "type": "string"
           }
         },

@@ -173,7 +173,6 @@ const MlWorkloadRouteSchema = z
   .object({
     workload: MlWorkloadSchema,
     destinationId: z.uuidv4().nullable().describe('Destination the workload is routed to, or null when unrouted'),
-    modelId: z.string().nullable().describe('Frameleaf Cloud catalogue model for this workload, or null'),
   })
   .meta({ id: 'MlWorkloadRouteDto' });
 
@@ -186,15 +185,6 @@ const MlWorkloadRoutesResponseSchema = z
 const MlWorkloadRouteUpdateSchema = z
   .object({
     destinationId: z.uuidv4().nullable().describe('Destination to route the workload to; null removes the route'),
-    modelId: z
-      .string()
-      .min(1)
-      .max(200)
-      .nullable()
-      .optional()
-      .describe(
-        'Frameleaf Cloud only: the catalogue model SKU this workload uses; omitted keeps the routed model, null uses the catalogue default',
-      ),
   })
   .meta({ id: 'MlWorkloadRouteUpdateDto' });
 

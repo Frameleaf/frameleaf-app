@@ -5,6 +5,7 @@ import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js'
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as cloudJobIndexMigration from 'src/fork-schema/migrations/0000000000201-MlWorkloadAccountingCloudJobIndex.js';
+import * as cloudModelChoiceMigration from 'src/schema/migrations/2100000000650-AddMlCloudModelChoice.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
@@ -219,5 +220,111 @@ describe(MlDestinationRepository.name, () => {
       consentAcknowledgedAt: null,
       consentAcknowledgedBy: null,
     });
+  });
+
+  it('keeps the chosen Frameleaf Cloud model per model group, apart from the routes (FL-186)', async () => {
+    const { sut } = setup();
+    await sut.clearCloudModelChoice('tts');
+    expect(await sut.getCloudModelChoice('tts')).toBeNull();
+
+    await sut.setCloudModelChoice('tts', 'ms_VOICE001');
+    await sut.setCloudModelChoice('tts', 'ms_VOICE002');
+    await sut.setCloudModelChoice('transcription', 'ms_WORDS001');
+    expect(await sut.getCloudModelChoice('tts')).toBe('ms_VOICE002');
+    expect(await sut.getCloudModelChoices()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ modelGroup: 'transcription', modelId: 'ms_WORDS001' }),
+        expect.objectContaining({ modelGroup: 'tts', modelId: 'ms_VOICE002' }),
+      ]),
+    );
+
+    await sut.clearCloudModelChoice('tts');
+    expect(await sut.getCloudModelChoice('tts')).toBeNull();
+    expect(await sut.getCloudModelChoice('transcription')).toBe('ms_WORDS001');
+    await sut.clearCloudModelChoice('transcription');
+  });
+
+  it('copies the valid cloud route models into the model choices, and matches the catalogue (FL-186)', async () => {
+    const { sut } = setup();
+    const cloud = await sut.create({
+      kind: MlDestinationKind.FrameleafCloud,
+      name: `cloud ${randomUUID()}`,
+      url: null,
+      authToken: null,
+      enabled: true,
+      workloads: [MlWorkload.Enrichment, MlWorkload.RestorationCreative, MlWorkload.Upscale, MlWorkload.StudioAi],
+      budgetLimitUsd: null,
+      maxRuntimeMinutes: null,
+      maxUploadBytes: null,
+    });
+    await sut.recordProbe(cloud.id, {
+      health: MlDestinationHealth.Healthy,
+      summary: null,
+      workloads: null,
+      probedAt: new Date(),
+      cloud: {
+        region: 'eu',
+        consentRequiredVersion: null,
+        consentRecordedVersion: null,
+        features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+        entitled: true,
+        balanceUsd: 1,
+        heldUsd: 0,
+        dailyCapUsd: null,
+        spentTodayUsd: 0,
+        limits: {},
+        catalogEtag: null,
+        modelIds: ['ms_DESCRIBE', 'ms_CREATIVE', 'ms_FAITHFUL', 'ms_STUDIOVO'],
+        modelWorkloads: {
+          ms_DESCRIBE: MlWorkload.Enrichment,
+          ms_CREATIVE: MlWorkload.RestorationCreative,
+          ms_FAITHFUL: MlWorkload.RestorationFaithful,
+          ms_STUDIOVO: MlWorkload.StudioAi,
+        },
+        refusal: null,
+      },
+    });
+    const route = (workload: MlWorkload, modelId: string) =>
+      sql`
+        INSERT INTO ml_workload_route ("workload", "destinationId", "modelId")
+        VALUES (${workload}, ${cloud.id}::uuid, ${modelId})
+        ON CONFLICT ("workload") DO UPDATE SET "destinationId" = excluded."destinationId", "modelId" = excluded."modelId"
+      `.execute(defaultDatabase);
+    // copied: in the last catalogue check, for this workload
+    await route(MlWorkload.Enrichment, 'ms_DESCRIBE');
+    // not copied: a faithful model on the creative route, a model the catalogue dropped, and Studio AI,
+    // whose speech to text and speech models cannot be told apart
+    await route(MlWorkload.RestorationCreative, 'ms_FAITHFUL');
+    await route(MlWorkload.Upscale, 'ms_RETIRED1');
+    await route(MlWorkload.StudioAi, 'ms_STUDIOVO');
+
+    try {
+      await cloudModelChoiceMigration.down(defaultDatabase);
+      await cloudModelChoiceMigration.up(defaultDatabase);
+
+      const choices = await sut.getCloudModelChoices();
+      expect(choices.map(({ modelGroup, modelId }) => [modelGroup, modelId])).toEqual([
+        ['descriptions', 'ms_DESCRIBE'],
+      ]);
+
+      const isChoice = (entry: { identity: string }) =>
+        entry.identity === 'public.ml_cloud_model_choice' || entry.identity.startsWith('public.ml_cloud_model_choice.');
+      const evidence = await getCatalogEvidence(defaultDatabase);
+      expect(evidence.tables.filter((entry) => isChoice(entry))).toEqual(
+        manifest.tables.filter((entry) => isChoice(entry)),
+      );
+      expect(evidence.columns.filter((entry) => isChoice(entry))).toEqual(
+        manifest.columns.filter((entry) => isChoice(entry)),
+      );
+      expect(evidence.constraints.filter((entry) => isChoice(entry))).toEqual(
+        manifest.constraints.filter((entry) => isChoice(entry)),
+      );
+      expect(evidence.indexes.filter((entry) => isChoice(entry))).toEqual(
+        manifest.indexes.filter((entry) => isChoice(entry)),
+      );
+    } finally {
+      await sql`DELETE FROM ml_workload_route WHERE "destinationId" = ${cloud.id}::uuid`.execute(defaultDatabase);
+      await sql`DELETE FROM ml_cloud_model_choice`.execute(defaultDatabase);
+    }
   });
 });

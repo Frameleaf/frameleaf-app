@@ -9,8 +9,8 @@
    *
    * Where work runs is a setting (`frameleafCloud.cloudMl.routing`, `startWith`) saved with the settings
    * bar like every other setting. Each kind of work allowed on Frameleaf Cloud has the Frameleaf Cloud
-   * model picker (FL-186): the models come from the cloud's catalogue and a choice is saved on the
-   * workload's route at once, since that route is what admission reads.
+   * model pickers (FL-186): the models come from the cloud's catalogue and a choice is saved per model
+   * group, apart from the workload's route, which is what admission reads for every cloud job.
    */
   import './frameleaf-cloud.css';
   import CloudRouteModels from '$lib/components/frameleaf/cloud/CloudRouteModels.svelte';
@@ -27,7 +27,7 @@
     workloadUseKey,
     workloadWhyKey,
   } from '$lib/frameleaf/cloud-ml';
-  import { loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
+  import { choicesByGroup, loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
   import type { RouteMode } from '$lib/frameleaf/gpu-model-catalog';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -54,18 +54,15 @@
 
   let status = $state<CloudMlStatusResponseDto | null>(null);
   let hardware = $state<HardwareCheckResponseDto | null>(null);
-  let models = $state<CloudModelData>({ catalog: null, catalogFailed: false, routes: [] });
+  let models = $state<CloudModelData>({ catalog: null, catalogFailed: false, choices: {} });
   let notice = $state('');
+  /** The catalogue was read for the current linked and turned-on state. */
+  let modelsRequested = false;
 
   onMount(() => {
     void getCloudMlStatus()
       .then((next) => (status = next))
-      .catch(() => (status = null))
-      .then(async () => {
-        if (showModels) {
-          models = await loadCloudModelData(status);
-        }
-      });
+      .catch(() => (status = null));
     void getHardwareCheck()
       .then((next) => (hardware = next))
       .catch(() => (hardware = null));
@@ -82,6 +79,20 @@
   );
   const cloudOn = $derived(linked && !!cloudMl?.enabled);
   const worker = $derived(workerFromHardware(hardware));
+
+  // FL-186: read the chosen models and the catalogue once cloud processing is linked and turned on,
+  // including when it is turned on on this page, and again the next time after it was turned off.
+  $effect(() => {
+    if (!showModels || !cloudOn) {
+      modelsRequested = false;
+      return;
+    }
+    if (modelsRequested) {
+      return;
+    }
+    modelsRequested = true;
+    void loadCloudModelData(status).then((next) => (models = next));
+  });
 
   const setRoute = (id: string, mode: RouteMode) => {
     if (cloudMl && isRoutedWorkload(id)) {
@@ -176,10 +187,9 @@
               row={row.id}
               catalog={models.catalog}
               catalogFailed={models.catalogFailed}
-              routes={models.routes}
-              cloudDestinationId={status?.destination?.id ?? null}
-              onSaved={(routes, message) => {
-                models = { ...models, routes };
+              choices={models.choices}
+              onSaved={(choices, message) => {
+                models = { ...models, choices: choicesByGroup(choices) };
                 notice = message;
               }}
             />

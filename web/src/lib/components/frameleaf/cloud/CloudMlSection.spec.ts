@@ -1,5 +1,6 @@
 import {
   CloudMlConnection,
+  CloudMlModelGroup,
   MlWorkload,
   type AdminConfigDto,
   type CloudMlStatusResponseDto,
@@ -272,17 +273,15 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(await screen.findByText(/Would be refused: Add AI credit/)).toBeInTheDocument();
   });
 
-  it("chooses each workload's Frameleaf Cloud model from the catalogue and saves it on the route (FL-186)", async () => {
+  it('chooses the Frameleaf Cloud model of each group from the catalogue and saves it apart from the routes (FL-186)', async () => {
     const store = useDraft(true);
-    sdkMock.getCloudMlStatus.mockResolvedValue(
-      status({ enabled: true, consent: consent('2026-10-01'), destination: { id: 'cloud-1' } as never }),
-    );
-    sdkMock.reconcileCloudMlUsage.mockResolvedValue({ settled: 0 });
-    sdkMock.getMlWorkloadRoutes.mockResolvedValue({
-      routes: [{ workload: MlWorkload.Enrichment, destinationId: 'cloud-1', modelId: null }],
+    sdkMock.getCloudMlStatus.mockResolvedValue(status({ enabled: true, consent: consent('2026-10-01') }));
+    sdkMock.getCloudMlModelChoices.mockResolvedValue({
+      choices: [{ group: CloudMlModelGroup.Descriptions, modelId: null }],
     });
     const entry = {
       workload: MlWorkload.Enrichment,
+      group: CloudMlModelGroup.Descriptions,
       description: 'Qwen3.5-9B, L40S-class',
       fingerprint: 'mr_68JDMAM8444M',
       pricingUnit: 'second',
@@ -294,8 +293,8 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
         { ...entry, id: 'ms_M7QG26PT', name: 'Descriptions · Best', rank: 5, isDefault: false },
       ],
     });
-    sdkMock.setMlWorkloadRoute.mockResolvedValue({
-      routes: [{ workload: MlWorkload.Enrichment, destinationId: 'cloud-1', modelId: 'ms_M7QG26PT' }],
+    sdkMock.setCloudMlModelChoice.mockResolvedValue({
+      choices: [{ group: CloudMlModelGroup.Descriptions, modelId: 'ms_M7QG26PT' }],
     });
     render(CloudMlSection);
 
@@ -305,11 +304,14 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(screen.getAllByText(/Set to this server only for this kind of work\./).length).toBeGreaterThan(0);
 
     await fireEvent.click(within(picker).getByRole('radio', { name: /Descriptions · Best/ }));
-    expect(sdkMock.setMlWorkloadRoute).toHaveBeenCalledWith({
-      workload: MlWorkload.Enrichment,
-      mlWorkloadRouteUpdateDto: { destinationId: 'cloud-1', modelId: 'ms_M7QG26PT' },
-    });
-    await vi.waitFor(() => expect(within(picker).getByRole('radio', { name: /Descriptions · Best/ })).toBeChecked());
+    await vi.waitFor(() =>
+      expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledWith({
+        group: CloudMlModelGroup.Descriptions,
+        cloudMlModelChoiceUpdateDto: { modelId: 'ms_M7QG26PT' },
+      }),
+    );
+    expect(within(picker).getByRole('radio', { name: /Descriptions · Best/ })).toBeChecked();
+    expect(sdkMock.setMlWorkloadRoute).not.toHaveBeenCalled();
     // a model choice is not a setting: nothing waits for the settings bar
     expect(store.draft.frameleafCloud!.cloudMl).not.toHaveProperty('models');
   });
