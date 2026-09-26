@@ -435,27 +435,33 @@ const compatibilityTargetFiles = new Set([
   "server/src/services/fork-handoff.service.spec.ts",
   "server/test/medium/specs/fork-schema/return-reconciliation.spec.ts",
 ]);
-const historicalRecord = (file) =>
-  file.startsWith("docs/superpowers/") ||
-  file.startsWith(".superpowers/") ||
-  file.startsWith("docs/docs/developer/evidence/");
-
-test("only the compatibility-target exceptions name an upstream image", () => {
+// Dated records of what was used when they were written; new files are never exempt.
+const historicalRecords = new Set([
+  ".superpowers/sdd/task-3-report.md",
+  ".superpowers/sdd/task-6-report.md",
+  "docs/docs/developer/evidence/fl25-toolchain-baseline.jsonl",
+  "docs/superpowers/plans/2026-07-15-upstream-reversion-compatible-fork-schema.md",
+  "docs/superpowers/plans/2026-07-16-fork-handoff-return-prerequisite.md",
+  "docs/superpowers/plans/2026-07-16-task-6-certification-corrections.md",
+]);
+const historicalRecord = (file) => historicalRecords.has(file);
+const trackedFilesContaining = (needle) => {
   const result = spawnSync(
     "git",
-    ["grep", "-l", "-F", upstreamRegistry, "--", ".", ":(exclude)mobile"],
+    ["grep", "-l", "-F", needle, "--", ".", ":(exclude)mobile"],
     { cwd: root, encoding: "utf8" },
   );
   assert.ok(
     result.status === 0 || result.status === 1,
     result.error?.message || result.stderr,
   );
-  const unexpected = result.stdout
-    .split("\n")
-    .filter(Boolean)
-    .filter(
-      (file) => !compatibilityTargetFiles.has(file) && !historicalRecord(file),
-    );
+  return result.stdout.split("\n").filter(Boolean);
+};
+
+test("only the compatibility-target exceptions name an upstream image", () => {
+  const unexpected = trackedFilesContaining(upstreamRegistry).filter(
+    (file) => !compatibilityTargetFiles.has(file) && !historicalRecord(file),
+  );
   assert.deepEqual(unexpected, []);
   // The exception is the official server image only, never a database, base or build-cache image.
   for (const file of compatibilityTargetFiles) {
@@ -472,6 +478,35 @@ test("only the compatibility-target exceptions name an upstream image", () => {
   assert.match(
     read(".github/workflows/fork-roundtrip.yml"),
     /Compatibility-target exception/,
+  );
+});
+
+test("installation files and instructions come from Frameleaf releases, not upstream ones", () => {
+  // Historical upstream release notes may be cited; nothing may download upstream release assets or scripts.
+  const citations = new Set([
+    "docker/frameleaf-delivery.test.mjs",
+    "docs/docs/administration/backup-and-restore.md",
+    "server/src/main.ts",
+  ]);
+  for (const needle of [
+    ["github.com", "immich-app", "immich", "releases"].join("/"),
+    ["raw.githubusercontent.com", "immich-app"].join("/"),
+  ]) {
+    const unexpected = trackedFilesContaining(needle).filter(
+      (file) => !citations.has(file) && !historicalRecord(file),
+    );
+    assert.deepEqual(unexpected, [], needle);
+  }
+  for (const file of citations) {
+    if (file.endsWith(".mjs")) continue;
+    for (const [url] of read(file).matchAll(
+      /https:\/\/github\.com\/immich-app\/immich\/releases\S*/g,
+    ))
+      assert.match(url, /\/releases\/tag\/v1\.\d+\.\d+/, `${file}: ${url}`);
+  }
+  assert.match(
+    read("install.sh"),
+    /RepoUrl='https:\/\/github\.com\/Frameleaf\/frameleaf-app\/releases\/latest\/download'/,
   );
 });
 
@@ -498,6 +533,19 @@ test("the server base is built in-repo and identical in the production and devel
     ))
       assert.ok(existsSync(resolve(root, source)), `${file}: ${source}`);
   }
+  // Every remote input is pinned: downloads by checksum, geodata to a fixed snapshot and date.
+  const server = read("server/Dockerfile");
+  for (const [line] of server.matchAll(/^ADD .*https:\/\/.*$/gm))
+    assert.match(line, /--checksum=sha256:[a-f0-9]{64} /, line);
+  assert.doesNotMatch(server, /^ADD (?:--\S+ )*https:\/\/download\.geonames/m);
+  assert.match(server, /^ARG GEODATA_DATE=\d{4}-\d{2}-\d{2}T[\d:]+\+00:00$/m);
+  assert.doesNotMatch(server, /date --iso-8601/);
+  assert.equal(
+    (server.match(/^ {2}'[a-f0-9]{64} {2}[^']+\.deb' \\$/gm) ?? []).length,
+    7,
+    "every Intel driver package has a checksum",
+  );
+  assert.match(server, /sha256sum --strict -c intel-drivers\.sha256/);
   // The vendored build pins every compiled library to an exact revision.
   for (const name of [
     "imagemagick",
@@ -562,7 +610,7 @@ test("the owned Postgres image keeps the exact database and extension versions",
   );
 });
 
-test("the Postgres workflow builds on pull requests and publishes only on an authorised release", () => {
+test("the Postgres workflow publishes the tested image once, by dispatch, without moving a version tag", () => {
   const workflow = load(read(".github/workflows/postgres.yml"));
   const { build, publish } = workflow.jobs;
   assert.deepEqual(build.permissions, { contents: "read" });
@@ -571,14 +619,41 @@ test("the Postgres workflow builds on pull requests and publishes only on an aut
   );
   assert.equal(buildStep.with.push, false);
   assert.equal(buildStep.with.context, "docker/postgres");
+  assert.match(buildStep.with.outputs, /^type=docker,dest=/);
+  // Releases are created with the workflow token and never trigger workflows.
+  assert.equal(workflow.on.release, undefined);
   assert.deepEqual(publish.needs, "build");
   assert.match(publish.if, /vars\.FRAMELEAF_ENABLE_POSTGRES_PUBLISH == 'true'/);
-  assert.match(publish.if, /github\.ref ==\s+'refs\/heads\/fork\/main'/);
+  assert.match(publish.if, /github\.event_name == 'workflow_dispatch'/);
+  assert.match(publish.if, /github\.ref == 'refs\/heads\/fork\/main'/);
   assert.equal(workflow.on.workflow_dispatch.inputs.publish.default, false);
-  assert.equal(
-    publish.steps.find((step) => step.name === "Container tags").with.images,
-    "ghcr.io/frameleaf/frameleaf-postgres",
+  assert.equal(publish.env.IMAGE, "ghcr.io/frameleaf/frameleaf-postgres");
+  // No rebuild after testing: the publisher only loads and pushes the tested archives.
+  assert.ok(
+    !publish.steps.some(
+      (step) =>
+        step.uses?.startsWith("docker/build-push-action@") ||
+        step.uses?.startsWith("docker/setup-qemu-action@"),
+    ),
   );
+  const push = publish.steps.find((step) => step.id === "publish");
+  assert.match(push.run, /docker load -i/);
+  assert.match(push.run, /is not the tested/);
+  assert.match(push.run, /already points to/);
+  assert.equal(publish.outputs.digest, "${{ steps.publish.outputs.digest }}");
+  assert.ok(
+    publish.steps.some(
+      (step) =>
+        step.uses?.startsWith("actions/upload-artifact@") &&
+        step.with.name === "frameleaf-postgres-digest",
+    ),
+  );
+  for (const action of [
+    "anchore/sbom-action@",
+    "actions/attest-sbom@",
+    "actions/attest-build-provenance@",
+  ])
+    assert.ok(publish.steps.some((step) => step.uses?.startsWith(action)));
   const guard = publish.steps.findIndex(
     (step) =>
       step.name === "Verify release commit is the current delivery branch",
@@ -587,4 +662,29 @@ test("the Postgres workflow builds on pull requests and publishes only on an aut
     (step) => step.name === "Login to owned GHCR namespace",
   );
   assert.ok(guard >= 0 && guard < login);
+});
+
+test("release Compose files pull only digest-pinned or promotion-verified images", () => {
+  const release = createRequire(import.meta.url)(
+    "../.github/frameleaf-release.cjs",
+  );
+  for (const name of release.INSTALL_FILES.filter((file) =>
+    file.startsWith("docker-compose"),
+  )) {
+    for (const service of Object.values(compose(`docker/${name}`).services)) {
+      const image = service.image;
+      if (image.includes("${IMMICH_VERSION")) continue;
+      const owned = image.match(/^ghcr\.io\/frameleaf\/([a-z0-9-]+)[:@]/);
+      // An unpinned Frameleaf dependency is only allowed because promotion verifies that it is
+      // published and pins the bundled copy to the verified digest.
+      if (owned && !/@sha256:[a-f0-9]{64}$/.test(image))
+        assert.ok(release.DEPENDENCY_IMAGES.includes(owned[1]), image);
+      else assert.match(image, /@sha256:[a-f0-9]{64}$/, image);
+    }
+  }
+  assert.equal(typeof release.verifyDependencyImages, "function");
+  assert.match(
+    read(".github/frameleaf-release.cjs"),
+    /await verifyDependencyImages\(registry, process\.cwd\(\)\)/,
+  );
 });
