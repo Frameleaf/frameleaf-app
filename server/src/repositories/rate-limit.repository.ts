@@ -18,6 +18,19 @@ export type RateLimitHit = {
  * of queueing while Redis is away (`enableOfflineQueue: false`), so a caller decides what an
  * unavailable counter means.
  */
+/** `DECR` only an existing counter; delete it at zero or below. Returns the new count (0 when gone). */
+export const RELEASE_SCRIPT = `
+if redis.call('EXISTS', KEYS[1]) == 0 then
+  return 0
+end
+local count = redis.call('DECR', KEYS[1])
+if count <= 0 then
+  redis.call('DEL', KEYS[1])
+  return 0
+end
+return count
+`;
+
 @Injectable()
 export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
   private client?: Redis;
@@ -63,15 +76,12 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Give one counted attempt back (`DECR`): an attempt counted up front that turned out not to be a
-   * failure. A counter never goes below zero, and one given back to zero is removed.
+   * Give one counted attempt back: an attempt counted up front that turned out not to be a failure.
+   * One atomic script: a counter that no longer exists (its window ended) is left alone rather than
+   * recreated without an expiry, and one given back to zero is removed.
    */
   async release(key: string): Promise<void> {
-    const client = this.getClient();
-    const count = await client.decr(key);
-    if (count <= 0) {
-      await client.del(key);
-    }
+    await this.getClient().eval(RELEASE_SCRIPT, 1, key);
   }
 
   async onModuleDestroy() {

@@ -946,6 +946,14 @@ describe(AssetMediaService.name, () => {
       expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
     });
 
+    it('allows full-size files except through the relay while originals are not allowed there (FL-161)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(sut.fullSizeAllowed(null)).resolves.toBe(true);
+      await expect(sut.fullSizeAllowed('lan')).resolves.toBe(true);
+      await expect(sut.fullSizeAllowed('wan')).resolves.toBe(true);
+      await expect(sut.fullSizeAllowed('relay')).resolves.toBe(false);
+    });
+
     it('serves the preview instead of redirecting to the original through the relay (FL-161)', async () => {
       const asset = AssetFactory.from({ originalPath: '/data/library/admin/image.jpeg' }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));

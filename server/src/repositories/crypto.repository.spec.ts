@@ -5,6 +5,27 @@ import { join } from 'node:path';
 import { CryptoRepository, SERVER_HMAC_KEY_FILE } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
+/** FL-161: file-system limits of SMB/CIFS, FUSE and cross-device mounts, switched on per test. */
+const fsFaults = vi.hoisted(() => ({ link: null as string | null, sync: null as string | null }));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  const fault = (code: string) => Object.assign(new Error(code), { code });
+  return {
+    ...actual,
+    link: (...args: Parameters<typeof actual.link>) =>
+      fsFaults.link ? Promise.reject(fault(fsFaults.link)) : actual.link(...args),
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args);
+      const code = fsFaults.sync;
+      if (code) {
+        handle.sync = () => Promise.reject(fault(code));
+      }
+      return handle;
+    },
+  };
+});
+
 describe(CryptoRepository.name, () => {
   let sut: CryptoRepository;
   let tmpDir: string;
@@ -119,6 +140,41 @@ describe(CryptoRepository.name, () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('unlocked with their password again'));
       expect(readdirSync(directory)).toEqual([SERVER_HMAC_KEY_FILE]);
       warn.mockRestore();
+    });
+
+    it.each(['EPERM', 'ENOTSUP', 'EXDEV'])(
+      'creates the key by renaming where the file system cannot hard-link (%s)',
+      async (code) => {
+        fsFaults.link = code;
+        try {
+          const directory = join(tmpDir, `no-link-${code}`);
+          const value = await sut.serverKeyedHash(directory, 'rate-limit', 'x');
+
+          const key = readFileSync(join(directory, SERVER_HMAC_KEY_FILE));
+          expect(key).toHaveLength(32);
+          expect(value).toBe(createHmac('sha256', key).update('rate-limit\0x').digest('base64url'));
+          expect(readdirSync(directory)).toEqual([SERVER_HMAC_KEY_FILE]);
+        } finally {
+          fsFaults.link = null;
+        }
+      },
+    );
+
+    it('accepts a mount that cannot flush a file, but not an I/O error', async () => {
+      fsFaults.sync = 'EINVAL';
+      try {
+        const directory = join(tmpDir, 'no-sync');
+        await expect(sut.serverKeyedHash(directory, 'rate-limit', 'x')).resolves.toEqual(expect.any(String));
+        expect(readFileSync(join(directory, SERVER_HMAC_KEY_FILE))).toHaveLength(32);
+
+        fsFaults.sync = 'EIO';
+        const failing = join(tmpDir, 'io-error');
+        await expect(new CryptoRepository().serverKeyedHash(failing, 'rate-limit', 'x')).rejects.toThrow('EIO');
+        // no partly written key is left behind
+        expect(readdirSync(failing)).toEqual([]);
+      } finally {
+        fsFaults.sync = null;
+      }
     });
 
     it('uses the key another process created first', async () => {
