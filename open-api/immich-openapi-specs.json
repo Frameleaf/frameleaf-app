@@ -55415,9 +55415,13 @@
             "type": "string"
           },
           "licensedDiscount": {
-            "description": "Share taken off plans on a licensed server",
+            "description": "Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup",
             "format": "double",
             "type": "number"
+          },
+          "pricesVersion": {
+            "description": "Version of the plan prices in force: published by Frameleaf Cloud, else the bundled snapshot",
+            "type": "string"
           },
           "products": {
             "items": {
@@ -55436,6 +55440,7 @@
           "credit",
           "currency",
           "licensedDiscount",
+          "pricesVersion",
           "products",
           "storeUrl"
         ],
@@ -55564,7 +55569,7 @@
             "nullable": true
           },
           "licensed": {
-            "description": "A supporter key or plan is active or in grace; plans then cost 20% less",
+            "description": "A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products",
             "type": "boolean"
           },
           "linked": {

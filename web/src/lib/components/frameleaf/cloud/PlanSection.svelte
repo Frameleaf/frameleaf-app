@@ -21,8 +21,8 @@
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import {
     CLOUD_BACKUP_PRICING,
-    LICENSED_DISCOUNT,
     cloudPlanPrice,
+    discountPercent,
     formatUsd,
     licensedDiscount,
   } from '$lib/frameleaf/cloud';
@@ -53,15 +53,16 @@
   const license = $derived(cloudManager.license);
   const products = $derived(cloudManager.products);
   const plan = $derived(license?.plan ?? null);
-  // FL-156: an activated server key or this person's own supporter key takes 20 % off plans; AI
-  // credit never changes
+  // FL-156: an activated server key or this person's own supporter key takes the published share
+  // (license/products) off plans; AI credit and extra backup never change
   const discount = $derived(
     licensedDiscount({ serverLicensed: !!license?.entitlements.supporter, personalKey: !!authManager.user.license }),
   );
-  const licensed = $derived(discount !== null);
+  const offered = $derived(products?.licensedDiscount ?? 0);
+  const share = $derived(discount !== null ? offered : 0);
   const linked = $derived(!!license?.linked);
   const plans = $derived(products?.products.filter((product) => product.kind === 'plan') ?? []);
-  const pct = `${Math.round(LICENSED_DISCOUNT * 100)}%`;
+  const pct = $derived(discountPercent(offered));
 
   let removing = $state(false);
   let checkout = $state<(typeof plans)[number] | null>(null);
@@ -131,7 +132,7 @@
 </script>
 
 {#snippet price(amount: number, period: string)}
-  {@const paid = cloudPlanPrice(amount, licensed)}
+  {@const paid = cloudPlanPrice(amount, share)}
   <p class="fc-price">
     {#if paid !== amount}
       <s>{formatUsd(amount)}</s>
@@ -201,19 +202,21 @@
         </dl>
       {/if}
       <p class="fc-note"><Icon icon={mdiShieldCheckOutline} size="16" /> {$t('frameleaf_plan_never_locked')}</p>
-      <p class="fc-note">
-        <Icon icon={mdiTagOutline} size="16" />
-        {#if discount === 'server'}
-          {$t('frameleaf_plan_discount_licensed', { values: { pct } })}
-        {:else if discount === 'personal'}
-          {$t('frameleaf_plan_discount_personal', { values: { pct } })}
-        {:else}
-          {$t('frameleaf_plan_discount_offer', { values: { pct } })}
-          <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-license')}
-            >{$t('frameleaf_plan_activate_licence')}</a
-          >
-        {/if}
-      </p>
+      {#if offered > 0}
+        <p class="fc-note">
+          <Icon icon={mdiTagOutline} size="16" />
+          {#if discount === 'server'}
+            {$t('frameleaf_plan_discount_licensed', { values: { pct } })}
+          {:else if discount === 'personal'}
+            {$t('frameleaf_plan_discount_personal', { values: { pct } })}
+          {:else}
+            {$t('frameleaf_plan_discount_offer', { values: { pct } })}
+            <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-license')}
+              >{$t('frameleaf_plan_activate_licence')}</a
+            >
+          {/if}
+        </p>
+      {/if}
       <div class="fc-actions">
         {#if plan && plan.source !== 'file' && products.storeUrl}
           <a class="fc-button" href={products.storeUrl} target="_blank" rel="noopener noreferrer">
@@ -307,11 +310,11 @@
       {$t('frameleaf_plan_checkout_body', {
         values: {
           plan: planTitle(checkout.id),
-          price: formatUsd(cloudPlanPrice(checkout.priceUsd, licensed)),
+          price: formatUsd(cloudPlanPrice(checkout.priceUsd, share)),
           period: periodLabel(checkout.period),
         },
       })}
-      {#if licensed}
+      {#if share > 0}
         {$t('frameleaf_plan_checkout_licensed')}
       {/if}
     </p>
