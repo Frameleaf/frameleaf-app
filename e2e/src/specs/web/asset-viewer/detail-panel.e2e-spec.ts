@@ -173,9 +173,10 @@ test.describe('Detail Panel', () => {
       await expect(dialog).toHaveCount(0);
 
       await expect
-        .poll(
-          async () => (await getAssetInfo({ id: located.id }, { headers: asBearerAuth(admin.accessToken) })).exifInfo,
-        )
+        .poll(async () => {
+          const info = await getAssetInfo({ id: located.id }, { headers: asBearerAuth(admin.accessToken) });
+          return info.exifInfo;
+        })
         .toMatchObject({ city: 'Banff', country: 'Canada', latitude: 51.1784, longitude: -115.5708 });
       await expect(page.getByTestId('frameleaf-info-location')).toContainText('Banff');
     });
@@ -280,11 +281,10 @@ test.describe('Detail Panel', () => {
       await expect(dialog).toHaveCount(0);
 
       await expect
-        .poll(
-          async () =>
-            (await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) })).exifInfo
-              ?.dateTimeOriginal,
-        )
+        .poll(async () => {
+          const info = await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) });
+          return info.exifInfo?.dateTimeOriginal;
+        })
         .toMatch(/^2024-03-05T09:15:00/);
     });
 

@@ -45,6 +45,8 @@ const setup = (db?: Kysely<DB>) => {
   });
 
   ctx.getMock(WebsocketRepository).clientSend.mockReturnValue();
+  // FL-90: a move into the Locked folder announces AssetLocked so Studio previews stop.
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
 
   return { sut, ctx };
 };

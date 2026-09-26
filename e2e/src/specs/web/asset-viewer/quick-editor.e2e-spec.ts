@@ -92,7 +92,7 @@ test.describe('Quick editor and Studio continuity', () => {
     await editor.getByRole('slider', { name: 'Exposure' }).fill('0.5');
 
     await editor.getByRole('button', { name: 'Open in Studio' }).first().click();
-    await expect(page).toHaveURL(new RegExp(`/studio\\?assets=${asset.id}&from=${asset.id}`));
+    await expect(page).toHaveURL(new RegExp(String.raw`/studio\?assets=${asset.id}&from=${asset.id}`));
 
     await page.getByRole('button', { name: 'Back to quick edit' }).click();
     await expect(page).toHaveURL(new RegExp(`/photos/${asset.id}$`));

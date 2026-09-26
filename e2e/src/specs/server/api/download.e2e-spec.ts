@@ -42,9 +42,11 @@ describe('/download', () => {
 
       expect(status).toBe(201);
       expect(body.archives).toHaveLength(2);
-      expect(body.archives.flatMap((archive: { assetIds: string[] }) => archive.assetIds).toSorted()).toEqual(
-        [asset1.id, asset2.id].toSorted(),
-      );
+      expect(
+        body.archives
+          .flatMap((archive: { assetIds: string[] }) => archive.assetIds)
+          .toSorted((a, b) => a.localeCompare(b)),
+      ).toEqual([asset1.id, asset2.id].toSorted((a, b) => a.localeCompare(b)));
       expect(body.totalSize).toBe(
         body.archives.reduce((sum: number, archive: { size: number }) => sum + archive.size, 0),
       );
