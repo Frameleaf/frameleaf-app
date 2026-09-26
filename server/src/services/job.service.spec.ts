@@ -395,6 +395,36 @@ describe(JobService.name, () => {
       ]);
     });
 
+    it('announces a finished upload as a new timeline item', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', type: AssetType.Image });
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([asset as never]);
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+
+      await sut.onJobRun(QueueName.BackgroundTask, {
+        name: JobName.AssetGenerateThumbnails,
+        data: { id: asset.id, source: 'upload' },
+      });
+
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_upload_success', asset.ownerId, expect.anything());
+    });
+
+    it('never announces an upload trashed before its thumbnails were ready (FL-169)', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', type: AssetType.Image, deletedAt: new Date() });
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([asset as never]);
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+
+      await sut.onJobRun(QueueName.BackgroundTask, {
+        name: JobName.AssetGenerateThumbnails,
+        data: { id: asset.id, source: 'upload' },
+      });
+
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith(
+        'on_upload_success',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
     it('should requeue Best Photos scoring after face detection succeeds', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
         machineLearning: {
