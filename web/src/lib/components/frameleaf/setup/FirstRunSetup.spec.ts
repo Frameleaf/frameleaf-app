@@ -20,14 +20,14 @@ describe('FirstRunSetup (FL-176)', () => {
 
   it('runs on the dark stage and opens with the logo intro', async () => {
     const { container } = render(FirstRunSetup, { initial: createSetup('new'), authenticated: false });
-    const root = container.querySelector('section.frs-root');
-    expect(root?.getAttribute('data-theme')).toBe('dark');
+    const root = container.querySelector<HTMLElement>('section.frs-root');
+    expect(root?.dataset.theme).toBe('dark');
     expect(screen.getByText('Your photos, beautifully kept. On your own server.')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: /Continue setup/ }));
     expect(await screen.findByRole('heading', { name: "How you'll sign in" })).toBeInTheDocument();
     expect(screen.getByText('Frameleaf account')).toBeInTheDocument();
     expect(screen.getByText('Local account only')).toBeInTheDocument();
-    expect(root?.getAttribute('data-theme')).toBe('dark');
+    expect(root?.dataset.theme).toBe('dark');
     // the chapter rail marks Welcome done and Account current
     expect(screen.getByRole('button', { name: /Account/, current: 'step' })).toBeInTheDocument();
   });

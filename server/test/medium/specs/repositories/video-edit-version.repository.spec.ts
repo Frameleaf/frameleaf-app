@@ -323,6 +323,9 @@ it('validates repeat saves and restores against the 30-second original after sho
     width: 1280,
     height: 720,
     durationMs: 30_000,
+    // FL-113: an SDR source keeps its colour through an edit.
+    colorPolicy: 'preserve',
+    colorReason: 'Source is SDR.',
   });
   await sut.editAsset(auth, asset.id, {
     edits: [

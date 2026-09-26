@@ -80,7 +80,7 @@ describe('AssetTile', () => {
     expect(text).toContain('asset_offline');
     expect(text).not.toContain('archived');
     // T-16: the badges sit on the photo's bottom-left plates, the durable job state keeps the top corner
-    expect(container.querySelector('.fl-tile-badges .fl-tile-job-slot')).toBeNull();
+    expect(container.querySelector(':scope .fl-tile-badges .fl-tile-job-slot')).toBeNull();
   });
 
   it('scrubs the preview transcode on hover and never the original file', async () => {
