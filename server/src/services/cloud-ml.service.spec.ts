@@ -455,6 +455,9 @@ describe(CloudMlService.name, () => {
 
         await expect(sut.updateWallet({ dailyCapUsd: 200 })).rejects.toBeInstanceOf(ForbiddenException);
         await expect(sut.updateWallet({ autoTopUp: true })).rejects.toThrow(WALLET_STEP_UP_MESSAGE);
+        await expect(sut.updateWallet({ autoTopUp: true })).rejects.toMatchObject({
+          response: { code: 'step-up-required', statusCode: 403 },
+        });
         expect(metadata.get(SystemMetadataKey.FrameleafMlWallet)).toMatchObject({
           settingsUrl: 'https://account.cloud.test/wallet/settings',
         });

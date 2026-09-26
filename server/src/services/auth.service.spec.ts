@@ -262,17 +262,17 @@ describe(AuthService.name, () => {
       beforeEach(() => {
         mocks.config.getEnv.mockReturnValue({
           ...mocks.config.getEnv(),
-          frameleafCloud: { ...mocks.config.getEnv().frameleafCloud, url: 'https://api.cloud.test' },
+          frameleafCloud: { ...mocks.config.getEnv().frameleafCloud, url: 'https://api.frameleaf.cloud' },
         });
         mocks.systemMetadata.get.mockImplementation((key) =>
           Promise.resolve(
             (key === SystemMetadataKey.FrameleafCloudLink
               ? {
                   status: 'linked',
-                  cloudUrl: 'https://api.cloud.test',
+                  cloudUrl: 'https://api.frameleaf.cloud',
                   instanceId: 'instance-1',
                   oidc: {
-                    issuer: 'https://id.cloud.test',
+                    issuer: 'https://id.frameleaf.cloud',
                     clientId: 'instance-1',
                     scope: 'openid email profile',
                     roleClaim: 'frameleaf_role',
@@ -295,16 +295,16 @@ describe(AuthService.name, () => {
       });
 
       it('ends the Frameleaf session through the issuer’s end_session_endpoint', async () => {
-        mocks.oauth.getLogoutEndpoint.mockResolvedValue('https://id.cloud.test/session/end');
+        mocks.oauth.getLogoutEndpoint.mockResolvedValue('https://id.frameleaf.cloud/session/end');
 
         const result = await sut.logout(auth, AuthType.Password);
 
         const url = new URL(result.redirectUri);
-        expect(`${url.origin}${url.pathname}`).toBe('https://id.cloud.test/session/end');
+        expect(`${url.origin}${url.pathname}`).toBe('https://id.frameleaf.cloud/session/end');
         expect(url.searchParams.get('client_id')).toBe('instance-1');
         expect(url.searchParams.get('id_token_hint')).toBe('id-token-1');
         expect(mocks.oauth.getLogoutEndpoint).toHaveBeenCalledWith(
-          expect.objectContaining({ clientId: 'instance-1', issuerUrl: 'https://id.cloud.test' }),
+          expect.objectContaining({ clientId: 'instance-1', issuerUrl: 'https://id.frameleaf.cloud' }),
         );
         expect(mocks.session.delete).toHaveBeenCalledWith('fl-session');
       });

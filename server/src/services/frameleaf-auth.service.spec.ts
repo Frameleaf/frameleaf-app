@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
-import { AdminAuditAction, SystemMetadataKey } from 'src/enum.js';
+import { AdminAuditAction, DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -317,6 +317,38 @@ describe(FrameleafAuthService.name, () => {
 
         await expect(signInLinked(user)).resolves.toMatchObject({ userId: user.id });
         expect(mocks.user.update).not.toHaveBeenCalled();
+      });
+
+      it('never leaves the server without an administrator when two are demoted at once (FL-177 review)', async () => {
+        const first = UserFactory.create({ isAdmin: true });
+        const second = UserFactory.create({ isAdmin: true });
+        const users = new Map([
+          [first.id, first],
+          [second.id, second],
+        ]);
+        // a real advisory lock serialises its holders; the mock does the same
+        let queue: Promise<unknown> = Promise.resolve();
+        mocks.database.withLock.mockImplementation((_lock, callback) => {
+          const run = queue.then(() => callback());
+          queue = run.catch(() => {});
+          return run as never;
+        });
+        mocks.user.getAdmins.mockImplementation(() =>
+          Promise.resolve([...users.values()].filter((user) => user.isAdmin) as never),
+        );
+        mocks.user.update.mockImplementation(async (id, change) => {
+          // yield between the count and the write, where an unlocked demotion would interleave
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          const next = { ...users.get(id)!, ...change } as typeof first;
+          users.set(id, next);
+          return next as never;
+        });
+        const applyRole = (user: typeof first) =>
+          (sut as unknown as { applyRole: (user: unknown, role: 'user') => Promise<unknown> }).applyRole(user, 'user');
+
+        await Promise.all([applyRole(first), applyRole(second)]);
+        expect([...users.values()].filter((user) => user.isAdmin)).toHaveLength(1);
+        expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.FrameleafRoleChange, expect.any(Function));
       });
 
       it('grants nothing from frameleaf_access, and changes nothing without frameleaf_role', async () => {
