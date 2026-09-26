@@ -217,6 +217,19 @@
   flex: none;
   margin-top: 1px;
 }
+/* FL-189: this server's stops and the Frameleaf Cloud stops are two radio groups on one track. */
+.ms-side {
+  display: contents;
+}
+.ms-side:has(+ .ms-side) .ms-stop:last-child .ms-band,
+.ms-side + .ms-side .ms-stop:first-child .ms-band {
+  border-radius: 0;
+}
+.ms-note {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro, 11px);
+}
 @container (max-width: 520px) {
   .ms-stop-name > span {
     display: none;

@@ -8,23 +8,25 @@
    * - the AI Wallet (CloudMlWalletCard): balance, held, available, spent today against the daily cap,
    *   add credit and automatic top-up;
    * - how cloud jobs are billed (GPU time per second by GPU class plus a start fee per worker) with the
-   *   GPU rate list, the Frameleaf Cloud model per model group (FL-186: from the cloud's catalogue,
+   *   GPU rate list, the model sliders (FL-189: this server's description model, saved with the
+   *   settings bar, and FL-186: the Frameleaf Cloud model per model group from the cloud's catalogue,
    *   saved apart from the routes), and a job estimate with its admission;
    * - automatic descriptions of new photos with a daily budget;
    * - describing the library in batches, estimate first (FL-163, CloudDescriptionBackfill);
    * - recent cloud jobs with their GPU time and settled cost.
    *
    * Every figure comes from the server; amounts are USD for everyone. The enable toggle and automatic
-   * descriptions are settings, saved with the settings bar; a model choice is saved at once.
+   * descriptions are settings, saved with the settings bar, as is this server's description model; a
+   * Frameleaf Cloud model choice is saved at once.
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CloudDescriptionBackfill from '$lib/components/frameleaf/cloud/CloudDescriptionBackfill.svelte';
   import CloudMlConsentDialog from '$lib/components/frameleaf/cloud/CloudMlConsentDialog.svelte';
   import CloudMlWalletCard from '$lib/components/frameleaf/cloud/CloudMlWalletCard.svelte';
-  import CloudRouteModels from '$lib/components/frameleaf/cloud/CloudRouteModels.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import WorkloadModelPickers from '$lib/components/frameleaf/cloud/WorkloadModelPickers.svelte';
   import WorkloadRoutingTable from '$lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte';
   import {
     cloudAdmission,
@@ -35,7 +37,6 @@
     formatRatePerMinute,
     formatUsd,
     ROUTED_WORKLOADS,
-    workloadNameKey,
     workloadRoute,
   } from '$lib/frameleaf/cloud-ml';
   import {
@@ -49,6 +50,7 @@
     type CostEstimate,
   } from '$lib/frameleaf/gpu-model-catalog';
   import { choicesByGroup, loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
+  import { localModelsFor } from '$lib/frameleaf/local-models';
   import { mlWorkloadLabelKey } from '$lib/frameleaf/ml-destinations';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -59,9 +61,11 @@
     CloudMlConnection,
     getCloudMlSettlements,
     getCloudMlStatus,
+    getHardwareCheck,
     reconcileCloudMlUsage,
     type CloudMlSettlementDto,
     type CloudMlStatusResponseDto,
+    type HardwareCheckResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
@@ -79,6 +83,8 @@
 
   let status = $state<CloudMlStatusResponseDto | null>(null);
   let models = $state<CloudModelData>({ catalog: null, catalogFailed: false, choices: {} });
+  /** The stored Hardware & GPU check, which colours this server's model stops (FL-189). */
+  let hardware = $state<HardwareCheckResponseDto | null>(null);
   let settlements = $state<CloudMlSettlementDto[]>([]);
   let loadError = $state(false);
   let notice = $state('');
@@ -109,6 +115,9 @@
 
   onMount(() => {
     void load();
+    void getHardwareCheck()
+      .then((next) => (hardware = next))
+      .catch(() => (hardware = null));
   });
 
   const linked = $derived(
@@ -337,24 +346,23 @@
     </div>
     {#if cloudMl}
       {#each ROUTED_WORKLOADS as workload (workload)}
-        <div class="fc-model-row">
-          {#if workloadRoute(cloudMl.routing, workload) === 'local'}
-            <p class="fc-muted">
-              <strong>{$t(workloadNameKey(workload))}</strong> · {$t('admin.frameleaf_routing_job_local_only')}
-            </p>
-          {:else}
-            <CloudRouteModels
+        {#if models.catalog || models.catalogFailed || localModelsFor(workload).length > 0}
+          <div class="fc-model-row">
+            <WorkloadModelPickers
               row={workload}
+              route={workloadRoute(cloudMl.routing, workload)}
+              {hardware}
               catalog={models.catalog}
               catalogFailed={models.catalogFailed}
               choices={models.choices}
+              modelForLegend={false}
               onSaved={(choices, message) => {
                 models = { ...models, choices: choicesByGroup(choices) };
                 notice = message;
               }}
             />
-          {/if}
-        </div>
+          </div>
+        {/if}
       {/each}
     {/if}
     <div class="fc-estimate">
