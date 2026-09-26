@@ -297,7 +297,7 @@ const isReturnBackfillBatchEvidence = (value: unknown): value is ReturnBackfillB
 };
 
 /** FL-161: a bcrypt hash as a PostgreSQL regular expression (see `isBcryptHash`). */
-const BCRYPT_HASH_PATTERN = '^\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}$';
+const BCRYPT_HASH_PATTERN = String.raw`^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$`;
 
 export type SharedLinkPasswordCounts = { hashed: number; plaintext: number };
 

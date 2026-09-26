@@ -38,6 +38,7 @@ import {
   defaultMachineLearningHardware,
 } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import {
   ConfigHistoryKind,
   appendConfigHistory,
@@ -45,7 +46,6 @@ import {
   describeConfigChanges,
   readConfigHistory,
 } from 'src/utils/config-history.js';
-import { cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {

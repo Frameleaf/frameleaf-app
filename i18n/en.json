@@ -2339,6 +2339,7 @@
   "frameleaf_activity_indicator_progress": "{count, plural, one {# job running} other {# jobs running}}, {progress}% done. Open Activity.",
   "frameleaf_activity_kind_bulk": "Bulk operation",
   "frameleaf_activity_kind_cloud_backup": "Cloud backup",
+  "frameleaf_activity_kind_cloud_description_batch": "Frameleaf Cloud descriptions",
   "frameleaf_activity_kind_download": "Download",
   "frameleaf_activity_kind_enrichment_plan": "Enrichment",
   "frameleaf_activity_kind_icloud_sync": "iCloud Photos sync",

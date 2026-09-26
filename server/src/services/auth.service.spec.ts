@@ -2129,10 +2129,7 @@ describe(AuthService.name, () => {
         ),
       );
     const refusedWith = async (promise: Promise<unknown>, code: string) => {
-      const error = await promise.then(
-        () => null,
-        (error_: unknown) => error_,
-      );
+      const error = await promise.then(() => null).catch((error_: unknown) => error_);
       expect(error).toBeInstanceOf(ForbiddenException);
       expect((error as ForbiddenException).getResponse()).toMatchObject({ code, statusCode: 403 });
     };
