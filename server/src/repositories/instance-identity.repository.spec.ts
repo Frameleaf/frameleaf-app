@@ -24,6 +24,7 @@ import {
   RETIRING_META_FILE,
   ROTATION_NEEDED_FILE,
   SET_ASIDE_MARK,
+  SUPERSEDED_MARK,
 } from 'src/repositories/instance-identity.repository.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 
@@ -223,6 +224,41 @@ describe(InstanceIdentityRepository.name, () => {
 
   it('refuses to sign before the key is loaded', () => {
     expect(() => new InstanceIdentityRepository().signAssertion('kid', 'id', 'aud')).toThrow('not loaded');
+    expect(() => new InstanceIdentityRepository().currentSigner()).toThrow('not loaded');
+  });
+
+  it('gives a signer bound to the current key, which keeps that key through a rotation (FL-178)', async () => {
+    const repository = new InstanceIdentityRepository();
+    const identity = await repository.loadOrCreate(dir, null);
+    const signer = repository.currentSigner();
+    expect(signer.kid).toBe(identity.kid);
+    expect(signer.publicJwk).toEqual(identity.publicJwk);
+
+    const jws = signer.sign({ typ: 'dpop+jwt', alg: 'EdDSA', jwk: signer.publicJwk }, { htm: 'GET' });
+    const [header, payload, signature] = jws.split('.', 3);
+    expect(decode(header)).toEqual({ typ: 'dpop+jwt', alg: 'EdDSA', jwk: identity.publicJwk });
+    expect(decode(payload)).toEqual({ htm: 'GET' });
+    const verifies = (jwk: typeof identity.publicJwk) =>
+      verify(
+        null,
+        Buffer.from(`${header}.${payload}`),
+        createPublicKey({ key: jwk, format: 'jwk' }),
+        Buffer.from(signature, 'base64url'),
+      );
+    expect(verifies(identity.publicJwk)).toBe(true);
+
+    // a rotation replaces the current key: the earlier signer still signs with the key it named
+    const rotated = await repository.rotate(identity, () => Promise.resolve(), 24);
+    expect(repository.currentSigner().kid).toBe(rotated.kid);
+    const [h2, p2, s2] = signer.sign({ alg: 'EdDSA' }, { n: 1 }).split('.', 3);
+    expect(
+      verify(
+        null,
+        Buffer.from(`${h2}.${p2}`),
+        createPublicKey({ key: identity.publicJwk, format: 'jwk' }),
+        Buffer.from(s2, 'base64url'),
+      ),
+    ).toBe(true);
   });
   describe('key rotation (FL-155)', () => {
     const newPem = () => generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }) as string;
@@ -251,6 +287,38 @@ describe(InstanceIdentityRepository.name, () => {
       expect(recovered.instanceId).toBe(identity.instanceId);
       expect(recovered.retiring).toMatchObject({ kid: identity.kid, keyFile: join(dir, RETIRING_KEY_FILE) });
       await expect(access(join(dir, PROVEN_KEY_FILE))).rejects.toThrow();
+    });
+
+    it('never overwrites an open candidate with a next key a crash left, keeping it under a unique name (FL-178)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      const olderPem = newPem();
+      const nextPem = newPem();
+      await writeFile(join(dir, CANDIDATE_KEY_FILE), olderPem, { mode: 0o600 });
+      await writeFile(join(dir, NEXT_KEY_FILE), nextPem, { mode: 0o600 });
+
+      const repository = new InstanceIdentityRepository();
+      const again = await repository.loadOrCreate(dir, identity);
+
+      const kidOf = (pem: string) => {
+        const jwk = createPublicKey(pem).export({ format: 'jwk' });
+        return ed25519Thumbprint({ kty: 'OKP', crv: 'Ed25519', x: jwk.x! });
+      };
+      expect(again.kid).toBe(identity.kid);
+      expect(again.candidate?.kid).toBe(kidOf(nextPem));
+      expect(await readFile(join(dir, CANDIDATE_KEY_FILE), 'utf8')).toBe(nextPem);
+      await expect(access(join(dir, NEXT_KEY_FILE))).rejects.toThrow();
+      const kept = (await readdir(dir)).filter((name) => name.startsWith(`${CANDIDATE_KEY_FILE}${SUPERSEDED_MARK}`));
+      expect(kept).toHaveLength(1);
+      expect(await readFile(join(dir, kept[0]), 'utf8')).toBe(olderPem);
+      expect((await stat(join(dir, kept[0]))).mode & 0o777).toBe(0o600);
+
+      // the candidate signer signs with the newer candidate, and names it
+      const signer = await repository.candidateSigner(again);
+      expect(signer.kid).toBe(kidOf(nextPem));
+
+      // a later load leaves the kept key alone
+      await new InstanceIdentityRepository().loadOrCreate(dir, again);
+      expect(await readFile(join(dir, kept[0]), 'utf8')).toBe(olderPem);
     });
 
     it('keeps a new key whose registration was in flight at a crash as the candidate', async () => {

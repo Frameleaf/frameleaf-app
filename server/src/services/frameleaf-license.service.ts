@@ -302,11 +302,11 @@ export class FrameleafLicenseService extends BaseService {
       return;
     }
     try {
-      const { document, bearer } = await this.apiToken(cloudUrl, link.instanceId);
+      const { document, token } = await this.apiToken(cloudUrl, link.instanceId);
       const response = await this.frameleafCloudRepository.requestJson(refreshResponseSchema, {
         method: 'POST',
         url: `${document.api.replace(/\/+$/, '')}/v1/licenses/refresh`,
-        bearer,
+        dpop: token,
         body: {
           instanceId: link.instanceId,
           certificates: [store.key, store.plan].filter(Boolean).map((license) => license!.claims.jti ?? null),
@@ -478,12 +478,12 @@ export class FrameleafLicenseService extends BaseService {
     const instanceId = (linked && link?.instanceId) || identity.instanceId;
     const config = await this.getConfig({ withCache: true });
     try {
-      const token = linked ? await this.apiToken(cloudUrl, instanceId) : null;
-      const document = token?.document ?? (await this.frameleafCloudRepository.discovery(cloudUrl));
+      const api = linked ? await this.apiToken(cloudUrl, instanceId) : null;
+      const document = api?.document ?? (await this.frameleafCloudRepository.discovery(cloudUrl));
       return await this.frameleafCloudRepository.requestJson(certificateResponseSchema, {
         method: 'POST',
         url: `${document.api.replace(/\/+$/, '')}/v1/licenses/activate`,
-        bearer: token?.bearer,
+        dpop: api?.token,
         body: {
           key,
           fingerprint: { instanceId, jkt: identity.kid, ...extra },
@@ -512,12 +512,12 @@ export class FrameleafLicenseService extends BaseService {
     try {
       const identity = await loadInstanceIdentity(this.gatewayDeps());
       const instanceId = (linked && link?.instanceId) || identity.instanceId;
-      const token = linked ? await this.apiToken(cloudUrl, instanceId) : null;
-      const document = token?.document ?? (await this.frameleafCloudRepository.discovery(cloudUrl));
+      const api = linked ? await this.apiToken(cloudUrl, instanceId) : null;
+      const document = api?.document ?? (await this.frameleafCloudRepository.discovery(cloudUrl));
       await this.frameleafCloudRepository.requestJson(z.unknown(), {
         method: 'POST',
         url: `${document.api.replace(/\/+$/, '')}/v1/licenses/deactivate`,
-        bearer: token?.bearer,
+        dpop: api?.token,
         body: {
           activationId: extra.activationId ?? license?.activationId ?? null,
           licenseId: license?.claims.lic?.id ?? null,
@@ -585,13 +585,17 @@ export class FrameleafLicenseService extends BaseService {
     return trimmed;
   }
 
+  /** A DPoP-bound instance token for the cloud API, minted with this server's current key (FL-178). */
   private async apiToken(cloudUrl: string, instanceId: string) {
     const document = await this.frameleafCloudRepository.discovery(cloudUrl);
-    const identity = await loadInstanceIdentity(this.gatewayDeps());
-    const bearer = await this.frameleafCloudRepository.accessToken(document, instanceId, document.api, (claims) =>
-      this.instanceIdentityRepository.signJws(identity.kid, claims),
+    await loadInstanceIdentity(this.gatewayDeps());
+    const token = await this.frameleafCloudRepository.accessToken(
+      document,
+      instanceId,
+      document.api,
+      this.instanceIdentityRepository.currentSigner(),
     );
-    return { document, bearer };
+    return { document, token };
   }
 
   private async readStore(): Promise<FrameleafLicenseStore> {

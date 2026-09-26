@@ -1,4 +1,4 @@
-import { createPublicKey, verify } from 'node:crypto';
+import { createHash, createPublicKey, verify } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { IncomingMessage, Server, ServerResponse, createServer } from 'node:http';
@@ -17,15 +17,44 @@ import { FrameleafCloudError, ed25519Thumbprint } from 'src/utils/frameleaf-clou
 
 /**
  * A fake Frameleaf Cloud (FL-159): discovery, the token endpoint (which verifies the EdDSA client
- * assertion against the instance's public key) and the regional processing gateway. Fork tests
- * never need the real hosted service.
+ * assertion against the instance's public key, and since FL-178 the DPoP proof by the same key) and
+ * the regional processing gateway (which takes only the DPoP-bound token with a proof carrying its
+ * `ath`). Fork tests never need the real hosted service.
  */
 type FakeCloud = {
   url: string;
-  requests: Array<{ method: string; path: string; auth: string | null; body: string }>;
+  requests: Array<{ method: string; path: string; auth: string | null; dpop: string | null; body: string }>;
   publicJwk?: FrameleafInstanceIdentity['publicJwk'];
+  /** The DPoP-bound token the token endpoint minted last. */
+  token?: string;
   respond: (request: { method: string; path: string; body: string }) => { status: number; body: unknown } | undefined;
   close: () => Promise<void>;
+};
+
+const part = (jws: string, index: number) =>
+  JSON.parse(Buffer.from(jws.split('.', 3)[index] ?? '', 'base64url').toString('utf8'));
+
+/** The RFC 7638 thumbprint of the key in a DPoP proof whose signature verifies, or null. */
+const proofKey = (proof: string | undefined, htm: string, htu: string, ath?: string) => {
+  if (!proof) {
+    return null;
+  }
+  const [header, payload, signature] = proof.split('.', 3);
+  const { typ, alg, jwk, kid } = part(proof, 0);
+  const claims = part(proof, 1);
+  const verified = verify(
+    null,
+    Buffer.from(`${header}.${payload}`),
+    createPublicKey({ key: jwk, format: 'jwk' }),
+    Buffer.from(signature, 'base64url'),
+  );
+  if (!verified || typ !== 'dpop+jwt' || alg !== 'EdDSA' || kid !== undefined || jwk.d !== undefined) {
+    return null;
+  }
+  if (claims.htm !== htm || claims.htu !== htu || claims.ath !== ath || typeof claims.jti !== 'string') {
+    return null;
+  }
+  return ed25519Thumbprint(jwk);
 };
 
 const readBody = async (request: IncomingMessage) => {
@@ -42,7 +71,13 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
   const server: Server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
     const body = await readBody(request);
     const path = request.url ?? '/';
-    fake.requests.push({ method: request.method ?? 'GET', path, auth: request.headers.authorization ?? null, body });
+    fake.requests.push({
+      method: request.method ?? 'GET',
+      path,
+      auth: request.headers.authorization ?? null,
+      dpop: (request.headers.dpop as string | undefined) ?? null,
+      body,
+    });
     const send = (status: number, payload: unknown) => {
       response.writeHead(status, { 'content-type': 'application/json' });
       response.end(JSON.stringify(payload));
@@ -75,8 +110,11 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
           createPublicKey({ key: fake.publicJwk, format: 'jwk' }),
           Buffer.from(signature, 'base64url'),
         );
+      const jkt = proofKey(request.headers.dpop as string | undefined, 'POST', `${fake.url}/id/token`);
       if (
         !valid ||
+        !jkt ||
+        jkt !== part(assertion, 0).kid ||
         claims.iss !== 'instance-1' ||
         claims.sub !== 'instance-1' ||
         claims.aud !== `${fake.url}/id/token` ||
@@ -86,10 +124,19 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
       ) {
         return send(401, { code: 'invalid-client', message: 'assertion refused' });
       }
-      return send(200, { access_token: 'ml-token', token_type: 'Bearer', expires_in: 600 });
+      const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+      fake.token = `${encode({ alg: 'EdDSA' })}.${encode({ name: 'ml-token', cnf: { jkt }, frameleaf_kid: jkt })}.c2ln`;
+      return send(200, { access_token: fake.token, token_type: 'DPoP', expires_in: 600 });
     }
     if (path.startsWith('/ml-eu/')) {
-      if (path !== '/ml-eu/ping' && request.headers.authorization !== 'Bearer ml-token') {
+      const ath = fake.token ? createHash('sha256').update(fake.token).digest('base64url') : undefined;
+      const htu = `${fake.url}${path.split('?', 1)[0]}`;
+      if (
+        path !== '/ml-eu/ping' &&
+        (request.headers.authorization !== `DPoP ${fake.token}` ||
+          proofKey(request.headers.dpop as string | undefined, request.method ?? 'GET', htu, ath) !==
+            part(fake.token!, 1).cnf.jkt)
+      ) {
         return send(401, { code: 'invalid-token', message: 'no token' });
       }
       switch (path.split('?', 1)[0]) {
@@ -223,9 +270,12 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     expect(resolution).toMatchObject({
       state: CloudConnectionState.Ready,
       region: 'eu',
-      gateway: { url: `${cloud.url}/ml-eu`, bearer: 'ml-token' },
+      gateway: { url: `${cloud.url}/ml-eu`, token: { accessToken: cloud.token } },
     });
     const stored = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+    // FL-178: the token is bound to the identity key, which signs its calls' proofs
+    expect(resolution.state === CloudConnectionState.Ready && resolution.gateway.token.signer.kid).toBe(stored.kid);
+    expect(part(cloud.token!, 1).cnf.jkt).toBe(stored.kid);
     expect(stored.kid).toBe(ed25519Thumbprint(stored.publicJwk));
     expect(JSON.stringify(stored)).not.toContain('PRIVATE');
     const keyStat = await stat(join(identityDir, INSTANCE_KEY_FILE));
@@ -306,7 +356,12 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     const gatewayCalls = cloud.requests.filter(
       (request) => request.path.startsWith('/ml-eu/') && request.path !== '/ml-eu/ping',
     );
-    expect(gatewayCalls.every((request) => request.auth === 'Bearer ml-token')).toBe(true);
+    expect(gatewayCalls.length).toBeGreaterThan(0);
+    expect(gatewayCalls.every((request) => request.auth === `DPoP ${cloud.token}` && !!request.dpop)).toBe(true);
+    // the public ping carries neither a token nor a proof
+    const ping = cloud.requests.find((request) => request.path === '/ml-eu/ping')!;
+    expect(ping.auth).toBeNull();
+    expect(ping.dpop).toBeNull();
   });
 
   it.each([

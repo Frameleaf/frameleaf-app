@@ -21,7 +21,15 @@ import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
-import { FakeCloud, FakeCloudAnswer, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
+import {
+  FakeCloud,
+  FakeCloudAnswer,
+  FakeCloudRequest,
+  assertionKidOf,
+  startFakeCloud,
+  tokenAnswer,
+  tokenNameOf,
+} from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -71,9 +79,7 @@ describe(FrameleafCloudService.name, () => {
       },
     }));
     cloud.on('POST /id/token', (request) =>
-      request.form().get('grant_type') === 'client_credentials'
-        ? { status: 200, body: { access_token: 'api-token', expires_in: 600 } }
-        : grant(),
+      request.form().get('grant_type') === 'client_credentials' ? tokenAnswer(request) : grant(),
     );
     cloud.on('POST /api/v1/instances', () => ({
       status: 200,
@@ -102,6 +108,25 @@ describe(FrameleafCloudService.name, () => {
       ...(link.pending && { pending: { ...link.pending, nextPollAt: new Date(0).toISOString() } }),
       ...(link.heartbeat && { heartbeat: { ...link.heartbeat, nextAt: new Date(0).toISOString() } }),
     });
+  };
+
+  /**
+   * FL-178: `POST {api}/v1/instances` carries a DPoP proof by the key being linked (the fake cloud
+   * verified its signature, `typ`, `alg`, `jwk`, `jti` and `iat`): `htm` POST, `htu` the endpoint,
+   * no `ath`, and its key is the one registered.
+   */
+  const expectRegistrationProof = (register: FakeCloudRequest) => {
+    const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+    expect(register.dpop).not.toBeNull();
+    expect(register.dpop!.header).toEqual({ typ: 'dpop+jwt', alg: 'EdDSA', jwk: identity.publicJwk });
+    expect(register.dpop!.claims).toEqual({
+      jti: expect.any(String),
+      htm: 'POST',
+      htu: `${cloud.url}/api/v1/instances`,
+      iat: expect.any(Number),
+    });
+    expect(register.dpop!.jkt).toBe(identity.kid);
+    expect(register.json().jwk).toEqual({ ...identity.publicJwk, kid: identity.kid });
   };
 
   const linkNow = async () => {
@@ -352,6 +377,7 @@ describe(FrameleafCloudService.name, () => {
 
       const register = cloud.requests.find(({ path }) => path === '/api/v1/instances')!;
       expect(register.headers.authorization).toBe('Bearer link-token');
+      expectRegistrationProof(register);
       expect(register.json()).toMatchObject({
         name: expect.any(String),
         version: expect.any(String),
@@ -397,6 +423,7 @@ describe(FrameleafCloudService.name, () => {
       const register = cloud.requests.find(({ path }) => path === '/api/v1/instances')!;
       expect(register.headers['x-frameleaf-link-token']).toBe('fll_headless_token_1');
       expect(register.headers.authorization).toBeUndefined();
+      expectRegistrationProof(register);
       expect(storedLink()?.status).toBe('linked');
       expect(JSON.stringify(storedLink())).not.toContain('fll_headless_token_1');
 
@@ -434,7 +461,18 @@ describe(FrameleafCloudService.name, () => {
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
 
       const beat = cloud.requests.find(({ path }) => path === '/api/v1/instance/heartbeat')!;
-      expect(beat.headers.authorization).toBe('Bearer api-token');
+      // FL-178: a DPoP-bound token and a proof by the identity key, with ath
+      const kid = (metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).kid;
+      expect(beat.headers.authorization).toMatch(/^DPoP ey/);
+      expect(tokenNameOf(beat)).toBe('api-token');
+      expect(beat.dpop).toMatchObject({
+        jkt: kid,
+        claims: { htm: 'POST', htu: `${cloud.url}/api/v1/instance/heartbeat`, ath: expect.any(String) },
+      });
+      const token = cloud.requests.find(({ path }) => path === '/id/token')!;
+      expect(token.dpop!.jkt).toBe(kid);
+      expect(assertionKidOf(token)).toBe(kid);
+      expect(token.dpop!.claims).not.toHaveProperty('ath');
       expect(Object.keys(beat.json())).toEqual([...HEARTBEAT_FIELDS]);
       expect((await sut.getStatus()).heartbeatFields).toEqual(Object.keys(beat.json()));
       const nextAt = Date.parse(storedLink()!.heartbeat!.nextAt!);
@@ -619,9 +657,7 @@ describe(FrameleafCloudService.name, () => {
         const header = JSON.parse(
           Buffer.from(request.form().get('client_assertion')!.split('.', 1)[0], 'base64url').toString('utf8'),
         );
-        return header.kid === held
-          ? { status: 200, body: { access_token: 'api-token', expires_in: 600 } }
-          : { status: 401, body: { error: 'invalid_client' } };
+        return header.kid === held ? tokenAnswer(request) : { status: 401, body: { error: 'invalid_client' } };
       });
       cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
       sutForgetTokens();
@@ -773,6 +809,12 @@ describe(FrameleafCloudService.name, () => {
         .map((request) => headerOf(request.form().get('client_assertion')!).kid);
       expect(tokenKids.length).toBeGreaterThan(0);
       expect(new Set(tokenKids)).toEqual(new Set([before.kid]));
+      // FL-178: so do the DPoP proofs of the token request and of the nonce and rotate calls
+      for (const path of ['/id/token', '/api/v1/instance/keys/nonce', '/api/v1/instance/keys/rotate']) {
+        const proofs = cloud.requests.filter((request) => request.path === path).map((request) => request.dpop?.jkt);
+        expect(proofs.length).toBeGreaterThan(0);
+        expect(new Set(proofs)).toEqual(new Set([before.kid]));
+      }
       const [header, payload, signature] = (rotate.proof as string).split('.', 3);
       expect(headerOf(rotate.proof).kid).toBe(before.kid);
       expect(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))).toEqual({
@@ -1039,6 +1081,11 @@ describe(FrameleafCloudService.name, () => {
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
 
       expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
+      // FL-178: the candidate is asked about with an assertion and a DPoP proof by the candidate key
+      const asked = cloud.requests.find(
+        (request) => request.path === '/id/token' && assertionKidOf(request) === candidateKid,
+      )!;
+      expect(asked.dpop!.jkt).toBe(candidateKid);
       const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
       expect(after.kid).toBe(candidateKid);
       expect(after.retiring?.kid).toBe(before.kid);
@@ -1053,7 +1100,7 @@ describe(FrameleafCloudService.name, () => {
       cloud.on('POST /id/token', (request) =>
         headerOf(request.form().get('client_assertion')!).kid === candidateKid
           ? { status: 401, body: { error: 'invalid_client' } }
-          : { status: 200, body: { access_token: 'api-token', expires_in: 600 } },
+          : tokenAnswer(request),
       );
       cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
       cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
@@ -1069,10 +1116,8 @@ describe(FrameleafCloudService.name, () => {
       await expect(access(join(identityDir, CANDIDATE_KEY_FILE))).rejects.toThrow();
     });
 
-    it('does not start a commanded rotation while a candidate is open (FL-175)', async () => {
-      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
-      await writeCandidate();
-      const pem = await readFile(join(identityDir, CANDIDATE_KEY_FILE), 'utf8');
+    /** A `key.rotate` command in the next check-in, with the nonce and rotate endpoints answering. */
+    const commandRotation = () => {
       cloud.on('POST /api/v1/instance/heartbeat', () => ({
         status: 200,
         body: { commands: [{ id: 'k1', type: 'key.rotate' }] },
@@ -1080,14 +1125,129 @@ describe(FrameleafCloudService.name, () => {
       cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
       cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
       cloud.on('POST /api/v1/instance/commands/k1/ack', () => ({ status: 200, body: {} }));
+    };
+    const ackResult = () => cloud.requests.find(({ path }) => path === '/api/v1/instance/commands/k1/ack')!.json();
+
+    it('asks about an open candidate before a commanded rotation, and fetches no nonce while its answer is unclear (FL-178)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      const candidateKid = await writeCandidate();
+      const pem = await readFile(join(identityDir, CANDIDATE_KEY_FILE), 'utf8');
+      commandRotation();
+      cloud.on('POST /id/token', (request) =>
+        assertionKidOf(request) === candidateKid
+          ? { status: 503, body: { code: 'unavailable', message: 'no answer' } }
+          : tokenAnswer(request),
+      );
       makeDue();
       await sut.handleHeartbeat();
 
+      // the candidate was asked about with a proof by the candidate key itself
+      const asked = cloud.requests.filter(
+        (request) => request.path === '/id/token' && assertionKidOf(request) === candidateKid,
+      );
+      expect(asked).toHaveLength(1);
+      expect(asked[0].dpop!.jkt).toBe(candidateKid);
+      expect(pathsCalled()).not.toContain('GET /api/v1/instance/keys/nonce');
       expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
-      const ack = cloud.requests.find(({ path }) => path === '/api/v1/instance/commands/k1/ack')!.json();
-      expect(ack.result).toBe('failed');
+      expect(ackResult()).toMatchObject({ result: 'failed', detail: expect.stringContaining('earlier rotation') });
       expect(await readFile(join(identityDir, CANDIDATE_KEY_FILE), 'utf8')).toBe(pem);
       expect((metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).kid).toBe(before.kid);
+    });
+
+    it('finishes a commanded rotation by promoting a candidate the cloud holds, without rotating again (FL-178)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      const candidateKid = await writeCandidate();
+      commandRotation();
+      makeDue();
+      await sut.handleHeartbeat();
+
+      expect(pathsCalled()).not.toContain('GET /api/v1/instance/keys/nonce');
+      expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(after.kid).toBe(candidateKid);
+      expect(after.retiring?.kid).toBe(before.kid);
+      expect(after.candidate).toBeUndefined();
+      expect(ackResult().result).toBe('done');
+      // the acknowledgement already goes out with a token bound to the promoted key
+      const ack = cloud.requests.find(({ path }) => path === '/api/v1/instance/commands/k1/ack')!;
+      expect(ack.dpop!.jkt).toBe(candidateKid);
+    });
+
+    it('rotates on command once the cloud refused the open candidate, which is discarded (FL-178)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      const candidateKid = await writeCandidate();
+      commandRotation();
+      cloud.on('POST /id/token', (request) =>
+        assertionKidOf(request) === candidateKid
+          ? { status: 401, body: { error: 'invalid_client' } }
+          : tokenAnswer(request),
+      );
+      makeDue();
+      await sut.handleHeartbeat();
+
+      const rotate = cloud.requests.find(({ path }) => path === '/api/v1/instance/keys/rotate')!;
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(after.kid).toBe(rotate.json().newJwk.kid);
+      expect(after.kid).not.toBe(candidateKid);
+      expect(after.retiring?.kid).toBe(before.kid);
+      await expect(access(join(identityDir, CANDIDATE_KEY_FILE))).rejects.toThrow();
+      // the nonce and rotate calls use a token and proofs by the key that signs the rotation proof
+      for (const path of ['/api/v1/instance/keys/nonce', '/api/v1/instance/keys/rotate']) {
+        expect(cloud.requests.find((request) => request.path === path)!.dpop!.jkt).toBe(before.kid);
+      }
+      expect(headerOf(rotate.json().proof).kid).toBe(before.kid);
+      expect(ackResult().result).toBe('done');
+    });
+
+    it('keeps the candidate and waits when its answer is unclear during a recovery, without rotating (FL-178)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      const candidateKid = await writeCandidate();
+      const pem = await readFile(join(identityDir, CANDIDATE_KEY_FILE), 'utf8');
+      cloud.on('POST /id/token', (request) =>
+        assertionKidOf(request) === candidateKid
+          ? { status: 503, body: { code: 'unavailable', message: 'no answer' } }
+          : tokenAnswer(request),
+      );
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      expect(pathsCalled()).not.toContain('GET /api/v1/instance/keys/nonce');
+      expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
+      expect(await readFile(join(identityDir, CANDIDATE_KEY_FILE), 'utf8')).toBe(pem);
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(after.kid).toBe(before.kid);
+      expect(after.candidate?.kid).toBe(candidateKid);
+      expect(after.rotationNeeded).toBeDefined();
+      const wait = Date.parse(storedLink()!.heartbeat!.keyRecovery!.nextAttemptAt!) - Date.now();
+      expect(wait).toBeGreaterThan(19 * 60 * 1000);
+      expect(wait).toBeLessThanOrEqual(20 * 60 * 1000);
+      expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.CloudKeyRecoveryRotation, detail: 'retrying' }),
+      ]);
+    });
+
+    it('retries a check-in once on a DPoP nonce challenge, keeping the token and counting no failure (FL-178)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      const tokens = () => cloud.requests.filter(({ path }) => path === '/id/token').length;
+      expect(tokens()).toBe(1);
+
+      cloud.nonce = 'heartbeat-nonce-1';
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      expect(cloud.refusals).toEqual([{ path: '/api/v1/instance/heartbeat', status: 401, code: 'use_dpop_nonce' }]);
+      const beats = cloud.requests.filter(({ path }) => path === '/api/v1/instance/heartbeat');
+      expect(beats).toHaveLength(3);
+      expect(beats[2].dpop!.claims.nonce).toBe('heartbeat-nonce-1');
+      expect(tokens()).toBe(1);
+      expect(storedLink()).toMatchObject({ status: 'linked', heartbeat: { failures: 0 } });
     });
 
     it('retries a commanded rotation once with a fresh nonce on nonce_invalid (FL-175)', async () => {
