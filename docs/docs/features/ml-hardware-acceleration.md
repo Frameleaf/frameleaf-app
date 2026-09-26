@@ -44,7 +44,7 @@ The default fallback setting is `microsoft/Florence-2-base-ft`. The fallback is 
 
 #### Model licences and Frameleaf Cloud
 
-Some models may run on your own hardware but are never offered on Frameleaf Cloud, because their licences do not allow hosted commercial use. The server refuses a cloud job for them, the settings refuse them for work allowed on Frameleaf Cloud, and the model sliders never show them in the cloud (blue) band. They stay available on this server and on home-network workers.
+Some models may run on your own hardware but are never offered on Frameleaf Cloud, because their licences do not allow hosted commercial use. The server refuses a cloud job for them and a model choice that names one, and the Frameleaf Cloud model pickers never offer them. They stay available on this server and on home-network workers.
 
 | Model                                                          | Licence                                         | Frameleaf Cloud |
 | -------------------------------------------------------------- | ----------------------------------------------- | --------------- |
@@ -52,7 +52,7 @@ Some models may run on your own hardware but are never offered on Frameleaf Clou
 | `nllb-clip` search models (base and large, every variant)      | CC-BY-NC-4.0                                    | Local only      |
 | MusicGen-small (`Xenova/musicgen-small`)                       | CC-BY-NC-4.0                                    | Local only      |
 
-When no description model is chosen for Frameleaf Cloud, cloud descriptions use **Qwen3.5 9B** (Qwen team, Alibaba Cloud; Apache-2.0), a commercially licensed pick from the catalogue. Every model the cloud tier offers is licensed Apache-2.0, MIT or for commercial hosted use.
+Choose the Frameleaf Cloud model for each kind of work in **Where each job runs**. When none is chosen, jobs use the model Frameleaf Cloud recommends for your region; if it recommends none, and always for Studio AI, cloud jobs are refused until you choose one. Every model the cloud tier offers is licensed Apache-2.0, MIT or for commercial hosted use.
 
 ## Prerequisites
 

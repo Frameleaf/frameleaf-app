@@ -28,17 +28,18 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { getConfig } from 'src/utils/config.js';
 import {
+  CloudModelChoices,
   ML_BUDGET_WINDOW_DAYS,
   accelerationOf,
-  evaluateAdmission,
   hasRequiredConsent,
   isCloudDestination,
   mlWorkerRoleOf,
+  readCloudModelChoices,
   readinessOf,
   resolveEndpoint,
   restorationRoleConflict,
   sameEndpointUrl,
-  storedProbe,
+  storedAdmission,
 } from 'src/utils/ml-destination.js';
 import { RESTORATION_OPERATION_KINDS } from 'src/utils/restoration.js';
 import {
@@ -115,10 +116,14 @@ export class WorkerInventoryService {
     const queueByName = new Map(queues.map((entry) => [entry.queue, entry]));
     const configuredUrls = [...config.machineLearning.urls];
 
+    // FL-186: Frameleaf Cloud is judged with the models an administrator chose
+    const choices = await readCloudModelChoices(this.mlDestinationRepository, rows);
+
     const entries: WorkerInventoryEntryDto[] = [];
     for (const row of rows) {
       entries.push(
         await this.mlEntry(row, {
+          choices,
           routedWorkloads: Object.values(MlWorkload).filter((workload) => routedTo.get(workload) === row.id),
           configuredUrls,
           backlog,
@@ -157,6 +162,7 @@ export class WorkerInventoryService {
   private async mlEntry(
     row: MlDestinationRow,
     context: {
+      choices: CloudModelChoices;
       routedWorkloads: MlWorkload[];
       configuredUrls: string[];
       backlog: number;
@@ -165,13 +171,12 @@ export class WorkerInventoryService {
     },
   ): Promise<WorkerInventoryEntryDto> {
     const endpoint = resolveEndpoint(row);
-    const probe = storedProbe(row);
     const spentUsd =
       row.budgetLimitUsd === null ? 0 : await this.mlDestinationRepository.getSpend(row.id, budgetWindowStart());
 
     const admission: WorkerInventoryEntryDto['admission'] = [];
     for (const workload of row.workloads) {
-      let verdict = evaluateAdmission({ destination: row, workload, endpoint, probe, spentUsd });
+      let verdict = storedAdmission({ destination: row, workload, spentUsd, choices: context.choices });
       if (verdict.admitted) {
         const conflict = await restorationRoleConflict(
           {

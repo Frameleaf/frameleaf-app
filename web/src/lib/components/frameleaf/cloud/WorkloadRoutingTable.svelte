@@ -5,15 +5,16 @@
    * each job lets the person pick, preselecting "When a job can run in both places, start with"; a
    * job never moves to the cloud on its own. Search, faces and text recognition stay on this server,
    * and Studio exports render at home. The cloud options stay disabled until this server is linked
-   * and cloud processing is on. Each routable row has the model slider, following the hardware check.
+   * and cloud processing is on.
    *
-   * The choices are settings (`frameleafCloud.cloudMl.routing`, `models`, `startWith`) saved with the
-   * settings bar like every other setting.
+   * Where work runs is a setting (`frameleafCloud.cloudMl.routing`, `startWith`) saved with the settings
+   * bar like every other setting. Each kind of work allowed on Frameleaf Cloud has the Frameleaf Cloud
+   * model pickers (FL-186): the models come from the cloud's catalogue and a choice is saved per model
+   * group, apart from the workload's route, which is what admission reads for every cloud job.
    */
   import './frameleaf-cloud.css';
-  import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
+  import CloudRouteModels from '$lib/components/frameleaf/cloud/CloudRouteModels.svelte';
   import {
-    benchmarkFor,
     isRoutedWorkload,
     localCapability,
     localGbNeeded,
@@ -21,13 +22,13 @@
     routeSummary,
     routingModes,
     workerFromHardware,
-    workerGpu,
     workloadNameKey,
     workloadRoute,
     workloadUseKey,
     workloadWhyKey,
   } from '$lib/frameleaf/cloud-ml';
-  import { resolvePosition, type RouteMode } from '$lib/frameleaf/gpu-model-catalog';
+  import { choicesByGroup, loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
+  import type { RouteMode } from '$lib/frameleaf/gpu-model-catalog';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
@@ -53,6 +54,12 @@
 
   let status = $state<CloudMlStatusResponseDto | null>(null);
   let hardware = $state<HardwareCheckResponseDto | null>(null);
+  let models = $state<CloudModelData>({ catalog: null, catalogFailed: false, choices: {} });
+  let notice = $state('');
+  /** The catalogue was read for the current linked and turned-on state. */
+  let modelsRequested = false;
+  /** Only the latest read is shown, whatever order the answers arrive in. */
+  let modelsLoad = 0;
 
   onMount(() => {
     void getCloudMlStatus()
@@ -65,7 +72,6 @@
 
   const settingsDraft = getSystemConfigDraft();
   const cloudMl = $derived(settingsDraft?.draft.frameleafCloud?.cloudMl);
-  const baseline = $derived(settingsDraft?.baseline.frameleafCloud?.cloudMl);
   const disabled = $derived(featureFlagsManager.value.configFile);
 
   const linked = $derived(
@@ -75,7 +81,27 @@
   );
   const cloudOn = $derived(linked && !!cloudMl?.enabled);
   const worker = $derived(workerFromHardware(hardware));
-  const benchmark = $derived(benchmarkFor(hardware));
+
+  // FL-186: read the chosen models and the catalogue once cloud processing is linked and turned on,
+  // including when it is turned on on this page, and again the next time after it was turned off.
+  $effect(() => {
+    if (!showModels || !cloudOn) {
+      modelsRequested = false;
+      modelsLoad += 1;
+      return;
+    }
+    if (modelsRequested) {
+      return;
+    }
+    modelsRequested = true;
+    modelsLoad += 1;
+    const load = modelsLoad;
+    void loadCloudModelData(status).then((next) => {
+      if (load === modelsLoad) {
+        models = next;
+      }
+    });
+  });
 
   const setRoute = (id: string, mode: RouteMode) => {
     if (cloudMl && isRoutedWorkload(id)) {
@@ -115,6 +141,9 @@
       </select>
       <small>{$t('admin.frameleaf_routing_start_with_help')}</small>
     </label>
+  {/if}
+  {#if notice}
+    <p class="fc-muted" role="status">{notice}</p>
   {/if}
   <ul class="fc-routing-list">
     {#each mlWorkloads as row (row.id)}
@@ -161,29 +190,18 @@
             {$t(workloadWhyKey(row.id))}
           {/if}
         </p>
-        {#if showModels && row.cloud && isRoutedWorkload(row.id) && cloudMl}
-          {@const id = row.id}
-          {@const gpu = workerGpu(worker, id)}
-          {@const resolved = resolvePosition(id, cloudMl.models[id], { gpu, route, benchmark })}
+        {#if showModels && cloudOn && isRoutedWorkload(row.id) && route !== 'local'}
           <div class="fc-routing-models">
-            <ModelSlider
-              workload={id}
-              value={resolved?.item.id}
-              {gpu}
-              {route}
-              {benchmark}
-              {disabled}
-              label={$t('admin.frameleaf_routing_model_for', { values: { name: $t(workloadNameKey(id)) } })}
-              onChange={(modelId) => (cloudMl.models[id] = modelId)}
+            <CloudRouteModels
+              row={row.id}
+              catalog={models.catalog}
+              catalogFailed={models.catalogFailed}
+              choices={models.choices}
+              onSaved={(choices, message) => {
+                models = { ...models, choices: choicesByGroup(choices) };
+                notice = message;
+              }}
             />
-            {#if resolved?.fallback}
-              <p class="fc-routing-summary is-warning">
-                {$t('admin.frameleaf_routing_model_fallback', { values: { model: resolved.item.name } })}
-              </p>
-            {/if}
-            {#if baseline && cloudMl.models[id] !== baseline.models[id]}
-              <p class="fc-muted">{$t('admin.frameleaf_routing_model_unsaved')}</p>
-            {/if}
           </div>
         {/if}
       </li>

@@ -564,14 +564,14 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
   it('backfills fork configuration from the exact effective config-file value', async () => {
     const fileConfig = structuredClone(defaults);
     fileConfig.frameleafCloud.cloudMl.enabled = true;
-    fileConfig.frameleafCloud.cloudMl.models.descriptions = 'file-model';
+    fileConfig.frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd = 7.5;
     fileConfig.smartAlbums.enabled = true;
     await db
       .insertInto('system_metadata')
       .values({
         key: SystemMetadataKey.SystemConfig,
         value: {
-          frameleafCloud: { cloudMl: { enabled: false, models: { descriptions: 'database-model' } } },
+          frameleafCloud: { cloudMl: { enabled: false, autoDescribe: { dailyBudgetUsd: 3 } } },
           smartAlbums: { enabled: false },
         },
       })
@@ -587,7 +587,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
         value: {
           cloudMl: expect.objectContaining({
             enabled: true,
-            models: expect.objectContaining({ descriptions: 'file-model' }),
+            autoDescribe: expect.objectContaining({ dailyBudgetUsd: 7.5 }),
           }),
           signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
         },
@@ -598,7 +598,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
 
   it('deep-merges a locked partial database config into complete validated fork fields', async () => {
     const preLockEffective = structuredClone(defaults);
-    preLockEffective.frameleafCloud.cloudMl.models.descriptions = 'stale-model';
+    preLockEffective.frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd = 4;
     preLockEffective.smartAlbums.builtIn.travel.tagTriggers.push('stale-tag');
     preLockEffective.smartAlbums.builtIn.travel.clipQueries.push('stale query');
     await db
@@ -606,7 +606,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
       .values({
         key: SystemMetadataKey.SystemConfig,
         value: {
-          frameleafCloud: { cloudMl: { enabled: true, models: { descriptions: 'locked-model' } } },
+          frameleafCloud: { cloudMl: { enabled: true, autoDescribe: { dailyBudgetUsd: 9 } } },
           smartAlbums: {
             enabled: true,
             builtIn: { travel: { tagTriggers: ['locked-tag'], clipQueries: ['locked query'] } },
@@ -620,14 +620,14 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
     const complete = await new ForkSchemaRepository(db).overlayConfig(structuredClone(defaults));
     const expectedCloud = structuredClone(defaults.frameleafCloud);
     expectedCloud.cloudMl.enabled = true;
-    expectedCloud.cloudMl.models.descriptions = 'locked-model';
+    expectedCloud.cloudMl.autoDescribe.dailyBudgetUsd = 9;
     const expectedSmartAlbums = structuredClone(defaults.smartAlbums);
     expectedSmartAlbums.enabled = true;
     expectedSmartAlbums.builtIn.travel.tagTriggers = ['locked-tag'];
     expectedSmartAlbums.builtIn.travel.clipQueries = ['locked query'];
     expect(complete.frameleafCloud).toEqual(expectedCloud);
     expect(complete.smartAlbums).toEqual(expectedSmartAlbums);
-    expect(complete.frameleafCloud.cloudMl.models.descriptions).toEqual('locked-model');
+    expect(complete.frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd).toEqual(9);
     expect(complete.smartAlbums.builtIn.travel.tagTriggers).toEqual(['locked-tag']);
     expect(complete.smartAlbums.builtIn.travel.clipQueries).toEqual(['locked query']);
   });
@@ -707,10 +707,10 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
     };
     await forkSchemaRepo.setPhase('dual-write');
     const first = structuredClone(defaults);
-    first.frameleafCloud.cloudMl.models.descriptions = 'first';
+    first.frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd = 5;
     first.smartAlbums.enabled = true;
     const second = structuredClone(defaults);
-    second.frameleafCloud.cloudMl.models.descriptions = 'second';
+    second.frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd = 6;
     second.smartAlbums.enabled = false;
     await Promise.all([updateConfig(repos, first), updateConfig(repos, second)]);
 

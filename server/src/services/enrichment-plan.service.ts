@@ -22,7 +22,6 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   MlAdmissionRefusal,
-  MlDestinationHealth,
   MlDestinationKind,
   MlWorkload,
   Permission,
@@ -30,7 +29,7 @@ import {
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import {
   MediaOperation,
   MediaOperationRepository,
@@ -76,7 +75,12 @@ import {
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { isImageDescriptionEnabled, isNsfwDetectionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
-import { evaluateAdmission, isCloudDestination, resolveEndpoint } from 'src/utils/ml-destination.js';
+import {
+  CloudModelChoices,
+  isCloudDestination,
+  readCloudModelChoices,
+  storedAdmission,
+} from 'src/utils/ml-destination.js';
 
 /** How often the worker looks for queued plans. */
 export const ENRICHMENT_PLAN_TICK_MS = 5000;
@@ -194,6 +198,8 @@ export class EnrichmentPlanService {
   async getOptions(): Promise<EnrichmentOptionsResponseDto> {
     const { machineLearning } = await this.config();
     const [rows, routes] = await Promise.all([this.mlDestinations.getAll(), this.mlDestinations.getRoutes()]);
+    // FL-186: a Frameleaf Cloud destination is judged with the model an administrator chose
+    const choices = await readCloudModelChoices(this.mlDestinations, rows);
 
     const destinations: EnrichmentOptionsResponseDto['destinations'] = Array.from(rows, (row) => ({
       id: row.id,
@@ -201,8 +207,8 @@ export class EnrichmentPlanService {
       kind: row.kind,
       cloud: isCloudDestination(row.kind),
       health: row.lastProbeHealth,
-      enrichment: this.admission(row, MlWorkload.Enrichment),
-      search: this.admission(row, MlWorkload.Clip),
+      enrichment: this.admission(row, MlWorkload.Enrichment, choices),
+      search: this.admission(row, MlWorkload.Clip, choices),
     }));
 
     return {
@@ -858,36 +864,24 @@ export class EnrichmentPlanService {
     if (!destination) {
       throw new BadRequestException('That processing destination does not exist');
     }
-    const verdict = this.admission(destination, workload);
+    const verdict = this.admission(
+      destination,
+      workload,
+      await readCloudModelChoices(this.mlDestinations, [destination]),
+    );
     if (!verdict.admitted && !TRANSIENT_REFUSALS.has(verdict.refusal as MlAdmissionRefusal)) {
       throw new BadRequestException(`${destination.name} cannot run this work (${verdict.refusal})`);
     }
     return destination;
   }
 
-  private admission(row: MlDestinationRow, workload: MlWorkload) {
-    const verdict = evaluateAdmission({
-      destination: row,
-      workload,
-      endpoint: resolveEndpoint(row),
-      probe: this.probeFromRow(row),
-      spentUsd: 0,
-    });
+  /**
+   * The stored check, never a new one, with the Frameleaf Cloud model an administrator chose (FL-186),
+   * so this page, plan creation and Processing destinations agree with what admission answers.
+   */
+  private admission(row: MlDestinationRow, workload: MlWorkload, choices: CloudModelChoices) {
+    const verdict = storedAdmission({ destination: row, workload, spentUsd: 0, choices });
     return verdict.admitted ? { admitted: true, refusal: null } : { admitted: false, refusal: verdict.refusal };
-  }
-
-  private probeFromRow(row: MlDestinationRow): MlEndpointProbe | null {
-    if (!row.lastProbeAt) {
-      return null;
-    }
-    return {
-      reachable: row.lastProbeHealth === MlDestinationHealth.Healthy,
-      workloads: (row.lastProbeWorkloads ?? []) as MlWorkload[],
-      hardware: null,
-      latencyMs: 0,
-      probedAt: new Date(row.lastProbeAt),
-      error: row.lastProbeHealth === MlDestinationHealth.Healthy ? null : (row.lastProbeSummary ?? 'not probed'),
-    };
   }
 
   private emptySample(

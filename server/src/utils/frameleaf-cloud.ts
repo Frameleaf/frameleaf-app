@@ -345,12 +345,32 @@ export const catalogEntrySchema = z
 export type CloudCatalogEntry = z.infer<typeof catalogEntrySchema>;
 
 /**
- * The catalogue group a model belongs to for its default (FC-34): its cloud workload, and for
- * restoration its mode too (`restoration:faithful`, `restoration:creative`). The region is the
- * gateway's own, so it is never part of the key.
+ * The catalogue group a model belongs to (FC-34): its cloud workload, and for restoration its mode
+ * too (`restoration-faithful`, `restoration-creative`). A group has at most one default, and it is
+ * what an administrator chooses a Frameleaf Cloud model for (FL-186, `CloudModelGroup`). The region is
+ * the gateway's own, so it is never part of the key.
  */
 export const catalogGroupKey = (workload: string, mode: CloudRestorationMode | null): string =>
-  mode ? `${workload}:${mode}` : workload;
+  mode ? `${workload}-${mode}` : workload;
+
+/**
+ * The groups an administrator chooses a Frameleaf Cloud model for (FL-186), keyed exactly as
+ * `catalogGroupKey` keys the catalogue: one per cloud workload, restoration once per mode, and Studio
+ * AI twice (`transcription` for speech to text and captions, `tts` for speech).
+ */
+export const CLOUD_MODEL_GROUPS = [
+  'descriptions',
+  'upscale',
+  'restoration-faithful',
+  'restoration-creative',
+  'interpolation',
+  'transcription',
+  'tts',
+] as const;
+export type CloudModelGroup = (typeof CLOUD_MODEL_GROUPS)[number];
+
+export const isCloudModelGroup = (value: string): value is CloudModelGroup =>
+  (CLOUD_MODEL_GROUPS as readonly string[]).includes(value);
 
 /**
  * `GET /v2/catalog` (FC-34 `CatalogResponse`): only what this server may run now. Every entry is
@@ -956,7 +976,7 @@ export type CloudProbeFacts = {
   catalogEtag: string | null;
   /**
    * The model SKUs (`ms_…`, FC-66) the catalogue offered at this check (FL-183): the cloud's model
-   * identity, and what `ml_workload_route.modelId` names for Frameleaf Cloud work.
+   * identity, and what a Frameleaf Cloud model choice (`ml_cloud_model_choice`, FL-186) names.
    */
   modelIds: string[];
   /**
@@ -969,11 +989,18 @@ export type CloudProbeFacts = {
   modelWorkloads: Record<string, MlWorkload | null>;
   /**
    * FC-34: the model SKU the catalogue marks as the default of each group (`catalogGroupKey`:
-   * `descriptions`, `restoration:faithful`, …), among the models offered. Admission uses it when no
-   * model is routed; a group without one refuses. Absent on facts stored before FL-183, which
+   * `descriptions`, `restoration-faithful`, …), among the models offered. Admission uses it when no
+   * model is chosen; a group without one refuses. Absent on facts stored before FL-183, which
    * therefore name no default.
    */
   defaultModels?: Record<string, string>;
+  /**
+   * FL-186: the catalogue group (`catalogGroupKey`) each offered model SKU belongs to. Admission
+   * refuses a model whose group is not the job's own, so a TTS model is never sent for speech to
+   * text, nor a faithful restoration model for creative work. Absent on facts stored before FL-186;
+   * such facts admit no model until the next check.
+   */
+  modelGroups?: Record<string, string>;
   refusal: { refusal: MlAdmissionRefusal; detail: string } | null;
 };
 
@@ -997,7 +1024,8 @@ export const isLocalOnlyModel = (id: string | null | undefined): boolean =>
 /**
  * The catalogue group a Frameleaf Cloud job for `workload` takes its default from (FC-34), or null
  * when there is none to take: Studio AI spans two cloud workloads (`transcription`, `tts`), so it
- * always names its model, and work the cloud never runs has no group.
+ * always names its model, and work the cloud never runs has no group. `cloudModelGroupFor` is the
+ * group a job's chosen model is read from, Studio AI included.
  */
 export const cloudDefaultGroupFor = (workload: MlWorkload): string | null => {
   const cloudId = cloudWorkloadIdFor(workload);
@@ -1038,6 +1066,57 @@ export const cloudModelFor = (
   return facts?.defaultModels?.[group] ?? null;
 };
 
+/**
+ * The Frameleaf Cloud model group a cloud job reads its chosen model from (FL-186): the catalogue
+ * group of `workload`, and for Studio AI the group of the feature being run (`transcription` for
+ * speech to text and captions, `tts` for speech). Null for work the cloud never runs, and for Studio
+ * AI when the feature is not named: that job has no model to send and is refused.
+ */
+export const cloudModelGroupFor = (
+  workload: MlWorkload,
+  studioFeature?: StudioAiCloudFeature | null,
+): CloudModelGroup | null => {
+  if (workload === MlWorkload.StudioAi) {
+    if (!studioFeature) {
+      return null;
+    }
+    return studioAiCloudWorkloadId(studioFeature) === 'tts' ? 'tts' : 'transcription';
+  }
+  const group = cloudDefaultGroupFor(workload);
+  return group !== null && isCloudModelGroup(group) ? group : null;
+};
+
+/** The Studio features a Studio AI cloud job can name (FL-181). */
+export const STUDIO_AI_CLOUD_FEATURES = ['speech-to-text', 'captions', 'speech'] as const;
+
+/** FL-186: a model group stored as `restoration:faithful` before the keys were hyphenated. */
+const hyphenatedGroup = (key: string): string => key.replace(/^restoration:(faithful|creative)$/, 'restoration-$1');
+
+/**
+ * Stored check facts in today's shape (FL-186): the old `restoration:faithful` and
+ * `restoration:creative` group keys become `restoration-faithful` and `restoration-creative`, so a check
+ * recorded before the keys changed still names its defaults. Facts from before FL-186 have no
+ * `modelGroups`; that stays absent, and read-only views treat such a check as unknown until the next.
+ */
+export const normalizeCloudProbeFacts = (facts: CloudProbeFacts | null): CloudProbeFacts | null => {
+  if (!facts) {
+    return facts;
+  }
+  return {
+    ...facts,
+    ...(facts.defaultModels && {
+      defaultModels: Object.fromEntries(
+        Object.entries(facts.defaultModels).map(([group, sku]) => [hyphenatedGroup(group), sku]),
+      ),
+    }),
+    ...(facts.modelGroups && {
+      modelGroups: Object.fromEntries(
+        Object.entries(facts.modelGroups).map(([sku, group]) => [sku, hyphenatedGroup(group)]),
+      ),
+    }),
+  };
+};
+
 /** FC-34: the server reads `active` alone, which already includes a grace period (`state: grace`). */
 export const isEntitled = (entitlement: CloudCapabilities['entitlement']): boolean => entitlement.active;
 
@@ -1046,6 +1125,7 @@ export const cloudFactsFromCapabilities = (
   modelIds: string[],
   modelWorkloads: Record<string, MlWorkload | null> = {},
   defaultModels: Record<string, string> = {},
+  modelGroups: Record<string, string> = {},
 ): CloudProbeFacts => ({
   region: capabilities.region,
   consentRequiredVersion: capabilities.consent.requiredVersion,
@@ -1061,6 +1141,7 @@ export const cloudFactsFromCapabilities = (
   modelIds,
   modelWorkloads,
   defaultModels,
+  modelGroups,
   refusal: null,
 });
 
@@ -1156,7 +1237,7 @@ export const cloudWorkloadIdFor = (workload: MlWorkload): CloudWorkloadId | null
  * cloud-confirmed 2026-09-25): a music job is refused for the cloud by the existing Studio AI
  * refusal and is never mapped here or silently moved to a different workload.
  */
-export type StudioAiCloudFeature = 'speech-to-text' | 'captions' | 'speech';
+export type StudioAiCloudFeature = (typeof STUDIO_AI_CLOUD_FEATURES)[number];
 
 /**
  * The cloud ID a Studio AI job for `feature` is sent under (FL-181, cloud-confirmed 2026-09-25):

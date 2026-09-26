@@ -325,6 +325,8 @@ const deps = (overrides: {
     recordAccounting: vi.fn().mockResolvedValue(undefined),
     getRoute: vi.fn().mockResolvedValue(overrides.route),
     getRoutes: vi.fn().mockResolvedValue(overrides.routes ?? []),
+    // FL-186: no Frameleaf Cloud model is chosen, so cloud work uses the catalogue's default
+    getCloudModelChoice: vi.fn().mockResolvedValue(null),
   } as unknown as MlDestinationRepository;
   const machineLearningRepository = {
     probe: vi.fn().mockResolvedValue(overrides.probe ?? mlProbeStub.restoration),

@@ -9,6 +9,7 @@ import {
   MlWorkerRoleSchema,
   MlWorkloadSchema,
 } from 'src/enum.js';
+import { STUDIO_AI_CLOUD_FEATURES } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Machine-learning destinations and workload capabilities (FL-110).
@@ -173,7 +174,6 @@ const MlWorkloadRouteSchema = z
   .object({
     workload: MlWorkloadSchema,
     destinationId: z.uuidv4().nullable().describe('Destination the workload is routed to, or null when unrouted'),
-    modelId: z.string().nullable().describe('Frameleaf Cloud catalogue model for this workload, or null'),
   })
   .meta({ id: 'MlWorkloadRouteDto' });
 
@@ -186,20 +186,21 @@ const MlWorkloadRoutesResponseSchema = z
 const MlWorkloadRouteUpdateSchema = z
   .object({
     destinationId: z.uuidv4().nullable().describe('Destination to route the workload to; null removes the route'),
-    modelId: z
-      .string()
-      .min(1)
-      .max(200)
-      .nullable()
-      .optional()
-      .describe('Frameleaf Cloud only: the catalogue model this workload uses'),
   })
   .meta({ id: 'MlWorkloadRouteUpdateDto' });
+
+const MlStudioFeatureSchema = z
+  .enum(STUDIO_AI_CLOUD_FEATURES)
+  .describe(
+    'Studio AI only: the Studio feature, which decides the Frameleaf Cloud model the job uses (speech to text and captions, or speech)',
+  )
+  .meta({ id: 'MlStudioFeature' });
 
 const MlAdmissionRequestSchema = z
   .object({
     workload: MlWorkloadSchema,
     jobId: z.string().max(200).optional().describe('Job the admission is for, recorded with the accounting row'),
+    studioFeature: MlStudioFeatureSchema.optional(),
   })
   .meta({ id: 'MlAdmissionRequestDto' });
 

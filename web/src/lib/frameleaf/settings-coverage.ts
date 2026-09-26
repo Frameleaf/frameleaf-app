@@ -75,12 +75,6 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'frameleaf_cloud_ml_fact_faces',
   },
   {
-    pattern: 'frameleafCloud.cloudMl.models.*',
-    kind: 'control',
-    file: 'src/lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte',
-    evidence: 'cloudMl.models[id]',
-  },
-  {
     pattern: 'frameleafCloud.cloudMl.routing.*',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte',

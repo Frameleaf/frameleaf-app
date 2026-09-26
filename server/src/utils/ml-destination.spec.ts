@@ -26,9 +26,12 @@ import {
   readinessOf,
   resolveEndpoint,
   restorationRoleConflict,
+  readCloudModelChoices,
   routedMlDestinationId,
   sameEndpointUrl,
   selectMlDestination,
+  storedAdmission,
+  storedProbe,
   summarizeProbe,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
@@ -40,7 +43,9 @@ const deps = (overrides: {
   destination?: typeof mlDestinationStub.local | undefined;
   probe?: MlEndpointProbe;
   spend?: number;
-  route?: { workload: MlWorkload; destinationId: string; modelId?: string | null } | undefined;
+  route?: { workload: MlWorkload; destinationId: string } | undefined;
+  /** FL-186: the chosen Frameleaf Cloud model per model group. */
+  choices?: Record<string, string>;
 }) => {
   const mlDestinationRepository = {
     getById: vi.fn().mockResolvedValue('destination' in overrides ? overrides.destination : mlDestinationStub.local),
@@ -48,6 +53,7 @@ const deps = (overrides: {
     recordProbe: vi.fn().mockResolvedValue(undefined),
     recordAccounting: vi.fn().mockResolvedValue(undefined),
     getRoute: vi.fn().mockResolvedValue(overrides.route),
+    getCloudModelChoice: vi.fn((group: string) => Promise.resolve(overrides.choices?.[group] ?? null)),
   } as unknown as MlDestinationRepository;
   const machineLearningRepository = {
     probe: vi.fn().mockResolvedValue(overrides.probe ?? mlProbeStub.healthy),
@@ -245,15 +251,22 @@ describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
     expect(refusal({ ...cloud, workload: MlWorkload.RestorationFaithful, modelId: 'restore-faithful' })).toBeNull();
   });
 
-  it('refuses a model whose catalogue mode does not match the workload asked for (FL-181 P1)', () => {
+  it('refuses a model whose catalogue group does not match the workload asked for (FL-181 P1, FL-186)', () => {
     // The stub catalogue's `restore-faithful` model is faithful mode: fine for a faithful job, a
     // mismatch for a creative one, even though the model id itself is still "in the catalogue".
     expect(refusal({ ...cloud, workload: MlWorkload.RestorationCreative, modelId: 'restore-faithful' })).toBe(
       MlAdmissionRefusal.ModelMismatch,
     );
     expect(refusal({ ...cloud, workload: MlWorkload.RestorationFaithful, modelId: 'restore-faithful' })).toBeNull();
-    // A non-restoration workload never runs this check: it has no mode to mismatch.
-    expect(refusal({ ...cloud, workload: MlWorkload.Enrichment, modelId: 'restore-faithful' })).toBeNull();
+    // FL-186: every workload runs this check, so a restoration model is never sent for descriptions
+    expect(refusal({ ...cloud, workload: MlWorkload.Enrichment, modelId: 'restore-faithful' })).toBe(
+      MlAdmissionRefusal.ModelMismatch,
+    );
+    expect(refusal({ ...cloud, workload: MlWorkload.Enrichment, modelId: 'describe-large' })).toBeNull();
+    // facts stored before FL-186 place no model in a group, so they send none until the next check
+    expect(
+      refusal({ ...withFacts({ modelGroups: undefined }), workload: MlWorkload.Enrichment, modelId: 'describe-large' }),
+    ).toBe(MlAdmissionRefusal.ModelMismatch);
   });
 
   it('refuses a cloud job for the local-only nllb-clip, MusicGen-small and Qwen2.5-VL-3B models, even if listed (FL-146)', () => {
@@ -294,7 +307,7 @@ describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
       // the faithful default never stands in for creative work
       expect(
         refusal({
-          ...withFacts({ defaultModels: { 'restoration:faithful': 'restore-faithful' } }),
+          ...withFacts({ defaultModels: { 'restoration-faithful': 'restore-faithful' } }),
           workload: MlWorkload.RestorationCreative,
         }),
       ).toBe(MlAdmissionRefusal.ModelMismatch);
@@ -304,13 +317,62 @@ describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
       );
     });
 
+    it('asks for a Studio AI model of its own, since Studio AI never takes a catalogue default (FL-186)', () => {
+      const studioWorkloads = [...cloud.destination.workloads, MlWorkload.StudioAi];
+      const { probe } = withFacts({
+        modelIds: [...facts.modelIds, 'studio-voice', 'studio-words'],
+        modelWorkloads: {
+          ...facts.modelWorkloads,
+          'studio-voice': MlWorkload.StudioAi,
+          'studio-words': MlWorkload.StudioAi,
+        },
+        modelGroups: { ...facts.modelGroups, 'studio-voice': 'tts', 'studio-words': 'transcription' },
+        // even a mark on a Studio AI model's own cloud workload is never taken as its default
+        defaultModels: { ...facts.defaultModels, transcription: 'studio-words', tts: 'studio-voice' },
+      });
+      const studio = {
+        ...cloud,
+        destination: { ...cloud.destination, workloads: studioWorkloads },
+        probe: { ...probe, workloads: studioWorkloads },
+        workload: MlWorkload.StudioAi,
+      };
+
+      // without a Studio feature there is no model group at all: the job must name it
+      expect(evaluateAdmission(studio)).toEqual({
+        admitted: false,
+        refusal: MlAdmissionRefusal.ModelMismatch,
+        detail:
+          'Frameleaf Cloud: a Studio AI job must name its Studio feature (speech to text, captions or speech) before Frameleaf Cloud can choose its model',
+      });
+      expect(evaluateAdmission({ ...studio, studioFeature: 'speech' })).toEqual({
+        admitted: false,
+        refusal: MlAdmissionRefusal.ModelMismatch,
+        detail: 'Frameleaf Cloud: choose a Frameleaf Cloud model for Studio AI speech in Where each job runs',
+      });
+      expect(evaluateAdmission({ ...studio, modelId: 'studio-voice', studioFeature: 'speech' })).toEqual({
+        admitted: true,
+      });
+      expect(evaluateAdmission({ ...studio, modelId: 'studio-words', studioFeature: 'captions' })).toEqual({
+        admitted: true,
+      });
+      // a speech (TTS) model is never sent for speech to text, and a Studio AI job names its feature
+      expect(evaluateAdmission({ ...studio, modelId: 'studio-voice', studioFeature: 'speech-to-text' })).toMatchObject({
+        admitted: false,
+        refusal: MlAdmissionRefusal.ModelMismatch,
+      });
+      expect(evaluateAdmission({ ...studio, modelId: 'studio-voice' })).toMatchObject({
+        admitted: false,
+        refusal: MlAdmissionRefusal.ModelMismatch,
+      });
+    });
+
     it('refuses a default the catalogue no longer lists, or one of the other mode', () => {
       expect(
         refusal({ ...withFacts({ defaultModels: { descriptions: 'gone' } }), workload: MlWorkload.Enrichment }),
       ).toBe(MlAdmissionRefusal.ModelMismatch);
       expect(
         refusal({
-          ...withFacts({ defaultModels: { 'restoration:creative': 'restore-faithful' } }),
+          ...withFacts({ defaultModels: { 'restoration-creative': 'restore-faithful' } }),
           workload: MlWorkload.RestorationCreative,
         }),
       ).toBe(MlAdmissionRefusal.ModelMismatch);
@@ -396,20 +458,70 @@ describe('selectMlDestination', () => {
     expect(local.cloudModelId).toBeNull();
   });
 
-  it('refuses the routed model when the catalogue dropped it, and never picks another (FL-159)', async () => {
+  it('refuses the chosen model when the catalogue dropped it, and never picks another (FL-159)', async () => {
     const d = deps({
       destination: mlDestinationStub.frameleafCloudConsented,
       probe: mlProbeStub.frameleafCloud,
-      route: {
-        workload: MlWorkload.Enrichment,
-        destinationId: mlDestinationStub.frameleafCloudConsented.id,
-        modelId: 'retired-model',
-      },
+      choices: { descriptions: 'retired-model' },
     });
     const error = await selectMlDestination(d, {
       workload: MlWorkload.Enrichment,
       destinationId: mlDestinationStub.frameleafCloudConsented.id,
     }).catch((error_) => error_);
+    expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.ModelMismatch);
+  });
+
+  it('sends the chosen cloud model whatever the route points at, and reads it per model group (FL-186)', async () => {
+    // A "Both" workload routed to this server: a job the person sends to the cloud still names the
+    // model chosen for its group. The route is never read for the model.
+    const d = deps({
+      destination: mlDestinationStub.frameleafCloudConsented,
+      probe: mlProbeStub.frameleafCloud,
+      route: { workload: MlWorkload.RestorationCreative, destinationId: 'ml-destination-local' },
+      choices: { 'restoration-creative': 'restore-creative', descriptions: 'describe-large' },
+    });
+    const creative = await selectMlDestination(d, {
+      workload: MlWorkload.RestorationCreative,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
+    });
+    expect(creative.cloudModelId).toBe('restore-creative');
+    expect(d.mlDestinationRepository.getCloudModelChoice).toHaveBeenCalledWith('restoration-creative');
+    expect(d.mlDestinationRepository.getRoute).not.toHaveBeenCalled();
+
+    // a local destination never reads a cloud model
+    const local = deps({ choices: { descriptions: 'describe-large' } });
+    await selectMlDestination(local, { workload: MlWorkload.Enrichment, destinationId: 'ml-destination-local' });
+    expect(local.mlDestinationRepository.getCloudModelChoice).not.toHaveBeenCalled();
+  });
+
+  it('uses the Studio AI transcription or speech choice by feature, and refuses a model of the other one (FL-186)', async () => {
+    const workloads = [...mlDestinationStub.frameleafCloudConsented.workloads, MlWorkload.StudioAi];
+    const destination = { ...mlDestinationStub.frameleafCloudConsented, workloads };
+    const facts = mlProbeStub.frameleafCloud.cloud!;
+    const probe = {
+      ...mlProbeStub.frameleafCloud,
+      workloads,
+      cloud: {
+        ...facts,
+        modelIds: [...facts.modelIds, 'studio-voice', 'studio-words'],
+        modelGroups: { ...facts.modelGroups, 'studio-voice': 'tts', 'studio-words': 'transcription' },
+      },
+    };
+    const d = deps({ destination, probe, choices: { transcription: 'studio-words', tts: 'studio-voice' } });
+    const request = { workload: MlWorkload.StudioAi, destinationId: destination.id };
+
+    await expect(selectMlDestination(d, { ...request, studioFeature: 'captions' })).resolves.toMatchObject({
+      cloudModelId: 'studio-words',
+    });
+    await expect(selectMlDestination(d, { ...request, studioFeature: 'speech' })).resolves.toMatchObject({
+      cloudModelId: 'studio-voice',
+    });
+
+    // a TTS model chosen for transcription is refused at admission, never sent for speech to text
+    const wrong = deps({ destination, probe, choices: { transcription: 'studio-voice' } });
+    const error = await selectMlDestination(wrong, { ...request, studioFeature: 'speech-to-text' }).catch(
+      (error_) => error_,
+    );
     expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.ModelMismatch);
   });
 
@@ -675,5 +787,129 @@ describe('worker readiness (FL-72)', () => {
     expect(readinessOf({ ...local, lastProbeHardware: cpuHardware })).toBe(MlWorkerReadiness.Cpu);
     expect(readinessOf({ ...local, lastProbeHardware: cudaHardware })).toBe(MlWorkerReadiness.ModelReady);
     expect(readinessOf({ ...local, lastProbeHardware: null })).toBe(MlWorkerReadiness.ModelReady);
+  });
+});
+
+describe('storedAdmission (FL-186)', () => {
+  const facts = mlDestinationStub.frameleafCloudConsented.lastProbeCloud!;
+  const cloudWith = (
+    overrides: Partial<typeof facts>,
+    workloads = mlDestinationStub.frameleafCloudConsented.workloads,
+  ) => ({
+    ...mlDestinationStub.frameleafCloudConsented,
+    workloads,
+    lastProbeWorkloads: workloads,
+    lastProbeCloud: { ...facts, ...overrides },
+  });
+
+  it('judges the stored check with the model chosen for the group, as a job would name it', () => {
+    const destination = cloudWith({ defaultModels: {} });
+    expect(storedAdmission({ destination, workload: MlWorkload.Enrichment, spentUsd: 0, choices: {} })).toMatchObject({
+      admitted: false,
+      refusal: MlAdmissionRefusal.ModelMismatch,
+    });
+    expect(
+      storedAdmission({
+        destination,
+        workload: MlWorkload.Enrichment,
+        spentUsd: 0,
+        choices: { descriptions: 'describe-large' },
+      }),
+    ).toEqual({ admitted: true });
+    // a chosen model of the other mode is refused, never sent
+    expect(
+      storedAdmission({
+        destination,
+        workload: MlWorkload.RestorationCreative,
+        spentUsd: 0,
+        choices: { 'restoration-creative': 'restore-faithful' },
+      }),
+    ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.ModelMismatch });
+  });
+
+  it('counts Studio AI only when both speech to text and speech have a model, and names the missing one', () => {
+    const workloads = [MlWorkload.StudioAi];
+    const destination = cloudWith(
+      {
+        modelIds: [...facts.modelIds, 'studio-words', 'studio-voice'],
+        modelGroups: { ...facts.modelGroups, 'studio-words': 'transcription', 'studio-voice': 'tts' },
+      },
+      workloads,
+    );
+    const studio = (choices: Record<string, string>) =>
+      storedAdmission({ destination, workload: MlWorkload.StudioAi, spentUsd: 0, choices });
+
+    expect(studio({ tts: 'studio-voice' })).toEqual({
+      admitted: false,
+      refusal: MlAdmissionRefusal.ModelMismatch,
+      detail:
+        'Frameleaf Cloud: choose a Frameleaf Cloud model for Studio AI speech to text and captions in Where each job runs',
+    });
+    expect(studio({ transcription: 'studio-words' })).toMatchObject({
+      detail: 'Frameleaf Cloud: choose a Frameleaf Cloud model for Studio AI speech in Where each job runs',
+    });
+    expect(studio({ transcription: 'studio-words', tts: 'studio-voice' })).toEqual({ admitted: true });
+    // a named feature is judged on its own group only
+    expect(
+      storedAdmission({
+        destination,
+        workload: MlWorkload.StudioAi,
+        spentUsd: 0,
+        choices: { tts: 'studio-voice' },
+        studioFeature: 'speech',
+      }),
+    ).toEqual({ admitted: true });
+  });
+
+  it('shows a check from before model groups as waiting for the next one, and reads old group keys', () => {
+    // no modelGroups: a view cannot tell whether there is a model to send, so it waits (a transient
+    // refusal) whether or not a model is chosen; a live admission checks again first
+    const unplaced = cloudWith({ modelGroups: undefined, defaultModels: {} });
+    const waiting = {
+      admitted: false,
+      refusal: MlAdmissionRefusal.DestinationUnhealthy,
+      detail: 'Frameleaf Cloud: checked before model groups; waiting for the next check',
+    };
+    expect(
+      storedAdmission({ destination: unplaced, workload: MlWorkload.Enrichment, spentUsd: 0, choices: {} }),
+    ).toEqual(waiting);
+    expect(
+      storedAdmission({
+        destination: unplaced,
+        workload: MlWorkload.Enrichment,
+        spentUsd: 0,
+        choices: { descriptions: 'describe-large' },
+      }),
+    ).toEqual(waiting);
+    const studio = cloudWith({ modelGroups: undefined }, [MlWorkload.StudioAi]);
+    expect(storedAdmission({ destination: studio, workload: MlWorkload.StudioAi, spentUsd: 0, choices: {} })).toEqual(
+      waiting,
+    );
+
+    // a default recorded under the old `restoration:faithful` key is still found
+    const oldKeys = cloudWith({
+      defaultModels: { 'restoration:faithful': 'restore-faithful' },
+      modelGroups: { 'restore-faithful': 'restoration:faithful' },
+    });
+    expect(storedProbe(oldKeys)?.cloud).toMatchObject({
+      defaultModels: { 'restoration-faithful': 'restore-faithful' },
+      modelGroups: { 'restore-faithful': 'restoration-faithful' },
+    });
+    expect(
+      storedAdmission({ destination: oldKeys, workload: MlWorkload.RestorationFaithful, spentUsd: 0, choices: {} }),
+    ).toEqual({ admitted: true });
+  });
+
+  it('reads the chosen models only when a Frameleaf Cloud destination is listed', async () => {
+    const repository = {
+      getCloudModelChoices: vi
+        .fn()
+        .mockResolvedValue([{ modelGroup: 'tts', modelId: 'studio-voice', updatedAt: new Date() }]),
+    };
+    await expect(readCloudModelChoices(repository, [mlDestinationStub.local])).resolves.toEqual({});
+    expect(repository.getCloudModelChoices).not.toHaveBeenCalled();
+    await expect(
+      readCloudModelChoices(repository, [mlDestinationStub.local, mlDestinationStub.frameleafCloudConsented]),
+    ).resolves.toEqual({ tts: 'studio-voice' });
   });
 });
