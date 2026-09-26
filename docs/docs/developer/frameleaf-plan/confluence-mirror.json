@@ -1035,19 +1035,19 @@
       "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 99366,
+      "bytes": 105525,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "97431d8654fdff9e666ec487540511fac076bc5b55106a62b8b5ab8f1dd72fc3",
+      "sourceSha256": "17c03a494296c6f831aefd1d7afbdb7023df7de22d968b0f7fa56883fcb94942",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 13,
+      "version": 14,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "e6d0187a0469e4776b2460dce854de3a8c7adb62",
-      "sourceState": "committed-fl-183-ml-gateway-wire-shape-merged-2026-09-26",
-      "readbackResult": "Markdown read-back of version 13 begins with the header carrying SHA-256 97431d86, 99366 bytes, commit e6d0187a04 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-183 commits e478c307a3 and 6b0ad76965 merged in e6d0187a04, the source-at-commit backlink, FL-183, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the rewritten Cloud ML v2 (FC-34) entry and the new Gateway wire shape in the server, Default model and Model identity (FL-183) entries, except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
-      "readbackAt": "2026-09-26T08:25:40.000Z"
+      "sourceCommit": "4139e3357a71f07ff03af15d832e855105331f50",
+      "sourceState": "committed-fl-186-model-choice-per-group-merged-2026-09-26",
+      "readbackResult": "Markdown read-back of version 14 begins with the header carrying SHA-256 17c03a49, 105525 bytes, commit 4139e3357a on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-186 commits fda80f5c6a, 6ea5c35d9b, ce698529f8 and abf0ca2dca merged in 76248f2f65 and the FL-183 fixture re-sync commit 4139e3357a, the source-at-commit backlink, FL-186, FL-183, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the Model choice per model group (FL-186) entry, the FL-186 notes in Default model and Model identity, the as-built slider note under CLD-201 and the frameleaf-cloud main 5e51087d92 fixture sentence, except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
+      "readbackAt": "2026-09-26T10:53:50.000Z"
     }
   ],
   "spaceId": "61374475",
