@@ -21,7 +21,6 @@ from ..config import clean_name, log, model_source_token, model_source_url, sett
 from ..schemas import ModelFormat, ModelIdentity, ModelSession, ModelTask, ModelType
 from ..sessions.ann import AnnSession
 
-
 # Organisation on the model source that holds the Frameleaf model repositories.
 MODEL_SOURCE_ORG = "frameleaf"
 
