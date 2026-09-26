@@ -29,10 +29,18 @@ When the server has neither, emails are sent without a link and ask the recipien
 
 Users can manage their email notification settings from their account settings page on the web. They can choose to turn email notifications on or off for the following events:
 
-<img src={require('./img/user-notifications-settings.webp').default} width="80%" title="User notification settings" />
+- **Enable**: turns all email notifications on or off.
+- **Album added**: an email when they are added to a shared album.
+- **Album updated**: an email when a shared album has new assets.
+
+Select **Save** after changing these options.
 
 ## Notification templates
 
-You can override the default notification text with custom templates in HTML format. You can use tags to show dynamic tags in your templates.
+You can override the default notification text with custom templates in HTML format. You can use tags to show dynamic tags in your templates. An empty template uses the default email. Each template has a **Preview** button.
 
-<img src={require('./img/user-notifications-templates.webp').default} width="80%" title="User notification templates" />
+| Template               | Available tags                                                             |
+| ---------------------- | -------------------------------------------------------------------------- |
+| Welcome email template | `{username}`, `{password}`, `{displayName}`, `{baseUrl}`                   |
+| Invite album template  | `{senderName}`, `{recipientName}`, `{albumId}`, `{albumName}`, `{baseUrl}` |
+| Update album template  | `{recipientName}`, `{albumId}`, `{albumName}`, `{baseUrl}`                 |

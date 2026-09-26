@@ -195,8 +195,10 @@ immich upload --dry-run --json-output . | tail -n +6 | jq .newFiles[]
 
 ### Obtain the API Key
 
-The API key can be obtained in the user setting panel on the web interface. You can also specify permissions for the key to limit its access.
+The API key can be created in your account settings on the web interface. You can also specify permissions for the key to limit its access.
 
-![Obtain Api Key](./img/obtain-api-key.webp)
-
-![Specify permissions for the key](./img/obtain-api-key-2.webp)
+1. Select your avatar in the top right corner and choose **Account settings**.
+2. In **Your preferences**, open **Account access**.
+3. Under **API keys**, select **Create API key**.
+4. Give the key a name and choose only the permissions the CLI needs, or full access.
+5. Create the key and copy it. The key is shown only once.

@@ -164,9 +164,7 @@ Within seconds, the assets from the old-pics and videos folders should show up i
 
 Folder view provides an additional view besides the timeline that is similar to a file explorer. It allows you to navigate through the folders and files in the library. This feature is handy for a highly curated and customized external library or a nicely configured storage template.
 
-You can enable this feature under `Account Settings > Features > Folders`
-
-<img src={require('./img/folder-view-1.webp').default} width="100%" title='Folder-view' />
+You can enable this feature under **Settings > Your preferences > Library features > Enable folders**. See [Folder view](/features/folder-view) for details.
 
 ### Set Custom Scan Interval
 
@@ -174,7 +172,9 @@ You can enable this feature under `Account Settings > Features > Folders`
 Only an admin can do this.
 :::
 
-You can define a custom interval for the trigger external library rescan under Administration -> Settings -> External Library.  
-You can set the scanning interval using the preset or cron format. For more information you can refer to [Crontab Guru](https://crontab.guru/).
+You can define a custom interval for the external library rescan:
 
-<img src={require('./img/library-custom-scan-interval.webp').default} width="75%" title='Set custom scan interval for external library' />
+1. Open **Settings** from the sidebar and go to **Libraries**.
+2. In **External libraries**, turn on **Enable scheduled scans**.
+3. Enter a cron expression in **Custom scan schedule**, for example `0 0 * * *` for every night at midnight. For more information you can refer to [Crontab Guru](https://crontab.guru/).
+4. Save your changes.

@@ -13,12 +13,14 @@ You will need to generate an app password to use your Microsoft email in Framele
 
 ## Entering the SMTP credential in Frameleaf
 
-Entering your credential in Frameleaf's email notification settings at `Administration -> Settings -> Notification Settings`
-
-Host: smtp-mail.outlook.com
-Port: 587
-username: your mail address
-Password: app password you created earlier
-SMTPS: set it to disabled
-
-<img src={require('./img/email-ms-settings.webp').default} width="80%" title="SMTP settings" />
+1. In Frameleaf, select **Settings** in the sidebar to open the Command Center.
+2. Open **Notifications**, then **Email delivery**.
+3. Turn on **Enable email notifications**.
+4. Enter the following values:
+   - **Host**: `smtp-mail.outlook.com`
+   - **Port**: `587`
+   - **Username**: your mail address
+   - **SMTP password**: select **Replace credential** and enter the app password you created earlier
+   - **SMTPS**: off
+   - **From address**: a sender name and your mail address, for example `Frameleaf <mail@yourdomain.com>`
+5. Select **Send test email and save**. A successful test also saves your email settings.

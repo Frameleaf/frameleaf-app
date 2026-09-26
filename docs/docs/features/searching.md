@@ -31,8 +31,6 @@ You can search the following types of content:
 
 To browse the photos that show text, and to correct what was read, see [Documents](./documents.md).
 
-<img src={require('./img/advanced-search-filters.webp').default} width="70%" title='Advanced search filters' />
-
 ## Ask Search
 
 AJ Taylor's maintained fork adds a local Ask Search experience for Google Photos-like discovery without handing your media library to a cloud photo service.

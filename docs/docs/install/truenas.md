@@ -31,14 +31,7 @@ Consider reviewing the TrueNAS [Apps resources](https://apps.truenas.com/getting
 Before beginning app installation, [create the datasets](https://www.truenas.com/docs/scale/scaletutorials/storage/datasets/datasetsscale/) to use in the **Storage Configuration** section during installation.
 
 In TrueNAS, the app requires 2 datasets for the application to function correctly: `data` and `pgData`. You can set the datasets to any names to match your naming conventions or preferences.
-You can organize these as one parent with two child datasets, for example `/mnt/tank/immich/data` and `/mnt/tank/immich/pgData`.
-
-<img
-src={require('./img/truenas/truenas00.webp').default}
-width="40%"
-alt="App widget in the TrueNAS catalog"
-className="border rounded-xl"
-/>
+You can organize these as one parent with two child datasets, for example `/mnt/tank/frameleaf/data` and `/mnt/tank/frameleaf/pgData`.
 
 :::info Datasets Permissions
 
@@ -50,7 +43,7 @@ Since TrueNAS Community Edition 24.10.2.2 and later, the app can be run as any u
 
 For an easy setup:
 
-- Create the parent dataset `immich` keeping the default **Generic** preset.
+- Create the parent dataset `frameleaf` keeping the default **Generic** preset.
 - Select `Dataset Preset` **Apps** instead of **Generic** when creating the `data` dataset. This will automatically give the correct permissions to the dataset. If you want to use another user for the app, you can keep the **Generic** preset, but you will need to give the **_modify_** permission to that other user.
 - For the `pgData` dataset, you can keep the default preset **Generic** as permissions can be set during the installation of the app (See [Storage Configuration](#storage-configuration) section).
   :::
@@ -73,41 +66,14 @@ To change or verify the ACL mode, go to the **Datasets** screen, select the **li
 
 To install the application, go to **Apps**, click **Discover Apps**, and either search for the upstream server's application (listed under the upstream project's name) or scroll down to locate its application widget.
 
-<div style={{ marginBottom: '2rem', border: '1px solid #ccc', padding: '1rem', borderRadius: '8px' }}>
-
-Click on the widget to open the application details screen.
-<img
-src={require('./img/truenas/truenas01.webp').default}
-width="50%"
-alt="App widget in the TrueNAS catalog"
-className="border rounded-xl"
-/>
-
-</div>
-
-<div style={{ marginBottom: '2rem', border: '1px solid #ccc', padding: '1rem', borderRadius: '8px' }}>
-
-Click **Install** to open the application configuration screen.
-<img
-src={require('./img/truenas/truenas02.webp').default}
-width="100%"
-alt="App Details Screen"
-className="border rounded-xl"
-/>
-
-</div>
+1. Click on the application widget to open the application details screen.
+2. Check the **App Version**, **Version** and **Train** (`community`) shown next to the application icon.
+3. Click **Install** to open the application configuration screen.
 
 Application configuration settings are presented in several sections, each explained below.
 To find specific fields, click in the **Search Input Fields** search field, scroll down to a particular section, or click on the section heading on the navigation area in the upper-right corner.
 
 ### Application Name and Version
-
-<img
-src={require('./img/truenas/truenas03.webp').default}
-width="100%"
-alt="Install App Screen"
-className="border rounded-xl mb-4"
-/>
 
 Keep the default value or enter a name in the **Application Name** field.  
 Change it if you’re deploying a second instance.
@@ -115,13 +81,6 @@ Change it if you’re deploying a second instance.
 App version within the TrueNAS catalog (different from the server release version).
 
 ### App configuration
-
-<img
-src={require('./img/truenas/truenas04.webp').default}
-width="40%"
-alt="Configuration Settings"
-className="border rounded-xl mb-4"
-/>
 
 The **Timezone** is set to the system default, which usually matches your local timezone. You can change it to another timezone if you prefer.
 
@@ -201,17 +160,10 @@ className="border rounded-xl"
 ### Storage Configuration
 
 :::danger Default Settings (Not recommended)
-The default setting for datasets is **ixVolume (dataset created automatically by the system)**. This is not recommended as this results in your data being harder to access manually and can result in data loss if you delete the immich app. It is also harder to manage snapshots and replication tasks. It is recommended to use the **Host Path (Path that already exists on the system)** option instead.
+The default setting for datasets is **ixVolume (dataset created automatically by the system)**. This is not recommended as this results in your data being harder to access manually and can result in data loss if you delete the app. It is also harder to manage snapshots and replication tasks. It is recommended to use the **Host Path (Path that already exists on the system)** option instead.
 :::
 
 The storage configuration section allows you to set up the storage locations for app data. You can select the datasets created in the previous step.
-
-<img
-src={require('./img/truenas/truenas08.webp').default}
-width="40%"
-alt="Configure Storage Volumes"
-className="border rounded-xl"
-/>
 
 For the Data Storage, select **Host Path (Path that already exists on the system)** and then select the dataset you created for app data storage, for example, `data`.
 
@@ -280,14 +232,7 @@ To mount these datasets:
    You have to write the full path, including `/data/`, as the server expects the data to be in that location.  
    If you do not include this path, the server will not be able to find the data and will not write the data to the location you specified.
    :::
-4. Select the **Host Path** as the dataset you created for that folder, for example, `/mnt/tank/immich/library`, `/mnt/tank/immich/upload`, etc.
-
-<img
-src={require('./img/truenas/truenas10.webp').default}
-width="40%"
-alt="Use Multiple Datasets for App Storage with Additional Storage"
-className="border rounded-xl"
-/>
+4. Select the **Host Path** as the dataset you created for that folder, for example, `/mnt/tank/frameleaf/library`, `/mnt/tank/frameleaf/upload`, etc.
 
 </details>
 
@@ -317,13 +262,6 @@ More details here: [GPU Passthrough Docs for TrueNAS Apps](https://apps.truenas.
 Finally, click **Install**.
 The system opens the **Installed Applications** screen with the app in the **Deploying** state.
 When the installation completes, it changes to **Running**.
-
-<img
-src={require('./img/truenas/truenas12.webp').default}
-width="100%"
-alt="App Installed"
-className="border rounded-xl"
-/>
 
 Click **Web Portal** on the **Application Info** widget, or go to the URL `http://<your-truenas-ip>:30041` in your web browser to open the web interface. This will show you the onboarding process to set up your first user account, which will be an administrator account.
 
@@ -385,27 +323,27 @@ To migrate from the old storage configuration to the new one, you will need to c
 3. **Copy the data** from the old datasets to the new dataset. We advise using the `rsync` command to copy the data, as it will preserve the permissions and ownership of the files. The following commands are examples:
 
 ```bash
-sudo rsync -av /mnt/tank/immich/library/ /mnt/tank/immich/data/library/
-sudo rsync -av /mnt/tank/immich/upload/ /mnt/tank/immich/data/upload/
-sudo rsync -av /mnt/tank/immich/thumbs/ /mnt/tank/immich/data/thumbs/
-sudo rsync -av /mnt/tank/immich/profile/ /mnt/tank/immich/data/profile/
-sudo rsync -av /mnt/tank/immich/video/ /mnt/tank/immich/data/encoded-video/
-sudo rsync -av /mnt/tank/immich/backups/ /mnt/tank/immich/data/backups/
+sudo rsync -av /mnt/tank/frameleaf/library/ /mnt/tank/frameleaf/data/library/
+sudo rsync -av /mnt/tank/frameleaf/upload/ /mnt/tank/frameleaf/data/upload/
+sudo rsync -av /mnt/tank/frameleaf/thumbs/ /mnt/tank/frameleaf/data/thumbs/
+sudo rsync -av /mnt/tank/frameleaf/profile/ /mnt/tank/frameleaf/data/profile/
+sudo rsync -av /mnt/tank/frameleaf/video/ /mnt/tank/frameleaf/data/encoded-video/
+sudo rsync -av /mnt/tank/frameleaf/backups/ /mnt/tank/frameleaf/data/backups/
 ```
 
-Make sure to replace `/mnt/tank/immich/` with the correct path to your old datasets and `/mnt/tank/immich/data/` with the correct path to your new dataset.
+Make sure to replace `/mnt/tank/frameleaf/` with the correct path to your old datasets and `/mnt/tank/frameleaf/data/` with the correct path to your new dataset.
 
 :::tip
-If you were using **ixVolume (dataset created automatically by the system)** for some of the app data storage, the path to the data should be `/mnt/.ix-apps/app_mounts/immich/`. You have to use this path instead of `/mnt/tank/immich/` in the `rsync` command above, for example:
+If you were using **ixVolume (dataset created automatically by the system)** for some of the app data storage, the path to the data should be `/mnt/.ix-apps/app_mounts/immich/`. You have to use this path instead of `/mnt/tank/frameleaf/` in the `rsync` command above, for example:
 
 ```bash
-sudo rsync -av /mnt/.ix-apps/app_mounts/immich/library/ /mnt/tank/immich/data/library/
+sudo rsync -av /mnt/.ix-apps/app_mounts/immich/library/ /mnt/tank/frameleaf/data/library/
 ```
 
 If you also were storing your files in the **ixVolume**, the **_upload_** folder is named `uploads` instead of `upload`, so the command to run should be:
 
 ```bash
-sudo rsync -av /mnt/.ix-apps/app_mounts/immich/uploads/ /mnt/tank/immich/data/upload/
+sudo rsync -av /mnt/.ix-apps/app_mounts/immich/uploads/ /mnt/tank/frameleaf/data/upload/
 ```
 
 This means that depending on your old storage configuration, you might have to use a mix of paths in the `rsync` commands above.
@@ -413,7 +351,7 @@ This means that depending on your old storage configuration, you might have to u
 If you were also using an ixVolume for Postgres data storage, you also should, first create the pgData dataset, as described in the [Setting up Storage Datasets](#setting-up-storage-datasets) section above, and then you can use the following command to copy the Postgres data:
 
 ```bash
-sudo rsync -av /mnt/.ix-apps/app_mounts/immich/pgData/ /mnt/tank/immich/pgData/
+sudo rsync -av /mnt/.ix-apps/app_mounts/immich/pgData/ /mnt/tank/frameleaf/pgData/
 ```
 
 :::
@@ -422,7 +360,7 @@ sudo rsync -av /mnt/.ix-apps/app_mounts/immich/pgData/ /mnt/tank/immich/pgData/
 Make sure that for each folder, the `.immich` file is copied as well, as it contains important metadata for the server. If for some reason the `.immich` file is not copied, you can copy it manually with the `rsync` command, for example:
 
 ```bash
-sudo rsync -av /mnt/tank/immich/library/.immich /mnt/tank/immich/data/library/
+sudo rsync -av /mnt/tank/frameleaf/library/.immich /mnt/tank/frameleaf/data/library/
 ```
 
 Replace `library` with the name of the folder where you are copying the file.
@@ -468,7 +406,7 @@ To migrate from the old storage configuration to the new one without creating ne
    - Following the instructions in the [Multiple Datasets for App Storage](#additional-storage-advanced-users) section, you can add, **for each old dataset**, a new Additional Storage with the following settings:
      - **Type**: `Host Path (Path that already exists on the system)`
      - **Mount Path**: `/data/<folder-name>` (e.g. `/data/library`)
-     - **Host Path**: `/mnt/<your-pool-name>/<dataset-name>` (e.g. `/mnt/tank/immich/library`)
+     - **Host Path**: `/mnt/<your-pool-name>/<dataset-name>` (e.g. `/mnt/tank/frameleaf/library`)
        :::danger Ensure using the correct paths names
        Make sure to replace `<folder-name>` with the actual name of the folder used by the server: `library`, `upload`, `thumbs`, `profile`, `encoded-video`, and `backups`. Also, replace `<your-pool-name>` and `<dataset-name>` with the actual names of your pool and dataset.
        :::

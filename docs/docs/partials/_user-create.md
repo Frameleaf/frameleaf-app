@@ -1,7 +1,6 @@
 If you have friends or family members who want to use the application as well, you can create additional accounts for them.
 
-<img src={require('./img/create-new-user.webp').default} width="90%" title='New User Registration' />
-
-On the **Administration > Users** page, you can click on the **Create user** button, and you'll be presented with the following dialog:
-
-<img src={require('./img/create-new-user-dialog.webp').default} width="40%" title='New User Registration Dialog' />
+1. On the **Administration > Users** page, select **Create user**.
+2. Enter the user's **Email**, a **Password** (twice) and their **Name**.
+3. Optionally set **Quota Size (GiB)** (leave it empty for unlimited), turn on **Require user to change password on first login**, or turn on **Admin User**.
+4. Select **Create**.

@@ -2,7 +2,6 @@
 sidebar_position: 1
 ---
 
-import AppArchitecture from './img/app-architecture.webp';
 import MobileArchitecture from './img/immich_mobile_architecture.svg';
 
 # Architecture
@@ -11,7 +10,33 @@ Frameleaf uses a traditional client-server design, with a dedicated database for
 
 ## High Level Diagram
 
-<img alt="Frameleaf architecture" src={AppArchitecture} className="p-4 dark:bg-immich-dark-primary my-4" />
+```mermaid
+graph LR
+    subgraph Clients
+        W["Web app (SvelteKit)"]
+        M["Mobile app (Flutter)"]
+        C["Frameleaf CLI (TypeScript)"]
+    end
+    subgraph Server
+        API[API controllers]
+        CORE["Core services (domain)"]
+        REPO["Repositories (infra)"]
+        CRON[Cron]
+        JOBS[Jobs]
+    end
+    W -- "HTTP (OpenAPI)" --> API
+    M -- "HTTP (OpenAPI)" --> API
+    C -- "HTTP (OpenAPI)" --> API
+    API --> CORE
+    CRON --> CORE
+    JOBS --> CORE
+    CORE --> REPO
+    REPO -- HTTP --> ML["Machine learning (Python)"]
+    REPO --> FS[File system]
+    REPO --> PG[(Postgres)]
+    REPO --> RD[(Redis)]
+    RD -- Queue --> JOBS
+```
 
 The diagram shows clients communicating with the server's API via REST. The server communicates with downstream systems (i.e. Redis, Postgres, Machine Learning, file system) through repository interfaces. Not shown in the diagram, is that the server is split into two separate containers `immich-server` and `immich-microservices`. The microservices container does not handle API requests or schedule cron jobs, but primarily handles incoming job requests from Redis.
 

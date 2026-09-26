@@ -6,9 +6,10 @@ Frameleaf supports the Google's Cast protocol so that photos and videos can be c
 
 Google Cast support is disabled by default. The web UI uses Google-provided scripts and must retrieve them from Google servers when the page loads. This is a privacy concern for some and is thus opt-in.
 
-You can enable Google Cast support through `Account Settings > Features > Cast > Google Cast`
+To enable it:
 
-<img src={require('./img/gcast-enable.webp').default} width="70%" title='Enable Google Cast Support' />
+1. Open **Settings** from the sidebar and go to **Your preferences**.
+2. In **Library features**, turn on **Enable Chromecast**.
 
 ## Limitations
 
