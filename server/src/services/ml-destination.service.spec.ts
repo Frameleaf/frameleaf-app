@@ -355,6 +355,7 @@ describe(MlDestinationService.name, () => {
       const gateway = {
         url: 'https://ml.eu.cloud.test',
         token: { accessToken: 'instance-token', signer: identitySigner },
+        onCloneSuspected: expect.any(Function),
       };
       expect(mocks.frameleafCloud.accessToken).toHaveBeenCalledWith(
         expect.objectContaining({ issuer: 'https://id.cloud.test' }),
@@ -458,6 +459,7 @@ describe(MlDestinationService.name, () => {
       expect(mocks.frameleafCloudMl.revokeConsent).toHaveBeenCalledWith({
         url: 'https://ml.eu.cloud.test',
         token: { accessToken: 'instance-token', signer: identitySigner },
+        onCloneSuspected: expect.any(Function),
       });
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });

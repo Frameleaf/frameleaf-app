@@ -270,6 +270,53 @@ describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
     }
   });
 
+  describe("the catalogue's default model (FL-183, FC-34)", () => {
+    const verdict = (input: Parameters<typeof evaluateAdmission>[0]) => evaluateAdmission(input);
+
+    it('uses the default of the exact group, restoration by mode, and a routed model over it', () => {
+      expect(refusal({ ...cloud, workload: MlWorkload.RestorationFaithful })).toBeNull();
+      expect(refusal({ ...cloud, workload: MlWorkload.RestorationCreative })).toBeNull();
+      expect(refusal({ ...cloud, workload: MlWorkload.Enrichment })).toBeNull();
+      // routed wins even where the catalogue marks another default
+      expect(
+        refusal({ ...withFacts({ defaultModels: {} }), workload: MlWorkload.Enrichment, modelId: 'describe-large' }),
+      ).toBeNull();
+    });
+
+    it('refuses unrouted work whose group has no default, asking the administrator to pick', () => {
+      const none = verdict({ ...withFacts({ defaultModels: {} }), workload: MlWorkload.RestorationCreative });
+      expect(none).toEqual({
+        admitted: false,
+        refusal: MlAdmissionRefusal.ModelMismatch,
+        detail:
+          'Frameleaf Cloud: Frameleaf Cloud recommends no model for restoration-creative in this region; choose one in Where each job runs',
+      });
+      // the faithful default never stands in for creative work
+      expect(
+        refusal({
+          ...withFacts({ defaultModels: { 'restoration:faithful': 'restore-faithful' } }),
+          workload: MlWorkload.RestorationCreative,
+        }),
+      ).toBe(MlAdmissionRefusal.ModelMismatch);
+      // facts stored before FL-183 name no default
+      expect(refusal({ ...withFacts({ defaultModels: undefined }), workload: MlWorkload.Enrichment })).toBe(
+        MlAdmissionRefusal.ModelMismatch,
+      );
+    });
+
+    it('refuses a default the catalogue no longer lists, or one of the other mode', () => {
+      expect(
+        refusal({ ...withFacts({ defaultModels: { descriptions: 'gone' } }), workload: MlWorkload.Enrichment }),
+      ).toBe(MlAdmissionRefusal.ModelMismatch);
+      expect(
+        refusal({
+          ...withFacts({ defaultModels: { 'restoration:creative': 'restore-faithful' } }),
+          workload: MlWorkload.RestorationCreative,
+        }),
+      ).toBe(MlAdmissionRefusal.ModelMismatch);
+    });
+  });
+
   it('refuses a workload the cloud does not offer this account right now', () => {
     expect(refusal({ ...cloud, probe: { ...mlProbeStub.frameleafCloud, workloads: [MlWorkload.Enrichment] } })).toBe(
       MlAdmissionRefusal.WorkloadNotServed,
@@ -330,13 +377,18 @@ describe('selectMlDestination', () => {
     );
   });
 
-  it('names the licensed cloud description default when no model is routed, never the local one (FL-146)', async () => {
+  it("names the catalogue's marked default when no model is routed, never a model name (FL-146, FL-183)", async () => {
     const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
     const cloud = await selectMlDestination(d, {
       workload: MlWorkload.Enrichment,
       destinationId: mlDestinationStub.frameleafCloudConsented.id,
     });
-    expect(cloud.cloudModelId).toBe('qwen3.5-9b@1');
+    expect(cloud.cloudModelId).toBe('describe-large');
+    const creative = await selectMlDestination(d, {
+      workload: MlWorkload.RestorationCreative,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
+    });
+    expect(creative.cloudModelId).toBe('restore-creative');
     const local = await selectMlDestination(deps({}), {
       workload: MlWorkload.Enrichment,
       destinationId: 'ml-destination-local',

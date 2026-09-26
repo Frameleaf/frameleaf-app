@@ -9,12 +9,15 @@ import {
   type FrameleafDiscoveryDocument,
   appWorkloadsForCloudId,
   capabilitiesSchema,
+  catalogDefaults,
   catalogEntrySchema,
   catalogSchema,
   cloudAddressProblem,
+  cloudDefaultGroupFor,
   cloudDomainOf,
   cloudErrorCode,
   cloudFactsFromCapabilities,
+  cloudModelFor,
   cloudRequestBody,
   cloudWorkloadIdFor,
   consentCurrentSchema,
@@ -27,6 +30,8 @@ import {
   estimateResponseSchema,
   estimateUsable,
   isEntitled,
+  isGatewayCloneSuspected,
+  isLocalOnlyModel,
   jobAdmittedSchema,
   jobCreateRequestSchema,
   jobRunSchema,
@@ -37,6 +42,7 @@ import {
   stepUpUrl,
   storeAddress,
   studioAiCloudWorkloadId,
+  usageItemSchema,
   usageSchema,
   walletResponseSchema,
   workloadForCatalogEntry,
@@ -303,9 +309,24 @@ describe('error envelope (FL-177, as-built decisions #15–#18)', () => {
       MlAdmissionRefusal.ModelMismatch,
     );
     expect(failure(503, { code: 'maintenance', message: '' }).refusal).toBe(MlAdmissionRefusal.CloudUnavailable);
-    expect(failure(403, { code: CloudErrorCode.CloneSuspected, message: '' }).refusal).toBe(
+  });
+
+  it('maps a gateway clone_suspected to the cloud being unavailable, whatever refusal it names (FL-183, FL-185)', () => {
+    for (const refusal of [undefined, 'destination-unhealthy']) {
+      const error = failure(403, { code: CloudErrorCode.CloneSuspected, message: 'copy', refusal });
+      expect(error.refusal).toBe(MlAdmissionRefusal.CloudUnavailable);
+      expect(isGatewayCloneSuspected(error)).toBe(true);
+    }
+    // region-mismatch and capacity keep their own mapping
+    expect(failure(403, { code: CloudErrorCode.RegionMismatch, message: '' }).refusal).toBe(
       MlAdmissionRefusal.DestinationUnhealthy,
     );
+    expect(failure(503, { code: CloudErrorCode.Capacity, message: '' }).refusal).toBe(
+      MlAdmissionRefusal.DestinationUnhealthy,
+    );
+    // the token endpoint's refusal is an OAuth 400, handled by the gateway resolution (FL-185)
+    expect(isGatewayCloneSuspected(failure(400, { code: CloudErrorCode.CloneSuspected, message: '' }))).toBe(false);
+    expect(isGatewayCloneSuspected(new Error('clone_suspected'))).toBe(false);
   });
 
   // FL-184: licence-domain envelopes (FC-22) carry no `refusal` — the licence service reads their
@@ -446,15 +467,31 @@ describe('gateway amounts and usage (FL-177, as-built decisions #21, #22 and #24
     ]);
   });
 
-  it('refuses the rejected usage-model-id.json whole, so no settlement is applied from it (FL-183)', () => {
-    expect(usageSchema.safeParse(cloudContractFixture('ml/rejected/usage-model-id.json')).success).toBe(false);
+  it('refuses the item of the rejected usage-model-id.json, counting it, so no settlement is applied from it', () => {
+    expect(usageSchema.parse(cloudContractFixture('ml/rejected/usage-model-id.json'))).toEqual({
+      items: [],
+      refused: 1,
+    });
+  });
+
+  it('keeps every good usage item when one among them is refused (FL-183)', () => {
+    const [item] = cloudContractFixture<{ items: Record<string, unknown>[] }>('ml/usage.json').items;
+    const [leaky] = cloudContractFixture<{ items: unknown[] }>('ml/rejected/usage-model-id.json').items;
+    const later = { ...item, jobId: '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e10' };
+    const usage = usageSchema.parse({ items: [item, leaky, later] });
+    expect(usage.items.map((entry) => entry.jobId)).toEqual([
+      '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f',
+      '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e10',
+    ]);
+    expect(usage.refused).toBe(1);
   });
 
   it('refuses a usage item whose SKU is a model or GPU name (FL-183)', () => {
     const [item] = cloudContractFixture<{ items: Record<string, unknown>[] }>('ml/usage.json').items;
-    expect(usageSchema.safeParse({ items: [{ ...item, modelSku: 'qwen3.5-9b@1' }] }).success).toBe(false);
-    expect(usageSchema.safeParse({ items: [{ ...item, computeSku: 'gpu48pro' }] }).success).toBe(false);
-    expect(usageSchema.safeParse({ items: [{ ...item, modelSku: null, computeSku: null }] }).success).toBe(true);
+    expect(usageItemSchema.safeParse({ ...item, modelSku: 'qwen3.5-9b@1' }).success).toBe(false);
+    expect(usageItemSchema.safeParse({ ...item, computeSku: 'gpu48pro' }).success).toBe(false);
+    expect(usageItemSchema.safeParse({ ...item, modelSku: null, computeSku: null }).success).toBe(true);
+    expect(usageSchema.safeParse({ items: 'not a list' }).success).toBe(false);
   });
 });
 
@@ -685,6 +722,7 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         notice: 'Built with Qwen',
         mode: null,
         licence: null,
+        default: false,
       });
       for (const model of catalog.models) {
         expect(workloadForCatalogEntry(model.workload, model.mode), model.sku).not.toBeNull();
@@ -765,6 +803,119 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         'ms_54S55W7C',
       ]);
       expect(offeredCatalogModels(null)).toEqual([]);
+    });
+
+    it('recognises a local-only model whatever spaces or punctuation its name carries', () => {
+      for (const name of [
+        'Qwen2.5 VL 3B',
+        'Qwen 2.5-VL 3B Instruct',
+        'qwen2_5_vl_3b',
+        'Qwen/Qwen2.5-VL-3B-Instruct',
+        'llmware/qwen2.5-vl-3b-ov',
+        'NLLB CLIP base',
+        'nllb-clip-large-siglip__v1',
+        'MusicGen Small',
+        'Xenova/musicgen-small',
+      ]) {
+        expect(isLocalOnlyModel(name), name).toBe(true);
+      }
+      for (const name of [
+        'Qwen2.5-VL-72B AWQ',
+        'Qwen2.5-VL-32B',
+        'Qwen3.5-9B',
+        'SeedVR2-3B',
+        'ms_K6WT70CS',
+        '',
+        null,
+      ]) {
+        expect(isLocalOnlyModel(name), String(name)).toBe(false);
+      }
+    });
+
+    /**
+     * FC-34 (cloud decision 2026-09-26): a catalogue entry may carry `default: true`, at most one per
+     * group (workload; for restoration, workload and mode). The cloud has not yet published its
+     * fixtures for this (catalog-descriptions.json, rejected/catalog-two-defaults.json, the updated
+     * catalog-restoration.json), so these specs build the catalogues from its published entries.
+     */
+    describe('defaults', () => {
+      const catalogModels = cloudContractFixture<{ models: Record<string, unknown>[] }>('ml/catalog.json').models;
+      const [faithful, creative] = cloudContractFixture<{ models: Record<string, unknown>[] }>(
+        'ml/catalog-restoration.json',
+      ).models;
+      const [standard, best, upscale] = catalogModels;
+      const parse = (models: unknown[]) => catalogSchema.parse({ etag: '"cat-test"', models });
+
+      it('reads one default per group, with restoration grouped by mode', () => {
+        const catalog = parse([
+          { ...standard, default: true },
+          best,
+          { ...upscale, default: false },
+          { ...faithful, default: true },
+          { ...creative, default: true },
+        ]);
+        expect(catalog.refused).toBe(0);
+        expect(catalog.models.map((model) => model.default)).toEqual([true, false, false, true, true]);
+        expect(catalogDefaults(catalog.models)).toEqual({
+          descriptions: 'ms_K6WT70CS',
+          'restoration:faithful': 'ms_YS60DAXB',
+          'restoration:creative': 'ms_F1SSRED6',
+        });
+      });
+
+      it('names no default for a group the cloud marks none in (not available to this region or licence)', () => {
+        const catalog = parse([standard, best, { ...faithful, default: true }, creative]);
+        expect(catalogDefaults(catalog.models)).toEqual({ 'restoration:faithful': 'ms_YS60DAXB' });
+      });
+
+      it('refuses two defaults in one group: the group keeps its models, has no default, and counts once', () => {
+        const catalog = parse([
+          { ...standard, default: true },
+          { ...best, default: true },
+          { ...upscale, default: true },
+          { ...creative, default: true },
+          { ...creative, sku: 'ms_CRE8TVE2', rev: 'mr_CRE8TVE2CRE8', default: true },
+          { ...faithful, default: true },
+        ]);
+        expect(catalog.refused).toBe(2);
+        expect(catalog.models).toHaveLength(6);
+        expect(catalogDefaults(catalog.models)).toEqual({
+          upscale: 'ms_54S55W7C',
+          'restoration:faithful': 'ms_YS60DAXB',
+        });
+      });
+
+      it('never counts a refused entry toward a default, nor a default that is not a boolean', () => {
+        const leaky = cloudContractFixture<Record<string, unknown>>('ml/rejected/catalog-entry-model-id.json');
+        const catalog = parse([
+          { ...standard, default: true },
+          { ...leaky, default: true },
+        ]);
+        expect(catalog.refused).toBe(1);
+        expect(catalogDefaults(catalog.models)).toEqual({ descriptions: 'ms_K6WT70CS' });
+        expect(catalogEntrySchema.safeParse({ ...standard, default: 'yes' }).success).toBe(false);
+      });
+
+      it('never names a local-only model as a default', () => {
+        const catalog = parse([{ ...standard, default: true, display: { model: 'Qwen2.5 VL 3B', gpu: 'Any' } }]);
+        expect(catalogDefaults(offeredCatalogModels(catalog))).toEqual({});
+      });
+
+      it('takes a workload default from its own group only', () => {
+        const facts = {
+          defaultModels: { descriptions: 'ms_K6WT70CS', 'restoration:faithful': 'ms_YS60DAXB', tts: 'ms_TTS00000' },
+        };
+        expect(cloudDefaultGroupFor(MlWorkload.Enrichment)).toBe('descriptions');
+        expect(cloudDefaultGroupFor(MlWorkload.RestorationCreative)).toBe('restoration:creative');
+        expect(cloudDefaultGroupFor(MlWorkload.StudioAi)).toBeNull();
+        expect(cloudDefaultGroupFor(MlWorkload.Face)).toBeNull();
+        expect(cloudModelFor(MlWorkload.Enrichment, null, facts)).toBe('ms_K6WT70CS');
+        expect(cloudModelFor(MlWorkload.RestorationFaithful, undefined, facts)).toBe('ms_YS60DAXB');
+        expect(cloudModelFor(MlWorkload.RestorationCreative, null, facts)).toBeNull();
+        expect(cloudModelFor(MlWorkload.StudioAi, null, facts)).toBeNull();
+        expect(cloudModelFor(MlWorkload.Upscale, 'ms_54S55W7C', facts)).toBe('ms_54S55W7C');
+        expect(cloudModelFor(MlWorkload.Enrichment, null, {})).toBeNull();
+      });
     });
   });
 
