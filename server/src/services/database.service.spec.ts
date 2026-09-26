@@ -337,6 +337,17 @@ describe(DatabaseService.name, () => {
       expect(mocks.database.runMigrations).not.toHaveBeenCalled();
     });
 
+    it('reports an official-origin library that still awaits adoption without adopting it (FL-44)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('official-origin');
+      mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(true);
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('immich-admin fork-schema adopt'));
+      expect(mocks.database.adoptOfficialOrigin).not.toHaveBeenCalled();
+      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
     it('guards an inactive schema version 2 return before either migration provider runs', async () => {
       mocks.database.detectMigrationMode.mockResolvedValue('isolated');
       mocks.database.isCertifiedReturnStartup.mockResolvedValue(true);

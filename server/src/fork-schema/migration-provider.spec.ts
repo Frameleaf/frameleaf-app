@@ -1,8 +1,13 @@
 import type { Migration, MigrationProvider } from 'kysely/migration';
-import { createCertifiedLedgerMigrationProvider } from 'src/fork-schema/migration-provider.js';
+import { resolve } from 'node:path';
+import {
+  createCertifiedLedgerMigrationProvider,
+  createLegacyMigrationProvider,
+} from 'src/fork-schema/migration-provider.js';
 import {
   ADD_PLUGIN_METHOD_ALLOWED_HOSTS_MIGRATION,
   ADD_PLUGIN_TEMPLATES_MIGRATION,
+  LEGACY_WORKFLOW_MIGRATION,
   OFFICIAL_WORKFLOW_MIGRATION,
 } from 'src/fork-schema/workflow-compatibility.js';
 
@@ -75,5 +80,27 @@ describe(createCertifiedLedgerMigrationProvider, () => {
       OFFICIAL_WORKFLOW_MIGRATION,
       '1779000000000-LegacyAfter',
     ]);
+  });
+});
+
+describe(createLegacyMigrationProvider, () => {
+  const folder = resolve('src/schema/migrations');
+
+  it('bundles the Frameleaf workflow rewrite for fresh and legacy databases', async () => {
+    const names = Object.keys(await createLegacyMigrationProvider(folder).getMigrations());
+
+    expect(names).toContain(LEGACY_WORKFLOW_MIGRATION);
+    expect(names).toContain('2100000000570-AddWorkflowDefinitions');
+  });
+
+  it('leaves the Frameleaf workflow rewrite out once the official original is ledgered (FL-44)', async () => {
+    const names = Object.keys(
+      await createLegacyMigrationProvider(folder, [OFFICIAL_WORKFLOW_MIGRATION]).getMigrations(),
+    );
+
+    expect(names).not.toContain(LEGACY_WORKFLOW_MIGRATION);
+    expect(names).toContain('1778000000000-PhysicalDeduplication');
+    expect(names).toContain('2100000000570-AddWorkflowDefinitions');
+    expect(names).toContain('1787148183729-ClusterGroups');
   });
 });
