@@ -26,15 +26,18 @@ export class ForkHandoffPrepareOfficialCommand extends CommandRunner {
     }
     const acknowledgeSharedLinkPasswords = options.acknowledgeSharedLinkPasswords === true;
     // FL-161: refuses before the checkpoint unless the locked shared links were acknowledged
-    const { passwordProtectedLinks } = await this.handoff.sharedLinkPasswordPreflight({
+    const { hashed, plaintext } = await this.handoff.sharedLinkPasswordPreflight({
       acknowledgeSharedLinkPasswords,
     });
     const checkpoint = await this.handoff.prepareOfficial({ acknowledgeSharedLinkPasswords });
-    if (passwordProtectedLinks > 0) {
+    if (hashed > 0) {
       process.stderr.write(
-        `${passwordProtectedLinks} password-protected shared link(s) stay locked on the official server until ` +
+        `${hashed} password-protected shared link(s) stay locked on the official server until ` +
           'their passwords are set again there.\n',
       );
+    }
+    if (plaintext > 0) {
+      process.stderr.write(`${plaintext} other password-protected shared link(s) keep working there.\n`);
     }
     process.stdout.write(`${canonicalCutoverJson(checkpoint)}\n`);
   }

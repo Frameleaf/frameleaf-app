@@ -26,7 +26,7 @@ import {
   AssetDevelopSaveDto,
 } from 'src/dtos/asset-develop.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -149,6 +149,8 @@ export class AssetDevelopController {
   @Get(':id/develop/revisions/:revisionId/file')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetEditGet })
+  // FL-161: can stream the edited full-resolution master
+  @OriginalTransfer()
   @Endpoint({
     summary: 'View a rendered develop file',
     description: 'Streams the edited master or the preview rendered for the version.',

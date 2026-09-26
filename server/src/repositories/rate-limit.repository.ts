@@ -3,7 +3,7 @@ import { Redis } from 'ioredis';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 
 export type RateLimitHit = {
-  /** Requests counted in the current window, including this one (for `peek`, so far). */
+  /** Requests counted in the current window, including this one. */
   count: number;
   /** Seconds until the window ends. */
   resetSeconds: number;
@@ -62,18 +62,16 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
     return { count, resetSeconds: Math.max(1, ttl) };
   }
 
-  /** The count so far, without counting this request (0 when the window has not started). */
-  async peek(key: string): Promise<RateLimitHit> {
+  /**
+   * Give one counted attempt back (`DECR`): an attempt counted up front that turned out not to be a
+   * failure. A counter never goes below zero, and one given back to zero is removed.
+   */
+  async release(key: string): Promise<void> {
     const client = this.getClient();
-    const results = await client.multi().get(key).ttl(key).exec();
-    if (!results) {
-      throw new Error('Rate limit counter transaction was discarded');
+    const count = await client.decr(key);
+    if (count <= 0) {
+      await client.del(key);
     }
-    const [[getError, value], [ttlError, ttl]] = results as [[Error | null, string | null], [Error | null, number]];
-    if (getError || ttlError) {
-      throw getError ?? ttlError;
-    }
-    return { count: Number(value ?? 0), resetSeconds: Math.max(1, ttl) };
   }
 
   async onModuleDestroy() {

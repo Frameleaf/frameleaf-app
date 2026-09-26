@@ -1,6 +1,12 @@
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthGuard, Authenticated, HomeNetworkOnly, OriginalTransfer } from 'src/middleware/auth.guard.js';
+import {
+  AuthGuard,
+  Authenticated,
+  HomeNetworkOnly,
+  OriginalTransfer,
+  RemoteSignInExempt,
+} from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -25,6 +31,10 @@ class TestController {
   @Authenticated({ public: true })
   @HomeNetworkOnly()
   workerInputRoute() {}
+
+  @Authenticated()
+  @RemoteSignInExempt()
+  logoutRoute() {}
 }
 
 const contextFor = (handler: () => void, request: Record<string, unknown> = {}) =>
@@ -127,6 +137,20 @@ describe(AuthGuard.name, () => {
         sut.canActivate(contextFor(TestController.prototype.originalRoute, { frameleafVia: 'wan' })),
       ).resolves.toBe(true);
       await expect(sut.canActivate(contextFor(TestController.prototype.originalRoute))).resolves.toBe(true);
+    });
+
+    it('tells authentication that signing out is exempt from the remote sign-in rule, and nothing else', async () => {
+      const authenticate = vitest.spyOn(authService, 'authenticate').mockResolvedValue({} as never);
+
+      await sut.canActivate(contextFor(TestController.prototype.logoutRoute, { frameleafVia: 'relay' }));
+      expect(authenticate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ via: 'relay', remoteSignInExempt: true }) }),
+      );
+
+      await sut.canActivate(contextFor(TestController.prototype.thumbnailRoute, { frameleafVia: 'relay' }));
+      expect(authenticate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ remoteSignInExempt: false }) }),
+      );
     });
 
     it('refuses a home-network route over remote access, public or not, whatever the settings (FL-161)', async () => {

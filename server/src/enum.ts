@@ -1809,8 +1809,10 @@ export enum MetadataKey {
   OriginalTransfer = 'original_transfer',
   /** FL-161: a route (or controller) for machines on the home network only, refused over remote access. */
   HomeNetworkOnly = 'home_network_only',
-  /** FL-161: a route left out of the per-address remote-access ceiling (thumbnails and previews). */
-  RemoteCeilingExempt = 'remote_ceiling_exempt',
+  /** FL-161: a route counted against the higher remote-access media ceiling (thumbnails and previews). */
+  RemoteMediaCeiling = 'remote_media_ceiling',
+  /** FL-161: a route any valid session may reach through remote access (signing out). */
+  RemoteSignInExempt = 'remote_sign_in_exempt',
 }
 
 export enum RouteKey {
