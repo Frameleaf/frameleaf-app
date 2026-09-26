@@ -348,6 +348,7 @@ describe(CloudMlService.name, () => {
         dailyCapUsd: null,
         spentTodayUsd: 0,
         topUpUrl: null,
+        settingsUrl: null,
         autoTopUp: false,
       });
 
