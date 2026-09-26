@@ -1438,6 +1438,29 @@ export class MediaOperationRepository {
     );
   }
 
+  /**
+   * FL-162: finished Frameleaf Cloud jobs whose cloud job was admitted but whose settled cost is not
+   * recorded yet, oldest first. The settle pass reads each one's cost once and writes it to the result;
+   * `maxReads` bounds how often a job whose cost never comes is asked about, and only jobs finished
+   * since `since` are asked about at all.
+   */
+  listCloudMlJobsAwaitingCost(options: { limit: number; maxReads: number; since: Date }): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('kind', '=', MediaOperationKind.CloudMlJob)
+        .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .where('remoteJobId', 'is not', null)
+        .where('finishedAt', '>=', options.since)
+        .where(sql<string>`"result" ->> 'cost'`, 'is', null)
+        .where(sql<number>`coalesce(("result" ->> 'costReads')::int, 0)`, '<', options.maxReads)
+        .orderBy('finishedAt', 'asc')
+        .limit(options.limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
+  }
+
   async markRemoteReleased(id: string): Promise<void> {
     await this.db
       .updateTable('media_operation')

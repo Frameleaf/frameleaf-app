@@ -105,8 +105,35 @@ export const RestorationErrorCode = {
 
 export type RestorationStage = 'preview' | 'full';
 
-export const workloadForMode = (mode: AssetRestorationMode): MlWorkload =>
-  mode === AssetRestorationMode.Creative ? MlWorkload.RestorationCreative : MlWorkload.RestorationFaithful;
+export const workloadForMode = (mode: AssetRestorationMode): MlWorkload => {
+  switch (mode) {
+    case AssetRestorationMode.Creative: {
+      return MlWorkload.RestorationCreative;
+    }
+    case AssetRestorationMode.SmoothMotion: {
+      // FL-162: Smooth motion is frame interpolation, its own workload and its own cloud job
+      return MlWorkload.Interpolation;
+    }
+    case AssetRestorationMode.Faithful: {
+      return MlWorkload.RestorationFaithful;
+    }
+  }
+};
+
+/** What Activity shows for a mode under the job title. Customer words, not enum values. */
+export const restorationModeLabel = (mode: AssetRestorationMode): string => {
+  switch (mode) {
+    case AssetRestorationMode.Creative: {
+      return 'Creative';
+    }
+    case AssetRestorationMode.SmoothMotion: {
+      return 'Smooth motion';
+    }
+    case AssetRestorationMode.Faithful: {
+      return 'Faithful';
+    }
+  }
+};
 
 export const stageOfKind = (kind: MediaOperationKind): RestorationStage | null => {
   switch (kind) {

@@ -16,6 +16,7 @@ import { ClassificationController } from 'src/controllers/classification.control
 import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
 import { CloudBackupAdminController } from 'src/controllers/cloud-backup-admin.controller.js';
 import { CloudMlAdminController } from 'src/controllers/cloud-ml-admin.controller.js';
+import { CloudMlController } from 'src/controllers/cloud-ml.controller.js';
 import { ClusterGroupController } from 'src/controllers/cluster-group.controller.js';
 import { ConfigAdminController } from 'src/controllers/config-admin.controller.js';
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
@@ -84,6 +85,7 @@ export const controllers = [
   LicenseAdminController,
   LicenseController,
   CloudMlAdminController,
+  CloudMlController,
   CloudBackupAdminController,
   HardwareCheckController,
   ICloudSyncController,

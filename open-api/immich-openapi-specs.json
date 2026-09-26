@@ -13116,6 +13116,175 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/cloud/ml/jobs": {
+      "post": {
+        "description": "Confirms a kept estimate with the consent version it was shown with and the acknowledgement that the file leaves this server. The job then runs in Activity. A repeated confirmation answers with the same job; an expired estimate is refused with 409 estimate-expired and is never reused.",
+        "operationId": "createCloudMlJob",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudMlJobCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlJobResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Confirm a Frameleaf Cloud job",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "cloudMlJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/cloud/ml/jobs/estimate": {
+      "post": {
+        "description": "Prepares the preview or the whole file without metadata and asks Frameleaf Cloud for a sealed estimate: metered GPU time × rate + a start fee per worker, as a p50–p90 range with a per-photo or per-minute figure, the AI Wallet and the consent version. Nothing is sent to be processed. 409 model-mismatch sends the person back to the model slider.",
+        "operationId": "estimateCloudMlJob",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudMlJobEstimateRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlJobEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate a Frameleaf Cloud job",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "cloudMlJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/cloud/ml/jobs/{id}": {
+      "get": {
+        "description": "Where one of your Frameleaf Cloud jobs is: its stage (queued, starting, running, paused, done, failed or cancelled), the model, and the estimated, metered and settled cost.",
+        "operationId": "getCloudMlJob",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlJobActivityDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Frameleaf Cloud job",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "cloudMlJob.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/cluster-groups/requests": {
       "get": {
         "description": "Retrieve the pending requests for the current user to join a cluster group.",
@@ -39988,6 +40157,10 @@
       "description": "Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback."
     },
     {
+      "name": "Frameleaf Cloud jobs",
+      "description": "Restoration, upscaling and Smooth motion on Frameleaf Cloud for your own media: an estimate from metered GPU time, a confirmation with consent, then a durable job in Activity. Nothing is sent without that confirmation."
+    },
+    {
       "name": "Integrity (admin)",
       "description": "Endpoints for viewing and managing integrity reports."
     },
@@ -48584,7 +48757,8 @@
         "description": "Restoration model family",
         "enum": [
           "faithful",
-          "creative"
+          "creative",
+          "smooth_motion"
         ],
         "type": "string"
       },
@@ -48911,6 +49085,13 @@
             "minimum": 1,
             "type": "integer"
           },
+          "smoothMotionFactor": {
+            "description": "Smooth motion: how many frames each source frame became (2, 4 or 8); null for a restoration",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
           "sourceDurationSeconds": {
             "format": "double",
             "nullable": true,
@@ -48973,6 +49154,7 @@
           "resultExpiresAt",
           "reviewedAt",
           "revision",
+          "smoothMotionFactor",
           "sourceDurationSeconds",
           "sourceHeight",
           "sourceType",
@@ -51494,6 +51676,535 @@
           "workloads"
         ],
         "type": "object"
+      },
+      "CloudMlJobActivityDto": {
+        "properties": {
+          "activityStage": {
+            "$ref": "#/components/schemas/CloudMlJobActivityStage"
+          },
+          "cloudStatus": {
+            "description": "Frameleaf Cloud’s own state of the job, or null before it was sent",
+            "nullable": true,
+            "type": "string"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/CloudMlJobCostDto"
+          },
+          "model": {
+            "description": "The catalogue name of the model the job runs",
+            "type": "string"
+          },
+          "modelSku": {
+            "type": "string"
+          },
+          "plannedWorkers": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "progressUnit": {
+            "description": "items, seconds or segments, when Frameleaf Cloud reports progress",
+            "nullable": true,
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/CloudMlJobPurpose"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/CloudMlJobStage"
+          },
+          "workers": {
+            "description": "Workers started so far",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "activityStage",
+          "cloudStatus",
+          "cost",
+          "model",
+          "modelSku",
+          "plannedWorkers",
+          "progressUnit",
+          "purpose",
+          "stage",
+          "workers"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobActivityStage": {
+        "description": "Where the job is, as Activity shows it; starting is a worker cold start",
+        "enum": [
+          "queued",
+          "starting",
+          "running",
+          "paused",
+          "done",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "CloudMlJobConsentDto": {
+        "properties": {
+          "documentUrl": {
+            "description": "The full text, when Frameleaf Cloud links one",
+            "nullable": true,
+            "type": "string"
+          },
+          "summary": {
+            "description": "What leaves this server and what is kept, as Frameleaf Cloud words it",
+            "type": "string"
+          },
+          "version": {
+            "description": "The consent version this job is confirmed under; send it back with the job",
+            "type": "string"
+          }
+        },
+        "required": [
+          "documentUrl",
+          "summary",
+          "version"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobCostDto": {
+        "properties": {
+          "estimatedP50Usd": {
+            "description": "The likely total the owner confirmed, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "estimatedP90Usd": {
+            "description": "The high end the owner confirmed, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "holdUsd": {
+            "description": "What the AI Wallet holds for the job, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "note": {
+            "description": "Frameleaf Cloud’s note on the settlement",
+            "nullable": true,
+            "type": "string"
+          },
+          "outcome": {
+            "description": "not_charged: the hold went back in full (a failure on the cloud side, or a job that never ran)",
+            "enum": [
+              "charged",
+              "not_charged",
+              "refunded"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "settledUsd": {
+            "description": "What the job was charged once settled, USD; null until then",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "soFarUsd": {
+            "description": "Metered so far, never above the hold, USD; null before a worker starts",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "estimatedP50Usd",
+          "estimatedP90Usd",
+          "holdUsd",
+          "note",
+          "outcome",
+          "settledUsd",
+          "soFarUsd"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobCreateDto": {
+        "properties": {
+          "acknowledgeDataLeaves": {
+            "description": "The owner confirmed that the preview or file leaves this server for Frameleaf Cloud",
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "consentVersion": {
+            "description": "The consent version shown with the estimate",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "estimateId": {
+            "description": "The estimate the owner saw and confirmed",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "acknowledgeDataLeaves",
+          "consentVersion",
+          "estimateId"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobEstimateRequestDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo or video",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "destinationId": {
+            "description": "The Frameleaf Cloud processing destination; never inferred",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "factor": {
+            "anyOf": [
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  2
+                ]
+              },
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  4
+                ]
+              },
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  8
+                ]
+              }
+            ],
+            "description": "Smooth motion preview: how many frames each frame becomes (2×, 4× or 8×)"
+          },
+          "keepGrain": {
+            "description": "Restoration preview: keep fine film grain",
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode",
+            "description": "Restoration preview: faithful or creative"
+          },
+          "modelSku": {
+            "description": "The model chosen on the slider; omitted, the chosen or recommended model for this work",
+            "pattern": "^ms_[\\dA-HJKMNP-TV-Z]{8}$",
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/CloudMlJobPurpose"
+          },
+          "region": {
+            "$ref": "#/components/schemas/AssetRestorationRegionDto",
+            "description": "Preview: the part of the frame to preview"
+          },
+          "restorationId": {
+            "description": "For the full stage: the reviewed preview it renders in full, with the same model and settings",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/CloudMlJobStage"
+          },
+          "upscale": {
+            "anyOf": [
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  2
+                ]
+              },
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  4
+                ]
+              }
+            ],
+            "description": "Restoration preview: 2× or 4×, capped at 4K"
+          }
+        },
+        "required": [
+          "assetId",
+          "destinationId",
+          "purpose",
+          "stage"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobEstimateResponseDto": {
+        "properties": {
+          "availableUsd": {
+            "description": "AI Wallet balance minus holds, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "basis": {
+            "description": "measured: from the model's measured GPU time; modelled: from its expected GPU time",
+            "type": "string"
+          },
+          "coldStartSeconds": {
+            "description": "Expected time to start a worker",
+            "format": "double",
+            "type": "number"
+          },
+          "consent": {
+            "$ref": "#/components/schemas/CloudMlJobConsentDto"
+          },
+          "dailyCapUsd": {
+            "description": "The daily AI Wallet limit, USD, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "estimateId": {
+            "description": "What confirming the job names; the server keeps everything else",
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "After this, estimate again; it is never reused",
+            "format": "date-time",
+            "type": "string"
+          },
+          "holdUsd": {
+            "description": "What the AI Wallet holds while the job runs, USD; released when it settles",
+            "format": "double",
+            "type": "number"
+          },
+          "minimumUsd": {
+            "description": "The least the job can cost once a worker starts (one start fee), USD",
+            "format": "double",
+            "type": "number"
+          },
+          "model": {
+            "$ref": "#/components/schemas/CloudMlJobModelDto"
+          },
+          "p50Usd": {
+            "description": "Likely total: GPU time × rate + start fees, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "p90Usd": {
+            "description": "High end, in nine cases out of ten, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "perSecondUsd": {
+            "description": "The GPU rate per metered second, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "perUnit": {
+            "$ref": "#/components/schemas/CloudMlJobPerUnitDto"
+          },
+          "plannedWorkers": {
+            "description": "Serverless workers the job is planned on, at most 5; each adds a start fee",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlJobRefusalDto"
+              }
+            ],
+            "description": "Why the job cannot be sent now, or null when it can",
+            "nullable": true
+          },
+          "runSeconds": {
+            "description": "Expected GPU time once running (p50)",
+            "format": "double",
+            "type": "number"
+          },
+          "spentTodayUsd": {
+            "description": "Spent today, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "startFeeUsd": {
+            "description": "One start fee, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "startupUsd": {
+            "description": "Start fees: one start fee per planned worker, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "availableUsd",
+          "basis",
+          "coldStartSeconds",
+          "consent",
+          "dailyCapUsd",
+          "estimateId",
+          "expiresAt",
+          "holdUsd",
+          "minimumUsd",
+          "model",
+          "p50Usd",
+          "p90Usd",
+          "perSecondUsd",
+          "perUnit",
+          "plannedWorkers",
+          "refusal",
+          "runSeconds",
+          "spentTodayUsd",
+          "startFeeUsd",
+          "startupUsd",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobModelDto": {
+        "properties": {
+          "gpu": {
+            "description": "The GPU class it runs on, for people only",
+            "type": "string"
+          },
+          "label": {
+            "description": "The catalogue name",
+            "type": "string"
+          },
+          "rank": {
+            "description": "Position on the model slider, 1 = lightest",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "rev": {
+            "description": "The model revision the estimate is bound to",
+            "type": "string"
+          },
+          "sku": {
+            "description": "The catalogue model SKU",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gpu",
+          "label",
+          "rank",
+          "rev",
+          "sku"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobPerUnitDto": {
+        "properties": {
+          "p50Usd": {
+            "description": "Likely cost per unit, start fees included, USD; an estimate, never a price",
+            "format": "double",
+            "type": "number"
+          },
+          "p90Usd": {
+            "description": "Cost per unit at most, in nine cases out of ten, start fees included, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "quantity": {
+            "description": "How many units the job has",
+            "format": "double",
+            "type": "number"
+          },
+          "unit": {
+            "description": "What one unit is",
+            "enum": [
+              "photo",
+              "minute"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p50Usd",
+          "p90Usd",
+          "quantity",
+          "unit"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobPurpose": {
+        "description": "restoration: restore or upscale; smooth-motion: frame interpolation for slow motion or frame rate",
+        "enum": [
+          "restoration",
+          "smooth-motion"
+        ],
+        "type": "string"
+      },
+      "CloudMlJobRefusalDto": {
+        "properties": {
+          "code": {
+            "description": "insufficient-credits, daily-cap or budget-exceeded; nothing is sent and the model is never changed",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobResponseDto": {
+        "properties": {
+          "operationId": {
+            "description": "The job in Activity; cancel it there",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "restorationId": {
+            "description": "The restoration or Smooth motion version it renders",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/CloudMlJobStage"
+          }
+        },
+        "required": [
+          "operationId",
+          "restorationId",
+          "stage"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobStage": {
+        "description": "preview: a short clip or a crop first; full: the whole file, after the preview was reviewed",
+        "enum": [
+          "preview",
+          "full"
+        ],
+        "type": "string"
       },
       "CloudMlModelChoiceDto": {
         "properties": {
@@ -59265,6 +59976,14 @@
             },
             "type": "array"
           },
+          "cloudJob": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlJobActivityDto"
+              }
+            ],
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -59471,6 +60190,14 @@
             "format": "date-time",
             "nullable": true,
             "type": "string"
+          },
+          "cloudJob": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlJobActivityDto"
+              }
+            ],
+            "nullable": true
           },
           "createdAt": {
             "format": "date-time",
@@ -59738,6 +60465,7 @@
           "preservation_restore",
           "studio_export_publish",
           "cloud_description_batch",
+          "cloud_ml_job",
           "cloud_backup"
         ],
         "type": "string"
@@ -63141,6 +63869,8 @@
           "frameleafAccount.update",
           "adminCloudMl.read",
           "adminCloudMl.update",
+          "cloudMlJob.create",
+          "cloudMlJob.read",
           "adminCloudBackup.read",
           "adminCloudBackup.update",
           "adminCloudBackup.run",
