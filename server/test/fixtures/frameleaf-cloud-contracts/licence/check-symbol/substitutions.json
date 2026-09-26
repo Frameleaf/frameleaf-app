@@ -1,0 +1,1371 @@
+{
+  "description": "Every single-symbol substitution of the valid key, all refused with reason check",
+  "valid": "FL-SQWE-RTYU-P78C",
+  "reason": "check",
+  "substitutions": [
+    {
+      "position": 1,
+      "input": "FL-SAWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SBWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SCWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SDWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SEWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SFWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SGWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SHWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SJWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SKWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SLWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SMWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SNWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SPWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SRWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SSWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-STWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SUWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SVWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SWWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SXWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SYWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-SZWE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-S2WE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-S3WE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-S4WE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-S5WE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-S6WE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-S7WE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-S8WE-RTYU-P78C"
+    },
+    {
+      "position": 1,
+      "input": "FL-S9WE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQAE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQBE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQCE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQDE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQEE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQFE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQGE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQHE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQJE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQKE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQLE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQME-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQNE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQPE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQQE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQRE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQSE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQTE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQUE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQVE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQXE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQYE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQZE-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQ2E-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQ3E-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQ4E-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQ5E-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQ6E-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQ7E-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQ8E-RTYU-P78C"
+    },
+    {
+      "position": 2,
+      "input": "FL-SQ9E-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWA-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWB-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWC-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWD-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWF-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWG-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWH-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWJ-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWK-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWL-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWM-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWN-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWP-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWQ-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWR-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWS-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWT-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWU-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWV-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWW-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWX-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWY-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQWZ-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQW2-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQW3-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQW4-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQW5-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQW6-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQW7-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQW8-RTYU-P78C"
+    },
+    {
+      "position": 3,
+      "input": "FL-SQW9-RTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-ATYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-BTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-CTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-DTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-ETYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-FTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-GTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-HTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-JTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-KTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-LTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-MTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-NTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-PTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-QTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-STYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-TTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-UTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-VTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-WTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-XTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-YTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-ZTYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-2TYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-3TYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-4TYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-5TYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-6TYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-7TYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-8TYU-P78C"
+    },
+    {
+      "position": 4,
+      "input": "FL-SQWE-9TYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RAYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RBYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RCYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RDYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-REYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RFYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RGYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RHYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RJYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RKYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RLYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RMYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RNYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RPYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RQYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RRYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RSYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RUYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RVYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RWYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RXYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RYYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-RZYU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-R2YU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-R3YU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-R4YU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-R5YU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-R6YU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-R7YU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-R8YU-P78C"
+    },
+    {
+      "position": 5,
+      "input": "FL-SQWE-R9YU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTAU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTBU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTCU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTDU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTEU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTFU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTGU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTHU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTJU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTKU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTLU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTMU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTNU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTPU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTQU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTRU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTSU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTTU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTUU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTVU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTWU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTXU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RTZU-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RT2U-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RT3U-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RT4U-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RT5U-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RT6U-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RT7U-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RT8U-P78C"
+    },
+    {
+      "position": 6,
+      "input": "FL-SQWE-RT9U-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYA-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYB-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYC-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYD-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYE-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYF-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYG-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYH-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYJ-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYK-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYL-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYM-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYN-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYP-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYQ-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYR-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYS-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYT-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYV-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYW-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYX-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYY-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTYZ-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTY2-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTY3-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTY4-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTY5-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTY6-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTY7-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTY8-P78C"
+    },
+    {
+      "position": 7,
+      "input": "FL-SQWE-RTY9-P78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-A78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-B78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-C78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-D78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-E78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-F78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-G78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-H78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-J78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-K78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-L78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-M78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-N78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-Q78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-R78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-S78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-T78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-U78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-V78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-W78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-X78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-Y78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-Z78C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-278C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-378C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-478C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-578C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-678C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-778C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-878C"
+    },
+    {
+      "position": 8,
+      "input": "FL-SQWE-RTYU-978C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PA8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PB8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PC8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PD8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PE8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PF8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PG8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PH8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PJ8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PK8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PL8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PM8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PN8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PP8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PQ8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PR8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PS8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PT8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PU8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PV8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PW8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PX8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PY8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-PZ8C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-P28C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-P38C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-P48C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-P58C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-P68C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-P88C"
+    },
+    {
+      "position": 9,
+      "input": "FL-SQWE-RTYU-P98C"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7AC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7BC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7CC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7DC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7EC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7FC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7GC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7HC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7JC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7KC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7LC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7MC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7NC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7PC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7QC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7RC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7SC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7TC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7UC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7VC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7WC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7XC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7YC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P7ZC"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P72C"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P73C"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P74C"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P75C"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P76C"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P77C"
+    },
+    {
+      "position": 10,
+      "input": "FL-SQWE-RTYU-P79C"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78A"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78B"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78D"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78E"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78F"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78G"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78H"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78J"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78K"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78L"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78M"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78N"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78P"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78Q"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78R"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78S"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78T"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78U"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78V"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78W"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78X"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78Y"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P78Z"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P782"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P783"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P784"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P785"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P786"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P787"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P788"
+    },
+    {
+      "position": 11,
+      "input": "FL-SQWE-RTYU-P789"
+    }
+  ]
+}

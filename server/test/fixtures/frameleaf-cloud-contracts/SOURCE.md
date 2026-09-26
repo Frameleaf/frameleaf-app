@@ -22,6 +22,9 @@ tested against what the cloud publishes (FL-177).
   `models[].mode` is exactly `"faithful"`/`"creative"` on every restoration model and never absent (2026-09-25),
   but has not yet published its own catalogue fixture with a restoration entry (tracked for FC-34). Replace
   this file with the cloud's own fixture once FC-34 ships one.
+- `licence/check-symbol/` (every file) is byte-identical to `packages/contracts/fixtures/licence/check-symbol/` at
+  `8bf5b83ed2a5a4ce22b64f553a6f48ec78768504` (`feat: FC-22 Luhn mod 32 check symbol for licence keys`); see that
+  folder's own `SOURCE.md` for what it exercises (FL-182).
 
 Do not edit these files by hand, except `ml/catalog-restoration.json`, which is ours to maintain until FC-34
 ships a real one. When the cloud changes a fixture, copy the new version and update the commit above.

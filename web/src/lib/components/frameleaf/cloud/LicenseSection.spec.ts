@@ -48,7 +48,7 @@ const keySlot = {
   state: LicenseState.Active,
   kind: LicenseKind.Server,
   source: Source.Key,
-  keyHint: 'J58U',
+  keyHint: 'J583',
   activatedAt: '2026-09-25T09:00:00.000Z',
   expiresAt: null,
   graceUntil: null,
@@ -151,7 +151,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
   describe('LicenseSection', () => {
     it('refuses a mistyped or upstream key before sending it, then activates a valid server key', async () => {
       sdkMock.getLicenseStatus.mockResolvedValue(license());
-      sdkMock.activateLicense.mockResolvedValue(license({ licensed: true, key: keySlot, keyHint: 'J58U' }));
+      sdkMock.activateLicense.mockResolvedValue(license({ licensed: true, key: keySlot, keyHint: 'J583' }));
       render(LicenseSection);
 
       const input = await screen.findByPlaceholderText('FL-XXXX-XXXX-XXXX');
@@ -166,13 +166,13 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(await screen.findByText(/typo/)).toBeInTheDocument();
       expect(activate).toBeDisabled();
 
-      await fireEvent.input(input, { target: { value: 'FL-S8NL-49G8-J58U' } });
+      await fireEvent.input(input, { target: { value: 'FL-S8NL-49G8-J583' } });
       await waitFor(() => expect(activate).toBeEnabled());
       await fireEvent.click(activate);
       await waitFor(() =>
-        expect(sdkMock.activateLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-S8NL-49G8-J58U' } }),
+        expect(sdkMock.activateLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-S8NL-49G8-J583' } }),
       );
-      expect(await screen.findByText('•••• J58U')).toBeInTheDocument();
+      expect(await screen.findByText('•••• J583')).toBeInTheDocument();
       expect(screen.getByText('Licensed')).toBeInTheDocument();
     });
 
@@ -183,13 +183,13 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       render(LicenseSection);
 
       await fireEvent.input(await screen.findByPlaceholderText('FL-XXXX-XXXX-XXXX'), {
-        target: { value: 'FL-IC8Q-BT2Q-8ELH' },
+        target: { value: 'FL-IC8Q-BT2Q-8EL6' },
       });
       const activate = screen.getByRole('button', { name: 'Activate licence' });
       await waitFor(() => expect(activate).toBeEnabled());
       await fireEvent.click(activate);
       await waitFor(() =>
-        expect(sdkMock.setUserLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-IC8Q-BT2Q-8ELH' } }),
+        expect(sdkMock.setUserLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-IC8Q-BT2Q-8EL6' } }),
       );
       expect(sdkMock.activateLicense).not.toHaveBeenCalled();
       expect(await screen.findByText(/active for your account/)).toBeInTheDocument();
@@ -200,7 +200,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       [LicenseState.Invalid, 'The licence could not be verified'],
     ])('shows the %s banner and still offers a replacement key', async (state, title) => {
       sdkMock.getLicenseStatus.mockResolvedValue(
-        license({ state, key: { ...keySlot, state }, keyHint: 'J58U', licensed: false }),
+        license({ state, key: { ...keySlot, state }, keyHint: 'J583', licensed: false }),
       );
       render(LicenseSection);
       expect(await screen.findByText(title)).toBeInTheDocument();
@@ -214,7 +214,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
         name: 'Admin',
         email: 'a@example.test',
         isAdmin: true,
-        license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T09:00:00.000Z' },
+        license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T09:00:00.000Z' },
       } as never);
       sdkMock.getLicenseStatus.mockResolvedValue(license());
       sdkMock.deleteUserLicense.mockResolvedValue(undefined as never);
@@ -223,7 +223,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
 
       expect(await screen.findByRole('heading', { name: 'Individual licence' })).toBeInTheDocument();
       expect(screen.getByText('Licensed')).toBeInTheDocument();
-      expect(screen.getByText('•••• 8ELH')).toBeInTheDocument();
+      expect(screen.getByText('•••• 8EL6')).toBeInTheDocument();
       expect(screen.queryByText('Enter a licence key')).toBeNull();
       const supporterChip = within(screen.getByRole('list', { name: /included/i }))
         .getByText(/Supporter/)
@@ -244,18 +244,18 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
         name: 'Admin',
         email: 'a@example.test',
         isAdmin: true,
-        license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T09:00:00.000Z' },
+        license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T09:00:00.000Z' },
       } as never);
       sdkMock.getLicenseStatus.mockResolvedValue(
-        license({ state: LicenseState.Expired, key: { ...keySlot, state: LicenseState.Expired }, keyHint: 'J58U' }),
+        license({ state: LicenseState.Expired, key: { ...keySlot, state: LicenseState.Expired }, keyHint: 'J583' }),
       );
       sdkMock.removeLicenseKey.mockResolvedValue(license());
       sdkMock.deleteUserLicense.mockResolvedValue(undefined as never);
       sdkMock.getMyUser.mockResolvedValue({ id: 'admin-1', isAdmin: true, license: null } as never);
       render(LicenseSection);
 
-      expect(await screen.findByText('•••• J58U')).toBeInTheDocument();
-      expect(screen.getByText('•••• 8ELH')).toBeInTheDocument();
+      expect(await screen.findByText('•••• J583')).toBeInTheDocument();
+      expect(screen.getByText('•••• 8EL6')).toBeInTheDocument();
 
       await fireEvent.click(screen.getByRole('button', { name: 'Remove licence key…' }));
       await fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove key' }));
