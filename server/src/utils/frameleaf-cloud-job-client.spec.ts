@@ -123,7 +123,52 @@ describe(FrameleafCloudJobClient.name, () => {
 
     expect(files).toEqual(['/work/out-a1.json', '/work/out-a2.json']);
     expect(repo.downloadOutput).toHaveBeenCalledTimes(1);
-    expect(repo.downloadOutput).toHaveBeenCalledWith(gateway, outputs[1], view.result!.headers, '/work/out-a2.json');
+    expect(repo.downloadOutput).toHaveBeenCalledWith(gateway, outputs[1], view.result!.headers, '/work/out-a2.json', {
+      signal: undefined,
+    });
+  });
+
+  it('tries a transfer again after storage fails for a moment, and gives up on anything else', async () => {
+    const repo = repository();
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway, { sleep });
+    repo.uploadInput
+      .mockRejectedValueOnce(new CloudTransferError('storage-unreachable', 'reset'))
+      .mockRejectedValueOnce(new CloudTransferError('storage-refused', 'busy', 503));
+
+    await expect(client.upload('job-1', [input], {}, { now, record: () => Promise.resolve(true) })).resolves.toBe(
+      'uploaded',
+    );
+    expect(repo.uploadInput).toHaveBeenCalledTimes(3);
+    expect(sleep.mock.calls).toEqual([[1000], [2000]]);
+
+    repo.uploadInput.mockClear();
+    repo.uploadInput.mockRejectedValue(new CloudTransferError('storage-refused', 'refused', 400));
+    await expect(
+      client.upload('job-1', [input], {}, { now, record: () => Promise.resolve(true) }),
+    ).rejects.toBeInstanceOf(CloudTransferError);
+    expect(repo.uploadInput).toHaveBeenCalledTimes(1);
+
+    repo.uploadInput.mockClear();
+    repo.uploadInput.mockRejectedValue(new CloudTransferError('storage-unreachable', 'down'));
+    await expect(
+      client.upload('job-1', [input], {}, { now, record: () => Promise.resolve(true) }),
+    ).rejects.toBeInstanceOf(CloudTransferError);
+    expect(repo.uploadInput).toHaveBeenCalledTimes(3);
+  });
+
+  it('resumes a re-signed upload from the parts recorded before it was refused', async () => {
+    const repo = repository();
+    const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway);
+    repo.uploadInput.mockImplementationOnce(async (_gateway, _target, _file, options) => {
+      await options.onPart({ partNumber: 1, etag: '"p1"' });
+      throw new CloudTransferError('target-expired', 'expired');
+    });
+
+    await client.upload('job-1', [input], {}, { now, record: () => Promise.resolve(true) });
+
+    expect(repo.uploadInput).toHaveBeenCalledTimes(2);
+    expect(repo.uploadInput.mock.calls[1][3].done).toEqual([{ partNumber: 1, etag: '"p1"' }]);
   });
 
   it('cancels only a job that has not ended, and takes job-ended as done', async () => {

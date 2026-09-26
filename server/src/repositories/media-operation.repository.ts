@@ -1461,6 +1461,50 @@ export class MediaOperationRepository {
     );
   }
 
+  /**
+   * FL-162: finished cloud ML jobs whose cloud job was never acknowledged. A job is acknowledged only
+   * after its result is published, so a crash or a failed `DELETE` between the two leaves it here for
+   * the cleanup pass, which acknowledges it; nothing is cancelled.
+   */
+  listUnacknowledgedCloudMlJobs(limit: number): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('kind', '=', MediaOperationKind.CloudMlJob)
+        .where('status', '=', MediaOperationStatus.Completed)
+        .where('remoteJobId', 'is not', null)
+        .where('remoteReleasedAt', 'is', null)
+        .orderBy('finishedAt', 'asc')
+        .limit(limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
+  }
+
+  /**
+   * FL-162: create a job together with the rows it binds, in one transaction. `bind` writes those rows
+   * with the transaction it is given and answers with the job to insert; `after` runs in the same
+   * transaction once the job exists. Either everything lands or nothing does.
+   */
+  async createWithin<T>(
+    bind: (trx: Kysely<DB>) => Promise<{ operation: MediaOperationCreate; value: T }>,
+    after: (trx: Kysely<DB>, created: MediaOperation, value: T) => Promise<void>,
+  ): Promise<{ operation: MediaOperation; value: T }> {
+    const done = await this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
+      const { operation, value } = await bind(trx);
+      const created = (await trx
+        .insertInto('media_operation')
+        .values(operation)
+        .returningAll()
+        .executeTakeFirstOrThrow()) as unknown as MediaOperation;
+      await after(trx, created, value);
+      return { operation: created, value };
+    });
+    this.changed(done.operation as unknown as MediaOperationChange);
+    return done;
+  }
+
   async markRemoteReleased(id: string): Promise<void> {
     await this.db
       .updateTable('media_operation')

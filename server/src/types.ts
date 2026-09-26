@@ -1079,7 +1079,11 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.FrameleafCloudDescriptionQueue]: FrameleafCloudDescriptionQueue;
   [SystemMetadataKey.FrameleafCloudDescriptionEstimates]: { records: CloudDescriptionEstimateRecord[] };
-  [SystemMetadataKey.FrameleafCloudMlJobEstimates]: { records: CloudMlJobEstimateRecord[] };
+  [SystemMetadataKey.FrameleafCloudMlJobEstimates]: {
+    records: CloudMlJobEstimateRecord[];
+    /** FL-162: whole videos prepared once for their estimates, dropped a day after nothing uses them. */
+    prepared?: { dir: string; ownerId: string; at: string }[];
+  };
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
