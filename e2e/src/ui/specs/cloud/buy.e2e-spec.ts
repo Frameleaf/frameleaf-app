@@ -75,7 +75,9 @@ test.describe('Support Frameleaf', () => {
 
     await expect(page.getByRole('heading', { name: 'Support Frameleaf' })).toBeVisible();
     await expect(page.getByText('$60')).toBeVisible();
-    await expect(page.getByText('Purchasing isn’t available on this server yet.')).toHaveCount(4);
+    // Two plans and two supporter keys, plus the AI credit note an administrator sees under the
+    // credit packs (design/frameleaf/template/src/AuthScreens.jsx, the "AI credit" card).
+    await expect(page.getByText('Purchasing isn’t available on this server yet.')).toHaveCount(5);
     await expect(page.getByRole('button', { name: 'Purchase' })).toHaveCount(0);
   });
 
