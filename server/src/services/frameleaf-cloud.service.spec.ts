@@ -1964,6 +1964,33 @@ describe(FrameleafCloudService.name, () => {
         expect(metadata.has(SystemMetadataKey.FrameleafMlSuspension)).toBe(false);
       });
 
+      it('lets only one of two concurrent admissions take the daily probe', async () => {
+        metadata.set(SystemMetadataKey.FrameleafMlSuspension, {
+          reason: 'clone-suspected',
+          cloudUrl: cloud.url,
+          instanceId: storedLink()!.instanceId,
+          since: new Date(Date.now() - ML_SUSPENSION_PROBE_AFTER_MS - 60_000).toISOString(),
+        });
+        // like the real lock across workers: one holder at a time, the other waits its turn
+        let chain: Promise<unknown> = Promise.resolve();
+        const withLock = (lock: DatabaseLock, callback: () => Promise<unknown>) => {
+          const run = chain.then(() => mocks.database.withLock(lock, callback));
+          chain = run.catch(() => {});
+          return run;
+        };
+        const deps = { ...mlDeps(), databaseRepository: { withLock } as never };
+
+        const results = await Promise.all([resolveCloudGateway(deps), resolveCloudGateway(deps)]);
+
+        expect(mlTokenRequests()).toHaveLength(1);
+        expect(results.map(({ state }) => state)).toEqual([
+          CloudConnectionState.Unavailable,
+          CloudConnectionState.Unavailable,
+        ]);
+        const renewed = metadata.get(SystemMetadataKey.FrameleafMlSuspension) as { since: string };
+        expect(Date.now() - Date.parse(renewed.since)).toBeLessThan(60_000);
+      });
+
       it('ignores a suspension recorded for another link, and unlinking clears it', async () => {
         metadata.set(SystemMetadataKey.FrameleafMlSuspension, {
           reason: 'clone-suspected',
