@@ -905,6 +905,7 @@ export class CloudBackupService {
       this.logger.log('Scheduled cloud backup skipped: a backup run is still unfinished');
       return JobStatus.Skipped;
     }
+    await this.clearScheduledRunDue();
     return JobStatus.Success;
   }
 
@@ -917,13 +918,22 @@ export class CloudBackupService {
     if (!metadata?.scheduledRunDueAt) {
       return;
     }
-    await this.updateMetadata(({ scheduledRunDueAt: _due, ...current }) => current);
     const { frameleafCloud } = await this.readSettings();
     const owner = await this.userRepository.getAdmin();
     if (!owner || !frameleafCloud.cloudBackup.enabled || frameleafCloud.cloudBackup.target === 'off') {
+      await this.clearScheduledRunDue();
       return;
     }
-    await this.createOperation(owner.id, metadata, 'backup', { scheduled: true });
+    // The operation that held the bucket may only have paused, waited or be retrying: then it still holds
+    // it and the run stays due for the next ending. A backup run holding it is the run that was due.
+    const created = await this.createOperation(owner.id, metadata, 'backup', { scheduled: true });
+    if (created.created || created.activeTask === 'backup') {
+      await this.clearScheduledRunDue();
+    }
+  }
+
+  private async clearScheduledRunDue() {
+    await this.updateMetadata(({ scheduledRunDueAt: _due, ...current }) => current);
   }
 
   /** FL-164: whether the scheduled backup starts within the next hour, when a check would hold it up. */
@@ -2074,7 +2084,7 @@ export class CloudBackupService {
   /** A verification, a clean-up or a restore failed: after its automatic retry, the administrators hear why. */
   private async failTask(operation: MediaOperation, claimToken: string, error: unknown, what: string) {
     // a file system error names its path: shown to administrators, it names it below the media folder only
-    const message = errorMessage(error).replaceAll(StorageCore.getMediaLocation(), '<media>');
+    const message = maskMediaPath(errorMessage(error));
     this.logger.error(`${what} ${operation.id} failed: ${message}`);
     const outcome = await this.operations.fail(operation.id, claimToken, {
       error: message,
@@ -2306,7 +2316,7 @@ export class CloudBackupService {
       );
     } catch (error) {
       if (await this.failTask(operation, claimToken, error, 'Restore from cloud backup')) {
-        const message = errorMessage(error).replaceAll(StorageCore.getMediaLocation(), '<media>');
+        const message = maskMediaPath(errorMessage(error));
         await this.recordRestore(operation, snapshot, result, 'failed', message);
       }
     }
@@ -2404,7 +2414,12 @@ export class CloudBackupService {
         const state = stateOf(assetId);
         return filter === 'all' || (filter === 'deleted' ? state === 'deleted' : state !== 'deleted');
       })
-      .toSorted((a, b) => byName(a, b) || compareCodeUnits(a.assetId, b.assetId));
+      .toSorted(
+        (a, b) =>
+          Number(!!library.get(a.assetId)?.locked) - Number(!!library.get(b.assetId)?.locked) ||
+          (library.get(a.assetId)?.locked ? 0 : byName(a, b)) ||
+          compareCodeUnits(a.assetId, b.assetId),
+      );
     const page = matching.slice(0, limit);
     const owners = await this.index.getOwnerNames(
       page.map(({ asset }) => asset.owner).filter((owner): owner is string => !!owner),
@@ -2949,6 +2964,16 @@ export class CloudBackupService {
     return getConfig(this.configRepos(), { withCache: false });
   }
 }
+
+/** FL-164: a message with the media folder as a path prefix written `<media>`, never a longer name. */
+const maskMediaPath = (message: string) => {
+  const media = StorageCore.getMediaLocation().replace(/\/+$/, '');
+  if (!media) {
+    return message;
+  }
+  const escaped = media.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
+  return message.replaceAll(new RegExp(`${escaped}(?=/|$|[\\s'",:;)])`, 'g'), '<media>');
+};
 
 /** FL-164: what a checkpoint of a verification, a clean-up or a restore decided. */
 type TaskCheckpoint = 'continue' | 'cancelled' | 'stopped';
