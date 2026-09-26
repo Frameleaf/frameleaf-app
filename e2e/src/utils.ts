@@ -668,18 +668,23 @@ export const utils = {
    * Serves the configured map styles (`/v1/style/light.json` and `dark.json`) from the test itself,
    * so a map renders its markers without reaching a tile host. The style is a plain background with
    * no sources, glyphs or sprites, which is all the marker layers need.
+   *
+   * Passing `failWith` (404 or 500) serves that status instead, for FL-193: the map's offline/
+   * unavailable state when the style can't load, rather than one where it actually loads.
    */
-  mockMapStyle: async (context: BrowserContext) =>
+  mockMapStyle: async (context: BrowserContext, failWith?: 404 | 500) =>
     await context.route(/\/v1\/style\/(light|dark)\.json(\?.*)?$/, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          version: 8,
-          sources: {},
-          layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#e8ecef' } }],
-        }),
-      }),
+      failWith
+        ? route.fulfill({ status: failWith, contentType: 'text/plain', body: 'map style unavailable' })
+        : route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              version: 8,
+              sources: {},
+              layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#e8ecef' } }],
+            }),
+          }),
     ),
 
   setMaintenanceAuthCookie: async (context: BrowserContext, token: string, domain = '127.0.0.1') =>
