@@ -184,6 +184,10 @@ describe('official-origin adoption into a full Frameleaf library', () => {
       INSERT INTO public.album_user ("albumId", "userId", role)
       VALUES (${ownedAlbumId}::uuid, ${userId}::uuid, 'owner')
     `.execute(db);
+    // Its cover is the Locked photo's stack mate, which only the whole-stack lock of 0320 covers.
+    await sql`
+      UPDATE public.album SET "albumThumbnailAssetId" = ${stackMateId}::uuid WHERE id = ${ownedAlbumId}::uuid
+    `.execute(db);
 
     // The person's featured face is on the Locked photo.
     await sql`
@@ -378,14 +382,19 @@ describe('official-origin adoption into a full Frameleaf library', () => {
       SELECT "faceAssetId"::text AS "faceAssetId" FROM public.person WHERE id = ${personId}::uuid
     `.execute(db);
     expect(featured.rows).toEqual([{ faceAssetId: null }]);
+    const cover = await sql<{ albumThumbnailAssetId: string | null }>`
+      SELECT "albumThumbnailAssetId"::text AS "albumThumbnailAssetId" FROM public.album WHERE id = ${ownedAlbumId}::uuid
+    `.execute(db);
+    expect(cover.rows).toEqual([{ albumThumbnailAssetId: null }]);
+    // Before 0320 its counters read what it is about to lock: the Locked folder and its stack mates.
     expect(steps['2100000000320-AddAssetLock']).toMatchObject({
       before: {
         lockedFolderAssets: 1,
         assetLocks: null,
-        lockedFaceThumbnails: null,
-        lockedAlbumCovers: null,
-        lockedSharedSpaceCovers: null,
-        lockedPetCovers: null,
+        lockedFaceThumbnails: 0,
+        lockedAlbumCovers: 1,
+        lockedSharedSpaceCovers: 0,
+        lockedPetCovers: 0,
       },
       after: {
         lockedFolderAssets: 0,
