@@ -37,8 +37,9 @@ const safeEqual = (a: string, b: string) =>
  * keeps working. The password is never returned: responses carry a fixed mask, and an edit that sends
  * the mask back leaves the password unchanged. The unlock token kept in the viewer's cookie is an HMAC
  * of the link and its stored hash under this server's own key, which lives in the identity directory
- * and never in the database, so neither a leaked token nor a database backup can produce a token or
- * reveal the password. Tokens are compared in constant time.
+ * and not in the database: a leaked token reveals nothing about the password, and a database dump alone
+ * cannot produce a token. (The identity directory sits on the media volume with the database backups,
+ * so a copy of that volume carries both.) Tokens are compared in constant time.
  */
 @Injectable()
 export class SharedLinkService extends BaseService {

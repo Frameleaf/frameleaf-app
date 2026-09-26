@@ -80,6 +80,13 @@ export const OriginalTransfer = (): MethodDecorator => SetMetadata(MetadataKey.O
  */
 export const HomeNetworkOnly = (): MethodDecorator & ClassDecorator => SetMetadata(MetadataKey.HomeNetworkOnly, true);
 
+/**
+ * FL-161: lets any valid session reach a route through remote access, even one that is not a
+ * Frameleaf sign-in. Only for signing out, so such a session can still be revoked and its cookie
+ * cleared from away.
+ */
+export const RemoteSignInExempt = (): MethodDecorator => SetMetadata(MetadataKey.RemoteSignInExempt, true);
+
 export const Auth = createParamDecorator((data, context: ExecutionContext): AuthDto => {
   return context.switchToHttp().getRequest<AuthenticatedRequest>().user;
 });
@@ -156,10 +163,20 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthRequest>();
 
     const via = requestVia(request);
+    const remoteSignInExempt =
+      this.reflector.get<boolean | undefined>(MetadataKey.RemoteSignInExempt, context.getHandler()) === true;
     request.user = await this.authService.authenticate({
       headers: request.headers,
       queryParams: request.query as Record<string, string>,
-      metadata: { adminRoute, sharedLinkRoute, permission, uri: request.path, refreshElevation, via },
+      metadata: {
+        adminRoute,
+        sharedLinkRoute,
+        permission,
+        uri: request.path,
+        refreshElevation,
+        via,
+        remoteSignInExempt,
+      },
     });
 
     if (this.reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, context.getHandler())) {

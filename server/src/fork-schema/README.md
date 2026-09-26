@@ -62,8 +62,10 @@ turned back into the password. The official server compares that column as plain
 handoff every password-protected link stays locked there (it fails closed, never open) until its
 password is set again on the official server. `ADOPTION_STEP_COUNTERS` records
 `passwordProtectedLinks` and `plaintextPasswordLinks`; `fork-handoff prepare-official` counts the
-password-protected links (`ForkHandoffRepository.countPasswordProtectedSharedLinks`) and refuses to
-prepare the checkpoint until the operator passes `--acknowledge-shared-link-passwords`. A plaintext
+links holding a hash and those still holding plaintext apart
+(`ForkHandoffRepository.countPasswordProtectedSharedLinks`, inside the checkpoint's own
+transaction) and refuses to prepare the checkpoint while hashed ones exist until the operator passes
+`--acknowledge-shared-link-passwords`; plaintext ones keep working on the official server. A plaintext
 password set on the official server keeps working after the return and is hashed on first use.
 
 ## Libraries past the certified cutover (FL-180)

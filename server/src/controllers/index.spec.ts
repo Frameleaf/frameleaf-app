@@ -132,6 +132,10 @@ const ORIGINAL_TRANSFER_ROUTES = new Set([
   'GET memories/exports/:id/download',
   // the flagged file itself, usually an original
   'GET admin/integrity/report/:id/file',
+  // can stream a full-resolution edited master or restored result (the viewer's own full-size view
+  // of a chosen restoration falls back to its preview through the relay)
+  'GET assets/:id/develop/revisions/:revisionId/file',
+  'GET assets/:id/restorations/:restorationId/file',
 ]);
 
 /**
@@ -196,6 +200,7 @@ const getRoutes = () => {
         path,
         auth: getAuthenticatedOptions(reflector, handler),
         originalTransfer: reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, handler) === true,
+        remoteSignInExempt: reflector.get<boolean | undefined>(MetadataKey.RemoteSignInExempt, handler) === true,
         homeNetworkOnly:
           reflector.getAllAndOverride<boolean | undefined>(MetadataKey.HomeNetworkOnly, [handler, Controller]) === true,
         rateLimit: reflector.get<RateLimitRule | undefined>(MetadataKey.RateLimit, handler),
@@ -244,6 +249,10 @@ describe('controllers', () => {
         homeNetworkOnly: false,
       });
     }
+  });
+
+  it('should let only signing out skip the remote sign-in rule (FL-161)', () => {
+    expect(routes.filter((route) => route.remoteSignInExempt).map((route) => route.id)).toEqual(['POST auth/logout']);
   });
 
   it('should keep the whole render-worker API, original inputs included, on the home network (FL-161)', () => {

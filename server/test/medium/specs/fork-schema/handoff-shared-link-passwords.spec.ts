@@ -42,20 +42,22 @@ describe('official handoff: password-protected shared links (FL-161)', () => {
     `.execute(db);
   };
 
-  it('counts every link with a password, hashed or not, and none without', async () => {
-    await expect(repository.countPasswordProtectedSharedLinks()).resolves.toBe(0);
+  it('counts hashed and plaintext passwords apart, and links without one not at all', async () => {
+    await expect(repository.countPasswordProtectedSharedLinks()).resolves.toEqual({ hashed: 0, plaintext: 0 });
 
     await seedLink(`$2b$10$${'a'.repeat(53)}`);
+    await seedLink(`$2a$12$${'b'.repeat(53)}`);
     await seedLink('left-in-plaintext');
     await seedLink(null);
     await seedLink('');
 
-    await expect(repository.countPasswordProtectedSharedLinks()).resolves.toBe(2);
+    await expect(repository.countPasswordProtectedSharedLinks()).resolves.toEqual({ hashed: 2, plaintext: 1 });
   });
 
-  it('refuses the handoff preflight until the locked links are acknowledged', async () => {
+  it('refuses the handoff preflight until the locked links are acknowledged, never for plaintext ones', async () => {
     const service = new ForkHandoffService(repository, {} as ForkSchemaMigrationService);
-    await expect(service.sharedLinkPasswordPreflight()).resolves.toEqual({ passwordProtectedLinks: 0 });
+    await seedLink('set-on-the-official-server');
+    await expect(service.sharedLinkPasswordPreflight()).resolves.toEqual({ hashed: 0, plaintext: 1 });
 
     await seedLink(`$2b$10$${'b'.repeat(53)}`);
 
@@ -63,7 +65,8 @@ describe('official handoff: password-protected shared links (FL-161)', () => {
       '1 password-protected shared link(s) will stay locked on the official server',
     );
     await expect(service.sharedLinkPasswordPreflight({ acknowledgeSharedLinkPasswords: true })).resolves.toEqual({
-      passwordProtectedLinks: 1,
+      hashed: 1,
+      plaintext: 1,
     });
   });
 });

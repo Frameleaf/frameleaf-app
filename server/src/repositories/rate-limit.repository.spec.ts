@@ -3,9 +3,8 @@ import { newConfigRepositoryMock } from 'test/repositories/config.repository.moc
 
 const redis = vi.hoisted(() => {
   const exec = vi.fn();
-  const multi = { incr: vi.fn(), get: vi.fn(), ttl: vi.fn(), exec };
+  const multi = { incr: vi.fn(), ttl: vi.fn(), exec };
   multi.incr.mockReturnValue(multi);
-  multi.get.mockReturnValue(multi);
   multi.ttl.mockReturnValue(multi);
   return {
     multi,
@@ -15,6 +14,8 @@ const redis = vi.hoisted(() => {
       status: 'ready',
       multi: vi.fn(() => multi),
       expire: vi.fn(),
+      decr: vi.fn(),
+      del: vi.fn(),
       on: vi.fn(),
       quit: vi.fn(),
       disconnect: vi.fn(),
@@ -35,7 +36,6 @@ describe(RateLimitRepository.name, () => {
   beforeEach(() => {
     vi.clearAllMocks();
     redis.multi.incr.mockReturnValue(redis.multi);
-    redis.multi.get.mockReturnValue(redis.multi);
     redis.multi.ttl.mockReturnValue(redis.multi);
     redis.client.multi.mockReturnValue(redis.multi);
     redis.client.quit.mockResolvedValue('OK');
@@ -59,20 +59,15 @@ describe(RateLimitRepository.name, () => {
     expect(redis.created).toHaveBeenCalledTimes(1);
   });
 
-  it('reads a counter without counting (peek)', async () => {
-    redis.exec.mockResolvedValueOnce([
-      [null, '4'],
-      [null, 120],
-    ]);
-    await expect(sut.peek('key')).resolves.toEqual({ count: 4, resetSeconds: 120 });
-    expect(redis.multi.get).toHaveBeenCalledWith('key');
-    expect(redis.multi.incr).not.toHaveBeenCalled();
+  it('gives an attempt back with DECR, and removes a counter that reaches zero', async () => {
+    redis.client.decr.mockResolvedValueOnce(3);
+    await sut.release('key');
+    expect(redis.client.decr).toHaveBeenCalledWith('key');
+    expect(redis.client.del).not.toHaveBeenCalled();
 
-    redis.exec.mockResolvedValueOnce([
-      [null, null],
-      [null, -2],
-    ]);
-    await expect(sut.peek('key')).resolves.toEqual({ count: 0, resetSeconds: 1 });
+    redis.client.decr.mockResolvedValueOnce(0);
+    await sut.release('key');
+    expect(redis.client.del).toHaveBeenCalledWith('key');
   });
 
   it('counts with INCR and reports the time left in the window', async () => {

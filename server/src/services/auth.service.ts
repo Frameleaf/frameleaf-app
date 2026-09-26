@@ -107,6 +107,8 @@ export type ValidateRequest = {
     refreshElevation?: boolean;
     /** FL-161: how the request arrived; `relay` and `wan` require a Frameleaf sign-in. */
     via?: FrameleafVia | null;
+    /** FL-161: signing out, which any valid session may do through remote access. */
+    remoteSignInExempt?: boolean;
   };
 };
 
@@ -427,7 +429,7 @@ export class AuthService extends BaseService {
     const { adminRoute, sharedLinkRoute, uri } = metadata;
     const requestedPermission = metadata.permission ?? Permission.All;
 
-    if (isRemoteVia(metadata.via)) {
+    if (isRemoteVia(metadata.via) && !metadata.remoteSignInExempt) {
       await this.requireRemoteSignIn(authDto, metadata.via, uri);
     }
 
