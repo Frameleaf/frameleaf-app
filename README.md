@@ -42,12 +42,12 @@ Frameleaf is actively maintained and kept up to date with the upstream project w
 > [!CAUTION]
 > Frameleaf is not the upstream project. It includes database changes and Frameleaf-only features that the upstream project does not have.
 >
-> Compatibility-certified 3.x releases can hand a converted database to the exact matching official upstream image and later return to a compatible fork while fork-owned sidecars remain dormant. Official plugin and workflow rows stay in the official tables and are not migrated by the fork. See [Switching between Frameleaf and the upstream server](docs/docs/features/switching-between-fork-and-official.md) for the versioned procedure and required release gates. Always back up both the database and media library before switching.
+> Compatibility-certified 3.x releases can hand a converted database to the exact matching official upstream image and later return to a compatible Frameleaf release while Frameleaf-owned sidecars remain dormant. Official plugin and workflow rows stay in the official tables and are not migrated by Frameleaf. See [Switching between Frameleaf and the upstream server](docs/docs/features/switching-between-fork-and-official.md) for the versioned procedure and required release gates. Always back up both the database and media library before switching.
 
 > [!IMPORTANT]
-> **Before upgrading,** read [Configurable Descriptions, Identity, Videos, and Smart Albums](docs/docs/features/descriptions-and-smart-albums.md). The ML description pipeline in this fork has a recommended setup order, a dependency on Enhanced Video Duplicate Detection for video descriptions, and a curated model dropdown that may not include your existing model. Following the guide saves you from re-queueing your whole library more than once. New in this release: video descriptions via composite frame grids, a free-form "custom instructions" prompt field, and stronger identity-injection wording that names every detected person.
+> **Before upgrading,** read [Configurable Descriptions, Identity, Videos, and Smart Albums](docs/docs/features/descriptions-and-smart-albums.md). The ML description pipeline in Frameleaf has a recommended setup order, a dependency on Enhanced Video Duplicate Detection for video descriptions, and a curated model dropdown that may not include your existing model. Following the guide saves you from re-queueing your whole library more than once. New in this release: video descriptions via composite frame grids, a free-form "custom instructions" prompt field, and stronger identity-injection wording that names every detected person.
 
-Start with the [fork privacy suite guide](docs/docs/features/fork-privacy-suite.md) for setup notes, recommended rollout steps, physical deduplication guidance, and differences from the upstream project.
+Start with the [Frameleaf privacy suite guide](docs/docs/features/fork-privacy-suite.md) for setup notes, recommended rollout steps, physical deduplication guidance, and differences from the upstream project.
 
 ## Frameleaf container installation
 
@@ -57,7 +57,7 @@ For contributing and delivery workflows, read the [Frameleaf development guide](
 
 ---
 
-## Why This Fork Exists
+## Why Frameleaf exists
 
 The upstream project is already excellent. Frameleaf adds features aimed at real home-lab and family-library workflows where users often need more than a standard photo timeline.
 
@@ -70,13 +70,13 @@ Common use cases include:
 - Using local GPUs for ML and video workflows where available
 - Editing photos and videos without replacing the original upload
 
-This fork is especially useful for users who want a self-hosted photo library that behaves more like a mature family photo platform while still keeping processing local.
+Frameleaf is especially useful for users who want a self-hosted photo library that behaves more like a mature family photo platform while still keeping processing local.
 
 ---
 
 ## Sensitive Media and Privacy Controls
 
-This fork uses the term **NSFW** broadly to describe sensitive or private media that you may want to keep in albums or your library without moving it to a separate locked folder.
+Frameleaf uses the term **NSFW** broadly to describe sensitive or private media that you may want to keep in albums or your library without moving it to a separate locked folder.
 
 That can include:
 
@@ -88,7 +88,7 @@ That can include:
 - Personal records
 - Any media you want hidden from the default timeline, albums, and browsing views
 
-Instead of requiring sensitive media to live only in a separate locked folder, this fork adds a PIN-gated privacy mode.
+Instead of requiring sensitive media to live only in a separate locked folder, Frameleaf adds a PIN-gated privacy mode.
 
 When locked mode is active, sensitive media is hidden from the normal Frameleaf web UI. Hidden assets do not appear in the timeline, albums, or standard browsing views. A lock icon near the upload button allows an authorized user to enter the PIN and temporarily reveal hidden content.
 
@@ -114,7 +114,7 @@ From the normal web UI, however, hidden media is not visible unless privacy mode
 
 ## AI and Privacy Features
 
-This fork adds optional local AI and privacy workflows for users who want richer search and better control over sensitive content.
+Frameleaf adds optional local AI and privacy workflows for users who want richer search and better control over sensitive content.
 
 ### Local ML acceleration
 
@@ -137,7 +137,7 @@ CPU fallback works, but GPU acceleration is strongly recommended for larger libr
 ### Generated descriptions and tags
 
 > [!IMPORTANT]
-> **Read [the descriptions, identity, videos, and smart albums guide](docs/docs/features/descriptions-and-smart-albums.md) before upgrading.** This fork's ML description pipeline has a recommended setup order — Facial Recognition → Enhanced Video Duplicate Detection → prompt tuning → identity injection → re-queue → smart albums — and doing it in the wrong order means re-running expensive jobs across your whole library. The guide includes a day-by-day worked example for a typical family library, a recommended-setup-order table, and concrete custom-instructions examples you can paste into your config. Upgrading without reading it will still work, but you will likely re-queue your library more than once before getting the results you want.
+> **Read [the descriptions, identity, videos, and smart albums guide](docs/docs/features/descriptions-and-smart-albums.md) before upgrading.** Frameleaf's ML description pipeline has a recommended setup order — Facial Recognition → Enhanced Video Duplicate Detection → prompt tuning → identity injection → re-queue → smart albums — and doing it in the wrong order means re-running expensive jobs across your whole library. The guide includes a day-by-day worked example for a typical family library, a recommended-setup-order table, and concrete custom-instructions examples you can paste into your config. Upgrading without reading it will still work, but you will likely re-queue your library more than once before getting the results you want.
 
 - AI-generated image descriptions
 - **AI-generated video descriptions** — composites the sampled frames from Enhanced Video Duplicate Detection into a single grid image and feeds it to the vision-language model with a time-aware prompt, so video descriptions reflect the whole timeline instead of one thumbnail
@@ -179,7 +179,7 @@ Smart albums are disabled by default. See the [configurable descriptions, identi
 
 ## Nested Albums and Folder Organization
 
-Upstream albums are a single flat list. This fork lets you organize them into **nested folders**, so a large family library can be grouped the way you actually think about it — for example, `2024 ▸ Summer ▸ Beach Trip` — instead of scrolling one long alphabetical wall of albums.
+Upstream albums are a single flat list. Frameleaf lets you organize them into **nested folders**, so a large family library can be grouped the way you actually think about it — for example, `2024 ▸ Summer ▸ Beach Trip` — instead of scrolling one long alphabetical wall of albums.
 
 - **Folders within folders** — nest albums to any depth and group related albums together by year, event, trip, person, or however you like
 - **Drag-and-drop organization** — drag one album onto another to nest it, or drag to reorder; works in both the album grid and the album tree
@@ -195,7 +195,7 @@ Nested albums are purely an organization layer on top of the albums you already 
 
 ## Enhanced RAW Support and Media Health
 
-This fork adds admin tools for libraries with RAW camera files, external-library moves, or media that may have gone missing or corrupt over time.
+Frameleaf adds admin tools for libraries with RAW camera files, external-library moves, or media that may have gone missing or corrupt over time.
 
 ### Enhanced RAW rendering
 
@@ -246,7 +246,7 @@ An administrator must install the private HTTPS bridge and staging storage. Live
 
 An Apple **Live Photo** is really two files — a still photo and a short video — stored together. When those parts get uploaded or imported separately (for example from a backup, a desktop sync, or a third-party export), they show up as two unrelated items instead of one playable live photo.
 
-This fork adds a utility that finds those separated pairs and reassembles them.
+Frameleaf adds a utility that finds those separated pairs and reassembles them.
 
 - Available to every user under **Utilities → Relink live photos**
 - Matches pairs primarily on the identifier Apple embeds in both files, so confident matches are exact
@@ -261,7 +261,7 @@ Note: the optional AAC audio track that some live photos include is not part of 
 
 ## Family-Library Physical Deduplication
 
-This fork adds physical deduplication designed for family and multi-user home libraries.
+Frameleaf adds physical deduplication designed for family and multi-user home libraries.
 
 The goal is simple: if multiple users upload the same original file, Frameleaf should not have to store the same bytes multiple times.
 
@@ -283,7 +283,7 @@ This does **not** require partner sharing, and it does **not** merge user librar
 
 ## Enhanced Video Duplicate Detection
 
-This fork improves duplicate detection for videos by sampling multiple internal-only video frames and comparing CLIP embeddings.
+Frameleaf improves duplicate detection for videos by sampling multiple internal-only video frames and comparing CLIP embeddings.
 
 This reduces false duplicate groups caused by:
 
@@ -299,9 +299,9 @@ The result is better duplicate detection for real-world video libraries, especia
 
 ## Smarter Duplicate Keep Suggestions
 
-When you review duplicates, this fork suggests keeping the **original** version of a photo instead of whichever copy happens to be the largest file.
+When you review duplicates, Frameleaf suggests keeping the **original** version of a photo instead of whichever copy happens to be the largest file.
 
-Apple devices capture in **HEIC**, and many cameras shoot **RAW** (DNG and similar). When those originals get re-saved or shared, they often become larger JPGs that look bigger on disk but are actually a lower-quality re-encode. The upstream project would suggest keeping that bigger JPG; this fork knows the native original is the better one to keep.
+Apple devices capture in **HEIC**, and many cameras shoot **RAW** (DNG and similar). When those originals get re-saved or shared, they often become larger JPGs that look bigger on disk but are actually a lower-quality re-encode. The upstream project would suggest keeping that bigger JPG; Frameleaf knows the native original is the better one to keep.
 
 - Prefers native originals when choosing which duplicate to keep — **RAW first, then HEIC/HEIF**, then everything else
 - Wins even when the JPG copy is larger in file size
@@ -314,7 +314,7 @@ This only changes which asset is pre-selected as the keeper in the duplicate rev
 
 ## Non-Destructive Photo and Video Editing
 
-This fork adds non-destructive editing for photos and videos.
+Frameleaf adds non-destructive editing for photos and videos.
 
 The original upload remains untouched. Edited results are saved as Frameleaf-managed copies or derivatives linked to the same asset workflow.
 
@@ -348,7 +348,7 @@ This gives users the best available performance without making GPU support manda
 
 ## Recently Added and Best Photos
 
-This fork adds two library views for users who want faster ways to rediscover useful media without changing albums or favorites.
+Frameleaf adds two library views for users who want faster ways to rediscover useful media without changing albums or favorites.
 
 ### Recently Added
 
@@ -396,7 +396,7 @@ photos of Alice in Calgary from April 2024
 
 ## Server-to-Server Library Migration
 
-This fork adds a `migrate` command to the CLI (run as `immich migrate`; the CLI keeps its upstream package name) that moves **one user's entire library from one server to another** over the API — originals, albums, tags, descriptions, and everything else — then **audits the result** so you can safely retire the old server.
+Frameleaf adds a `migrate` command to the CLI (run as `immich migrate`; the CLI keeps its upstream package name) that moves **one user's entire library from one server to another** over the API — originals, albums, tags, descriptions, and everything else — then **audits the result** so you can safely retire the old server.
 
 It is built for real migrations: consolidating two home-lab servers, moving to new hardware, or folding a second instance into your main one.
 
@@ -428,7 +428,7 @@ If the user doesn't exist on the destination yet, create the account there first
 
 ### Building the CLI
 
-`migrate` is fork-only, so build the CLI from this repository instead of installing `@immich/cli` from npm:
+`migrate` is Frameleaf-only, so build the CLI from this repository instead of installing `@immich/cli` from npm:
 
 ```bash
 pnpm install
@@ -502,7 +502,7 @@ Anything short of `PASS` names the specific assets still missing, both on screen
 - Live Photo pairing (still + video)
 - Albums — including nested folders, custom icons, sort direction, and thumbnails
 - Tags — including the full nested hierarchy
-- Descriptions, including AI-generated text from this fork
+- Descriptions, including AI-generated text from Frameleaf
 - Capture date, GPS location, and star rating
 - Favorites and archived status
 - Stacks
@@ -607,10 +607,6 @@ Run `node packages/cli/dist/index.js migrate --help` for the full list. The step
 ## Translations
 
 Read more about translations [here](https://help.frameleaf.ai/developer/translations).
-
-## Repository activity
-
-![Activities](https://repobeats.axiom.co/api/embed/9e86d9dc3ddd137161f2f6d2e758d7863b1789cb.svg "Repobeats analytics image")
 
 ## Contributors
 

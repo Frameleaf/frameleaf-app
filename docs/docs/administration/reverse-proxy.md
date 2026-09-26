@@ -3,7 +3,7 @@
 Users can deploy a custom reverse proxy that forwards requests to Frameleaf. This way, the reverse proxy can handle TLS termination, load balancing, or other advanced features. All reverse proxies between Frameleaf and the user must forward all headers and set the `Host`, `X-Real-IP`, `X-Forwarded-Proto` and `X-Forwarded-For` headers to their appropriate values. Additionally, your reverse proxy should allow for big enough uploads. By following these practices, you ensure that all custom reverse proxies are fully compatible with Frameleaf.
 
 :::caution
-Frameleaf does not support being served on a sub-path such as `location /immich {`. It has to be served on the root path of a (sub)domain.
+Frameleaf does not support being served on a sub-path such as `location /photos {`. It has to be served on the root path of a (sub)domain.
 :::
 
 :::info
@@ -60,7 +60,7 @@ server {
 As an alternative to nginx, you can also use [Caddy](https://caddyserver.com/) as a reverse proxy (with automatic HTTPS configuration). Below is an example config.
 
 ```
-immich.example.org {
+photos.example.org {
     reverse_proxy http://<snip>:2283
 }
 ```
@@ -84,7 +84,7 @@ Below is an example config for Apache2 site configuration.
 
 The example below is for Traefik version 3.
 
-The most important is to increase the `respondingTimeouts` of the entrypoint used by immich. In this example of entrypoint `websecure` for port `443`. Per default it's set to 60s which leeds to videos stop uploading after 1 minute (Error Code 499). With this config it will fail after 10 minutes which is in most cases enough. Increase it if needed.
+The most important is to increase the `respondingTimeouts` of the entrypoint used by Frameleaf. In this example of entrypoint `websecure` for port `443`. Per default it's set to 60s which leeds to videos stop uploading after 1 minute (Error Code 499). With this config it will fail after 10 minutes which is in most cases enough. Increase it if needed.
 
 `traefik.yaml`
 
@@ -100,7 +100,7 @@ entryPoints:
         idleTimeout: 600s
 ```
 
-The second part is in the `docker-compose.yml` file where immich is in. Add the Traefik specific labels like in the example.
+The second part is in the `docker-compose.yml` file Frameleaf runs from. Add the Traefik specific labels like in the example.
 
 `docker-compose.yml`
 
@@ -111,10 +111,10 @@ services:
     labels:
       traefik.enable: true
       # increase readingTimeouts for the entrypoint used here
-      traefik.http.routers.immich.entrypoints: websecure
-      traefik.http.routers.immich.rule: Host(`immich.example.com`)
-      traefik.http.services.immich.loadbalancer.server.port: 2283
+      traefik.http.routers.frameleaf.entrypoints: websecure
+      traefik.http.routers.frameleaf.rule: Host(`photos.example.com`)
+      traefik.http.services.frameleaf.loadbalancer.server.port: 2283
 ```
 
-Keep in mind, that Traefik needs to communicate with the network where immich is in, usually done
+Keep in mind, that Traefik needs to communicate with the network Frameleaf runs in, usually done
 by adding the Traefik network to the `immich-server`.

@@ -33,7 +33,7 @@ To browse the photos that show text, and to correct what was read, see [Document
 
 ## Ask Search
 
-AJ Taylor's maintained fork adds a local Ask Search experience for Google Photos-like discovery without handing your media library to a cloud photo service.
+Frameleaf adds a local Ask Search experience for Google Photos-like discovery without handing your media library to a cloud photo service.
 
 Ask Search accepts normal phrases such as:
 
@@ -47,7 +47,7 @@ The server turns these phrases into existing Frameleaf search filters. Smart Sea
 
 When a named person can be resolved to one of your Frameleaf people, Ask Search uses the real person filter. If a person name looks like a person reference but cannot be matched, the search still runs semantically and explains that the person match is approximate.
 
-Ask Search runs against your local Frameleaf server and your configured machine-learning setup. It is meant for discovery, not as a Google Photos account sync. For importing full Google Photos exports, use Google Takeout with an import tool such as `immich-go`.
+Ask Search runs against your local Frameleaf server and your configured machine-learning setup. It is meant for discovery, not as a Google Photos account sync. For importing full Google Photos exports, use Google Takeout with [Import Google Photos](/features/google-photos-import).
 
 ### Full path or folder
 
