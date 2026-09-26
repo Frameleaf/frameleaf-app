@@ -1002,12 +1002,29 @@ export class PhysicalFileRepository {
    *
    * The physical_file row is cleaned up in the same transaction, so a failed
    * unlink leaves both the file and its row intact.
+   *
+   * FL-169: `removedAssetId` names an asset whose removal queued this delete inside its transaction
+   * while holding this path's lock. Holding the lock here means that transaction has ended; if the
+   * asset still exists it rolled back, and the path is kept even when no counted row names it (a
+   * video duplicate frame, a storage reservation, a develop revision output).
    */
   async deleteUnreferencedPath(
     path: string,
     unlink: () => Promise<void>,
+    options: { removedAssetId?: string } = {},
   ): Promise<{ deleted: boolean; references: number }> {
     return this.withPathLock(path, async (trx) => {
+      if (options.removedAssetId) {
+        const kept = await trx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', '=', asUuid(options.removedAssetId))
+          .executeTakeFirst();
+        if (kept) {
+          return { deleted: false, references: 1 };
+        }
+      }
+
       const physicalFile = await trx
         .selectFrom('physical_file')
         .select(['id'])

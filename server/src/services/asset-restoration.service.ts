@@ -572,7 +572,11 @@ export class AssetRestorationService {
     };
   }
 
-  /** Rows and files go with the asset; the original was never ours to delete. */
+  /**
+   * Rows and files go with the asset; the original was never ours to delete. The rows cascade with the
+   * asset row, so a permanent deletion releases the files inside its removal (FL-169); this only
+   * catches rows another removal left behind.
+   */
   @OnEvent({ name: 'AssetDelete' })
   async onAssetDelete({ assetId }: ArgOf<'AssetDelete'>) {
     const files = await this.restorationRepository.getFilePaths(assetId);
