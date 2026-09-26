@@ -1522,10 +1522,11 @@ export class AssetRepository {
     };
     const lockedStacks = new Set<string>();
     const lockStack = async (stackId: string | null | undefined) => {
-      if (stackId && !lockedStacks.has(stackId)) {
-        await tx.selectFrom('stack').select('id').where('id', '=', asUuid(stackId)).forUpdate().execute();
-        lockedStacks.add(stackId);
+      if (!stackId || lockedStacks.has(stackId)) {
+        return;
       }
+      await tx.selectFrom('stack').select('id').where('id', '=', asUuid(stackId)).forUpdate().execute();
+      lockedStacks.add(stackId);
     };
     // a lock needed after the row lock: start over, unless this is the last attempt
     const lockLate = async (paths: string[], stackId?: string | null) => {

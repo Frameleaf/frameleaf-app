@@ -70,7 +70,7 @@ export class FrameleafAuthService extends BaseService {
     const role = frameleafRole(profile);
 
     let user: UserAdmin | undefined;
-    let link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
+    const link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
     if (link) {
       user = await this.userRepository.get(link.userId, { withDeleted: false });
       if (!user) {
@@ -87,7 +87,7 @@ export class FrameleafAuthService extends BaseService {
           throw new BadRequestException('This account is already linked to another Frameleaf account');
         }
         user = existing;
-        link = await this.frameleafAccountRepository.upsertLink({
+        await this.frameleafAccountRepository.upsertLink({
           userId: user.id,
           sub: profile.sub,
           email,
@@ -106,7 +106,7 @@ export class FrameleafAuthService extends BaseService {
         email,
         isAdmin: role === 'admin',
       });
-      link = await this.frameleafAccountRepository.upsertLink({
+      await this.frameleafAccountRepository.upsertLink({
         userId: user.id,
         sub: profile.sub,
         email,
@@ -308,7 +308,7 @@ export class FrameleafAuthService extends BaseService {
     const updated = await this.databaseRepository.withLock(DatabaseLock.FrameleafRoleChange, async () => {
       if (role === 'user') {
         const admins = await this.userRepository.getAdmins();
-        if (!admins.some((admin) => admin.id !== user.id)) {
+        if (admins.every((admin) => admin.id === user.id)) {
           this.logger.warn(
             `Frameleaf asked for ${user.email} to stop administering this server, but they are its only administrator; they stay one`,
           );

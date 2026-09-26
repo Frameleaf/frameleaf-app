@@ -268,7 +268,7 @@ export class StorageCore {
     // asset's row lock, so the move cannot race the asset's removal. Only a rename runs in that unit; a
     // move across filesystems is copied and verified first, beside the new path, and then renamed. The
     // move stays recorded until the new path is saved, so one interrupted in between is finished next time.
-    const request = {
+    const moveArgs = {
       moveId: move.id,
       assetId: entityId,
       pathType: pathType as AssetMovePathType,
@@ -278,7 +278,7 @@ export class StorageCore {
     };
     // what the filesystem side did, set from inside the move's transaction
     const state = { crossDevice: false, placed: false };
-    let result = await this.assetRepository.moveFile(request, {
+    let result = await this.assetRepository.moveFile(moveArgs, {
       rename: async () => {
         if (source === newPath) {
           return true;
@@ -297,7 +297,7 @@ export class StorageCore {
         return false;
       }
       try {
-        result = await this.assetRepository.moveFile(request, {
+        result = await this.assetRepository.moveFile(moveArgs, {
           rename: async () => {
             state.placed = (await this.rename(staged, newPath)) === 'renamed';
             return state.placed;
@@ -316,20 +316,29 @@ export class StorageCore {
       }
     }
 
-    if (result === 'removed') {
-      this.logger.log(`Skipped moving ${oldPath}: asset ${entityId} was removed`);
-    } else if (result === 'changed') {
-      this.logger.log(`Skipped moving ${oldPath}: asset ${entityId} no longer uses it`);
-    } else if (result === 'deferred') {
-      this.logger.log(`Deferred moving ${oldPath}: records that cannot change now name it; the nightly job retries`);
-    } else if (result === 'mismatched') {
-      const message = `Deferred moving ${oldPath}: asset ${entityId} is mapped to another file; the move is kept until they agree`;
-      // retried every night: reported once per recorded move
-      if (this.reportedMismatches.has(move.id)) {
-        this.logger.debug(message);
-      } else {
-        this.reportedMismatches.add(move.id);
-        this.logger.warn(message);
+    switch (result) {
+      case 'removed': {
+        this.logger.log(`Skipped moving ${oldPath}: asset ${entityId} was removed`);
+        break;
+      }
+      case 'changed': {
+        this.logger.log(`Skipped moving ${oldPath}: asset ${entityId} no longer uses it`);
+        break;
+      }
+      case 'deferred': {
+        this.logger.log(`Deferred moving ${oldPath}: records that cannot change now name it; the nightly job retries`);
+        break;
+      }
+      case 'mismatched': {
+        const message = `Deferred moving ${oldPath}: asset ${entityId} is mapped to another file; the move is kept until they agree`;
+        // retried every night: reported once per recorded move
+        if (this.reportedMismatches.has(move.id)) {
+          this.logger.debug(message);
+        } else {
+          this.reportedMismatches.add(move.id);
+          this.logger.warn(message);
+        }
+        break;
       }
     }
     return result === 'moved';

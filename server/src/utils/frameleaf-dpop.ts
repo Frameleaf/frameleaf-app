@@ -154,20 +154,21 @@ export const boundTokenProblem = (
   if (response.token_type?.toLowerCase() !== 'dpop') {
     return `the token type is ${response.token_type ?? 'missing'}, not DPoP`;
   }
-  let claims: { cnf?: { jkt?: unknown }; frameleaf_kid?: unknown } | null = null;
+  let claims: unknown = null;
   try {
     const [, payload] = response.access_token.split('.', 3);
-    claims = payload ? (JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as typeof claims) : null;
+    claims = payload ? JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) : null;
   } catch {
     claims = null;
   }
   if (!claims || typeof claims !== 'object') {
     return 'the token is not a JWT this server can read';
   }
-  if (claims.cnf?.jkt !== signer.kid) {
+  const jwtClaims = claims as { cnf?: { jkt?: unknown }; frameleaf_kid?: unknown };
+  if (jwtClaims.cnf?.jkt !== signer.kid) {
     return 'the token is not bound to this server’s key (cnf.jkt)';
   }
-  if (claims.frameleaf_kid !== undefined && claims.frameleaf_kid !== signer.kid) {
+  if (jwtClaims.frameleaf_kid !== undefined && jwtClaims.frameleaf_kid !== signer.kid) {
     return 'the token was minted for another key of this server (frameleaf_kid)';
   }
   return null;

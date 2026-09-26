@@ -649,11 +649,9 @@ describe(AssetService.name, () => {
           const { asset: primary } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
           const { asset: other } = await ctx.newAsset({ ownerId: user.id });
           const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, other.id]);
-          queue.mockImplementation(async (job) => {
-            if (job.name === JobName.FileDelete) {
-              throw new Error('commit failed');
-            }
-          });
+          queue.mockImplementation((job) =>
+            job.name === JobName.FileDelete ? Promise.reject(new Error('commit failed')) : Promise.resolve(),
+          );
 
           await expect(sut.handleAssetDeletion({ id: primary.id, deleteOnDisk: true })).rejects.toThrow(
             'commit failed',
@@ -753,7 +751,7 @@ describe(AssetService.name, () => {
           const { asset } = await ctx.newAsset({ ownerId: user.id });
           const to = `/data/library/${asset.id}-template.jpg`;
           const moveId = await recordMove(asset.id, asset.originalPath, to);
-          const operations = { rename: vi.fn(async () => true), finish: vi.fn(noop), undo: vi.fn(noop) };
+          const operations = { rename: vi.fn(() => Promise.resolve(true)), finish: vi.fn(noop), undo: vi.fn(noop) };
 
           await expect(
             ctx.get(AssetRepository).moveFile(
@@ -789,7 +787,7 @@ describe(AssetService.name, () => {
             `/data/library/${changed.id}-t.jpg`,
           );
           await repository.remove({ id: removed.id });
-          const rename = vi.fn(async () => true);
+          const rename = vi.fn(() => Promise.resolve(true));
 
           await expect(
             repository.moveFile(
@@ -864,7 +862,7 @@ describe(AssetService.name, () => {
                 source: asset.originalPath,
                 to,
               },
-              { rename: async () => true, finish: noop, undo: noop },
+              { rename: () => Promise.resolve(true), finish: noop, undo: noop },
             ),
           ).resolves.toBe('moved');
 
@@ -892,7 +890,7 @@ describe(AssetService.name, () => {
           // another physical file already has the new path, so saving it fails
           await addPhysicalOriginal(to, null);
           const moveId = await recordMove(asset.id, asset.originalPath, to);
-          const operations = { rename: vi.fn(async () => true), finish: vi.fn(noop), undo: vi.fn(noop) };
+          const operations = { rename: vi.fn(() => Promise.resolve(true)), finish: vi.fn(noop), undo: vi.fn(noop) };
 
           await expect(
             repository.moveFile(
@@ -955,8 +953,9 @@ describe(AssetService.name, () => {
                 removed.originalPath,
                 ...removed.pendingMoves.flatMap((move) => [move.oldPath, move.newPath]),
               ],
-              queue: async (files) => {
+              queue: (files) => {
                 queued.push(files);
+                return Promise.resolve();
               },
             },
           );

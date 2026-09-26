@@ -1249,7 +1249,8 @@ describe(StorageTemplateService.name, () => {
         pending({ id: 'm3', entityId: 'asset-2', pathType: AssetFileType.Thumbnail }),
         pending({ id: 'm4', entityId: 'asset-2', pathType: AssetPathType.EncodedVideo }),
       ]);
-      mocks.storage.checkFileExists.mockResolvedValue(true);
+      // every recorded move's files are still present, so none is judged finished
+      mocks.storage.stat.mockResolvedValue({} as Stats);
 
       await sut.onNightlyDatabaseCleanup();
 
@@ -1346,9 +1347,7 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigrationSingle({ id: asset.id });
       await sut.handleMigrationSingle({ id: asset.id });
 
-      const warnings = mocks.logger.warn.mock.calls.filter(([message]) =>
-        String(message).includes('mapped to another file'),
-      );
+      const warnings = mocks.logger.warn.mock.calls.filter(([message]) => message.includes('mapped to another file'));
       expect(warnings).toHaveLength(1);
     });
 
