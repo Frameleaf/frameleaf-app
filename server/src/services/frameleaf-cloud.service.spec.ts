@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { generateKeyPairSync } from 'node:crypto';
+import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,13 +13,14 @@ import {
   PROVEN_KEY_FILE,
   RETIRING_KEY_FILE,
   RETIRING_META_FILE,
+  ROTATION_NEEDED_FILE,
   SET_ASIDE_MARK,
 } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
-import { FakeCloud, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
+import { FakeCloud, FakeCloudAnswer, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -35,7 +36,7 @@ describe(FrameleafCloudService.name, () => {
   let linkToken: string | null;
   let identityRepository: InstanceIdentityRepository;
   /** Whether each identity load ran under `DatabaseLock.FrameleafIdentity`. */
-  let identityLoads: boolean[];
+  let identityCalls: { method: string; locked: boolean }[];
   // like the real lock (an in-process AsyncLock plus a Postgres advisory lock), not re-entrant: taking
   // a lock already held from inside it would wait forever, so the fake fails the test instead (FL-175)
   const heldLocks = new AsyncLocalStorage<DatabaseLock[]>();
@@ -44,6 +45,9 @@ describe(FrameleafCloudService.name, () => {
   const cloudMlEnabled = () =>
     !!(metadata.get(SystemMetadataKey.SystemConfig) as { frameleafCloud?: { cloudMl?: { enabled?: boolean } } })
       ?.frameleafCloud?.cloudMl?.enabled;
+  /** The decoded JWS header of a compact JWS. */
+  const headerOf = (jws: string) =>
+    JSON.parse(Buffer.from(jws.split('.', 1)[0], 'base64url').toString('utf8')) as { kid: string };
   const pathsCalled = () => cloud.requests.map(({ method, path }) => `${method} ${path}`);
 
   /** The fake cloud's link and token endpoints. `grant` answers the device-code poll. */
@@ -110,15 +114,27 @@ describe(FrameleafCloudService.name, () => {
     metadata = new Map();
     clearConfigCache();
     identityRepository = new InstanceIdentityRepository();
-    identityLoads = [];
-    const loadOrCreate = identityRepository.loadOrCreate.bind(identityRepository);
-    vi.spyOn(identityRepository, 'loadOrCreate').mockImplementation((...args) => {
-      const locked = !!heldLocks.getStore()?.includes(DatabaseLock.FrameleafIdentity);
-      identityLoads.push(locked);
-      return locked
-        ? loadOrCreate(...args)
-        : Promise.reject(new Error('The identity was loaded outside DatabaseLock.FrameleafIdentity'));
-    });
+    identityCalls = [];
+    // every call that reads or changes the key files must hold the identity lock (FL-175)
+    const target = identityRepository as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+    for (const method of [
+      'loadOrCreate',
+      'rotate',
+      'promoteCandidate',
+      'discardCandidate',
+      'candidateSigner',
+      'removeRetired',
+      'clearRotationNeeded',
+    ]) {
+      const original = target[method].bind(identityRepository);
+      vi.spyOn(target, method).mockImplementation((...args) => {
+        const locked = !!heldLocks.getStore()?.includes(DatabaseLock.FrameleafIdentity);
+        identityCalls.push({ method, locked });
+        return locked
+          ? original(...args)
+          : Promise.reject(new Error(`${method} ran outside DatabaseLock.FrameleafIdentity`));
+      });
+    }
     ({ sut, mocks } = newTestService(FrameleafCloudService, {
       frameleafCloud: new FrameleafCloudRepository(LoggingRepository.create()),
       instanceIdentity: identityRepository,
@@ -704,17 +720,24 @@ describe(FrameleafCloudService.name, () => {
       cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
       cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
       cloud.on('POST /api/v1/instance/commands/k1/ack', () => ({ status: 200, body: {} }));
-      identityLoads.length = 0;
+      identityCalls.length = 0;
       makeDue();
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
-      expect(identityLoads.length).toBeGreaterThan(2);
-      expect(identityLoads.every(Boolean)).toBe(true);
+      expect(identityCalls.filter(({ method }) => method === 'loadOrCreate').length).toBeGreaterThan(2);
+      expect(identityCalls.map(({ method }) => method)).toContain('rotate');
+      expect(identityCalls.every(({ locked }) => locked)).toBe(true);
     });
 
     it('warns the administrators and rotates again when the key the cloud accepted was damaged (FL-175)', async () => {
       const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
-      // a crash left the accepted key unreadable before it replaced the current one
+      // a crash left the accepted key unreadable before it replaced the current one, 20 hours ago
       await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      const since = Date.now() - 20 * 60 * 60 * 1000;
+      const deadline = since + 24 * 60 * 60 * 1000;
+      await writeFile(
+        join(identityDir, ROTATION_NEEDED_FILE),
+        JSON.stringify({ since: new Date(since).toISOString(), until: new Date(deadline).toISOString() }),
+      );
       cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
       cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
       cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
@@ -737,11 +760,139 @@ describe(FrameleafCloudService.name, () => {
       expect(setAside).toHaveLength(1);
       expect(await readFile(join(identityDir, setAside[0]), 'utf8')).toBe('damaged');
 
+      // the token and the proof both come from the previous (for the cloud, retiring) key
+      const tokenKids = cloud.requests
+        .filter(({ path }) => path === '/id/token')
+        .map((request) => headerOf(request.form().get('client_assertion')!).kid);
+      expect(tokenKids.length).toBeGreaterThan(0);
+      expect(new Set(tokenKids)).toEqual(new Set([before.kid]));
+      const [header, payload, signature] = (rotate.proof as string).split('.', 3);
+      expect(headerOf(rotate.proof).kid).toBe(before.kid);
+      expect(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))).toEqual({
+        nonce: 'nonce-12345',
+        jkt: rotate.newJwk.kid,
+      });
+      expect(
+        verify(
+          null,
+          Buffer.from(`${header}.${payload}`),
+          createPublicKey({ key: before.publicJwk, format: 'jwk' }),
+          Buffer.from(signature, 'base64url'),
+        ),
+      ).toBe(true);
+      // the previous key keeps its original deadline; recovery never extends it
+      expect(Math.abs(Date.parse(after.retiring!.until) - deadline)).toBeLessThanOrEqual(1);
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.CloudKeyRecoveryRotation, detail: 'rotated' }),
+      ]);
+
       // done once: the next check-in does not rotate again
       cloud.requests.length = 0;
       makeDue();
       await sut.handleHeartbeat();
       expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
+    });
+
+    it('spaces recovery rotations out after a 429, honouring Retry-After (FL-175)', async () => {
+      await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      const limited = { code: 'rate-limited', message: 'more than 3 rotations this hour' };
+      let answer: FakeCloudAnswer = { status: 429, body: limited };
+      cloud.on('POST /api/v1/instance/keys/rotate', () => answer);
+      const rotations = () => cloud.requests.filter(({ path }) => path === '/api/v1/instance/keys/rotate').length;
+      const nextAttemptIn = () => Date.parse(storedLink()!.heartbeat!.keyRecovery!.nextAttemptAt!) - Date.now();
+      const overdue = () => {
+        const link = storedLink()!;
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+          ...link,
+          heartbeat: { ...link.heartbeat!, keyRecovery: { nextAttemptAt: new Date(0).toISOString() } },
+        });
+      };
+
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(rotations()).toBe(1);
+      expect(nextAttemptIn()).toBeGreaterThan(19 * 60 * 1000);
+      expect(nextAttemptIn()).toBeLessThanOrEqual(20 * 60 * 1000);
+      await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).resolves.toBeUndefined();
+
+      // check-ins inside the gap do not rotate
+      makeDue();
+      await sut.handleHeartbeat();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(rotations()).toBe(1);
+
+      // the cloud asks for half an hour
+      answer = { status: 429, body: limited, headers: { 'Retry-After': '1800' } };
+      overdue();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(rotations()).toBe(2);
+      expect(nextAttemptIn()).toBeGreaterThan(29 * 60 * 1000);
+      expect(nextAttemptIn()).toBeLessThanOrEqual(30 * 60 * 1000);
+      expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
+
+      answer = { status: 200, body: {} };
+      overdue();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(rotations()).toBe(3);
+      expect(storedLink()?.heartbeat?.keyRecovery).toBeUndefined();
+      expect((metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).rotationNeeded).toBe(
+        undefined,
+      );
+      for (const detail of ['retrying', 'rotated']) {
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ action: AdminAuditAction.CloudKeyRecoveryRotation, detail }),
+        ]);
+      }
+    });
+
+    it('asks for the server to be linked again when the cloud refuses the recovery because the window closed (FL-175)', async () => {
+      await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      cloud.on('POST /api/v1/instance/keys/rotate', () => ({
+        status: 401,
+        body: { code: 'key-retired', message: 'the retiring key is past its window' },
+      }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      expect(storedLink()?.status).toBe('linked');
+      expect(storedLink()?.heartbeat).toMatchObject({ relinkRequested: true, keyRecovery: { closed: true } });
+      await expect(sut.getStatus()).resolves.toMatchObject({ relinkRequested: true });
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:identity-key-expired', level: NotificationLevel.Error }),
+      );
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.CloudKeyRecoveryRotation, detail: 'window-closed' }),
+      ]);
+      await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).rejects.toThrow();
+
+      // no more attempts; the relink request stays
+      cloud.requests.length = 0;
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
+      expect(storedLink()?.heartbeat?.relinkRequested).toBe(true);
+    });
+
+    it('asks for a relink without calling the cloud once a day has passed since the key was set aside (FL-175)', async () => {
+      const since = Date.now() - 25 * 60 * 60 * 1000;
+      await writeFile(
+        join(identityDir, ROTATION_NEEDED_FILE),
+        JSON.stringify({ since: new Date(since).toISOString(), until: new Date(since + 24 * 60 * 60 * 1000) }),
+      );
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(pathsCalled()).not.toContain('GET /api/v1/instance/keys/nonce');
+      expect(storedLink()?.heartbeat?.relinkRequested).toBe(true);
+      await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).rejects.toThrow();
     });
 
     it('removes the retired key only once its window closed, deciding from disk (FL-175)', async () => {
@@ -794,6 +945,14 @@ describe(FrameleafCloudService.name, () => {
   });
 
   describe('unlink (FL-155)', () => {
+    it('forgets a pending recovery rotation (FL-175)', async () => {
+      await linkNow();
+      cloud.on('DELETE /api/v1/instance', () => ({ status: 200, body: {} }));
+      await writeFile(join(identityDir, ROTATION_NEEDED_FILE), 'not json');
+      await sut.unlink(authStub.admin);
+      await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).rejects.toThrow();
+    });
+
     it('tells the cloud, clears the link and switches cloud features off', async () => {
       await linkNow();
       cloud.on('DELETE /api/v1/instance', () => ({ status: 200, body: {} }));

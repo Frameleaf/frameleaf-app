@@ -19914,6 +19914,7 @@ export enum AdminAuditAction {
     CloudUnlinked = "cloud-unlinked",
     CloudRevoked = "cloud-revoked",
     CloudPermissionsChanged = "cloud-permissions-changed",
+    CloudKeyRecoveryRotation = "cloud-key-recovery-rotation",
     LicenseActivated = "license-activated",
     LicenseRemoved = "license-removed",
     FrameleafAccountLinked = "frameleaf-account-linked",

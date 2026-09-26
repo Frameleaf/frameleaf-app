@@ -44,6 +44,8 @@ const fsControl = vi.hoisted(() => ({
   synced: [] as string[],
   /** Flush failures by path. */
   syncErrors: {} as Record<string, string>,
+  /** A close of a handle for a path containing this fails with EIO. */
+  closeError: null as string | null,
 }));
 vi.mock('node:fs/promises', async (original) => {
   const actual = await original<typeof import('node:fs/promises')>();
@@ -79,6 +81,13 @@ vi.mock('node:fs/promises', async (original) => {
         }
         await sync();
       };
+      if (fsControl.closeError && path.includes(fsControl.closeError)) {
+        const close = handle.close.bind(handle);
+        handle.close = async () => {
+          await close();
+          throw Object.assign(new Error('close failed'), { code: 'EIO' });
+        };
+      }
       return handle;
     },
   };
@@ -96,6 +105,7 @@ describe(InstanceIdentityRepository.name, () => {
     fsControl.writeError = null;
     fsControl.synced = [];
     fsControl.syncErrors = {};
+    fsControl.closeError = null;
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -363,7 +373,10 @@ describe(InstanceIdentityRepository.name, () => {
       const again = await repository.loadOrCreate(dir, identity, start);
       expect(again.kid).toBe(identity.kid);
       expect(again.retiring).toBeUndefined();
-      expect(again.rotationNeeded).toEqual({ since: new Date(start).toISOString() });
+      expect(again.rotationNeeded).toEqual({
+        since: new Date(start).toISOString(),
+        until: new Date(start + 24 * 60 * 60 * 1000).toISOString(),
+      });
       await expect(access(join(dir, PROVEN_KEY_FILE))).rejects.toThrow();
       const [setAside] = await setAsideOf(PROVEN_KEY_FILE);
       expect(await readFile(setAside, 'utf8')).toBe(damaged);
@@ -377,6 +390,114 @@ describe(InstanceIdentityRepository.name, () => {
       expect(rotated.rotationNeeded).toBeUndefined();
       await expect(access(join(dir, ROTATION_NEEDED_FILE))).rejects.toThrow();
       await expect(repository.loadOrCreate(dir, rotated)).resolves.not.toHaveProperty('rotationNeeded');
+    });
+
+    it('keeps the marker of a crash between asking for a rotation and setting the key aside (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      // the crash: the marker was written, the damaged proven key not yet moved
+      const since = Date.now() - 3 * 60 * 60 * 1000;
+      const marker = {
+        since: new Date(since).toISOString(),
+        until: new Date(since + 24 * 60 * 60 * 1000).toISOString(),
+      };
+      await writeFile(join(dir, ROTATION_NEEDED_FILE), JSON.stringify(marker));
+      await writeFile(join(dir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+      expect(again.kid).toBe(identity.kid);
+      // the earlier marker stands: the original deadline is never pushed back
+      expect(again.rotationNeeded).toEqual(marker);
+      await expect(setAsideOf(PROVEN_KEY_FILE)).resolves.toHaveLength(1);
+    });
+
+    it('flushes the marker before setting the key aside, and moves nothing when it cannot (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      await writeFile(join(dir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      fsControl.syncErrors = { [join(dir, `${ROTATION_NEEDED_FILE}.tmp`)]: 'EIO' };
+      await expect(new InstanceIdentityRepository().loadOrCreate(dir, identity)).rejects.toMatchObject({ code: 'EIO' });
+      expect(await readFile(join(dir, PROVEN_KEY_FILE), 'utf8')).toBe('damaged');
+      await expect(access(join(dir, ROTATION_NEEDED_FILE))).rejects.toThrow();
+
+      fsControl.syncErrors = {};
+      fsControl.synced = [];
+      await expect(new InstanceIdentityRepository().loadOrCreate(dir, identity)).resolves.toHaveProperty(
+        'rotationNeeded',
+      );
+      expect(fsControl.synced).toContain(join(dir, `${ROTATION_NEEDED_FILE}.tmp`));
+    });
+
+    it('still asks for a rotation when the marker cannot be understood (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      await writeFile(join(dir, ROTATION_NEEDED_FILE), '{"since": ');
+      const now = Date.now();
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity, now);
+      expect(again.rotationNeeded).toEqual({
+        since: new Date(now).toISOString(),
+        until: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+      });
+      expect(JSON.parse(await readFile(join(dir, ROTATION_NEEDED_FILE), 'utf8'))).toEqual(again.rotationNeeded);
+    });
+
+    it('clears the marker on request (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      await writeFile(join(dir, ROTATION_NEEDED_FILE), '{}');
+      await repository.clearRotationNeeded(dir);
+      await expect(repository.loadOrCreate(dir, identity)).resolves.not.toHaveProperty('rotationNeeded');
+    });
+
+    it('reports no phantom retiring key when a promotion sets a damaged current key aside (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      // an older rotation left a retiring key and sidecar
+      const rotated = await repository.rotate(identity, () => Promise.resolve(), 24);
+      await writeFile(join(dir, CANDIDATE_KEY_FILE), newPem(), { mode: 0o600 });
+      const pending = await repository.loadOrCreate(dir, rotated);
+      expect(pending.candidate).toBeDefined();
+      await writeFile(pending.keyFile, 'damaged', { mode: 0o600 });
+
+      const promoted = await repository.promoteCandidate(pending, 24);
+      expect(promoted.kid).toBe(pending.candidate!.kid);
+      expect(promoted.retiring).toBeUndefined();
+      await expect(access(join(dir, RETIRING_KEY_FILE))).rejects.toThrow();
+      await expect(access(join(dir, RETIRING_META_FILE))).rejects.toThrow();
+      await expect(setAsideOf(INSTANCE_KEY_FILE)).resolves.toHaveLength(1);
+      await expect(new InstanceIdentityRepository().loadOrCreate(dir, promoted)).resolves.toMatchObject({
+        kid: promoted.kid,
+      });
+    });
+
+    it('finishes a rotation whose last flush fails, once the key is in place (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const rotated = await repository.rotate(
+        identity,
+        () => {
+          // the cloud accepted the key; only the flush after the swap fails
+          fsControl.syncErrors = { [dir]: 'EIO' };
+          return Promise.resolve();
+        },
+        24,
+      );
+      expect(rotated.kid).not.toBe(identity.kid);
+      fsControl.syncErrors = {};
+      await expect(new InstanceIdentityRepository().loadOrCreate(dir, rotated)).resolves.toMatchObject({
+        kid: rotated.kid,
+      });
+    });
+
+    it('removes a new key whose close fails and reports the first error (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const prove = vi.fn(() => Promise.resolve());
+      fsControl.closeError = NEXT_KEY_FILE;
+      await expect(repository.rotate(identity, prove, 24)).rejects.toMatchObject({ code: 'EIO' });
+      await expect(access(join(dir, NEXT_KEY_FILE))).rejects.toThrow();
+
+      fsControl.writeError = NEXT_KEY_FILE;
+      await expect(repository.rotate(identity, prove, 24)).rejects.toMatchObject({ code: 'ENOSPC' });
+      await expect(access(join(dir, NEXT_KEY_FILE))).rejects.toThrow();
+      expect(prove).not.toHaveBeenCalled();
     });
 
     it('swaps in a readable proven key over a current key that does not parse (FL-175)', async () => {
