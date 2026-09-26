@@ -361,7 +361,7 @@
 
   const isCloudItem = (item: AssetRestorationResponseDto) => item.destinationKind === MlDestinationKind.FrameleafCloud;
 
-  const accept = (item: AssetRestorationResponseDto) => {
+  const accept = async (item: AssetRestorationResponseDto) => {
     // A reviewed Frameleaf Cloud preview renders in full only as its own confirmed job.
     if (isCloudItem(item) && item.destinationId) {
       const smooth = item.mode === AssetRestorationMode.SmoothMotion;
@@ -380,7 +380,7 @@
       });
       return;
     }
-    return acceptLocal(item);
+    await acceptLocal(item);
   };
 
   const acceptLocal = (item: AssetRestorationResponseDto) =>
