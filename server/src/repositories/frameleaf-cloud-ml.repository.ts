@@ -99,9 +99,9 @@ export class FrameleafCloudMlRepository {
    * would refuse it, for example a model name where a SKU belongs or a request key outside the
    * workload's allow-list.
    */
-  createEstimate(gateway: CloudMlGateway, request: CloudEstimateRequest): Promise<CloudEstimate> {
+  async createEstimate(gateway: CloudMlGateway, request: CloudEstimateRequest): Promise<CloudEstimate> {
     const body = cloudRequestBody(estimateRequestSchema, request, 'the estimate request');
-    return this.request(gateway, estimateResponseSchema, {
+    return await this.request(gateway, estimateResponseSchema, {
       method: 'POST',
       url: `${gateway.url}/v2/estimates`,
       dpop: gateway.token,
@@ -147,8 +147,8 @@ export class FrameleafCloudMlRepository {
   }
 
   /** `GET /v2/jobs/{id}`: where a job is now. */
-  getJob(gateway: CloudMlGateway, jobId: string): Promise<CloudJobStatus> {
-    return this.request(gateway, jobStatusSchema, { url: this.jobUrl(gateway, jobId), dpop: gateway.token });
+  async getJob(gateway: CloudMlGateway, jobId: string): Promise<CloudJobStatus> {
+    return await this.request(gateway, jobStatusSchema, { url: this.jobUrl(gateway, jobId), dpop: gateway.token });
   }
 
   /** `POST /v2/jobs/{id}/cancel`: stop a job; the cloud releases what it holds. An empty answer is fine. */
@@ -213,12 +213,12 @@ export class FrameleafCloudMlRepository {
    * version; a body it would refuse (the reserved text-recognition add-on turned on, a malformed
    * version) is refused here and never sent.
    */
-  recordConsent(
+  async recordConsent(
     gateway: CloudMlGateway,
     consent: { version: string; features: CloudConsentFeatures; acknowledgedBy?: string },
   ): Promise<CloudConsentRecorded> {
     const body = cloudRequestBody(consentRecordRequestSchema, consent, 'the consent');
-    return this.request(gateway, consentRecordedSchema, {
+    return await this.request(gateway, consentRecordedSchema, {
       method: 'POST',
       url: `${gateway.url}/v2/consent`,
       dpop: gateway.token,
