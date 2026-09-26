@@ -28,6 +28,21 @@ describe(describeAdminEvent.name, () => {
     expect(describe_(AdminAuditAction.AccountRemovalScheduled)).toBe('Account scheduled for permanent removal');
   });
 
+  it('describes each step of an identity key recovery (FL-175)', () => {
+    expect(describe_(AdminAuditAction.CloudKeyRecoveryRotation, 'rotated')).toBe(
+      'Replaced this server’s identity key after a key could not be read',
+    );
+    expect(describe_(AdminAuditAction.CloudKeyRecoveryRotation, 'retrying')).toBe(
+      'Could not replace this server’s identity key yet; retrying',
+    );
+    expect(describe_(AdminAuditAction.CloudKeyRecoveryRotation, 'window-closed')).toBe(
+      'The previous identity key expired before it could be replaced; link this server again',
+    );
+    expect(describe_(AdminAuditAction.CloudKeyRecoveryRotation)).toBe(
+      'Started a new identity key rotation after a key could not be read',
+    );
+  });
+
   it('carries the recorded specifics', () => {
     expect(describe_(AdminAuditAction.AccountDeleted, '7')).toBe('Account deleted · recovery available for 7 days');
     expect(describe_(AdminAuditAction.SessionRevoked, 'iOS · iPhone')).toBe('Device signed out: iOS · iPhone');

@@ -582,7 +582,10 @@ describe('studio project session', () => {
       expect(last()).toMatchObject({ status: 'lease-lost', hasDraft: false, project: { revision: 4 } });
 
       // An editor that still shows the discarded draft reports the revision it was loaded from.
-      session.stage({ mine: 2 }, ['clip.move'], [], 3);
+      // Loaded before Reload, it is refused (FL-174); even one that has the head's graph version
+      // but still names revision 3 is never saved over revision 4.
+      expect(session.stageEditor({ mine: 2 }, ['clip.move'], 3, 1)).toBe('superseded');
+      session.stageEditor({ mine: 2 }, ['clip.move'], 3, 2);
       expect(await session.takeOver()).toBe(true);
       expect(last()).toMatchObject({ status: 'conflict', conflict: { currentRevision: 4 }, hasDraft: true });
       expect(api.save).toHaveBeenCalledTimes(1);
@@ -592,12 +595,12 @@ describe('studio project session', () => {
       api.save.mockResolvedValueOnce(saved(4)).mockResolvedValueOnce(saved(5));
       const session = create();
       await session.open();
-      session.stage({ step: 1 }, ['editor.save'], [], 3);
+      session.stageEditor({ step: 1 }, ['editor.save'], 3, 0);
       await timers.fire((timer) => timer.ms === 1500);
       expect(last()).toMatchObject({ status: 'saved', project: { revision: 4 } });
 
       // The next edit lands before the editor sees revision 4: it still reports base 3.
-      session.stage({ step: 2 }, ['editor.save'], [], 3);
+      session.stageEditor({ step: 2 }, ['editor.save'], 3, 0);
       await timers.fire((timer) => timer.ms === 1500);
       expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 4 }));
       expect(last()).toMatchObject({ status: 'saved', project: { revision: 5 } });
@@ -610,7 +613,8 @@ describe('studio project session', () => {
       // A canonical command stored by the host: the editor has not loaded it.
       session.stage({ command: true }, ['clip.add']);
       await timers.fire((timer) => timer.ms === 1500);
-      session.stage({ editor: true }, ['editor.save'], [], 3);
+      // The editor reloaded to the command's graph (version 1) but its mount still names revision 3.
+      session.stageEditor({ editor: true }, ['editor.save'], 3, 1);
       await timers.fire((timer) => timer.ms === 1500);
       expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 3 }));
     });
@@ -619,11 +623,11 @@ describe('studio project session', () => {
       api.save.mockResolvedValueOnce(saved(4)).mockResolvedValueOnce(saved(6));
       const session = create();
       await session.open();
-      session.stage({ step: 1 }, ['editor.save'], [], 3);
+      session.stageEditor({ step: 1 }, ['editor.save'], 3, 0);
       await timers.fire((timer) => timer.ms === 1500);
       api.get.mockResolvedValue(detail({ revision: 5 }));
       await session.reload();
-      session.stage({ stale: true }, ['editor.save'], [], 3);
+      session.stageEditor({ stale: true }, ['editor.save'], 3, 1);
       await timers.fire((timer) => timer.ms === 1500);
       expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 3 }));
     });
@@ -634,7 +638,7 @@ describe('studio project session', () => {
       const session = create();
       await session.open();
 
-      session.stage({ stale: true }, ['clip.add'], [], 3);
+      session.stageEditor({ stale: true }, ['clip.add'], 3, 0);
       await timers.fire((timer) => timer.ms === 1500);
       expect(api.save).toHaveBeenLastCalledWith('p-1', expect.objectContaining({ expectedRevision: 3 }));
     });
@@ -712,6 +716,171 @@ describe('studio project session', () => {
         hasDraft: true,
       });
       expect(timers.pending()).toEqual([]);
+    });
+  });
+
+  // FL-174: a canonical command or undo stages the host's own graph; the editor reloads to show it.
+  // An editor draft sent before that reload was built without the command and must never replace it.
+  describe('host graph and editor drafts (FL-174)', () => {
+    const command = {
+      id: 'clip.add',
+      payload: { trackId: 'v1', assetId: 'a-1', at: { num: 0, den: 1 } },
+      revision: 3,
+      idempotencyKey: 'cmd-1',
+      issuedAt: 5,
+    };
+
+    it('keeps a staged command’s effect when an editor draft from before the remount arrives', async () => {
+      api.save.mockResolvedValue(saved(4));
+      const session = create();
+      await session.open();
+      expect(last().project.graphVersion).toBe(0);
+
+      expect(session.stage({ command: true }, ['clip.add'], [command as never])).toBe('staged');
+      expect(last()).toMatchObject({ status: 'dirty', project: { graph: { command: true }, graphVersion: 1 } });
+
+      // The editor still shows version 0: this draft never saw the command.
+      expect(session.stageEditor({ editor: 'before' }, ['editor.save'], 3, 0)).toBe('superseded');
+      expect(last()).toMatchObject({ hasDraft: true, project: { graph: { command: true }, graphVersion: 1 } });
+
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenCalledTimes(1);
+      expect(api.save).toHaveBeenCalledWith(
+        'p-1',
+        expect.objectContaining({
+          expectedRevision: 3,
+          envelope: expect.objectContaining({ graph: { command: true } }),
+          commands: [expect.objectContaining({ id: 'clip.add', idempotencyKey: 'cmd-1' })],
+        }),
+      );
+      expect(last()).toMatchObject({ status: 'saved', hasDraft: false, project: { revision: 4 } });
+    });
+
+    it('takes the remounted editor’s draft, built on the command, together with the command', async () => {
+      api.save.mockResolvedValue(saved(4));
+      const session = create();
+      await session.open();
+      session.stage({ command: true }, ['clip.add'], [command as never]);
+      expect(session.stageEditor({ editor: 'before' }, ['editor.save'], 3, 0)).toBe('superseded');
+
+      // After the remount the editor loaded version 1, the command's graph, and edits on top of it.
+      expect(session.stageEditor({ command: true, editor: 'after' }, ['editor.save'], 3, 1)).toBe('staged');
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenCalledTimes(1);
+      expect(api.save).toHaveBeenCalledWith(
+        'p-1',
+        expect.objectContaining({
+          expectedRevision: 3,
+          envelope: expect.objectContaining({ graph: { command: true, editor: 'after' } }),
+          summary: { counts: { 'clip.add': 1, 'editor.save': 1 }, total: 2 },
+          commands: [expect.objectContaining({ id: 'clip.add' })],
+        }),
+      );
+    });
+
+    it('refuses an editor draft from before a command that is already saved, instead of a conflict', async () => {
+      api.save.mockResolvedValue(saved(4));
+      const session = create();
+      await session.open();
+      session.stage({ command: true }, ['clip.add'], [command as never]);
+      await timers.fire((timer) => timer.ms === 1500);
+
+      expect(session.stageEditor({ editor: 'before' }, ['editor.save'], 3, 0)).toBe('superseded');
+      expect(last()).toMatchObject({ status: 'saved', hasDraft: false, conflict: null });
+      expect(last().project).toMatchObject({ revision: 4, graph: { command: true } });
+      expect(timers.pending().some((timer) => timer.ms === 1500)).toBe(false);
+      expect(api.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps an undo staged by the host over an editor draft from before it', async () => {
+      const session = create();
+      await session.open();
+      session.stageEditor({ step: 1 }, ['editor.save'], 3, 0);
+      // `history.undo` stages the replaced graph as the host's own.
+      session.stage({ tracks: ['t1'] }, ['history.undo']);
+      expect(session.stageEditor({ step: 2 }, ['editor.save'], 3, 0)).toBe('superseded');
+      expect(last().project).toMatchObject({ graph: { tracks: ['t1'] }, graphVersion: 1 });
+    });
+
+    it('refuses a draft from before Reload or a restore, and takes one from after it', async () => {
+      api.restore.mockResolvedValue(saved(6));
+      const session = create();
+      await session.open();
+
+      api.get.mockResolvedValue(detail({ revision: 5 }));
+      await session.reload();
+      expect(last().project).toMatchObject({ revision: 5, graphVersion: 1 });
+      expect(session.stageEditor({ stale: true }, ['editor.save'], 3, 0)).toBe('superseded');
+      expect(last()).toMatchObject({ status: 'saved', hasDraft: false });
+
+      api.get.mockResolvedValue(detail({ revision: 6 }));
+      expect(await session.restore(2)).toBe(true);
+      expect(last().project).toMatchObject({ revision: 6, graphVersion: 2 });
+      expect(session.stageEditor({ stale: true }, ['editor.save'], 5, 1)).toBe('superseded');
+      expect(session.stageEditor({ fresh: true }, ['editor.save'], 6, 2)).toBe('staged');
+      expect(last()).toMatchObject({ status: 'dirty', hasDraft: true, project: { graph: { fresh: true } } });
+    });
+
+    it('never takes an editor draft for the host’s own graph', async () => {
+      const session = create();
+      await session.open();
+      expect(session.stageEditor({ step: 1 }, ['editor.save'], 3, 0)).toBe('staged');
+      expect(last().project.graphVersion).toBe(0);
+      session.stage({ command: true }, ['clip.add'], [command as never]);
+      expect(last().project.graphVersion).toBe(1);
+      expect(session.stageEditor({ step: 2 }, ['editor.save'], 3, 0)).toBe('superseded');
+      expect(last().project).toMatchObject({ graph: { command: true }, graphVersion: 1 });
+    });
+
+    it('refuses a late editor draft after a take over finds a moved head and no draft', async () => {
+      const session = create();
+      await session.open();
+      api.acquireLease.mockRejectedValueOnce(
+        httpError(409, { reason: 'lease-held', lease: lease({ heldByYou: false, heldByAnother: true }) }),
+      );
+      await timers.fire((timer) => timer.ms === 30_000);
+      expect(last()).toMatchObject({ status: 'lease-lost', hasDraft: false });
+
+      api.get.mockResolvedValue(
+        detail({
+          revision: 5,
+          envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { theirs: true } },
+        }),
+      );
+      expect(await session.takeOver()).toBe(true);
+      expect(last()).toMatchObject({
+        status: 'saved',
+        project: { revision: 5, graph: { theirs: true }, graphVersion: 1 },
+      });
+      // Made on revision 3 before the editor reloaded to the head: never staged over it.
+      expect(session.stageEditor({ late: true }, ['editor.save'], 3, 0)).toBe('superseded');
+      expect(last()).toMatchObject({ hasDraft: false, project: { graph: { theirs: true } } });
+      expect(session.stageEditor({ next: true }, ['editor.save'], 5, 1)).toBe('staged');
+    });
+
+    it('keeps the version when a take over finds the head where this tab left it', async () => {
+      const session = create();
+      await session.open();
+      api.acquireLease.mockRejectedValueOnce(
+        httpError(409, { reason: 'lease-held', lease: lease({ heldByYou: false, heldByAnother: true }) }),
+      );
+      await timers.fire((timer) => timer.ms === 30_000);
+      expect(await session.takeOver()).toBe(true);
+      expect(last().project).toMatchObject({ revision: 3, graphVersion: 0 });
+      expect(session.stageEditor({ kept: true }, ['editor.save'], 3, 0)).toBe('staged');
+    });
+
+    it('never advances the version for the editor’s own drafts, their saves or a take over', async () => {
+      api.save.mockResolvedValue(saved(4));
+      const session = create();
+      await session.open();
+      session.stageEditor({ step: 1 }, ['editor.save'], 3, 0);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(session.stageEditor({ step: 2 }, ['editor.save'], 3, 0)).toBe('staged');
+      api.get.mockResolvedValue(detail({ revision: 4 }));
+      expect(await session.takeOver()).toBe(true);
+      expect(last()).toMatchObject({ status: 'dirty', hasDraft: true });
+      expect(last().project.graphVersion).toBe(0);
     });
   });
 

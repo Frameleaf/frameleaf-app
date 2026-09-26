@@ -298,11 +298,26 @@ export class FrameleafCloudError extends Error {
     message: string,
     readonly envelope: CloudErrorEnvelope | null = null,
     readonly oauth: OAuthErrorBody | null = null,
+    /** The answer's `Retry-After`, in seconds, when it had a usable one. */
+    readonly retryAfterSeconds: number | null = null,
   ) {
     super(message);
     this.name = 'FrameleafCloudError';
   }
 }
+
+/** A `Retry-After` header (delay in seconds, or an HTTP date) as seconds from `now`, or null. */
+export const parseRetryAfter = (value: string | null, now = Date.now()): number | null => {
+  const text = value?.trim() ?? '';
+  if (!text) {
+    return null;
+  }
+  if (/^\d+$/.test(text)) {
+    return Number(text);
+  }
+  const at = Date.parse(text);
+  return Number.isNaN(at) ? null : Math.max(0, Math.ceil((at - now) / 1000));
+};
 
 /**
  * What the last check of the Frameleaf Cloud destination learned, persisted on the destination row
