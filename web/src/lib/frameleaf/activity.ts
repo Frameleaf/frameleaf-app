@@ -200,7 +200,18 @@ export type ActivityItem = {
   estimateSeconds?: number;
   /** The server's estimate of the output size, in bytes, when it has one (prototype "Done · 12 MB"). */
   sizeBytes?: number;
+  /**
+   * FL-164: a cloud backup operation or restore. While it is unfinished it is shown in Activity's read-only
+   * background work, not among the person's own jobs; finished, it is listed like any other.
+   */
+  cloudWork?: boolean;
 };
+
+/** FL-164: the server's cloud backup operations and restores, which Activity shows as background work. */
+const CLOUD_WORK_KINDS: ReadonlySet<MediaOperationKind> = new Set([
+  MediaOperationKind.CloudBackup,
+  MediaOperationKind.CloudRestore,
+]);
 
 const DESTINATION_KEY: Record<MediaOperationDestination, Translations> = {
   [MediaOperationDestination.Local]: 'frameleaf_activity_destination_local',
@@ -330,7 +341,9 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   const workingKey: Translations =
     isPreservationKind(operation.kind) && BULK_WORKING.has(status)
       ? 'frameleaf_activity_bulk_running'
-      : `frameleaf_activity_status_${status}`;
+      : CLOUD_WORK_KINDS.has(operation.kind) && BULK_WORKING.has(status)
+        ? cloudWorkStatusKey(status)
+        : `frameleaf_activity_status_${status}`;
   const edit = mediaOperationEdit(operation);
 
   return {
@@ -371,12 +384,13 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     // A Library Care scan or search is started again from Library Care, not copied (FL-69); a
     // deduplication plan is reviewed again on its page and applied as a new plan (FL-73).
     // A library scan is started again from Libraries, which checks its folders and owner first (FL-78).
-    // A cloud backup run is started again with "Back up now", which checks the claim and key (FL-160).
+    // A cloud backup run is started again with "Back up now", which checks the claim and key (FL-160);
+    // a restore from the Restore section, which reads the backup and checks the key again (FL-164).
     // An edit that could not be cancelled was never cancelled by its owner, so only a failure retries.
     canRetry:
       operation.kind !== MediaOperationKind.MediaHealth &&
       operation.kind !== MediaOperationKind.LibraryScan &&
-      operation.kind !== MediaOperationKind.CloudBackup &&
+      !CLOUD_WORK_KINDS.has(operation.kind) &&
       !dedup &&
       (status === MediaOperationStatus.Failed ||
         (status === MediaOperationStatus.Cancelled && (!edit || CANCELLABLE_EDITS.has(edit)))),
@@ -385,8 +399,26 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
     ...(operation.projectId && STUDIO_RENDER_KINDS.has(operation.kind) && { projectId: operation.projectId }),
     ...estimateOf(operation),
+    ...(CLOUD_WORK_KINDS.has(operation.kind) && { cloudWork: true }),
   };
 };
+
+/**
+ * FL-164: the prototype's stages for a cloud backup operation or restore (activity-feed.mjs `stageOf`): a
+ * worker getting the bucket and key ready is starting; one uploading, checking or restoring is running.
+ * "Rendering" would say something untrue.
+ */
+const cloudWorkStatusKey = (status: MediaOperationStatus): Translations =>
+  status === MediaOperationStatus.Preparing
+    ? 'frameleaf_activity_status_starting'
+    : 'frameleaf_activity_status_running';
+
+/**
+ * FL-164: whether a row belongs in Activity's background work rather than among the person's jobs: an
+ * unfinished cloud backup operation or restore, shown read-only there for an administrator.
+ */
+export const isUnfinishedCloudWork = (item: Pick<ActivityItem, 'cloudWork' | 'finished'>) =>
+  !!item.cloudWork && !item.finished;
 
 /** Renders of a Studio project, which Activity can open in Studio (FL-104, `Activity.jsx` Open in Studio). */
 const STUDIO_RENDER_KINDS: ReadonlySet<MediaOperationKind> = new Set([

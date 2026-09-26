@@ -125,21 +125,32 @@ describe(CloudBackupIndexRepository.name, () => {
     await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
   });
 
-  it('names the dump of the newest complete manifest', async () => {
+  it('records manifests found in the bucket once, and never over one it already knows (FL-164)', async () => {
     const { sut } = setup();
     const bucket = `https://s3.example.test/${randomUUID()}`;
-    await expect(sut.getLatestManifestDatabaseKey(bucket)).resolves.toBeNull();
+    const pruned = await sut.createManifest({ bucket, key: 'm/20260920T030000Z.json.gz', operationId: randomUUID() });
+    await sut.finishManifest(pruned.id, { status: 'complete' });
+    await sut.markManifests(bucket, ['m/20260920T030000Z.json.gz'], 'pruned');
+    const found = (key: string) => ({
+      key,
+      createdAt: new Date('2026-09-21T03:00:00.000Z'),
+      databaseKey: 'db/21.sql.gz',
+      assetCount: 3,
+      fileCount: 4,
+      bytes: 50,
+    });
 
-    const older = await sut.createManifest({ bucket, key: 'm/1.json.gz', operationId: randomUUID() });
-    await sut.setManifestDatabase(older.id, 'db/one.sql.gz');
-    await sut.finishManifest(older.id, { status: 'complete' });
-    const newer = await sut.createManifest({ bucket, key: 'm/2.json.gz', operationId: randomUUID() });
-    await sut.setManifestDatabase(newer.id, 'db/two.sql.gz');
-    await sut.finishManifest(newer.id, { status: 'complete' });
-    const running = await sut.createManifest({ bucket, key: 'm/3.json.gz', operationId: randomUUID() });
-    await sut.setManifestDatabase(running.id, 'db/three.sql.gz');
+    await expect(
+      sut.adoptManifests(bucket, [found('m/20260920T030000Z.json.gz'), found('m/20260921T030000Z.json.gz')]),
+    ).resolves.toBe(1);
+    await expect(sut.adoptManifests(bucket, [found('m/20260921T030000Z.json.gz')])).resolves.toBe(0);
 
-    await expect(sut.getLatestManifestDatabaseKey(bucket)).resolves.toBe('db/two.sql.gz');
+    await expect(sut.listKeptManifests(bucket)).resolves.toEqual([
+      expect.objectContaining({ key: 'm/20260921T030000Z.json.gz', status: 'complete', databaseKey: 'db/21.sql.gz' }),
+    ]);
+    await expect(
+      sut.getManifestKeys(bucket, ['m/20260920T030000Z.json.gz', 'm/20260922T030000Z.json.gz']),
+    ).resolves.toEqual(new Set(['m/20260920T030000Z.json.gz']));
   });
 
   it('ends the running manifests whose run is over or gone, with their files, and keeps the others', async () => {
@@ -245,5 +256,92 @@ describe(CloudBackupIndexRepository.name, () => {
     });
     expect(after.map(({ id }) => id)).not.toContain(first);
     await expect(sut.countAssets()).resolves.toBeGreaterThanOrEqual(3);
+  });
+
+  describe('FL-164', () => {
+    it('keeps the dump of every kept manifest, lists the kept ones newest first, and never revives a pruned one', async () => {
+      const { sut } = setup();
+      const bucket = `https://s3.example.test/${randomUUID()}`;
+      const manifest = async (key: string, databaseKey: string, status: 'complete' | 'failed' | null) => {
+        const row = await sut.createManifest({ bucket, key, operationId: randomUUID() });
+        await sut.setManifestDatabase(row.id, databaseKey);
+        if (status) {
+          await sut.finishManifest(row.id, { status, assetCount: 1, fileCount: 2, bytes: 30 });
+        }
+        return row;
+      };
+      await manifest('m/20260924T030000Z.json.gz', 'db/24.sql.gz', 'complete');
+      await manifest('m/20260925T030000Z.json.gz', 'db/25.sql.gz', 'complete');
+      await manifest('m/20260926T030000Z.json.gz', 'db/26.sql.gz', 'failed');
+      await manifest('m/20260927T030000Z.json.gz', 'db/27.sql.gz', null);
+
+      await expect(sut.getKeptDatabaseKeys(bucket)).resolves.toEqual(new Set(['db/24.sql.gz', 'db/25.sql.gz']));
+
+      await expect(sut.markManifests(bucket, ['m/20260925T030000Z.json.gz'], 'degraded')).resolves.toBe(1);
+      await expect(sut.markManifests(bucket, ['m/20260924T030000Z.json.gz'], 'pruned')).resolves.toBe(1);
+      // a pruned manifest stays pruned, and a failed one is never kept
+      await expect(
+        sut.markManifests(bucket, ['m/20260924T030000Z.json.gz', 'm/20260926T030000Z.json.gz'], 'degraded'),
+      ).resolves.toBe(0);
+
+      const kept = await sut.listKeptManifests(bucket);
+      expect(kept).toEqual([
+        expect.objectContaining({
+          key: 'm/20260925T030000Z.json.gz',
+          status: 'degraded',
+          databaseKey: 'db/25.sql.gz',
+          assetCount: 1,
+          fileCount: 2,
+          bytes: 30,
+        }),
+      ]);
+      await expect(sut.getKeptDatabaseKeys(bucket)).resolves.toEqual(new Set(['db/25.sql.gz']));
+    });
+
+    it('forgets objects of one bucket only', async () => {
+      const { sut } = setup();
+      const bucket = `https://s3.example.test/${randomUUID()}`;
+      const other = `https://s3.example.test/${randomUUID()}`;
+      for (const name of [bucket, other]) {
+        await sut.record(name, [
+          { sha256: sha('a'), size: 1, etag: null },
+          { sha256: sha('b'), size: 1, etag: null },
+        ]);
+      }
+
+      await sut.forget(bucket, [sha('a')]);
+
+      await expect(sut.getExisting(bucket, [sha('a'), sha('b')])).resolves.toEqual(new Set([sha('b')]));
+      await expect(sut.getExisting(other, [sha('a'), sha('b')])).resolves.toEqual(new Set([sha('a'), sha('b')]));
+    });
+
+    it('tells which assets the library still has, in the trash or not, and names their owners', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: active } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: trashed } = await ctx.newAsset({
+        ownerId: user.id,
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+      const { asset: deleted } = await ctx.newAsset({
+        ownerId: user.id,
+        status: AssetStatus.Deleted,
+        deletedAt: new Date(),
+      });
+
+      const state = await sut.getLibraryState([active.id, trashed.id, deleted.id, randomUUID()]);
+
+      expect(state.get(active.id)).toMatchObject({
+        status: 'active',
+        ownerId: user.id,
+        isExternal: false,
+        locked: false,
+      });
+      expect(state.get(trashed.id)).toMatchObject({ status: 'trashed' });
+      expect(state.has(deleted.id)).toBe(false);
+      expect(state.size).toBe(2);
+      await expect(sut.getOwnerNames([user.id])).resolves.toEqual(new Map([[user.id, user.name]]));
+    });
   });
 });

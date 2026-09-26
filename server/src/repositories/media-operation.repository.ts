@@ -379,10 +379,13 @@ export class MediaOperationRepository {
    * Create a job of a kind that runs one at a time across the whole server, or answer with the one
    * already unfinished (FL-73). The check and the insert happen under one transaction-scoped
    * advisory lock, so two administrators applying at the same moment cannot both start a job.
+   * FL-164: `alsoKinds` makes other kinds exclusive with it too (a cloud backup run and a cloud restore
+   * both use the bucket, so neither starts while the other is unfinished); they must use the same lock.
    */
   async createExclusive(
     operation: MediaOperationCreate,
     lock: DatabaseLock,
+    options: { alsoKinds?: readonly MediaOperationKind[] } = {},
   ): Promise<{ created: MediaOperation } | { active: { id: string; ownerId: string; fingerprint: string | null } }> {
     return this.db.transaction().execute(async (trx) => {
       await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
@@ -392,7 +395,7 @@ export class MediaOperationRepository {
         .selectFrom('media_operation')
         .select(['id', 'ownerId'])
         .select(sql<string | null>`"snapshot"->>'fingerprint'`.as('fingerprint'))
-        .where('kind', '=', operation.kind)
+        .where('kind', 'in', [operation.kind, ...(options.alsoKinds ?? [])])
         .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
         .orderBy('createdAt', 'asc')
         .limit(1)

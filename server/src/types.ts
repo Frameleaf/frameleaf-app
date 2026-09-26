@@ -576,6 +576,9 @@ export type JobItem =
   | { name: JobName.FrameleafLicenseRefresh; data: IBaseJob }
   // FL-163: one pass over Frameleaf Cloud description batches
   | { name: JobName.CloudMlDescriptionBatch; data: IBaseJob }
+  // FL-164: the cloud backup schedule and the verification check
+  | { name: JobName.CloudBackupSchedule; data: IBaseJob }
+  | { name: JobName.CloudBackupVerify; data: IBaseJob }
 
   // OCR
   | { name: JobName.OcrQueueAll; data: IBaseJob }
@@ -866,7 +869,7 @@ export type FrameleafMlSuspension = {
 /** FL-160: who generated a cloud backup bucket key and where it is kept. */
 export type CloudBackupKeyMode = 'server' | 'own-stored' | 'own-memory';
 
-/** FL-160: where cloud backups are stored. `managed` waits for Frameleaf Cloud backup grants (FC-33). */
+/** FL-160: where cloud backups are stored. FL-164: `managed` is a Frameleaf Cloud backup grant (FC-33). */
 export type CloudBackupTarget = 'managed' | 'byo-s3';
 
 /** FL-160: how the last cloud backup run went. Counts are files, not assets. */
@@ -906,6 +909,82 @@ export type FrameleafCloudBackup = {
   lastManifestKey?: string;
   /** The last run's checks of the bucket (listing and claim) that reached the provider. */
   lastCheckAt?: string;
+  /** FL-164: the last verification of the bucket, sampled (weekly) or full (monthly). */
+  lastVerify?: FrameleafCloudBackupVerification;
+  /** FL-164: the last full verification, which decides when the next monthly one is due. */
+  lastFullVerifyAt?: string;
+  /** FL-164: the last clean-up of runs past their retention, or its dry run. */
+  lastPrune?: FrameleafCloudBackupPrune;
+  /**
+   * FL-164, Frameleaf-managed storage only: what the grant and usage last said. Never a credential: the
+   * bucket-scoped key is rotated at the start of every operation and held in memory for that operation.
+   */
+  managed?: FrameleafCloudBackupManaged;
+  /** FL-164: a passphrase-wrapped copy of the bucket key is stored with Frameleaf Cloud (server key mode). */
+  escrow?: { storedAt: string };
+  /** FL-164: how the last restore from this bucket ended. */
+  lastRestore?: FrameleafCloudBackupRestore;
+  /** FL-164: a scheduled run found the bucket busy; it starts when the operation holding it ends. */
+  scheduledRunDueAt?: string;
+};
+
+/** FL-164: one restore from a manifest. Counts are files; `databaseFile` is the dump's name in `<media>/backups`. */
+export type FrameleafCloudBackupRestore = {
+  operationId: string;
+  scope: 'files' | 'asset' | 'database' | 'library';
+  manifestKey: string;
+  status: 'completed' | 'failed' | 'cancelled';
+  at: string;
+  files: number;
+  bytes: number;
+  skipped: number;
+  replaced: number;
+  destination?: string;
+  databaseFile?: string;
+  error?: string;
+};
+
+/** FL-164: one verification of the bucket's objects against their SHA-256 names. */
+export type FrameleafCloudBackupVerification = {
+  operationId: string;
+  depth: 'sample' | 'full';
+  at: string;
+  status: 'passed' | 'degraded' | 'failed';
+  checked: number;
+  missing: number;
+  mismatched: number;
+  /** Manifests marked degraded because they name a missing or damaged object. */
+  degradedManifests: number;
+  error?: string;
+};
+
+/** FL-164: one clean-up of manifests past retention and the objects only they referenced. */
+export type FrameleafCloudBackupPrune = {
+  operationId: string;
+  dryRun: boolean;
+  at: string;
+  manifestsKept: number;
+  manifestsRemoved: number;
+  objectsRemoved: number;
+  bytesRemoved: number;
+  dumpsRemoved: number;
+};
+
+/** FL-164: Frameleaf-managed storage as the grant and the usage report last described it. */
+export type FrameleafCloudBackupManaged = {
+  readOnly: boolean;
+  readOnlyReason: string | null;
+  quotaBytes: number;
+  usage?: {
+    measuredAt: string | null;
+    bytesCurrent: number;
+    objects: number;
+    allowanceBytes: number;
+    extraBlocks: number;
+  };
+  checkedAt: string;
+  /** Why the last grant request was refused, in words an administrator can act on. */
+  refusal?: string;
 };
 
 export type FrameleafCloudPermissions = {

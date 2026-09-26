@@ -439,6 +439,10 @@ const updatedConfig = Object.freeze<SystemConfig>({
       s3: { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '' },
       keyMode: 'server',
       include: { thumbs: false, encodedVideo: false },
+      schedule: { cronExpression: '0 3 * * *' },
+      retention: { keepDaily: 7, keepWeekly: 4, keepMonthly: 12 },
+      verifyWeekly: true,
+      escrow: false,
     },
   },
   libraryCare: {

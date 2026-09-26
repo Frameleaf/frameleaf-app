@@ -38,6 +38,7 @@ import { ForkHandoffRepository } from 'src/repositories/fork-handoff.repository.
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
+import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
@@ -154,6 +155,7 @@ export const repositories = [
   MediaOperationRepository,
   RenderWorkerRepository,
   FrameleafCloudRepository,
+  FrameleafCloudBackupRepository,
   FrameleafCloudMlRepository,
   FrameleafConsentRepository,
   FrameleafUserLicenseRepository,

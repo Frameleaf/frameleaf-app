@@ -173,6 +173,9 @@
   "frameleafCloud.cloudBackup.enabled": {
     "type": "boolean"
   },
+  "frameleafCloud.cloudBackup.escrow": {
+    "type": "boolean"
+  },
   "frameleafCloud.cloudBackup.include.encodedVideo": {
     "type": "boolean"
   },
@@ -186,6 +189,21 @@
       "own-stored",
       "own-memory"
     ]
+  },
+  "frameleafCloud.cloudBackup.retention.keepDaily": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 90
+  },
+  "frameleafCloud.cloudBackup.retention.keepMonthly": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 120
+  },
+  "frameleafCloud.cloudBackup.retention.keepWeekly": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 52
   },
   "frameleafCloud.cloudBackup.s3.accessKeyId": {
     "type": "string"
@@ -205,6 +223,9 @@
   "frameleafCloud.cloudBackup.s3.secretAccessKeyConfigured": {
     "type": "boolean"
   },
+  "frameleafCloud.cloudBackup.schedule.cronExpression": {
+    "type": "string"
+  },
   "frameleafCloud.cloudBackup.target": {
     "type": "string",
     "enum": [
@@ -212,6 +233,9 @@
       "managed",
       "byo-s3"
     ]
+  },
+  "frameleafCloud.cloudBackup.verifyWeekly": {
+    "type": "boolean"
   },
   "frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd": {
     "type": "number",
