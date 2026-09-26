@@ -5,7 +5,7 @@ import { Mocked, vitest } from 'vitest';
 import { JobName, JobStatus, WorkflowResult, WorkflowRunErrorCode, WorkflowType } from 'src/enum.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
-import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
+import { WorkflowExecutionService, getAutomaticRetryExecutionId } from 'src/services/workflow-execution.service.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -832,6 +832,7 @@ describe(WorkflowExecutionService.name, () => {
       it('skips the steps an earlier run of the job completed', async () => {
         setup();
         mocks.workflow.getCompletedSteps.mockResolvedValue(new Map([[filterId, { halted: false }]]));
+        mocks.workflow.getLatestRunAttempt.mockResolvedValue(undefined);
         mocks.workflow.completeStep.mockResolvedValue();
         mocks.plugin.callMethod.mockResolvedValue({});
 
@@ -851,6 +852,7 @@ describe(WorkflowExecutionService.name, () => {
       it('stops where a completed step stopped the run', async () => {
         setup();
         mocks.workflow.getCompletedSteps.mockResolvedValue(new Map([[filterId, { halted: true }]]));
+        mocks.workflow.getLatestRunAttempt.mockResolvedValue(undefined);
 
         await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, executionId })).resolves.toBeUndefined();
 
@@ -893,6 +895,45 @@ describe(WorkflowExecutionService.name, () => {
           data: { runId, attempt: 1, fromStepId: webhookId, executionId: expect.any(String) },
         });
         expect((retry as unknown as { data: { executionId: string } }).data.executionId).not.toBe(executionId);
+      });
+
+      it('does not log a run again when a replay finds it already finished and logged', async () => {
+        setup();
+        mocks.workflow.getCompletedSteps.mockResolvedValue(
+          new Map([
+            [filterId, { halted: false }],
+            [webhookId, { halted: false }],
+          ]),
+        );
+        mocks.workflow.getLatestRunAttempt.mockResolvedValue({
+          runId,
+          triggerDataId: assetId,
+          result: WorkflowResult.Completed,
+          attempt: 0,
+        } as never);
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, executionId })).resolves.toBeUndefined();
+
+        expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+        expect(mocks.workflow.getLatestRunAttempt).toHaveBeenCalledWith(workflowId, runId);
+        expect(mocks.workflow.log).not.toHaveBeenCalled();
+      });
+
+      it('queues the same automatic retry when a replay fails the step again', async () => {
+        setup();
+        mocks.workflow.getCompletedSteps.mockResolvedValue(new Map([[filterId, { halted: false }]]));
+        mocks.workflow.getLatestRunAttempt.mockResolvedValue(undefined);
+        mocks.plugin.callMethod.mockRejectedValue(new Error('webhook failed'));
+
+        await sut.handleAssetTrigger({ workflowId, assetId, runId, executionId });
+        await sut.handleAssetTrigger({ workflowId, assetId, runId, executionId });
+
+        const retries = mocks.job.queue.mock.calls.map(
+          ([job]) => (job as unknown as { data: { executionId: string } }).data.executionId,
+        );
+        expect(retries).toEqual([getAutomaticRetryExecutionId(executionId), getAutomaticRetryExecutionId(executionId)]);
+        expect(retries[0]).not.toBe(executionId);
+        expect(retries[0]).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-8[\da-f]{3}-[\da-f]{12}$/);
       });
 
       it('queues every new run with its own run and execution ids', async () => {
