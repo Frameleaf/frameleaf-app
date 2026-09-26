@@ -41317,6 +41317,14 @@
           "routing": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudRoutingDto"
           },
+          "spenders": {
+            "description": "People besides administrators who may spend the AI Wallet, each with an optional monthly limit",
+            "items": {
+              "$ref": "#/components/schemas/AdminConfigFrameleafCloudSpenderDto"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
           "startWith": {
             "description": "The destination a job preselects when its kind of work may run in both places",
             "enum": [
@@ -41331,6 +41339,7 @@
           "enabled",
           "faces",
           "routing",
+          "spenders",
           "startWith"
         ],
         "type": "object"
@@ -41360,6 +41369,29 @@
           "restoration",
           "studio",
           "upscale"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudSpenderDto": {
+        "properties": {
+          "monthlyCapUsd": {
+            "description": "Their monthly limit, USD: settled charges plus the holds of running jobs; null for none",
+            "format": "double",
+            "maximum": 100000,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "userId": {
+            "description": "A person allowed to confirm Frameleaf Cloud jobs",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "monthlyCapUsd",
+          "userId"
         ],
         "type": "object"
       },
@@ -52024,6 +52056,9 @@
           "perUnit": {
             "$ref": "#/components/schemas/CloudMlJobPerUnitDto"
           },
+          "permission": {
+            "$ref": "#/components/schemas/CloudMlJobPermissionDto"
+          },
           "plannedWorkers": {
             "description": "Serverless workers the job is planned on, at most 5; each adds a start fee",
             "maximum": 9007199254740991,
@@ -52079,6 +52114,7 @@
           "p90Usd",
           "perSecondUsd",
           "perUnit",
+          "permission",
           "plannedWorkers",
           "refusal",
           "runSeconds",
@@ -52166,6 +52202,38 @@
           "p90Usd",
           "quantity",
           "unit"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobPermissionDto": {
+        "properties": {
+          "canConfirm": {
+            "description": "Whether this person may confirm the job; administrators always may",
+            "type": "boolean"
+          },
+          "monthlyCapUsd": {
+            "description": "This person's monthly Frameleaf Cloud limit, USD, or null when none applies",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "reason": {
+            "description": "not-allowed (an administrator has not allowed this person) or monthly-cap, when they may not",
+            "nullable": true,
+            "type": "string"
+          },
+          "spentThisMonthUsd": {
+            "description": "Settled this month plus the holds of their running jobs, USD, or null when no limit applies",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "canConfirm",
+          "monthlyCapUsd",
+          "reason",
+          "spentThisMonthUsd"
         ],
         "type": "object"
       },

@@ -417,6 +417,43 @@ export const cloudMlJobCanPause = (operation: { kind: string; result: unknown })
   return parseCloudMlJobResult(operation.result).phase === CloudMlJobPhase.Queued;
 };
 
+/** The first moment of `now`'s month, in UTC: a person's monthly limit counts from here. */
+export const cloudMlJobMonthStart = (now: Date): Date => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+/**
+ * What one person's confirmed jobs count against their monthly limit (FL-162 owner decision): a
+ * settled job its settled charge, a job still running (or ended but not settled) the amount the AI
+ * Wallet holds for it, and a job that ended before anything was sent nothing.
+ */
+export const cloudMlJobSpentUsd = (
+  rows: ReadonlyArray<{
+    status: string;
+    remoteJobId: string | null;
+    result: unknown;
+    holdUsd: number | null;
+    settledUsd: number | null;
+  }>,
+): number => {
+  const ended = new Set<string>([
+    MediaOperationStatus.Completed,
+    MediaOperationStatus.Failed,
+    MediaOperationStatus.Cancelled,
+  ]);
+  let total = 0;
+  for (const row of rows) {
+    if (row.settledUsd !== null) {
+      total += row.settledUsd;
+      continue;
+    }
+    if (ended.has(row.status) && !row.remoteJobId) {
+      continue;
+    }
+    const cost = parseCloudMlJobResult(row.result).cost;
+    total += cost ? cost.totalUsd : (row.holdUsd ?? 0);
+  }
+  return Math.round(total * 10_000) / 10_000;
+};
+
 /**
  * How long a job waits after its `failures`-th transient failure in a row: doubling from
  * `CLOUD_ML_JOB_POLL_MS` up to `CLOUD_ML_JOB_MAX_POLL_MS`, and never sooner than the cloud's

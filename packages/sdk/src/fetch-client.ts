@@ -546,6 +546,16 @@ export type CloudMlJobPerUnitDto = {
     /** What one unit is */
     unit: Unit;
 };
+export type CloudMlJobPermissionDto = {
+    /** Whether this person may confirm the job; administrators always may */
+    canConfirm: boolean;
+    /** This person's monthly Frameleaf Cloud limit, USD, or null when none applies */
+    monthlyCapUsd: number | null;
+    /** not-allowed (an administrator has not allowed this person) or monthly-cap, when they may not */
+    reason: string | null;
+    /** Settled this month plus the holds of their running jobs, USD, or null when no limit applies */
+    spentThisMonthUsd: number | null;
+};
 export type CloudMlJobRefusalDto = {
     /** insufficient-credits, daily-cap or budget-exceeded; nothing is sent and the model is never changed */
     code: string;
@@ -579,6 +589,7 @@ export type CloudMlJobEstimateResponseDto = {
     /** The GPU rate per metered second, USD */
     perSecondUsd: number;
     perUnit: CloudMlJobPerUnitDto;
+    permission: CloudMlJobPermissionDto;
     /** Serverless workers the job is planned on, at most 5; each adds a start fee */
     plannedWorkers: number;
     /** Why the job cannot be sent now, or null when it can */
@@ -775,12 +786,20 @@ export type AdminConfigFrameleafCloudRoutingDto = {
     studio: CloudRouteMode;
     upscale: CloudRouteMode;
 };
+export type AdminConfigFrameleafCloudSpenderDto = {
+    /** Their monthly limit, USD: settled charges plus the holds of running jobs; null for none */
+    monthlyCapUsd: number | null;
+    /** A person allowed to confirm Frameleaf Cloud jobs */
+    userId: string;
+};
 export type AdminConfigFrameleafCloudMlDto = {
     autoDescribe: AdminConfigFrameleafCloudAutoDescribeDto;
     /** Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation) */
     enabled: boolean;
     faces: AdminConfigFrameleafCloudFacesDto;
     routing: AdminConfigFrameleafCloudRoutingDto;
+    /** People besides administrators who may spend the AI Wallet, each with an optional monthly limit */
+    spenders: AdminConfigFrameleafCloudSpenderDto[];
     /** The destination a job preselects when its kind of work may run in both places */
     startWith: StartWith;
 };

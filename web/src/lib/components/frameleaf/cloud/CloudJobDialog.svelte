@@ -153,7 +153,7 @@
   };
 
   const submit = async () => {
-    if (!estimate || estimate.refusal || !agreed || submitting) {
+    if (!estimate || estimate.refusal || !estimate.permission.canConfirm || !agreed || submitting) {
       return;
     }
     if (!estimateLive(estimate)) {
@@ -305,7 +305,22 @@
         </dl>
         <p class="fcj-note">{$t('frameleaf_cloud_job_expires', { values: { time: expiresAt } })}</p>
 
-        {#if estimate.refusal}
+        {#if !estimate.permission.canConfirm}
+          <!-- FL-162 owner decision: only administrators and people they allow may spend the AI Wallet -->
+          <p class="fcj-refusal" role="alert">
+            <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
+            <span>
+              {estimate.permission.reason === 'monthly-cap'
+                ? $t('frameleaf_cloud_job_monthly_cap', {
+                    values: {
+                      cap: formatUsd(estimate.permission.monthlyCapUsd),
+                      spent: formatUsd(estimate.permission.spentThisMonthUsd),
+                    },
+                  })
+                : $t('frameleaf_cloud_job_not_allowed')}
+            </span>
+          </p>
+        {:else if estimate.refusal}
           <p class="fcj-refusal" role="alert">
             <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
             <span>{$t('frameleaf_cloud_job_refusal', { values: { message: estimate.refusal.message } })}</span>
@@ -391,7 +406,7 @@
   {#snippet actions()}
     {#if !job}
       <Button onclick={close}>{$t('cancel')}</Button>
-      {#if !estimate?.refusal}
+      {#if !estimate?.refusal && estimate?.permission.canConfirm !== false}
         <Button
           variant="primary"
           disabled={!estimate || !agreed || estimating || submitting}

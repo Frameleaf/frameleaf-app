@@ -105,6 +105,26 @@ const CloudMlJobRefusalSchema = z
   })
   .meta({ id: 'CloudMlJobRefusalDto' });
 
+const CloudMlJobPermissionSchema = z
+  .object({
+    canConfirm: z.boolean().describe('Whether this person may confirm the job; administrators always may'),
+    reason: z
+      .string()
+      .nullable()
+      .describe('not-allowed (an administrator has not allowed this person) or monthly-cap, when they may not'),
+    monthlyCapUsd: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe("This person's monthly Frameleaf Cloud limit, USD, or null when none applies"),
+    spentThisMonthUsd: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('Settled this month plus the holds of their running jobs, USD, or null when no limit applies'),
+  })
+  .meta({ id: 'CloudMlJobPermissionDto' });
+
 const CloudMlJobEstimateResponseSchema = z
   .object({
     estimateId: z.string().describe('What confirming the job names; the server keeps everything else'),
@@ -131,6 +151,7 @@ const CloudMlJobEstimateResponseSchema = z
     spentTodayUsd: usd('Spent today, USD'),
     consent: CloudMlJobConsentSchema,
     refusal: CloudMlJobRefusalSchema.nullable().describe('Why the job cannot be sent now, or null when it can'),
+    permission: CloudMlJobPermissionSchema,
   })
   .meta({ id: 'CloudMlJobEstimateResponseDto' });
 
