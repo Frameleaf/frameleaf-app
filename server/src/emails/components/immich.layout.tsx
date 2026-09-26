@@ -73,7 +73,7 @@ export const ImmichLayout = ({ children, preview, baseUrl }: ImmichLayoutProps) 
 
 ImmichLayout.PreviewProps = {
   preview: 'This is the preview shown on some mail clients',
-  baseUrl: 'https://demo.immich.app',
+  baseUrl: 'https://photos.example.com',
   children: <Text>Email body goes here.</Text>,
 } as ImmichLayoutProps;
 

@@ -18,7 +18,7 @@ export const TestEmail = ({ baseUrl, displayName }: TestEmailProps) => (
 );
 
 TestEmail.PreviewProps = {
-  baseUrl: 'https://demo.immich.app',
+  baseUrl: 'https://photos.example.com',
   displayName: 'Alan Turing',
 } as TestEmailProps;
 

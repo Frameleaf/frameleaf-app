@@ -7,9 +7,9 @@ from pathlib import Path
 from .config import log, non_prefixed_settings, settings
 
 if source_ref := os.getenv("IMMICH_SOURCE_REF"):
-    log.info(f"Initializing Immich ML [{source_ref}]")
+    log.info(f"Initializing Frameleaf ML [{source_ref}]")
 else:
-    log.info("Initializing Immich ML")
+    log.info("Initializing Frameleaf ML")
 
 module_dir = Path(__file__).parent
 

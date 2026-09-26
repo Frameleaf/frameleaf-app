@@ -1,5 +1,5 @@
 /**
- * Immich
+ * Frameleaf
  * 3.2.0
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
@@ -3203,7 +3203,7 @@ export type TagResponseDto = {
 export type AssetResponseDto = {
     /** Base64-encoded file checksum. SHA-256 (44 chars) for assets uploaded after the SHA-256 transition; SHA-1 (28 chars) for legacy assets. Use the asset `checksumAlgorithm` field to disambiguate when length-based detection is insufficient. */
     checksum: string;
-    /** The UTC timestamp when the asset was originally uploaded to Immich. */
+    /** The UTC timestamp when the asset was originally uploaded to Frameleaf. */
     createdAt: string;
     /** Duplicate group ID */
     duplicateId?: string | null;
@@ -4000,7 +4000,7 @@ export type BestPhotoAssetResponseDto = {
     bestPhotoScore: BestPhotoScoreDto;
     /** Base64-encoded file checksum. SHA-256 (44 chars) for assets uploaded after the SHA-256 transition; SHA-1 (28 chars) for legacy assets. Use the asset `checksumAlgorithm` field to disambiguate when length-based detection is insufficient. */
     checksum: string;
-    /** The UTC timestamp when the asset was originally uploaded to Immich. */
+    /** The UTC timestamp when the asset was originally uploaded to Frameleaf. */
     createdAt: string;
     /** Duplicate group ID */
     duplicateId?: string | null;
@@ -9578,7 +9578,7 @@ export type TimeBucketAssetResponseDto = {
     city?: (string | null)[];
     /** Array of country names extracted from EXIF GPS data */
     country?: (string | null)[];
-    /** Array of UTC timestamps when each asset was originally uploaded to Immich */
+    /** Array of UTC timestamps when each asset was originally uploaded to Frameleaf */
     createdAt: string[];
     /** Array of video/gif durations in milliseconds (null for static images) */
     duration: (number | null)[];
@@ -10211,7 +10211,7 @@ export type SyncAssetOcrV1 = {
 export type SyncAssetV1 = {
     /** Checksum */
     checksum: string;
-    /** Uploaded to Immich at */
+    /** Uploaded to Frameleaf at */
     createdAt: string | null;
     /** Deleted at */
     deletedAt: string | null;
@@ -10251,7 +10251,7 @@ export type SyncAssetV1 = {
 export type SyncAssetV2 = {
     /** Checksum */
     checksum: string;
-    /** Uploaded to Immich at */
+    /** Uploaded to Frameleaf at */
     createdAt: string | null;
     /** Deleted at */
     deletedAt: string | null;

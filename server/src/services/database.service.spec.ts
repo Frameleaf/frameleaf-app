@@ -112,7 +112,7 @@ describe(DatabaseService.name, () => {
         ]);
 
         await expect(sut.onBootstrap()).rejects.toThrow(
-          `The ${extensionName} extension version is ${versionBelowRange}, but Immich only supports ${extensionRange}`,
+          `The ${extensionName} extension version is ${versionBelowRange}, but Frameleaf only supports ${extensionRange}`,
         );
 
         expect(mocks.database.runMigrations).not.toHaveBeenCalled();
@@ -232,7 +232,7 @@ describe(DatabaseService.name, () => {
         ]);
 
         await expect(sut.onBootstrap()).rejects.toThrow(
-          `The ${extensionName} extension version is ${versionAboveRange}, but Immich only supports`,
+          `The ${extensionName} extension version is ${versionAboveRange}, but Frameleaf only supports`,
         );
 
         expect(mocks.database.updateVectorExtension).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-# Immich Apprentissage machine
+# Frameleaf apprentissage machine
 
 - Classification d'images
 - Embarquement de CLIP
