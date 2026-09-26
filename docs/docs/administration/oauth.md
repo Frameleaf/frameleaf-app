@@ -47,8 +47,8 @@ Before enabling OAuth in Frameleaf, a new client application needs to be configu
    - `http://192.168.0.200:2283/user-settings`
 
    Hostname
-   - `https://immich.example.com/auth/login`
-   - `https://immich.example.com/user-settings`
+   - `https://photos.example.com/auth/login`
+   - `https://photos.example.com/user-settings`
 
 3. Configure Backchannel logout URL
 
@@ -97,7 +97,7 @@ Claim is only used on user creation and not synchronized after that.
 The Issuer URL should look something like the following, and return a valid json document.
 
 - `https://accounts.google.com/.well-known/openid-configuration`
-- `http://localhost:9000/application/o/immich/.well-known/openid-configuration`
+- `http://localhost:9000/application/o/frameleaf/.well-known/openid-configuration`
 
 The `.well-known/openid-configuration` part of the url is optional and will be automatically added during discovery.
 :::
@@ -141,7 +141,7 @@ Administration → Settings → Authentication lists both apps' callbacks for th
 
 Here's an example of OAuth configured for Authelia:
 
-This assumes there exist an attribute `immichquota` in the user schema, which is used to set the user's storage quota in Frameleaf.
+This assumes there exist an attribute `frameleafquota` in the user schema, which is used to set the user's storage quota in Frameleaf.
 The configuration concerning the quota is optional.
 
 ```yaml
@@ -151,7 +151,7 @@ authentication_backend:
     # See: https://www.authelia.com/c/ldap
     attributes:
       extra:
-        immichquota: # The attribute name from LDAP
+        frameleafquota: # The attribute name from LDAP
           name: 'immich_quota'
           multi_valued: false
           value_type: 'integer'
@@ -160,17 +160,17 @@ identity_providers:
     ## The other portions of the mandatory OpenID Connect 1.0 configuration go here.
     ## See: https://www.authelia.com/c/oidc
     claims_policies:
-      immich_policy:
+      frameleaf_policy:
         custom_claims:
           immich_quota:
             attribute: 'immich_quota'
     scopes:
-      immich_scope:
+      frameleaf_scope:
         claims:
           - 'immich_quota'
 
     clients:
-      - client_id: 'immich'
+      - client_id: 'frameleaf'
         client_name: 'Frameleaf'
         # https://www.authelia.com/integration/openid-connect/frequently-asked-questions/#how-do-i-generate-a-client-identifier-or-client-secret
         client_secret: '$pbkdf2-sha512$310000$c8p78n7pUMln0jzvd4aK4Q$JNRBzwAo0ek5qKn50cFzzvE9RXV88h1wJn5KGiHrD0YKtZaR/nCb2CJPOsKaPK0hjf.9yHxzQGZziziccp6Yng'
@@ -185,8 +185,8 @@ identity_providers:
           - 'openid'
           - 'profile'
           - 'email'
-          - 'immich_scope'
-        claims_policy: 'immich_policy'
+          - 'frameleaf_scope'
+        claims_policy: 'frameleaf_policy'
         response_types:
           - 'code'
         grant_types:
@@ -201,13 +201,13 @@ Configuration of OAuth in Frameleaf System Settings
 | Setting                            | Value                                                               |
 | ---------------------------------- | ------------------------------------------------------------------- |
 | Issuer URL                         | `https://auth.example.com`                                          |
-| Client ID                          | immich                                                              |
+| Client ID                          | frameleaf                                                           |
 | Client Secret                      | 0v89FXkQOWO\***\*\*\*\*\***\*\*\***\*\*\*\*\***mprbvXD549HH6s1iw... |
 | Token Endpoint Auth Method         | client_secret_post                                                  |
-| Scope                              | openid email profile immich_scope                                   |
+| Scope                              | openid email profile frameleaf_scope                                |
 | ID Token Signed Response Algorithm | RS256                                                               |
 | Userinfo Signed Response Algorithm | RS256                                                               |
-| End Session Endpoint               | https://auth.example.com/logout?rd=https://immich.example.com/      |
+| End Session Endpoint               | https://auth.example.com/logout?rd=https://photos.example.com/      |
 | Storage Label Claim                | uid                                                                 |
 | Storage Quota Claim                | immich_quota                                                        |
 | Default Storage Quota (GiB)        | 0 (empty for unlimited quota)                                       |
@@ -228,13 +228,15 @@ Here's an example of OAuth configured for Authentik:
 
 Configuration of Authorised redirect URIs (Authentik OAuth2/OpenID Provider)
 
-<img src={require('./img/authentik-redirect-uris-example.webp').default} width='70%' title="Authentik authorised redirect URIs" />
+1. Open the provider's **Protocol settings** and set **Client type** to **Confidential**.
+2. In **Redirect URIs/Origins (RegEx)**, add one URI per line for each address you use, for example `https://photos.example.com/auth/login` and `https://photos.example.com/user-settings`, plus the mobile callback described in [Mobile Redirect URI](#mobile-redirect-uri).
+3. Copy the **Client ID** and **Client Secret** into the Frameleaf settings below.
 
 Configuration of OAuth in Frameleaf System Settings
 
 | Setting                      | Value                                                               |
 | ---------------------------- | ------------------------------------------------------------------- |
-| Issuer URL                   | `https://authentik.example.com/application/o/immich/`               |
+| Issuer URL                   | `https://authentik.example.com/application/o/frameleaf/`            |
 | Client ID                    | AFCj2rM1f4rps**\*\*\*\***\***\*\*\*\***lCLEum6hH9...                |
 | Client Secret                | 0v89FXkQOWO\***\*\*\*\*\***\*\*\***\*\*\*\*\***mprbvXD549HH6s1iw... |
 | Scope                        | openid email profile                                                |
@@ -259,7 +261,13 @@ Here's an example of OAuth configured for Google:
 
 Configuration of Authorised redirect URIs (Google Console)
 
-<img src={require('./img/google-redirect-uris-example.webp').default} width='50%' title="Google authorised redirect URIs" />
+In the OAuth client's **Authorised redirect URIs**, select **Add URI** for each of these, then save:
+
+1. `https://photos.example.com/auth/login`
+2. `https://photos.example.com/user-settings`
+3. `https://photos.example.com/api/oauth/mobile-redirect`
+
+Google notes that changes can take from five minutes to a few hours to apply.
 
 Configuration of OAuth in Frameleaf System Settings
 
@@ -288,30 +296,32 @@ Configuration of OAuth in Frameleaf System Settings
 
 Here's an example of OAuth configured for Keycloak:
 
-Create your immich client on your Keycloak Realm.
+Create a frameleaf client on your Keycloak Realm.
 
-<img src={require('./img/keycloak-general-settings.webp').default} width='100%' title="Keycloak Client general Settings" />
-<img src={require('./img/keycloak-access-settings.webp').default} width='100%' title="Keycloak Client Access Settings" />
+1. **General settings**: create an OpenID Connect client and set its **Client ID** (the value you enter as Client ID below).
+2. **Access settings**: set **Root URL**, **Home URL** and **Admin URL** to your server address (for example `https://photos.example.com`). Under **Valid redirect URIs**, add `https://photos.example.com/auth/login`, `https://photos.example.com/user-settings` and the mobile callback described in [Mobile Redirect URI](#mobile-redirect-uri). Set **Valid post logout redirect URIs** and **Web origins** to `+`.
+3. **Capability config**: set it up as shown below.
+
 <img src={require('./img/keycloak-capability-config.webp').default} width='100%' title="Keycloak Client Capability Configuration" />
 
 Configuration of OAuth in Frameleaf System Settings
 
-| Setting                      | Value                                                 |
-| ---------------------------- | ----------------------------------------------------- |
-| Issuer URL                   | `https://<KEYCLOAK_DOMAIN>/realms/<YOUR_REALM>`       |
-| Client ID                    | immich                                                |
-| Client Secret                | can be obtained from Clients -> immich -> Credentials |
-| Scope                        | openid email profile                                  |
-| Signing Algorithm            | RS256                                                 |
-| Storage Label Claim          | preferred_username                                    |
-| Role Claim                   | immich_role                                           |
-| Storage Quota Claim          | immich_quota                                          |
-| Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                         |
-| Button Text                  | Sign in with Keycloak (recommended)                   |
-| Auto Register                | Enabled (optional)                                    |
-| Auto Launch                  | Enabled (optional)                                    |
-| Mobile Redirect URI Override | Disabled                                              |
-| Mobile Redirect URI          |                                                       |
+| Setting                      | Value                                                    |
+| ---------------------------- | -------------------------------------------------------- |
+| Issuer URL                   | `https://<KEYCLOAK_DOMAIN>/realms/<YOUR_REALM>`          |
+| Client ID                    | frameleaf                                                |
+| Client Secret                | can be obtained from Clients -> frameleaf -> Credentials |
+| Scope                        | openid email profile                                     |
+| Signing Algorithm            | RS256                                                    |
+| Storage Label Claim          | preferred_username                                       |
+| Role Claim                   | immich_role                                              |
+| Storage Quota Claim          | immich_quota                                             |
+| Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                            |
+| Button Text                  | Sign in with Keycloak (recommended)                      |
+| Auto Register                | Enabled (optional)                                       |
+| Auto Launch                  | Enabled (optional)                                       |
+| Mobile Redirect URI Override | Disabled                                                 |
+| Mobile Redirect URI          |                                                          |
 
 Role Claim can be managed via Client Role. Remember to create a mapper with claim name `immich_role`.
 

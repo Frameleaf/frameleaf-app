@@ -14,8 +14,4 @@ Moving an item's pin without touching its place names hands naming back to rever
 
 ## Usage
 
-Data from a reverse geocode is displayed in the image details, and used in [Smart Search](/features/searching.md).
-
-<img src={require('./img/reverse-geocoding-mobile3.webp').default} width='33%' title='Reverse Geocoding' />
-<img src={require('./img/reverse-geocoding-mobile1.webp').default} width='33%' title='Reverse Geocoding' />
-<img src={require('./img/reverse-geocoding-mobile2.webp').default} width='33%' title='Reverse Geocoding' />
+Data from a reverse geocode is displayed in the image details, and used in [Smart Search](/features/searching.md). Place names also appear in the **Places** filter when you search, so you can narrow results to a city, state or country.
