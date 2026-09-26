@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import type { SystemConfig } from 'src/config.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import type { MachineLearningHardwareResponse, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
@@ -34,12 +34,17 @@ import {
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  CloudErrorCode,
   CloudProbeFacts,
   CloudUsage,
+  CloudWallet,
   FrameleafCloudError,
+  cloudAddressProblem,
+  cloudErrorCode,
   cloudFactsFromCapabilities,
   isLocalOnlyModel,
   knownWorkloads,
+  stepUpUrl,
 } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination } from 'src/utils/ml-destination-dto.js';
 import { ML_BUDGET_WINDOW_DAYS, workloadPolicyProblem } from 'src/utils/ml-destination.js';
@@ -72,6 +77,10 @@ const CLOUD_ML_SETTLEMENT_LIMIT = 50;
 export const CLOUD_ML_USAGE_WINDOW_DAYS = 30;
 
 const emptyFeatures = { identityNames: false, medicalSignals: false, ocrAddon: false };
+
+/** Raising the daily cap or turning automatic top-up on is confirmed by the account owner (FL-177). */
+export const WALLET_STEP_UP_MESSAGE =
+  'Raise the daily cap or turn on automatic top-up in your Frameleaf account. This server can only lower the cap or turn automatic top-up off.';
 
 const refusedFacts = (refusal: MlAdmissionRefusal, detail: string, region: string | null = null): CloudProbeFacts => ({
   region,
@@ -209,6 +218,12 @@ export class CloudMlService extends BaseService {
   /**
    * Change the account's daily cap or automatic top-up (`PATCH /v2/wallet`). Card details never
    * pass through this server: automatic top-up uses the payment method saved on frameleaf.cloud.
+   *
+   * FL-177 (as-built decision #22): with this server's token Frameleaf Cloud only accepts changes
+   * that reduce spend (a lower cap, automatic top-up off). Raising the cap or turning automatic
+   * top-up on needs the account owner in the account app, so the cloud answers 403
+   * `step-up-required`; that becomes a 403 here and the account-app page it names is kept for the
+   * wallet's links.
    */
   async updateWallet(dto: CloudMlWalletUpdateDto): Promise<CloudMlWalletDto> {
     const gateway = await this.requireGateway();
@@ -219,8 +234,42 @@ export class CloudMlService extends BaseService {
     if (Object.keys(settings).length === 0) {
       throw new BadRequestException('Nothing to change');
     }
-    const wallet = await this.callCloud(() => this.frameleafCloudMlRepository.updateWallet(gateway, settings));
-    return this.toWalletDto(await this.cacheWallet({ ...wallet }, wallet.topUpUrl));
+    let wallet: CloudWallet;
+    try {
+      wallet = await this.frameleafCloudMlRepository.updateWallet(gateway, settings);
+    } catch (error) {
+      if (cloudErrorCode(error) === CloudErrorCode.StepUpRequired) {
+        const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
+        const settingsUrl = cloudUrl ? stepUpUrl(cloudUrl, error) : null;
+        if (settingsUrl) {
+          await this.rememberSettingsUrl(settingsUrl);
+        }
+        throw new ForbiddenException(WALLET_STEP_UP_MESSAGE);
+      }
+      if (error instanceof FrameleafCloudError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
+    return this.toWalletDto(await this.cacheWallet({ ...wallet }, wallet.topUpUrl, this.cloudLink(wallet.settingsUrl)));
+  }
+
+  /** Keep the account-app page a step-up answer named, so the wallet can link to it. */
+  private async rememberSettingsUrl(settingsUrl: string) {
+    try {
+      const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafMlWallet);
+      if (previous && previous.settingsUrl !== settingsUrl) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafMlWallet, { ...previous, settingsUrl });
+      }
+    } catch (error) {
+      this.logger.warn(`Could not keep the Frameleaf account wallet address: ${error}`);
+    }
+  }
+
+  /** An account-app address from the cloud, only when it is https on the configured cloud. */
+  private cloudLink(value: string | null): string | null {
+    const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
+    return value && cloudUrl && !cloudAddressProblem(cloudUrl, 'account address', value) ? value : null;
   }
 
   /** The models Frameleaf Cloud offers now, for the model picker. Retired models are left out. */
@@ -289,7 +338,8 @@ export class CloudMlService extends BaseService {
           costUsd: Number(row.costUsd),
           credits: row.credits === null ? null : Number(row.credits),
           finishedAt: new Date(row.finishedAt).toISOString(),
-          modelId: detail?.modelId ?? null,
+          modelSku: detail?.modelSku ?? null,
+          computeSku: detail?.computeSku ?? null,
           gpuSeconds: detail?.gpuSeconds ?? null,
           workers: detail?.workers ?? null,
           estimateUsd: detail?.estimateUsd ?? null,
@@ -425,13 +475,18 @@ export class CloudMlService extends BaseService {
 
   private async refreshWallet(gateway: CloudMlGateway): Promise<FrameleafMlWallet> {
     const wallet = await this.callCloud(() => this.frameleafCloudMlRepository.getWallet(gateway));
-    return this.cacheWallet({ ...wallet }, wallet.topUpUrl);
+    return this.cacheWallet({ ...wallet }, wallet.topUpUrl, this.cloudLink(wallet.settingsUrl));
   }
 
+  /**
+   * Keep the last wallet read. A link the read did not carry (`undefined`) keeps the stored one; the
+   * account-app settings page also survives a read without one, since only some answers name it.
+   */
   private async cacheWallet(
     wallet: Pick<FrameleafMlWallet, 'balanceUsd' | 'heldUsd' | 'dailyCapUsd' | 'spentTodayUsd'> &
       Partial<Pick<FrameleafMlWallet, 'autoTopUp'>>,
     topUpUrl?: string | null,
+    settingsUrl?: string | null,
   ): Promise<FrameleafMlWallet> {
     const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafMlWallet);
     const value: FrameleafMlWallet = {
@@ -441,6 +496,7 @@ export class CloudMlService extends BaseService {
       spentTodayUsd: wallet.spentTodayUsd,
       autoTopUp: wallet.autoTopUp ?? previous?.autoTopUp ?? false,
       topUpUrl: topUpUrl === undefined ? (previous?.topUpUrl ?? null) : topUpUrl,
+      settingsUrl: settingsUrl ?? previous?.settingsUrl ?? null,
       updatedAt: new Date().toISOString(),
     };
     await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafMlWallet, value);
@@ -456,6 +512,7 @@ export class CloudMlService extends BaseService {
       spentTodayUsd: wallet.spentTodayUsd,
       topUpUrl: wallet.topUpUrl,
       autoTopUp: wallet.autoTopUp ?? false,
+      settingsUrl: wallet.settingsUrl ?? null,
       updatedAt: wallet.updatedAt,
     };
   }

@@ -775,9 +775,14 @@ export type FrameleafCloudLink = {
   };
   /** FL-155: how the last device authorization ended. */
   lastLinkResult?: 'approved' | 'denied' | 'expired';
+  /** FL-177: why Frameleaf Cloud refused the last registration, when it said (shown with its own help). */
+  lastLinkRefusal?: FrameleafCloudLinkRefusal;
   /** FL-155: what Frameleaf Cloud may ask this server to do. */
   permissions?: FrameleafCloudPermissions;
-  /** FL-155: the OpenID client Frameleaf Cloud registered for this server (no secret is kept). */
+  /**
+   * FL-155: the OpenID client Frameleaf Cloud registered for this server (no secret is kept). Since
+   * FL-177 the cloud registers it itself; `registrationEndpoint` only survives on older link records.
+   */
   oidc?: {
     issuer: string;
     clientId: string;
@@ -804,6 +809,18 @@ export type FrameleafCloudLink = {
   /** FL-155: sha256 of headless link tokens already used, so a token never links twice. */
   usedLinkTokens?: string[];
 };
+
+/**
+ * FL-177: a registration Frameleaf Cloud refused for a reason an administrator can act on:
+ * `instance-limit` (402, the plan allows no more servers), `server-refused` (403, the server was
+ * removed or the account is suspended), `instance-id-taken` (409, this server's id is registered with
+ * another key) and `key-already-linked` (409 `jwk_already_bound`, a copied identity directory).
+ */
+export type FrameleafCloudLinkRefusal =
+  'instance-limit' | 'server-refused' | 'instance-id-taken' | 'key-already-linked';
+
+/** FL-177: one boot id per server start, shared by every worker (as-built decision #14). */
+export type FrameleafBoot = { bootId: string; startedAt: string };
 
 export type FrameleafCloudPermissions = {
   allowRemoteEnable: boolean;
@@ -919,6 +936,11 @@ export type FrameleafMlWallet = {
   topUpUrl: string | null;
   /** Automatic top-up is on for the account (read from Frameleaf Cloud). */
   autoTopUp?: boolean;
+  /**
+   * FL-177: the account-app page where the daily cap is raised and automatic top-up turned on (both
+   * need the owner there), from the wallet read or the last `step-up-required` answer.
+   */
+  settingsUrl?: string | null;
   updatedAt: string;
 };
 
@@ -947,6 +969,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
   [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
   [SystemMetadataKey.FrameleafPricing]: FrameleafPricingState;
+  [SystemMetadataKey.FrameleafBoot]: FrameleafBoot;
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };

@@ -44,6 +44,7 @@ export const cloudStatus = (mock: CloudMockState) => {
         }
       : null,
     linkResult: pending ? 'pending' : linked ? 'approved' : null,
+    linkRefusal: null,
     permissions: { allowRemoteEnable: false, allowBackupTrigger: true, allowEntitlementRefresh: true },
     revoked:
       mock.state === 'revoked'

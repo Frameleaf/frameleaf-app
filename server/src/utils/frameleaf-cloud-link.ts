@@ -1,5 +1,6 @@
 import z from 'zod';
-import type { FrameleafCloudLink, FrameleafCloudPermissions } from 'src/types.js';
+import type { FrameleafCloudLink, FrameleafCloudLinkRefusal, FrameleafCloudPermissions } from 'src/types.js';
+import { CloudErrorCode, FrameleafCloudError, cloudErrorCode } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * The link side of the Frameleaf Cloud instance contract (FL-155, CLD-002; program plan section 4
@@ -152,7 +153,6 @@ export const linkEndpoints = (document: { issuer: string; api: string; endpoints
   return {
     deviceAuthorization: `${issuer}/device/auth`,
     token: `${issuer}/token`,
-    registration: `${issuer}/reg`,
     instances: `${api}/v1/instances`,
     instance: `${api}/v1/instance`,
     heartbeat: document.endpoints?.heartbeat ?? `${api}/v1/instance/heartbeat`,
@@ -160,31 +160,6 @@ export const linkEndpoints = (document: { issuer: string; api: string; endpoints
     keyNonce: `${api}/v1/instance/keys/nonce`,
     keyRotate: `${api}/v1/instance/keys/rotate`,
   };
-};
-
-/**
- * Redirect URIs registered for Sign in with Frameleaf (instance contract step 5): the web and
- * native callbacks on each public origin this server is reached at, plus the native app scheme.
- */
-export const redirectUris = (origins: string[]): string[] => {
-  const uris = new Set<string>();
-  for (const origin of origins) {
-    let base: string;
-    try {
-      const url = new URL(origin);
-      if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-        continue;
-      }
-      base = url.origin;
-    } catch {
-      continue;
-    }
-    for (const path of ['/auth/login', '/user-settings', '/link', '/api/oauth/mobile-redirect']) {
-      uris.add(`${base}${path}`);
-    }
-  }
-  uris.add('frameleaf-auth:///oauth-callback');
-  return [...uris];
 };
 
 // ------------------------------------------------------------------ response schemas
@@ -214,13 +189,18 @@ export const linkTokenSchema = z.object({
     .optional(),
 });
 
+/**
+ * The `POST /v1/instances` answer (frameleaf-cloud `packages/contracts` `RegisterInstanceResponse`).
+ * Frameleaf Cloud registers the Sign in with Frameleaf client itself (`client_id` = the instance id,
+ * `private_key_jwt` with this server's key, redirect URIs it builds from the relay origin and verified
+ * custom hostnames), so the answer carries no initial access token and this server never runs
+ * dynamic client registration (as-built decisions #7–#9). Anything else in `oidc` is ignored.
+ */
 export const instanceRegistrationSchema = z.object({
   instanceId: z.string().min(1).max(200),
   oidc: z.object({
     issuer: z.url({ protocol: /^https?$/ }),
     clientId: z.string().min(1).max(200),
-    initialAccessToken: z.string().min(1).max(8192).optional(),
-    registrationEndpoint: z.url({ protocol: /^https?$/ }).optional(),
     scope: z.string().max(200).default('openid email profile'),
     roleClaim: z.string().max(100).default('frameleaf_role'),
     storageLabelClaim: z.string().max(100).default(''),
@@ -240,8 +220,6 @@ export const instanceRegistrationSchema = z.object({
     .default({}),
 });
 export type InstanceRegistration = z.infer<typeof instanceRegistrationSchema>;
-
-export const clientRegistrationSchema = z.object({ client_id: z.string().min(1).max(200) }).loose();
 
 const commandSchema = z
   .object({
@@ -274,3 +252,40 @@ export const keyNonceSchema = z.object({ nonce: z.string().min(8).max(512) });
 /** The label shown for the linked account: its label, else its name, else its email. */
 export const accountLabelOf = (owner: InstanceRegistration['owner']): string | undefined =>
   owner.label || owner.name || owner.email || undefined;
+
+/**
+ * The refusal an administrator can act on, when Frameleaf Cloud refused this server's registration
+ * (`POST /v1/instances`) for one of the reasons the contract names; otherwise null (FL-177).
+ */
+export const linkRefusalOf = (error: unknown): FrameleafCloudLinkRefusal | null => {
+  if (!(error instanceof FrameleafCloudError)) {
+    return null;
+  }
+  const code = cloudErrorCode(error);
+  if (error.status === 402 && code === CloudErrorCode.InstanceLimit) {
+    return 'instance-limit';
+  }
+  if (error.status === 403) {
+    // a server removed from the account (instance_revoked) or an account that is suspended
+    return 'server-refused';
+  }
+  if (error.status === 409 && code === CloudErrorCode.InstanceIdTaken) {
+    return 'instance-id-taken';
+  }
+  if (error.status === 409 && code === CloudErrorCode.JwkAlreadyBound) {
+    return 'key-already-linked';
+  }
+  return null;
+};
+
+/** What an administrator reads for a refused registration: what happened and what to do next. */
+export const LINK_REFUSAL_MESSAGES: Record<FrameleafCloudLinkRefusal, string> = {
+  'instance-limit':
+    'Your Frameleaf plan has no room for another server. Remove a server under Servers in your Frameleaf account, or change your plan, then link again.',
+  'server-refused':
+    'Frameleaf Cloud refused this server: it was removed from your Frameleaf account, or the account is suspended. Check Servers in your Frameleaf account.',
+  'instance-id-taken':
+    'Another server is already registered with this server’s ID. Remove the old entry under Servers in your Frameleaf account, then link again.',
+  'key-already-linked':
+    'This server’s key is already linked, usually because its identity directory was copied from another server. Give this server its own identity directory, or unlink the other one under Servers in your Frameleaf account.',
+};

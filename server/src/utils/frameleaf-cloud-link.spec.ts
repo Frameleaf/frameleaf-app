@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
+import { MlAdmissionRefusal } from 'src/enum.js';
 import {
   HEARTBEAT_FIELDS,
+  LINK_REFUSAL_MESSAGES,
+  accountLabelOf,
   buildHeartbeat,
   commandPermission,
+  instanceRegistrationSchema,
   isUserCode,
+  linkEndpoints,
+  linkRefusalOf,
   nextHeartbeatDelay,
   permissionsOf,
-  redirectUris,
 } from 'src/utils/frameleaf-cloud-link.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
 describe('frameleaf-cloud-link (FL-155)', () => {
   it('accepts only XXXX-XXXX user codes from the consonant alphabet', () => {
@@ -63,14 +70,63 @@ describe('frameleaf-cloud-link (FL-155)', () => {
     expect(nextHeartbeatDelay(120, () => 0.999)).toBe(149);
   });
 
-  it('registers web and native callbacks on each public origin', () => {
-    expect(redirectUris(['https://photos.example.test/some/path', 'not a url', 'ftp://x.test'])).toEqual([
-      'https://photos.example.test/auth/login',
-      'https://photos.example.test/user-settings',
-      'https://photos.example.test/link',
-      'https://photos.example.test/api/oauth/mobile-redirect',
-      'frameleaf-auth:///oauth-callback',
-    ]);
+  it('reads the golden registration answer: the cloud registered the client, no initial access token', () => {
+    const answer = cloudContractFixture('instance/register-response.json');
+    const registration = instanceRegistrationSchema.parse({
+      ...answer,
+      oidc: { ...answer.oidc, initialAccessToken: 'x' },
+    });
+    expect(registration).toEqual({
+      instanceId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53',
+      oidc: {
+        issuer: 'https://id.frameleaf.cloud',
+        clientId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53',
+        scope: 'openid email profile',
+        roleClaim: 'frameleaf_role',
+        storageLabelClaim: '',
+      },
+      services: {},
+      owner: {
+        accountId: '0192f1a0-1111-7aaa-8bbb-123456789abc',
+        label: 'Ana',
+        email: 'ana@example.com',
+        dataRegion: 'eu',
+      },
+    });
+    // anything about dynamic client registration is ignored: this server never runs it (decisions #7–#9)
+    expect(JSON.stringify(registration)).not.toContain('initialAccessToken');
+    expect(accountLabelOf(registration.owner)).toBe('Ana');
+  });
+
+  it('builds no client registration address any more', () => {
+    const endpoints = linkEndpoints({ issuer: 'https://id.frameleaf.cloud', api: 'https://api.frameleaf.cloud' });
+    expect(endpoints).not.toHaveProperty('registration');
+    expect(endpoints.instances).toBe('https://api.frameleaf.cloud/v1/instances');
+  });
+
+  it('names the registration refusals an administrator can act on (FL-177)', () => {
+    const refused = (status: number, code: string) =>
+      new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, status, 'x', {
+        code,
+        message: '',
+        retryable: false,
+        refusal: null,
+        detail: null,
+        data: null,
+        requestId: null,
+      });
+    expect(linkRefusalOf(refused(402, 'instance-limit'))).toBe('instance-limit');
+    expect(linkRefusalOf(refused(403, 'instance_revoked'))).toBe('server-refused');
+    expect(linkRefusalOf(refused(403, 'forbidden'))).toBe('server-refused');
+    expect(linkRefusalOf(refused(409, 'instance-id-taken'))).toBe('instance-id-taken');
+    expect(linkRefusalOf(refused(409, 'jwk_already_bound'))).toBe('key-already-linked');
+    expect(linkRefusalOf(refused(402, 'insufficient-credits'))).toBeNull();
+    expect(linkRefusalOf(refused(409, 'conflict'))).toBeNull();
+    expect(linkRefusalOf(refused(503, 'internal'))).toBeNull();
+    expect(linkRefusalOf(new Error('x'))).toBeNull();
+    for (const message of Object.values(LINK_REFUSAL_MESSAGES)) {
+      expect(message).not.toMatch(/please|successfully|simply/i);
+    }
   });
 
   it('defaults the permission toggles as the prototype does', () => {
