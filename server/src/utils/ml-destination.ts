@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import type { SystemConfig } from 'src/config.js';
 import type { MlProbeHardware } from 'src/schema/tables/ml-destination.table.js';
 import {
   CLOUD_ML_DESTINATION_KINDS,
@@ -43,6 +44,27 @@ import {
  * instead of quietly moving the media somewhere else.
  */
 
+/** The routed kind of work (Where each job runs) each cloud workload belongs to. */
+const ROUTED_KIND: Partial<
+  Record<MlWorkload, 'descriptions' | 'upscale' | 'restoration' | 'studio' | 'interpolation'>
+> = {
+  [MlWorkload.Enrichment]: 'descriptions',
+  [MlWorkload.Upscale]: 'upscale',
+  [MlWorkload.RestorationFaithful]: 'restoration',
+  [MlWorkload.RestorationCreative]: 'restoration',
+  [MlWorkload.StudioAi]: 'studio',
+  [MlWorkload.Interpolation]: 'interpolation',
+};
+
+/** Whether the administrator allowed this workload on Frameleaf Cloud ("Both" or "Cloud only"). */
+export const cloudRouteAllows = (
+  cloudMl: Pick<SystemConfig['frameleafCloud']['cloudMl'], 'routing'>,
+  workload: MlWorkload,
+): boolean => {
+  const kind = ROUTED_KIND[workload];
+  return !!kind && cloudMl.routing[kind] !== 'local';
+};
+
 /** Window over which a destination's spend is compared with its budget limit. */
 export const ML_BUDGET_WINDOW_DAYS = 30;
 
@@ -86,6 +108,12 @@ export type MlSelectionRequest = {
 export type MlSelectionDeps = {
   mlDestinationRepository: MlDestinationRepository;
   machineLearningRepository: MachineLearningRepository;
+  /**
+   * FL-163 review P1: the saved Frameleaf Cloud processing settings, read at admission. When given, a
+   * Frameleaf Cloud destination is refused while processing is turned off or while the workload's kind
+   * of work is set to this server only, whatever an earlier check remembered.
+   */
+  cloudMlSettings?: () => Promise<Pick<SystemConfig['frameleafCloud']['cloudMl'], 'enabled' | 'routing'>>;
 };
 
 export const isCloudDestination = (kind: MlDestinationKind): boolean => CLOUD_ML_DESTINATION_KINDS.has(kind);
@@ -664,12 +692,32 @@ const budgetWindowStart = () => new Date(Date.now() - ML_BUDGET_WINDOW_DAYS * 24
  * once per request and the row lands in `ml_workload_accounting` for FL-115.
  */
 export const selectMlDestination = async (
-  { mlDestinationRepository, machineLearningRepository }: MlSelectionDeps,
+  { mlDestinationRepository, machineLearningRepository, cloudMlSettings }: MlSelectionDeps,
   request: MlSelectionRequest,
 ): Promise<MlSelection> => {
   const destination = await mlDestinationRepository.getById(request.destinationId);
   if (!destination) {
     throw new MlDestinationNotFoundError(request.workload, request.destinationId);
+  }
+
+  if (destination.kind === MlDestinationKind.FrameleafCloud && cloudMlSettings) {
+    const settings = await cloudMlSettings();
+    if (!settings.enabled) {
+      throw new MlDestinationRefusedError(
+        MlAdmissionRefusal.CloudUnavailable,
+        request.workload,
+        destination.id,
+        'Frameleaf Cloud processing is turned off in settings',
+      );
+    }
+    if (!cloudRouteAllows(settings, request.workload)) {
+      throw new MlDestinationRefusedError(
+        MlAdmissionRefusal.WorkloadNotAllowed,
+        request.workload,
+        destination.id,
+        `Where each job runs keeps ${request.workload} on this server`,
+      );
+    }
   }
 
   const endpoint = resolveEndpoint(destination);

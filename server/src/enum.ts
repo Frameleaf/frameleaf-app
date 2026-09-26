@@ -528,6 +528,13 @@ export enum SystemMetadataKey {
    * provider, so administrators are told once, in plain language, what changed.
    */
   FrameleafCloudMigrationNotice = 'frameleaf-cloud-migration-notice',
+  /**
+   * FL-163: the photos waiting for an automatic Frameleaf Cloud description batch ("Describe new photos
+   * automatically"), with when automatic batching last ran.
+   */
+  FrameleafCloudDescriptionQueue = 'frameleaf-cloud-description-queue',
+  /** FL-163: the backfill estimates an administrator was shown, which queueing a backfill reads back. */
+  FrameleafCloudDescriptionEstimates = 'frameleaf-cloud-description-estimates',
   IntegrityChecksumCheckpoint = 'integrity-checksum-checkpoint',
   /**
    * FL-34: whether "hide sensitive detections from the library" was on the last time the server
@@ -1292,6 +1299,12 @@ export enum MediaOperationKind {
    * render worker, and gets the one automatic retry every job gets.
    */
   StudioExportPublish = 'studio_export_publish',
+  /**
+   * FL-163 (`CLD-203`): one Frameleaf Cloud description batch, a frozen set of one owner's photos sent as
+   * one cloud job. The snapshot pins the destination, model, pack key and idempotency key; the result
+   * records the estimate, the cloud job and every photo's input, and the job is polled until it ends.
+   */
+  CloudDescriptionBatch = 'cloud_description_batch',
 }
 
 export const MediaOperationKindSchema = z
@@ -2166,6 +2179,11 @@ export enum JobName {
   FrameleafHeartbeat = 'FrameleafHeartbeat',
   /** FL-156: the daily Frameleaf licence certificate refresh, with jitter. */
   FrameleafLicenseRefresh = 'FrameleafLicenseRefresh',
+  /**
+   * FL-163: one pass over Frameleaf Cloud description batches: automatic batching of new photos, then
+   * every batch's next step (estimate, submit, poll, cancel, settle).
+   */
+  CloudMlDescriptionBatch = 'CloudMlDescriptionBatch',
 
   // OCR
   OcrQueueAll = 'OcrQueueAll',
@@ -2278,6 +2296,12 @@ export enum DatabaseLock {
    * of the suspension as one step), so no two workers probe at once.
    */
   FrameleafMlProbe = 949,
+  /** FL-163: one pass over Frameleaf Cloud description batches runs at a time, across every worker. */
+  FrameleafCloudMlBatch = 960,
+  /** FL-163: adding photos to the automatic description queue is one read-modify-write at a time. */
+  FrameleafCloudMlBatchQueue = 961,
+  /** FL-163: queueing a description backfill is one step at a time, so two requests never both queue. */
+  FrameleafCloudMlBackfill = 962,
 }
 
 export enum MaintenanceAction {

@@ -82,6 +82,11 @@ export class ImageDescriptionRequeueEstimateDto extends createZodDto(ImageDescri
 const ImageDescriptionRequeueResponseSchema = z
   .object({
     queued: z.boolean().describe('Whether the queue-all job was newly enqueued (false = already in-flight)'),
+    cloudBatches: z
+      .boolean()
+      .describe(
+        'Descriptions are routed to Frameleaf Cloud, which describes photos in batches from Frameleaf Cloud processing with an estimate first; nothing was queued here',
+      ),
   })
   .meta({ id: 'ImageDescriptionRequeueResponseDto' });
 
