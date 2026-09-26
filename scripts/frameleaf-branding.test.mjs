@@ -27,6 +27,7 @@ test("the name and the upstream sites are found", () => {
       "See https://docs.immich.app/overview",
       "Source: https://github.com/immich-app/immich",
       "mailto:demo@immich.app",
+      "curl https://raw.githubusercontent.com/immich-app/immich/main/install.sh",
     ].join("\n"),
     [NAME, SITES],
     { file: "docs/docs/example.md" },
@@ -40,6 +41,7 @@ test("the name and the upstream sites are found", () => {
       [4, "docs.immich.app"],
       [5, "github.com/immich-app"],
       [6, "immich.app"],
+      [7, "githubusercontent.com/immich-app"],
     ],
   );
 });
