@@ -8,10 +8,16 @@ import {
   CloudSignInUpdateDto,
   CloudStatusResponseDto,
 } from 'src/dtos/frameleaf-cloud.dto.js';
+import {
+  RemoteAccessStatusResponseDto,
+  RemoteAccessUpdateDto,
+  RemoteHostnameUpdateDto,
+} from 'src/dtos/frameleaf-remote-access.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
+import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 
 /**
  * Linking this server to a Frameleaf account (FL-154 status, FL-155 link lifecycle). Nothing is
@@ -21,7 +27,10 @@ import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 @ApiTags(ApiTag.FrameleafCloud)
 @Controller('admin/cloud')
 export class CloudAdminController {
-  constructor(private service: FrameleafCloudService) {}
+  constructor(
+    private service: FrameleafCloudService,
+    private remoteAccessService: FrameleafRemoteAccessService,
+  ) {}
 
   @Get('status')
   @Authenticated({ permission: Permission.AdminCloudRead, admin: true })
@@ -125,6 +134,92 @@ export class CloudAdminController {
   })
   updateRemoteAccess(@Auth() auth: AuthDto, @Body() dto: CloudRemoteAccessUpdateDto): Promise<CloudStatusResponseDto> {
     return this.service.updateRemoteAccess(auth, dto);
+  }
+
+  @Get('remote')
+  @Authenticated({ permission: Permission.AdminCloudRead, admin: true })
+  @Endpoint({
+    operationId: 'getRemoteAccess',
+    summary: 'Get remote access',
+    description:
+      'Whether remote access is on, how it connects, the address it publishes, its certificate, the custom hostname and the connection candidates. Reads local state only; nothing is contacted.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getRemoteAccess(): Promise<RemoteAccessStatusResponseDto> {
+    return this.remoteAccessService.getStatus();
+  }
+
+  @Put('remote')
+  @Authenticated({ permission: Permission.AdminRemoteAccessUpdate, admin: true })
+  @Endpoint({
+    operationId: 'updateRemoteAccess',
+    summary: 'Change remote access',
+    description:
+      'Turns remote access on or off and chooses its connection, direct port and published address. Turning it on needs a linked server with a remote access plan; publishing your own domain needs a verified custom hostname.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  updateRemoteAccessSettings(
+    @Auth() auth: AuthDto,
+    @Body() dto: RemoteAccessUpdateDto,
+  ): Promise<RemoteAccessStatusResponseDto> {
+    return this.remoteAccessService.update(auth, dto);
+  }
+
+  @Post('remote/test')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminRemoteAccessUpdate, admin: true })
+  @Endpoint({
+    operationId: 'testRemoteAccess',
+    summary: 'Test remote access',
+    description:
+      'Checks the certificate, the HTTPS listener and a request through it to this server, and reports the relay and the router as last seen. The result is kept with the remote access status.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  testRemoteAccess(@Auth() auth: AuthDto): Promise<RemoteAccessStatusResponseDto> {
+    return this.remoteAccessService.test(auth);
+  }
+
+  @Put('remote/hostname')
+  @Authenticated({ permission: Permission.AdminRemoteAccessUpdate, admin: true })
+  @Endpoint({
+    operationId: 'setRemoteHostname',
+    summary: 'Use your own domain for remote access',
+    description:
+      'Adds a hostname on a domain you own, such as photos.example.com, and returns the two DNS records to add at your DNS provider. It waits for them until they are checked.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  setRemoteHostname(
+    @Auth() auth: AuthDto,
+    @Body() dto: RemoteHostnameUpdateDto,
+  ): Promise<RemoteAccessStatusResponseDto> {
+    return this.remoteAccessService.setCustomHostname(auth, dto);
+  }
+
+  @Post('remote/hostname/check')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminRemoteAccessUpdate, admin: true })
+  @Endpoint({
+    operationId: 'checkRemoteHostname',
+    summary: 'Check the custom hostname’s DNS records',
+    description:
+      'Asks Frameleaf Cloud whether both DNS records point to this server. Once they do, the hostname is verified and this server obtains its certificate.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  checkRemoteHostname(@Auth() auth: AuthDto): Promise<RemoteAccessStatusResponseDto> {
+    return this.remoteAccessService.checkCustomHostname(auth);
+  }
+
+  @Delete('remote/hostname')
+  @Authenticated({ permission: Permission.AdminRemoteAccessUpdate, admin: true })
+  @Endpoint({
+    operationId: 'removeRemoteHostname',
+    summary: 'Stop using the custom hostname',
+    description:
+      'Removes the custom hostname and publishes the Frameleaf address again. Its DNS records can then be deleted.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  removeRemoteHostname(@Auth() auth: AuthDto): Promise<RemoteAccessStatusResponseDto> {
+    return this.remoteAccessService.removeCustomHostname(auth);
   }
 
   @Post('heartbeat')

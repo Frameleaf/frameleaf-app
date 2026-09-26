@@ -69,6 +69,19 @@ tested against what the cloud publishes (FL-177).
   them, and `errors/entitlement-missing.json` was checked byte-identical at that commit. Not copied, because nothing
   here parses them yet: `backup/purge.json`, `backup/run-list.json` and `errors/purge-not-cancellable.json` (a
   purge is started from the Frameleaf account).
+- FL-165 remote access: `remote/enroll-response.json`, `remote/dns-txt-put-request.json`,
+  `remote/dns-txt-put-response.json`, `remote/certs-request.json`, `remote/caa-put-request.json`,
+  `remote/hostname-put-request.json`, `remote/hostnames-list.json` and `remote/label-vectors.json` are
+  byte-identical to `origin/main` at `39488a50b176ea0778ee138d202bc8eda8376a70`. The contracts are
+  `packages/contracts/src/remote/{enroll,dns-txt,certs,caa,hostnames}.ts`; `server/src/utils/frameleaf-remote-access.ts`
+  reads and builds them. These fixtures still name the earlier direct domain `frameleaf-direct.net`; the server
+  takes the domain from the enrolment answer (or discovery's `remote.directDomain`) and only documents
+  `frameleaf.net` as the default. The relay fixtures (`remote/relay-*.json`, `remote/wan-probe-*.json`,
+  `remote/remote-usage.json`) belong to CLD-103/CLD-104 and are not copied yet.
+- FL-165: `instance/discovery.json` and `instance/discovery-instance.json` are byte-identical to
+  `daa22f68296bc5a897b40b3af34b750fd6586e2f` (the `frameleaf.net` rename): both gained the optional
+  `remote: { directDomain }` (contract `packages/contracts/src/instance/discovery.ts`), which
+  `server/src/utils/frameleaf-cloud.ts` reads and remote access uses as the direct domain before enrolment.
 
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
 above.

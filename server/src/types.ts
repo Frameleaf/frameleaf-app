@@ -1133,6 +1133,99 @@ export type FrameleafCloudDescriptionQueue = {
   lastBatchAt: Record<string, string>;
 };
 
+/**
+ * FL-165: the enrolment Frameleaf Cloud answered `POST /v1/remote/enroll` with (contract
+ * `remote/enroll.ts`), kept with the link it belongs to. `domain` is the direct domain the cloud uses
+ * now; it is never assumed.
+ */
+export type FrameleafRemoteEnrollment = {
+  cloudUrl: string;
+  instanceId: string;
+  label: string;
+  domain: string;
+  names: { relay: string; lanPattern: string; ipv6Pattern: string };
+  relay: { id: string; host: string; port: number };
+  caa: { issue: string; validationMethods: string; accountUri: string | null };
+  certProfile: string;
+  renewBeforeDays: number;
+  cloneSuspected: boolean;
+  enrolledAt: string;
+};
+
+/** FL-165: facts about one certificate the edge worker holds. Its private key is a 0600 file that never leaves the host. */
+export type FrameleafEdgeCertificate = {
+  names: string[];
+  serial: string;
+  issuer: string;
+  notBefore: string;
+  notAfter: string;
+  /** Reported to Frameleaf Cloud (`POST /v1/remote/certs`) as the Certificate Transparency baseline. */
+  reported: boolean;
+};
+
+/**
+ * FL-165: when a certificate is next checked for renewal (daily, with 0–6 h of jitter) and how its
+ * issuance is failing: retries wait 1 h, doubling up to 24 h.
+ */
+export type FrameleafEdgeIssuance = {
+  failures: number;
+  lastError?: string;
+  lastAttemptAt?: string;
+  nextAttemptAt?: string;
+  nextCheckAt?: string;
+};
+
+/** FL-165: one connection candidate, in the shape of the cloud's `connections[]` (contract `instance/connections.ts`). */
+export type FrameleafRemoteConnection = {
+  kind: 'local' | 'wan' | 'relay' | 'ipv6';
+  uri: string;
+  protocol: 'http' | 'https';
+  address: string;
+  port: number;
+  local: boolean;
+  relay: boolean;
+  ipv6: boolean;
+  custom: boolean;
+  dnsRebindingProtection: boolean;
+  httpsRequired: boolean;
+  verified: boolean;
+};
+
+/** FL-165: the last remote access self-check an administrator ran (`POST admin/cloud/remote/test`). */
+export type FrameleafRemoteAccessTest = {
+  at: string;
+  ok: boolean;
+  checks: Array<{ id: string; ok: boolean; detail: string }>;
+};
+
+/**
+ * FL-165: what the edge worker is doing for remote access, written by the edge worker that holds
+ * `DatabaseLock.FrameleafEdge` and read by the API. No key or secret is ever part of it.
+ */
+export type FrameleafRemoteAccess = {
+  status: 'off' | 'idle' | 'starting' | 'ready' | 'error';
+  /** A new id every time an edge worker starts serving. */
+  bootId: string;
+  updatedAt: string;
+  /** Why it is off, idle or failing, in plain words. */
+  reason: string | null;
+  /** The enrolment: label, direct domain, names, relay assignment and CAA parameters. */
+  names?: FrameleafRemoteEnrollment;
+  acmeAccountUri?: string;
+  certificate?: FrameleafEdgeCertificate | null;
+  certificateIssuance?: FrameleafEdgeIssuance;
+  customCertificate?: (FrameleafEdgeCertificate & { host: string }) | null;
+  customCertificateIssuance?: FrameleafEdgeIssuance & { host: string };
+  relay: { connected: boolean };
+  direct: {
+    listening: boolean;
+    port: number;
+    mapping?: { externalPort: number; method: 'manual' | 'upnp' | 'nat-pmp' } | null;
+    cgnatSuspected: boolean;
+  };
+  candidates: FrameleafRemoteConnection[];
+};
+
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
@@ -1153,6 +1246,8 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafBoot]: FrameleafBoot;
   [SystemMetadataKey.FrameleafMlSuspension]: FrameleafMlSuspension;
   [SystemMetadataKey.FrameleafCloudBackup]: FrameleafCloudBackup;
+  [SystemMetadataKey.FrameleafRemoteAccess]: FrameleafRemoteAccess;
+  [SystemMetadataKey.FrameleafRemoteAccessTest]: FrameleafRemoteAccessTest;
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.FrameleafCloudDescriptionQueue]: FrameleafCloudDescriptionQueue;

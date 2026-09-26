@@ -137,7 +137,7 @@ export interface EnvData {
     /** FL-155: single-use headless link token, or null. */
     linkToken: string | null;
     /** FL-154: the edge worker's direct listener. */
-    edge: { port: number; bind: string; secret: string | null };
+    edge: { port: number; bind: string; secret: string | null; acmeDirectoryUrl: string | null };
     /** FL-158: this server's home-network address, or null. */
     localUrl: string | null;
     /** FL-154: networks treated as home besides RFC 1918 and ULA. */
@@ -183,9 +183,20 @@ const getEnv = (): EnvData => {
   const dto = parseResult.data;
   const helpLinks = parseHelpLinks(dto);
 
-  const includedWorkers = asSet(dto.IMMICH_WORKERS_INCLUDE, [ImmichWorker.Api, ImmichWorker.Microservices]);
+  // FL-165: the edge worker runs by default; it stays idle (no listener, no network call) until
+  // remote access is on for a linked, entitled server
+  const includedWorkers = asSet(dto.IMMICH_WORKERS_INCLUDE, [
+    ImmichWorker.Api,
+    ImmichWorker.Microservices,
+    ImmichWorker.Edge,
+  ]);
   const excludedWorkers = asSet(dto.IMMICH_WORKERS_EXCLUDE, []);
-  const workers = [...setDifference(includedWorkers, excludedWorkers)];
+  let workers = [...setDifference(includedWorkers, excludedWorkers)];
+  // FL-165: by default the edge worker runs where the API does; a container without the API (for
+  // example one that only runs jobs) runs it only when IMMICH_WORKERS_INCLUDE names it
+  if (!dto.IMMICH_WORKERS_INCLUDE && !workers.includes(ImmichWorker.Api)) {
+    workers = workers.filter((worker) => worker !== ImmichWorker.Edge);
+  }
   for (const worker of workers) {
     if (!WORKER_TYPES.has(worker)) {
       throw new Error(`Invalid worker(s) found: ${workers.join(',')}`);
@@ -349,6 +360,7 @@ const getEnv = (): EnvData => {
         port: dto.FRAMELEAF_EDGE_PORT ?? 2443,
         bind: dto.FRAMELEAF_EDGE_BIND ?? '0.0.0.0',
         secret: dto.FRAMELEAF_EDGE_SECRET ?? null,
+        acmeDirectoryUrl: dto.FRAMELEAF_ACME_DIRECTORY_URL ?? null,
       },
       localUrl: dto.FRAMELEAF_LOCAL_URL ? new URL(dto.FRAMELEAF_LOCAL_URL).origin : null,
       trustedLanCidrs: parseTrustedLanCidrs(dto.FRAMELEAF_TRUSTED_LAN_CIDRS),
