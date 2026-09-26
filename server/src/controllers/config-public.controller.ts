@@ -1,6 +1,5 @@
-import { Controller, Get, Req } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
 import type { LoginDetails } from 'src/services/auth.service.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { PublicConfigDto } from 'src/dtos/config.dto.js';
@@ -20,8 +19,8 @@ export class ConfigPublicController {
     description: 'Retrieve the system configuration properties that are visible to everyone.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  getPublicConfig(@Req() request: Request, @GetLoginDetails() { clientIp }: LoginDetails): Promise<PublicConfigDto> {
-    return this.service.getPublicConfig({ headers: request.headers, clientIp });
+  getPublicConfig(@GetLoginDetails() { clientIp, via }: LoginDetails): Promise<PublicConfigDto> {
+    return this.service.getPublicConfig({ via: via ?? null, clientIp });
   }
 
   @Get('defaults')

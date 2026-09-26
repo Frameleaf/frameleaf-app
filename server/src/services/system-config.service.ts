@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { cloneDeep, get, isEqual, omit, set } from 'lodash-es';
-import type { IncomingHttpHeaders } from 'node:http';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
@@ -48,7 +47,13 @@ import {
 } from 'src/utils/config-history.js';
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { frameleafVia, isHomeAddress, signInClient } from 'src/utils/frameleaf-sign-in.js';
+import {
+  type FrameleafVia,
+  frameleafPublicUrl,
+  isHomeAddress,
+  isRemoteVia,
+  signInClient,
+} from 'src/utils/frameleaf-sign-in.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { toPlainObject } from 'src/utils/object.js';
@@ -147,18 +152,19 @@ export class SystemConfigService extends BaseService {
   /**
    * FL-158: the public configuration, with how Sign in with Frameleaf applies to this visitor. A
    * visitor arriving through remote access (`relay` or `wan`, vouched for by the edge worker) is
-   * offered only Sign in with Frameleaf; one who is also on the home network is offered the local
-   * address.
+   * offered only Sign in with Frameleaf, unless an administrator allowed password sign-in there
+   * (FL-161); one who is also on the home network is offered the local address.
    */
-  async getPublicConfig(arrival?: { headers: IncomingHttpHeaders; clientIp: string }) {
+  async getPublicConfig(arrival?: { via: FrameleafVia | null; clientIp: string }) {
     const config = await this.getConfig({ withCache: false });
     const env = this.configRepository.getEnv().frameleafCloud;
     const { link, linked } = await readCloudLink({
       configRepository: this.configRepository,
       systemMetadataRepository: this.systemMetadataRepository,
     });
-    const via = frameleafVia(arrival?.headers ?? {}, env.edge.secret);
-    const signInRequired = via === 'relay' || via === 'wan';
+    const via = arrival?.via ?? null;
+    const remote = isRemoteVia(via);
+    const signInRequired = remote && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay;
     const relayOrigin = link?.services?.relayOrigin;
     let relayHost: string | null;
     try {
@@ -166,7 +172,7 @@ export class SystemConfigService extends BaseService {
     } catch {
       relayHost = null;
     }
-    const sameNetwork = signInRequired && !!env.localUrl && isHomeAddress(arrival?.clientIp, env.trustedLanCidrs);
+    const sameNetwork = remote && !!env.localUrl && isHomeAddress(arrival?.clientIp, env.trustedLanCidrs);
     return mapPublicConfig(config, {
       signInAvailable: !!signInClient(link, linked),
       signInRequired,
@@ -176,6 +182,26 @@ export class SystemConfigService extends BaseService {
       localUrl: sameNetwork ? env.localUrl : null,
       sameNetwork,
     });
+  }
+
+  /**
+   * FL-161: `/.well-known/immich`, which apps read to find the API, with what the Frameleaf apps need
+   * to find this server again: its instance id and published address while it is linked, and whether
+   * Sign in with Frameleaf is available.
+   */
+  async getWellKnown() {
+    const { link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    return {
+      api: { endpoint: '/api' },
+      frameleaf: {
+        instanceId: linked ? (link?.instanceId ?? null) : null,
+        publicUrl: linked ? frameleafPublicUrl(link) : null,
+        signIn: !!signInClient(link, linked),
+      },
+    };
   }
 
   getPublicConfigDefaults(): PublicConfigDto {

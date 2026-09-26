@@ -4,7 +4,7 @@ import { type ClientAuth } from 'openid-client';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { OAuthConfig, OAuthProfile } from 'src/repositories/oauth.repository.js';
 import type { FrameleafCloudLink } from 'src/types.js';
-import { OAuthTokenEndpointAuthMethod } from 'src/enum.js';
+import { ImmichHeader, OAuthTokenEndpointAuthMethod } from 'src/enum.js';
 import { CloudGatewayDeps, loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
 
@@ -165,6 +165,29 @@ export const logoutTokenAudiences = (token: string): string[] => {
 
 export type FrameleafVia = 'lan' | 'wan' | 'relay';
 
+const httpsOrigin = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * FL-161: the address Frameleaf Cloud published for a linked server: its public URL (a verified
+ * custom hostname) or else its relay origin, https only. Callers check that the server is linked.
+ */
+export const frameleafPublicUrl = (link: FrameleafCloudLink | null): string | null =>
+  httpsOrigin(link?.services?.publicUrl) ?? httpsOrigin(link?.services?.relayOrigin);
+
+/** FL-161: whether an arrival is remote access (the relay, or a direct connection from outside the home). */
+export const isRemoteVia = (via: FrameleafVia | null | undefined): via is 'wan' | 'relay' =>
+  via === 'relay' || via === 'wan';
+
 const VIAS = new Set<FrameleafVia>(['lan', 'wan', 'relay']);
 /** RFC 1918, loopback and IPv6 unique-local addresses are always home (FRAMELEAF_TRUSTED_LAN_CIDRS adds more). */
 const HOME_NETWORKS = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', 'fc00::/7', '::1/128'];
@@ -180,8 +203,8 @@ const header = (headers: IncomingHttpHeaders, name: string) => {
  * client-supplied header, is an arrival the server cannot vouch for (`null`).
  */
 export const frameleafVia = (headers: IncomingHttpHeaders, edgeSecret: string | null): FrameleafVia | null => {
-  const via = header(headers, 'x-frameleaf-via');
-  const auth = header(headers, 'x-frameleaf-via-auth');
+  const via = header(headers, ImmichHeader.FrameleafVia);
+  const auth = header(headers, ImmichHeader.FrameleafViaAuth);
   if (!edgeSecret || !via || !auth || !VIAS.has(via as FrameleafVia)) {
     return null;
   }

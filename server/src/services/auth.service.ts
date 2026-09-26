@@ -32,12 +32,21 @@ import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
-import { frameleafLogoutUrl, frameleafOAuthConfig, logoutTokenAudiences } from 'src/utils/frameleaf-sign-in.js';
+import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import {
+  type FrameleafVia,
+  frameleafLogoutUrl,
+  frameleafOAuthConfig,
+  frameleafVia,
+  isRemoteVia,
+  logoutTokenAudiences,
+} from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 import { createSession } from 'src/utils/session.js';
+import { allowedOrigins, requestHosts, websocketOriginAllowed } from 'src/utils/websocket-origin.js';
 
 export interface LoginDetails {
   isSecure: boolean;
@@ -45,6 +54,8 @@ export interface LoginDetails {
   deviceType: string;
   deviceOS: string;
   appVersion: string | null;
+  /** FL-161: how the request arrived, as the edge worker vouched for it (absent or null: not vouched for). */
+  via?: FrameleafVia | null;
 }
 
 interface ClaimOptions<T> {
@@ -93,8 +104,27 @@ export type ValidateRequest = {
     uri: string;
     /** FL-34: `false` leaves an elevated session's PIN expiry as it is (a status read). */
     refreshElevation?: boolean;
+    /** FL-161: how the request arrived; `relay` and `wan` require a Frameleaf sign-in. */
+    via?: FrameleafVia | null;
   };
 };
+
+/** FL-161: the error code of a remote-access request that is not signed in with Frameleaf. */
+export const FRAMELEAF_SIGN_IN_REQUIRED = 'frameleaf_sign_in_required';
+export const FRAMELEAF_SIGN_IN_REQUIRED_MESSAGE =
+  'Away from home, sign in with your Frameleaf account to use this server';
+/** FL-161: the error code of an original, archive or database backup refused over the relay. */
+export const RELAY_ORIGINALS_REFUSED = 'frameleaf_relay_originals_refused';
+export const RELAY_ORIGINALS_REFUSED_MESSAGE =
+  'Originals, archives and database backups are not available through the Frameleaf relay. Download them at home, or ask your administrator to allow them.';
+
+const frameleafSignInRequired = () =>
+  new ForbiddenException({
+    message: FRAMELEAF_SIGN_IN_REQUIRED_MESSAGE,
+    error: 'Forbidden',
+    statusCode: 403,
+    code: FRAMELEAF_SIGN_IN_REQUIRED,
+  });
 
 const FRAMELEAF_CALLBACK = /frameleaf-auth:\/+oauth-callback/;
 
@@ -158,6 +188,13 @@ export class AuthService extends BaseService {
     const config = await this.getConfig({ withCache: false });
     if (!config.passwordLogin.enabled) {
       throw new UnauthorizedException('Password login has been disabled');
+    }
+
+    // FL-161: away from home a password is refused before any account is looked up, unless an
+    // administrator allowed it
+    if (isRemoteVia(details.via) && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay) {
+      this.logger.warn(`Refused password sign-in over remote access (${details.via}) from ${details.clientIp}`);
+      throw frameleafSignInRequired();
     }
 
     const user = await this.userRepository.getByEmail(dto.email, { withPassword: true });
@@ -389,6 +426,10 @@ export class AuthService extends BaseService {
     const { adminRoute, sharedLinkRoute, uri } = metadata;
     const requestedPermission = metadata.permission ?? Permission.All;
 
+    if (isRemoteVia(metadata.via)) {
+      await this.requireRemoteSignIn(authDto, metadata.via, uri);
+    }
+
     if (!authDto.user.isAdmin && adminRoute) {
       this.logger.warn(`Denied access to admin only route: ${uri}`);
       throw new ForbiddenException('Forbidden');
@@ -421,6 +462,88 @@ export class AuthService extends BaseService {
     }
 
     return authDto;
+  }
+
+  /**
+   * FL-161 (instance contract "Via-header contract"): a request arriving through remote access
+   * (`relay` or `wan`) must come from a Frameleaf sign-in. A public shared link passes; a session
+   * passes when a Frameleaf sign-in created it (`immich_fork.frameleaf_session`), or when an
+   * administrator allowed password sign-in over remote access; an API key passes only when its
+   * owner's account here is linked to a Frameleaf account. Everything else is refused with 403
+   * `frameleaf_sign_in_required`. Requests from the home network never reach this check.
+   */
+  private async requireRemoteSignIn(auth: AuthDto, via: FrameleafVia, uri: string): Promise<void> {
+    if (auth.sharedLink) {
+      return;
+    }
+    if (auth.session) {
+      if (await this.frameleafAccountRepository.getSession(auth.session.id)) {
+        return;
+      }
+      const config = await this.getConfig({ withCache: true });
+      if (config.frameleafCloud.remoteAccess.allowPasswordOverRelay) {
+        return;
+      }
+    } else if (auth.apiKey && (await this.frameleafAccountRepository.getLinkByUser(auth.user.id))) {
+      return;
+    }
+    this.logger.warn(`Denied remote access (${via}) without a Frameleaf sign-in: ${uri}`);
+    throw frameleafSignInRequired();
+  }
+
+  /**
+   * FL-161: originals, archive downloads and database backups are refused over the relay unless an
+   * administrator allowed them (`frameleafCloud.remoteAccess.allowOriginalsOverRelay`). Thumbnails,
+   * previews and playback are not marked and keep working; direct and home connections are unchanged.
+   */
+  async requireOriginalTransfer(via: FrameleafVia | null | undefined, uri: string): Promise<void> {
+    if (via !== 'relay') {
+      return;
+    }
+    const config = await this.getConfig({ withCache: true });
+    if (config.frameleafCloud.remoteAccess.allowOriginalsOverRelay) {
+      return;
+    }
+    this.logger.warn(`Refused an original transfer over the relay: ${uri}`);
+    throw new ForbiddenException({
+      message: RELAY_ORIGINALS_REFUSED_MESSAGE,
+      error: 'Forbidden',
+      statusCode: 403,
+      code: RELAY_ORIGINALS_REFUSED,
+    });
+  }
+
+  /**
+   * FL-161: a websocket handshake. Its `Origin` must be this server's own, its external domain or a
+   * published Frameleaf name (the socket carries the visitor's cookies, so no other page may open it);
+   * its arrival is read from the edge worker's headers, and it then authenticates like any request.
+   */
+  async authenticateWebsocket(headers: IncomingHttpHeaders): Promise<{ auth: AuthDto; via: FrameleafVia | null }> {
+    const via = frameleafVia(headers, this.configRepository.getEnv().frameleafCloud.edge.secret);
+    const origin = Array.isArray(headers.origin) ? headers.origin[0] : headers.origin;
+    if (origin !== undefined && !this.configRepository.isDev()) {
+      const config = await this.getConfig({ withCache: true });
+      const { link, linked } = await readCloudLink({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      const services: Record<string, unknown> = (linked ? link?.services : null) ?? {};
+      const origins = allowedOrigins([
+        config.server.externalDomain,
+        typeof services.relayOrigin === 'string' ? services.relayOrigin : null,
+        typeof services.publicUrl === 'string' ? services.publicUrl : null,
+      ]);
+      if (!websocketOriginAllowed(origin, { hosts: requestHosts(headers), origins })) {
+        this.logger.warn(`Refused a websocket from origin ${JSON.stringify(origin)}`);
+        throw new ForbiddenException('This page may not connect to this server');
+      }
+    }
+    const auth = await this.authenticate({
+      headers,
+      queryParams: {},
+      metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/socket.io', via },
+    });
+    return { auth, via };
   }
 
   private async getHiddenContentFilter(auth: AuthDto, includeNsfw: boolean): Promise<HiddenContentFilter> {

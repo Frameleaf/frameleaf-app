@@ -78,6 +78,10 @@ export type CloudStatusResponseDto = {
         id: string | null;
         label: string | null;
     } | null;
+    /** Originals, archives and database backups may be downloaded through the relay */
+    allowOriginalsOverRelay: boolean;
+    /** Password sign-in is allowed away from home */
+    allowPasswordOverRelay: boolean;
     /** Frameleaf Cloud saw this server’s identity start from two places */
     cloneSuspected: boolean;
     /** Host of the configured Frameleaf Cloud address */
@@ -346,6 +350,12 @@ export type CloudPermissionsUpdateDto = {
     /** Frameleaf Cloud may turn remote access on or off */
     allowRemoteEnable?: boolean;
 };
+export type CloudRemoteAccessUpdateDto = {
+    /** Allow original downloads, archives and database backups through the relay */
+    allowOriginalsOverRelay?: boolean;
+    /** Allow password sign-in away from home */
+    allowPasswordOverRelay?: boolean;
+};
 export type CloudSignInUpdateDto = {
     /** The Sign in with Frameleaf button text */
     buttonText?: string;
@@ -442,6 +452,12 @@ export type AdminConfigFrameleafCloudMlDto = {
     /** The destination a job preselects when its kind of work may run in both places */
     startWith: StartWith;
 };
+export type AdminConfigFrameleafRemoteAccessDto = {
+    /** Allow original downloads, archives and database backups over the Frameleaf relay */
+    allowOriginalsOverRelay: boolean;
+    /** Allow password sign-in, and sessions it creates, over remote access */
+    allowPasswordOverRelay: boolean;
+};
 export type AdminConfigFrameleafSignInDto = {
     /** Sign in with Frameleaf button text */
     buttonText: string;
@@ -450,6 +466,7 @@ export type AdminConfigFrameleafSignInDto = {
 };
 export type AdminConfigFrameleafCloudDto = {
     cloudMl: AdminConfigFrameleafCloudMlDto;
+    remoteAccess?: AdminConfigFrameleafRemoteAccessDto;
     signIn?: AdminConfigFrameleafSignInDto;
 };
 export type AdminConfigEnhancedRawImageDto = {
@@ -7911,11 +7928,22 @@ export type ServerAppReleasesResponseDto = {
         url?: string;
     };
 };
+export type ServerFrameleafConfigDto = {
+    /** The address Frameleaf Cloud published for this server, while it is linked */
+    publicUrl: string | null;
+    /** Whether Sign in with Frameleaf is available (the server is linked) */
+    signInAvailable: boolean;
+    /** Whether this request arrived through remote access, where a Frameleaf sign-in is required */
+    signInRequired: boolean;
+    /** How the request arrived; null when the edge worker did not vouch for it */
+    via: (FrameleafVia) | null;
+};
 export type ServerConfigDto = {
     /** Canonical default for the image-description advanced raw prompt template */
     defaultImageDescriptionRawPromptTemplate: string;
     /** External domain URL */
     externalDomain: string;
+    frameleaf: ServerFrameleafConfigDto;
     /** Whether the server has been initialized */
     isInitialized: boolean;
     /** Whether the admin has completed onboarding */
@@ -8149,7 +8177,7 @@ export type SharedLinkResponseDto = {
     key: string;
     /** Display name of the user who created the link, for "Shared by" on the public page */
     owner?: SharedLinkOwnerResponseDto;
-    /** Has password */
+    /** Has password: a fixed mask when the link has one, never the password itself */
     password: string | null;
     /** Show metadata */
     showMetadata: boolean;
@@ -10531,6 +10559,21 @@ export function updateCloudPermissions({ cloudPermissionsUpdateDto }: {
         ...opts,
         method: "PUT",
         body: cloudPermissionsUpdateDto
+    })));
+}
+/**
+ * Choose what remote access may carry
+ */
+export function updateCloudRemoteAccess({ cloudRemoteAccessUpdateDto }: {
+    cloudRemoteAccessUpdateDto: CloudRemoteAccessUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/remote-access", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudRemoteAccessUpdateDto
     })));
 }
 /**

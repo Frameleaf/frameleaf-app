@@ -26,7 +26,7 @@ import {
   DatabaseBackupUploadDto,
 } from 'src/dtos/database-backup.dto.js';
 import { ApiTag, ImmichCookie, Permission } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, GetLoginDetails, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
@@ -89,6 +89,7 @@ export class DatabaseBackupController {
     history: new HistoryBuilder().added('v2.5.0').alpha('v2.5.0'),
   })
   @Authenticated({ permission: Permission.BackupDownload, admin: true })
+  @OriginalTransfer()
   async downloadDatabaseBackup(
     @Param() { filename }: FilenameParamDto,
     @Res() res: Response,
