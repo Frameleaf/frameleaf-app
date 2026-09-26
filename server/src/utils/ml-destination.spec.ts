@@ -861,12 +861,30 @@ describe('storedAdmission (FL-186)', () => {
     ).toEqual({ admitted: true });
   });
 
-  it('treats a check from before model groups as unknown until the next one, and reads old group keys', () => {
-    // no modelGroups and no default: a live admission would check again, so a view does not refuse
+  it('shows a check from before model groups as waiting for the next one, and reads old group keys', () => {
+    // no modelGroups: a view cannot tell whether there is a model to send, so it waits (a transient
+    // refusal) whether or not a model is chosen; a live admission checks again first
     const unplaced = cloudWith({ modelGroups: undefined, defaultModels: {} });
+    const waiting = {
+      admitted: false,
+      refusal: MlAdmissionRefusal.DestinationUnhealthy,
+      detail: 'Frameleaf Cloud: checked before model groups; waiting for the next check',
+    };
     expect(
       storedAdmission({ destination: unplaced, workload: MlWorkload.Enrichment, spentUsd: 0, choices: {} }),
-    ).toEqual({ admitted: true });
+    ).toEqual(waiting);
+    expect(
+      storedAdmission({
+        destination: unplaced,
+        workload: MlWorkload.Enrichment,
+        spentUsd: 0,
+        choices: { descriptions: 'describe-large' },
+      }),
+    ).toEqual(waiting);
+    const studio = cloudWith({ modelGroups: undefined }, [MlWorkload.StudioAi]);
+    expect(storedAdmission({ destination: studio, workload: MlWorkload.StudioAi, spentUsd: 0, choices: {} })).toEqual(
+      waiting,
+    );
 
     // a default recorded under the old `restoration:faithful` key is still found
     const oldKeys = cloudWith({

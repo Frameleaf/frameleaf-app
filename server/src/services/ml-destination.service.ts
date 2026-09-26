@@ -655,7 +655,12 @@ export class MlDestinationService extends BaseService {
         return true;
       }
       const verdict = storedAdmission({ destination: row, workload, spentUsd: 0, choices });
-      return verdict.admitted || verdict.refusal !== MlAdmissionRefusal.ModelMismatch;
+      // no model to send, or a check from before model groups that cannot tell yet
+      return (
+        verdict.admitted ||
+        (verdict.refusal !== MlAdmissionRefusal.ModelMismatch &&
+          verdict.refusal !== MlAdmissionRefusal.DestinationUnhealthy)
+      );
     };
 
     const workloads: MlWorkloadCapabilityDto[] = Object.values(MlWorkload).map((workload) => {

@@ -855,6 +855,26 @@ describe(MlDestinationService.name, () => {
       expect(await enrichmentOn()).toBe(true);
     });
 
+    it('keeps Frameleaf Cloud unavailable on a check from before model groups until the next check (FL-186)', async () => {
+      const workloads = [MlWorkload.Enrichment, MlWorkload.StudioAi];
+      const cloud = {
+        ...mlDestinationStub.frameleafCloudConsented,
+        workloads,
+        lastProbeWorkloads: workloads,
+        lastProbeCloud: { ...mlDestinationStub.frameleafCloudConsented.lastProbeCloud!, modelGroups: undefined },
+      };
+      mocks.mlDestination.getAll.mockResolvedValue([cloud]);
+      mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
+        { modelGroup: 'transcription', modelId: 'studio-words', updatedAt: new Date() },
+        { modelGroup: 'tts', modelId: 'studio-voice', updatedAt: new Date() },
+      ]);
+
+      const result = await sut.getCapabilities();
+
+      expect(result.studio.transcriptionWorker).toBe(false);
+      expect(result.workloads.find((entry) => entry.workload === MlWorkload.Enrichment)!.available).toBe(false);
+    });
+
     describe('render worker (FL-42)', () => {
       const hour = 60 * 60 * 1000;
       const liveSession = (
