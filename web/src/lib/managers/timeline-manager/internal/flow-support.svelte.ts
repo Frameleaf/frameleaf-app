@@ -115,6 +115,7 @@ function layoutFlowMonth(manager: TimelineManager, index: number, compensation: 
   month.flowTail = items.slice(layout.tailStart);
   month.flowCarried = carry.slice(0, Math.min(carry.length, laid));
   month.flowClosed = closeTail;
+  month.flowContentWidth = layout.width;
   month.flowContentHeight = layout.height;
   month.flowShownAt ??= now;
 
@@ -353,5 +354,6 @@ export function leaveFlow(month: TimelineMonth) {
   if (month.flowCarried.length > 0) {
     month.flowCarried = [];
   }
+  month.flowContentWidth = 0;
   month.flowContentHeight = 0;
 }
