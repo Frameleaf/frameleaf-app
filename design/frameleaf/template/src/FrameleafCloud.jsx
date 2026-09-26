@@ -99,7 +99,7 @@ const day = (value) => (value ? when(`${String(value).slice(0, 10)}T12:00:00Z`, 
 const plural = (count, noun) =>
   `${count.toLocaleString("en")} ${noun}${count === 1 ? "" : "s"}`;
 const planById = (id) => cloudPlans.find((plan) => plan.id === id) ?? null;
-const STORE_URL = "https://account.frameleaf.cloud";
+const STORE_URL = "https://frameleaf.cloud";
 const WORKLOADS = [
   ["descriptions", "Descriptions & tags"],
   ["upscale", "Enhance & upscale"],
@@ -671,7 +671,7 @@ function AccountLink({ state, run, onNavigate }) {
         <Toggle
           id="allowRemoteEnable"
           label="Turn remote access on or off"
-          help="Lets you enable remote access from account.frameleaf.cloud when you are away."
+          help="Lets you enable remote access from frameleaf.cloud when you are away."
           value={link.permissions.allowRemoteEnable}
           onChange={(value) => permission("allowRemoteEnable", value)}
         />
@@ -782,7 +782,7 @@ function HeadlessNote() {
         <Icon name="mdiServerOutline" /> Linking a server without a browser
       </summary>
       <p>
-        Create a link token at account.frameleaf.cloud → Servers → Add server,
+        Create a link token at frameleaf.cloud → Servers → Add server,
         then start the server with <code>FRAMELEAF_LINK_TOKEN=fll_…</code>. The
         token works once and expires within an hour. Remove it after the
         server shows as linked.

@@ -15,7 +15,7 @@ const feedRelease: FrameleafFeedRelease = {
   tag: 'frameleaf-v3.2.1-4',
   publishedAt: '2026-09-25T12:00:00Z',
   url: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1-4',
-  notesUrl: 'https://help.frameleaf.ai/releases/3.2.1',
+  notesUrl: 'https://help.frameleaf.app/releases/3.2.1',
   minimumSupported: null,
 };
 
