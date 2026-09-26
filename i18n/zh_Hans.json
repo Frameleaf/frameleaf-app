@@ -1691,8 +1691,6 @@
   "purchase_input_suggestion": "已有一个产品密钥？请在下方输入密钥",
   "purchase_lifetime_description": "终身许可",
   "purchase_option_title": "购买选项",
-  "purchase_panel_info_1": "开发 Frameleaf 需要大量的时间和精力，我们有全职工程师在努力将其做到最好。我们的使命是通过开源软件和道德商业实践，为开发者提供可持续的收入来源，并创建一个尊重隐私的生态系统，提供一个可以真正替代现有剥削性云服务的选择。",
-  "purchase_panel_info_2": "由于我们承诺不添加付费功能，此次购买不会为您提供 Frameleaf 的任何额外功能。我们依靠像您这样的用户来支持 Frameleaf 的持续开发。",
   "purchase_panel_title": "支持这个项目",
   "purchase_per_server": "每台服务器",
   "purchase_per_user": "每个用户",

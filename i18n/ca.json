@@ -1723,8 +1723,6 @@
   "purchase_input_suggestion": "Teniu una clau del producte? Introduïu-la a continuació",
   "purchase_lifetime_description": "Compra de per vida",
   "purchase_option_title": "OPCIONS DE COMPRA",
-  "purchase_panel_info_1": "Desenvolupar el Frameleaf requereix molt de temps i esforç i tenim enginyers treballant-hi a temps complet per a fer-lo tan bo com sigui possible. La nostra missió és que el programari de codi obert i les pràctiques empresarials ètiques esdevinguin una font d’ingressos sostenible per als desenvolupadors i creïn un ecosistema que respecti la privacitat amb alternatives reals als serveis al núvol explotadors.",
-  "purchase_panel_info_2": "Com que estem compromesos a no afegir murs de pagament, aquesta compra no us atorgarà cap funcionalitat addicional al Frameleaf. Confiem en els usuaris com vós perquè doneu suport al desenvolupament continuat del Frameleaf.",
   "purchase_panel_title": "Dóna suport al projecte",
   "purchase_per_server": "Per servidor",
   "purchase_per_user": "Per usuari",

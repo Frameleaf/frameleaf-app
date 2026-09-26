@@ -1676,8 +1676,6 @@
   "purchase_input_suggestion": "제품 키를 보유 중인가요? 아래에 키를 입력하세요.",
   "purchase_lifetime_description": "일회성 구매",
   "purchase_option_title": "구매 옵션",
-  "purchase_panel_info_1": "Frameleaf를 개발하는 데는 많은 시간과 노력이 필요합니다. 우리는 좋은 앱을 만들기 위해 풀 타임 개발자와 함께하고 있으며, 최종적으로 오픈 소스 소프트웨어와 비즈니스 행동 윤리가 개발자에게 지속 가능한 수입원을 제공하고 착취적인 클라우드 서비스를 대체할 수 있는 개인 정보 보호 생태계를 구축하는 것을 목표로 합니다.",
-  "purchase_panel_info_2": "유료화 정책을 도입하지 않기로 약속했기에 이 구매는 어떠한 추가 기능도 제공하지 않습니다. Frameleaf의 지속적인 개발은 당신과 같은 여러 사용자의 지원이 있기에 가능합니다.",
   "purchase_panel_title": "프로젝트 지원",
   "purchase_per_server": "서버당",
   "purchase_per_user": "사용자당",
