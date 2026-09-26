@@ -98,3 +98,8 @@ may therefore touch a public table or column that either of them creates only af
 exactly that object exists, and must repeat the step after them: structural steps in
 `applyFrameleafSchemaForkFollowUps`, data carry-overs in a guarded, idempotent step that the return
 runs (`carryOverEarlierFaceDecisions` does this for 0000000000175).
+
+Every return runs `carryOverEarlierFaceDecisions`, whether or not the library has Frameleaf
+migrations to apply or a Frameleaf ledger at all. Faces the official server soft-deleted while it held
+the library, including any it soft-deleted while detecting faces again, are therefore recorded as
+the owner's `remove` decisions, exactly as adoption and 0000000000175 record them.

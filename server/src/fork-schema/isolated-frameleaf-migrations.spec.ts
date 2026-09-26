@@ -146,6 +146,19 @@ describe(planIsolatedFrameleafMigrations, () => {
     ).toEqual({ pending: [], skipped: 'no-frameleaf-schema' });
   });
 
+  it('plans no migration for the return of a library without a Frameleaf ledger', () => {
+    // The repository still repeats the face-decision carry-over for this return.
+    expect(
+      planIsolatedFrameleafMigrations({
+        context: 'return',
+        state: handedOver,
+        cutoverLedger: [],
+        appliedLedger: [],
+        bundled,
+      }),
+    ).toEqual({ pending: [], skipped: 'no-frameleaf-schema' });
+  });
+
   it('refuses Frameleaf migrations recorded without a cutover ledger', () => {
     expect(() =>
       planIsolatedFrameleafMigrations({

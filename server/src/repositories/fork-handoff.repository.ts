@@ -396,7 +396,10 @@ export class ForkHandoffRepository {
           .map(({ name }) => name),
         bundled: Object.keys(migrations),
       });
-      if (plan.skipped || (plan.pending.length === 0 && context !== 'return')) {
+      // Whatever the plan, the return still repeats the face-decision carry-over below: it is guarded
+      // and idempotent, and a library without the Frameleaf ledger can hold faces as well.
+      const applying = plan.skipped ? [] : plan.pending;
+      if (applying.length === 0 && context !== 'return') {
         return { ...plan, applied: [] };
       }
 
@@ -407,7 +410,7 @@ export class ForkHandoffRepository {
         return JSON.stringify(ledger.rows);
       };
       const officialBefore = await officialLedger();
-      for (const name of plan.pending) {
+      for (const name of applying) {
         await migrations[name]!.up(transaction);
         await sql`
           INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
@@ -425,7 +428,7 @@ export class ForkHandoffRepository {
         `.execute(transaction);
         await this.afterIsolatedFrameleafMigration(transaction, name);
       }
-      if (plan.pending.length > 0) {
+      if (applying.length > 0) {
         await applyFrameleafSchemaForkFollowUps(transaction);
       }
       if (context === 'return') {
@@ -448,7 +451,7 @@ export class ForkHandoffRepository {
       if ((await officialLedger()) !== officialBefore) {
         throw new Error('A Frameleaf migration changed the official migration ledger');
       }
-      return { ...plan, applied: plan.pending };
+      return { ...plan, applied: applying };
     });
   }
 
