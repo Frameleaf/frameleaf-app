@@ -495,6 +495,7 @@ export class WorkflowExecutionService extends BaseService {
    * A run is one durable job. A failed step gets one automatic retry, starting at that step (the
    * steps before it already applied), then only manual retries. Pausing or deleting the workflow
    * cancels runs that have not started, including a pending retry; a step already running finishes.
+   * Once a step has run, the job never throws (FL-169), so "Retry failed" cannot replay applied steps.
    */
   private async execute<T extends WorkflowType>(
     job: JobOf<JobName.WorkflowAssetTrigger>,
@@ -518,9 +519,24 @@ export class WorkflowExecutionService extends BaseService {
 
     const runId = job.runId ?? crypto.randomUUID();
     const attempt = job.attempt ?? 0;
-    const log = async (entry: Omit<WorkflowRunLog, 'workflowId' | 'runId' | 'attempt' | 'triggerDataId'>) => {
+    type RunLogEntry = Omit<WorkflowRunLog, 'workflowId' | 'runId' | 'attempt' | 'triggerDataId'>;
+    const log = async (entry: RunLogEntry) => {
       if (workflow.logging) {
         await this.workflowRepository.log({ ...entry, workflowId, runId, attempt, triggerDataId: assetId });
+      }
+    };
+    // FL-169: once a step has run, its changes are applied while the job's data still starts the run
+    // over. From then on nothing may throw out of the job: a thrown error records it as failed, and
+    // "Retry failed" in the Job manager would run the applied steps again. Run history written after
+    // that point is therefore logged, not rethrown, when it cannot be saved.
+    const record = async (entry: RunLogEntry) => {
+      try {
+        await log(entry);
+      } catch (error: any) {
+        this.logger.error(
+          `Unable to save the ${entry.result} result of workflow ${workflowId} run ${runId} (attempt ${attempt}): ${error}`,
+          error?.stack,
+        );
       }
     };
 
@@ -580,6 +596,7 @@ export class WorkflowExecutionService extends BaseService {
     const readResult = await read(type);
     let data = readResult.data;
 
+    let haltedStepId: string | undefined;
     for (const step of steps) {
       const definitionStep = expectedDefinition.steps.find((item) => item.id === step.id);
       try {
@@ -633,11 +650,12 @@ export class WorkflowExecutionService extends BaseService {
           }
         }
 
+        // The halt is recorded after the loop: in here, a record that failed to save would be taken
+        // for a failed step, and the automatic retry would run this finished step again.
         const shouldContinue = result?.workflow?.continue ?? true;
         if (!shouldContinue) {
-          await log({ result: WorkflowResult.Halted, workflowStepId: step.id });
-          this.logger.debug(`Workflow ${workflowId} run ${runId} stopped on step ${step.id}`);
-          return;
+          haltedStepId = step.id;
+          break;
         }
       } catch (error) {
         this.logger.error(`Error executing workflow ${workflowId} run ${runId} (attempt ${attempt}):`, error);
@@ -649,7 +667,7 @@ export class WorkflowExecutionService extends BaseService {
           stepExtra: definitionStep?.extra ?? null,
           workflowExtra: expectedDefinition.extra ?? null,
         });
-        await log({
+        await record({
           result: WorkflowResult.Error,
           workflowStepId: step.id,
           errorCode: WorkflowRunErrorCode.StepFailed,
@@ -657,24 +675,38 @@ export class WorkflowExecutionService extends BaseService {
         });
 
         if (attempt === 0 && !job.manual) {
-          await this.jobRepository.queue({
-            name: JobName.WorkflowAssetTrigger,
-            data: {
-              workflowId,
-              assetId,
-              runId,
-              attempt: 1,
-              fromStepId: step.id,
-              definitionSha256: definitionSha256(expectedDefinition),
-            },
-          });
+          try {
+            await this.jobRepository.queue({
+              name: JobName.WorkflowAssetTrigger,
+              data: {
+                workflowId,
+                assetId,
+                runId,
+                attempt: 1,
+                fromStepId: step.id,
+                definitionSha256: definitionSha256(expectedDefinition),
+              },
+            });
+          } catch (queueError: any) {
+            // Without its automatic retry the run stays failed; the owner can retry it from run history.
+            this.logger.error(
+              `Unable to queue the automatic retry of workflow ${workflowId} run ${runId} from step ${step.id}: ${queueError}`,
+              queueError?.stack,
+            );
+          }
         }
 
         return JobStatus.Failed;
       }
     }
 
-    await log({ result: WorkflowResult.Completed });
+    if (haltedStepId) {
+      await record({ result: WorkflowResult.Halted, workflowStepId: haltedStepId });
+      this.logger.debug(`Workflow ${workflowId} run ${runId} stopped on step ${haltedStepId}`);
+      return;
+    }
+
+    await record({ result: WorkflowResult.Completed });
     this.logger.debug(`Workflow ${workflowId} run ${runId} executed successfully`);
   }
 }

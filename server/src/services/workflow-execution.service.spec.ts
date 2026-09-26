@@ -665,6 +665,69 @@ describe(WorkflowExecutionService.name, () => {
       });
     });
 
+    describe('after its steps ran (FL-169)', () => {
+      it('does not fail the job when the completed result cannot be saved', async () => {
+        setup();
+        mocks.plugin.callMethod.mockResolvedValue({});
+        mocks.workflow.log.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBeUndefined();
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledTimes(2);
+        expect(mocks.workflow.log).toHaveBeenCalledWith(expect.objectContaining({ result: WorkflowResult.Completed }));
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('does not fail the job or retry a halting step when the halt cannot be saved', async () => {
+        setup();
+        mocks.plugin.callMethod.mockResolvedValueOnce({ workflow: { continue: false } });
+        mocks.workflow.log.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBeUndefined();
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledOnce();
+        expect(mocks.workflow.log).toHaveBeenCalledOnce();
+        expect(mocks.workflow.log).toHaveBeenCalledWith(
+          expect.objectContaining({ result: WorkflowResult.Halted, workflowStepId: filterId }),
+        );
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('still queues the retry from the failed step when the step error cannot be saved', async () => {
+        setup();
+        mocks.plugin.callMethod.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('webhook failed'));
+        mocks.workflow.log.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.job.queue).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ attempt: 1, fromStepId: webhookId }) }),
+        );
+      });
+
+      it('reports a failed step without throwing when its automatic retry cannot be queued', async () => {
+        setup();
+        mocks.plugin.callMethod.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('webhook failed'));
+        mocks.job.queue.mockRejectedValue(new Error('redis unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.plugin.callMethod).toHaveBeenCalledTimes(2);
+        expect(mocks.workflow.log).toHaveBeenCalledWith(
+          expect.objectContaining({ errorCode: WorkflowRunErrorCode.StepFailed, workflowStepId: webhookId }),
+        );
+      });
+
+      it('still fails the job when run history cannot be saved before any step ran', async () => {
+        setup({ steps: [runnableStep(webhookId, 'webhook', 0, {})] });
+        mocks.workflow.log.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetTrigger({ workflowId, assetId })).rejects.toThrow('database unavailable');
+
+        expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+      });
+    });
+
     it('does not log when run history is off, but still retries', async () => {
       setup({ logging: false });
       mocks.plugin.callMethod.mockRejectedValue(new Error('failing'));
