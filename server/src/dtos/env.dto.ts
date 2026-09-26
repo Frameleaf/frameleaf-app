@@ -111,6 +111,12 @@ export const EnvSchema = z
     FRAMELEAF_EDGE_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
     FRAMELEAF_EDGE_BIND: z.string().min(1).optional(),
     /**
+     * FL-165: the ACME directory the edge worker obtains its certificates from (default Let’s Encrypt
+     * production). Only for Let’s Encrypt staging or a test CA; Frameleaf Cloud pins the direct names’
+     * CAA records to Let’s Encrypt.
+     */
+    FRAMELEAF_ACME_DIRECTORY_URL: z.url({ protocol: /^https?$/ }).optional(),
+    /**
      * FL-158: the per-boot secret the edge worker sends as `X-Frameleaf-Via-Auth`; without it every
      * `X-Frameleaf-Via` header is ignored. FL-161: the supervisor generates a new one on every boot and
      * hands it to its workers; a value set here is used instead.
