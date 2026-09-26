@@ -13,8 +13,10 @@ import {
   startCloudLink,
   unlinkCloud,
   updateCloudPermissions,
+  updateCloudRemoteAccess,
   updateCloudSignIn,
   type CloudPermissionsUpdateDto,
+  type CloudRemoteAccessUpdateDto,
   type CloudStatusResponseDto,
   type LicenseProductsResponseDto,
   type LicenseStatusResponseDto,
@@ -135,6 +137,9 @@ export class CloudManager {
   setShowOnLocalLogin = (showOnLocalLogin: boolean) =>
     this.#run(() => updateCloudSignIn({ cloudSignInUpdateDto: { showOnLocalLogin } }));
   setButtonText = (buttonText: string) => this.#run(() => updateCloudSignIn({ cloudSignInUpdateDto: { buttonText } }));
+  /** FL-161: whether originals may go through the relay, and whether passwords work away from home. */
+  setRemoteAccess = (dto: CloudRemoteAccessUpdateDto) =>
+    this.#run(() => updateCloudRemoteAccess({ cloudRemoteAccessUpdateDto: dto }));
 
   activateLicense = (key: string) => this.#runLicense(() => activateLicense({ licenseActivateDto: { key } }));
   installLicenseFile = (certificate: string) =>

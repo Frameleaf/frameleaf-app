@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { CommandFactory } from 'nest-commander';
 import { ChildProcess, fork } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { PostgresError } from 'postgres';
@@ -9,6 +10,21 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+
+/**
+ * FL-161: an `FRAMELEAF_EDGE_SECRET` set in the environment, kept for installs that set one on purpose.
+ * Read once, before the supervisor writes its own.
+ */
+const configuredEdgeSecret = process.env.FRAMELEAF_EDGE_SECRET;
+
+/**
+ * FL-161 (instance contract "Via-header contract"): the secret the edge worker sends as
+ * `X-Frameleaf-Via-Auth`, handed to every worker through the environment. Unless the administrator set
+ * one, it is generated again on every boot (and restart), so it never exists anywhere but in memory.
+ */
+const setEdgeSecret = () => {
+  process.env.FRAMELEAF_EDGE_SECRET = configuredEdgeSecret || randomBytes(32).toString('base64url');
+};
 
 /**
  * Manages worker lifecycle
@@ -28,6 +44,7 @@ class Workers {
    * Boot all enabled workers
    */
   async bootstrap() {
+    setEdgeSecret();
     const isMaintenanceMode = await this.isMaintenanceMode();
     const { workers } = new ConfigRepository().getEnv();
 

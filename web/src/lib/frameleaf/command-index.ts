@@ -47,6 +47,7 @@ import {
   mdiWrench,
   mdiCertificateOutline,
   mdiCloudOutline,
+  mdiEarth,
   mdiShieldAccountOutline,
   mdiCreditCardOutline,
   mdiLinkVariant,
@@ -309,6 +310,13 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_cloud_license',
     descriptionKey: 'frameleaf_cc_section_cloud_license_description',
     icon: mdiCertificateOutline,
+  },
+  // FL-161: Frameleaf Cloud → Remote access.
+  {
+    key: 'cloud-remote',
+    titleKey: 'frameleaf_cc_section_cloud_remote',
+    descriptionKey: 'frameleaf_cc_section_cloud_remote_description',
+    icon: mdiEarth,
   },
   // FL-158: Access & security → Sign in with Frameleaf (settings-catalog.mjs:1801-1813).
   {

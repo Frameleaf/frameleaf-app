@@ -355,6 +355,19 @@ export const ADOPTION_STEP_COUNTERS: Readonly<Record<string, Readonly<Record<str
     albumsWithoutCover,
     peopleWithoutThumbnail,
   },
+  // FL-161: shared-link passwords become bcrypt hashes the official server cannot compare, so every
+  // password-protected link stays locked there until its password is set again on the official server.
+  '2100000000660-HashSharedLinkPasswords': {
+    passwordProtectedLinks: count(
+      ['public.shared_link'],
+      `SELECT count(*)::int AS count FROM public.shared_link WHERE password IS NOT NULL AND password <> ''`,
+    ),
+    plaintextPasswordLinks: count(
+      ['public.shared_link'],
+      `SELECT count(*)::int AS count FROM public.shared_link
+       WHERE password IS NOT NULL AND password <> '' AND password !~ '^\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}$'`,
+    ),
+  },
 };
 
 /** Counts for one step; a counter whose tables (and fallback's tables) do not exist yet reads `null`. */

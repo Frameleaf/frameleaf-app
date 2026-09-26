@@ -126,6 +126,8 @@ const cloudStatus = {
   signInLinkedAccounts: 0,
   signInShowOnLocalLogin: false,
   signInButtonText: 'Sign in with Frameleaf',
+  allowOriginalsOverRelay: false,
+  allowPasswordOverRelay: false,
 };
 
 describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172)', () => {

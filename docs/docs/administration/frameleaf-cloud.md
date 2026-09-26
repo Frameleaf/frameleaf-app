@@ -52,13 +52,46 @@ Administrators receive a notification when the server is linked or unlinked, whe
 
 Once the server is linked, people can sign in with their Frameleaf account. It works alongside passwords and your own OpenID provider, whose settings it never reads or changes. Settings → Access & security → **Sign in with Frameleaf** shows whether it is available, this server's client ID and how many accounts are linked.
 
-- **Through remote access** the sign-in page offers only Sign in with Frameleaf, and a visitor who turns out to be on the same network is offered this server's local address (`FRAMELEAF_LOCAL_URL`). The server does not yet refuse passwords or other sessions that arrive through remote access; that enforcement comes with remote access itself.
+- **Through remote access** the sign-in page offers only Sign in with Frameleaf, and a visitor who turns out to be on the same network is offered this server's local address (`FRAMELEAF_LOCAL_URL`). The server refuses passwords and other sessions that arrive through remote access; see [Remote access security](#remote-access-security).
 - **At home** people keep signing in as they do now. Turn on **Show "Sign in with Frameleaf" at home** to add the button to the local sign-in page too; you can change its text on the same page.
 - Each person links their own Frameleaf account under Your preferences → **Frameleaf account**, and can unlink it there, which ends their other Frameleaf sessions.
 - A person Frameleaf Cloud authorizes for this server gets an account here on first sign-in, as an administrator or a member as Frameleaf Cloud says. A Frameleaf account is linked to an existing account here only by a verified email address; the same rule now applies to your own OpenID provider.
 - When Frameleaf Cloud signs someone out, or the server is unlinked, their Frameleaf sessions on this server end.
 
 The server proves who it is to Frameleaf Cloud with its own key. A client secret is only needed if Frameleaf Cloud registered the server with one; it is write-only, like the other credentials.
+
+## Remote access security
+
+These protections are in place before any remote path opens. The sign-in and download rules apply only to requests that arrive through remote access, so people on your home network sign in and download as before; the rate limits apply to every request. Both settings below are under Settings → Frameleaf Cloud → **Remote access**, and go back to off when the server is unlinked.
+
+**How the server knows a request is remote.** The edge worker, which carries remote-access traffic, marks each request with how it arrived (home network, a direct connection from outside, or the Frameleaf relay) and proves the mark with a secret the server generates again on every start (`FRAMELEAF_EDGE_SECRET`; a value you set is used instead). A request that carries a mark (`X-Frameleaf-Via` or `X-Frameleaf-Via-Auth`) without the right secret is refused with `403` (`frameleaf_via_unverified`); it is never treated as coming from home. Every other `X-Frameleaf-*` header a browser or app sends is dropped, except `X-Frameleaf-Worker-Session`, the session credential this server gives its render workers. The edge worker must also send `X-Forwarded-For` with the visitor's address; without it every remote visitor shares one rate-limit counter.
+
+If you run the edge worker in a different container from the API (a split deployment), each container would generate its own secret and every remote request would be refused. Set `FRAMELEAF_EDGE_SECRET` explicitly, to a random value of at least 16 characters, and give both containers the same value.
+
+**Who can connect from outside.** A remote request must come from a Sign in with Frameleaf session; any session can still sign out. Public shared links still open without signing in. An API key works only when its owner's account here is linked to a Frameleaf account. Anything else is refused with `frameleaf_sign_in_required`. Password sign-in is refused away from home unless you turn on **Allow password sign-in over the relay**; the sessions it creates then work remotely too.
+
+**What the relay carries.** Original downloads, archive downloads, preservation packages, database backups, video version masters, Studio bundles and exports, memory export archives and integrity report files are refused through the relay unless you turn on **Allow original downloads over the relay**. Thumbnails, previews and video playback always work; a full-size view shows the preview through the relay instead of the original, and so does a restored photo chosen for viewing. Develop and restoration files are refused like originals. Direct connections are not affected. The render workers' API, including the originals they read, is refused over remote access whatever the setting: render workers belong on your home network.
+
+**Shared-link passwords** are stored as bcrypt hashes. Passwords saved before this version are hashed when the server upgrades, and every link keeps its password. The password is never shown again after it is set. After a password is entered, the browser keeps an unlock token that is keyed with a secret stored in the identity folder (`server-hmac.key`, next to the server's identity key), not in the database, so a database dump alone cannot unlock a link. The identity folder is on the same volume as the database backups, so protect a copy of that volume like the server itself. If the key file is damaged, the server replaces it and says so in its log; viewers then enter link passwords again. Viewers enter a link's password once more after this upgrade. The official Immich server cannot check these hashes: see [the upstream handoff guide](./upstream-handoff.md) before handing the library to it.
+
+**Live updates** (the websocket) accept a browser page only from this server's own address, its external domain or the addresses Frameleaf Cloud published for it.
+
+### Rate limits
+
+Each limit counts requests in a fixed window, per client address (an IPv6 address by its /64) and, where the request names one, per account or link. For password sign-in and shared-link passwords, the per-email and per-link limits count wrong passwords from each address separately, so a stranger trying passwords from elsewhere never locks you out of your own address, and a correct password never uses up your attempts. Every attempt is counted as it starts, so attempts sent in parallel cannot get past the limit either. There is deliberately no limit on one account across all addresses, because such a limit would let anyone lock a person out; someone guessing from many addresses is slowed by the per-address limits and by bcrypt, which makes every guess take tens of milliseconds of server time. Use a strong password, or Sign in with Frameleaf, for accounts that can be reached from outside. Emails, links and credentials are counted as keyed hashes, never in clear. Going over answers `429` with `Retry-After` in seconds. The counters live in Redis; if Redis cannot be reached, remote requests are refused (`503` with `Retry-After`) and requests on your home network are let through.
+
+The client address is the one the server sees. Behind a reverse proxy, the proxy's address is used unless the proxy is trusted: private addresses and loopback need nothing, but a proxy on another address, for example a VPS reached over Tailscale (`100.64.0.0/10`), must be listed in `IMMICH_TRUSTED_PROXIES`, or every visitor shares the proxy's counter. `IMMICH_ENV=testing` turns the sign-in limits off for the automated test suites; never set it on a server people use (the server warns when it starts with it).
+
+| Requests                                                                                                      | Per address | Per account or link            | Window     |
+| ------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------ | ---------- |
+| Password sign-in (`POST /api/auth/login`)                                                                     | 30          | 10 wrong per email and address | 10 minutes |
+| Your OpenID provider's callbacks (`/api/oauth/callback`, `/api/oauth/link`)                                   | 30          | 30 per session                 | 10 minutes |
+| Sign in with Frameleaf (`/api/oauth/frameleaf/*`)                                                             | 60          | 60 per session                 | 10 minutes |
+| Shared-link password (`POST /api/shared-links/login`)                                                         | 30          | 60 wrong per link and address  | 10 minutes |
+| Licence activation (`/api/admin/license/activate`, `/api/admin/license/certificate`, `/api/users/me/license`) | 10          | 10 per session                 | 1 hour     |
+| Starting a link (`POST /api/admin/cloud/link`)                                                                | 10          | 10 per session                 | 1 hour     |
+| Every request through remote access, except thumbnails and previews                                           | 1,200       | —                              | 1 minute   |
+| Thumbnails and previews through remote access, shared links included                                          | 6,000       | —                              | 1 minute   |
 
 ## Plan and licence
 

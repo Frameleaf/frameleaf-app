@@ -11,7 +11,7 @@ import {
   IntegrityReportTypeParamDto,
 } from 'src/dtos/integrity.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -67,6 +67,8 @@ export class IntegrityAdminController {
   })
   @FileResponse()
   @Authenticated({ permission: Permission.Maintenance, admin: true })
+  // FL-161: the flagged file itself, usually an original
+  @OriginalTransfer()
   async getIntegrityReportFile(
     @Param() { id }: UUIDv7ParamDto,
     @Res() res: Response,

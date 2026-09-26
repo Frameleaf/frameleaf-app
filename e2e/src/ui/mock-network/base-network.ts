@@ -165,6 +165,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         mapDarkStyleUrl: 'https://tiles.immich.cloud/v1/style/dark.json',
         mapLightStyleUrl: 'https://tiles.immich.cloud/v1/style/light.json',
         maintenanceMode: false,
+        frameleaf: { via: null, signInAvailable: false, signInRequired: false, publicUrl: null },
       },
     });
   });
