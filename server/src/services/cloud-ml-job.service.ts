@@ -377,7 +377,7 @@ export class CloudMlJobService {
     const destination = await this.requireCloudDestination(dto.destinationId, appWorkload);
     const gateway = await this.requireGateway();
 
-    const model = await this.chooseModel(gateway, workload, settings.mode, dto.modelSku);
+    const { model, offered } = await this.chooseModel(gateway, workload, settings.mode, dto.modelSku);
     if (preview) {
       // FL-115: the full render runs the model the owner reviewed in the preview, at the same revision
       const reviewed = this.previewModel(preview);
@@ -486,7 +486,8 @@ export class CloudMlJobService {
       estimateId: id,
       expiresAt: sealed.expiresAt,
       workload: appWorkload,
-      model: { sku: model.sku, rev: model.rev, label: model.label, gpu: model.display.gpu, rank: model.rank },
+      model: this.modelOf(model),
+      models: offered.toSorted((a, b) => a.rank - b.rank).map((entry) => this.modelOf(entry)),
       basis: sealed.basis,
       p50Usd: sealed.cost.p50,
       p90Usd: sealed.cost.p90,
@@ -2205,7 +2206,7 @@ export class CloudMlJobService {
     workload: CloudMlJobWorkload,
     mode: AssetRestorationMode,
     requested: string | undefined,
-  ): Promise<CloudCatalogEntry> {
+  ): Promise<{ model: CloudCatalogEntry; offered: CloudCatalogEntry[] }> {
     let catalog: Awaited<ReturnType<FrameleafCloudMlRepository['getCatalog']>>;
     try {
       catalog = await this.frameleafCloudMlRepository.getCatalog(gateway);
@@ -2228,7 +2229,20 @@ export class CloudMlJobService {
           : 'Frameleaf Cloud recommends no model for this work here; choose one on the slider',
       );
     }
-    return model;
+    return { model, offered };
+  }
+
+  /** A catalogue model as the slider shows it: name, GPU class and price, never a model identity. */
+  private modelOf(model: CloudCatalogEntry) {
+    return {
+      sku: model.sku,
+      rev: model.rev,
+      label: model.label,
+      gpu: model.display.gpu,
+      rank: model.rank,
+      perSecondUsd: model.rate.perSecondUsd,
+      startFeeUsd: model.rate.startFeeUsd,
+    };
   }
 
   private modelMismatch(message: string) {

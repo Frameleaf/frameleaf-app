@@ -74,6 +74,8 @@ const CloudMlJobModelSchema = z
     label: z.string().describe('The catalogue name'),
     gpu: z.string().describe('The GPU class it runs on, for people only'),
     rank: z.int().describe('Position on the model slider, 1 = lightest'),
+    perSecondUsd: usd('The GPU rate per metered second, USD'),
+    startFeeUsd: usd('One start fee, USD'),
   })
   .meta({ id: 'CloudMlJobModelDto' });
 
@@ -109,6 +111,9 @@ const CloudMlJobEstimateResponseSchema = z
     expiresAt: z.string().meta({ format: 'date-time' }).describe('After this, estimate again; it is never reused'),
     workload: MlWorkloadSchema,
     model: CloudMlJobModelSchema,
+    models: z
+      .array(CloudMlJobModelSchema)
+      .describe('Every model Frameleaf Cloud offers for this work here, light to heavy, for the model slider'),
     basis: z.string().describe("measured: from the model's measured GPU time; modelled: from its expected GPU time"),
     p50Usd: usd('Likely total: GPU time × rate + start fees, USD'),
     p90Usd: usd('High end, in nine cases out of ten, USD'),
