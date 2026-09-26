@@ -5,7 +5,7 @@ import {
   GENERIC_LEGACY_FORK_MIGRATIONS,
   POST_CERTIFIED_UPSTREAM_MIGRATIONS,
 } from 'src/fork-schema/migration-manifest.js';
-import { OFFICIAL_ADOPTION_AUDIT } from 'src/fork-schema/official-adoption.js';
+import { OFFICIAL_ADOPTION_AUDIT, OfficialAdoptionResult } from 'src/fork-schema/official-adoption.js';
 import {
   LEGACY_WORKFLOW_MIGRATION,
   OFFICIAL_WORKFLOW_MIGRATION,
@@ -63,9 +63,16 @@ const connectToSameDatabase = async (db: Kysely<DB>): Promise<Kysely<DB>> => {
 const setMaintenanceMode = async (db: Kysely<DB>, isMaintenanceMode: boolean) => {
   await sql`
     INSERT INTO public.system_metadata (key, value)
-    VALUES ('maintenance-mode', ${JSON.stringify({ isMaintenanceMode })}::jsonb)
+    VALUES ('maintenance-mode', ${{ isMaintenanceMode }}::jsonb)
     ON CONFLICT (key) DO UPDATE SET value = excluded.value
   `.execute(db);
+};
+
+const maintenanceMode = async (db: Kysely<DB>) => {
+  const { rows } = await sql<{ enabled: boolean | null }>`
+    SELECT (value->>'isMaintenanceMode')::boolean AS enabled FROM public.system_metadata WHERE key = 'maintenance-mode'
+  `.execute(db);
+  return rows[0]?.enabled ?? false;
 };
 
 /** An official v3.1.0 asset row (the columns that schema requires). */
@@ -103,6 +110,10 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   let db: Kysely<DB>;
   let repository: DatabaseRepository;
   let officialLedger: string[];
+  let adoption: Promise<OfficialAdoptionResult> | undefined;
+  // The cases after the adoption read its result; each one starts from it rather than from the order
+  // the cases run in, so a failure is reported where it happens.
+  const adopt = () => (adoption ??= repository.adoptOfficialOrigin());
   const userId = randomUUID();
   const otherUserId = randomUUID();
   const personId = randomUUID();
@@ -193,7 +204,10 @@ describe('official-origin adoption into a full Frameleaf library', () => {
     officialLedger = await ledgerNames(db);
   }, 120_000);
 
-  afterAll(async () => db.destroy());
+  afterAll(async () => {
+    await setMaintenanceMode(db, false);
+    await db.destroy();
+  });
 
   it('leaves the first boot certified-upstream and reports the pending adoption', async () => {
     expect(officialLedger).toEqual(CERTIFIED_TAG_MIGRATIONS);
@@ -204,6 +218,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
 
   it('refuses to adopt outside maintenance mode', async () => {
     await setMaintenanceMode(db, false);
+    await expect(maintenanceMode(db)).resolves.toBe(false);
     try {
       await expect(repository.adoptOfficialOrigin()).rejects.toThrow('Adoption requires maintenance mode');
     } finally {
@@ -213,6 +228,8 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   });
 
   it('refuses to adopt while another server is working in the database', async () => {
+    // Maintenance mode is on, so the connection check is what refuses.
+    await setMaintenanceMode(db, true);
     const otherServer = await connectToSameDatabase(db);
     try {
       await otherServer.transaction().execute(async (transaction) => {
@@ -258,7 +275,8 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   });
 
   it('applies the post-certified and Frameleaf migrations and starts the library in the legacy phase', async () => {
-    const result = await repository.adoptOfficialOrigin();
+    await expect(maintenanceMode(db)).resolves.toBe(true);
+    const result = await adopt();
 
     const expected = [...POST_CERTIFIED_UPSTREAM_MIGRATIONS, ...GENERIC_LEGACY_FORK_MIGRATIONS].toSorted();
     expect(result).toEqual({ adopted: true, applied: expected });
@@ -271,6 +289,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   });
 
   it('carries the official user, person and workflow into the Frameleaf schema', async () => {
+    await adopt();
     const user = await sql<{ clusterGroupId: string | null }>`
       SELECT "clusterGroupId"::text AS "clusterGroupId" FROM public."user" WHERE id = ${userId}::uuid
     `.execute(db);
@@ -287,6 +306,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   });
 
   it('applies the documented changes to official data and records what each step touched', async () => {
+    await adopt();
     // Locked folder -> lock records, extended to the whole stack; the asset returns to the timeline.
     const locks = await sql<{ assetId: string; reason: string; previousVisibility: string | null }>`
       SELECT "assetId"::text AS "assetId", reason, "previousVisibility"::text AS "previousVisibility"
@@ -383,6 +403,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   });
 
   it('creates the Frameleaf public tables and repeats the table-dependent fork migration steps', async () => {
+    await adopt();
     const missing = Object.entries(
       await relations(db, [
         'public.media_operation',
@@ -408,6 +429,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   });
 
   it('matches the Frameleaf catalog and ledger the certified handoff verifies', async () => {
+    await adopt();
     const evidence = await repository.getForkSchemaCutoverEvidence();
 
     expect(evidence.installationClass).toBe('current-fork');
@@ -418,6 +440,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   });
 
   it('boots afterwards as a legacy library without running the Frameleaf workflow rewrite', async () => {
+    await adopt();
     const before = await ledgerNames(db);
 
     await expect(repository.detectMigrationMode()).resolves.toBe('legacy');
@@ -428,6 +451,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
   });
 
   it('changes nothing when run again', async () => {
+    await adopt();
     const before = await ledgerNames(db);
 
     await expect(repository.adoptOfficialOrigin()).resolves.toEqual({
