@@ -1086,6 +1086,37 @@ export const cloudModelGroupFor = (
   return group !== null && isCloudModelGroup(group) ? group : null;
 };
 
+/** The Studio features a Studio AI cloud job can name (FL-181). */
+export const STUDIO_AI_CLOUD_FEATURES = ['speech-to-text', 'captions', 'speech'] as const;
+
+/** FL-186: a model group stored as `restoration:faithful` before the keys were hyphenated. */
+const hyphenatedGroup = (key: string): string => key.replace(/^restoration:(faithful|creative)$/, 'restoration-$1');
+
+/**
+ * Stored check facts in today's shape (FL-186): the old `restoration:faithful` and
+ * `restoration:creative` group keys become `restoration-faithful` and `restoration-creative`, so a check
+ * recorded before the keys changed still names its defaults. Facts from before FL-186 have no
+ * `modelGroups`; that stays absent, and read-only views treat such a check as unknown until the next.
+ */
+export const normalizeCloudProbeFacts = (facts: CloudProbeFacts | null): CloudProbeFacts | null => {
+  if (!facts) {
+    return facts;
+  }
+  return {
+    ...facts,
+    ...(facts.defaultModels && {
+      defaultModels: Object.fromEntries(
+        Object.entries(facts.defaultModels).map(([group, sku]) => [hyphenatedGroup(group), sku]),
+      ),
+    }),
+    ...(facts.modelGroups && {
+      modelGroups: Object.fromEntries(
+        Object.entries(facts.modelGroups).map(([sku, group]) => [sku, hyphenatedGroup(group)]),
+      ),
+    }),
+  };
+};
+
 /** FC-34: the server reads `active` alone, which already includes a grace period (`state: grace`). */
 export const isEntitled = (entitlement: CloudCapabilities['entitlement']): boolean => entitlement.active;
 
@@ -1206,7 +1237,7 @@ export const cloudWorkloadIdFor = (workload: MlWorkload): CloudWorkloadId | null
  * cloud-confirmed 2026-09-25): a music job is refused for the cloud by the existing Studio AI
  * refusal and is never mapped here or silently moved to a different workload.
  */
-export type StudioAiCloudFeature = 'speech-to-text' | 'captions' | 'speech';
+export type StudioAiCloudFeature = (typeof STUDIO_AI_CLOUD_FEATURES)[number];
 
 /**
  * The cloud ID a Studio AI job for `feature` is sent under (FL-181, cloud-confirmed 2026-09-25):

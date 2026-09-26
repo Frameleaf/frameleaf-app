@@ -5908,6 +5908,7 @@ export type MlDestinationUpdateDto = {
 export type MlAdmissionRequestDto = {
     /** Job the admission is for, recorded with the accounting row */
     jobId?: string;
+    studioFeature?: MlStudioFeature;
     workload: MlWorkload;
 };
 export type MlThroughputEstimateDto = {
@@ -20842,6 +20843,11 @@ export enum MemoryShowLessKind {
     Pet = "pet",
     Date = "date",
     Type = "type"
+}
+export enum MlStudioFeature {
+    SpeechToText = "speech-to-text",
+    Captions = "captions",
+    Speech = "speech"
 }
 export enum RestorationDynamicRange {
     Sdr = "sdr",

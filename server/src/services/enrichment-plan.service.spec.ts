@@ -6,6 +6,7 @@ import {
   JobStatus,
   MediaOperationKind,
   MediaOperationStatus,
+  MlAdmissionRefusal,
   MlWorkload,
 } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -102,6 +103,7 @@ describe(EnrichmentPlanService.name, () => {
     users = { get: vi.fn().mockResolvedValue({ ...authStub.user1.user }) };
     mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local]);
     mocks.mlDestination.getRoutes.mockResolvedValue([]);
+    mocks.mlDestination.getCloudModelChoices.mockResolvedValue([]);
 
     sut = new EnrichmentPlanService(
       mocks.logger as never,
@@ -437,6 +439,27 @@ describe(EnrichmentPlanService.name, () => {
       expect(options.destinations[0]).not.toHaveProperty('url');
       expect(options.defaultStages).not.toContain(EnrichmentStage.MomentCaptions);
       expect(MlWorkload.Enrichment).toBe('enrichment');
+    });
+
+    it('judges Frameleaf Cloud with the chosen model where the catalogue marks no default (FL-186)', async () => {
+      const facts = mlDestinationStub.frameleafCloudConsented.lastProbeCloud!;
+      const cloud = { ...mlDestinationStub.frameleafCloudConsented, lastProbeCloud: { ...facts, defaultModels: {} } };
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, cloud]);
+
+      const unchosen = await sut.getOptions();
+      expect(unchosen.destinations.find(({ id }) => id === cloud.id)?.enrichment).toEqual({
+        admitted: false,
+        refusal: MlAdmissionRefusal.ModelMismatch,
+      });
+
+      mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
+        { modelGroup: 'descriptions', modelId: 'describe-large', updatedAt: new Date() },
+      ]);
+      const chosen = await sut.getOptions();
+      expect(chosen.destinations.find(({ id }) => id === cloud.id)?.enrichment).toEqual({
+        admitted: true,
+        refusal: null,
+      });
     });
   });
 });

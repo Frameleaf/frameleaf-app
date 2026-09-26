@@ -9,6 +9,7 @@ import {
   MlWorkerRoleSchema,
   MlWorkloadSchema,
 } from 'src/enum.js';
+import { STUDIO_AI_CLOUD_FEATURES } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Machine-learning destinations and workload capabilities (FL-110).
@@ -188,10 +189,18 @@ const MlWorkloadRouteUpdateSchema = z
   })
   .meta({ id: 'MlWorkloadRouteUpdateDto' });
 
+const MlStudioFeatureSchema = z
+  .enum(STUDIO_AI_CLOUD_FEATURES)
+  .describe(
+    'Studio AI only: the Studio feature, which decides the Frameleaf Cloud model the job uses (speech to text and captions, or speech)',
+  )
+  .meta({ id: 'MlStudioFeature' });
+
 const MlAdmissionRequestSchema = z
   .object({
     workload: MlWorkloadSchema,
     jobId: z.string().max(200).optional().describe('Job the admission is for, recorded with the accounting row'),
+    studioFeature: MlStudioFeatureSchema.optional(),
   })
   .meta({ id: 'MlAdmissionRequestDto' });
 
