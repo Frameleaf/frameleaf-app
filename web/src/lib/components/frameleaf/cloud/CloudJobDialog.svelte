@@ -24,6 +24,7 @@
     estimateLive,
     estimateRange,
     isEndedStage,
+    preparingRetryMs,
     runHeadKey,
   } from '$lib/frameleaf/cloud-jobs';
   import { formatUsd } from '$lib/frameleaf/cloud-ml';
@@ -61,12 +62,16 @@
   let submitting = $state(false);
   let notice = $state('');
   let job = $state<CloudMlJobResponseDto | null>(null);
+  /** A whole video is being prepared for its estimate on the server; the dialog asks again shortly. */
+  let preparing = $state(false);
   let stopWatching: (() => void) | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   /** Only the latest estimate request may answer: a slower earlier one never overwrites it. */
   let estimateTurn = 0;
 
   const runEstimate = async (sku: string | null) => {
     const turn = ++estimateTurn;
+    clearTimeout(retryTimer);
     estimating = true;
     estimateError = false;
     agreed = false;
@@ -79,11 +84,23 @@
       }
       estimate = next;
       modelSku = next.model.sku;
+      preparing = false;
     } catch (error) {
       if (turn !== estimateTurn) {
         return;
       }
       estimate = null;
+      if (cloudJobRefusal(error) === 'preparing') {
+        // not an error: the estimate follows once the video is ready
+        preparing = true;
+        retryTimer = setTimeout(() => {
+          if (open && turn === estimateTurn) {
+            void runEstimate(sku);
+          }
+        }, preparingRetryMs(error));
+        return;
+      }
+      preparing = false;
       estimateError = true;
       handleError(error, $t('frameleaf_cloud_job_estimate_error'));
     } finally {
@@ -93,15 +110,35 @@
     }
   };
 
-  // Every opening starts from a fresh estimate on the recommended model.
+  /** Forget the previous opening: its estimate, its consent and the job it followed. */
+  const reset = () => {
+    estimateTurn++;
+    clearTimeout(retryTimer);
+    stopWatching?.();
+    stopWatching = undefined;
+    job = null;
+    estimate = null;
+    modelSku = null;
+    agreed = false;
+    notice = '';
+    preparing = false;
+    estimateError = false;
+    estimating = false;
+  };
+
+  // Every opening starts afresh, from a new estimate on the recommended model; closing stops asking.
+  let wasOpen = false;
   $effect(() => {
-    if (!open || job) {
-      return;
-    }
+    const isOpen = open;
     untrack(() => {
-      notice = '';
-      modelSku = null;
-      void runEstimate(null);
+      if (isOpen && !wasOpen) {
+        reset();
+        void runEstimate(null);
+      } else if (!isOpen && wasOpen) {
+        estimateTurn++;
+        clearTimeout(retryTimer);
+      }
+      wasOpen = isOpen;
     });
   });
 
@@ -156,7 +193,10 @@
     }
   };
 
-  onDestroy(() => stopWatching?.());
+  onDestroy(() => {
+    clearTimeout(retryTimer);
+    stopWatching?.();
+  });
 
   /* The running job, as Activity has it ---------------------------------- */
   const operation = $derived(
@@ -197,7 +237,7 @@
       {#if notice}
         <p class="fcj-note" role="status">{notice}</p>
       {/if}
-      {#if estimate}
+      {#if estimate && estimate.models.length > 1}
         <CloudMlModelSlider
           models={estimate.models}
           value={modelSku}
@@ -207,7 +247,9 @@
         />
       {/if}
 
-      {#if estimating && !estimate}
+      {#if preparing && !estimate}
+        <p class="fcj-note" role="status" aria-busy="true">{$t('frameleaf_cloud_job_preparing')}</p>
+      {:else if estimating && !estimate}
         <p class="fcj-note" aria-busy="true">{$t('frameleaf_cloud_job_estimating')}</p>
       {:else if estimateError && !estimate}
         <p class="fcj-refusal" role="alert">
@@ -216,6 +258,14 @@
         </p>
       {:else if estimate}
         <dl class="fcj-facts" aria-busy={estimating}>
+          {#if estimate.models.length <= 1}
+            <!-- a full render runs the model its preview was reviewed with -->
+            <dt>{$t('frameleaf_cloud_job_fact_model')}</dt>
+            <dd>
+              {estimate.model.label}
+              <small>{$t('frameleaf_cloud_job_fact_model_help')}</small>
+            </dd>
+          {/if}
           <dt>{$t('frameleaf_cloud_job_fact_estimate')}</dt>
           <dd>
             <strong>{estimateRange(estimate.p50Usd, estimate.p90Usd)}</strong>
@@ -233,7 +283,10 @@
           <dt>{$t('frameleaf_cloud_job_fact_per_unit', { values: { unit: estimate.perUnit.unit } })}</dt>
           <dd>
             {$t('frameleaf_cloud_job_per_unit', {
-              values: { price: formatUsd(estimate.perUnit.p50Usd), unit: estimate.perUnit.unit },
+              values: {
+                range: estimateRange(estimate.perUnit.p50Usd, estimate.perUnit.p90Usd),
+                unit: estimate.perUnit.unit,
+              },
             })}
             <small>{$t('frameleaf_cloud_job_per_unit_help')}</small>
           </dd>
