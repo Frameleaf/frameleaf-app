@@ -849,6 +849,17 @@ export type FrameleafCloudLinkRefusal =
 /** FL-177: one boot id per server start, shared by every worker (as-built decision #14). */
 export type FrameleafBoot = { bootId: string; startedAt: string };
 
+/**
+ * FL-185: cloud processing paused because Frameleaf Cloud suspects a copy of this server. It belongs
+ * to the link it was recorded for (`cloudUrl`, `instanceId`); a record for another link is ignored.
+ */
+export type FrameleafMlSuspension = {
+  reason: 'clone-suspected';
+  cloudUrl: string;
+  instanceId: string;
+  since: string;
+};
+
 export type FrameleafCloudPermissions = {
   allowRemoteEnable: boolean;
   allowBackupTrigger: boolean;
@@ -1004,6 +1015,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
   [SystemMetadataKey.FrameleafPricing]: FrameleafPricingState;
   [SystemMetadataKey.FrameleafBoot]: FrameleafBoot;
+  [SystemMetadataKey.FrameleafMlSuspension]: FrameleafMlSuspension;
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
