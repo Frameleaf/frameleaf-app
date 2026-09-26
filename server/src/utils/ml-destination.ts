@@ -474,8 +474,8 @@ const evaluateCloudAdmission = (
       `${destination.name}: the model ${modelId} runs on this server only and is never sent to Frameleaf Cloud`,
     );
   }
-  // FL-186: a stored check from before model groups cannot place a model; a view shows it as unknown
-  // rather than refused, and the live admission checks again
+  // FL-186: a stored check from before model groups cannot place a model; a view shows it as waiting
+  // for the next check (below) rather than refusing the model, and the live admission checks again
   const modelsKnown = !fromStoredCheck || facts.modelGroups !== undefined;
   // FL-183 (FC-34): the chosen model, else the catalogue's marked default for this work's group
   const model = cloudModelFor(workload, modelId, facts);
@@ -517,7 +517,15 @@ const evaluateCloudAdmission = (
       `${destination.name}: Frameleaf Cloud does not offer ${workload} to this account right now`,
     );
   }
-  if (model || !modelsKnown) {
+  // FL-186: a stored check from before model groups cannot say whether this work has a model to send;
+  // a view shows it as waiting (a transient refusal) and the live admission checks again first
+  if (!modelsKnown) {
+    return refuse(
+      MlAdmissionRefusal.DestinationUnhealthy,
+      `${destination.name}: checked before model groups; waiting for the next check`,
+    );
+  }
+  if (model) {
     return null;
   }
   return refuse(
