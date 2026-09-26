@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { randomBytes } from 'node:crypto';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
@@ -279,7 +280,7 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [thumbnailPath, previewPath, sidecarPath, asset.originalPath] },
+        data: { files: [thumbnailPath, previewPath, sidecarPath, asset.originalPath], removedAssetId: asset.id },
       });
     });
 
@@ -361,7 +362,7 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [thumbnailPath, previewPath] },
+        data: { files: [thumbnailPath, previewPath], removedAssetId: asset.id },
       });
     });
 
@@ -440,7 +441,7 @@ describe(AssetService.name, () => {
           // the FileDelete worker picks the job up before the removal's transaction has committed
           const state = { settled: false };
           deletion = new PhysicalFileRepository(forkDatabase)
-            .deleteUnreferencedPath(asset.originalPath, unlink)
+            .deleteUnreferencedPath(asset.originalPath, unlink, { removedAssetId: job.data.removedAssetId })
             .finally(() => {
               state.settled = true;
             });
@@ -480,6 +481,84 @@ describe(AssetService.name, () => {
           new PhysicalFileRepository(forkDatabase).deleteUnreferencedPath(asset.originalPath, unlink),
         ).resolves.toMatchObject({ deleted: false });
         expect(unlink).not.toHaveBeenCalled();
+      });
+
+      const addDevelopRevision = async (assetId: string, ownerId: string) => {
+        const masterPath = `/data/develop/${assetId}-master.tif`;
+        await sql`
+          INSERT INTO immich_fork.asset_develop_revision ("assetId", "ownerId", revision, recipe, "masterPath")
+          VALUES (${assetId}::uuid, ${ownerId}::uuid, 1, '{}'::jsonb, ${masterPath})
+        `.execute(forkDatabase);
+        return masterPath;
+      };
+
+      const addRestoration = async (assetId: string, ownerId: string) => {
+        const resultPath = `/data/restorations/${assetId}-result.jpg`;
+        const previewAfterPath = `/data/restorations/${assetId}-after.jpg`;
+        await sql`
+          INSERT INTO public.asset_restoration
+            ("assetId", "ownerId", revision, mode, workload, "destinationKind", "destinationName", "sourceType",
+             "sourceChecksum", "sourceWidth", "sourceHeight", "previewRegion", "resultPath", "previewAfterPath")
+          VALUES (${assetId}::uuid, ${ownerId}::uuid, 1, 'restore', 'restoration', 'local', 'This server', 'IMAGE',
+             ${randomBytes(20)}, 100, 100, '{}'::jsonb, ${resultPath}, ${previewAfterPath})
+        `.execute(forkDatabase);
+        return [resultPath, previewAfterPath];
+      };
+
+      it('keeps every listed file when the removal rolls back after its cleanup was queued', async () => {
+        const { sut, ctx } = setup(forkDatabase);
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+        const thumbnailPath = `/path/to/${asset.id}-thumbnail.jpg`;
+        await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: thumbnailPath });
+        // no row is counted as referencing a develop output, so only the removed asset can keep it
+        const developPath = await addDevelopRevision(asset.id, user.id);
+        let queued: { files: Array<string | null | undefined>; removedAssetId?: string } | undefined;
+        ctx.getMock(JobRepository).queue.mockImplementation(async (job) => {
+          if (job.name === JobName.FileDelete) {
+            // the job reached the queue, then the removal's transaction failed and rolled back
+            queued = job.data;
+            throw new Error('commit failed');
+          }
+        });
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow('commit failed');
+
+        await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ id: asset.id });
+        expect(queued?.removedAssetId).toBe(asset.id);
+        expect(queued?.files).toEqual(expect.arrayContaining([thumbnailPath, developPath, asset.originalPath]));
+        const physical = new PhysicalFileRepository(forkDatabase);
+        const unlink = vi.fn(async () => {});
+        for (const file of queued!.files as string[]) {
+          await expect(
+            physical.deleteUnreferencedPath(file, unlink, { removedAssetId: queued!.removedAssetId }),
+          ).resolves.toMatchObject({ deleted: false });
+        }
+        expect(unlink).not.toHaveBeenCalled();
+      });
+
+      it('releases the outputs of restorations and develop revisions, whose rows go with the asset', async () => {
+        const { sut, ctx } = setup(forkDatabase);
+        ctx.getMock(JobRepository).queue.mockResolvedValue();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+        const restorationPaths = await addRestoration(asset.id, user.id);
+        const developPath = await addDevelopRevision(asset.id, user.id);
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        const [files] = fileDeletes(ctx);
+        expect(files).toEqual(expect.arrayContaining([...restorationPaths, developPath, asset.originalPath]));
+        const revisions = await sql`
+          SELECT 1 FROM immich_fork.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid
+        `.execute(forkDatabase);
+        expect(revisions.rows).toEqual([]);
+        const unlink = vi.fn(async () => {});
+        for (const file of [...restorationPaths, developPath]) {
+          await expect(
+            new PhysicalFileRepository(forkDatabase).deleteUnreferencedPath(file, unlink, { removedAssetId: asset.id }),
+          ).resolves.toEqual({ deleted: true, references: 0 });
+        }
       });
     });
   });

@@ -19,7 +19,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { LockableProperty, Stack } from 'src/database.js';
+import { AssetFile, LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
   AssetFileType,
@@ -96,8 +96,17 @@ import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
 export type AssetStats = Record<AssetType, number>;
 
-/** What `remove` reports about the files a removed asset held, beyond its generated ones. */
-export type RemovedAsset = { originalPath: string; reservationTemporaryPath: string | null; videoEditPaths?: string[] };
+/** The files a removed asset held, read under its row lock in the removal's transaction (FL-169). */
+export type RemovedAsset = {
+  originalPath: string;
+  reservationTemporaryPath: string | null;
+  /** Its generated, edited and sidecar files. */
+  files: AssetFile[];
+  videoDuplicateFramePaths: string[];
+  /** Outputs of its restorations and develop revisions, whose rows go with it. */
+  derivedPaths: string[];
+  videoEditPaths?: string[];
+};
 
 /** The file cleanup `remove` queues inside its transaction (FL-169). */
 export type AssetFileRelease = {
@@ -1397,8 +1406,7 @@ export class AssetRepository {
         // The paths are read again under the row lock below; one that changed in between is locked then.
         const unlocked = await this.readRemovedPaths(tx, asset.id, false);
         if (unlocked) {
-          const videoEditPaths = await this.getReleasableVideoEditPaths([asset.id], tx);
-          await lockPaths(release.files({ ...unlocked, videoEditPaths }));
+          await lockPaths(release.files(unlocked));
         }
       }
 
@@ -1407,12 +1415,22 @@ export class AssetRepository {
         return;
       }
       const videoEditPaths = await this.deleteVideoEditVersions([asset.id], tx);
+      // only a removal that releases their files takes the develop revisions (they have no foreign key)
+      const developPaths = release ? await this.deleteDevelopRevisions(asset.id, tx) : [];
       await this.forkPrivacy.delete([asset.id], tx);
       await this.forkEnrichment.delete([asset.id], tx);
       await this.smartAlbums.deleteAssets([asset.id], tx);
       await this.deleteForkDerivedResults([asset.id], tx);
       await tx.deleteFrom('asset').where('id', '=', asUuid(asset.id)).execute();
-      const removed: RemovedAsset = { ...lockedAsset, ...(videoEditPaths.length > 0 && { videoEditPaths }) };
+      // the version and develop paths are the ones actually deleted, not the ones read beforehand
+      const removed: RemovedAsset = {
+        originalPath: lockedAsset.originalPath,
+        reservationTemporaryPath: lockedAsset.reservationTemporaryPath,
+        files: lockedAsset.files,
+        videoDuplicateFramePaths: lockedAsset.videoDuplicateFramePaths,
+        derivedPaths: [...new Set([...lockedAsset.restorationPaths, ...developPaths])],
+        ...(videoEditPaths.length > 0 && { videoEditPaths }),
+      };
 
       if (release) {
         const files = release.files(removed);
@@ -1424,7 +1442,15 @@ export class AssetRepository {
     });
   }
 
-  private async readRemovedPaths(tx: Kysely<DB>, id: string, lock: boolean) {
+  /**
+   * What a removal of the asset would free, read in the removal's transaction. Locked, the asset row
+   * is held, so no generated file, frame or restoration can be added or changed until it ends.
+   */
+  private async readRemovedPaths(
+    tx: Kysely<DB>,
+    id: string,
+    lock: boolean,
+  ): Promise<(RemovedAsset & { restorationPaths: string[] }) | undefined> {
     const rows = await sql<{ originalPath: string; reservationTemporaryPath: string | null }>`
       SELECT
         coalesce(mapping."upstreamPath", reservation."upstreamPath", asset."originalPath") AS "originalPath",
@@ -1435,7 +1461,73 @@ export class AssetRepository {
       WHERE asset.id = ${id}::uuid
       ${lock ? sql`FOR UPDATE OF asset` : sql``}
     `.execute(tx);
-    return rows.rows[0];
+    const row = rows.rows[0];
+    if (!row) {
+      return;
+    }
+
+    const files = await tx
+      .selectFrom('asset_file')
+      .select(['id', 'type', 'path', 'isEdited'])
+      .where('assetId', '=', asUuid(id))
+      .execute();
+    // the legacy table and the fork sidecar can both hold an asset's frames, depending on the phase
+    const frames = await sql<{ path: string }>`
+      SELECT path FROM public.asset_video_duplicate_frame WHERE "assetId" = ${id}::uuid
+      UNION SELECT path FROM immich_fork.asset_video_duplicate_frame WHERE "assetId" = ${id}::uuid
+    `.execute(tx);
+    // restorations are removed with the asset (ON DELETE CASCADE), so their outputs are read here
+    const restorations = await tx
+      .selectFrom('asset_restoration')
+      .select(['previewBeforePath', 'previewAfterPath', 'resultPath', 'resultPreviewPath'])
+      .where('assetId', '=', asUuid(id))
+      .execute();
+    const developPaths = await this.getReleasableDevelopPaths(id, tx);
+    const videoEditPaths = await this.getReleasableVideoEditPaths([id], tx);
+
+    const restorationPaths = restorations
+      .flatMap((restoration) => [
+        restoration.previewBeforePath,
+        restoration.previewAfterPath,
+        restoration.resultPath,
+        restoration.resultPreviewPath,
+      ])
+      .filter((path): path is string => !!path);
+
+    return {
+      ...row,
+      files,
+      videoDuplicateFramePaths: frames.rows.map(({ path }) => path),
+      restorationPaths,
+      derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? [])])],
+      ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),
+    };
+  }
+
+  /**
+   * The outputs of the asset's develop revisions, when the revisions can be deleted with it now. The
+   * revisions have no foreign key to the asset, so the removal deletes them itself (FL-169); while
+   * fork writes are disabled the AssetDelete listener still cleans them up later.
+   */
+  private async getReleasableDevelopPaths(id: string, db: Kysely<DB>): Promise<string[] | undefined> {
+    if (!isForkWriteEnabled(await getForkSchemaPhase(db))) {
+      return;
+    }
+    const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
+      SELECT "masterPath", "previewPath" FROM immich_fork.asset_develop_revision WHERE "assetId" = ${id}::uuid
+    `.execute(db);
+    return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
+  }
+
+  private async deleteDevelopRevisions(id: string, db: Kysely<DB>): Promise<string[]> {
+    if (!isForkWriteEnabled(await getForkSchemaPhase(db))) {
+      return [];
+    }
+    const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
+      DELETE FROM immich_fork.asset_develop_revision WHERE "assetId" = ${id}::uuid
+      RETURNING "masterPath", "previewPath"
+    `.execute(db);
+    return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
   }
 
   /**
