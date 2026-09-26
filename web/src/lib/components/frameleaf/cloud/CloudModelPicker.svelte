@@ -126,6 +126,7 @@
     for (const radio of radios) {
       if (radio.value === target) {
         radio.focus();
+        break;
       }
     }
   };
