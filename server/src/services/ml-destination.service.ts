@@ -32,7 +32,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
-import { FrameleafCloudError, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
+import { CloudErrorCode, FrameleafCloudError, cloudErrorCode, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
@@ -346,6 +346,14 @@ export class MlDestinationService extends BaseService {
       ).recordedVersion;
     } catch (error) {
       if (error instanceof FrameleafCloudError) {
+        // FL-183 (FC-34): consent is versioned; a disclosure that changed between reading and
+        // recording is answered 403 consent-version-outdated with the version now required
+        const required = error.envelope?.data?.requiredVersion;
+        if (cloudErrorCode(error) === CloudErrorCode.ConsentVersionOutdated && typeof required === 'string') {
+          throw new BadRequestException(
+            `Frameleaf Cloud now asks for consent version ${required}; review it and accept again`,
+          );
+        }
         throw new BadRequestException(`Frameleaf Cloud did not record the consent: ${error.message}`);
       }
       throw error;
