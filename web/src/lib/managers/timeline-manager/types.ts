@@ -104,9 +104,9 @@ export interface UpdateGeometryOptions {
 
 /**
  * How the Frameleaf timeline groups what it shows (prototype `TimelineLibrary.jsx` MODES). Months
- * are loaded a bucket at a time; a month group is one justified flow, and a year or "all" group is
- * one justified flow that runs on across its months as they load (FL-143), with the group header
- * over the first month the group covers.
+ * are loaded a bucket at a time; a month group is one justified flow, and an "all" group (and a year
+ * group when not shown as cards) is one justified flow that runs on across its months as they load
+ * (FL-143), with the group header over the first month the group covers.
  */
 export type TimelineGrouping = 'days' | 'months' | 'years' | 'all';
 

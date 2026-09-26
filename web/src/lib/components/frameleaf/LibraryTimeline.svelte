@@ -529,8 +529,8 @@
   });
 
   /**
-   * The earlier months' tiles a month lays out at the start of its rows (Years and All, FL-143),
-   * gathered by the day that owns them.
+   * The earlier months' tiles a month lays out at the start of its rows (FL-143: All, Years when not
+   * shown as cards, and the Browse and Work grids), gathered by the day that owns them.
    */
   const carriedDays = (month: TimelineMonth) => {
     const days: { key: string; day: TimelineDay; tiles: ViewerAsset[] }[] = [];
@@ -1236,9 +1236,9 @@
               }}
             >
               <!--
-                Years and All, and the Browse and Work grids (FL-143): a row that runs on from the
-                months before this one starts with their tiles; this month lays them out and draws
-                them, ahead of its own in reading order.
+                All (and Years when not shown as cards), and the Browse and Work grids (FL-143): a row
+                that runs on from the months before this one starts with their tiles; this month lays
+                them out and draws them, ahead of its own in reading order.
               -->
               {#each carriedDays(month) as carried (carried.key)}
                 <LibraryDayGroup

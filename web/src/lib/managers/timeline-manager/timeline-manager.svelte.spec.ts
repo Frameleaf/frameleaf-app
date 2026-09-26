@@ -1841,4 +1841,178 @@ describe('TimelineManager', () => {
       expectOneFlow(timelineManager, [marchMonth, februaryMonth]);
     });
   });
+
+  describe('a change in an earlier month of the Browse grid (FL-143)', () => {
+    let timelineManager: TimelineManager;
+    let scrollTop: number;
+    let clock: number;
+    const browse = cellGridOptions('browse', 200, false);
+    const inMonth = (month: string, count: number) =>
+      Array.from({ length: count }, (_, index) =>
+        deriveLocalDateTimeFromFileCreatedAt({
+          ...timelineAssetFactory.build(),
+          fileCreatedAt: fromISODateTimeUTCToObject(
+            `${month}-${String(28 - (index % 27)).padStart(2, '0')}T12:00:00.000Z`,
+          ),
+        }),
+      );
+    // Six columns at 1000 wide: March hands one cell on to February.
+    const buckets: Record<string, TimelineAsset[]> = {
+      '2024-03': inMonth('2024-03', 7),
+      '2024-02': inMonth('2024-02', 40),
+      '2024-01': inMonth('2024-01', 40),
+    };
+
+    beforeEach(async () => {
+      clock = 1_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => clock);
+      sdkMock.getTimeBuckets.mockResolvedValue(
+        Object.entries(buckets).map(([month, assets]) => ({ timeBucket: `${month}-01`, count: assets.length })),
+      );
+      sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) =>
+        Promise.resolve(toResponseDto(...buckets[timeBucket.slice(0, 7)])),
+      );
+      timelineManager = new TimelineManager();
+      scrollTop = 0;
+      timelineManager.scrollableElement = {
+        get scrollTop() {
+          return scrollTop;
+        },
+        scrollTo({ top }: { top: number }) {
+          scrollTop = Math.max(0, top);
+        },
+        scrollBy(_x: number, y: number) {
+          scrollTop = Math.max(0, scrollTop + y);
+        },
+      } as unknown as HTMLElement;
+      timelineManager.setLayoutOptions({
+        headerHeight: browse.gap,
+        gap: browse.gap,
+        fillRowWidth: true,
+        cells: browse,
+      });
+      await timelineManager.updateViewport({ width: 1000, height: 150 });
+      await vi.waitFor(() => expect(timelineManager.months[1].isLoaded).toBe(true));
+      await settle();
+    });
+
+    afterEach(() => {
+      vi.mocked(Date.now).mockRestore();
+    });
+
+    it('leaves a settled month on screen where it is when an earlier month gains a photo, and joins up later', () => {
+      const [marchMonth, februaryMonth, januaryMonth] = timelineManager.months;
+      expect(februaryMonth.flowLinkedTo).toBe(marchMonth);
+      expect(februaryMonth.flowCarried).toHaveLength(1);
+      expect(januaryMonth.isLoaded).toBe(false);
+
+      clock += FLOW_SETTLE_MS + 1;
+      timelineManager.scrollTo(februaryMonth.top + 200);
+      const onScreen = () => ({
+        carried: februaryMonth.flowCarried.map(({ viewerAsset }) => viewerAsset.id),
+        tiles: flowTiles([februaryMonth]).map(({ viewerAsset }) => ({
+          id: viewerAsset.id,
+          top: februaryMonth.findAssetAbsolutePosition(viewerAsset.id)!.top - timelineManager.scrollTop,
+          left: viewerAsset.position!.left,
+        })),
+      });
+      const before = onScreen();
+
+      // A new upload lands at the start of March, above the viewport.
+      const upload = deriveLocalDateTimeFromFileCreatedAt({
+        ...timelineAssetFactory.build(),
+        fileCreatedAt: fromISODateTimeUTCToObject('2024-03-28T18:00:00.000Z'),
+      });
+      timelineManager.upsertAssets([upload]);
+      expect(marchMonth.getAssets().map(({ id }) => id)).toContain(upload.id);
+
+      // February keeps exactly its cells and tiles; March closes the rest of its last row itself.
+      expect(onScreen()).toEqual(before);
+      expect(marchMonth.flowHandOff).toBe(1);
+      expect(januaryMonth.isLoaded).toBe(false);
+
+      // Back at the top, February is off screen: the grid joins up again.
+      timelineManager.scrollTo(0);
+      expect(marchMonth.flowHandOff).toBeUndefined();
+      expectOneGrid(timelineManager, [marchMonth, februaryMonth]);
+    });
+  });
+
+  describe('a later month of an All group loading under a settled last row (FL-143)', () => {
+    let timelineManager: TimelineManager;
+    let clock: number;
+    let releaseFebruary: () => void;
+    const inMonth = (month: string, count: number) =>
+      Array.from({ length: count }, (_, index) =>
+        deriveLocalDateTimeFromFileCreatedAt({
+          ...timelineAssetFactory.build(),
+          ratio: 1.5,
+          fileCreatedAt: fromISODateTimeUTCToObject(`${month}-${String(28 - index).padStart(2, '0')}T12:00:00.000Z`),
+        }),
+      );
+    const march = inMonth('2024-03', 8);
+    const february = inMonth('2024-02', 20);
+
+    beforeEach(async () => {
+      clock = 1_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => clock);
+      const pendingFebruary = deferred<TimeBucketAssetResponseDto>();
+      releaseFebruary = () => pendingFebruary.resolve(toResponseDto(...february));
+      sdkMock.getTimeBuckets.mockResolvedValue([
+        { timeBucket: '2024-03-01', count: march.length },
+        { timeBucket: '2024-02-01', count: february.length },
+      ]);
+      sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) =>
+        timeBucket.startsWith('2024-03') ? Promise.resolve(toResponseDto(...march)) : pendingFebruary.promise,
+      );
+      timelineManager = new TimelineManager();
+      let scrollTop = 0;
+      timelineManager.scrollableElement = {
+        get scrollTop() {
+          return scrollTop;
+        },
+        scrollTo({ top }: { top: number }) {
+          scrollTop = Math.max(0, top);
+        },
+        scrollBy(_x: number, y: number) {
+          scrollTop = Math.max(0, scrollTop + y);
+        },
+      } as unknown as HTMLElement;
+      timelineManager.setLayoutOptions({ fillRowWidth: true });
+      timelineManager.grouping = 'all';
+      // March, with its last row, fills the screen; February below it is requested and pending.
+      await timelineManager.updateViewport({ width: 1200, height: 1000 });
+      await vi.waitFor(() => expect(timelineManager.months[0].isLoaded).toBe(true));
+      await settle();
+    });
+
+    afterEach(() => {
+      vi.mocked(Date.now).mockRestore();
+    });
+
+    it('keeps the settled last row where it is, and runs it on once it is off screen', async () => {
+      const [marchMonth, februaryMonth] = timelineManager.months;
+      clock += FLOW_SETTLE_MS + 1;
+      const places = () =>
+        flowTiles([marchMonth]).map(({ viewerAsset }) => ({
+          id: viewerAsset.id,
+          top: marchMonth.findAssetAbsolutePosition(viewerAsset.id)!.top,
+          ...viewerAsset.position,
+        }));
+      const before = places();
+
+      releaseFebruary();
+      await vi.waitFor(() => expect(februaryMonth.isLoaded).toBe(true));
+      await settle();
+
+      expect(places()).toEqual(before);
+      expect(februaryMonth.flowLinkedTo).toBeUndefined();
+      expect(marchMonth.flowClosed).toBe(true);
+
+      // Scrolled past both months: the rows run on.
+      timelineManager.scrollTo(februaryMonth.top + februaryMonth.height + 100);
+      expect(februaryMonth.flowLinkedTo).toBe(marchMonth);
+      expectOneFlow(timelineManager, [marchMonth, februaryMonth]);
+    });
+  });
 });

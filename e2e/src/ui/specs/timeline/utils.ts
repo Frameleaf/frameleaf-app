@@ -242,8 +242,9 @@ export const groupingUtils = {
 };
 
 /**
- * Years and All justify a whole group as one flow (prototype `TimelineLibrary.jsx` justifiedRows over
- * `group.assets`, FL-143), read from the rendered geometry.
+ * One flow across month buckets, read from the rendered geometry (FL-143): All justifies the whole
+ * library as one flow (prototype `TimelineLibrary.jsx` justifiedRows over `group.assets`), and Browse
+ * and Work are one grid (`App.jsx` `.media-grid`).
  */
 export const flowUtils = {
   /**
@@ -284,18 +285,18 @@ export const flowUtils = {
     }, TILE);
   },
   /**
-   * Month placeholders still showing in the scroll area or just past its edges. A month's last row
-   * only runs on into the next month once that month has loaded, so rows at an edge are read after
-   * the neighbour beyond it has loaded too.
+   * Month placeholders in the scroll area or within `margin` pixels of its edges. The timeline
+   * requests every month within 500px of the viewport, so with a margin under that every placeholder
+   * counted here is loading and goes away.
    */
-  async skeletonsOnScreen(page: Page) {
-    return await timelineUtils.locator(page).evaluate((scroller) => {
+  async skeletonsNear(page: Page, margin = 50) {
+    return await timelineUtils.locator(page).evaluate((scroller, margin) => {
       const box = scroller.getBoundingClientRect();
       return [...scroller.querySelectorAll<HTMLElement>('[data-skeleton]')].filter((element) => {
         const rect = element.getBoundingClientRect();
-        return rect.height > 0 && rect.bottom >= box.top - 50 && rect.top <= box.bottom + 50;
+        return rect.height > 0 && rect.bottom >= box.top - margin && rect.top <= box.bottom + margin;
       }).length;
-    });
+    }, margin);
   },
 };
 
