@@ -44,27 +44,35 @@ export const identityDirectory = (configRepository: ConfigRepository): string =>
   configRepository.getEnv().frameleafCloud.identityDir ?? join(StorageCore.getMediaLocation(), 'frameleaf', 'identity');
 
 /**
+ * `loadInstanceIdentity` for a caller that already holds `DatabaseLock.FrameleafIdentity`. The lock is
+ * not re-entrant (a second `withLock` on it from inside waits for itself forever), so such a caller
+ * must use this instead (FL-175).
+ */
+export const loadInstanceIdentityLocked = async (deps: CloudGatewayDeps): Promise<FrameleafInstanceIdentity> => {
+  const existing = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafInstance);
+  const identity = await deps.instanceIdentityRepository.loadOrCreate(
+    identityDirectory(deps.configRepository),
+    existing,
+  );
+  if (
+    !existing ||
+    existing.kid !== identity.kid ||
+    existing.instanceId !== identity.instanceId ||
+    existing.retiring?.rotationId !== identity.retiring?.rotationId ||
+    existing.candidate?.kid !== identity.candidate?.kid ||
+    existing.rotationNeeded?.since !== identity.rotationNeeded?.since
+  ) {
+    await deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, identity);
+  }
+  return identity;
+};
+
+/**
  * This server's identity key, created once under `DatabaseLock.FrameleafIdentity` (FL-159 builds this
  * part of FL-154). The public half is kept in `system_metadata`; the private key never leaves its file.
  */
 export const loadInstanceIdentity = async (deps: CloudGatewayDeps): Promise<FrameleafInstanceIdentity> =>
-  deps.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, async () => {
-    const existing = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafInstance);
-    const identity = await deps.instanceIdentityRepository.loadOrCreate(
-      identityDirectory(deps.configRepository),
-      existing,
-    );
-    if (
-      !existing ||
-      existing.kid !== identity.kid ||
-      existing.instanceId !== identity.instanceId ||
-      existing.retiring?.rotationId !== identity.retiring?.rotationId ||
-      existing.candidate?.kid !== identity.candidate?.kid
-    ) {
-      await deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, identity);
-    }
-    return identity;
-  });
+  deps.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, () => loadInstanceIdentityLocked(deps));
 
 /** The configured cloud and the link record, without contacting anything. */
 export const readCloudLink = async (
