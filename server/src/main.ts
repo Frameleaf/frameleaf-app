@@ -40,6 +40,9 @@ class Workers {
    */
   restarting = false;
 
+  /** FL-165: the edge worker was asked to stop for a restart. */
+  stoppingEdge = false;
+
   /**
    * Boot all enabled workers
    */
@@ -159,10 +162,19 @@ class Workers {
       console.info(`${name} worker shutdown for restart`);
       delete this.workers[name];
 
+      // FL-165: the edge worker does not listen for restart events; it is stopped here (it closes
+      // its connections within 5 seconds) and starts again with the others
+      const edge = this.workers[ImmichWorker.Edge];
+      if (edge && name !== ImmichWorker.Edge && !this.stoppingEdge) {
+        this.stoppingEdge = true;
+        void edge.kill('SIGTERM');
+      }
+
       // once all workers shut down, bootstrap again
       if (Object.keys(this.workers).length === 0) {
         void this.bootstrap();
         this.restarting = false;
+        this.stoppingEdge = false;
       }
 
       return;
@@ -177,6 +189,10 @@ class Workers {
       if (Object.hasOwn(this.workers, ImmichWorker.Api) && name !== ImmichWorker.Api) {
         console.error('Killing api process');
         void this.workers[ImmichWorker.Api]!.kill('SIGTERM');
+      }
+      // FL-165: the edge worker is a process of its own too; it must not keep the direct port open
+      if (Object.hasOwn(this.workers, ImmichWorker.Edge) && name !== ImmichWorker.Edge) {
+        void this.workers[ImmichWorker.Edge]!.kill('SIGTERM');
       }
     }
 
