@@ -106,11 +106,12 @@ test.describe('Timeline', () => {
    * one month into the next, so only the library's last row may end short — and that at least one
    * row holds the end of one month and the start of the next.
    *
-   * The steps are small (50px) and every month the timeline has requested (within 500px) is loaded
-   * before the next step, so a month always loads while the row it finishes is still below the viewport,
-   * whatever order or timing the bucket responses have.
+   * The steps are small (`stepPx`, well under the 480px that must be loaded) and every month the
+   * timeline has requested (within 500px) is loaded before the next step, so a month always loads
+   * while the row it finishes is still below the viewport, whatever order or timing the bucket
+   * responses have.
    */
-  const expectRowsRunOn = async (page: Page) => {
+  const expectRowsRunOn = async (page: Page, stepPx = 50) => {
     const lastId = assets.at(-1)!.id;
     let crossing = 0;
     let checked = 0;
@@ -126,7 +127,7 @@ test.describe('Timeline', () => {
           crossing++;
         }
       }
-      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, 50));
+      await timelineUtils.locator(page).evaluate((scroller, by) => scroller.scrollBy(0, by), stepPx);
     }
     expect(checked).toBeGreaterThan(0);
     // At least one row holds the end of one month and the start of the next.
@@ -966,7 +967,10 @@ test.describe('Timeline', () => {
     test('Work lays the library out as one grid: rows run on across month boundaries', async ({ page }) => {
       await pageUtils.openPhotosPage(page);
       await timelineUtils.setLayout(page, 'Work');
-      await expectRowsRunOn(page);
+      // Work opens its inspector on a wide screen, which leaves the grid two columns wide, and the
+      // newest month holds 107 photos (odd), so the first row that runs on across a month boundary
+      // is about 54 rows (some 13,000px) down: step further than Browse does to reach it.
+      await expectRowsRunOn(page, 200);
     });
 
     test('Browse: a month loading above what is on screen does not move it', async ({ page }) => {
