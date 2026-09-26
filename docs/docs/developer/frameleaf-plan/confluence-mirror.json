@@ -1035,19 +1035,19 @@
       "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 131234,
+      "bytes": 131506,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "17fd8de42b2d0d325bce7e1d77b7db498d14d7ae28d50dcfbc4291f771cf903d",
+      "sourceSha256": "3b2417062b8fee3910dd63abfb41c7a626f09f376db4468339ddcf60b8fc5ffb",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 16,
+      "version": 17,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "8d0d0ad30a45c5517f6087181be15278fd29e028",
-      "sourceState": "committed-fl-160-cloud-backup-merged-2026-09-26",
-      "readbackResult": "Markdown read-back of version 16 begins with the header carrying SHA-256 17fd8de4, 131234 bytes, commit 8d0d0ad30a on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-160 commits 73f428e821, f1e1b396ea and 4cf3664243 merged in 8d0d0ad30a, the source-at-commit backlink, FL-160, FL-163, FL-161, FL-186, FL-183, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the As built (FL-160) note under CLD-301, except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
-      "readbackAt": "2026-09-26T13:38:30.000Z"
+      "sourceCommit": "9e3a9a1fa76ef5ecf5041a8326381ffe07ffd180",
+      "sourceState": "committed-fl-160-what-is-backed-up-note-2026-09-26",
+      "readbackResult": "Markdown read-back of version 17 begins with the header carrying SHA-256 3b241706, 131506 bytes, commit 9e3a9a1fa7 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-160 commit 9e3a9a1fa7 on top of the FL-160 merge 8d0d0ad30a, the source-at-commit backlink, FL-160, FL-163, FL-161, FL-186, FL-183, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the What is backed up card sentence in the FL-160 note under CLD-301, except normalized spaces at three nested-backtick boundaries (reads `active`, the sealed `est1.` token, the cloud-backup-bucket-key credential) and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
+      "readbackAt": "2026-09-26T14:49:10.000Z"
     }
   ],
   "spaceId": "61374475",
