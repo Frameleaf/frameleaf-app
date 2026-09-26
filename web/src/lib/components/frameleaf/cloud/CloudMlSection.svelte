@@ -23,6 +23,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CloudDescriptionBackfill from '$lib/components/frameleaf/cloud/CloudDescriptionBackfill.svelte';
   import CloudMlConsentDialog from '$lib/components/frameleaf/cloud/CloudMlConsentDialog.svelte';
+  import CloudMlSpendersCard from '$lib/components/frameleaf/cloud/CloudMlSpendersCard.svelte';
   import CloudMlWalletCard from '$lib/components/frameleaf/cloud/CloudMlWalletCard.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
@@ -444,6 +445,8 @@
       <SettingActions keys={['frameleafCloud']} disabled={configDisabled} />
     </section>
   {/if}
+
+  <CloudMlSpendersCard disabled={configDisabled} />
 
   <CloudDescriptionBackfill available={backfillAvailable} />
 

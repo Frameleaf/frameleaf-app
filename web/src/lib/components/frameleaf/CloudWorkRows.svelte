@@ -5,28 +5,21 @@
    * progress. Read-only: each row opens Cloud backup, and pause, retry and limits live in Settings ›
    * Background work. Shown to administrators, who own the server's backups; the stage follows the
    * prototype's Queued → Starting → Running → Paused, with files and bytes as the server counts them.
+   *
+   * FL-162: it is the last group of Activity's In progress section, after the stage groups, as in the
+   * prototype; ActivityView reads the status (so the section can count these rows) and passes it here.
    */
+  import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
   import { cloudWorkRows, type CloudWorkRow } from '$lib/frameleaf/cloud-backup';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import { CloudBackupTargetSetting, getCloudBackupStatus, type CloudBackupStatusResponseDto } from '@immich/sdk';
+  import { CloudBackupTargetSetting, type CloudBackupStatusResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiBackupRestore, mdiChevronRight, mdiCloudUploadOutline } from '@mdi/js';
-  import { onMount } from 'svelte';
-  import { t, type Translations } from 'svelte-i18n';
+  import { t } from 'svelte-i18n';
 
-  /** How often the rows are read again while something runs, and while nothing does. */
-  const ACTIVE_POLL_MS = 5000;
-  const IDLE_POLL_MS = 30_000;
+  let { status }: { status: CloudBackupStatusResponseDto | null } = $props();
 
-  const STAGE_WORDS: Record<CloudWorkRow['stage'], Translations> = {
-    queued: 'frameleaf_activity_stage_queued',
-    starting: 'frameleaf_activity_stage_starting',
-    running: 'frameleaf_activity_stage_running',
-    paused: 'frameleaf_activity_stage_paused',
-  };
-
-  let status = $state<CloudBackupStatusResponseDto | null>(null);
   const rows = $derived(cloudWorkRows(status));
   const where = $derived(
     status?.target === CloudBackupTargetSetting.Managed
@@ -34,24 +27,6 @@
       : $t('frameleaf_cloud_work_where_own'),
   );
   const headingId = $props.id();
-
-  const load = async () => {
-    try {
-      status = await getCloudBackupStatus();
-    } catch {
-      // not set up, or unreachable: nothing to show
-      status = null;
-    }
-  };
-
-  onMount(() => {
-    void load();
-  });
-
-  $effect(() => {
-    const timer = setInterval(() => void load(), rows.length > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS);
-    return () => clearInterval(timer);
-  });
 
   const filesOf = ({ files }: CloudWorkRow) => {
     if (!files) {
@@ -64,7 +39,7 @@
 
   const detailOf = (row: CloudWorkRow) =>
     [
-      $t(STAGE_WORDS[row.stage]),
+      $t(ACTIVITY_STAGE_KEYS[row.stage]),
       row.progress !== null && row.stage !== 'queued' ? `${row.progress}%` : null,
       filesOf(row),
       row.bytes ? getByteUnitString(row.bytes) : null,
@@ -75,10 +50,10 @@
 </script>
 
 {#if rows.length > 0}
-  <section class="fla-bg-group" aria-labelledby={headingId}>
-    <h2 id={headingId} class="fla-bg-heading">
+  <div class="fla-bg-group" role="group" aria-labelledby={headingId}>
+    <h3 id={headingId} class="fla-bg-heading">
       {$t('frameleaf_activity_background_work')} <span class="fla-bg-count">{rows.length}</span>
-    </h2>
+    </h3>
     <p class="fla-bg-hint">
       {$t('frameleaf_activity_background_hint')}
       <a href={commandCenterUrl('processing', 'queues')}>{$t('frameleaf_activity_background_link')}</a>
@@ -112,21 +87,35 @@
         </li>
       {/each}
     </ul>
-  </section>
+  </div>
 {/if}
 
 <style>
+  /* activity.css: a group inside In progress, titled like the stage groups above it */
   .fla-bg-group {
-    margin: 0 0 1.25rem;
+    margin: 0 0 16px;
   }
   .fla-bg-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin: 0;
-    font-size: var(--fl-font-body, 0.875rem);
+    font-size: 12px;
     font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--fl-muted);
   }
   .fla-bg-count {
-    color: var(--fl-muted);
+    font-size: 11px;
     font-weight: 500;
+    color: var(--fl-muted);
+    background: var(--fl-raised);
+    padding: 0 7px;
+    border-radius: var(--fl-radius-pill);
+    line-height: 1.7;
+    font-variant-numeric: tabular-nums;
+    text-transform: none;
   }
   .fla-bg-hint {
     margin: 0.25rem 0 0.75rem;

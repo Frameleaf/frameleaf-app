@@ -17,6 +17,7 @@ import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
+import { CloudMlJobService } from 'src/services/cloud-ml-job.service.js';
 import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
@@ -117,6 +118,7 @@ export const services = [
   CloudMlService,
   CloudBackupService,
   CloudMlBatchService,
+  CloudMlJobService,
   FrameleafAuthService,
   FrameleafCloudService,
   FrameleafLicenseService,

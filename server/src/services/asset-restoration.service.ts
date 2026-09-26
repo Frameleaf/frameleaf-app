@@ -67,6 +67,7 @@ import {
   previewExpiryAfterDecision,
   previewInputBytes,
   restorationEstimate,
+  restorationModeLabel,
   restorationWorkDir,
   workloadForMode,
 } from 'src/utils/restoration.js';
@@ -193,9 +194,14 @@ export class AssetRestorationService {
 
     const destinations: AssetRestorationDestinationDto[] = [];
     for (const row of rows) {
+      // FL-162: Frameleaf Cloud restores a photo by upscaling it, so a photo is judged by that workload there
+      const judged =
+        row.kind === MlDestinationKind.FrameleafCloud && source.sourceType === AssetRestorationSourceType.Image
+          ? MlWorkload.Upscale
+          : workload;
       let verdict = storedAdmission({
         destination: row,
-        workload,
+        workload: judged,
         spentUsd:
           row.budgetLimitUsd === null
             ? 0
@@ -266,6 +272,10 @@ export class AssetRestorationService {
     dto: AssetRestorationRequestDto,
   ): Promise<AssetRestorationResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
+    if (dto.mode === AssetRestorationMode.SmoothMotion) {
+      throw new BadRequestException('Smooth motion runs as its own Frameleaf Cloud job; estimate it first');
+    }
+    await this.refuseCloudRequest(dto.destinationId);
     const source = await this.requireSource(assetId);
     const workload = workloadForMode(dto.mode);
     const region = dto.region ?? DEFAULT_RESTORATION_REGION;
@@ -355,6 +365,7 @@ export class AssetRestorationService {
     if (!restoration.destinationId) {
       throw new BadRequestException('The destination this preview ran on has been removed; request a new preview');
     }
+    await this.refuseCloudRequest(restoration.destinationId);
 
     await this.admitRestoration(
       restoration.workload as MlWorkload,
@@ -605,6 +616,19 @@ export class AssetRestorationService {
     return restoration;
   }
 
+  /**
+   * FL-162: work on Frameleaf Cloud is estimated and confirmed as a cloud job (`POST /cloud/ml/jobs`),
+   * with its price and consent shown first. This request path never sends anything to the cloud.
+   */
+  private async refuseCloudRequest(destinationId: string) {
+    const destination = await this.mlDestinationRepository.getById(destinationId);
+    if (destination?.kind === MlDestinationKind.FrameleafCloud) {
+      throw new BadRequestException(
+        'Frameleaf Cloud work is estimated and confirmed first; nothing was sent. Use the Frameleaf Cloud estimate.',
+      );
+    }
+  }
+
   private async requireDestination(id: string): Promise<MlDestinationRow> {
     const destination = await this.mlDestinationRepository.getById(id);
     if (!destination) {
@@ -736,7 +760,7 @@ export class AssetRestorationService {
   /** What Activity shows under the job title. Customer words, not enum values. */
   private settingsOf(restoration: AssetRestoration, destinationName: string, preview: boolean) {
     return {
-      mode: restoration.mode === AssetRestorationMode.Creative ? 'Creative' : 'Faithful',
+      mode: restorationModeLabel(restoration.mode as AssetRestorationMode),
       upscale: restoration.upscale,
       preview,
       destination: destinationName,
@@ -787,7 +811,9 @@ export class AssetRestorationService {
       revision: row.revision,
       status,
       mode: row.mode as AssetRestorationMode,
-      upscale: row.upscale,
+      // FL-162: a Smooth motion version keeps its frame-rate factor where a restoration keeps its upscale
+      upscale: row.mode === AssetRestorationMode.SmoothMotion ? 1 : row.upscale,
+      smoothMotionFactor: row.mode === AssetRestorationMode.SmoothMotion ? row.upscale : null,
       keepGrain: row.keepGrain,
       workload: row.workload as MlWorkload,
       destinationId: row.destinationId,

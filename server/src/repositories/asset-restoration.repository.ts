@@ -44,9 +44,12 @@ export type RestorationFilePaths = Pick<
 export class AssetRestorationRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
-  /** Inserts the asset's next revision; the number is assigned inside the statement. */
-  async create(input: AssetRestorationCreate): Promise<AssetRestoration> {
-    const row = await this.db
+  /**
+   * Inserts the asset's next revision; the number is assigned inside the statement. `executor` is a
+   * transaction to write in, when the row must land together with the job that renders it (FL-162).
+   */
+  async create(input: AssetRestorationCreate, executor: Kysely<DB> = this.db): Promise<AssetRestoration> {
+    const row = await executor
       .insertInto('asset_restoration')
       .values({
         ...input,
@@ -106,12 +109,16 @@ export class AssetRestorationRepository {
       .execute()) as RestoredForPlayback[];
   }
 
-  async update(id: string, patch: AssetRestorationUpdate): Promise<AssetRestoration | undefined> {
+  async update(
+    id: string,
+    patch: AssetRestorationUpdate,
+    executor: Kysely<DB> = this.db,
+  ): Promise<AssetRestoration | undefined> {
     const entries = Object.entries(patch).filter(([, value]) => value !== undefined);
     if (entries.length === 0) {
       return this.get(id);
     }
-    return (await this.db
+    return (await executor
       .updateTable('asset_restoration')
       .set(Object.fromEntries(entries) as AssetRestorationUpdate)
       .where('id', '=', id)

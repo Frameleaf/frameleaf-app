@@ -3,6 +3,7 @@ import { Mocked } from 'vitest';
 import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
+import type { CloudMlJobEstimateRecord } from 'src/utils/cloud-ml-job.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
@@ -1252,6 +1253,11 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafCloudMigrationNotice]: FrameleafCloudMigrationNotice;
   [SystemMetadataKey.FrameleafCloudDescriptionQueue]: FrameleafCloudDescriptionQueue;
   [SystemMetadataKey.FrameleafCloudDescriptionEstimates]: { records: CloudDescriptionEstimateRecord[] };
+  [SystemMetadataKey.FrameleafCloudMlJobEstimates]: {
+    records: CloudMlJobEstimateRecord[];
+    /** FL-162: whole videos prepared once for their estimates, dropped a day after nothing uses them. */
+    prepared?: { dir: string; ownerId: string; at: string }[];
+  };
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;

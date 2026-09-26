@@ -584,6 +584,167 @@ export type CloudMlDescriptionEstimateResponseDto = {
     /** More photos need a description than one backfill covers; run another afterwards for the rest */
     truncated: boolean;
 };
+export type CloudMlJobCostDto = {
+    /** The likely total the owner confirmed, USD */
+    estimatedP50Usd: number;
+    /** The high end the owner confirmed, USD */
+    estimatedP90Usd: number;
+    /** What the AI Wallet holds for the job, USD */
+    holdUsd: number;
+    /** Frameleaf Cloud’s note on the settlement */
+    note: string | null;
+    /** not_charged: the hold went back in full (a failure on the cloud side, or a job that never ran) */
+    outcome: Outcome | null;
+    /** What the job was charged once settled, USD; null until then */
+    settledUsd: number | null;
+    /** Metered so far, never above the hold, USD; null before a worker starts */
+    soFarUsd: number | null;
+};
+export type CloudMlJobActivityDto = {
+    activityStage: CloudMlJobActivityStage;
+    /** Frameleaf Cloud’s own state of the job, or null before it was sent */
+    cloudStatus: string | null;
+    cost: CloudMlJobCostDto;
+    /** The catalogue name of the model the job runs */
+    model: string;
+    modelSku: string;
+    plannedWorkers: number;
+    /** items, seconds or segments, when Frameleaf Cloud reports progress */
+    progressUnit: string | null;
+    purpose: CloudMlJobPurpose;
+    stage: CloudMlJobStage;
+    /** Workers started so far */
+    workers: number;
+};
+export type CloudMlJobCreateDto = {
+    /** The owner confirmed that the preview or file leaves this server for Frameleaf Cloud */
+    acknowledgeDataLeaves: true;
+    /** The consent version shown with the estimate */
+    consentVersion: string;
+    /** The estimate the owner saw and confirmed */
+    estimateId: string;
+};
+export type CloudMlJobResponseDto = {
+    /** The job in Activity; cancel it there */
+    operationId: string;
+    /** The restoration or Smooth motion version it renders */
+    restorationId: string;
+    stage: CloudMlJobStage;
+};
+export type CloudMlJobEstimateRequestDto = {
+    /** The photo or video */
+    assetId: string;
+    /** The Frameleaf Cloud processing destination; never inferred */
+    destinationId: string;
+    /** Smooth motion preview: how many frames each frame becomes (2×, 4× or 8×) */
+    factor?: 2 | 4 | 8;
+    /** Restoration preview: keep fine film grain */
+    keepGrain?: boolean;
+    /** Restoration preview: faithful or creative */
+    mode?: AssetRestorationMode;
+    /** The model chosen on the slider; omitted, the chosen or recommended model for this work */
+    modelSku?: string;
+    purpose: CloudMlJobPurpose;
+    /** Preview: the part of the frame to preview */
+    region?: AssetRestorationRegionDto;
+    /** For the full stage: the reviewed preview it renders in full, with the same model and settings */
+    restorationId?: string;
+    stage: CloudMlJobStage;
+    /** Restoration preview: 2× or 4×, capped at 4K */
+    upscale?: 2 | 4;
+};
+export type CloudMlJobConsentDto = {
+    /** The full text, when Frameleaf Cloud links one */
+    documentUrl: string | null;
+    /** What leaves this server and what is kept, as Frameleaf Cloud words it */
+    summary: string;
+    /** The consent version this job is confirmed under; send it back with the job */
+    version: string;
+};
+export type CloudMlJobModelDto = {
+    /** The GPU class it runs on, for people only */
+    gpu: string;
+    /** The catalogue name */
+    label: string;
+    /** The GPU rate per metered second, USD */
+    perSecondUsd: number;
+    /** Position on the model slider, 1 = lightest */
+    rank: number;
+    /** The model revision the estimate is bound to */
+    rev: string;
+    /** The catalogue model SKU */
+    sku: string;
+    /** One start fee, USD */
+    startFeeUsd: number;
+};
+export type CloudMlJobPerUnitDto = {
+    /** Likely cost per unit, start fees included, USD; an estimate, never a price */
+    p50Usd: number;
+    /** Cost per unit at most, in nine cases out of ten, start fees included, USD */
+    p90Usd: number;
+    /** How many units the job has */
+    quantity: number;
+    /** What one unit is */
+    unit: Unit;
+};
+export type CloudMlJobPermissionDto = {
+    /** Whether this person may confirm the job; administrators always may */
+    canConfirm: boolean;
+    /** This person's monthly Frameleaf Cloud limit, USD, or null when none applies */
+    monthlyCapUsd: number | null;
+    /** not-allowed (an administrator has not allowed this person) or monthly-cap, when they may not */
+    reason: string | null;
+    /** Settled this month plus the holds of their running jobs, USD, or null when no limit applies */
+    spentThisMonthUsd: number | null;
+};
+export type CloudMlJobRefusalDto = {
+    /** insufficient-credits, daily-cap or budget-exceeded; nothing is sent and the model is never changed */
+    code: string;
+    message: string;
+};
+export type CloudMlJobEstimateResponseDto = {
+    /** AI Wallet balance minus holds, USD */
+    availableUsd: number;
+    /** measured: from the model's measured GPU time; modelled: from its expected GPU time */
+    basis: string;
+    /** Expected time to start a worker */
+    coldStartSeconds: number;
+    consent: CloudMlJobConsentDto;
+    /** The daily AI Wallet limit, USD, or null */
+    dailyCapUsd: number | null;
+    /** What confirming the job names; the server keeps everything else */
+    estimateId: string;
+    /** After this, estimate again; it is never reused */
+    expiresAt: string;
+    /** What the AI Wallet holds while the job runs, USD; released when it settles */
+    holdUsd: number;
+    /** The least the job can cost once a worker starts (one start fee), USD */
+    minimumUsd: number;
+    model: CloudMlJobModelDto;
+    /** Every model Frameleaf Cloud offers for this work here, light to heavy, for the model slider */
+    models: CloudMlJobModelDto[];
+    /** Likely total: GPU time × rate + start fees, USD */
+    p50Usd: number;
+    /** High end, in nine cases out of ten, USD */
+    p90Usd: number;
+    /** The GPU rate per metered second, USD */
+    perSecondUsd: number;
+    perUnit: CloudMlJobPerUnitDto;
+    permission: CloudMlJobPermissionDto;
+    /** Serverless workers the job is planned on, at most 5; each adds a start fee */
+    plannedWorkers: number;
+    /** Why the job cannot be sent now, or null when it can */
+    refusal: (CloudMlJobRefusalDto) | null;
+    /** Expected GPU time once running (p50) */
+    runSeconds: number;
+    /** Spent today, USD */
+    spentTodayUsd: number;
+    /** One start fee, USD */
+    startFeeUsd: number;
+    /** Start fees: one start fee per planned worker, USD */
+    startupUsd: number;
+    workload: MlWorkload;
+};
 export type CloudMlDestinationCreateDto = {
     budgetLimitUsd?: number | null;
     name?: string;
@@ -879,12 +1040,20 @@ export type AdminConfigFrameleafCloudRoutingDto = {
     studio: CloudRouteMode;
     upscale: CloudRouteMode;
 };
+export type AdminConfigFrameleafCloudSpenderDto = {
+    /** Their monthly limit, USD: settled charges plus the holds of running jobs; null for none */
+    monthlyCapUsd: number | null;
+    /** A person allowed to confirm Frameleaf Cloud jobs */
+    userId: string;
+};
 export type AdminConfigFrameleafCloudMlDto = {
     autoDescribe: AdminConfigFrameleafCloudAutoDescribeDto;
     /** Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation) */
     enabled: boolean;
     faces: AdminConfigFrameleafCloudFacesDto;
     routing: AdminConfigFrameleafCloudRoutingDto;
+    /** People besides administrators who may spend the AI Wallet, each with an optional monthly limit */
+    spenders: AdminConfigFrameleafCloudSpenderDto[];
     /** The destination a job preselects when its kind of work may run in both places */
     startWith: StartWith;
 };
@@ -1820,6 +1989,7 @@ export type MediaOperationDto = {
     bulk: (MediaOperationBulkSummaryDto) | null;
     cancelAcknowledgedAt: string | null;
     cancelRequestedAt: string | null;
+    cloudJob?: (CloudMlJobActivityDto) | null;
     createdAt: string;
     destination: MediaOperationDestination;
     /** Which worker or endpoint the destination resolved to */
@@ -4094,6 +4264,8 @@ export type AssetRestorationResponseDto = {
     reviewedAt: string | null;
     /** Per-asset sequence number, 1 for the first restoration */
     revision: number;
+    /** Smooth motion: how many frames each source frame became (2, 4 or 8); null for a restoration */
+    smoothMotionFactor: number | null;
     sourceDurationSeconds: number | null;
     sourceHeight: number;
     sourceType: AssetRestorationSourceType;
@@ -6058,6 +6230,7 @@ export type MediaOperationDetailDto = {
     cancelAcknowledgedAt: string | null;
     cancelRequestedAt: string | null;
     checkpoints: MediaOperationCheckpointDto[];
+    cloudJob?: (CloudMlJobActivityDto) | null;
     createdAt: string;
     destination: MediaOperationDestination;
     /** Which worker or endpoint the destination resolved to */
@@ -14031,6 +14204,49 @@ export function getClassificationSettings(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Confirm a Frameleaf Cloud job
+ */
+export function createCloudMlJob({ cloudMlJobCreateDto }: {
+    cloudMlJobCreateDto: CloudMlJobCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: CloudMlJobResponseDto;
+    }>("/cloud/ml/jobs", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudMlJobCreateDto
+    })));
+}
+/**
+ * Estimate a Frameleaf Cloud job
+ */
+export function estimateCloudMlJob({ cloudMlJobEstimateRequestDto }: {
+    cloudMlJobEstimateRequestDto: CloudMlJobEstimateRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlJobEstimateResponseDto;
+    }>("/cloud/ml/jobs/estimate", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudMlJobEstimateRequestDto
+    })));
+}
+/**
+ * Get a Frameleaf Cloud job
+ */
+export function getCloudMlJob({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlJobActivityDto;
+    }>(`/cloud/ml/jobs/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
  * Retrieve cluster group requests
  */
 export function getClusterGroupRequests(opts?: Oazapfts.RequestOpts) {
@@ -20473,6 +20689,32 @@ export enum CloudLinkState {
     Linked = "linked",
     Revoked = "revoked"
 }
+export enum CloudMlJobActivityStage {
+    Queued = "queued",
+    Starting = "starting",
+    Running = "running",
+    Paused = "paused",
+    Done = "done",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum CloudMlJobPurpose {
+    Restoration = "restoration",
+    SmoothMotion = "smooth-motion"
+}
+export enum CloudMlJobStage {
+    Preview = "preview",
+    Full = "full"
+}
+export enum Outcome {
+    Charged = "charged",
+    NotCharged = "not_charged",
+    Refunded = "refunded"
+}
+export enum Unit {
+    Photo = "photo",
+    Minute = "minute"
+}
 export enum CloudMlConnection {
     NotConfigured = "not-configured",
     NotLinked = "not-linked",
@@ -20827,6 +21069,7 @@ export enum MediaOperationKind {
     PreservationRestore = "preservation_restore",
     StudioExportPublish = "studio_export_publish",
     CloudDescriptionBatch = "cloud_description_batch",
+    CloudMlJob = "cloud_ml_job",
     CloudBackup = "cloud_backup",
     CloudRestore = "cloud_restore"
 }
@@ -21240,6 +21483,8 @@ export enum Permission {
     FrameleafAccountUpdate = "frameleafAccount.update",
     AdminCloudMlRead = "adminCloudMl.read",
     AdminCloudMlUpdate = "adminCloudMl.update",
+    CloudMlJobCreate = "cloudMlJob.create",
+    CloudMlJobRead = "cloudMlJob.read",
     AdminCloudBackupRead = "adminCloudBackup.read",
     AdminCloudBackupUpdate = "adminCloudBackup.update",
     AdminCloudBackupRun = "adminCloudBackup.run",
@@ -21472,7 +21717,8 @@ export enum AssetImageEnrichmentAction {
 }
 export enum AssetRestorationMode {
     Faithful = "faithful",
-    Creative = "creative"
+    Creative = "creative",
+    SmoothMotion = "smooth_motion"
 }
 export enum AssetRestorationSourceType {
     Image = "image",

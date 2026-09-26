@@ -52,7 +52,20 @@ export type FrameleafCloudRequest = {
    * TXT write waits up to 25 s for the name servers). Defaults to `FRAMELEAF_CLOUD_TIMEOUT_MS`.
    */
   timeoutMs?: number;
+  /**
+   * FL-162: the longest answer accepted, when an answer may be larger than
+   * `FRAMELEAF_CLOUD_MAX_BODY_BYTES` (a long video's upload targets name one presigned part per 8 MiB).
+   */
+  maxBodyBytes?: number;
 };
+
+/**
+ * FL-162: a conditional read's answer (`If-None-Match`). `notModified` is a 304: nothing changed since
+ * the ETag that was sent. `etag` and `retryAfterSeconds` come from the answer's headers either way.
+ */
+export type FrameleafCloudConditional<T> =
+  | { notModified: true; etag: string | null; retryAfterSeconds: number | null }
+  | { notModified: false; data: T; etag: string | null; retryAfterSeconds: number | null };
 
 /**
  * One answer: whether it was a DPoP nonce challenge, the nonce the proof carried, and the usable
@@ -216,6 +229,37 @@ export class FrameleafCloudRepository {
    * signs a fresh proof with the origin's latest nonce.
    */
   private async exchangeJson<T extends z.ZodType>(schema: T, build: () => FrameleafCloudRequest): Promise<z.infer<T>> {
+    const { request, exchange } = await this.exchangeWithNonce(build);
+    return this.parseExchange(schema, request, exchange);
+  }
+
+  /**
+   * FL-162: a conditional JSON read. `ifNoneMatch` goes out as `If-None-Match`; a 304 answers
+   * `notModified` without a body, and every other answer is read exactly as `requestJson` reads it.
+   * The answer's `ETag` and `Retry-After` are returned either way, so a caller polling a job honours
+   * both.
+   */
+  async requestJsonConditional<T extends z.ZodType>(
+    schema: T,
+    request: FrameleafCloudRequest,
+    ifNoneMatch: string | null,
+  ): Promise<FrameleafCloudConditional<z.infer<T>>> {
+    const withHeader = (): FrameleafCloudRequest =>
+      ifNoneMatch ? { ...request, headers: { ...request.headers, 'If-None-Match': ifNoneMatch } } : request;
+    const { request: sent, exchange } = await this.exchangeWithNonce(withHeader);
+    const etag = exchange.response.headers.get('etag');
+    const retryAfterSeconds = parseRetryAfter(exchange.response.headers.get('retry-after'));
+    if (exchange.response.status === 304) {
+      return { notModified: true, etag: etag ?? ifNoneMatch, retryAfterSeconds };
+    }
+    const data = this.parseExchange(schema, sent, exchange);
+    return { notModified: false, data, etag, retryAfterSeconds };
+  }
+
+  /** One exchange, retried once when a DPoP nonce challenge brought a nonce this attempt did not use. */
+  private async exchangeWithNonce(
+    build: () => FrameleafCloudRequest,
+  ): Promise<{ request: FrameleafCloudRequest; exchange: Exchange }> {
     let request = build();
     let exchange = await this.exchange(request);
     // retried once, and only when the challenge itself brought a nonce this attempt did not already use
@@ -224,6 +268,15 @@ export class FrameleafCloudRepository {
       request = build();
       exchange = await this.exchange(request, nonce);
     }
+    return { request, exchange };
+  }
+
+  /** An answer read against `schema`, or the `FrameleafCloudError` its failure means. */
+  private parseExchange<T extends z.ZodType>(
+    schema: T,
+    request: FrameleafCloudRequest,
+    exchange: Exchange,
+  ): z.infer<T> {
     const { response, text } = exchange;
     if (!response.ok) {
       let envelope = null;
@@ -332,7 +385,7 @@ export class FrameleafCloudRepository {
     if (nonceReceived) {
       this.nonces.set(origin, nonceReceived);
     }
-    const text = await this.readBounded(response);
+    const text = await this.readBounded(response, request.maxBodyBytes ?? FRAMELEAF_CLOUD_MAX_BODY_BYTES);
     let nonceChallenge = false;
     if (!response.ok) {
       let code: string | undefined;
@@ -348,7 +401,7 @@ export class FrameleafCloudRepository {
     return { response, text, nonceChallenge, nonceUsed, nonceReceived };
   }
 
-  private async readBounded(response: Response): Promise<string> {
+  private async readBounded(response: Response, maxBytes: number): Promise<string> {
     const reader = response.body?.getReader();
     if (!reader) {
       return '';
@@ -362,7 +415,7 @@ export class FrameleafCloudRepository {
           break;
         }
         size += value.byteLength;
-        if (size > FRAMELEAF_CLOUD_MAX_BODY_BYTES) {
+        if (size > maxBytes) {
           throw new FrameleafCloudError(
             MlAdmissionRefusal.CloudUnavailable,
             response.status,

@@ -415,6 +415,7 @@ export const adminConfigDefaults = {
       startWith: 'local',
       autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
       faces: { enabled: false },
+      spenders: [],
     },
     // FL-160: cloud backup is off until it is set up; the secret is write-only.
     cloudBackup: {

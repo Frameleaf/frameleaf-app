@@ -48,6 +48,7 @@ const config = (enabled: boolean, routing: Partial<Routing> = {}, modelName?: st
         startWith: 'local',
         autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
         faces: { enabled: false },
+        spenders: [],
       },
     },
   }) as unknown as AdminConfigDto;
