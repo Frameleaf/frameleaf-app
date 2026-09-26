@@ -67,8 +67,7 @@
     }
   };
 
-  const start = () =>
-    run(() => (mode === 'link' ? cloudManager.startLink() : startFrameleaf('sign-in', globalThis.location)));
+  const start = () => run(() => (mode === 'link' ? cloudManager.startLink() : startFrameleaf('sign-in', location)));
 </script>
 
 {#if linked || status?.state === 'linked'}

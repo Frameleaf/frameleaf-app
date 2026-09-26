@@ -193,9 +193,9 @@
       void loadServerData();
     }
     if (setup.flow === 'new') {
-      Promise.resolve()
-        .then(() => getPublicConfig())
-        .then((config) => (frameleafAvailable = config.frameleaf?.signInAvailable === true))
+      // A server without the Frameleaf block answers without `frameleaf`, which reads as unavailable.
+      getPublicConfig()
+        .then((config) => (frameleafAvailable = Boolean(config.frameleaf?.signInAvailable)))
         .catch(() => (frameleafAvailable = false));
     }
   });
