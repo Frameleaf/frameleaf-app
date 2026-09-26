@@ -183,6 +183,17 @@ const connection: CloudBackupConnection = {
 
 const sha256 = (data: Buffer) => createHash('sha256').update(data).digest('hex');
 
+/**
+ * The stored object holds exactly these bytes. `toEqual` walks a Buffer element by element (about a
+ * second per MiB), which runs an 8 MiB multipart object past the test timeout; `Buffer#equals` is
+ * the same exact comparison.
+ */
+const expectStored = (stored: { body: Buffer } | undefined, expected: Buffer) => {
+  expect(stored).toBeDefined();
+  expect(stored!.body.length).toBe(expected.length);
+  expect(stored!.body.equals(expected)).toBe(true);
+};
+
 describe(CloudBackupStoreRepository.name, () => {
   let s3: FakeS3;
   let sut: CloudBackupStoreRepository;
@@ -253,7 +264,7 @@ describe(CloudBackupStoreRepository.name, () => {
         size: 1000,
       },
     );
-    expect(s3.objects.get(`o/${sha256(content)}`)?.body).toEqual(content);
+    expectStored(s3.objects.get(`o/${sha256(content)}`), content);
 
     const wrong = sha256(Buffer.from('something else'));
     await expect(sut.uploadFile(connection, `o/${wrong}`, path, bucketKey, wrong)).rejects.toBeInstanceOf(
@@ -271,7 +282,7 @@ describe(CloudBackupStoreRepository.name, () => {
     const result = await sut.uploadFile(connection, `o/${sha256(content)}`, path, bucketKey, sha256(content));
 
     expect(result).toEqual({ etag: '"multi-2"', size: content.length });
-    expect(s3.objects.get(`o/${sha256(content)}`)?.body).toEqual(content);
+    expectStored(s3.objects.get(`o/${sha256(content)}`), content);
     const parts = s3.seen.filter(({ method, query }) => method === 'PUT' && query.has('partNumber'));
     expect(parts.map(({ query }) => query.get('partNumber'))).toEqual(['1', '2']);
     for (const part of parts) {
@@ -409,7 +420,7 @@ describe(CloudBackupStoreRepository.name, () => {
       etag: '"etag-1"',
       size: 2000,
     });
-    expect(s3.objects.get('m/small.json.gz')?.body).toEqual(small);
+    expectStored(s3.objects.get('m/small.json.gz'), small);
 
     const large = randomBytes(CLOUD_BACKUP_PART_BYTES + 5000);
     const chunks = Array.from({ length: Math.ceil(large.length / 65_536) }, (_, i) =>
@@ -421,7 +432,7 @@ describe(CloudBackupStoreRepository.name, () => {
       etag: '"multi-2"',
       size: large.length,
     });
-    expect(s3.objects.get('m/large.json.gz')?.body).toEqual(large);
+    expectStored(s3.objects.get('m/large.json.gz'), large);
     const parts = s3.seen.filter(
       ({ method, key, query }) => method === 'PUT' && key === 'm/large.json.gz' && query.has('partNumber'),
     );
@@ -441,7 +452,7 @@ describe(CloudBackupStoreRepository.name, () => {
         size: content.length,
       },
     );
-    expect(s3.objects.get(`o/${sha256(content)}`)?.body).toEqual(content);
+    expectStored(s3.objects.get(`o/${sha256(content)}`), content);
     expect(s3.seen.some(({ method, key }) => method === 'HEAD' && key === `o/${sha256(content)}`)).toBe(true);
   });
 
