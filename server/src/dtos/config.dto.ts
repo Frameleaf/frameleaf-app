@@ -210,6 +210,14 @@ const frameleafCloudDefaults = {
     s3: { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '' },
     keyMode: 'server' as 'server' | 'own-stored' | 'own-memory',
     include: { thumbs: false, encodedVideo: false },
+    // FL-164: one run a night; retention keeps 7 daily, 4 weekly and 12 monthly manifests and removes only
+    // objects no kept manifest names; a 1/52 sample is verified weekly (every referenced object monthly).
+    // Escrow of the bucket key with Frameleaf Cloud is off until an administrator turns it on (server key
+    // mode only).
+    schedule: { cronExpression: '0 3 * * *' },
+    retention: { keepDaily: 7, keepWeekly: 4, keepMonthly: 12 },
+    verifyWeekly: true,
+    escrow: false,
   },
 };
 
@@ -574,6 +582,22 @@ const AdminConfigFrameleafCloudSchema = z
             encodedVideo: configBool.describe('Also back up transcoded videos'),
           })
           .meta({ id: 'AdminConfigFrameleafCloudBackupIncludeDto' }),
+        schedule: z
+          .object({ cronExpression: cronExpressionSchema.describe('When scheduled backup runs start') })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupScheduleDto' }),
+        retention: z
+          .object({
+            keepDaily: z.int().min(1).max(90).describe('Daily runs kept, in days'),
+            keepWeekly: z.int().min(0).max(52).describe('Weekly runs kept, in weeks'),
+            keepMonthly: z.int().min(0).max(120).describe('Monthly runs kept, in months'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupRetentionDto' }),
+        verifyWeekly: configBool.describe(
+          'Check a sample of the backed-up files every week, and every referenced file every month',
+        ),
+        escrow: configBool.describe(
+          'Keep a passphrase-wrapped copy of the bucket key with Frameleaf Cloud (server key mode only)',
+        ),
       })
       .default(frameleafCloudDefaults.cloudBackup)
       .meta({ id: 'AdminConfigFrameleafCloudBackupDto' }),
