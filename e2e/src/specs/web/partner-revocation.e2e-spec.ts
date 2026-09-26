@@ -16,7 +16,7 @@ test.describe('Partner revocation', () => {
     admin = await utils.adminSetup();
     partner = await utils.userSetup(admin.accessToken, {
       name: 'Pat Partner',
-      email: 'partner@immich.cloud',
+      email: 'partner@example.com',
       password: 'password',
     });
     await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(partner.accessToken) });

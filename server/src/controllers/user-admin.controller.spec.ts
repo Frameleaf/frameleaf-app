@@ -29,7 +29,7 @@ describe(UserAdminController.name, () => {
     it('should allow a null pinCode', async () => {
       await request(ctx.getHttpServer()).post(`/admin/users`).send({
         name: 'Test user',
-        email: 'test@immich.cloud',
+        email: 'test@example.com',
         password: 'password',
         pinCode: null,
       });
@@ -39,7 +39,7 @@ describe(UserAdminController.name, () => {
     it('should allow a null avatarColor', async () => {
       await request(ctx.getHttpServer()).post(`/admin/users`).send({
         name: 'Test user',
-        email: 'test@immich.cloud',
+        email: 'test@example.com',
         password: 'password',
         avatarColor: null,
       });
