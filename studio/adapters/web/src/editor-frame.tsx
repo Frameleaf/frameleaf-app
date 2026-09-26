@@ -74,6 +74,7 @@ import {
 import { canonicalJson } from './canonical-commands'
 import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
 import { RemotePreview, frameToTime, localPreviewSupport } from './remote-preview'
+import { timelineEditContent } from './shims/timeline-persistence'
 
 installBrowserShims()
 hideFileSystemPickers()
@@ -454,7 +455,10 @@ async function remount(state: Session, context: StudioHostContext, incoming: str
   retireProject(state.retiredProjectIds, replaced.projectId)
   state.hostContent = incoming
   usePlaybackStore.getState().pause()
-  if (lost && reportLost(state, replaced.generation)) notifySuperseded(state)
+  // What the replaced instance shows now, so an edit it takes after this notice is told again.
+  const mark =
+    lost && replaced.generation === state.renderedGeneration ? timelineEditContent() : undefined
+  if (lost && reportLost(state, replaced.generation, mark)) notifySuperseded(state)
   await seedProject(state, mount)
   if (state.disposed) return
   // Before the new instance renders, so its bin and its orphaned-clip check at load already see the
@@ -464,7 +468,10 @@ async function remount(state: Session, context: StudioHostContext, incoming: str
   if (state.disposed || state.mount !== mount) return
   // The instance on screen until now stayed editable while this one was seeded; edits it made since
   // can no longer be saved (the persistence gate refuses a replaced mount) and go with it.
-  if (useTimelineSettingsStore.getState().isDirty && reportLost(state, state.renderedGeneration))
+  if (
+    useTimelineSettingsStore.getState().isDirty &&
+    reportLost(state, state.renderedGeneration, timelineEditContent())
+  )
     notifySuperseded(state)
   state.renderedGeneration = mount.generation
   state.render()

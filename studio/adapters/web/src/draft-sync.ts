@@ -91,6 +91,8 @@ export interface DraftSendState {
   writePending?: boolean
   /** The mount generation whose lost edits were last reported, so the person is told once per mount. */
   lostReportedFor?: number
+  /** What that instance showed when it was reported; a later edit there is reported again. */
+  lostReportedMark?: string
   disposed: boolean
 }
 
@@ -140,11 +142,20 @@ export const editsLostOnRemount = (state: DraftSendState, unsent: boolean): bool
     (unsent || state.pendingSend || state.writePending === true))
 
 /**
- * Whether to tell the person that edits of mount `generation` were lost (FL-174): true once per
- * mount, so a remount and a refusal arriving after it do not both show the notice.
+ * Whether to tell the person that edits of mount `generation` were lost (FL-174). True once per
+ * mount, so a remount and a refusal arriving after it do not both show the notice, unless `mark`
+ * (what that instance shows) changed since it was reported: the replaced instance stays on screen,
+ * and editable, until the new one renders, and an edit made there after the notice is lost too.
+ * Without a mark, a report for the same mount is never repeated.
  */
-export function reportLost(state: DraftSendState, generation: number): boolean {
-  if (state.disposed || state.lostReportedFor === generation) return false
+export function reportLost(state: DraftSendState, generation: number, mark?: string): boolean {
+  if (state.disposed) return false
+  if (
+    state.lostReportedFor === generation &&
+    (mark === undefined || mark === state.lostReportedMark)
+  )
+    return false
+  if (state.lostReportedFor !== generation || mark !== undefined) state.lostReportedMark = mark
   state.lostReportedFor = generation
   return true
 }
@@ -256,6 +267,11 @@ export async function sendEditorDraft(
     // The mount took the host's newer graph meanwhile (it already showed it), so what it shows now is
     // built on the host's change: send that instead.
     await sendEditorDraft(state, mount, io)
+  } else if (result.status === 'rejected' && result.reason === 'invalid') {
+    // The host could not read this draft at all (a malformed build); the same draft would be refused
+    // again, so it is not queued for another send. The edit stays unsent, and a remount reports it.
+    state.pendingSend = false
+    io.dirty(true)
   } else {
     // Kept in the editor and sent again when the host can take it; the host's banner says why. A
     // superseded one goes again once the mount takes the host's graph, or is lost with the mount.

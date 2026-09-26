@@ -750,8 +750,11 @@ class StudioModel {
   seeding: { mount: EditorMount; graph: string } | null = null
   pendingSaves: Array<{ projectId: string; content: string }> = []
   sendTimers: EditorMount[] = []
-  edits = new Map<string, number>()
-  lostMounts = new Set<number>()
+  /** Every edit: the instance it was made in and when. */
+  edits = new Map<string, { generation: number; at: number }>()
+  /** When each instance last told the person its edits were lost. */
+  reports = new Map<number, number>()
+  private clock = 0
   updates: ModelUpdate[] = []
   arrivals: Array<{
     graph: string
@@ -894,7 +897,11 @@ class StudioModel {
     const graph = this.node('e', this.store)
     this.store = graph
     this.dirty = true
-    this.edits.set(graph, this.live.generation)
+    this.edits.set(graph, { generation: this.live.generation, at: (this.clock += 1) })
+  }
+
+  private reported(generation: number) {
+    this.reports.set(generation, (this.clock += 1))
   }
 
   startSave() {
@@ -906,7 +913,9 @@ class StudioModel {
     const save = this.pendingSaves.shift()
     if (!save) return
     this.files.set(save.projectId, save.content)
-    if (save.projectId === this.live.projectId && save.content === this.store) this.dirty = false
+    // Freecut marks the (global) timeline clean after every save; the persistence shim marks it dirty
+    // again when the stores changed while the save wrote.
+    this.dirty = this.store !== save.content
     const mount = this.state.mount
     if (save.projectId === mount.projectId && acceptsWrite(this.state, mount)) {
       this.state.writePending = true
@@ -928,7 +937,7 @@ class StudioModel {
           this.arrivals.push({ graph: String(graph), base, version, resolve }),
         ),
       dirty: () => undefined,
-      lost: () => this.lostMounts.add(mount.generation),
+      lost: () => this.reported(mount.generation),
     })
   }
 
@@ -953,8 +962,9 @@ class StudioModel {
         update.version,
       )
       this.state.hostContent = update.graph
-      if (lost && reportLost(this.state, replaced.generation))
-        this.lostMounts.add(replaced.generation)
+      const mark = lost && replaced === this.live ? this.store : undefined
+      if (lost && reportLost(this.state, replaced.generation, mark))
+        this.reported(replaced.generation)
       this.seeding = { mount, graph: update.graph }
     } else if (outcome === 'echo') {
       this.state.hostContent = update.graph
@@ -971,8 +981,8 @@ class StudioModel {
     this.seeding = null
     if (seeding.mount !== this.state.mount) return
     this.files.set(seeding.mount.projectId, seeding.graph)
-    if (this.dirty && reportLost(this.state, this.live.generation))
-      this.lostMounts.add(this.live.generation)
+    if (this.dirty && reportLost(this.state, this.live.generation, this.store))
+      this.reported(this.live.generation)
     this.live = seeding.mount
   }
 
@@ -997,10 +1007,11 @@ class StudioModel {
     expect(this.descends(this.hostGraph, this.lastReplacement)).toBe(true)
   }
 
+  /** An edit the host never took was reported lost by its instance after it was made. */
   assertNoEditDisappeared() {
-    for (const [edit, generation] of this.edits) {
+    for (const [edit, { generation, at }] of this.edits) {
       const kept = this.accepted.some((graph) => this.descends(graph, edit))
-      if (!kept) expect(this.lostMounts.has(generation), `edit ${edit}`).toBe(true)
+      if (!kept) expect(this.reports.get(generation) ?? 0, `edit ${edit}`).toBeGreaterThan(at)
     }
   }
 
@@ -1074,7 +1085,7 @@ describe('the Studio host and editor under every interleaving (FL-174)', () => {
       model.assertNoEditDisappeared()
       // Settled: the editor shows the host's latest graph, at its version.
       expect(model.state.mount.graphVersion).toBe(model.host.graphVersion)
-      lostAtAll += model.lostMounts.size
+      lostAtAll += model.reports.size
     }
     // The interleavings reach the lost-edit path, so the second property is exercised.
     expect(lostAtAll).toBeGreaterThan(0)
