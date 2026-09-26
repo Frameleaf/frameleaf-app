@@ -331,6 +331,10 @@ describe(WorkflowExecutionService.name, () => {
       mocks.workflow.isWorkflowEligible.mockResolvedValue(true);
       mocks.workflow.getForAssetV1.mockResolvedValue({ id: assetId, ownerId } as never);
       mocks.workflow.log.mockResolvedValue(newUuid());
+      // FL-179: an automatic retry carries its own execution id, so it reads and records step progress
+      mocks.workflow.hasRunStepTable.mockResolvedValue(true);
+      mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
+      mocks.workflow.completeStep.mockResolvedValue();
       return workflow;
     };
 
