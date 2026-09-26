@@ -154,7 +154,7 @@ export const boundTokenProblem = (
   if (response.token_type?.toLowerCase() !== 'dpop') {
     return `the token type is ${response.token_type ?? 'missing'}, not DPoP`;
   }
-  let claims: unknown = null;
+  let claims: unknown;
   try {
     const [, payload] = response.access_token.split('.', 3);
     claims = payload ? JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) : null;

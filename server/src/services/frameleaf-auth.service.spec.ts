@@ -337,8 +337,8 @@ describe(FrameleafAuthService.name, () => {
           Promise.resolve(
             users
               .values()
-              .toArray()
-              .filter((user) => user.isAdmin) as never,
+              .filter((user) => user.isAdmin)
+              .toArray() as never,
           ),
         );
         mocks.user.update.mockImplementation(async (id, change) => {
@@ -355,8 +355,8 @@ describe(FrameleafAuthService.name, () => {
         expect(
           users
             .values()
-            .toArray()
-            .filter((user) => user.isAdmin),
+            .filter((user) => user.isAdmin)
+            .toArray(),
         ).toHaveLength(1);
         expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.FrameleafRoleChange, expect.any(Function));
       });
