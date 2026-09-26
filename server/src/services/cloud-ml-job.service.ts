@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -98,7 +99,9 @@ import {
   cloudMlJobClientRef,
   cloudMlJobCostOf,
   cloudMlJobIdempotencyKey,
+  cloudMlJobMonthStart,
   cloudMlJobRecordOf,
+  cloudMlJobSpentUsd,
   cloudMlJobWorkload,
   emptyCloudMlJobResult,
   orderedOutputs,
@@ -568,7 +571,60 @@ export class CloudMlJobService {
       spentTodayUsd: wallet.spentTodayUsd,
       consent: { version: consent.requiredVersion, summary: consent.summary, documentUrl: consent.documentUrl },
       refusal: this.walletRefusal(wallet, availableUsd, sealed.cost.hold),
+      // everyone may see what a job would cost; only those allowed may confirm it
+      permission: await this.spendPermission(auth, sealed.cost.hold, now),
     };
+  }
+
+  /**
+   * Whether this person may confirm a job that holds `holdUsd` (FL-162 owner decision, 2026-09-26).
+   * Administrators always may. Anyone else only when an administrator allowed them
+   * (`frameleafCloud.cloudMl.spenders`), and, with a monthly limit, only while this month's settled
+   * charges plus the holds of their unsettled jobs plus this job's hold stay within it.
+   */
+  async spendPermission(
+    auth: AuthDto,
+    holdUsd: number,
+    now: Date,
+  ): Promise<CloudMlJobEstimateResponseDto['permission']> {
+    if (auth.user.isAdmin) {
+      return { canConfirm: true, reason: null, monthlyCapUsd: null, spentThisMonthUsd: null };
+    }
+    const { spenders } = await this.cloudMlSettings();
+    const spender = spenders.find((entry) => entry.userId === auth.user.id);
+    if (!spender) {
+      return { canConfirm: false, reason: 'not-allowed', monthlyCapUsd: null, spentThisMonthUsd: null };
+    }
+    if (spender.monthlyCapUsd === null) {
+      return { canConfirm: true, reason: null, monthlyCapUsd: null, spentThisMonthUsd: null };
+    }
+    const rows = await this.mediaOperationRepository.listCloudMlJobSpend(auth.user.id, cloudMlJobMonthStart(now));
+    const spent = cloudMlJobSpentUsd(rows);
+    const within = spent + holdUsd <= spender.monthlyCapUsd + 1e-9;
+    return {
+      canConfirm: within,
+      reason: within ? null : 'monthly-cap',
+      monthlyCapUsd: spender.monthlyCapUsd,
+      spentThisMonthUsd: spent,
+    };
+  }
+
+  /** Refuse a confirmation this person may not make, in plain words; never left to the web app. */
+  private async requireSpendPermission(auth: AuthDto, holdUsd: number, now: Date) {
+    const permission = await this.spendPermission(auth, holdUsd, now);
+    if (permission.canConfirm) {
+      return;
+    }
+    const message =
+      permission.reason === 'monthly-cap'
+        ? `This job would take you past your monthly Frameleaf Cloud limit of ${permission.monthlyCapUsd?.toFixed(2)} USD (${permission.spentThisMonthUsd?.toFixed(2)} USD used). An administrator can raise it.`
+        : 'Only administrators, and people an administrator allows, can run jobs on Frameleaf Cloud. An administrator can allow you.';
+    throw new ForbiddenException({
+      message,
+      error: 'Forbidden',
+      statusCode: HttpStatus.FORBIDDEN,
+      code: permission.reason,
+    });
   }
 
   /**
@@ -621,6 +677,8 @@ export class CloudMlJobService {
         permission: Permission.AssetEditCreate,
         ids: [record.assetId],
       });
+      // checked under the estimates lock, so two confirmations at once cannot both fit one monthly limit
+      await this.requireSpendPermission(auth, record.approved.holdUsd, now);
       const source = await this.requireSource(record.assetId);
       if (Buffer.from(source.checksum).toString('hex') !== record.sourceChecksumHex) {
         throw new ConflictException('The original changed since the estimate; estimate again');
