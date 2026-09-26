@@ -265,9 +265,7 @@ export const flowUtils = {
         row.push({ id: element.dataset.assetId!, left: rect.left, right: rect.right });
         rows.set(top, row);
       }
-      return [...rows]
-        .toSorted(([a], [b]) => a - b)
-        .map(([, row]) => row.toSorted((a, b) => a.left - b.left));
+      return [...rows].toSorted(([a], [b]) => a - b).map(([, row]) => row.toSorted((a, b) => a.left - b.left));
     }, TILE);
   },
   /** Where each tile wholly inside the scroll area sits, relative to the scroll area. */

@@ -31,7 +31,7 @@ import {
   RenderWorkerStatus,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { CloudConnectionState, CloudGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
+import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
 import { CloudErrorCode, FrameleafCloudError, cloudErrorCode, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
@@ -411,13 +411,15 @@ export class MlDestinationService extends BaseService {
     }
   }
 
-  private cloudGatewayDeps(): CloudGatewayDeps {
+  private cloudGatewayDeps(): CloudMlGatewayDeps {
     return {
       configRepository: this.configRepository,
       databaseRepository: this.databaseRepository,
       systemMetadataRepository: this.systemMetadataRepository,
       instanceIdentityRepository: this.instanceIdentityRepository,
       frameleafCloudRepository: this.frameleafCloudRepository,
+      eventRepository: this.eventRepository,
+      logger: this.logger,
     };
   }
 
