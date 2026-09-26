@@ -664,6 +664,24 @@ export const utils = {
       },
     ]),
 
+  /**
+   * Serves the configured map styles (`/v1/style/light.json` and `dark.json`) from the test itself,
+   * so a map renders its markers without reaching a tile host. The style is a plain background with
+   * no sources, glyphs or sprites, which is all the marker layers need.
+   */
+  mockMapStyle: async (context: BrowserContext) =>
+    await context.route(/\/v1\/style\/(light|dark)\.json(\?.*)?$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          version: 8,
+          sources: {},
+          layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#e8ecef' } }],
+        }),
+      }),
+    ),
+
   setMaintenanceAuthCookie: async (context: BrowserContext, token: string, domain = '127.0.0.1') =>
     await context.addCookies([
       {

@@ -55,7 +55,7 @@ test.describe('User Administration', () => {
     await expect(dialog).toHaveCount(0);
 
     // Verify the user exists in the user list
-    await expect(page.getByRole('row', { name: /user@immich\.cloud/ })).toBeVisible();
+    await expect(page.getByRole('row', { name: /user@example\.com/ })).toBeVisible();
   });
 
   test('promote to admin', async ({ context, page }) => {
@@ -218,9 +218,9 @@ test.describe('User Administration', () => {
       // the default list shows active accounts; the Deleted filter finds this one
       await page.goto(usersManager);
       const table = page.getByRole('region', { name: 'Account table' });
-      await expect(table.getByRole('link', { name: /leaving-user@immich\.cloud/ })).toHaveCount(0);
+      await expect(table.getByRole('link', { name: /leaving-user@example\.com/ })).toHaveCount(0);
       await page.getByRole('combobox', { name: 'Filter records' }).selectOption('deleted');
-      await table.getByRole('link', { name: /leaving-user@immich\.cloud/ }).click();
+      await table.getByRole('link', { name: /leaving-user@example\.com/ }).click();
 
       await page.getByRole('button', { name: 'Restore account', exact: true }).click();
       const restore = page.getByRole('dialog', { name: 'Restore Leaving User' });
