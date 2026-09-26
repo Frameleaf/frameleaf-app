@@ -19,6 +19,7 @@
   "regions": ["eu", "na"],
   "intervals": { "heartbeatSec": 300, "entitlementRefreshSec": 86400, "relayTokenRefreshPct": 50 },
   "limits": { "heartbeatBodyBytes": 65536, "heartbeatEndpoints": 16, "commandsPerResponse": 50, "noticesPerResponse": 20, "commandsLongPollSec": 25, "commandTtlSec": 86400 },
+  "remote": { "directDomain": "frameleaf.net" },
   "instanceId": "0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53",
   "services": {
     "relay": { "status": "disabled", "reason": "not-enabled" },
