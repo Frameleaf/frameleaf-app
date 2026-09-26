@@ -1035,19 +1035,19 @@
       "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 86303,
+      "bytes": 88495,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "6b63ce66d641d7a23f55bb40c3d204320ef99d6f813f4880e800a973a68ed754",
+      "sourceSha256": "98428d8bdb0a2b725003493fa86287f081caf8b908952b72833531cc1c1ea129",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 9,
+      "version": 11,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "625870f0e00c3e1143db99336a00b94f0522c7c4",
-      "sourceState": "committed-fl-178-dpop-merged-2026-09-26",
-      "readbackResult": "Markdown read-back of version 9 begins with the header carrying SHA-256 6b63ce66, 86303 bytes, commit 625870f0e0 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-178 commits ce358f3040 and a701c01c3f merged in 625870f0e0, the source-at-commit backlink, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the DPoP (FC-66, RFC 9449; FL-178) entry, DPoP-bound tokens and the key-recovery check-in outcomes, except one normalized space at a nested-backtick boundary and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
-      "readbackAt": "2026-09-26T05:35:40.000Z"
+      "sourceCommit": "74a731a215aef13f071b96db6a4b6030d8994e3f",
+      "sourceState": "committed-fl-181-fl-182-workload-ids-licence-key-merged-2026-09-26",
+      "readbackResult": "Markdown read-back of version 11 begins with the header carrying SHA-256 98428d8b, 88495 bytes, commit 74a731a215 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-181 commits 9990204e06 and 4cc520230d merged in 2b17345e33 and the FL-182 commit e81592111e merged in 74a731a215, the source-at-commit backlink, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the Workload IDs on the wire (FC-66, FL-181) entry and the Luhn mod 32 licence-key check symbol (FL-182, decision #40), except one normalized space at a nested-backtick boundary and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text. Version 10 (FL-181 alone, SHA-256 cc751026 at 2b17345e33) was published and read back first and is superseded by version 11.",
+      "readbackAt": "2026-09-26T06:33:00.000Z"
     }
   ],
   "spaceId": "61374475",
