@@ -26,6 +26,11 @@ docker image prune
 [breaking]: https://github.com/immich-app/immich/discussions?discussions_q=label%3Achangelog%3Abreaking-change+sort%3Adate_created
 [releases]: https://github.com/immich-app/immich/releases
 
+## Frameleaf upgrade notes
+
+- **Index on generated file paths.** The first start after upgrading builds an index on the paths of generated files (`asset_file_path_frameleaf_idx`). The server is ready once it is built, and saving generated files waits until then, so on a large library that start takes longer than usual. Let it finish; nothing else is needed.
+- **After a certified handoff.** A database that has been handed off to the official server does not receive new Frameleaf database changes. Frameleaf keeps working without them: workflows run as before, but a run interrupted by a worker restart starts again from its first step, and moving files is slower.
+
 ## Versioning Policy
 
 Immich follows [semantic versioning][semver], which tags releases in the format `<major>.<minor>.<patch>`.
