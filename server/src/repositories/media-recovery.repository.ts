@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { MediaIntegrityResult } from 'src/services/media-integrity.service.js';
+import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import {
   AssetLockReason,
   AssetStatus,
@@ -166,11 +167,13 @@ export class MediaRecoveryRepository {
           AND h.status NOT IN ('resolved', 'relinked', 'trashed')) AS damaged
       FROM public.asset a LEFT JOIN public.asset_exif e ON e."assetId" = a.id
       LEFT JOIN immich_fork.asset_checksum s ON s."assetId" = a.id
+        AND s.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
       LEFT JOIN immich_fork.asset_physical_file p ON p."assetId" = a.id
       WHERE a."ownerId" = ${ownerId}::uuid AND a.id IN (
         SELECT id FROM public.asset WHERE "ownerId" = ${ownerId}::uuid AND checksum IN (${verified.sha1}, ${verified.sha256})
           AND "checksumAlgorithm" IN (${ChecksumAlgorithm.sha1File}, ${ChecksumAlgorithm.sha256File})
-        UNION SELECT "assetId" FROM immich_fork.asset_checksum WHERE sha1 = ${verified.sha1} OR sha256 = ${verified.sha256}
+        UNION SELECT "assetId" FROM immich_fork.asset_checksum WHERE (sha1 = ${verified.sha1} OR sha256 = ${verified.sha256})
+          AND evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
         UNION SELECT ${mappedId ?? null}::uuid)
       ORDER BY (a.id = ${mappedId ?? null}::uuid) DESC NULLS LAST, a.id LIMIT 33
     `.execute(db);

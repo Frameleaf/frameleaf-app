@@ -10,6 +10,7 @@ import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import {
   EXTENSION_NAMES,
+  EXTERNAL_SCAN_CHECKSUM,
   POSTGRES_VERSION_RANGE,
   VECTORCHORD_LIST_SLACK_FACTOR,
   VECTORCHORD_VERSION_RANGE,
@@ -785,6 +786,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
         )::int AS "invalidCount"
       FROM public.asset asset
       LEFT JOIN immich_fork.asset_checksum checksum ON checksum."assetId" = asset.id
+        AND checksum.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
     `.execute(runner);
     const mappingResult = await sql<{
       mappingCount: number;

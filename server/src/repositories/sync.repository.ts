@@ -3,6 +3,7 @@ import { ExpressionBuilder, Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SyncAck } from 'src/types.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, AssetMetadataKey } from 'src/enum.js';
@@ -76,9 +77,15 @@ const personFaceAssetId = (options: HiddenContentQueryOptions) => {
     : sql<string | null>`person."faceAssetId"`.as('faceAssetId');
 };
 
+/**
+ * The sha1 a device compares its local files against. An external-library original's scanned digests
+ * (FL-69) are left out: bytes on an external mount are not a managed copy, so a device must never treat
+ * its own photo as backed up because of them.
+ */
 const syncChecksum = () =>
   sql<Buffer>`coalesce(
-    (select checksum.sha1 from immich_fork.asset_checksum checksum where checksum."assetId" = asset.id),
+    (select checksum.sha1 from immich_fork.asset_checksum checksum where checksum."assetId" = asset.id
+      and checksum.evidence ->> 'source' is distinct from ${sql.lit(EXTERNAL_SCAN_CHECKSUM)}),
     asset.checksum
   )`.as('checksum');
 
