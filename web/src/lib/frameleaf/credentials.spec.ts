@@ -100,6 +100,29 @@ describe('write-only credentials (FL-67)', () => {
     expect(JSON.stringify(stored)).not.toMatch(/-secret/);
   });
 
+  it('treats the cloud backup secret access key like every other credential (FL-160)', () => {
+    const withBackup = {
+      ...config(),
+      frameleafCloud: {
+        cloudBackup: {
+          s3: { endpoint: 'https://s3.example.test', secretAccessKey: 's3-secret', secretAccessKeyConfigured: true },
+        },
+      },
+    } as unknown as AdminConfigDto;
+
+    expect(hasCredentialValues({ frameleafCloud: withBackup.frameleafCloud })).toBe(true);
+    const safe = withoutCredentialValues(withBackup);
+    expect(safe.frameleafCloud?.cloudBackup?.s3).toMatchObject({
+      secretAccessKey: '',
+      secretAccessKeyConfigured: true,
+    });
+    expect(forConfigSave(withBackup).frameleafCloud?.cloudBackup?.s3).not.toHaveProperty('secretAccessKeyConfigured');
+    expect(isCredentialConfigured(withBackup, ConfigCredential.CloudBackupS3SecretKey)).toBe(true);
+    const cleared = withCredentialState(withBackup, ConfigCredential.CloudBackupS3SecretKey, false);
+    expect(isCredentialConfigured(cleared, ConfigCredential.CloudBackupS3SecretKey)).toBe(false);
+    expect(JSON.stringify(cleared)).not.toContain('s3-secret');
+  });
+
   it('accepts any non-blank value up to the server limit, as typed', () => {
     expect(isCredentialValueValid('  spaced secret  ')).toBe(true);
     expect(isCredentialValueValid('')).toBe(false);
