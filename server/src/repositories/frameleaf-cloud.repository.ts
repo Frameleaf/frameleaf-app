@@ -47,6 +47,11 @@ export type FrameleafCloudRequest = {
   /** FL-177: a body sent as it is, for example a compact JWS as `application/jose`. */
   raw?: { contentType: string; body: string };
   headers?: Record<string, string>;
+  /**
+   * FL-165: how long this call may take, for the few calls the cloud answers slowly on purpose (a DNS
+   * TXT write waits up to 25 s for the name servers). Defaults to `FRAMELEAF_CLOUD_TIMEOUT_MS`.
+   */
+  timeoutMs?: number;
 };
 
 /**
@@ -312,7 +317,7 @@ export class FrameleafCloudRepository {
         headers,
         body,
         redirect: 'error',
-        signal: AbortSignal.timeout(FRAMELEAF_CLOUD_TIMEOUT_MS),
+        signal: AbortSignal.timeout(request.timeoutMs ?? FRAMELEAF_CLOUD_TIMEOUT_MS),
       });
     } catch (error) {
       throw new FrameleafCloudError(

@@ -33,6 +33,7 @@ import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.s
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
+import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
@@ -119,6 +120,7 @@ export const services = [
   FrameleafAuthService,
   FrameleafCloudService,
   FrameleafLicenseService,
+  FrameleafRemoteAccessService,
   HardwareCheckService,
   ICloudMetadataService,
   ICloudRelationsService,

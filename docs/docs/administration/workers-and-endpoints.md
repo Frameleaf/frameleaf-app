@@ -105,6 +105,50 @@ Then add a home-network destination at `http://frameleaf-restoration:3004`, allo
 - **One GPU for both.** Tick **This worker shares a GPU with library analysis** on the restoration destination. Full restorations bound to it then stay queued while face, search, text and description jobs have work, and start when that work is done. Previews still run, because someone is waiting for them and they are short. A paused library queue does not hold restoration back.
 - **On the server.** Restoration jobs are not in the library-analysis queues. Each server process runs at most one restoration at a time on its own loop, so a restoration never takes a queue's concurrency slot; queue concurrency is set under **Job Queues** as before.
 
+## The edge worker (remote access)
+
+The server container runs a third worker next to `api` and `microservices`: **edge**. It carries Frameleaf Cloud remote access. It is part of the default worker set, runs as a process of its own, and does nothing until remote access can run:
+
+- Without `FRAMELEAF_CLOUD_URL`, a linked server, an active (or in-grace) remote access plan and **Allow remote access** switched on in Settings → Frameleaf Cloud → Remote access, it serves nothing and contacts nothing. It only reads the settings every 10 seconds.
+- Exactly one edge worker serves at a time, however many containers run one: the one holding the edge lock in the database. Any other waits.
+- It proxies every remote request to the API at `IMMICH_HOST:IMMICH_PORT` (`127.0.0.1` when `IMMICH_HOST` is unset or a wildcard address), marking how it arrived with the per-boot `FRAMELEAF_EDGE_SECRET`. Without that secret it serves nothing: remote visitors are never let in as if they were at home. A container that runs the edge worker without the API must set `IMMICH_HOST` to the API container's address and share its `FRAMELEAF_EDGE_SECRET`.
+
+### What it does once remote access is on
+
+1. **Enrols** the server with Frameleaf Cloud (`POST /v1/remote/enroll`). The answer gives the server's label (16 characters derived from its instance ID), the direct domain in use and its names: `r.<label>.<domain>` for the relay, `<address>.<label>.<domain>` for LAN, WAN and IPv6 addresses (`192-168-1-10.<label>.frameleaf.net`). The direct domain always comes from Frameleaf Cloud; `frameleaf.net` is only the documented default.
+2. **Obtains its own certificate** for `*.<label>.<domain>` and `<label>.<domain>` from Let's Encrypt with the ACME DNS-01 challenge. Frameleaf Cloud only publishes the challenge values the server hands it (`PUT` and `DELETE /v1/remote/dns/txt`) and pins the domain's CAA record to this server's ACME account. The ACME account key, the certificate and its private key are files readable by the server only (mode 0600) in `<identity folder>/edge`; they never leave the server. The server reports each certificate's serial, issuer, dates and names (never the certificate or key) so Frameleaf Cloud can watch Certificate Transparency logs for certificates it did not obtain.
+3. **Renews** the certificate: it checks once a day, at a random time up to six hours later, and renews once less than 25 days or a third of the certificate's lifetime is left. A failed attempt is retried after 1 hour, then 2, 4 and so on, at most once a day, and administrators get one notice a day while it keeps failing. The current certificate keeps working until it expires.
+4. **Listens for HTTPS** on `FRAMELEAF_EDGE_BIND:FRAMELEAF_EDGE_PORT` (default `0.0.0.0:2443`). A connection arrives as **home** only when it asks for one of the LAN names this server publishes, such as `https://192-168-1-10.<label>.frameleaf.net:2443`, and comes from the same /24 (IPv4) or /64 (IPv6) as that address, or from a network listed in `FRAMELEAF_TRUSTED_LAN_CIDRS`. Everyone else arrives as **remote** and signs in with Frameleaf: the relay name, a custom hostname, another name, another subnet, a loopback address, or the container's own gateway (unless you list the gateway in `FRAMELEAF_TRUSTED_LAN_CIDRS`). With **Relay only**, connections from outside the home network are closed; **Relay and direct** serves them too.
+
+The proxy streams uploads and downloads without buffering (a request may run for up to 24 hours), passes byte ranges and WebSocket connections through, adds HSTS to every answer, and accepts at most 512 connections at once and 64 from one address (an IPv6 visitor counts by its /64).
+
+**Which LAN names.** The server publishes a LAN name only for the IPv4 address in `FRAMELEAF_LOCAL_URL`, or, outside a container and without it, for the addresses of the network interface its default route uses (never a container bridge, virtual machine or tunnel interface).
+
+**Docker networking.** Publish the listener's port on the server container (`ports: ['2443:2443']` next to `2283:2283`), with the same number inside and outside so the LAN names the server publishes work. The edge worker must see each visitor's real address, so the direct port must not go through Docker's userland proxy (`docker-proxy`), slirp4netns (rootless Docker or Podman) or a reverse proxy: behind those every visitor appears to come from the container's gateway, and is then treated as remote even at home. With the default bridge network, IPv4 connections to a published port keep their address; IPv6 connections to an IPv4-only network and connections from the same host go through `docker-proxy`. Use host networking, or enable IPv6 for Docker's network, if people at home should connect directly. Set `FRAMELEAF_LOCAL_URL` to the address the home network knows the server by, as an IPv4 address (a host name publishes no LAN name): in a container, only that address's LAN name makes a visitor count as home (the container's own bridge address never does, because other containers share it). A device on your home network that forwards internet traffic to the server while rewriting its source address (a router port forward with source NAT, a VPN endpoint, a TCP proxy) makes visitors look like neighbours: keep such a forwarder off the server's /24, or do not use direct connections.
+
+### Turning it off
+
+Switching remote access off or unlinking the server closes the listener and every connection and removes the certificates and their keys; the ACME account key stays, so the CAA record still names this server's account. When only the plan lapses, the listener closes and the certificates stay until they expire. Stopping or restarting the server closes every connection within five seconds.
+
+### Your own domain
+
+A server can also be reached at a hostname on a domain you own, such as `photos.example.com`, through the relay. Add it in Settings → Frameleaf Cloud → Remote access → **Use your own domain** and create these two records at your DNS provider:
+
+| Type  | Name                                 | Points to                               |
+| ----- | ------------------------------------ | --------------------------------------- |
+| CNAME | `photos.example.com`                 | `r.<label>.frameleaf.net`               |
+| CNAME | `_acme-challenge.photos.example.com` | `_acme-challenge.<label>.frameleaf.net` |
+
+The page shows the exact values for your server. **Check DNS** asks Frameleaf Cloud whether both records point to this server; once they do, the hostname is verified and the edge worker obtains and renews a certificate for it through the second record, the same way as for its own names. Hostnames under Frameleaf's own domains (`frameleaf.net`, `frameleaf-direct.net`, `frameleaf.cloud`) are refused. **Use my domain** publishes the verified hostname as the server's public address, in links, emails and to the apps; **Use the Frameleaf address** goes back to `https://r.<label>.frameleaf.net`. **Remove domain** stops using it; you can then delete the records.
+
+### Connections and the public address
+
+`GET /api/server/connections` lists the ways to reach the server, in the order apps should try them: local (LAN names), WAN and IPv6 (in **Relay and direct** mode), the verified custom hostname, then the relay. `/api/server/config` and `/.well-known/immich` publish the public address. The relay name and the custom hostname both reach the server through the relay, so they are published (as candidates and as the public address) only while the relay is connected; LAN names are published whenever the listener runs. The check-in with Frameleaf Cloud reports the same list and whether the relay and direct connections are up.
+
+**Test connection** on the Remote access page checks the certificate, that the HTTPS listener is running, and that a request through it reaches the server, and shows what the relay and router reported last.
+
+**Not yet available:** the relay tunnel and automatic router port mapping arrive in later versions. Until then, with the default **Relay only** connection, the server cannot be reached from outside the home network at all: only its LAN names work, and no public address is published. With **Relay and direct** and a port you forward yourself, visitors can reach the listener directly on your public address.
+
 ## API
 
 `GET /api/admin/workers` returns the inventory for administrators. It reads stored state only: loads are counts, runner identities are process names, and no owner, asset or credential is returned. Destinations, routes, consent and checks use the `/api/ml-destinations` endpoints; Frameleaf Cloud's status, destination, AI Wallet, catalogue and consent records use `/api/admin/cloud/ml`.

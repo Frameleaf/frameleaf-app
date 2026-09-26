@@ -2133,6 +2133,108 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/remote": {
+      "get": {
+        "description": "Whether remote access is on, how it connects, the address it publishes, its certificate, the custom hostname and the connection candidates. Reads local state only; nothing is contacted.",
+        "operationId": "getRemoteAccess",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteAccessStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get remote access",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Turns remote access on or off and chooses its connection, direct port and published address. Turning it on needs a linked server with a remote access plan; publishing your own domain needs a verified custom hostname.",
+        "operationId": "updateRemoteAccess",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteAccessUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteAccessStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change remote access",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminRemoteAccess.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/remote-access": {
       "put": {
         "description": "Remote visitors always sign in with Frameleaf. This allows original downloads, archives and database backups through the relay, and password sign-in away from home. Turning either on needs a linked server.",
@@ -2187,6 +2289,202 @@
           }
         ],
         "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/remote/hostname": {
+      "delete": {
+        "description": "Removes the custom hostname and publishes the Frameleaf address again. Its DNS records can then be deleted.",
+        "operationId": "removeRemoteHostname",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteAccessStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stop using the custom hostname",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminRemoteAccess.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Adds a hostname on a domain you own, such as photos.example.com, and returns the two DNS records to add at your DNS provider. It waits for them until they are checked.",
+        "operationId": "setRemoteHostname",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteHostnameUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteAccessStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Use your own domain for remote access",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminRemoteAccess.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/remote/hostname/check": {
+      "post": {
+        "description": "Asks Frameleaf Cloud whether both DNS records point to this server. Once they do, the hostname is verified and this server obtains its certificate.",
+        "operationId": "checkRemoteHostname",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteAccessStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check the custom hostname’s DNS records",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminRemoteAccess.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/remote/test": {
+      "post": {
+        "description": "Checks the certificate, the HTTPS listener and a request through it to this server, and reports the relay and the router as last seen. The result is kept with the remote access status.",
+        "operationId": "testRemoteAccess",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteAccessStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Test remote access",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminRemoteAccess.update",
         "x-immich-state": "Alpha"
       }
     },
@@ -29044,6 +29342,52 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/server/connections": {
+      "get": {
+        "description": "The ways to reach this server through Frameleaf Cloud remote access, in the order apps should try them (local, wan, ipv6, custom hostname, relay), and the address it publishes. Empty unless remote access is on.",
+        "operationId": "getServerConnections",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteConnectionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get connections",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.about",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/features": {
       "get": {
         "deprecated": true,
@@ -41625,6 +41969,30 @@
         ],
         "type": "object"
       },
+      "AdminConfigFrameleafCustomHostnameDto": {
+        "properties": {
+          "checkedAt": {
+            "description": "When its DNS records were last checked",
+            "nullable": true,
+            "type": "string"
+          },
+          "host": {
+            "description": "A hostname on a domain the administrator owns; empty when none",
+            "maxLength": 253,
+            "pattern": "^$|^(?:[\\da-z](?:[\\da-z-]{0,61}[\\da-z])?\\.){2,}[\\da-z](?:[\\da-z-]{0,61}[\\da-z])?$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RemoteHostnameStatus"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "host",
+          "status"
+        ],
+        "type": "object"
+      },
       "AdminConfigFrameleafRemoteAccessDto": {
         "properties": {
           "allowOriginalsOverRelay": {
@@ -41634,11 +42002,40 @@
           "allowPasswordOverRelay": {
             "description": "Allow password sign-in, and sessions it creates, over remote access",
             "type": "boolean"
+          },
+          "customHostname": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCustomHostnameDto"
+          },
+          "directPort": {
+            "description": "External port for direct connections",
+            "maximum": 65535,
+            "minimum": 1024,
+            "type": "integer"
+          },
+          "enabled": {
+            "description": "Serve remote access through Frameleaf Cloud (needs a linked server with a remote access plan)",
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RemoteAccessMode"
+          },
+          "portMapping": {
+            "description": "Ask the router to open the direct port automatically; off when it is forwarded by hand",
+            "type": "boolean"
+          },
+          "publicUrl": {
+            "$ref": "#/components/schemas/RemoteAccessPublicUrl"
           }
         },
         "required": [
           "allowOriginalsOverRelay",
-          "allowPasswordOverRelay"
+          "allowPasswordOverRelay",
+          "customHostname",
+          "directPort",
+          "enabled",
+          "mode",
+          "portMapping",
+          "publicUrl"
         ],
         "type": "object"
       },
@@ -64244,6 +64641,7 @@
           "adminCloud.read",
           "adminCloud.update",
           "adminCloud.link",
+          "adminRemoteAccess.update",
           "frameleafAccount.read",
           "frameleafAccount.update",
           "adminCloudMl.read",
@@ -69313,6 +69711,391 @@
           "prerelease"
         ],
         "type": "string"
+      },
+      "RemoteAccessMode": {
+        "description": "relay: every remote connection goes through the relay; relay-and-direct: direct connections too",
+        "enum": [
+          "relay",
+          "relay-and-direct"
+        ],
+        "type": "string"
+      },
+      "RemoteAccessPublicUrl": {
+        "description": "The published address: the Frameleaf address, or the verified custom hostname",
+        "enum": [
+          "frameleaf",
+          "custom"
+        ],
+        "type": "string"
+      },
+      "RemoteAccessState": {
+        "description": "What the edge worker is doing; unknown when no edge worker reported recently",
+        "enum": [
+          "off",
+          "idle",
+          "starting",
+          "ready",
+          "error",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "RemoteAccessStatusResponseDto": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteConnectionDto"
+            },
+            "type": "array"
+          },
+          "certificateError": {
+            "description": "The last issuance or renewal problem",
+            "nullable": true,
+            "type": "string"
+          },
+          "certificateExpiresAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "certificateName": {
+            "description": "The wildcard name the certificate covers",
+            "nullable": true,
+            "type": "string"
+          },
+          "cgnatSuspected": {
+            "type": "boolean"
+          },
+          "customHostname": {
+            "description": "The custom hostname, when one was added",
+            "nullable": true,
+            "type": "string"
+          },
+          "customHostnameCheckedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "customHostnameProblem": {
+            "description": "Why the hostname is not verified yet",
+            "nullable": true,
+            "type": "string"
+          },
+          "customHostnameRecords": {
+            "description": "The two records to add at the DNS provider; empty until enrolled",
+            "items": {
+              "$ref": "#/components/schemas/RemoteDnsRecordDto"
+            },
+            "type": "array"
+          },
+          "customHostnameStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RemoteHostnameStatus"
+              }
+            ],
+            "nullable": true
+          },
+          "directListening": {
+            "type": "boolean"
+          },
+          "directPort": {
+            "description": "External port for direct connections",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "enabled": {
+            "description": "Remote access is switched on",
+            "type": "boolean"
+          },
+          "frameleafAddress": {
+            "description": "https://r.<label>.<direct domain>, once enrolled",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastTestAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastTestChecks": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteAccessTestCheckDto"
+            },
+            "type": "array"
+          },
+          "lastTestOk": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RemoteAccessMode"
+          },
+          "portMapping": {
+            "description": "The router is asked to open the direct port automatically",
+            "type": "boolean"
+          },
+          "publicUrl": {
+            "description": "The address this server publishes",
+            "nullable": true,
+            "type": "string"
+          },
+          "publicUrlChoice": {
+            "$ref": "#/components/schemas/RemoteAccessPublicUrl"
+          },
+          "reason": {
+            "description": "Why it is off, idle or failing, in plain words",
+            "nullable": true,
+            "type": "string"
+          },
+          "relayConnected": {
+            "type": "boolean"
+          },
+          "relayRegion": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RemoteAccessState"
+          },
+          "unavailableReason": {
+            "description": "Why remote access cannot be turned on (not set up, not linked, no plan); null when it can",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidates",
+          "certificateError",
+          "certificateExpiresAt",
+          "certificateName",
+          "cgnatSuspected",
+          "customHostname",
+          "customHostnameCheckedAt",
+          "customHostnameProblem",
+          "customHostnameRecords",
+          "customHostnameStatus",
+          "directListening",
+          "directPort",
+          "enabled",
+          "frameleafAddress",
+          "lastTestAt",
+          "lastTestChecks",
+          "lastTestOk",
+          "mode",
+          "portMapping",
+          "publicUrl",
+          "publicUrlChoice",
+          "reason",
+          "relayConnected",
+          "relayRegion",
+          "status",
+          "unavailableReason"
+        ],
+        "type": "object"
+      },
+      "RemoteAccessTestCheckDto": {
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "id": {
+            "description": "certificate, listener, api, relay or direct",
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "detail",
+          "id",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "RemoteAccessUpdateDto": {
+        "properties": {
+          "directPort": {
+            "description": "External port for direct connections",
+            "maximum": 65535,
+            "minimum": 1024,
+            "type": "integer"
+          },
+          "enabled": {
+            "description": "Turn remote access on or off",
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RemoteAccessMode"
+          },
+          "portMapping": {
+            "description": "Ask the router to open the direct port automatically",
+            "type": "boolean"
+          },
+          "publicUrl": {
+            "$ref": "#/components/schemas/RemoteAccessPublicUrl"
+          }
+        },
+        "type": "object"
+      },
+      "RemoteConnectionDto": {
+        "description": "One way to reach this server, in the order apps should try them",
+        "properties": {
+          "address": {
+            "description": "Host name or address, without brackets for IPv6",
+            "type": "string"
+          },
+          "custom": {
+            "description": "The administrator’s own hostname, verified by Frameleaf Cloud",
+            "type": "boolean"
+          },
+          "dnsRebindingProtection": {
+            "description": "The server refuses requests for another Host",
+            "type": "boolean"
+          },
+          "httpsRequired": {
+            "type": "boolean"
+          },
+          "ipv6": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RemoteConnectionKind"
+          },
+          "local": {
+            "type": "boolean"
+          },
+          "port": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/RemoteConnectionProtocol"
+          },
+          "relay": {
+            "description": "Carried by the Frameleaf relay",
+            "type": "boolean"
+          },
+          "uri": {
+            "description": "The address to connect to, https only",
+            "type": "string"
+          },
+          "verified": {
+            "description": "Frameleaf Cloud verified this entry itself",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "address",
+          "custom",
+          "dnsRebindingProtection",
+          "httpsRequired",
+          "ipv6",
+          "kind",
+          "local",
+          "port",
+          "protocol",
+          "relay",
+          "uri",
+          "verified"
+        ],
+        "type": "object"
+      },
+      "RemoteConnectionKind": {
+        "description": "local, wan (a custom hostname too), ipv6 or relay",
+        "enum": [
+          "local",
+          "wan",
+          "relay",
+          "ipv6"
+        ],
+        "type": "string"
+      },
+      "RemoteConnectionProtocol": {
+        "enum": [
+          "http",
+          "https"
+        ],
+        "type": "string"
+      },
+      "RemoteConnectionsResponseDto": {
+        "properties": {
+          "connections": {
+            "description": "Ordered local, wan, ipv6, custom hostname, relay",
+            "items": {
+              "$ref": "#/components/schemas/RemoteConnectionDto"
+            },
+            "type": "array"
+          },
+          "instanceId": {
+            "description": "This server’s Frameleaf instance ID while it is linked",
+            "nullable": true,
+            "type": "string"
+          },
+          "publicUrl": {
+            "description": "The address this server publishes for remote access",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connections",
+          "instanceId",
+          "publicUrl"
+        ],
+        "type": "object"
+      },
+      "RemoteDnsRecordDto": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "purpose": {
+            "description": "What the record is for, in plain words",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/RemoteDnsRecordType"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "purpose",
+          "type",
+          "value"
+        ],
+        "type": "object"
+      },
+      "RemoteDnsRecordType": {
+        "enum": [
+          "CNAME"
+        ],
+        "type": "string"
+      },
+      "RemoteHostnameStatus": {
+        "description": "pending: waiting for its DNS records; verified: Frameleaf Cloud verified them",
+        "enum": [
+          "pending",
+          "verified"
+        ],
+        "type": "string"
+      },
+      "RemoteHostnameUpdateDto": {
+        "properties": {
+          "hostname": {
+            "description": "A subdomain of a domain you own, such as photos.example.com",
+            "maxLength": 254,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname"
+        ],
+        "type": "object"
       },
       "RenderWorkerAdmissionDto": {
         "properties": {

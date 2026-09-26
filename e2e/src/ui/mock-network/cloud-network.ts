@@ -8,6 +8,119 @@ import { BrowserContext } from '@playwright/test';
 export type CloudMockState = {
   state: 'not-configured' | 'unlinked' | 'pending' | 'linked' | 'revoked';
   requests: Array<{ method: string; path: string; body?: unknown }>;
+  /** FL-165: the remote access page (`admin/cloud/remote*`); a remote access plan by default once linked. */
+  remote?: RemoteMockState;
+};
+
+export type RemoteMockState = {
+  entitled: boolean;
+  enabled: boolean;
+  mode: 'relay' | 'relay-and-direct';
+  customHostname: string | null;
+  customHostnameStatus: 'pending' | 'verified' | null;
+  publicUrlChoice: 'frameleaf' | 'custom';
+  tested: boolean;
+};
+
+const RELAY = 'https://r.u225vlzhsdlhwh4l.frameleaf.net';
+
+export const remoteStatus = (mock: CloudMockState) => {
+  const remote = mock.remote ?? defaultRemote();
+  const linked = mock.state === 'linked';
+  const unavailableReason =
+    mock.state === 'not-configured'
+      ? 'Frameleaf Cloud is not set up on this server.'
+      : linked
+        ? remote.entitled
+          ? null
+          : 'Remote access is included with a Frameleaf Cloud plan.'
+        : 'Link this server to a Frameleaf account first.';
+  const on = remote.enabled && !unavailableReason;
+  const host = remote.customHostname;
+  return {
+    unavailableReason,
+    enabled: on,
+    mode: remote.mode,
+    directPort: 2443,
+    portMapping: true,
+    publicUrlChoice: remote.publicUrlChoice,
+    status: on ? 'ready' : 'off',
+    reason: null,
+    publicUrl: on ? (remote.publicUrlChoice === 'custom' && host ? `https://${host}` : RELAY) : null,
+    frameleafAddress: linked ? RELAY : null,
+    certificateName: on ? '*.u225vlzhsdlhwh4l.frameleaf.net' : null,
+    certificateExpiresAt: on ? '2026-11-09T16:00:00.000Z' : null,
+    certificateError: null,
+    relayConnected: false,
+    relayRegion: linked ? 'eu1' : null,
+    directListening: on,
+    cgnatSuspected: false,
+    customHostname: host,
+    customHostnameStatus: host ? remote.customHostnameStatus : null,
+    customHostnameCheckedAt: host ? '2026-09-26T12:00:00.000Z' : null,
+    customHostnameProblem: null,
+    customHostnameRecords: host
+      ? [
+          { type: 'CNAME', name: host, value: 'r.u225vlzhsdlhwh4l.frameleaf.net', purpose: '' },
+          {
+            type: 'CNAME',
+            name: `_acme-challenge.${host}`,
+            value: '_acme-challenge.u225vlzhsdlhwh4l.frameleaf.net',
+            purpose: '',
+          },
+        ]
+      : [],
+    candidates: [],
+    lastTestAt: remote.tested ? '2026-09-26T12:05:00.000Z' : null,
+    lastTestOk: remote.tested ? true : null,
+    lastTestChecks: remote.tested
+      ? [
+          { id: 'certificate', ok: true, detail: 'Issued to this server for *.u225vlzhsdlhwh4l.frameleaf.net' },
+          { id: 'listener', ok: true, detail: 'Listening for HTTPS on port 2443' },
+          { id: 'api', ok: true, detail: 'This server answered over HTTPS through the direct listener.' },
+          { id: 'relay', ok: false, detail: 'Not connected to the Frameleaf relay yet.' },
+        ]
+      : [],
+  };
+};
+
+const defaultRemote = (): RemoteMockState => ({
+  entitled: true,
+  enabled: false,
+  mode: 'relay',
+  customHostname: null,
+  customHostnameStatus: null,
+  publicUrlChoice: 'frameleaf',
+  tested: false,
+});
+
+/** What a remote access route does to the mocked state (FL-165). */
+const applyRemote = (mock: CloudMockState, method: string, path: string, body: unknown) => {
+  const remote = (mock.remote ??= defaultRemote());
+  const input = (body ?? {}) as {
+    enabled?: boolean;
+    mode?: RemoteMockState['mode'];
+    publicUrl?: RemoteMockState['publicUrlChoice'];
+    hostname?: string;
+  };
+  if (method === 'PUT' && path === 'admin/cloud/remote') {
+    Object.assign(remote, {
+      ...(input.enabled !== undefined && { enabled: input.enabled }),
+      ...(input.mode !== undefined && { mode: input.mode }),
+      ...(input.publicUrl !== undefined && { publicUrlChoice: input.publicUrl }),
+    });
+  } else if (method === 'PUT' && path === 'admin/cloud/remote/hostname') {
+    remote.customHostname = input.hostname ?? null;
+    remote.customHostnameStatus = 'pending';
+  } else if (method === 'POST' && path === 'admin/cloud/remote/hostname/check') {
+    remote.customHostnameStatus = 'verified';
+  } else if (method === 'DELETE' && path === 'admin/cloud/remote/hostname') {
+    remote.customHostname = null;
+    remote.customHostnameStatus = null;
+    remote.publicUrlChoice = 'frameleaf';
+  } else if (method === 'POST' && path === 'admin/cloud/remote/test') {
+    remote.tested = true;
+  }
 };
 
 const heartbeatFields = [
@@ -71,7 +184,12 @@ export const setupCloudMockApiRoutes = async (context: BrowserContext, mock: Clo
   await context.route('**/api/admin/cloud/**', async (route, request) => {
     const path = new URL(request.url()).pathname.replace('/api/', '');
     const method = request.method();
-    mock.requests.push({ method, path, body: request.postDataJSON?.() ?? undefined });
+    const body = request.postDataJSON?.() ?? undefined;
+    mock.requests.push({ method, path, body });
+    if (path === 'admin/cloud/remote' || path.startsWith('admin/cloud/remote/')) {
+      applyRemote(mock, method, path, body);
+      return route.fulfill({ status: 200, json: remoteStatus(mock) });
+    }
     if (method === 'POST' && path === 'admin/cloud/link') {
       mock.state = 'pending';
     } else if (method === 'DELETE' && (path === 'admin/cloud/link/pending' || path === 'admin/cloud/link')) {

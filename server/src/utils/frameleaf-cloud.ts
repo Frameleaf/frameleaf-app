@@ -47,6 +47,20 @@ export const discoverySchema = z.object({
     .optional()
     // eslint-disable-next-line unicorn/no-useless-undefined -- a bad store address is dropped, keeping the optional type
     .catch(() => undefined),
+  /**
+   * FL-165: remote access. `directDomain` is the domain per-server names live under
+   * (`r.<label>.<directDomain>`); the enrolment answer's `domain` wins over it. A bad value is dropped.
+   */
+  remote: z
+    .object({
+      directDomain: z
+        .string()
+        .max(200)
+        .regex(/^(?:[\da-z](?:[\da-z-]{0,61}[\da-z])?\.)+[a-z]{2,63}$/),
+    })
+    .optional()
+    // eslint-disable-next-line unicorn/no-useless-undefined -- a bad remote block is dropped, keeping the optional type
+    .catch(() => undefined),
 });
 export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
 

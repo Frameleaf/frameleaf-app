@@ -1,19 +1,25 @@
 import type { SystemConfig } from 'src/dtos/config.dto.js';
+import type { FrameleafRemoteAccess, FrameleafRemoteConnection } from 'src/types.js';
+import { SystemMetadataKey } from 'src/enum.js';
 import { type CloudGatewayDeps, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { httpsOrigin } from 'src/utils/frameleaf-sign-in.js';
+import { edgeStateCurrent, remotePublicUrl, verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
+import { frameleafPublicUrl, httpsOrigin } from 'src/utils/frameleaf-sign-in.js';
 
 type PublicUrlDeps = Pick<CloudGatewayDeps, 'configRepository' | 'systemMetadataRepository'>;
+type RemoteSettings = SystemConfig['frameleafCloud']['remoteAccess'];
 
 /**
  * FL-190: the address this server can be reached at, for links in emails and login URLs: the
- * configured external domain, else the `publicUrl` Frameleaf Cloud published for a linked server
- * (https only; FL-161 describes it as the server's custom hostname). Never the relay origin: remote access through the relay refuses
- * password sign-in by default, and maintenance mode is not served there. `undefined` when the server
- * knows neither; callers then leave the link out rather than pointing at another project's host.
+ * configured external domain, else, for a linked server, the custom hostname when "Use my domain" is
+ * chosen and Frameleaf Cloud verified it (FL-165), else the `publicUrl` Frameleaf Cloud published
+ * (https only). Never the relay origin: remote access through the relay refuses password sign-in by
+ * default, and maintenance mode is not served there. `undefined` when the server knows neither;
+ * callers then leave the link out rather than pointing at another project's host.
  */
 export const resolvePublicUrl = async (
   server: Pick<SystemConfig['server'], 'externalDomain'>,
   deps: PublicUrlDeps,
+  remote?: Pick<RemoteSettings, 'publicUrl' | 'customHostname'>,
 ): Promise<string | undefined> => {
   if (server.externalDomain) {
     return server.externalDomain;
@@ -22,5 +28,64 @@ export const resolvePublicUrl = async (
     return undefined;
   }
   const { link, linked } = await readCloudLink(deps);
-  return (linked && httpsOrigin(link?.services?.publicUrl)) || undefined;
+  if (!linked) {
+    return undefined;
+  }
+  // FL-165: the custom hostname reaches this server through the relay only, so it goes into links
+  // only while the edge worker reports the relay connected
+  let custom = remote?.publicUrl === 'custom' ? verifiedCustomHost(remote) : null;
+  if (custom) {
+    const state = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
+    custom = edgeStateCurrent(state) && state?.relay.connected ? custom : null;
+  }
+  return (custom && `https://${custom}`) || httpsOrigin(link?.services?.publicUrl) || undefined;
+};
+
+export type RemoteAccessPublication = {
+  instanceId: string | null;
+  /** The address published for remote access, or null. */
+  publicUrl: string | null;
+  connections: FrameleafRemoteConnection[];
+};
+
+/**
+ * FL-165: what this server publishes for remote access (`/server/config`, `/.well-known/immich` and
+ * `GET server/connections`), while it is linked and remote access is on:
+ *
+ * - the connection candidates the edge worker reported, but the relay name and the custom hostname
+ *   (both reach this server through the relay) only while the relay is connected;
+ * - the public address, `https://r.<label>.<domain>` or the verified custom hostname when "Use my
+ *   domain" is chosen, likewise only while the relay is connected, so no address is published that
+ *   does not answer yet.
+ *
+ * Otherwise the address Frameleaf Cloud published for the link, if any.
+ */
+export const remoteAccessPublication = async (
+  remote: RemoteSettings,
+  deps: PublicUrlDeps,
+  now = Date.now(),
+): Promise<RemoteAccessPublication> => {
+  const { link, linked } = await readCloudLink(deps);
+  if (!linked || !link?.instanceId) {
+    return { instanceId: null, publicUrl: null, connections: [] };
+  }
+  const state: FrameleafRemoteAccess | null = remote.enabled
+    ? await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess)
+    : null;
+  const names = state?.names && state.names.instanceId === link.instanceId ? state.names : null;
+  // candidates are only as good as the edge worker's last report
+  const current = !!names && edgeStateCurrent(state, now);
+  const relayConnected = current && !!state?.relay.connected;
+  if (!names || !relayConnected) {
+    return {
+      instanceId: link.instanceId,
+      publicUrl: frameleafPublicUrl(link),
+      connections: current ? (state?.candidates ?? []).filter((candidate) => !candidate.relay) : [],
+    };
+  }
+  return {
+    instanceId: link.instanceId,
+    publicUrl: remotePublicUrl(names, remote),
+    connections: state?.candidates ?? [],
+  };
 };
