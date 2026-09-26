@@ -105,13 +105,17 @@ test.describe('Timeline', () => {
    * FL-143: scroll down the library and check that every row on screen is full — a row runs on from
    * one month into the next, so only the library's last row may end short — and that at least one
    * row holds the end of one month and the start of the next.
+   *
+   * The steps are small and every month the timeline has requested (within 500px) is loaded before
+   * the next step, so a month always loads while the row it finishes is still below the viewport,
+   * whatever order or timing the bucket responses have.
    */
   const expectRowsRunOn = async (page: Page) => {
     const lastId = assets.at(-1)!.id;
     let crossing = 0;
     let checked = 0;
-    for (let step = 0; step < 12 && (crossing === 0 || step < 4); step++) {
-      await expect.poll(() => flowUtils.skeletonsOnScreen(page)).toBe(0);
+    for (let step = 0; step < 120 && (crossing === 0 || step < 8); step++) {
+      await expect.poll(() => flowUtils.skeletonsNear(page, 480)).toBe(0);
       const rows = await flowUtils.rowsOnScreen(page);
       const right = Math.max(...rows.map((row) => row.at(-1)!.right));
       for (const row of rows.filter((candidate) => !candidate.some(({ id }) => id === lastId))) {
@@ -121,7 +125,7 @@ test.describe('Timeline', () => {
           crossing++;
         }
       }
-      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, scroller.clientHeight * 0.75));
+      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, 100));
     }
     expect(checked).toBeGreaterThan(0);
     // At least one row holds the end of one month and the start of the next.
@@ -156,6 +160,9 @@ test.describe('Timeline', () => {
       await route.fallback();
     });
 
+    // The page's clock decides when rows on screen have settled (300 ms); the test moves it on
+    // instead of waiting.
+    await page.clock.install();
     await open();
     await scrubberUtils.clickMonth(page, target);
     await expect
@@ -171,7 +178,7 @@ test.describe('Timeline', () => {
       .poll(() => thumbnailUtils.someInViewport(page, (assetId) => getYearMonth(assets, assetId) === target))
       .toBe(true);
     // Past the moment rows that load together may still join up: what is on screen has settled.
-    await page.waitForTimeout(800);
+    await page.clock.fastForward(1000);
     const before = await flowUtils.placesOnScreen(page);
     expect(Object.keys(before).length).toBeGreaterThan(0);
 
@@ -197,7 +204,7 @@ test.describe('Timeline', () => {
       await page.waitForTimeout(100);
     }
     await thumbnailUtils.withAssetId(page, lastAbove.id).scrollIntoViewIfNeeded();
-    await expect.poll(() => flowUtils.skeletonsOnScreen(page)).toBe(0);
+    await expect.poll(() => flowUtils.skeletonsNear(page)).toBe(0);
     const rows = await flowUtils.rowsOnScreen(page);
     const right = Math.max(...rows.map((row) => row.at(-1)!.right));
     const boundaryRow = rows.find((row) => row.some(({ id }) => id === lastAbove.id));

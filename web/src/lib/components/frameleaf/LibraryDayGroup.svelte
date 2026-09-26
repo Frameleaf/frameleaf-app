@@ -54,8 +54,9 @@
     /** The hover quick actions each tile may offer. */
     quickActions?: (asset: TimelineAsset) => TileQuickActions | null;
     /**
-     * Years and All, and the Browse and Work grids (FL-143): this day's tiles that a later month lays out at the start of its rows,
-     * where a row runs on across the month boundary. The later month draws them, measured from its
+     * All (and Years when not shown as cards), and the Browse and Work grids (FL-143): this day's
+     * tiles that a later month lays out at the start of its rows, where a row runs on across the
+     * month boundary. The later month draws them, measured from its
      * own first row, inside its rows (`hostedWidth` by `hostedHeight`). Without it the day draws its
      * own tiles.
      */

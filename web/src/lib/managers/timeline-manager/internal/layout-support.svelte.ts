@@ -33,8 +33,8 @@ export function updateGeometry(timelineManager: TimelineManager, month: Timeline
 
 export function layoutTimelineMonth(timelineManager: TimelineManager, month: TimelineMonth, noDefer: boolean = false) {
   if (timelineManager.continuousGroups) {
-    // Years and All, and the Browse and Work grids: the month is laid out as part of one flow that
-    // runs on across months (FL-143).
+    // All (and Years when not shown as cards), and the Browse and Work grids: the month is laid out
+    // as part of one flow that runs on across months (FL-143).
     requestFlowLayout(timelineManager, month);
     return;
   }
@@ -95,7 +95,7 @@ export function layoutTimelineMonth(timelineManager: TimelineManager, month: Tim
  * model, so selection, navigation and live updates keep working by day; each day holds its share of
  * the month's positions, all measured from the month's first row.
  *
- * Years and All over the Timeline's filling rows run the flow on across months instead
+ * All (and Years when not shown as cards) over the Timeline's filling rows run the flow on across months instead
  * (`flow-support.svelte.ts`, FL-143); this per-month flow remains for them only with the upstream
  * row layouts, which cannot be resumed part-way through a row.
  */

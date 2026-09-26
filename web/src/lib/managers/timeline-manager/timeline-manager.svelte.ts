@@ -14,7 +14,7 @@ import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/Virtual
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { GroupInsertionCache } from '$lib/managers/timeline-manager/group-insertion-cache.svelte';
-import { batchFlow, linkFlows } from '$lib/managers/timeline-manager/internal/flow-support.svelte';
+import { batchFlow, linkFlows, releaseFlowHolds } from '$lib/managers/timeline-manager/internal/flow-support.svelte';
 import { updateTimelineMonthViewportProximity } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
 import {
@@ -102,9 +102,10 @@ export class TimelineManager extends VirtualScrollManager {
 
   /**
    * FL-143: a group's rows run on from one month bucket into the next, as the prototype lays it out.
-   * Years and All over justified rows are one flow per group (`TimelineLibrary.jsx` justifiedRows
-   * over `group.assets`); the Browse and Work cell grids are one grid over the whole library
-   * (`App.jsx` `.media-grid`). Timeline month and day groups stay per month and per day.
+   * All (and Years when not shown as cards) over justified rows is one flow per group
+   * (`TimelineLibrary.jsx` justifiedRows over `group.assets`); the Browse and Work cell grids are one
+   * grid over the whole library (`App.jsx` `.media-grid`). Timeline month and day groups stay per
+   * month and per day.
    */
   get continuousGroups(): boolean {
     if (this.cells) {
@@ -292,7 +293,8 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   #calculateVewportTopRatioInMonth(month: TimelineMonth | undefined) {
-    if (!month) {
+    // A month whose tiles all run on into the next one (FL-143) can be 0 tall.
+    if (!month || month.height <= 0) {
       return 0;
     }
     return clamp((this.visibleWindow.top - month.top) / month.height, 0, 1);
@@ -478,6 +480,9 @@ export class TimelineManager extends VirtualScrollManager {
   protected override updateViewportGeometry(changedWidth: boolean) {
     if (!this.isInitialized || this.hasEmptyViewport) {
       return;
+    }
+    if (changedWidth) {
+      releaseFlowHolds(this);
     }
     batchFlow(this, () => {
       for (const month of this.months) {
@@ -787,6 +792,7 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   override refreshLayout() {
+    releaseFlowHolds(this);
     batchFlow(this, () => {
       for (const month of this.months) {
         updateGeometry(this, month, { invalidateHeight: true });
