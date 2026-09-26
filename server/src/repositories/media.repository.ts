@@ -223,6 +223,18 @@ export class MediaRepository {
   }
 
   /**
+   * FL-162: a full-resolution copy of a still for work that runs on another machine (Frameleaf Cloud,
+   * a restoration worker): the pixels as they are displayed (EXIF orientation applied) with the
+   * original ICC colour profile kept, and no EXIF, XMP, IPTC or GPS at all. A JPEG stays a JPEG at
+   * quality 98 without chroma subsampling; anything else is written as a lossless PNG.
+   */
+  async writeStrippedStill(input: string, output: string, format: 'jpeg' | 'png'): Promise<void> {
+    const image = sharp(input, { failOn: 'error', limitInputPixels: false }).rotate().keepIccProfile();
+    const encoded = format === 'jpeg' ? image.jpeg({ quality: 98, chromaSubsampling: '4:4:4' }) : image.png();
+    await encoded.toFile(output);
+  }
+
+  /**
    * Compose a set of input images into a single JPEG grid (left-to-right,
    * top-to-bottom). Cells are letterboxed to a fixed size on a black canvas
    * to keep aspect ratios intact. Used to feed multiple video frames through
