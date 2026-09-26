@@ -26,7 +26,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { loadInstanceIdentity } from 'src/utils/frameleaf-cloud-gateway.js';
+import { loadInstanceIdentity, loadInstanceIdentityLocked } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudCommand,
   CloudCommandType,
@@ -931,7 +931,8 @@ export class FrameleafCloudService extends BaseService {
       return false;
     }
     return this.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, async () => {
-      const identity = await loadInstanceIdentity(this.gatewayDeps());
+      // already under the identity lock, which is not re-entrant
+      const identity = await loadInstanceIdentityLocked(this.gatewayDeps());
       if (!identity.candidate) {
         return false;
       }
