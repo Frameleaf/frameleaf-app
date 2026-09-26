@@ -22,7 +22,7 @@
   import { Route } from '$lib/route';
   import { toStudioAssets } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
-  import { decideStudioDraft, studioDraftHeld } from '$lib/frameleaf/studio/draft-staging';
+  import { decideStudioDraft, studioDraftHeld, studioDraftResult } from '$lib/frameleaf/studio/draft-staging';
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
   import { registerFrameStudioEngine } from '$lib/frameleaf/studio/frame-engine';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
@@ -375,6 +375,7 @@
     graph: unknown,
     commandIds: readonly string[],
     baseRevision?: number,
+    graphVersion?: number,
   ): Promise<StudioDraftResult> => {
     // Offline, after a lost lease or in a conflict the session keeps the draft and sends it when the
     // connection or the lease is back; only a session that may not hold a draft refuses it.
@@ -394,14 +395,18 @@
     // The session keeps `project.graph` on the newest draft (in a conflict too, never the head), so
     // history records this edit against the draft's own previous graph.
     const before = project.graph;
-    session.stage(graph, commandIds.length > 0 ? commandIds : ['editor.save'], [], baseRevision);
-    if (!session.state.hasDraft) {
-      return Promise.resolve({ status: 'rejected', reason: 'lease-lost' });
-    }
-    if (before) {
+    const outcome = session.stage(
+      graph,
+      commandIds.length > 0 ? commandIds : ['editor.save'],
+      [],
+      baseRevision,
+      graphVersion,
+    );
+    const result = studioDraftResult(outcome, session.state.hasDraft);
+    if (result.status === 'staged' && before) {
       history.record(before, graph);
     }
-    return Promise.resolve({ status: 'staged' });
+    return Promise.resolve(result);
   };
 
   const services: StudioHostServices = {

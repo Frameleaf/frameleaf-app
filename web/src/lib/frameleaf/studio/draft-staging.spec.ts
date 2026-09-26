@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideStudioDraft, studioDraftHeld, type StudioDraftGate } from './draft-staging';
+import { decideStudioDraft, studioDraftHeld, studioDraftResult, type StudioDraftGate } from './draft-staging';
 
 const gate = (overrides: Partial<StudioDraftGate> = {}): StudioDraftGate => ({
   accessLost: false,
@@ -37,5 +37,12 @@ describe('editor drafts reaching the host (FL-88, FL-89)', () => {
     // After Reload there is no draft to hold, so the editor must show the head it is judged against.
     expect(studioDraftHeld('lease-lost', false)).toBe(false);
     expect(studioDraftHeld('conflict', false)).toBe(false);
+  });
+
+  it('tells the editor its draft was superseded by the host’s own graph, and keeps nothing (FL-174)', () => {
+    expect(studioDraftResult('superseded', true)).toEqual({ status: 'rejected', reason: 'superseded' });
+    expect(studioDraftResult('staged', true)).toEqual({ status: 'staged' });
+    expect(studioDraftResult('ignored', false)).toEqual({ status: 'rejected', reason: 'lease-lost' });
+    expect(studioDraftResult('staged', false)).toEqual({ status: 'rejected', reason: 'lease-lost' });
   });
 });

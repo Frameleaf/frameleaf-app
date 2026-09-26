@@ -11,8 +11,10 @@
  *   before the editor route loads it. Every save the editor makes is forwarded to the host as a
  *   draft (`stageDraft`); the host stores it as a revision with the lease and revision rules of
  *   FL-89. A graph that changes elsewhere (a restore, a reload, a canonical command) reloads the
- *   editor from the new revision.
- * - **Media.** The bin is the library selection the host authorized (`library-media.ts`).
+ *   editor from the new revision. A draft built before the host's own latest graph is refused, so it
+ *   never replaces the host's change (FL-174, `graphVersion`).
+ * - **Media.** The bin is the library selection the host authorized (`library-media.ts`), plus
+ *   whatever the person imports inside the editor, which follows every remount (FL-174).
  * - **Navigation.** Leaving the editor route asks the host to navigate; the host runs its own
  *   unsaved-work guard.
  * - **Lifetime.** `dispose` unmounts React, releases every media URL and the workspace, and the
@@ -54,14 +56,19 @@ import {
   beginMount,
   confirmEcho,
   loadFinished,
+  reconcileHostGraph,
   saveMayStart,
   sendEditorDraft,
-  shouldReloadFromHost,
   shouldResendDraft,
+  supersededEditLost,
   type DraftSendState,
   type EditorMount,
 } from './draft-sync'
-import { createLibraryMediaSeeder, type LibraryMediaSeeder } from './library-media'
+import {
+  createLibraryMediaSeeder,
+  followRetiredImports,
+  type LibraryMediaSeeder,
+} from './library-media'
 import { canonicalJson } from './canonical-commands'
 import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
 import { RemotePreview, frameToTime, localPreviewSupport } from './remote-preview'
@@ -86,6 +93,12 @@ const contentOf = (graph: unknown): string => {
   if (!graph || typeof graph !== 'object') return canonicalJson(graph)
   const { updatedAt: _updatedAt, id: _id, ...rest } = graph as Record<string, unknown>
   return canonicalJson(rest)
+}
+
+/** The host's count of graphs it put in place itself (FL-174); absent means 0. */
+const graphVersionOf = (context: StudioHostContext): number => {
+  const version = context.project.graphVersion
+  return Number.isSafeInteger(version) && (version as number) >= 0 ? (version as number) : 0
 }
 
 /** The Freecut project id inside the stored graph, or a stable one for a project that has none. */
@@ -139,6 +152,11 @@ interface Session extends DraftSendState {
   unsubscribe: Array<() => void>
   /** Timers the current mount scheduled (draft debounce, settled-save); a remount cancels them. */
   mountTimers: Set<ReturnType<typeof setTimeout>>
+  /**
+   * Project ids of replaced mounts. An import that was still running in a replaced instance links
+   * its media to that instance's project; `watchImports` carries it to the current one (FL-174).
+   */
+  retiredProjectIds: Set<string>
 }
 
 let session: Session | null = null
@@ -309,15 +327,41 @@ function sendDraft(state: Session, mount: EditorMount): Promise<void> {
     read: (from) => state.workspace.readText(projectJsonPath(from.projectId)),
     contentOf,
     // The host's graph keeps one Freecut id whichever mount wrote it.
-    stage: (graph, baseRevision) =>
+    stage: (graph, baseRevision, graphVersion) =>
       call(
         'stageDraft',
         { ...(graph as object), id: state.engineProjectId },
         ['editor.save'],
         baseRevision,
+        graphVersion,
       ),
     dirty: (dirty) => post({ type: 'dirty', dirty }),
+    lost: () => notifySuperseded(state),
   })
+}
+
+/** Tell the person an edit made on a graph the host has since replaced was not kept (FL-174). */
+function notifySuperseded(state: Session) {
+  const message = state.context.strings?.editSuperseded
+  if (message) post({ type: 'notify', message, tone: 'error' })
+}
+
+/** Carry imports a replaced instance finishes to the current mount (`followRetiredImports`). */
+function watchImports(state: Session) {
+  state.unsubscribe.push(
+    followRetiredImports({
+      workspace: state.workspace,
+      media: state.media,
+      retired: state.retiredProjectIds,
+      current: () => state.mount.projectId,
+      onError: (error) =>
+        post({
+          type: 'notify',
+          message: error instanceof Error ? error.message : String(error),
+          tone: 'error',
+        }),
+    }),
+  )
 }
 
 /**
@@ -381,15 +425,22 @@ function onLoadFinished(state: Session, projectId: string, error: unknown) {
 async function remount(state: Session, context: StudioHostContext, incoming: string) {
   for (const timer of state.mountTimers) clearTimeout(timer)
   state.mountTimers.clear()
+  const previous = state.mount.projectId
+  const lost = supersededEditLost(state)
   const mount = beginMount(
     state,
     `${state.engineProjectId}-m${state.mount.generation + 1}`,
     context.project.revision,
+    graphVersionOf(context),
   )
+  state.retiredProjectIds.add(previous)
   state.hostContent = incoming
   usePlaybackStore.getState().pause()
+  if (lost) notifySuperseded(state)
   await seedProject(state, mount)
-  await state.media.associate(mount.projectId)
+  // Before the new instance renders, so its bin and its orphaned-clip check at load already see the
+  // media the person imported inside the editor, not only the library selection (FL-174).
+  await state.media.associate(mount.projectId, previous)
   if (state.mount !== mount) return
   state.render()
 }
@@ -456,12 +507,15 @@ async function mount(context: StudioHostContext): Promise<void> {
       generation: 0,
       projectId: engineProjectId,
       revision: context.project.revision,
+      graphVersion: graphVersionOf(context),
       loaded: false,
     },
     render: () => undefined,
     unsubscribe: [],
     mountTimers: new Set(),
+    retiredProjectIds: new Set(),
     pendingSend: false,
+    pendingSuperseded: false,
     disposed: false,
   }
   session = state
@@ -484,6 +538,7 @@ async function mount(context: StudioHostContext): Promise<void> {
     )
   state.render()
   watchDrafts(state)
+  watchImports(state)
   watchDirty(state)
   watchPlayhead(state)
   startAtHandoffPlayhead(state, context.handoffPlayhead ?? null)
@@ -499,19 +554,19 @@ async function update(context: StudioHostContext): Promise<void> {
   // mount rules keep this correct whatever the order.
   const incoming = contentOf(context.project.graph)
   const current = contentOf(await currentGraph(state))
-  if (
-    context.project.graph &&
-    shouldReloadFromHost({
-      incoming,
-      hostContent: state.hostContent,
-      current,
-      draftHeld: context.draftHeld === true,
-    })
-  ) {
+  const outcome = context.project.graph
+    ? reconcileHostGraph(state, {
+        incoming,
+        current,
+        draftHeld: context.draftHeld === true,
+        graphVersion: graphVersionOf(context),
+      })
+    : 'hold'
+  if (outcome === 'remount') {
     // A revision this editor did not write: a restore, a reload after a conflict, or a canonical
     // command applied by the host. A fresh editor instance loads it.
     await remount(state, context, incoming)
-  } else if (context.project.graph && context.draftHeld !== true) {
+  } else if (outcome === 'echo') {
     state.hostContent = incoming
     confirmEcho(state, incoming, current, context.project.revision)
   }
