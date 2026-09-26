@@ -31,6 +31,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     CloudMlJobPurpose,
+    CloudMlJobStage,
     createCloudMlJob,
     estimateCloudMlJob,
     type CloudMlJobEstimateRequestDto,
@@ -259,11 +260,13 @@
       {:else if estimate}
         <dl class="fcj-facts" aria-busy={estimating}>
           {#if estimate.models.length <= 1}
-            <!-- a full render runs the model its preview was reviewed with -->
+            <!-- one model on offer (a full render runs the model its preview was reviewed with) -->
             <dt>{$t('frameleaf_cloud_job_fact_model')}</dt>
             <dd>
               {estimate.model.label}
-              <small>{$t('frameleaf_cloud_job_fact_model_help')}</small>
+              {#if request.stage === CloudMlJobStage.Full}
+                <small>{$t('frameleaf_cloud_job_fact_model_help')}</small>
+              {/if}
             </dd>
           {/if}
           <dt>{$t('frameleaf_cloud_job_fact_estimate')}</dt>

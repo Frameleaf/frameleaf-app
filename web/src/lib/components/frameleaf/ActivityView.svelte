@@ -6,11 +6,14 @@
   import {
     ACTIVITY_FILTERS,
     ACTIVITY_PROGRESS_STAGES,
+    ACTIVITY_STAGE_HINT_KEYS,
+    ACTIVITY_STAGE_KEYS,
     activityCompletion,
     activityCounts,
     activityStatusText,
     buildActivityList,
     formatActivityDuration,
+    isProgressStage,
     matchesActivityFilter,
     type ActivityFilter,
     type ActivityItem,
@@ -84,8 +87,8 @@
   const counts = $derived(activityCounts(items));
   const visible = $derived(items.filter((item) => matchesActivityFilter(item, filter)));
   /* FL-162, prototype Activity.jsx: In progress, grouped by stage in the order jobs run, then Recent. */
-  const inProgress = $derived(visible.filter((item) => ACTIVITY_PROGRESS_STAGES.includes(item.stage)));
-  const recent = $derived(visible.filter((item) => !ACTIVITY_PROGRESS_STAGES.includes(item.stage)));
+  const inProgress = $derived(visible.filter((item) => isProgressStage(item.stage)));
+  const recent = $derived(visible.filter((item) => !isProgressStage(item.stage)));
   const hasFinished = $derived(items.some((item) => item.source === 'job' && item.finished));
   /** The prototype's summary: only the counts that are not zero, or "nothing" when idle. */
   const summary = $derived(
@@ -359,7 +362,8 @@
     </div>
   {/if}
 
-  {#snippet card(item: ActivityItem, index: number)}
+  <!-- A card's title is one level below the heading it sits under: a stage group's, or Recent's. -->
+  {#snippet card(item: ActivityItem, index: number, level: 'h3' | 'h4')}
     {@const thumbnail = thumbnailOf(item)}
     <article
       class="fla-job"
@@ -380,7 +384,7 @@
 
       <div class="fla-body">
         <div class="fla-row">
-          <h4 id="{rowIdPrefix}-job-{index}">{nameOf(item)}</h4>
+          <svelte:element this={level} class="fla-name" id="{rowIdPrefix}-job-{index}">{nameOf(item)}</svelte:element>
           <span
             class="fla-chip"
             class:fla-chip--info={item.tone === 'info'}
@@ -540,13 +544,13 @@
         {#if group.length > 0}
           <div class="fla-group" role="group" aria-labelledby="{rowIdPrefix}-stage-{stage}">
             <h3 id="{rowIdPrefix}-stage-{stage}" class="fla-group-title">
-              {$t(`frameleaf_activity_stage_${stage}`)}
+              {$t(ACTIVITY_STAGE_KEYS[stage])}
               <span class="fla-count">{group.length}</span>
-              <span class="fla-group-hint">{$t(`frameleaf_activity_stage_hint_${stage}`)}</span>
+              <span class="fla-group-hint">{$t(ACTIVITY_STAGE_HINT_KEYS[stage])}</span>
             </h3>
             <div class="fla-list">
               {#each group as item (item.id)}
-                {@render card(item, visible.indexOf(item))}
+                {@render card(item, visible.indexOf(item), 'h4')}
               {/each}
             </div>
           </div>
@@ -562,7 +566,7 @@
       </h2>
       <div class="fla-list">
         {#each recent as item (item.id)}
-          {@render card(item, visible.indexOf(item))}
+          {@render card(item, visible.indexOf(item), 'h3')}
         {/each}
       </div>
     </section>
@@ -764,7 +768,7 @@
     gap: 10px;
     min-width: 0;
   }
-  h4 {
+  .fla-name {
     margin: 0;
     font-size: 14px;
     font-weight: 600;

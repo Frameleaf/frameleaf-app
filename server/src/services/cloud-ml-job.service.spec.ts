@@ -382,6 +382,8 @@ describe(CloudMlJobService.name, () => {
     });
     mocks.mediaOperation.getLatestBySubject.mockResolvedValue([]);
     mocks.mediaOperation.listUnacknowledgedCloudMlJobs.mockResolvedValue([]);
+    mocks.mediaOperation.listUnfinishedCloudMlJobSnapshots.mockResolvedValue([]);
+    mocks.mediaOperation.listUnreconciledCancelledCloudMlJobs.mockResolvedValue([]);
     mocks.mediaOperation.getForWorker.mockImplementation(() => Promise.resolve(created));
     mocks.mediaOperation.getForOwner.mockImplementation(() => Promise.resolve(created));
     mocks.mediaOperation.setBulkResult.mockResolvedValue({
@@ -708,6 +710,7 @@ describe(CloudMlJobService.name, () => {
           mode: AssetRestorationMode.Faithful,
           destinationKind: MlDestinationKind.FrameleafCloud,
         }),
+        expect.anything(),
       );
       expect(created).toMatchObject({
         kind: MediaOperationKind.CloudMlJob,
@@ -1306,6 +1309,46 @@ describe(CloudMlJobService.name, () => {
         OPERATION_ID,
         expect.objectContaining({ acknowledged: true }),
       );
+    });
+
+    it('puts a full render cancelled while queued back up for review, once', async () => {
+      rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, status: AssetRestorationStatus.Accepted });
+      const cancelled = {
+        ...claimed(),
+        snapshot: { ...created!.snapshot, stage: 'full' },
+        status: MediaOperationStatus.Cancelled,
+        claimToken: null,
+        remoteJobId: null,
+      } as unknown as MediaOperation;
+      mocks.mediaOperation.listUnreconciledCancelledCloudMlJobs.mockResolvedValue([cancelled]);
+
+      await sut.cleanup(now);
+
+      expect(rows.get(RESTORATION_ID)).toMatchObject({ status: AssetRestorationStatus.PreviewReady, reviewedAt: null });
+      expect(mocks.storage.unlinkDir).toHaveBeenCalled();
+      expect(mocks.mediaOperation.setFinishedResult).toHaveBeenCalledWith(
+        OPERATION_ID,
+        expect.objectContaining({ reconciled: true }),
+      );
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+    });
+
+    it('keeps a prepared copy an unfinished job still needs', async () => {
+      const dir = '/upload/thumbs/owner-1/as/se/cloud_ml_input_abc';
+      metadata.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, {
+        records: [],
+        prepared: [{ dir, ownerId: 'owner-1', at: '2026-09-20T00:00:00.000Z' }],
+      });
+      mocks.mediaOperation.listUnfinishedCloudMlJobSnapshots.mockResolvedValue([
+        { inputs: [{ path: `${dir}/input.mp4` }] },
+      ]);
+
+      await sut.pruneEstimates(now);
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalledWith(dir, expect.anything());
+
+      mocks.mediaOperation.listUnfinishedCloudMlJobSnapshots.mockResolvedValue([]);
+      await sut.pruneEstimates(now);
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(dir, expect.anything());
     });
 
     it('records the cost of a finished job once it is settled', async () => {

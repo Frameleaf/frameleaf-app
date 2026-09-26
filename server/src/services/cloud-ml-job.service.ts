@@ -358,6 +358,7 @@ export class CloudMlJobService {
    */
   async cleanup(now = new Date()): Promise<void> {
     await this.releaseUnwatched();
+    await this.reconcileCancelled(now);
     await this.acknowledgeFinished();
     await this.settleFinished(now);
     await this.pruneEstimates(now);
@@ -861,7 +862,17 @@ export class CloudMlJobService {
           removed.push(entry.workDir);
         }
       }
-      const inUse = new Set(records.flatMap((entry) => entry.inputs.map((input) => path.dirname(input.path))));
+      // a prepared copy stays while an estimate or an unfinished job (queued, paused, uploading) needs it
+      const jobs = await this.mediaOperationRepository.listUnfinishedCloudMlJobSnapshots();
+      const jobInputs = jobs.flatMap((snapshot) => {
+        const inputs = (snapshot as { inputs?: unknown } | null)?.inputs;
+        return Array.isArray(inputs) ? inputs.map((input) => String((input as { path?: unknown })?.path ?? '')) : [];
+      });
+      const inUse = new Set(
+        [...records.flatMap((entry) => entry.inputs.map((input) => input.path)), ...jobInputs].map((file) =>
+          path.dirname(file),
+        ),
+      );
       const prepared = (store.prepared ?? []).filter((entry) => {
         const keep =
           inUse.has(entry.dir) || this.preparing.has(entry.dir) || now.getTime() - Date.parse(entry.at) < DAY_MS;
@@ -916,7 +927,7 @@ export class CloudMlJobService {
       const client = new FrameleafCloudJobClient(this.frameleafCloudMlRepository, gateway, { signal });
       switch (run.result.phase) {
         case CloudMlJobPhase.Queued: {
-          await this.submit(run, gateway, client);
+          await this.submit(run, gateway, client, signal);
           break;
         }
         case CloudMlJobPhase.Uploading: {
@@ -996,6 +1007,11 @@ export class CloudMlJobService {
     const { phase } = run.result;
     const counted = phase === CloudMlJobPhase.Uploading || phase === CloudMlJobPhase.Ending;
     if (!run.result.job || failure?.retry === false || (!counted && phase !== CloudMlJobPhase.Started)) {
+      return false;
+    }
+    // a 4xx other than a timeout or a rate limit (the job is unknown, the request refused) never passes
+    const status = error instanceof FrameleafCloudError ? error.status : null;
+    if (status !== null && status >= 400 && status < 500 && status !== 408 && status !== 429) {
       return false;
     }
     const failures = run.result.transientFailures + 1;
@@ -1088,7 +1104,12 @@ export class CloudMlJobService {
    * estimate the queue held past its expiry is sealed again first, and sent only within 10 % of what
    * the owner confirmed; a changed model, a price above that, or a 402 stops the job as it is.
    */
-  private async submit(run: JobRun, gateway: CloudMlGateway, client: FrameleafCloudJobClient) {
+  private async submit(
+    run: JobRun,
+    gateway: CloudMlGateway,
+    client: FrameleafCloudJobClient,
+    signal: AbortSignal | null,
+  ) {
     const { operation, snapshot } = run;
     await this.checkInputs(run);
     await this.admit(snapshot, snapshot.approved.holdUsd, operation.id);
@@ -1140,8 +1161,17 @@ export class CloudMlJobService {
     }
 
     const held = await this.mediaOperationRepository.setRemoteJobId(operation.id, run.claimToken, admitted.jobId);
+    if (!held) {
+      // the claim is gone: keep the job's id on the row first so the cleanup pass can always find it,
+      // then stop it rather than leave it holding the wallet unwatched
+      this.logger.warn(
+        `Frameleaf Cloud job ${operation.id}: claim lost after cloud job ${admitted.jobId} was admitted`,
+      );
+      await this.mediaOperationRepository.recordRemoteJobId(operation.id, admitted.jobId);
+      await client.cancel(admitted.jobId, admitted.status).catch(() => {});
+    }
     // one accounting row per cloud job, which its settlement fills once; a replay adds none. A job whose
-    // claim was lost is stopped below, and its row says so; what it cost is settled all the same
+    // claim was lost was stopped above, and its row says so; what it cost is settled all the same
     await this.mlDestinationRepository.recordCloudJobAccounting({
       destinationId: snapshot.destinationId,
       destinationKind: MlDestinationKind.FrameleafCloud,
@@ -1158,13 +1188,6 @@ export class CloudMlJobService {
       cloudJobId: admitted.jobId,
     });
     if (!held) {
-      // the claim is gone: keep the job's id on the row first so the cleanup pass can always find it,
-      // then stop it rather than leave it holding the wallet unwatched
-      this.logger.warn(
-        `Frameleaf Cloud job ${operation.id}: claim lost after cloud job ${admitted.jobId} was admitted`,
-      );
-      await this.mediaOperationRepository.recordRemoteJobId(operation.id, admitted.jobId);
-      await client.cancel(admitted.jobId, admitted.status).catch(() => {});
       return;
     }
     run.result = {
@@ -1188,7 +1211,7 @@ export class CloudMlJobService {
       waiting: null,
     };
     if (await this.save(run)) {
-      await this.upload(run, client, admitted.uploads ?? null, null);
+      await this.upload(run, client, admitted.uploads ?? null, signal);
     }
   }
 
@@ -1411,7 +1434,7 @@ export class CloudMlJobService {
     const outputs = orderedOutputs(view.result?.outputs ?? []);
     const budgetStopped = view.status === 'cancelled_budget';
     const delivered = view.status === 'completed' || budgetStopped;
-    if (delivered && outputs.length > 0 && !outputsComplete(outputs, view.progress)) {
+    if (delivered && outputs.length > 0 && !outputsComplete(outputs, view.progress, budgetStopped)) {
       // shards missing (a job stopped at its hold part-way, or a gap): not a whole version
       throw budgetStopped
         ? new CloudMlJobFailure(
@@ -1475,6 +1498,12 @@ export class CloudMlJobService {
   private async releaseFinished(run: JobRun, client: FrameleafCloudJobClient) {
     try {
       await this.acknowledge(run, client);
+      // the settle pass may have recorded the cost since this step read the job: keep it
+      const stored = await this.mediaOperationRepository.getForWorker(run.operation.id);
+      const kept = stored ? parseCloudMlJobResult(stored.result) : null;
+      if (!run.result.cost && kept?.cost) {
+        run.result = { ...run.result, cost: kept.cost, costReads: Math.max(run.result.costReads, kept.costReads) };
+      }
       await this.settleAccounting(run);
       await this.mediaOperationRepository.setFinishedResult(
         run.operation.id,
@@ -1873,6 +1902,10 @@ export class CloudMlJobService {
       holder.result = { ...holder.result, phase: CloudMlJobPhase.Finished };
       return { released: true, result: holder.result };
     } catch (error) {
+      if (error instanceof FrameleafCloudError && error.status === 404) {
+        // the cloud no longer knows the job: nothing is held or kept for it any more
+        return { released: true, result: { ...holder.result, phase: CloudMlJobPhase.Finished, acknowledged: true } };
+      }
       this.logger.warn(`Frameleaf Cloud job ${operation.id} was not released yet: ${errorMessage(error)}`);
       return { released: false, result: holder.result };
     }
@@ -1937,6 +1970,41 @@ export class CloudMlJobService {
   }
 
   /**
+   * Jobs cancelled before anything was sent while no step held them (the cancel lands at once, without
+   * a worker): a full render's reviewed preview is put back up for review, a preview's version is
+   * marked cancelled, and the job's own files are removed. Each is reconciled once.
+   */
+  async reconcileCancelled(now: Date): Promise<void> {
+    const operations = await this.mediaOperationRepository.listUnreconciledCancelledCloudMlJobs({
+      limit: 20,
+      since: new Date(now.getTime() - 7 * DAY_MS),
+    });
+    for (const operation of operations) {
+      const result = parseCloudMlJobResult(operation.result);
+      try {
+        const snapshot = parseCloudMlJobSnapshot(operation.snapshot);
+        const statuses = STAGE_STATUSES[snapshot.stage];
+        const from = [statuses.running, this.queuedStatus({ snapshot })];
+        await (snapshot.stage === 'full'
+          ? this.restorationRepository.transition(snapshot.restorationId, from, {
+              status: AssetRestorationStatus.PreviewReady,
+              reviewedAt: null,
+              fullOperationId: null,
+              previewExpiresAt: previewExpiryAfterReady(now),
+            })
+          : this.restorationRepository.transition(snapshot.restorationId, from, { status: statuses.cancelled }));
+        await this.removeJobFiles(snapshot);
+      } catch (error) {
+        this.logger.warn(`Frameleaf Cloud job ${operation.id} was not reconciled: ${errorMessage(error)}`);
+      }
+      await this.mediaOperationRepository.setFinishedResult(operation.id, {
+        ...result,
+        reconciled: true,
+      } as unknown as Record<string, unknown>);
+    }
+  }
+
+  /**
    * Finished jobs whose acknowledgement did not land after their result was published (a crash, or a
    * `DELETE` that failed): each is acknowledged now, so the cloud purges it, and its cost recorded.
    */
@@ -1960,13 +2028,15 @@ export class CloudMlJobService {
       try {
         await this.acknowledge(holder, client);
         await this.settleAccounting(holder);
-        await this.mediaOperationRepository.setFinishedResult(
-          operation.id,
-          holder.result as unknown as Record<string, unknown>,
-        );
       } catch (error) {
         this.logger.warn(`Frameleaf Cloud job ${operation.id} was not acknowledged yet: ${errorMessage(error)}`);
+        // counted, so a job the cloud keeps refusing never holds up the others (least-tried first)
+        holder.result = { ...holder.result, ackAttempts: holder.result.ackAttempts + 1 };
       }
+      await this.mediaOperationRepository.setFinishedResult(
+        operation.id,
+        holder.result as unknown as Record<string, unknown>,
+      );
     }
   }
 
@@ -2187,8 +2257,9 @@ export class CloudMlJobService {
     const copy = !!codec && plan.codecs.includes(codec);
     const container = copy ? plan.container : 'mp4';
     const file = path.join(workDir, `input.${container}`);
-    // a stream copy keeps the encoder's SEI messages, where cameras put their own data (serial numbers,
-    // GPS, settings): user-data SEI is dropped (H.264 type 6, HEVC prefix and suffix types 39 and 40)
+    // a stream copy keeps the stream's SEI messages, where cameras put their own data (serial numbers,
+    // GPS, settings). Every SEI message is dropped (H.264 type 6, HEVC prefix and suffix types 39 and 40),
+    // HDR mastering metadata carried there included; the colour description in the stream header stays
     const sei: Record<string, string> = {
       h264: 'filter_units=remove_types=6',
       hevc: 'filter_units=remove_types=39|40',
@@ -2648,7 +2719,9 @@ export class CloudMlJobService {
     const failed = this.preparingFailed.get(dir);
     if (failed) {
       this.preparingFailed.delete(dir);
-      throw new BadRequestException(`This video could not be prepared for Frameleaf Cloud: ${failed}`);
+      throw new BadRequestException(
+        `This video could not be prepared for Frameleaf Cloud (${failed}). Nothing was sent; try again.`,
+      );
     }
     if (!this.preparing.has(dir)) {
       if (this.preparingBy.has(auth.user.id)) {
@@ -2690,7 +2763,7 @@ export class CloudMlJobService {
     })()
       .catch(async (error) => {
         this.logger.warn(`Preparing ${source.id} for a Frameleaf Cloud estimate failed: ${errorMessage(error)}`);
-        this.preparingFailed.set(dir, errorMessage(error));
+        this.preparingFailed.set(dir, error instanceof CloudMlJobFailure ? error.code : 'cloud_ml_prepare_failed');
         await this.removeWorkDir(dir);
       })
       .finally(() => {

@@ -1475,8 +1475,42 @@ export class MediaOperationRepository {
         .where('status', '=', MediaOperationStatus.Completed)
         .where('remoteJobId', 'is not', null)
         .where('remoteReleasedAt', 'is', null)
+        // the least-tried first, so a job the cloud keeps refusing never holds up the others
+        .orderBy(sql`coalesce(("result" ->> 'ackAttempts')::int, 0)`, 'asc')
         .orderBy('finishedAt', 'asc')
         .limit(limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
+  }
+
+  /** FL-162: the snapshots of unfinished cloud ML jobs, for the prepared inputs they still need. */
+  async listUnfinishedCloudMlJobSnapshots(): Promise<unknown[]> {
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select('snapshot')
+      .where('kind', '=', MediaOperationKind.CloudMlJob)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .execute();
+    return rows.map((row) => row.snapshot);
+  }
+
+  /**
+   * FL-162: cloud ML jobs cancelled before anything was sent (no cloud job), which the cleanup pass has
+   * not put right yet: a cancel of a job no worker held lands without a step, so its version and its
+   * prepared files are reconciled afterwards.
+   */
+  listUnreconciledCancelledCloudMlJobs(options: { limit: number; since: Date }): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('kind', '=', MediaOperationKind.CloudMlJob)
+        .where('status', '=', MediaOperationStatus.Cancelled)
+        .where('remoteJobId', 'is', null)
+        .where('finishedAt', '>=', options.since)
+        .where(sql<string>`coalesce("result" ->> 'reconciled', 'false')`, '=', 'false')
+        .orderBy('finishedAt', 'asc')
+        .limit(options.limit)
         .execute() as unknown as Promise<MediaOperation[]>
     );
   }

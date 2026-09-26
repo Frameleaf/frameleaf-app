@@ -283,6 +283,10 @@ export const CloudMlJobResultSchema = z.object({
   waiting: z.object({ code: z.string(), detail: z.string(), at: z.string() }).nullable(),
   /** Transient failures in a row since the cloud job exists; reset by every step that goes through. */
   transientFailures: z.int().min(0).default(0),
+  /** Acknowledgements of a finished job that failed, so the cleanup pass tries the least-tried first. */
+  ackAttempts: z.int().min(0).default(0),
+  /** A job cancelled before anything was sent had its version and files put right by the cleanup pass. */
+  reconciled: z.boolean().default(false),
 });
 export type CloudMlJobResult = z.infer<typeof CloudMlJobResultSchema>;
 
@@ -299,6 +303,8 @@ export const emptyCloudMlJobResult = (): CloudMlJobResult => ({
   costReads: 0,
   waiting: null,
   transientFailures: 0,
+  ackAttempts: 0,
+  reconciled: false,
 });
 
 /** The result as stored, or a fresh one when there is none or it cannot be read. */
@@ -417,9 +423,10 @@ export const cloudMlJobCanPause = (operation: { kind: string; result: unknown })
  * `Retry-After`.
  */
 export const cloudMlJobBackoffMs = (failures: number, retryAfterSeconds: number | null = null): number => {
-  const doubled = CLOUD_ML_JOB_POLL_MS * 2 ** Math.max(0, failures - 1);
-  const asked = retryAfterSeconds === null ? 0 : retryAfterSeconds * 1000;
-  return Math.min(CLOUD_ML_JOB_MAX_POLL_MS, Math.max(doubled, asked));
+  const doubled = Math.min(CLOUD_ML_JOB_MAX_POLL_MS, CLOUD_ML_JOB_POLL_MS * 2 ** Math.max(0, failures - 1));
+  // a Retry-After is honoured as asked, up to a quarter of an hour
+  const asked = retryAfterSeconds === null ? 0 : Math.min(15 * 60, retryAfterSeconds) * 1000;
+  return Math.max(doubled, asked);
 };
 
 /** A cloud job as Activity and `GET /cloud/ml/jobs/{id}` show it (FL-162); the DTO is `CloudMlJobActivityDto`. */
@@ -541,12 +548,14 @@ export const orderedOutputs = (outputs: readonly CloudOutputDownload[]): CloudOu
 
 /**
  * Whether a job's outputs make one whole result: a single output, or shards numbered 0 to n − 1 with
- * none missing, and, when the job counted its work, as many as it counted. A job stopped at its hold
- * part-way through a video delivers only the shards it finished, which is not a whole video.
+ * none missing. A job stopped at its hold part-way through a video delivers only the shards it
+ * finished, so one that stopped must also have counted all its work done (and, for segments, as many
+ * shards as it counted); a completed job's last progress report may lag, so it is not asked for.
  */
 export const outputsComplete = (
   outputs: readonly CloudOutputDownload[],
   progress: { done: number; total: number; unit: string } | null,
+  budgetStopped = false,
 ): boolean => {
   const shards = outputs.map((output) => /-s(\d+)$/.exec(output.outputId));
   if (shards.every((match) => match === null)) {
@@ -559,8 +568,11 @@ export const outputsComplete = (
   if (numbers.some((value, index) => value !== index)) {
     return false;
   }
-  if (!progress || progress.total <= 0) {
+  if (!budgetStopped) {
     return true;
+  }
+  if (!progress || progress.total <= 0) {
+    return false;
   }
   return progress.done >= progress.total && (progress.unit !== 'segments' || numbers.length === progress.total);
 };
