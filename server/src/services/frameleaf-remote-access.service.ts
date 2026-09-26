@@ -8,7 +8,7 @@ import {
   RemoteAccessUpdateDto,
   RemoteHostnameUpdateDto,
 } from 'src/dtos/frameleaf-remote-access.dto.js';
-import { SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
@@ -141,13 +141,16 @@ export class FrameleafRemoteAccessService extends BaseService {
    * command from Frameleaf Cloud starts from it.
    */
   private async syncDesired(enabled: boolean) {
-    const { link, linked } = await readCloudLink(this.linkDeps);
-    if (!linked || !link || !!link.desired?.remoteAccess === enabled) {
-      return;
-    }
-    await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, {
-      ...link,
-      desired: { cloudBackup: false, ...link.desired, remoteAccess: enabled },
+    // under the check-in's lock, so a check-in saving the link at the same time is not overwritten
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const { link, linked } = await readCloudLink(this.linkDeps);
+      if (!linked || !link || !!link.desired?.remoteAccess === enabled) {
+        return;
+      }
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, {
+        ...link,
+        desired: { cloudBackup: false, ...link.desired, remoteAccess: enabled },
+      });
     });
   }
 
