@@ -3,7 +3,7 @@ import { allowedOrigins, requestHosts, websocketOriginAllowed } from 'src/utils/
 describe('websocket origin allow-list (FL-161)', () => {
   const origins = allowedOrigins([
     'https://photos.example.com/',
-    'https://r.k3v9.frameleaf-direct.net',
+    'https://r.k3v9.frameleaf.net',
     null,
     '',
     'not a url',
@@ -12,7 +12,7 @@ describe('websocket origin allow-list (FL-161)', () => {
   const hosts = requestHosts({ host: '192.168.1.10:2283' });
 
   it('normalizes the configured origins and drops what is not an http address', () => {
-    expect(origins).toEqual(['https://photos.example.com', 'https://r.k3v9.frameleaf-direct.net']);
+    expect(origins).toEqual(['https://photos.example.com', 'https://r.k3v9.frameleaf.net']);
   });
 
   it('accepts a page on the address the request was sent to', () => {
@@ -21,7 +21,7 @@ describe('websocket origin allow-list (FL-161)', () => {
 
   it('accepts the external domain and the published Frameleaf names', () => {
     expect(websocketOriginAllowed('https://photos.example.com', { hosts, origins })).toBe(true);
-    expect(websocketOriginAllowed('https://r.k3v9.frameleaf-direct.net', { hosts, origins })).toBe(true);
+    expect(websocketOriginAllowed('https://r.k3v9.frameleaf.net', { hosts, origins })).toBe(true);
   });
 
   it('accepts the host a reverse proxy forwarded', () => {

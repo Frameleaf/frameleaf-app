@@ -488,7 +488,7 @@ describe(SystemConfigService.name, () => {
                 cloudUrl: 'https://cloud.test',
                 instanceId: 'instance-1',
                 oidc: { issuer: 'https://id.cloud.test', clientId: 'instance-1' },
-                services: { relayOrigin: 'https://r.label.frameleaf-direct.test' },
+                services: { relayOrigin: 'https://r.label.frameleaf.test' },
               }
             : null) as never,
         ),
@@ -501,7 +501,7 @@ describe(SystemConfigService.name, () => {
           signInAvailable: true,
           signInRequired: true,
           via: 'relay',
-          relayHost: 'r.label.frameleaf-direct.test',
+          relayHost: 'r.label.frameleaf.test',
           localUrl: null,
           sameNetwork: false,
         },
@@ -541,7 +541,7 @@ describe(SystemConfigService.name, () => {
     it('publishes the instance id, public address and sign-in in /.well-known/immich while linked (FL-161)', async () => {
       await expect(sut.getWellKnown()).resolves.toEqual({
         api: { endpoint: '/api' },
-        frameleaf: { instanceId: 'instance-1', publicUrl: 'https://r.label.frameleaf-direct.test', signIn: true },
+        frameleaf: { instanceId: 'instance-1', publicUrl: 'https://r.label.frameleaf.test', signIn: true },
       });
 
       mocks.systemMetadata.get.mockResolvedValue(null as never);

@@ -275,13 +275,13 @@ test("licensed servers pay less and removing the plan keeps the licence", async 
 
 test("custom hostnames need a subdomain the owner controls and verify on the second check", async () => {
   const data = await import("../src/frameleaf-cloud-data.mjs");
-  for (const bad of ["", "example.com", "https://photos.example.com", "a.frameleaf-direct.net", "bad_host.example.com"])
+  for (const bad of ["", "example.com", "https://photos.example.com", "a.frameleaf.net", "a.frameleaf-direct.net", "a.frameleaf.cloud", "bad_host.example.com"])
     assert.equal(data.validateCustomHostname(bad).valid, false, bad);
   assert.equal(data.validateCustomHostname("Photos.Example.com.").host, "photos.example.com");
-  const records = data.customHostnameRecords("photos.example.com", "https://r.k3v9q2m7x4a8d1fh.frameleaf-direct.net");
+  const records = data.customHostnameRecords("photos.example.com", "https://r.k3v9q2m7x4a8d1fh.frameleaf.net");
   assert.deepEqual(records.map((record) => [record.name, record.value]), [
-    ["photos.example.com", "r.k3v9q2m7x4a8d1fh.frameleaf-direct.net"],
-    ["_acme-challenge.photos.example.com", "_acme-challenge.k3v9q2m7x4a8d1fh.frameleaf-direct.net"],
+    ["photos.example.com", "r.k3v9q2m7x4a8d1fh.frameleaf.net"],
+    ["_acme-challenge.photos.example.com", "_acme-challenge.k3v9q2m7x4a8d1fh.frameleaf.net"],
   ]);
   let state = data.createCloudState();
   state = data.checkCustomHostname(state, "photos.example.com");

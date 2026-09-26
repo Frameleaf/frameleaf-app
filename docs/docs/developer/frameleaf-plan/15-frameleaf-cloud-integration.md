@@ -165,8 +165,8 @@ disable; external IP vs heartbeat `observed_ip` → `cgnatSuspected`; WAN candid
 `EdgeRelayService`: token → `tls.connect` (SNI `tun.<relay>`, ALPN `fl-tunnel/1`) → handshake → h2 server
 over the socket → `CONNECT` streams → `TLSSocket` per stream → proxy core with `via: relay`; PING 30 s (3
 misses reconnect), full-jitter backoff 1 s → 5 min, refresh token at 50 %, re-select relay after 3
-failures. Public URL `https://r.<label>.frameleaf-direct.net` — or a verified custom hostname on the owner's domain (CNAME
-`<host>` → `r.<label>.frameleaf-direct.net`, CNAME `_acme-challenge.<host>` → `_acme-challenge.<label>.frameleaf-direct.net`,
+failures. Public URL `https://r.<label>.frameleaf.net` — or a verified custom hostname on the owner's domain (CNAME
+`<host>` → `r.<label>.frameleaf.net`, CNAME `_acme-challenge.<host>` → `_acme-challenge.<label>.frameleaf.net`,
 so the cert for `<host>` is issued and renewed on the server through the same TXT API; the relay routes the SNI) — exposed via `/server/config`,
 `/.well-known/immich`, `/server/connections` (candidate order local → wan → ipv6 → relay).
 
@@ -392,7 +392,7 @@ fingerprint, entitlements{remoteAccess,cloudMl,cloudBackup,supporter}, refresh, 
   `X-Forwarded-*` + via contract, unbuffered bodies, upgrade, Range, HSTS; LAN name serves the web app with `via: lan`;
   disable/unlink removes cert and listener; `AppShutdown` closes sockets ≤ 5 s; `/server/config`, `/.well-known/immich`,
   `/server/connections` publish the public URL and candidates; **custom public hostname**: the owner adds CNAME `<host>` →
-  `r.<label>.frameleaf-direct.net` and CNAME `_acme-challenge.<host>` → `_acme-challenge.<label>.frameleaf-direct.net`,
+  `r.<label>.frameleaf.net` and CNAME `_acme-challenge.<host>` → `_acme-challenge.<label>.frameleaf.net`,
   a DNS check moves it pending → verified, then the server issues and renews the certificate for `<host>` via DNS-01
   through the delegated record and "Use my domain" makes it the public URL. Validation: proxy-core spec (headers/upgrade/range),
   certificate spec against a fake ACME directory, state spec, `PUT admin/cloud/remote` + `POST …/test`. Deps: CLD-101, FC REM-001.
