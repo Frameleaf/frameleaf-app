@@ -50,13 +50,13 @@
 ## Link utili
 
 - [Documentazione](https://docs.immich.app)  
-- [Informazioni](https://docs.immich.app/overview/introduction)  
-- [Installazione](https://docs.immich.app/install/requirements)  
+- [Informazioni](https://help.frameleaf.ai/overview/quick-start)  
+- [Installazione](https://help.frameleaf.ai/install/requirements)  
 - [Roadmap](https://immich.app/roadmap)  
 - [Demo](#demo)  
 - [Funzionalità](#funzionalità)  
-- [Traduzioni](https://docs.immich.app/developer/translations)  
-- [Contribuire](https://docs.immich.app/overview/support-the-project)  
+- [Traduzioni](https://help.frameleaf.ai/developer/translations)  
+- [Contribuire](https://help.frameleaf.ai/overview/support-the-project)  
 
 ## Demo
 
@@ -106,7 +106,7 @@ Per l’app mobile puoi usare `https://demo.immich.app` come `Server Endpoint UR
 
 ## Traduzioni
 
-Scopri di più sulle traduzioni [qui](https://docs.immich.app/developer/translations).  
+Scopri di più sulle traduzioni [qui](https://help.frameleaf.ai/developer/translations).  
 
 <a href="https://hosted.weblate.org/engage/immich/">
 <img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="Stato traduzioni" />

@@ -4,8 +4,8 @@ We appreciate every contribution, and we're happy about every new contributor. S
 
 ## Getting started
 
-To get you started quickly we have detailed guides for the dev setup on our [website](https://docs.immich.app/developer/setup). If you prefer, you can also use [Devcontainers](https://docs.immich.app/developer/devcontainers).
-There are also additional resources about Immich's architecture, database migrations, the use of OpenAPI, and more in our [developer documentation](https://docs.immich.app/developer/architecture).
+To get you started quickly we have detailed guides for the dev setup on our [website](https://help.frameleaf.ai/developer/setup). If you prefer, you can also use [Devcontainers](https://help.frameleaf.ai/developer/devcontainers).
+There are also additional resources about Immich's architecture, database migrations, the use of OpenAPI, and more in our [developer documentation](https://help.frameleaf.ai/developer/architecture).
 
 ## General
 

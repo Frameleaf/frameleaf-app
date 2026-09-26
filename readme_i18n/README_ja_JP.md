@@ -48,13 +48,13 @@
 ## コンテンツ
 
 - [公式ドキュメント](https://docs.immich.app/)
-- [紹介](https://docs.immich.app/overview/introduction)
-- [インストール](https://docs.immich.app/install/requirements)
+- [紹介](https://help.frameleaf.ai/overview/quick-start)
+- [インストール](https://help.frameleaf.ai/install/requirements)
 - [ロードマップ](https://immich.app/roadmap)
 - [デモ](#デモ)
 - [機能](#機能)
-- [翻訳](https://docs.immich.app/developer/translations)
-- [コントリビューションガイド](https://docs.immich.app/overview/support-the-project)
+- [翻訳](https://help.frameleaf.ai/developer/translations)
+- [コントリビューションガイド](https://help.frameleaf.ai/overview/support-the-project)
 
 ## デモ
 

@@ -8,8 +8,8 @@
 # The compose file on main may not be compatible with the latest release.
 
 # For development see:
-# - https://docs.immich.app/developer/setup
-# - https://docs.immich.app/developer/troubleshooting
+# - https://help.frameleaf.ai/developer/setup
+# - https://help.frameleaf.ai/developer/troubleshooting
 
 name: immich-dev
 

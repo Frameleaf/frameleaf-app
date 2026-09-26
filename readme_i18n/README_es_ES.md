@@ -49,13 +49,13 @@
 ## Contenido
 
 - [Documentación](https://docs.immich.app/)
-- [Introducción](https://docs.immich.app/overview/introduction)
-- [Instalación](https://docs.immich.app/install/requirements)
+- [Introducción](https://help.frameleaf.ai/overview/quick-start)
+- [Instalación](https://help.frameleaf.ai/install/requirements)
 - [Hoja de ruta](https://immich.app/roadmap)
 - [Demo](#demo)
 - [Funciones](#funciones)
-- [Traducciones](https://docs.immich.app/developer/translations)
-- [Directrices para contribuir](https://docs.immich.app/overview/support-the-project)
+- [Traducciones](https://help.frameleaf.ai/developer/translations)
+- [Directrices para contribuir](https://help.frameleaf.ai/overview/support-the-project)
 
 ## Demo
 
@@ -99,7 +99,7 @@ contraseña: demo
 
 ## Traducciones
 
-Lea mas acerca de las traducciones [acá](https://docs.immich.app/developer/translations).
+Lea mas acerca de las traducciones [acá](https://help.frameleaf.ai/developer/translations).
 
 <a href="https://hosted.weblate.org/engage/immich/">
 <img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="Translation status" />

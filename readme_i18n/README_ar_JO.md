@@ -49,13 +49,13 @@
 ## روابط
 
 - [الوثائق الرسمية](https://docs.immich.app/)
-- [مقدمة](https://docs.immich.app/overview/introduction)
-- [تعليمات التحميل](https://docs.immich.app/install/requirements)
+- [مقدمة](https://help.frameleaf.ai/overview/quick-start)
+- [تعليمات التحميل](https://help.frameleaf.ai/install/requirements)
 - [خريطة الطريق](https://immich.app/roadmap)
 - [تجريبي](#تجريبي)
 - [سمات](#سمات)
-- [الترجمات](https://docs.immich.app/developer/translations)
-- [قواعد المساهمة](https://docs.immich.app/overview/support-the-project)
+- [الترجمات](https://help.frameleaf.ai/developer/translations)
+- [قواعد المساهمة](https://help.frameleaf.ai/overview/support-the-project)
 
 ## تجريبي
 
