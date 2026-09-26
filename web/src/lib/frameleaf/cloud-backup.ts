@@ -208,7 +208,9 @@ export const RETENTION_FIELDS: ReadonlyArray<{
 export const retentionValue = (field: RetentionField, typed: string): number | null => {
   const bounds = RETENTION_FIELDS.find((entry) => entry.field === field)!;
   const value = Number(typed);
-  return typed.trim() !== '' && Number.isInteger(value) && value >= bounds.min && value <= bounds.max ? value : null;
+  return typed.trim() !== '' && Number.isSafeInteger(value) && value >= bounds.min && value <= bounds.max
+    ? value
+    : null;
 };
 
 /** FL-164: the bucket Frameleaf Cloud makes for this server, `fl-<region>-<instanceId>`. */

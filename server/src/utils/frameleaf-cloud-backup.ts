@@ -50,11 +50,7 @@ export const backupGrantResponseSchema = backupGrantMetadataSchema.extend({
 export type BackupGrantResponse = z.infer<typeof backupGrantResponseSchema>;
 
 /** What the grant's IAM policy must deny for this server to trust it with backups (BAK-001). */
-export const REQUIRED_BACKUP_DENIES = [
-  's3:DeleteObjectVersion',
-  's3:PutBucketVersioning',
-  's3:DeleteBucket',
-] as const;
+export const REQUIRED_BACKUP_DENIES = ['s3:DeleteObjectVersion', 's3:PutBucketVersioning', 's3:DeleteBucket'] as const;
 
 /** Why a grant cannot be used, or null: it must require SSE-C, keep versioning and deny version deletion. */
 export const backupGrantProblem = (grant: BackupGrantMetadata): string | null => {

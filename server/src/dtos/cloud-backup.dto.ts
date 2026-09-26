@@ -134,9 +134,7 @@ const ManifestKeySchema = z
   .regex(/^m\/\d{8}T\d{6}Z\.json\.gz$/)
   .describe('The backup run’s manifest in the bucket');
 
-const CloudBackupVerifySchema = z
-  .object({ depth: CloudBackupVerifyDepthSchema })
-  .meta({ id: 'CloudBackupVerifyDto' });
+const CloudBackupVerifySchema = z.object({ depth: CloudBackupVerifyDepthSchema }).meta({ id: 'CloudBackupVerifyDto' });
 
 const CloudBackupPruneSchema = z
   .object({
