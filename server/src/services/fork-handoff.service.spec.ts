@@ -41,6 +41,7 @@ const setup = () => {
     activateAfterReturnReconciliation: vi.fn().mockResolvedValue(activeReport),
     applyIsolatedFrameleafMigrations: vi.fn().mockResolvedValue({ applied: [], pending: [], skipped: null }),
     archiveAndDeleteOrphans: vi.fn().mockResolvedValue({ archived: 0, deleted: 0 }),
+    countPasswordProtectedSharedLinks: vi.fn().mockResolvedValue(0),
     getPreparedOfficialHandoffCheckpoint: vi.fn().mockResolvedValue(checkpoint),
     prepareOfficialHandoffCheckpoint: vi.fn().mockResolvedValue(checkpoint),
     getReturnEvidence: vi.fn().mockResolvedValue(returnEvidence),
@@ -68,6 +69,29 @@ describe(ForkHandoffService.name, () => {
     expect(databaseMocks.getPreparedOfficialHandoffCheckpoint).not.toHaveBeenCalled();
     expect(databaseMocks.archiveAndDeleteOrphans).not.toHaveBeenCalled();
     expect(migrationMocks.reconcileAfterOfficialReturn).not.toHaveBeenCalled();
+  });
+
+  it('refuses the handoff while password-protected shared links are not acknowledged (FL-161)', async () => {
+    const { databaseMocks, sut } = setup();
+    databaseMocks.countPasswordProtectedSharedLinks.mockResolvedValue(3);
+
+    await expect(sut.prepareOfficial()).rejects.toThrow(
+      '3 password-protected shared link(s) will stay locked on the official server',
+    );
+    expect(databaseMocks.prepareOfficialHandoffCheckpoint).not.toHaveBeenCalled();
+
+    await expect(sut.prepareOfficial({ acknowledgeSharedLinkPasswords: true })).resolves.toEqual(checkpoint);
+    await expect(sut.sharedLinkPasswordPreflight({ acknowledgeSharedLinkPasswords: true })).resolves.toEqual({
+      passwordProtectedLinks: 3,
+    });
+  });
+
+  it('needs no acknowledgement without password-protected shared links (FL-161)', async () => {
+    const { databaseMocks, sut } = setup();
+
+    await expect(sut.sharedLinkPasswordPreflight()).resolves.toEqual({ passwordProtectedLinks: 0 });
+    await expect(sut.prepareOfficial()).resolves.toEqual(checkpoint);
+    expect(databaseMocks.countPasswordProtectedSharedLinks).toHaveBeenCalled();
   });
 
   it('validates return evidence before archiving, reconciliation, and final activation', async () => {

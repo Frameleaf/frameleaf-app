@@ -553,6 +553,18 @@ export class ForkHandoffRepository {
     };
   }
 
+  /**
+   * FL-161: shared links protected by a password. Their passwords are bcrypt hashes
+   * (2100000000660-HashSharedLinkPasswords), which the official server compares as plaintext, so each
+   * of these links stays locked there until its password is set again on the official server.
+   */
+  async countPasswordProtectedSharedLinks(kysely: Kysely<DB> = this.db): Promise<number> {
+    const { rows } = await sql<{ count: number }>`
+      SELECT count(*)::int AS count FROM public.shared_link WHERE password IS NOT NULL AND password <> ''
+    `.execute(kysely);
+    return rows[0]?.count ?? 0;
+  }
+
   async prepareOfficialHandoffCheckpoint(): Promise<OfficialHandoffCheckpoint> {
     return this.db
       .transaction()
