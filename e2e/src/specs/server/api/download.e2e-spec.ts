@@ -91,7 +91,7 @@ describe('/download', () => {
 
     it("refuses a partner's items once the partner stops sharing", async () => {
       const partner = await utils.userSetup(admin.accessToken, {
-        email: 'download-partner@immich.cloud',
+        email: 'download-partner@example.com',
         name: 'Download Partner',
         password: 'password',
       });

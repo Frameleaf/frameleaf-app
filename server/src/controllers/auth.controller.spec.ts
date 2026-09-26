@@ -23,7 +23,7 @@ describe(AuthController.name, () => {
 
   describe('POST /auth/admin-sign-up', () => {
     const name = 'admin';
-    const email = 'admin@immich.cloud';
+    const email = 'admin@example.com';
     const password = 'password';
 
     it('should require an email address', async () => {
@@ -68,7 +68,7 @@ describe(AuthController.name, () => {
         .post('/auth/admin-sign-up')
         .send({ name: 'admin', password: 'password', email: 'aDmIn@IMMICH.cloud' });
       expect(status).toEqual(201);
-      expect(service.adminSignUp).toHaveBeenCalledWith(expect.objectContaining({ email: 'admin@immich.cloud' }));
+      expect(service.adminSignUp).toHaveBeenCalledWith(expect.objectContaining({ email: 'admin@example.com' }));
     });
 
     it('should accept an email with a local domain', async () => {
@@ -116,7 +116,7 @@ describe(AuthController.name, () => {
     it(`should not allow null password`, async () => {
       const { status, body } = await request(ctx.getHttpServer())
         .post('/auth/login')
-        .send({ name: 'admin', email: 'admin@immich.cloud', password: null });
+        .send({ name: 'admin', email: 'admin@example.com', password: null });
       expect(status).toBe(400);
       expect(body).toEqual(
         errorDto.validationError([{ path: ['password'], message: 'Invalid input: expected string, received null' }]),
