@@ -60,6 +60,7 @@ const DEFAULT_SECONDS_PER_ASSET = 1.5;
 const CREDENTIAL_PATHS: Record<ConfigCredential, string> = {
   [ConfigCredential.SmtpPassword]: 'notifications.smtp.transport.password',
   [ConfigCredential.OAuthClientSecret]: 'oauth.clientSecret',
+  [ConfigCredential.CloudBackupS3SecretKey]: 'frameleafCloud.cloudBackup.s3.secretAccessKey',
 };
 
 const CONFIG_FILE_IN_USE_MESSAGE = 'Cannot update configuration while IMMICH_CONFIG_FILE is in use';
@@ -73,6 +74,7 @@ const readCredential = (config: SystemConfig, name: ConfigCredential): string =>
 const stripCredentialFlags = (config: AdminConfigDto) => {
   delete config.notifications?.smtp?.transport?.passwordConfigured;
   delete config.oauth?.clientSecretConfigured;
+  delete config.frameleafCloud?.cloudBackup?.s3?.secretAccessKeyConfigured;
 };
 
 /** The credentials whose stored value differs between two configurations. Only names leave this function. */
@@ -105,6 +107,15 @@ const resolveCredentials = (dto: AdminConfigDto, stored: SystemConfig) => {
   }
   if (dto.oauth?.clientSecret === '') {
     dto.oauth.clientSecret = dto.oauth.issuerUrl === stored.oauth.issuerUrl ? stored.oauth.clientSecret : '';
+  }
+  // FL-160: the cloud backup bucket's secret is kept only for the same storage address, bucket and
+  // access key; pointing the section at another bucket or key clears it.
+  const s3 = dto.frameleafCloud?.cloudBackup?.s3;
+  const storedS3 = stored.frameleafCloud.cloudBackup.s3;
+  if (s3?.secretAccessKey === '') {
+    const sameBucket =
+      s3.endpoint === storedS3.endpoint && s3.bucket === storedS3.bucket && s3.accessKeyId === storedS3.accessKeyId;
+    s3.secretAccessKey = sameBucket ? storedS3.secretAccessKey : '';
   }
 };
 

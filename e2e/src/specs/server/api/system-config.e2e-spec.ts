@@ -97,10 +97,12 @@ describe('/system-config', () => {
         expect.arrayContaining([
           { name: 'smtp-password', configured: false },
           { name: 'oauth-client-secret', configured: false },
+          { name: 'cloud-backup-s3-secret-key', configured: false },
         ]),
       );
-      // FL-177: Sign in with Frameleaf has no client secret; it authenticates with the server's key
-      expect(body).toHaveLength(2);
+      // FL-177: Sign in with Frameleaf has no client secret; it authenticates with the server's key.
+      // FL-160: the cloud backup bucket key is not configuration (a 0600 file or memory only).
+      expect(body).toHaveLength(3);
     });
 
     // FL-67: a stored secret is write-only: the configuration only reports that it is configured
