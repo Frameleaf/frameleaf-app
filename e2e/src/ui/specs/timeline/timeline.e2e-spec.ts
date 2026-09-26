@@ -118,7 +118,8 @@ test.describe('Timeline', () => {
       await expect.poll(() => flowUtils.skeletonsNear(page, 480)).toBe(0);
       const rows = await flowUtils.rowsOnScreen(page);
       const right = Math.max(...rows.map((row) => row.at(-1)!.right));
-      for (const row of rows.filter((candidate) => !candidate.some(({ id }) => id === lastId))) {
+      const complete = rows.filter((candidate) => candidate.every(({ id }) => id !== lastId));
+      for (const row of complete) {
         expect(row.at(-1)!.right).toBeGreaterThan(right - 2);
         checked++;
         if (new Set(row.map(({ id }) => getYearMonth(assets, id))).size > 1) {
