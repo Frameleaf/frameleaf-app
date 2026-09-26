@@ -36,7 +36,7 @@ const estimate = (
 
 describe('CloudDescriptionBackfill (FL-163)', () => {
   beforeAll(() => {
-    addMessages('en', en);
+    addMessages('dev', en);
   });
 
   beforeEach(() => {
@@ -75,7 +75,7 @@ describe('CloudDescriptionBackfill (FL-163)', () => {
     expect(sdkMock.startCloudMlDescriptionBackfill).toHaveBeenCalledWith({
       cloudMlDescriptionBatchCreateDto: { estimateId: '5f0c6f8e-2b1a-4c3d-9e8f-1a2b3c4d5e6f' },
     });
-    expect(await screen.findByText('2 batches queued. Follow them in Activity.')).toBeInTheDocument();
+    expect(await screen.findByText('2 batches started. Follow them in Activity.')).toBeInTheDocument();
   });
 
   it('refuses to queue when the wallet cannot cover it', async () => {

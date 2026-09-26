@@ -13,8 +13,11 @@
   import CloudBackupSetupDialog from '$lib/components/frameleaf/cloud/CloudBackupSetupDialog.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { endpointHost, readBackupKeyFile } from '$lib/frameleaf/cloud-backup';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -83,6 +86,12 @@
     const timer = setInterval(() => void load(), ACTIVE_POLL_MS);
     return () => clearInterval(timer);
   });
+
+  // What a backup includes is an ordinary setting, saved with the settings bar like the other pages.
+  const settingsDraft = getSystemConfigDraft();
+  const include = $derived(settingsDraft?.draft.frameleafCloud?.cloudBackup?.include);
+  const includeBaseline = $derived(settingsDraft?.baseline.frameleafCloud?.cloudBackup?.include);
+  const configDisabled = $derived(featureFlagsManager.value.configFile);
 
   const linked = $derived(cloudManager.status?.state === 'linked');
   const entitled = $derived(linked && !!cloudManager.license?.entitlements.cloudBackup);
@@ -352,6 +361,30 @@
         </Button>
       </div>
     </CloudCard>
+
+    {#if include}
+      <CloudCard
+        title={$t('frameleaf_cloud_backup_include_title')}
+        description={$t('frameleaf_cloud_backup_include_description')}
+      >
+        <SettingToggle
+          title={$t('frameleaf_cloud_backup_include_thumbs')}
+          subtitle={$t('frameleaf_cloud_backup_include_thumbs_description')}
+          checked={include.thumbs}
+          disabled={configDisabled}
+          isEdited={include.thumbs !== includeBaseline?.thumbs}
+          onToggle={(value) => (include.thumbs = value)}
+        />
+        <SettingToggle
+          title={$t('frameleaf_cloud_backup_include_encoded_video')}
+          subtitle={$t('frameleaf_cloud_backup_include_encoded_video_description')}
+          checked={include.encodedVideo}
+          disabled={configDisabled}
+          isEdited={include.encodedVideo !== includeBaseline?.encodedVideo}
+          onToggle={(value) => (include.encodedVideo = value)}
+        />
+      </CloudCard>
+    {/if}
 
     <CloudCard
       title={$t('frameleaf_cloud_backup_turn_off_title')}
