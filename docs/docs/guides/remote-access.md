@@ -17,6 +17,8 @@ With a Frameleaf Cloud plan that includes remote access, a linked server can be 
 - **Your own domain.** Under **Use your own domain**, enter a subdomain you own, such as `photos.example.com`, add the two CNAME records the page shows at your DNS provider (`photos.example.com` → `r.<label>.frameleaf.net` and `_acme-challenge.photos.example.com` → `_acme-challenge.<label>.frameleaf.net`), then **Check DNS**. Once verified, the server obtains a certificate for your hostname too, and **Use my domain** makes it the address the server publishes.
 - **Who can connect.** Everyone connecting from outside your home signs in with a Frameleaf account linked to their account here. Public shared links still open without signing in. Original downloads and password sign-in stay off over the relay unless you turn them on.
 
+**Not yet available:** the Frameleaf relay is not connected in this version. Until it is, **Relay only** gives no access from outside the home network, the `r.<label>` address and your own domain do not answer, and no public address is published; only the LAN names and, with **Relay and direct** and a port you forward yourself, direct connections work.
+
 **Test connection** checks the certificate and a request through the HTTPS listener. See [Workers and endpoints](/administration/workers-and-endpoints#the-edge-worker-remote-access) for how the edge worker serves remote access, and [Frameleaf Cloud](/administration/frameleaf-cloud#remote-access-security) for the sign-in and download rules.
 
 The options below work without Frameleaf Cloud.
