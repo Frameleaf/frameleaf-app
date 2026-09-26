@@ -1588,6 +1588,85 @@ describe(FrameleafCloudService.name, () => {
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('its token was not usable'));
     });
 
+    it.each<[string, FakeCloudAnswer]>([
+      [
+        'a captive portal’s HTML page',
+        {
+          status: 200,
+          raw: '<html><body>Sign in to the network</body></html>',
+          headers: { 'content-type': 'text/html' },
+        },
+      ],
+      ['invalid JSON', { status: 200, raw: '{"access_token": ' }],
+      ['a JSON answer that is not a token response', { status: 200, body: { welcome: 'to the hotel network' } }],
+      ['an oversized body', { status: 200, raw: `{"pad":"${'x'.repeat(300 * 1024)}"}` }],
+    ])(
+      'never promotes a candidate on a success status that is not a token response: %s (FL-178)',
+      async (_what, answer) => {
+        const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+        const candidateKid = await writeCandidate();
+        const pem = await readFile(join(identityDir, CANDIDATE_KEY_FILE), 'utf8');
+        commandRotation();
+        cloud.on('POST /id/token', (request) =>
+          assertionKidOf(request) === candidateKid ? answer : tokenAnswer(request),
+        );
+        makeDue();
+        await sut.handleHeartbeat();
+
+        // the answer is unclear: the candidate stays, nothing is promoted or rotated, the command fails
+        const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+        expect(after.kid).toBe(before.kid);
+        expect(after.candidate?.kid).toBe(candidateKid);
+        expect(await readFile(join(identityDir, CANDIDATE_KEY_FILE), 'utf8')).toBe(pem);
+        expect(pathsCalled()).not.toContain('GET /api/v1/instance/keys/nonce');
+        expect(ackResult().result).toBe('failed');
+      },
+    );
+
+    it('clears a relink the key_retired path asked for once a check-in succeeds again (FL-178)', async () => {
+      let retired = true;
+      cloud.on('POST /api/v1/instance/heartbeat', () =>
+        retired ? { status: 401, body: cloudContractFixture('errors/key-retired.json') } : { status: 200, body: {} },
+      );
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.heartbeat).toMatchObject({ relinkRequested: true, relinkReason: 'key' });
+
+      retired = false;
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(storedLink()?.heartbeat?.relinkRequested).toBeFalsy();
+      expect(storedLink()?.heartbeat?.relinkReason).toBeUndefined();
+      await expect(sut.getStatus()).resolves.toMatchObject({ relinkRequested: false });
+    });
+
+    it('keeps a relink the cloud commanded through a later successful check-in (FL-178)', async () => {
+      let command = true;
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 200,
+        body: command ? { commands: [{ id: 'r1', type: 'relink' }] } : {},
+      }));
+      cloud.on('POST /api/v1/instance/commands/r1/ack', () => ({ status: 200, body: {} }));
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.heartbeat).toMatchObject({ relinkRequested: true, relinkReason: 'command' });
+
+      // a passing key_retired afterwards does not turn the commanded relink into a key relink
+      command = false;
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 401,
+        body: cloudContractFixture('errors/key-retired.json'),
+      }));
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.heartbeat).toMatchObject({ relinkRequested: true, relinkReason: 'command' });
+
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(storedLink()?.heartbeat).toMatchObject({ relinkRequested: true, relinkReason: 'command' });
+    });
+
     it('asks about a candidate on a key_retired check-in, then for a new link, without revoking (FL-178)', async () => {
       const candidateKid = await writeCandidate();
       cloud.on('POST /api/v1/instance/heartbeat', () => ({

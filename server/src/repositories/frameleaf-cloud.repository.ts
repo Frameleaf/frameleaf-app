@@ -19,6 +19,7 @@ import {
   tokenResponseSchema,
 } from 'src/utils/frameleaf-cloud.js';
 import {
+  BoundTokenRefusedError,
   DPOP_NONCE_HEADER,
   FrameleafInstanceToken,
   FrameleafKeySigner,
@@ -154,13 +155,11 @@ export class FrameleafCloudRepository {
         },
       };
     });
+    // only here, after the answer parsed as a token response, is a refusal the marker that the cloud
+    // issued a token for this key (`BoundTokenRefusedError`)
     const problem = boundTokenProblem(response, signer);
     if (problem) {
-      throw new FrameleafCloudError(
-        MlAdmissionRefusal.CloudUnavailable,
-        200,
-        `Frameleaf Cloud issued a token this server will not use: ${problem}`,
-      );
+      throw new BoundTokenRefusedError(problem);
     }
     // a token minted with another key of this server (one a rotation replaced) is never used again
     for (const key of this.tokenCache.keys()) {
