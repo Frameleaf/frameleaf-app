@@ -1,5 +1,5 @@
 import { WorkflowTrigger } from '@immich/plugin-sdk';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { WorkflowResult, WorkflowRunErrorCode, WorkflowType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -228,6 +228,39 @@ describe(WorkflowService.name, () => {
       await repository.completeStep({ executionId, workflowId: created.id, stepId: filterStep, halted: false });
       await sut.delete(auth, created.id);
       await expect(repository.getCompletedSteps(executionId)).resolves.toEqual(new Map());
+    });
+
+    it('records and skips nothing on a database without the step table, and checks again when reset (FL-179)', async () => {
+      // a database past its handoff cutover does not receive new Frameleaf public migrations
+      const database = await getKyselyDB();
+      await sql`DROP TABLE workflow_run_step`.execute(database);
+      const { sut, ctx } = setup(database);
+      const { user } = await ctx.newUser();
+      const created = await sut.create(factory.auth({ user }), {
+        trigger: WorkflowTrigger.AssetCreate,
+        enabled: false,
+      });
+      const repository = ctx.get(WorkflowRepository);
+      const executionId = '00000000-0000-4000-8000-000000000181';
+      const stepId = '00000000-0000-4000-8000-000000000003';
+
+      await expect(repository.hasRunStepTable()).resolves.toBe(false);
+      await expect(
+        repository.completeStep({ executionId, workflowId: created.id, stepId, halted: false }),
+      ).resolves.toBeUndefined();
+      await expect(repository.getCompletedSteps(executionId)).resolves.toEqual(new Map());
+      await expect(repository.deleteCompletedStepsBefore(new Date())).resolves.toBe(0);
+
+      // the table appears (a later migration): cached as missing until checked again
+      await sql`CREATE TABLE workflow_run_step (
+        "executionId" uuid NOT NULL, "stepId" uuid NOT NULL, "workflowId" uuid NOT NULL,
+        halted boolean NOT NULL DEFAULT false, "createdAt" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("executionId", "stepId"))`.execute(database);
+      await expect(repository.hasRunStepTable()).resolves.toBe(false);
+      repository.resetRunStepTable();
+      await expect(repository.hasRunStepTable()).resolves.toBe(true);
+      await repository.completeStep({ executionId, workflowId: created.id, stepId, halted: false });
+      await expect(repository.getCompletedSteps(executionId)).resolves.toEqual(new Map([[stepId, { halted: false }]]));
     });
   });
 
