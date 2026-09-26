@@ -6,7 +6,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, AssetMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
 import {
@@ -78,13 +78,15 @@ const personFaceAssetId = (options: HiddenContentQueryOptions) => {
 };
 
 /**
- * The sha1 a device compares its local files against. An external-library original's scanned digests
- * (FL-69) are left out: bytes on an external mount are not a managed copy, so a device must never treat
- * its own photo as backed up because of them.
+ * The sha1 a device compares its local files against. No recorded digest of an asset with a path checksum
+ * (an external-library original, however it was recorded), nor any external scan's (FL-69), is sent:
+ * bytes on an external mount are not a managed copy, so a device must never treat its own photo as backed
+ * up because of them.
  */
 const syncChecksum = () =>
   sql<Buffer>`coalesce(
     (select checksum.sha1 from immich_fork.asset_checksum checksum where checksum."assetId" = asset.id
+      and asset."checksumAlgorithm" != ${sql.lit(ChecksumAlgorithm.sha1Path)}
       and checksum.evidence ->> 'source' is distinct from ${sql.lit(EXTERNAL_SCAN_CHECKSUM)}),
     asset.checksum
   )`.as('checksum');
