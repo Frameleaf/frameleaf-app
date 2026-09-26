@@ -159,7 +159,7 @@ describe('Sign in with Frameleaf (FL-158)', () => {
       signInAvailable: true,
       signInRequired: true,
       via: 'relay',
-      relayHost: 'r.label.frameleaf-direct.net',
+      relayHost: 'r.label.frameleaf.net',
       localUrl: 'http://192.168.1.10:2283',
       sameNetwork: false,
     };
@@ -193,7 +193,7 @@ describe('Sign in with Frameleaf (FL-158)', () => {
     expect(screen.queryByLabelText('Password')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Continue with provider' })).toBeNull();
     expect(screen.getByText('Remote access')).toBeInTheDocument();
-    expect(screen.getByText('r.label.frameleaf-direct.net')).toBeInTheDocument();
+    expect(screen.getByText('r.label.frameleaf.net')).toBeInTheDocument();
     expect(screen.queryByText(/same network/)).toBeNull();
     expect(oauth.authorize).not.toHaveBeenCalled();
   });

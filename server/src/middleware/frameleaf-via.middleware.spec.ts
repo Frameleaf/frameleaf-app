@@ -42,7 +42,7 @@ describe('frameleafViaMiddleware (FL-161)', () => {
       'x-frameleaf-via-auth': secret,
       'x-forwarded-for': '203.0.113.9',
       'x-forwarded-proto': 'https',
-      'x-forwarded-host': 'r.label.frameleaf-direct.net',
+      'x-forwarded-host': 'r.label.frameleaf.net',
     });
 
     expect(request.frameleafVia).toBe('relay');
@@ -50,7 +50,7 @@ describe('frameleafViaMiddleware (FL-161)', () => {
     expect(request.frameleafForwarded).toEqual({
       for: '203.0.113.9',
       proto: 'https',
-      host: 'r.label.frameleaf-direct.net',
+      host: 'r.label.frameleaf.net',
     });
   });
 

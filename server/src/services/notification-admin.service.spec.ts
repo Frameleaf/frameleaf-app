@@ -108,7 +108,7 @@ describe(NotificationService.name, () => {
                 cloudUrl: 'https://api.frameleaf.cloud',
                 instanceId: 'instance-1',
                 services: {
-                  relayOrigin: 'https://r.k3v9.frameleaf-direct.net',
+                  relayOrigin: 'https://r.k3v9.frameleaf.net',
                   publicUrl: 'https://photos.example.com/',
                 },
               }
@@ -141,7 +141,7 @@ describe(NotificationService.name, () => {
                 status: 'linked',
                 cloudUrl: 'https://api.frameleaf.cloud',
                 instanceId: 'instance-1',
-                services: { relayOrigin: 'https://r.k3v9.frameleaf-direct.net' },
+                services: { relayOrigin: 'https://r.k3v9.frameleaf.net' },
               }
             : null) as never,
         ),

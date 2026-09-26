@@ -2306,7 +2306,7 @@ describe(AuthService.name, () => {
                   status: 'linked',
                   cloudUrl: 'https://api.frameleaf.cloud',
                   instanceId: 'instance-1',
-                  services: { relayOrigin: 'https://r.k3v9.frameleaf-direct.net' },
+                  services: { relayOrigin: 'https://r.k3v9.frameleaf.net' },
                 }
               : null) as never,
           ),
@@ -2338,7 +2338,7 @@ describe(AuthService.name, () => {
         await expect(
           sut.authenticateWebsocket({
             host: '127.0.0.1:2283',
-            origin: 'https://r.k3v9.frameleaf-direct.net',
+            origin: 'https://r.k3v9.frameleaf.net',
             authorization: 'Bearer auth_token',
             'x-frameleaf-via': 'relay',
             'x-frameleaf-via-auth': secret,
@@ -2353,7 +2353,7 @@ describe(AuthService.name, () => {
         await signInRequired(
           sut.authenticateWebsocket({
             host: '127.0.0.1:2283',
-            origin: 'https://r.k3v9.frameleaf-direct.net',
+            origin: 'https://r.k3v9.frameleaf.net',
             authorization: 'Bearer auth_token',
             'x-frameleaf-via': 'relay',
             'x-frameleaf-via-auth': secret,

@@ -177,7 +177,7 @@ export function createCloudState() {
       manualPort: false,
       cgnatSuspected: false,
       lastTestAt: null,
-      publicUrl: "https://r.k3v9q2m7x4a8d1fh.frameleaf-direct.net",
+      publicUrl: "https://r.k3v9q2m7x4a8d1fh.frameleaf.net",
       certificateExpires: "2026-11-02",
       allowOriginals: false,
       allowPasswordSignIn: false,
@@ -723,7 +723,7 @@ export function validateCustomHostname(value) {
     labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
   )
     return { valid: false, host, message: "Use a subdomain you own, such as photos.example.com." };
-  if (host.endsWith(".frameleaf-direct.net") || host.endsWith(".frameleaf.cloud"))
+  if ([".frameleaf.net", ".frameleaf-direct.net", ".frameleaf.cloud"].some((suffix) => host.endsWith(suffix)))
     return { valid: false, host, message: "Use a domain you own; Frameleaf addresses are already set up." };
   return { valid: true, host, message: "" };
 }
@@ -737,7 +737,7 @@ export function customHostnameRecords(host, publicUrl) {
     {
       type: "CNAME",
       name: `_acme-challenge.${host}`,
-      value: `_acme-challenge.${label}.frameleaf-direct.net`,
+      value: `_acme-challenge.${label}.frameleaf.net`,
       purpose: "Lets this server renew its own certificate for your domain.",
     },
   ];
