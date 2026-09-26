@@ -57,6 +57,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'turnOffCloudBackup',
   },
   {
+    pattern: 'frameleafCloud.cloudBackup.escrow',
+    kind: 'resource-action',
+    file: 'src/lib/components/frameleaf/cloud/CloudBackupSetupDialog.svelte',
+    evidence: 'storeCloudBackupEscrow',
+  },
+  {
     pattern: 'frameleafCloud.cloudBackup.include.encodedVideo',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/CloudBackupSection.svelte',
@@ -73,6 +79,24 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'resource-action',
     file: 'src/lib/components/frameleaf/cloud/CloudBackupSetupDialog.svelte',
     evidence: 'keyMode,',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.retention.keepDaily',
+    kind: 'control',
+    file: 'src/lib/frameleaf/cloud-backup.ts',
+    evidence: "field: 'keepDaily'",
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.retention.keepMonthly',
+    kind: 'control',
+    file: 'src/lib/frameleaf/cloud-backup.ts',
+    evidence: "field: 'keepMonthly'",
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.retention.keepWeekly',
+    kind: 'control',
+    file: 'src/lib/frameleaf/cloud-backup.ts',
+    evidence: "field: 'keepWeekly'",
   },
   {
     pattern: 'frameleafCloud.cloudBackup.s3.accessKeyId',
@@ -111,10 +135,22 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 's3.secretAccessKeyConfigured',
   },
   {
+    pattern: 'frameleafCloud.cloudBackup.schedule.cronExpression',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/CloudBackupSection.svelte',
+    evidence: 'schedule.cronExpression',
+  },
+  {
     pattern: 'frameleafCloud.cloudBackup.target',
     kind: 'resource-action',
     file: 'src/lib/components/frameleaf/cloud/CloudBackupSetupDialog.svelte',
     evidence: 'target: CloudBackupTarget.ByoS3',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.verifyWeekly',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/CloudBackupSection.svelte',
+    evidence: 'verifyWeekly',
   },
   {
     pattern: 'frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd',
