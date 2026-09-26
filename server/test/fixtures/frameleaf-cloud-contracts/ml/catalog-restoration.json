@@ -28,7 +28,8 @@
       "licence": {
         "name": "Apache-2.0",
         "commercialHosted": "yes"
-      }
+      },
+      "default": true
     },
     {
       "sku": "ms_F1SSRED6",
@@ -57,7 +58,8 @@
       "licence": {
         "name": "Apache-2.0",
         "commercialHosted": "yes"
-      }
+      },
+      "default": true
     }
   ]
 }

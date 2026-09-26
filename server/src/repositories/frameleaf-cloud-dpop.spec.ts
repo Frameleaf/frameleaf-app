@@ -406,10 +406,27 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
   });
 
   describe('golden exchanges (FL-184, FC-19/FC-66 final fixtures)', () => {
+    /**
+     * The golden answer's `access_token` is a placeholder JWT (its payload names only `sub`), so no
+     * test key can be bound to it. The exchange is answered as published with only the token
+     * replaced by one bound to this server's key, as the contract requires (`cnf.jkt`, `frameleaf_kid`).
+     */
     it('mints a token from the golden token-dpop.json exchange', async () => {
-      cloud.on('POST /id/token', () => answerOf(exchange('token-dpop.json')));
+      const golden = exchange('token-dpop.json');
+      let minted: string | undefined;
+      cloud.on('POST /id/token', (request) => {
+        minted = mintToken(request);
+        const body: Record<string, unknown> = { ...golden.body, access_token: minted };
+        return answerOf({ ...golden, body });
+      });
       const token = await mint();
-      expect(token.accessToken).toBe(exchange('token-dpop.json').body.access_token);
+      expect(token.accessToken).toBe(minted);
+      expect(tokenClaims(token.accessToken)).toMatchObject({ cnf: { jkt: signer.kid }, frameleaf_kid: signer.kid });
+    });
+
+    it('refuses the golden token-dpop.json placeholder token, which is bound to no key', async () => {
+      cloud.on('POST /id/token', () => answerOf(exchange('token-dpop.json')));
+      await expect(mint()).rejects.toBeInstanceOf(BoundTokenRefusedError);
     });
 
     it('retries once on the golden token-use-dpop-nonce.json exchange, then succeeds', async () => {
