@@ -59,8 +59,7 @@ describe(EdgeStateService.name, () => {
   let custom: { certificate: string; key: string };
   const now = Date.UTC(2026, 8, 26, 12);
 
-  const remoteState = () =>
-    metadata.get(SystemMetadataKey.FrameleafRemoteAccess) as FrameleafRemoteAccess | undefined;
+  const remoteState = () => metadata.get(SystemMetadataKey.FrameleafRemoteAccess) as FrameleafRemoteAccess | undefined;
 
   const setSettings = (remoteAccess: Record<string, unknown>) =>
     metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { remoteAccess } });
