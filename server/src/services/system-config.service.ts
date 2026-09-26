@@ -46,6 +46,7 @@ import {
   describeConfigChanges,
   readConfigHistory,
 } from 'src/utils/config-history.js';
+import { cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { frameleafVia, isHomeAddress, signInClient } from 'src/utils/frameleaf-sign-in.js';
@@ -570,6 +571,12 @@ export class SystemConfigService extends BaseService {
       throw new BadRequestException('Image description is not enabled');
     }
 
+    // FL-163: descriptions routed to Frameleaf Cloud are described in batches from Frameleaf Cloud
+    // processing, where the estimate comes first; the queue-all job queues none of them
+    if (await cloudDescriptionDestination(this.mlDestinationRepository)) {
+      return { queued: false, cloudBatches: true };
+    }
+
     // BullMQ deduplication (set up in job.repository.ts) prevents double-enqueueing
     // the queue-all job. We surface the result to the caller so the UI can react.
     const counts = await this.jobRepository.getJobCounts(QueueName.ImageDescription);
@@ -587,7 +594,7 @@ export class SystemConfigService extends BaseService {
       }
     }
 
-    return { queued: !alreadyInFlight };
+    return { queued: !alreadyInFlight, cloudBatches: false };
   }
 
   /**

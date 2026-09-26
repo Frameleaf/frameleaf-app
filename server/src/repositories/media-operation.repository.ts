@@ -1285,21 +1285,122 @@ export class MediaOperationRepository {
    * These survive owner dismissal on purpose: a cloud job nobody is watching still costs money
    * and still holds data, so the record is kept until the remote says it is gone.
    */
-  getUnreleasedRemoteOperations(limit: number): Promise<MediaOperation[]> {
-    return this.db
+  getUnreleasedRemoteOperations(limit: number, kinds?: readonly MediaOperationKind[]): Promise<MediaOperation[]> {
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('remoteJobId', 'is not', null)
+        .where('remoteReleasedAt', 'is', null)
+        // FL-163: a cleanup pass for one kind filters before the limit, so other kinds never crowd it out
+        .$if(kinds !== undefined, (qb) => qb.where('kind', 'in', [...kinds!]))
+        .where((eb) =>
+          eb.or([
+            eb('status', 'in', [MediaOperationStatus.Cancelling, MediaOperationStatus.Cancelled]),
+            eb('status', '=', MediaOperationStatus.Failed),
+          ]),
+        )
+        .orderBy('createdAt', 'asc')
+        .limit(limit)
+        .execute() as unknown as Promise<MediaOperation[]>
+    );
+  }
+
+  /**
+   * FL-163 review P2: record the remote job an operation started when its claim is already gone, so the
+   * job is never left without a row that names it. Only fills an empty handle (or confirms the same
+   * one); the cleanup pass and the next claim find the job by it.
+   */
+  async recordRemoteJobId(id: string, remoteJobId: string): Promise<boolean> {
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ remoteJobId })
+        .where('id', '=', id)
+        .where((eb) => eb.or([eb('remoteJobId', 'is', null), eb('remoteJobId', '=', remoteJobId)]))
+        .executeTakeFirst(),
+    );
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /** Several jobs for a worker at once, not scoped to an owner (FL-163 settlement). */
+  async getManyForWorker(ids: readonly string[]): Promise<MediaOperation[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    return (await this.db
       .selectFrom('media_operation')
       .selectAll()
-      .where('remoteJobId', 'is not', null)
-      .where('remoteReleasedAt', 'is', null)
-      .where((eb) =>
-        eb.or([
-          eb('status', 'in', [MediaOperationStatus.Cancelling, MediaOperationStatus.Cancelled]),
-          eb('status', '=', MediaOperationStatus.Failed),
-        ]),
+      .where('id', 'in', [...ids])
+      .execute()) as unknown as MediaOperation[];
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Frameleaf Cloud description batches (FL-163)                        */
+  /* ------------------------------------------------------------------ */
+
+  /** Every photo in an unfinished description batch, whoever owns it. */
+  async getOpenCloudDescriptionAssetIds(): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select(sql<string>`jsonb_array_elements_text("snapshot" -> 'assetIds')`.as('assetId'))
+      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .execute();
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+
+  /**
+   * What description batches admitted in [from, to) cost: each batch's settled charge once known, else
+   * what the wallet holds for it. With `origin`, only batches made that way (the automatic budget).
+   */
+  async sumCloudDescriptionSpend(options: {
+    from: Date;
+    to: Date;
+    origin?: 'automatic' | 'backfill';
+  }): Promise<number> {
+    const admittedAt = sql<Date>`("result" -> 'job' ->> 'admittedAt')::timestamptz`;
+    const row = await this.db
+      .selectFrom('media_operation')
+      .select(
+        sql<number>`coalesce(sum(coalesce(("result" ->> 'settledUsd')::double precision, ("result" -> 'job' ->> 'holdUsd')::double precision)), 0)`.as(
+          'spentUsd',
+        ),
       )
-      .orderBy('createdAt', 'asc')
-      .limit(limit)
-      .execute() as unknown as Promise<MediaOperation[]>;
+      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where(sql<string>`"result" -> 'job' ->> 'jobId'`, 'is not', null)
+      .where(admittedAt, '>=', options.from)
+      .where(admittedAt, '<', options.to)
+      .$if(options.origin !== undefined, (qb) => qb.where(sql<string>`"snapshot" ->> 'origin'`, '=', options.origin!))
+      .executeTakeFirstOrThrow();
+    return Number(row.spentUsd);
+  }
+
+  /** What the wallet holds for admitted description batches of a destination not settled yet. */
+  async sumCloudDescriptionOpenHolds(destinationId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom('media_operation')
+      .select(sql<number>`coalesce(sum(("result" -> 'job' ->> 'holdUsd')::double precision), 0)`.as('heldUsd'))
+      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where(sql<string>`"snapshot" ->> 'destinationId'`, '=', destinationId)
+      .where(sql<string>`"result" -> 'job' ->> 'jobId'`, 'is not', null)
+      .where(sql<string>`"result" ->> 'settledUsd'`, 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(row.heldUsd);
+  }
+
+  /** Whether a description batch admitted since `since` still waits for its settlement. */
+  async hasUnsettledCloudDescriptionJobs(since: Date): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('media_operation')
+      .select('id')
+      .where('kind', '=', MediaOperationKind.CloudDescriptionBatch)
+      .where('remoteJobId', 'is not', null)
+      .where(sql<string>`"result" ->> 'settledUsd'`, 'is', null)
+      .where('createdAt', '>=', since)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
   }
 
   async markRemoteReleased(id: string): Promise<void> {

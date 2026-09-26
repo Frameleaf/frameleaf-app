@@ -423,6 +423,40 @@ describe('consent and probe helpers', () => {
 });
 
 describe('selectMlDestination', () => {
+  it('refuses Frameleaf Cloud before any check while processing is off or the work stays here (FL-163)', async () => {
+    const routing = {
+      descriptions: 'both',
+      upscale: 'local',
+      restoration: 'local',
+      studio: 'local',
+      interpolation: 'local',
+    } as const;
+    const request = { workload: MlWorkload.Enrichment, destinationId: mlDestinationStub.frameleafCloudConsented.id };
+
+    const off = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
+    await expect(
+      selectMlDestination({ ...off, cloudMlSettings: () => Promise.resolve({ enabled: false, routing }) }, request),
+    ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.CloudUnavailable });
+    expect(off.machineLearningRepository.probe).not.toHaveBeenCalled();
+
+    const local = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
+    await expect(
+      selectMlDestination(
+        {
+          ...local,
+          cloudMlSettings: () => Promise.resolve({ enabled: true, routing: { ...routing, descriptions: 'local' } }),
+        },
+        request,
+      ),
+    ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.WorkloadNotAllowed });
+    expect(local.machineLearningRepository.probe).not.toHaveBeenCalled();
+
+    const on = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
+    await expect(
+      selectMlDestination({ ...on, cloudMlSettings: () => Promise.resolve({ enabled: true, routing }) }, request),
+    ).resolves.toMatchObject({ kind: MlDestinationKind.FrameleafCloud });
+  });
+
   it('admits Frameleaf Cloud through its delegated check and records the cloud facts (FL-159)', async () => {
     const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
     const selection = await selectMlDestination(d, {

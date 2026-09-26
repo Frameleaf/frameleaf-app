@@ -227,30 +227,21 @@ const CloudMlDescriptionEstimateResponseSchema = z
       'Set when the model is of the 72B class and some batches are too small for its start fee to pay off',
     ),
     refusal: z.string().nullable().describe('Why the backfill cannot start now, or null when it can'),
+    estimateId: z
+      .string()
+      .nullable()
+      .describe(
+        'The estimate the server keeps; queueing the backfill names only this, or null when there is nothing to queue',
+      ),
+    expiresAt: z.string().nullable().describe('Until when the estimate may be queued, or null'),
   })
   .meta({ id: 'CloudMlDescriptionEstimateResponseDto' });
 
 const CloudMlDescriptionBatchCreateSchema = z
   .object({
-    modelId: z.string().min(1).max(200).describe('The catalogue model SKU the estimate was for'),
-    perPhotoP90Usd: z
-      .number()
-      .min(0)
-      .max(100)
-      .meta({ format: 'double' })
-      .describe('The per-photo p90 the estimate showed, USD'),
-    startupUsd: z
-      .number()
-      .min(0)
-      .max(100)
-      .meta({ format: 'double' })
-      .describe('The start fee per batch the estimate showed, USD'),
-    maxTotalUsd: z
-      .number()
-      .min(0)
-      .max(100_000)
-      .meta({ format: 'double' })
-      .describe('The p90 total the administrator accepted, USD'),
+    estimateId: z
+      .uuid()
+      .describe('The estimate to queue; its model, photos and prices are read from the server, never sent'),
   })
   .meta({ id: 'CloudMlDescriptionBatchCreateDto' });
 

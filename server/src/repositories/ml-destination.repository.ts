@@ -230,6 +230,26 @@ export class MlDestinationRepository {
   }
 
   /**
+   * FL-163: record a Frameleaf Cloud job once. A job adopted again after a replayed submission (same
+   * idempotency key) already has its row, which its settlement fills; a second row would count it twice.
+   */
+  async recordCloudJobAccounting(entry: MlAccountingInsert & { cloudJobId: string }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtext(${entry.cloudJobId}))`.execute(trx);
+      const existing = await trx
+        .selectFrom('ml_workload_accounting')
+        .select('id')
+        .where('cloudJobId', '=', entry.cloudJobId)
+        .executeTakeFirst();
+      if (existing) {
+        return false;
+      }
+      await trx.insertInto('ml_workload_accounting').values(entry).execute();
+      return true;
+    });
+  }
+
+  /**
    * FL-159: apply Frameleaf Cloud settlements to the accounting rows of their jobs. Returns how many
    * rows changed; a settlement for a job this server never recorded changes nothing.
    */

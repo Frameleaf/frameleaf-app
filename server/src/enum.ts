@@ -529,6 +529,8 @@ export enum SystemMetadataKey {
    * automatically"), with when automatic batching last ran.
    */
   FrameleafCloudDescriptionQueue = 'frameleaf-cloud-description-queue',
+  /** FL-163: the backfill estimates an administrator was shown, which queueing a backfill reads back. */
+  FrameleafCloudDescriptionEstimates = 'frameleaf-cloud-description-estimates',
   IntegrityChecksumCheckpoint = 'integrity-checksum-checkpoint',
   /**
    * FL-34: whether "hide sensitive detections from the library" was on the last time the server
@@ -2284,6 +2286,8 @@ export enum DatabaseLock {
   FrameleafCloudMlBatch = 960,
   /** FL-163: adding photos to the automatic description queue is one read-modify-write at a time. */
   FrameleafCloudMlBatchQueue = 961,
+  /** FL-163: queueing a description backfill is one step at a time, so two requests never both queue. */
+  FrameleafCloudMlBackfill = 962,
 }
 
 export enum MaintenanceAction {
