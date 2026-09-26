@@ -1,5 +1,4 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
-import type { SystemConfig } from 'src/config.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import type { MachineLearningHardwareResponse, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
@@ -58,28 +57,7 @@ import {
   workloadForCatalogEntry,
 } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination } from 'src/utils/ml-destination-dto.js';
-import { ML_BUDGET_WINDOW_DAYS, workloadPolicyProblem } from 'src/utils/ml-destination.js';
-
-/** The routed kind of work (Where each job runs) each cloud workload belongs to. */
-const ROUTED_KIND: Partial<
-  Record<MlWorkload, 'descriptions' | 'upscale' | 'restoration' | 'studio' | 'interpolation'>
-> = {
-  [MlWorkload.Enrichment]: 'descriptions',
-  [MlWorkload.Upscale]: 'upscale',
-  [MlWorkload.RestorationFaithful]: 'restoration',
-  [MlWorkload.RestorationCreative]: 'restoration',
-  [MlWorkload.StudioAi]: 'studio',
-  [MlWorkload.Interpolation]: 'interpolation',
-};
-
-/** Whether the administrator allowed this workload on Frameleaf Cloud ("Both" or "Cloud only"). */
-export const cloudRouteAllows = (
-  cloudMl: Pick<SystemConfig['frameleafCloud']['cloudMl'], 'routing'>,
-  workload: MlWorkload,
-): boolean => {
-  const kind = ROUTED_KIND[workload];
-  return !!kind && cloudMl.routing[kind] !== 'local';
-};
+import { ML_BUDGET_WINDOW_DAYS, cloudRouteAllows, workloadPolicyProblem } from 'src/utils/ml-destination.js';
 
 /** How many settled charges the processing section lists. */
 const CLOUD_ML_SETTLEMENT_LIMIT = 50;

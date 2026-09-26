@@ -154,6 +154,48 @@ describe(MlDestinationRepository.name, () => {
     ]);
   });
 
+  it('records a Frameleaf Cloud job once, however often its admission is replayed (FL-163)', async () => {
+    const { sut } = setup();
+    const cloudJobId = `cloud-${randomUUID()}`;
+    const destination = await sut.create({
+      kind: MlDestinationKind.Lan,
+      name: `lan ${randomUUID()}`,
+      url: `http://${randomUUID()}.lan:3003`,
+      authToken: null,
+      enabled: true,
+      workloads: [MlWorkload.Enrichment],
+      budgetLimitUsd: null,
+      maxRuntimeMinutes: null,
+      maxUploadBytes: null,
+    });
+    const entry = {
+      destinationId: destination.id,
+      destinationKind: MlDestinationKind.Lan,
+      workload: MlWorkload.Enrichment,
+      jobId: null,
+      jobName: null,
+      bytesSent: 10,
+      bytesReceived: 0,
+      durationMs: 0,
+      outcome: 'success' as const,
+      costUsd: null,
+      cloudJobId,
+      startedAt: new Date(),
+      finishedAt: new Date(),
+    };
+
+    const results = await Promise.all([sut.recordCloudJobAccounting(entry), sut.recordCloudJobAccounting(entry)]);
+    await expect(sut.recordCloudJobAccounting(entry)).resolves.toBe(false);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const rows = await defaultDatabase
+      .selectFrom('ml_workload_accounting')
+      .select('id')
+      .where('cloudJobId', '=', cloudJobId)
+      .execute();
+    expect(rows).toHaveLength(1);
+  });
+
   it('certifies the cloud job id index against the catalogue and rolls it back cleanly (FL-159)', async () => {
     const isIndex = (entry: { identity: string }) =>
       entry.identity === 'public.ml_workload_accounting.ml_workload_accounting_cloudJobId_idx';
