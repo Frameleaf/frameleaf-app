@@ -45,7 +45,7 @@ describe('/download', () => {
       expect(
         body.archives
           .flatMap((archive: { assetIds: string[] }) => archive.assetIds)
-          .toSorted((a, b) => a.localeCompare(b)),
+          .toSorted((a: string, b: string) => a.localeCompare(b)),
       ).toEqual([asset1.id, asset2.id].toSorted((a, b) => a.localeCompare(b)));
       expect(body.totalSize).toBe(
         body.archives.reduce((sum: number, archive: { size: number }) => sum + archive.size, 0),
