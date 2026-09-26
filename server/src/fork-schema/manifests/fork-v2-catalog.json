@@ -3277,6 +3277,106 @@
       "identity": "public.classification_rule.visualQueries"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "public.cloud_backup_manifest_entry.assetId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_manifest_entry.fileKey"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.cloud_backup_manifest_entry.manifestId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.cloud_backup_manifest_entry.mtime"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.cloud_backup_manifest_entry.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_manifest_entry.path"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_manifest_entry.role"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_manifest_entry.sha256"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.cloud_backup_manifest_entry.size"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.cloud_backup_manifest.assetCount"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_manifest.bucket"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.cloud_backup_manifest.bytes"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.cloud_backup_manifest.createdAt"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.cloud_backup_manifest.fileCount"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.cloud_backup_manifest.finishedAt"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.cloud_backup_manifest.id"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_manifest.key"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.cloud_backup_manifest.operationId"
+    },
+    {
+      "definition": "text|not null|'running'::text||",
+      "identity": "public.cloud_backup_manifest.status"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_object.bucket"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.cloud_backup_object.etag"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.cloud_backup_object.lastSeenAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_object.sha256"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.cloud_backup_object.size"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.cloud_backup_object.uploadedAt"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "public.cluster_group_request.clusterGroupId"
     },
@@ -7987,6 +8087,18 @@
       "identity": "public.classification_rule.classification_rule_tagId_fkey"
     },
     {
+      "definition": "PRIMARY KEY (\"manifestId\", \"fileKey\")",
+      "identity": "public.cloud_backup_manifest_entry.cloud_backup_manifest_entry_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.cloud_backup_manifest.cloud_backup_manifest_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (bucket, sha256)",
+      "identity": "public.cloud_backup_object.cloud_backup_object_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"clusterGroupId\") REFERENCES cluster_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.cluster_group_request.cluster_group_request_clusterGroupId_fkey"
     },
@@ -11479,6 +11591,18 @@
       "identity": "public.classification_rule.classification_rule_tagId_idx"
     },
     {
+      "definition": "CREATE UNIQUE INDEX cloud_backup_manifest_entry_pkey ON public.cloud_backup_manifest_entry USING btree (\"manifestId\", \"fileKey\")",
+      "identity": "public.cloud_backup_manifest_entry.cloud_backup_manifest_entry_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX cloud_backup_manifest_pkey ON public.cloud_backup_manifest USING btree (id)",
+      "identity": "public.cloud_backup_manifest.cloud_backup_manifest_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX cloud_backup_object_pkey ON public.cloud_backup_object USING btree (bucket, sha256)",
+      "identity": "public.cloud_backup_object.cloud_backup_object_pkey"
+    },
+    {
       "definition": "CREATE INDEX \"cluster_group_request_clusterGroupId_idx\" ON public.cluster_group_request USING btree (\"clusterGroupId\")",
       "identity": "public.cluster_group_request.cluster_group_request_clusterGroupId_idx"
     },
@@ -13448,6 +13572,18 @@
     {
       "definition": "table",
       "identity": "public.classification_rule"
+    },
+    {
+      "definition": "table",
+      "identity": "public.cloud_backup_manifest"
+    },
+    {
+      "definition": "table",
+      "identity": "public.cloud_backup_manifest_entry"
+    },
+    {
+      "definition": "table",
+      "identity": "public.cloud_backup_object"
     },
     {
       "definition": "table",

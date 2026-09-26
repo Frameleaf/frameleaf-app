@@ -333,6 +333,537 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/cloud/backup": {
+      "delete": {
+        "description": "Stops backing up. The bucket, its backups and the key are kept.",
+        "operationId": "turnOffCloudBackup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Turn cloud backup off",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "The claimed bucket, the key mode and fingerprint (never the key), whether the key is loaded, the last run, the last success, usage and the run in progress.",
+        "operationId": "getCloudBackupStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the cloud backup status",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/check": {
+      "post": {
+        "description": "Lists the bucket and writes, reads back and deletes a test file encrypted with a throwaway customer key (SSE-C). Nothing is claimed or saved.",
+        "operationId": "checkCloudBackupBucket",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupCheckDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a bucket for cloud backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/key": {
+      "post": {
+        "description": "A new 256-bit key made by this server for \"Generate a key for me\", returned this once for the recovery kit. Nothing is stored until setup claims a bucket with it.",
+        "operationId": "generateCloudBackupKey",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupGeneratedKeyDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Generate a bucket key",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/key/unlock": {
+      "post": {
+        "description": "Own-memory key mode: loads the key after a restart. It is held in memory by this server’s workers only, never saved; backups wait until it is loaded.",
+        "operationId": "unlockCloudBackupKey",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupUnlockDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Load the backup key into memory",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/runs": {
+      "post": {
+        "description": "Queues a backup run, or answers with the one already queued or running. Only new or changed files upload.",
+        "operationId": "startCloudBackupRun",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Back up now",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.run",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/runs/{id}/cancel": {
+      "post": {
+        "description": "The run stops without a manifest. Files it already uploaded stay in the bucket and are not uploaded again.",
+        "operationId": "cancelCloudBackupRun",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a backup run",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.run",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/runs/{id}/pause": {
+      "post": {
+        "description": "The run stops after the files in hand and carries on from there when resumed.",
+        "operationId": "pauseCloudBackupRun",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Pause a backup run",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.run",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/runs/{id}/resume": {
+      "post": {
+        "description": "A paused run goes back to the queue and finishes the same manifest.",
+        "operationId": "resumeCloudBackupRun",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Resume a backup run",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.run",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/setup": {
+      "post": {
+        "description": "Claims the bucket for this server with the chosen key (an SSE-C write of frameleaf-backup.json holding the instance id) and turns cloud backup on. Refuses a bucket claimed by another server or holding other files, and a provider without SSE-C.",
+        "operationId": "setupCloudBackup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupSetupDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set up cloud backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/heartbeat": {
       "post": {
         "description": "Sends one check-in with exactly the fields the \"What this server sends\" panel lists.",
@@ -39288,6 +39819,10 @@
       "description": "Frameleaf licence certificates: activation by key or offline file, refresh with a grace period, and the entitlements cloud-connected features read. Self-hosted features never depend on a licence."
     },
     {
+      "name": "Frameleaf Cloud backup (admin)",
+      "description": "Cloud backup to one bucket per server: the claim, the SSE-C bucket key in one of three key modes (never returned after the recovery kit) and content-addressed runs that upload each unique file once."
+    },
+    {
       "name": "Frameleaf Cloud processing (admin)",
       "description": "Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback."
     },
@@ -40314,8 +40849,95 @@
         ],
         "type": "object"
       },
+      "AdminConfigFrameleafCloudBackupDto": {
+        "properties": {
+          "enabled": {
+            "description": "Back up to the claimed bucket (set up from Settings › Frameleaf Cloud › Cloud backup)",
+            "type": "boolean"
+          },
+          "include": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudBackupIncludeDto"
+          },
+          "keyMode": {
+            "$ref": "#/components/schemas/CloudBackupKeyMode"
+          },
+          "s3": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudBackupS3Dto"
+          },
+          "target": {
+            "$ref": "#/components/schemas/CloudBackupTargetSetting"
+          }
+        },
+        "required": [
+          "enabled",
+          "include",
+          "keyMode",
+          "s3",
+          "target"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudBackupIncludeDto": {
+        "properties": {
+          "encodedVideo": {
+            "description": "Also back up transcoded videos",
+            "type": "boolean"
+          },
+          "thumbs": {
+            "description": "Also back up thumbnails and previews",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "encodedVideo",
+          "thumbs"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudBackupS3Dto": {
+        "properties": {
+          "accessKeyId": {
+            "description": "Access key ID",
+            "maxLength": 256,
+            "type": "string"
+          },
+          "bucket": {
+            "description": "Bucket name",
+            "maxLength": 63,
+            "type": "string"
+          },
+          "endpoint": {
+            "description": "Storage address of your own S3-compatible bucket (HTTPS)",
+            "type": "string"
+          },
+          "region": {
+            "description": "Region; empty reads it from the storage address or uses us-east-1",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "secretAccessKey": {
+            "description": "Secret access key (write-only; empty preserves the existing secret)",
+            "type": "string"
+          },
+          "secretAccessKeyConfigured": {
+            "description": "Read-only indicator that a secret access key is stored. Set by the server; ignored on write.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accessKeyId",
+          "bucket",
+          "endpoint",
+          "region",
+          "secretAccessKey"
+        ],
+        "type": "object"
+      },
       "AdminConfigFrameleafCloudDto": {
         "properties": {
+          "cloudBackup": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudBackupDto"
+          },
           "cloudMl": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudMlDto"
           },
@@ -49841,6 +50463,421 @@
         ],
         "type": "object"
       },
+      "CloudBackupActiveRunDto": {
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/CloudBackupRunPhase"
+          },
+          "progress": {
+            "description": "0 to 100",
+            "format": "double",
+            "type": "number"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CloudBackupRunState"
+          },
+          "uploaded": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operationId",
+          "phase",
+          "progress",
+          "skipped",
+          "state",
+          "uploaded"
+        ],
+        "type": "object"
+      },
+      "CloudBackupBucketState": {
+        "description": "empty: ready to claim; claimed: holds a Frameleaf claim; not-empty: holds other files",
+        "enum": [
+          "empty",
+          "claimed",
+          "not-empty"
+        ],
+        "type": "string"
+      },
+      "CloudBackupCheckDto": {
+        "properties": {
+          "s3": {
+            "$ref": "#/components/schemas/CloudBackupS3Dto"
+          }
+        },
+        "required": [
+          "s3"
+        ],
+        "type": "object"
+      },
+      "CloudBackupCheckResponseDto": {
+        "properties": {
+          "message": {
+            "description": "What the check found, in plain words",
+            "type": "string"
+          },
+          "ok": {
+            "description": "The bucket can be claimed for this server",
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CloudBackupBucketState"
+          }
+        },
+        "required": [
+          "message",
+          "ok",
+          "state"
+        ],
+        "type": "object"
+      },
+      "CloudBackupGeneratedKeyDto": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "The key fingerprint that matches a key file to its bucket",
+            "type": "string"
+          },
+          "key": {
+            "description": "The new bucket key (base64). Shown once, for the recovery kit; never returned again",
+            "type": "string"
+          },
+          "recoveryCode": {
+            "description": "The key as the recovery kit writes it",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "fingerprint",
+          "key",
+          "recoveryCode"
+        ],
+        "type": "object"
+      },
+      "CloudBackupKeyMode": {
+        "description": "server: generated by this server and kept next to its identity; own-stored: your own key with a copy on this server; own-memory: your own key, never saved",
+        "enum": [
+          "server",
+          "own-stored",
+          "own-memory"
+        ],
+        "type": "string"
+      },
+      "CloudBackupLastRunDto": {
+        "properties": {
+          "bytesUploaded": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "missing": {
+            "description": "Files that were not on disk",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "skipped": {
+            "description": "Files already in the bucket",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CloudBackupLastRunStatus"
+          },
+          "uploaded": {
+            "description": "New or changed files uploaded",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytesUploaded",
+          "error",
+          "finishedAt",
+          "missing",
+          "operationId",
+          "skipped",
+          "startedAt",
+          "status",
+          "uploaded"
+        ],
+        "type": "object"
+      },
+      "CloudBackupLastRunStatus": {
+        "description": "How the last run went; waiting-for-key: an own-memory key is not loaded",
+        "enum": [
+          "running",
+          "waiting-for-key",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "CloudBackupRunPhase": {
+        "description": "Where a run has got to: the database dump, the bucket listing, assets, profile images, the manifest",
+        "enum": [
+          "database",
+          "reconcile",
+          "assets",
+          "profiles",
+          "manifest",
+          "done"
+        ],
+        "type": "string"
+      },
+      "CloudBackupRunState": {
+        "description": "The run in progress: waiting for a worker, running, stopping at its next checkpoint, paused, stopping",
+        "enum": [
+          "queued",
+          "running",
+          "pausing",
+          "paused",
+          "cancelling"
+        ],
+        "type": "string"
+      },
+      "CloudBackupS3Dto": {
+        "properties": {
+          "accessKeyId": {
+            "description": "Access key ID",
+            "maxLength": 256,
+            "type": "string"
+          },
+          "bucket": {
+            "description": "An empty bucket dedicated to this server",
+            "maxLength": 63,
+            "type": "string"
+          },
+          "endpoint": {
+            "description": "Storage address (HTTPS)",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "region": {
+            "description": "Region; empty reads it from the storage address",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "secretAccessKey": {
+            "description": "Secret access key; empty uses the one stored for the same address, bucket and access key",
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "accessKeyId",
+          "bucket",
+          "endpoint",
+          "secretAccessKey"
+        ],
+        "type": "object"
+      },
+      "CloudBackupSetupDto": {
+        "properties": {
+          "acknowledgement": {
+            "description": "own-memory only: \"I understand\" that a lost key makes every backup permanently unreadable",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "key": {
+            "description": "The bucket key: the key file, the base64 key or the recovery code. Never returned",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "keyMode": {
+            "$ref": "#/components/schemas/CloudBackupKeyMode"
+          },
+          "s3": {
+            "$ref": "#/components/schemas/CloudBackupS3Dto"
+          },
+          "target": {
+            "$ref": "#/components/schemas/CloudBackupTarget"
+          }
+        },
+        "required": [
+          "key",
+          "keyMode",
+          "target"
+        ],
+        "type": "object"
+      },
+      "CloudBackupStatusResponseDto": {
+        "properties": {
+          "activeRun": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupActiveRunDto"
+              }
+            ],
+            "nullable": true
+          },
+          "bucket": {
+            "nullable": true,
+            "type": "string"
+          },
+          "claimedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "configured": {
+            "description": "A bucket is claimed and cloud backup is on",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "nullable": true,
+            "type": "string"
+          },
+          "instanceId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "keyFingerprint": {
+            "nullable": true,
+            "type": "string"
+          },
+          "keyLoaded": {
+            "description": "The key is available to this server; false in own-memory mode until unlocked",
+            "type": "boolean"
+          },
+          "keyMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupKeyMode"
+              }
+            ],
+            "nullable": true
+          },
+          "lastManifestKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastRun": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupLastRunDto"
+              }
+            ],
+            "nullable": true
+          },
+          "lastSuccessAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "managedAvailable": {
+            "description": "Frameleaf-managed storage can be chosen; false until Frameleaf Cloud offers backup storage",
+            "type": "boolean"
+          },
+          "region": {
+            "nullable": true,
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/CloudBackupTargetSetting"
+          },
+          "usage": {
+            "description": "Unique files this server has in the bucket and their size",
+            "nullable": true,
+            "properties": {
+              "bytes": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "objects": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "bytes",
+              "objects"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "activeRun",
+          "bucket",
+          "claimedAt",
+          "configured",
+          "endpoint",
+          "instanceId",
+          "keyFingerprint",
+          "keyLoaded",
+          "keyMode",
+          "lastManifestKey",
+          "lastRun",
+          "lastSuccessAt",
+          "managedAvailable",
+          "region",
+          "target",
+          "usage"
+        ],
+        "type": "object"
+      },
+      "CloudBackupTarget": {
+        "description": "managed: Frameleaf-managed storage; byo-s3: your own S3-compatible bucket",
+        "enum": [
+          "managed",
+          "byo-s3"
+        ],
+        "type": "string"
+      },
+      "CloudBackupTargetSetting": {
+        "description": "off: no cloud backup; managed: Frameleaf-managed storage; byo-s3: your own S3-compatible bucket",
+        "enum": [
+          "off",
+          "managed",
+          "byo-s3"
+        ],
+        "type": "string"
+      },
+      "CloudBackupUnlockDto": {
+        "properties": {
+          "key": {
+            "description": "The key file, the base64 key or the recovery code. Kept in memory only",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
       "CloudHeartbeatField": {
         "enum": [
           "version",
@@ -50753,7 +51790,8 @@
         "description": "A server secret that can be replaced or cleared but never read back",
         "enum": [
           "smtp-password",
-          "oauth-client-secret"
+          "oauth-client-secret",
+          "cloud-backup-s3-secret-key"
         ],
         "type": "string"
       },
@@ -58288,7 +59326,8 @@
           "preservation_verify",
           "preservation_review",
           "preservation_restore",
-          "studio_export_publish"
+          "studio_export_publish",
+          "cloud_backup"
         ],
         "type": "string"
       },
@@ -61691,6 +62730,9 @@
           "frameleafAccount.update",
           "adminCloudMl.read",
           "adminCloudMl.update",
+          "adminCloudBackup.read",
+          "adminCloudBackup.update",
+          "adminCloudBackup.run",
           "serverLicense.read",
           "serverLicense.update",
           "serverLicense.delete",

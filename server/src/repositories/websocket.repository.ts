@@ -27,6 +27,8 @@ export const serverEvents = [
   'HlsSessionResult',
   'HlsSessionEnd',
   'LibraryWatchUpdate',
+  'CloudBackupKeyShare',
+  'CloudBackupKeyRequest',
 ] as const;
 export type ServerEvents = (typeof serverEvents)[number];
 

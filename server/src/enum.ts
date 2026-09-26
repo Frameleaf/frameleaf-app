@@ -374,6 +374,13 @@ export enum Permission {
   AdminCloudMlRead = 'adminCloudMl.read',
   AdminCloudMlUpdate = 'adminCloudMl.update',
 
+  /** FL-160: read the cloud backup status. */
+  AdminCloudBackupRead = 'adminCloudBackup.read',
+  /** FL-160: set up, unlock or turn off cloud backup. */
+  AdminCloudBackupUpdate = 'adminCloudBackup.update',
+  /** FL-160: start, pause, resume or cancel a cloud backup run. */
+  AdminCloudBackupRun = 'adminCloudBackup.run',
+
   ServerLicenseRead = 'serverLicense.read',
   ServerLicenseUpdate = 'serverLicense.update',
   ServerLicenseDelete = 'serverLicense.delete',
@@ -517,6 +524,11 @@ export enum SystemMetadataKey {
    * (`clone_suspected`). While it is set no ML token is requested; a check-in clears it.
    */
   FrameleafMlSuspension = 'frameleaf-ml-suspension',
+  /**
+   * FL-160: this server's cloud backup: the claimed bucket, the key mode and fingerprint (never the
+   * key), and the last run. The key itself is a 0600 file under the identity directory, or in memory.
+   */
+  FrameleafCloudBackup = 'frameleaf-cloud-backup',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
   HardwareCheck = 'hardware-check',
   /**
@@ -1288,6 +1300,12 @@ export enum MediaOperationKind {
    * render worker, and gets the one automatic retry every job gets.
    */
   StudioExportPublish = 'studio_export_publish',
+  /**
+   * A cloud backup run (FL-160): the database dump, then every original, sidecar and profile image by
+   * SHA-256 into the claimed bucket (each unique file uploaded once), then the run's manifest. It
+   * records its cursor every 25 assets, so it can pause, survive a restart and resume the same manifest.
+   */
+  CloudBackup = 'cloud_backup',
 }
 
 export const MediaOperationKindSchema = z
@@ -2264,6 +2282,8 @@ export enum DatabaseLock {
    * of the suspension as one step), so no two workers probe at once.
    */
   FrameleafMlProbe = 949,
+  /** FL-160: one cloud backup run is queued or running across the whole server at a time. */
+  FrameleafCloudBackup = 956,
 }
 
 export enum MaintenanceAction {
@@ -2839,6 +2859,7 @@ export enum ApiTag {
   Faces = 'Faces',
   FrameleafCloud = 'Frameleaf Cloud (admin)',
   FrameleafCloudMl = 'Frameleaf Cloud processing (admin)',
+  FrameleafCloudBackup = 'Frameleaf Cloud backup (admin)',
   FrameleafLicense = 'Frameleaf licence',
   Integrity = 'Integrity (admin)',
   Jobs = 'Jobs',
@@ -2953,6 +2974,8 @@ export enum ConfigCredential {
   SmtpPassword = 'smtp-password',
   /** `oauth.clientSecret` */
   OAuthClientSecret = 'oauth-client-secret',
+  /** `frameleafCloud.cloudBackup.s3.secretAccessKey` (FL-160): the secret of your own S3 bucket. */
+  CloudBackupS3SecretKey = 'cloud-backup-s3-secret-key',
 }
 
 export const ConfigCredentialSchema = z
