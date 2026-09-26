@@ -14,7 +14,7 @@
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import CloudToggleRow from '$lib/components/frameleaf/cloud/CloudToggleRow.svelte';
-  import { displayHost, formatCountdown, secondsUntil, shortFingerprint } from '$lib/frameleaf/cloud';
+  import { displayHost, formatCountdown, linkRefusalKeys, secondsUntil, shortFingerprint } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -94,6 +94,7 @@
     $t('frameleaf_cloud_unlink_consequence_processing'),
     $t('frameleaf_cloud_unlink_consequence_backup'),
     $t('frameleaf_cloud_unlink_consequence_accounts'),
+    $t('frameleaf_cloud_unlink_consequence_plan'),
     $t('frameleaf_cloud_unlink_consequence_local'),
   ]);
 </script>
@@ -159,7 +160,10 @@
         {$t('frameleaf_cloud_link_expired_body')}
       </CloudBanner>
     {/if}
-    {#if status.lastError && status.state === 'unlinked'}
+    {#if status.linkRefusal && status.state === 'unlinked'}
+      {@const refusal = linkRefusalKeys(status.linkRefusal)}
+      <CloudBanner tone="danger" title={$t(refusal.title)}>{$t(refusal.body)}</CloudBanner>
+    {:else if status.lastError && status.state === 'unlinked'}
       <CloudBanner tone="warning" title={$t('frameleaf_cloud_last_problem')}>{status.lastError}</CloudBanner>
     {/if}
     <CloudCard
