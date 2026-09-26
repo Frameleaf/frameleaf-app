@@ -26,7 +26,7 @@ import type {
 } from './host-contract';
 
 /** Bumped when a message changes shape; a frame built for another version is refused. */
-export const STUDIO_FRAME_PROTOCOL_VERSION = 2;
+export const STUDIO_FRAME_PROTOCOL_VERSION = 3;
 
 /** The engine build publishes this next to its documents (`/studio-engine/manifest.json`). */
 export interface StudioFrameManifest {
@@ -45,7 +45,10 @@ export interface StudioFrameManifest {
 /** Services the frame may call. Each maps one-to-one onto `StudioHostServices`. */
 export interface StudioFrameServiceCalls {
   submitCommands: { args: [envelopes: StudioCommandEnvelope[]]; result: StudioCommandResult[] };
-  stageDraft: { args: [graph: unknown, commandIds: string[], baseRevision?: number]; result: StudioDraftResult };
+  stageDraft: {
+    args: [graph: unknown, commandIds: string[], baseRevision?: number, graphVersion?: number];
+    result: StudioDraftResult;
+  };
   reloadProject: { args: []; result: StudioProjectHandle };
   saveWorkspace: { args: [layout: unknown]; result: StudioWorkspaceSaveResult };
 }

@@ -19,10 +19,11 @@ import {
   associateMediaWithProject,
   createMedia,
   getMedia,
+  getProjectMediaIds,
   saveThumbnail,
   updateMedia,
 } from '@/infrastructure/storage'
-import { mediaDir } from '@/infrastructure/storage/workspace-fs/paths'
+import { mediaDir, projectMediaLinksPath } from '@/infrastructure/storage/workspace-fs/paths'
 import type { StudioAssetRef } from '@frameleaf/host/host-contract'
 import type { VirtualWorkspace } from './virtual-workspace'
 
@@ -139,8 +140,12 @@ async function fetchBlob(url: string, signal?: AbortSignal): Promise<Blob> {
 export interface LibraryMediaSeeder {
   /** Make these assets available to the project; already-seeded ids are left alone. */
   seed(assets: readonly StudioAssetRef[]): Promise<void>
-  /** Link every seeded asset to another project (a remounted editor has its own project id). */
-  associate(projectId: string): Promise<void>
+  /**
+   * Link the bin to another project (a remounted editor has its own project id): every seeded
+   * library asset and, with `from`, every media that project held, which includes what the person
+   * imported inside the editor (FL-174). Without it an imported file leaves the bin on a remount.
+   */
+  associate(projectId: string, from?: string): Promise<void>
   /** Stop probing and release every registered URL. */
   dispose(): void
 }
@@ -218,8 +223,12 @@ export function createLibraryMediaSeeder(options: {
       })
       await probing
     },
-    async associate(target) {
-      for (const id of seeded) await associateMediaWithProject(target, id)
+    async associate(target, from) {
+      const ids = new Set(seeded)
+      if (from && from !== target) {
+        for (const id of await getProjectMediaIds(from)) ids.add(id)
+      }
+      for (const id of ids) await associateMediaWithProject(target, id)
       onChange()
     },
     dispose() {
@@ -228,4 +237,31 @@ export function createLibraryMediaSeeder(options: {
       seeded.clear()
     },
   }
+}
+
+/**
+ * Media the person imports inside the editor is linked to the current mount's project (FL-174). An
+ * import still running in a replaced instance links it to that instance's project after the remount
+ * carried the links over; this carries it again, so the bin and Freecut's orphaned-clip check of the
+ * current mount see it. Writes to the current mount's own links are never replayed. Returns the
+ * unsubscribe.
+ */
+export function followRetiredImports(options: {
+  workspace: VirtualWorkspace
+  media: LibraryMediaSeeder
+  /** Project ids of replaced editor mounts. */
+  retired: ReadonlySet<string>
+  current: () => string
+  onError: (error: unknown) => void
+}): () => void {
+  const { workspace, media, retired, current, onError } = options
+  return workspace.onWrite((path) => {
+    const written = path.join('/')
+    for (const projectId of retired) {
+      if (written !== projectMediaLinksPath(projectId).join('/')) continue
+      const target = current()
+      if (target !== projectId) void media.associate(target, projectId).catch(onError)
+      return
+    }
+  })
 }

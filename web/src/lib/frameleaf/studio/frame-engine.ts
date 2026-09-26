@@ -191,18 +191,25 @@ export const toNavigationTarget = (value: unknown): StudioNavigationTarget | nul
 
 type ServiceCall = (services: StudioHostServices, args: unknown[]) => Promise<unknown>;
 
+const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
+
 /** The services a frame may call, each checked for shape before it reaches the host. */
 const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
   submitCommands: (services, [envelopes]) =>
     services.submitCommands(Array.isArray(envelopes) ? (envelopes as StudioCommandEnvelope[]) : []),
-  stageDraft: (services, [graph, commandIds, baseRevision]) =>
-    services.stageDraft
-      ? services.stageDraft(
-          graph,
-          Array.isArray(commandIds) ? commandIds.filter((id): id is string => typeof id === 'string') : [],
-          ...(Number.isSafeInteger(baseRevision) && (baseRevision as number) >= 0 ? [baseRevision as number] : []),
-        )
-      : Promise.resolve({ status: 'rejected', reason: 'forbidden' } as const),
+  stageDraft: (services, [graph, commandIds, baseRevision, graphVersion]) => {
+    if (!services.stageDraft) {
+      return Promise.resolve({ status: 'rejected', reason: 'forbidden' } as const);
+    }
+    const ids = Array.isArray(commandIds) ? commandIds.filter((id): id is string => typeof id === 'string') : [];
+    // Each count only when it is a whole count; anything else is left out rather than trusted. A graph
+    // version without a valid base keeps its position.
+    const base = isCount(baseRevision) ? baseRevision : undefined;
+    if (isCount(graphVersion)) {
+      return services.stageDraft(graph, ids, base, graphVersion);
+    }
+    return base === undefined ? services.stageDraft(graph, ids) : services.stageDraft(graph, ids, base);
+  },
   reloadProject: (services) => services.reloadProject(),
   saveWorkspace: (services, [layout]) =>
     services.saveWorkspace ? services.saveWorkspace(layout) : Promise.resolve({ status: 'unavailable' } as const),

@@ -16,6 +16,29 @@ export const shouldReloadFromHost = (input: {
 }): boolean =>
   !input.draftHeld && input.incoming !== input.hostContent && input.incoming !== input.current
 
+/**
+ * What `update` does with the host's graph (FL-174). `graphVersion` counts the graphs the host put in
+ * place itself (a canonical command, undo, Reload, a restore); a newer one than the mount's means the
+ * editor's graph lacks the host's change. The editor then shows the host's graph: it reloads unless it
+ * already shows exactly that graph, in which case its edits are built on it and the mount takes the
+ * version. The host puts a graph in place only while it holds no undecided edits of the person's, so
+ * this reload is never held back. Otherwise the rules of `shouldReloadFromHost` apply. `hold` means
+ * the host holds the person's undecided edits: nothing is reloaded or confirmed.
+ */
+export function reconcileHostGraph(
+  state: DraftSendState,
+  input: { incoming: string; current: string; draftHeld: boolean; graphVersion: number },
+): 'remount' | 'echo' | 'hold' {
+  const { mount } = state
+  if (input.graphVersion > mount.graphVersion) {
+    if (input.incoming !== input.current) return 'remount'
+    mount.graphVersion = input.graphVersion
+  } else if (shouldReloadFromHost({ ...input, hostContent: state.hostContent })) {
+    return 'remount'
+  }
+  return input.draftHeld ? 'hold' : 'echo'
+}
+
 /** A draft the host could not take yet goes again once it is online and holds the lease. */
 export const shouldResendDraft = (input: {
   pending: boolean
@@ -42,6 +65,11 @@ export interface EditorMount {
   readonly projectId: string
   /** The revision its graph was loaded from, advanced only by the echo of its own content. */
   revision: number
+  /**
+   * The host's `graphVersion` its graph was loaded from (FL-174), advanced only when the host's newer
+   * graph is exactly what this instance shows. Sent with every draft.
+   */
+  graphVersion: number
   loaded: boolean
 }
 
@@ -50,6 +78,11 @@ export interface DraftSendState {
   hostContent: string
   mount: EditorMount
   pendingSend: boolean
+  /**
+   * The pending send was refused as `superseded`: the host replaced the graph after this mount
+   * loaded (FL-174). If the mount is replaced before it can go again, that edit is lost.
+   */
+  pendingSuperseded: boolean
   disposed: boolean
 }
 
@@ -58,12 +91,27 @@ export function beginMount(
   state: DraftSendState,
   projectId: string,
   revision: number,
+  graphVersion: number,
 ): EditorMount {
-  state.mount = { generation: state.mount.generation + 1, projectId, revision, loaded: false }
+  state.mount = {
+    generation: state.mount.generation + 1,
+    projectId,
+    revision,
+    graphVersion,
+    loaded: false,
+  }
   // The edits a refused draft carried belonged to the old instance; there is nothing to resend.
   state.pendingSend = false
+  state.pendingSuperseded = false
   return state.mount
 }
+
+/**
+ * Whether replacing the current mount now loses an edit the host refused as `superseded` (FL-174):
+ * one it could not resend on the host's graph. The person is told; asked before `beginMount`.
+ */
+export const supersededEditLost = (state: DraftSendState): boolean =>
+  !state.disposed && state.pendingSend && state.pendingSuperseded
 
 /** The mount's timeline finished loading: from now on its writes are drafts. */
 export function markLoaded(state: DraftSendState, mount: EditorMount): void {
@@ -114,9 +162,18 @@ export function confirmEcho(
 export interface DraftSendIo {
   read: (mount: EditorMount) => Promise<string | null>
   contentOf: (graph: unknown) => string
-  stage: (graph: unknown, baseRevision: number) => Promise<{ status: string }>
+  stage: (
+    graph: unknown,
+    baseRevision: number,
+    graphVersion: number,
+  ) => Promise<{ status: string; reason?: string }>
   dirty: (dirty: boolean) => void
+  /** A refused edit's mount was replaced by the host's graph before it could go again (FL-174). */
+  lost?: () => void
 }
+
+const isSuperseded = (result: { status: string; reason?: string }): boolean =>
+  result.status === 'rejected' && result.reason === 'superseded'
 
 /**
  * Send what `mount` wrote as a draft, based on the revision that mount started from. A mount that is
@@ -129,6 +186,8 @@ export async function sendEditorDraft(
 ): Promise<void> {
   if (!acceptsWrite(state, mount)) return
   const base = mount.revision
+  // Taken before the read, like the base: the graph read next was built on this version or a newer one.
+  const version = mount.graphVersion
   const text = await io.read(mount)
   if (!text || !acceptsWrite(state, mount)) return
   let graph: unknown
@@ -139,16 +198,29 @@ export async function sendEditorDraft(
   }
   const content = io.contentOf(graph)
   if (content === state.hostContent) return
-  const result = await io.stage(graph, base).catch(() => ({ status: 'rejected' }))
+  const result: { status: string; reason?: string } = await io
+    .stage(graph, base, version)
+    .catch(() => ({ status: 'rejected' }))
   // A remount meanwhile owns hostContent and pendingSend now; the host judged this draft on its base.
-  if (!acceptsWrite(state, mount)) return
+  if (!acceptsWrite(state, mount)) {
+    // The host's own graph replaced this mount before the refused edit could go again (FL-174).
+    if (!state.disposed && isSuperseded(result)) io.lost?.()
+    return
+  }
   if (result.status === 'staged') {
     state.hostContent = content
     state.pendingSend = false
+    state.pendingSuperseded = false
     io.dirty(false)
+  } else if (isSuperseded(result) && mount.graphVersion > version) {
+    // The mount took the host's newer graph meanwhile (it already showed it), so what it shows now is
+    // built on the host's change: send that instead.
+    await sendEditorDraft(state, mount, io)
   } else {
-    // Kept in the editor and sent again when the host can take it; the host's banner says why.
+    // Kept in the editor and sent again when the host can take it; the host's banner says why. A
+    // superseded one goes again once the mount takes the host's graph, or is lost with the mount.
     state.pendingSend = true
+    state.pendingSuperseded = isSuperseded(result)
     io.dirty(true)
   }
 }
