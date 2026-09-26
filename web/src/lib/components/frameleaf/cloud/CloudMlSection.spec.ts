@@ -26,8 +26,9 @@ vi.mock('$lib/frameleaf/system-config-draft.svelte', async (original) => ({
   getSystemConfigDraft: () => draftRef.current,
 }));
 
-const cloudConfig = (enabled = false) =>
+const cloudConfig = (enabled = false, modelName?: string) =>
   ({
+    ...(modelName && { machineLearning: { imageDescription: { modelName } } }),
     frameleafCloud: {
       cloudMl: {
         enabled,
@@ -45,9 +46,9 @@ const cloudConfig = (enabled = false) =>
     },
   }) as unknown as AdminConfigDto;
 
-const useDraft = (enabled = false) => {
+const useDraft = (enabled = false, modelName?: string) => {
   const store = new SystemConfigDraftStore(
-    { config: cloudConfig(enabled), revision: 'r1' },
+    { config: cloudConfig(enabled, modelName), revision: 'r1' },
     { defaults: cloudConfig(), load: vi.fn(), save: vi.fn() },
   );
   draftRef.current = store;
@@ -298,10 +299,12 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     });
     render(CloudMlSection);
 
-    const picker = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' });
+    // the Models card names each slider after its work, as in the prototype
+    const picker = await screen.findByRole('group', { name: 'Descriptions & tags' });
     expect(within(picker).getByRole('radio', { name: /Descriptions · Standard/ })).toBeChecked();
-    // work set to Local only says so instead of offering a model
-    expect(screen.getAllByText(/Set to this server only for this kind of work\./).length).toBeGreaterThan(0);
+    // work set to Local only keeps its slider; this catalogue has no upscale model yet
+    const upscale = screen.getByRole('group', { name: 'Enhance & upscale' });
+    expect(within(upscale).getByText(/Frameleaf Cloud offers no model for this work/)).toBeInTheDocument();
 
     await fireEvent.click(within(picker).getByRole('radio', { name: /Descriptions · Best/ }));
     await vi.waitFor(() =>
@@ -314,6 +317,21 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(sdkMock.setMlWorkloadRoute).not.toHaveBeenCalled();
     // a model choice is not a setting: nothing waits for the settings bar
     expect(store.draft.frameleafCloud!.cloudMl).not.toHaveProperty('models');
+  });
+
+  it("puts this server's description model on the Models card slider, saved with the settings bar (FL-189)", async () => {
+    const store = useDraft(false, 'Qwen/Qwen2.5-VL-3B-Instruct');
+    sdkMock.getCloudMlStatus.mockResolvedValue(status({ connection: CloudMlConnection.NotLinked }));
+    render(CloudMlSection);
+
+    const picker = await screen.findByRole('group', { name: 'Descriptions & tags' });
+    const local = within(picker).getByRole('radiogroup', { name: "This server's model for Descriptions & tags" });
+    expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 3B/ })).toBeChecked();
+    await fireEvent.click(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B/ }));
+    expect(store.draft.machineLearning.imageDescription?.modelName).toBe('Qwen/Qwen2.5-VL-7B-Instruct');
+    expect(sdkMock.setCloudMlModelChoice).not.toHaveBeenCalled();
+    // without a Frameleaf Cloud catalogue, kinds of work with no local model have no slider
+    expect(screen.queryByRole('group', { name: 'Enhance & upscale' })).toBeNull();
   });
 
   it('lists recent cloud jobs with GPU time, workers, estimate and settled cost', async () => {

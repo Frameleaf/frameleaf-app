@@ -86,6 +86,7 @@ import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import { MlSelectionRequest, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
+import { resolvePublicUrl } from 'src/utils/public-url.js';
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
@@ -323,6 +324,14 @@ export class BaseService {
     service.logger.setContext(BaseService.name);
 
     return service as InstanceType<T>;
+  }
+
+  /** FL-190: this server's public address for links it sends, or `undefined` (see `resolvePublicUrl`). */
+  protected getPublicUrl(server: SystemConfig['server']) {
+    return resolvePublicUrl(server, {
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
   }
 
   get worker() {

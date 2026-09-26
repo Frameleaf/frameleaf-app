@@ -228,7 +228,7 @@ describe(MaintenanceWorkerService.name, () => {
   });
 
   describe('logSecret', () => {
-    const RE_LOGIN_URL = /https:\/\/my.immich.app\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
+    const RE_LOGIN_URL = /(?:^|\s)\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
 
     it('should log a valid login URL', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
@@ -243,6 +243,9 @@ describe(MaintenanceWorkerService.name, () => {
       expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringMatching(RE_LOGIN_URL));
 
       const [url] = mocks.logger.log.mock.lastCall!;
+      // FL-190: without a public address the log gives a path on this server, never another host.
+      expect(url).toContain('Log in by opening this path on your server');
+      expect(url).not.toMatch(/https?:\/\//);
       const token = RE_LOGIN_URL.exec(url)![1];
 
       await expect(sut.login(token)).resolves.toEqual(

@@ -49,8 +49,9 @@ export const getMethodNames = (instance: any) => {
   return methods;
 };
 
-export const getExternalDomain = (server: SystemConfig['server'], defaultDomain = 'https://my.immich.app') =>
-  server.externalDomain || defaultDomain;
+/** The configured external domain, else the caller's fallback (FL-190: never another project's host). */
+export const getExternalDomain = (server: SystemConfig['server'], defaultDomain?: string): string | undefined =>
+  server.externalDomain || defaultDomain || undefined;
 
 /**
  * @returns a list of strings representing the keys of the object in dot notation
@@ -321,8 +322,8 @@ const patchOpenAPI = (document: OpenAPIObject) => {
 
 export const useSwagger = (app: INestApplication, { write }: { write: boolean }) => {
   const builder = new DocumentBuilder()
-    .setTitle('Immich')
-    .setDescription('Immich API')
+    .setTitle('Frameleaf')
+    .setDescription('Frameleaf API')
     .setVersion(serverVersion.toString())
     .addBearerAuth({
       type: 'http',
@@ -360,7 +361,7 @@ export const useSwagger = (app: INestApplication, { write }: { write: boolean })
     },
     jsonDocumentUrl: '/api/spec.json',
     yamlDocumentUrl: '/api/spec.yaml',
-    customSiteTitle: 'Immich API Documentation',
+    customSiteTitle: 'Frameleaf API documentation',
   };
 
   SwaggerModule.setup('doc', app, openApiDoc, customOptions);

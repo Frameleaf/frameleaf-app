@@ -112,7 +112,7 @@ export class DatabaseBackupController {
   @Post('start-restore')
   @Endpoint({
     summary: 'Start database backup restore flow',
-    description: 'Put Immich into maintenance mode to restore a backup (Immich must not be configured)',
+    description: 'Put Frameleaf into maintenance mode to restore a backup (Frameleaf must not be configured)',
     history: new HistoryBuilder().added('v2.5.0').alpha('v2.5.0'),
   })
   @Authenticated({ public: true, setup: true })

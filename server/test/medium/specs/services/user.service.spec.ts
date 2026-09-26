@@ -42,7 +42,7 @@ const setup = (db?: Kysely<DB>) => {
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
   const { ctx } = setup();
-  await ctx.newUser({ isAdmin: true, email: 'admin@immich.cloud' });
+  await ctx.newUser({ isAdmin: true, email: 'admin@example.com' });
 });
 
 describe(UserService.name, () => {
@@ -189,7 +189,7 @@ describe(UserService.name, () => {
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user: { id: user.id } });
 
-      const dto = { email: 'updated@immich.cloud' };
+      const dto = { email: 'updated@example.com' };
 
       await expect(sut.updateMe(auth, dto)).resolves.toMatchObject(dto);
       await expect(sut.getMe(auth)).resolves.toMatchObject(dto);

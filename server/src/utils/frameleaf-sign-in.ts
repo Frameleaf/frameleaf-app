@@ -165,7 +165,7 @@ export const logoutTokenAudiences = (token: string): string[] => {
 
 export type FrameleafVia = 'lan' | 'wan' | 'relay';
 
-const httpsOrigin = (value: unknown): string | null => {
+export const httpsOrigin = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
   }

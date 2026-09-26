@@ -6,4 +6,7 @@ Server statistics to show the total number of videos, photos, usage and quota pe
 External libraries are not included in the storage quota due to custom mount points.
 :::
 
-<img src={require('./img/server-stats.webp').default} title="server statistic" />
+The page shows:
+
+- **Total usage**: the number of photos and videos on the server and the storage space they use.
+- **User usage detail**: a row per user with their photos, videos and usage, alongside their quota (or unlimited).
