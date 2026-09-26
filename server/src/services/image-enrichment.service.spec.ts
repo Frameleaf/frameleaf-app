@@ -8,8 +8,10 @@ import {
   AssetStatus,
   AssetType,
   AssetVisibility,
+  DatabaseLock,
   JobName,
   JobStatus,
+  MlWorkload,
   SystemMetadataKey,
 } from 'src/enum.js';
 import { ImageEnrichmentService, descriptionConfidence } from 'src/services/image-enrichment.service.js';
@@ -2375,6 +2377,115 @@ describe(ImageEnrichmentService.name, () => {
 
       expect(moments.withdrawStaleCaptions).toHaveBeenCalledWith(video, identityHash(['Ada']));
       expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe('Frameleaf Cloud description batches (FL-163)', () => {
+    const cloud = mlDestinationStub.frameleafCloudConsented;
+    const configure = (autoDescribe: boolean) =>
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.SystemConfig
+            ? {
+                machineLearning: {
+                  enabled: true,
+                  nsfwDetection: { enabled: true },
+                  imageDescription: { enabled: true },
+                },
+                frameleafCloud: {
+                  cloudMl: {
+                    ...defaults.frameleafCloud.cloudMl,
+                    enabled: true,
+                    routing: { ...defaults.frameleafCloud.cloudMl.routing, descriptions: 'cloud' },
+                    autoDescribe: { enabled: autoDescribe, dailyBudgetUsd: 2 },
+                  },
+                },
+              }
+            : null) as never,
+        ),
+      );
+
+    beforeEach(() => {
+      mocks.mlDestination.getRoute.mockResolvedValue({
+        workload: MlWorkload.Enrichment,
+        destinationId: cloud.id,
+        modelId: null,
+        updatedAt: new Date(),
+      });
+      mocks.mlDestination.getById.mockResolvedValue(cloud);
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+    });
+
+    it('never describes a photo routed to Frameleaf Cloud on its own, and sends nothing from here', async () => {
+      configure(false);
+
+      await expect(sut.describeAsset(assetId)).resolves.toEqual({
+        status: JobStatus.Skipped,
+        reasonKey: 'cloud-batch',
+      });
+
+      expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.detectNsfw).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('adds the photo to the automatic queue when new photos are described automatically', async () => {
+      configure(true);
+
+      await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(
+        DatabaseLock.FrameleafCloudMlBatchQueue,
+        expect.any(Function),
+      );
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.FrameleafCloudDescriptionQueue, {
+        items: [{ assetId, ownerId, queuedAt: expect.any(String) }],
+        lastBatchAt: {},
+      });
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+    });
+
+    it('leaves a video routed to Frameleaf Cloud undescribed rather than describing it here', async () => {
+      configure(true);
+      mocks.assetJob.getForImageEnrichment.mockResolvedValue({
+        id: assetId,
+        ownerId,
+        type: AssetType.Video,
+        status: AssetStatus.Active,
+        deletedAt: null,
+        visibility: AssetVisibility.Timeline,
+        description: '',
+        previewFile,
+      });
+
+      await expect(sut.describeAsset(assetId)).resolves.toEqual({
+        status: JobStatus.Skipped,
+        reasonKey: 'cloud-photos-only',
+      });
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+    });
+
+    it('sends a plan pinned to Frameleaf Cloud to batches too', async () => {
+      configure(false);
+
+      await expect(
+        sut.describeAsset(assetId, { planRun: true, enrichmentDestinationId: cloud.id, searchDestinationId: null }),
+      ).resolves.toEqual({ status: JobStatus.Skipped, reasonKey: 'cloud-batch' });
+
+      expect(mocks.mlDestination.getRoute).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+    });
+
+    it('queues no library-wide description jobs while descriptions are routed to Frameleaf Cloud', async () => {
+      configure(false);
+      mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));
+
+      await expect(sut.handleQueueImageDescription({ force: false })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.assetJob.streamForImageDescriptionJob).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
   });
 });

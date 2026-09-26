@@ -31,6 +31,7 @@ import {
   ImmichWorker,
   JobName,
   JobStatus,
+  MlDestinationKind,
   MlWorkload,
   Permission,
   QueueName,
@@ -48,6 +49,7 @@ import { IdentityPostValidator } from 'src/services/identity-post-validator.serv
 import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/services/prompt-assembler.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
+import { queueCloudDescription } from 'src/utils/cloud-description-batch.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { enrichmentStaleReason, identityHash } from 'src/utils/enrichment-plan.js';
 import { isLockedRow } from 'src/utils/locked.js';
@@ -699,6 +701,14 @@ export class ImageEnrichmentService extends BaseService {
     if (!isImageDescriptionEnabled(machineLearning)) {
       return JobStatus.Skipped;
     }
+    // FL-163: describing the whole library on Frameleaf Cloud is a backfill, which shows its estimate
+    // before anything is queued; this job never queues it one photo at a time
+    if (await this.cloudDescriptionDestination({})) {
+      this.logger.log(
+        'Descriptions are routed to Frameleaf Cloud; describe the library from Frameleaf Cloud processing, where the estimate is shown first',
+      );
+      return JobStatus.Skipped;
+    }
 
     // Library care → "Reprocess only affected outputs" (FL-69, settings-catalog.mjs:966-971): a full
     // rerun still visits every photo, but each keeps a current description and only one that is
@@ -975,6 +985,13 @@ export class ImageEnrichmentService extends BaseService {
 
     if (!asset.previewFile) {
       return { status: JobStatus.Skipped, reasonKey: 'no-preview' };
+    }
+
+    // FL-163: the description stage routed (or pinned) to Frameleaf Cloud runs in batches, never one
+    // photo at a time, and nothing is sent from here
+    const cloud = await this.cloudDescriptionDestination(options);
+    if (cloud) {
+      return this.leaveForCloudBatch(asset, config);
     }
 
     const fingerprintBefore = await this.getSourceFingerprint(id);
@@ -1325,6 +1342,48 @@ export class ImageEnrichmentService extends BaseService {
     } finally {
       await rm(folder, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * FL-163: the Frameleaf Cloud destination this description would go to (the one a plan pinned, else
+   * the routed one), or undefined when it goes to this server or a home-network worker. Only the row is
+   * read: nothing is admitted or contacted here.
+   */
+  private async cloudDescriptionDestination(options: EnrichmentRunOptions) {
+    const destinationId =
+      options.enrichmentDestinationId ??
+      (options.planRun ? null : (await this.mlDestinationRepository.getRoute(MlWorkload.Enrichment))?.destinationId);
+    if (!destinationId) {
+      return;
+    }
+    const destination = await this.mlDestinationRepository.getById(destinationId);
+    return destination?.kind === MlDestinationKind.FrameleafCloud ? destination : undefined;
+  }
+
+  /**
+   * FL-163: a description routed to Frameleaf Cloud waits for a batch. With "Describe new photos
+   * automatically" on, a photo joins the automatic queue; otherwise (and for a video, which Frameleaf
+   * Cloud does not describe) it waits for a backfill, which shows its estimate first. It is never
+   * described on this server instead.
+   */
+  private async leaveForCloudBatch(
+    asset: { id: string; ownerId: string; type: AssetType },
+    config: SystemConfig,
+  ): Promise<EnrichmentStageResult> {
+    if (asset.type !== AssetType.Image) {
+      return { status: JobStatus.Skipped, reasonKey: 'cloud-photos-only' };
+    }
+    const { cloudMl } = config.frameleafCloud;
+    if (cloudMl.enabled && cloudMl.autoDescribe.enabled) {
+      const queued = await queueCloudDescription(
+        { databaseRepository: this.databaseRepository, systemMetadataRepository: this.systemMetadataRepository },
+        { assetId: asset.id, ownerId: asset.ownerId },
+      );
+      if (!queued) {
+        this.logger.warn(`The Frameleaf Cloud description queue is full; asset ${asset.id} waits for a backfill`);
+      }
+    }
+    return { status: JobStatus.Skipped, reasonKey: 'cloud-batch' };
   }
 
   /**
