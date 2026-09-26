@@ -26,7 +26,7 @@ docker compose logs immich-server
 docker compose exec database pg_isready
 ```
 
-Back up the database and originals before changing releases. The database runs Frameleaf's own PostgreSQL image, `ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0`, built from `docker/postgres` with the same PostgreSQL 14, VectorChord 0.4.3, pgvector 0.8.1 and pgvecto.rs 0.2.0 as the image it replaces, so an existing database directory opens unchanged. Keep the exact official image required by the [handoff procedure](../docs/docs/administration/upstream-handoff.md); it is the certified handoff target, and the Frameleaf image names do not change database compatibility certification.
+Back up the database and originals before changing releases. The database runs Frameleaf's own PostgreSQL image, `ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0`, built from `docker/postgres` with the same PostgreSQL 14, VectorChord 0.4.3, pgvector 0.8.1 and pgvecto.rs 0.2.0 as the image it replaces, so an existing database directory opens unchanged. Release bundles pin it by digest. Keep the exact official image required by the [handoff procedure](../docs/docs/administration/upstream-handoff.md); it is the certified handoff target, and the Frameleaf image names do not change database compatibility certification.
 
 Cloud processing is Frameleaf Cloud, added and consented to by an administrator in the app; no image setting or Compose change enables it.
 

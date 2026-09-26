@@ -14,6 +14,7 @@ const {
   chooseTag,
   verifyImage,
   createBundle,
+  verifyDependencyImages,
   checkedResponse,
   hash,
   Registry,
@@ -772,5 +773,126 @@ test("manual dispatch rejects existing fresh or reused same-SHA candidates befor
     assert.equal(await fs.readFile(output, "utf8"), "");
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+// FL-191: the database and CLI images are published separately, so promotion must prove they exist.
+async function dependencyRoot(databaseImage) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "frameleaf-deps-"));
+  await fs.mkdir(path.join(root, "docker"));
+  await fs.mkdir(path.join(root, "server/src/fork-schema"), {
+    recursive: true,
+  });
+  for (const name of INSTALL_FILES) {
+    const text = name.startsWith("docker-compose")
+      ? [
+          "services:",
+          "  immich-server:",
+          "    image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}",
+          "  redis:",
+          `    image: docker.io/valkey/valkey:9@${digest(7)}`,
+          "  database:",
+          `    image: ${databaseImage}`,
+          "",
+        ].join("\n")
+      : name === "example.env"
+        ? "IMMICH_VERSION=release\n"
+        : "services: {}\n";
+    await fs.writeFile(path.join(root, "docker", name), text);
+  }
+  await fs.writeFile(
+    path.join(root, "server/src/fork-schema/supported-versions.json"),
+    "{}",
+  );
+  return root;
+}
+const database =
+  "ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0";
+const published = (entries) => ({
+  read: async (image, reference) => {
+    const found = entries[`${image}:${reference}`];
+    if (!found)
+      throw Object.assign(new Error("Remote request failed (404)"), {
+        status: 404,
+      });
+    return { digest: found, json: {}, size: 1 };
+  },
+});
+
+test("promotion refuses a bundle whose database or CLI image is not published", async () => {
+  const root = await dependencyRoot(database);
+  try {
+    await assert.rejects(
+      verifyDependencyImages(
+        published({ "frameleaf-cli:latest": digest(2) }),
+        root,
+      ),
+      /frameleaf-postgres:14-vectorchord0\.4\.3-pgvectors0\.2\.0 is not published/,
+    );
+    await assert.rejects(
+      verifyDependencyImages(
+        published({
+          "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+        }),
+        root,
+      ),
+      /frameleaf-cli:latest is not published/,
+    );
+    const resolved = await verifyDependencyImages(
+      published({
+        "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+        "frameleaf-cli:latest": digest(2),
+      }),
+      root,
+    );
+    assert.equal(resolved.get(database), digest(1));
+    // The bundle pins the verified digest; the source Compose file is left as written.
+    const dir = path.join(root, "bundle");
+    await createBundle(dir, root, "frameleaf-v3.1.0-1", {}, resolved);
+    for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
+      const bundled = await fs.readFile(path.join(dir, name), "utf8");
+      assert(bundled.includes(`image: ${database}@${digest(1)}\n`), name);
+    }
+    await assert.rejects(
+      createBundle(
+        path.join(root, "unverified"),
+        root,
+        "frameleaf-v3.1.0-1",
+        {},
+      ),
+      /was not verified and pinned by digest/,
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("promotion rejects stale pins, upstream images and unpinned third-party images", async () => {
+  for (const [image, pattern] of [
+    [`${database}@${digest(3)}`, /no longer resolves to the pinned digest/],
+    [
+      // Built from parts so the repository-wide upstream-image guard does not match this test.
+      ["ghcr.io", "immich-app", "postgres:14-vectorchord0.4.3"].join("/"),
+      /must not pull upstream images/,
+    ],
+    ["docker.io/library/postgres:14", /must be digest-pinned/],
+    ["ghcr.io/frameleaf/unknown-image:1", /not a known Frameleaf dependency/],
+  ]) {
+    const root = await dependencyRoot(image);
+    try {
+      await assert.rejects(
+        verifyDependencyImages(
+          published({
+            "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+            "frameleaf-cli:latest": digest(2),
+          }),
+          root,
+        ),
+        pattern,
+        image,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   }
 });

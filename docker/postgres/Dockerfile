@@ -14,6 +14,15 @@
 # pgvector 0.8.1 on PostgreSQL 14 (Debian bookworm), the base the upstream image was built on.
 FROM docker.io/pgvector/pgvector:0.8.1-pg14-bookworm@sha256:2b8cdfaad8e380ef81202cb2df1db35a83482ca7c6f4d933d01d84c294ba64ff
 
+# Package checksum provenance (recorded 2026-09-26):
+# - VectorChord 0.4.3: the SHA-256 digests GitHub records for the tensorchord/VectorChord release assets
+#   postgresql-14-vchord_0.4.3-1_{amd64,arm64}.deb.
+# - pgvecto.rs 0.2.0: that release publishes no digests, so the hashes were computed by streaming
+#   vectors-pg14_0.2.0_amd64.deb (asset 149326236, created 2024-02-02T05:25:42Z, updated 05:25:43Z) and
+#   vectors-pg14_0.2.0_arm64.deb (asset 149327668, created 2024-02-02T05:31:28Z, updated 05:31:29Z).
+#   Both packages were cross-checked against the replaced image without running it: every installed
+#   file's MD5 in /var/lib/dpkg/info/vectors-pg14.md5sums, read from the extension layers of the
+#   bcf63357 index (amd64 layer a4e5eae7, arm64 layer 6fb75803), matches the file in these packages.
 ARG PG_MAJOR=14
 ARG VECTORCHORD_TAG=0.4.3
 ARG VECTORCHORD_SHA256_AMD64=2b923f4f313d150c37ed550c7b4c88a214761ff594c84bc0b3e5972cd512fb50

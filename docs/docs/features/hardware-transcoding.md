@@ -139,7 +139,7 @@ Once this is done, you can continue to step 3 of "Basic Setup".
 - While you can use VAAPI with NVIDIA and Intel devices, prefer the more specific APIs since they're more optimized for their respective devices
 - You can confirm the device is being recognized and used by checking its utilization (via `nvtop` for NVIDIA, `intel_gpu_top` for Intel, etc.) when transcoding. A lack of error logs when transcoding also indicates that it's being used.
 
-[hw-file]: https://github.com/immich-app/immich/releases/latest/download/hwaccel.transcoding.yml
+[hw-file]: https://github.com/Frameleaf/frameleaf-app/releases/latest/download/hwaccel.transcoding.yml
 [nvct]: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
 [jellyfin-lp]: https://jellyfin.org/docs/general/post-install/transcoding/hardware-acceleration/intel#low-power-encoding
 [jellyfin-kernel-bug]: https://jellyfin.org/docs/general/post-install/transcoding/hardware-acceleration/intel#known-issues-and-limitations-on-linux

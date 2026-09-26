@@ -24,7 +24,7 @@ docker image prune
 
 [watchtower]: https://containrrr.dev/watchtower/
 [breaking]: https://github.com/immich-app/immich/discussions?discussions_q=label%3Achangelog%3Abreaking-change+sort%3Adate_created
-[releases]: https://github.com/immich-app/immich/releases
+[releases]: https://github.com/Frameleaf/frameleaf-app/releases
 
 ## Frameleaf upgrade notes
 
