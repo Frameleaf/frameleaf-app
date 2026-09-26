@@ -1,8 +1,12 @@
 import {
+  CloudMlJobPurpose,
+  CloudMlJobStage,
   MediaOperationBulkAction,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  Outcome,
+  type CloudMlJobActivityDto,
   type MediaOperationDto,
 } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
@@ -200,6 +204,142 @@ export type ActivityItem = {
   estimateSeconds?: number;
   /** The server's estimate of the output size, in bytes, when it has one (prototype "Done · 12 MB"). */
   sizeBytes?: number;
+  /** Where the job is (prototype `activity-feed.mjs` stages); the In progress section groups by it. */
+  stage: ActivityStage;
+  /** FL-162: a Frameleaf Cloud job's model, workers and money, as the prototype's `CloudCost` shows them. */
+  cloud?: ActivityCloudJob;
+};
+
+/** The stages a person sees (prototype `activity-feed.mjs`): moving, held, or finished one way or another. */
+export type ActivityStage = 'queued' | 'starting' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+
+/** The unfinished stages, in the order the In progress section groups them. */
+export const ACTIVITY_PROGRESS_STAGES: readonly ActivityStage[] = ['queued', 'starting', 'running', 'paused'];
+
+const STAGE_TONE: Record<ActivityStage, ActivityTone> = {
+  queued: 'neutral',
+  starting: 'info',
+  running: 'info',
+  paused: 'warning',
+  done: 'success',
+  failed: 'danger',
+  cancelled: 'neutral',
+};
+
+/**
+ * A Frameleaf Cloud job's facts (FL-162): the model it runs, how many workers it was planned on and
+ * started, and its cost: the p50–p90 estimate the owner confirmed, what was metered so far (never above
+ * the hold), and what was settled, which is null until Frameleaf Cloud settles it. Every amount is USD.
+ */
+export type ActivityCloudJob = {
+  model: string;
+  purpose: CloudMlJobPurpose;
+  preview: boolean;
+  plannedWorkers: number;
+  workers: number;
+  cost: {
+    estimatedUsd: number;
+    estimatedHighUsd: number;
+    holdUsd: number;
+    soFarUsd: number | null;
+    settledUsd: number | null;
+    /** `not_charged`: the whole hold went back (a failure on the cloud's side, or a job that never ran). */
+    outcome: Outcome | null;
+  };
+};
+
+/** The stage of a server job from its status (prototype `stageOf`). */
+export const mediaOperationStage = (operation: Pick<MediaOperationDto, 'status' | 'cloudJob'>): ActivityStage => {
+  if (operation.cloudJob) {
+    return operation.cloudJob.activityStage as ActivityStage;
+  }
+  switch (operation.status) {
+    case MediaOperationStatus.Queued: {
+      return 'queued';
+    }
+    case MediaOperationStatus.Preparing: {
+      return 'starting';
+    }
+    case MediaOperationStatus.Rendering:
+    case MediaOperationStatus.Validating:
+    case MediaOperationStatus.Cancelling: {
+      return 'running';
+    }
+    case MediaOperationStatus.Paused: {
+      return 'paused';
+    }
+    case MediaOperationStatus.Completed: {
+      return 'done';
+    }
+    case MediaOperationStatus.Failed: {
+      return 'failed';
+    }
+    case MediaOperationStatus.Cancelled: {
+      return 'cancelled';
+    }
+  }
+};
+
+/** The stage of a browser-local or session item, from whether it runs and how it ended. */
+const stageOf = (item: Pick<ActivityItem, 'running' | 'paused' | 'failed' | 'statusKey'>): ActivityStage => {
+  if (item.paused) {
+    return 'paused';
+  }
+  if (item.running) {
+    return 'running';
+  }
+  if (item.failed) {
+    return 'failed';
+  }
+  return item.statusKey.endsWith('cancelled') ? 'cancelled' : 'done';
+};
+
+/** A Frameleaf Cloud job's facts as Activity and the confirmation dialog show them (FL-162). */
+export const activityCloudJob = (cloudJob: CloudMlJobActivityDto): ActivityCloudJob => ({
+  model: cloudJob.model,
+  purpose: cloudJob.purpose,
+  preview: cloudJob.stage === CloudMlJobStage.Preview,
+  plannedWorkers: cloudJob.plannedWorkers,
+  workers: cloudJob.workers,
+  cost: {
+    estimatedUsd: cloudJob.cost.estimatedP50Usd,
+    estimatedHighUsd: cloudJob.cost.estimatedP90Usd,
+    holdUsd: cloudJob.cost.holdUsd,
+    soFarUsd: cloudJob.cost.soFarUsd,
+    settledUsd: cloudJob.cost.settledUsd,
+    outcome: cloudJob.cost.outcome ?? null,
+  },
+});
+
+/**
+ * A Frameleaf Cloud job as a row (FL-162). Its stage comes from the cloud job itself: between two reads
+ * of the job the server's own record sits in its queue, which says nothing about where the job is.
+ * Retrying it is starting again from an estimate, so the row never offers Retry.
+ */
+const fromCloudMlJob = (
+  operation: MediaOperationDto,
+  cloudJob: CloudMlJobActivityDto,
+): Pick<
+  ActivityItem,
+  'kindKey' | 'statusKey' | 'tone' | 'progress' | 'canRetry' | 'stage' | 'cloud' | 'estimateSeconds'
+> => {
+  const stage = cloudJob.activityStage as ActivityStage;
+  const measured = (stage === 'running' || stage === 'paused') && Number(operation.totalUnits ?? 0) > 0;
+  return {
+    // the confirmed estimate is the whole job's, not what is left of it
+    estimateSeconds: undefined,
+    kindKey:
+      cloudJob.purpose === CloudMlJobPurpose.SmoothMotion
+        ? 'frameleaf_activity_kind_cloud_smooth_motion'
+        : 'frameleaf_activity_kind_cloud_restoration',
+    statusKey: `frameleaf_activity_stage_${stage}`,
+    tone: STAGE_TONE[stage],
+    // queued and starting have no honest percentage yet: a cold start is shown as indeterminate
+    progress: stage === 'done' ? 100 : measured ? clampPercent(operation.progress) : null,
+    canRetry: false,
+    stage,
+    cloud: activityCloudJob(cloudJob),
+  };
 };
 
 const DESTINATION_KEY: Record<MediaOperationDestination, Translations> = {
@@ -385,6 +525,9 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
     ...(operation.projectId && STUDIO_RENDER_KINDS.has(operation.kind) && { projectId: operation.projectId }),
     ...estimateOf(operation),
+    stage: mediaOperationStage(operation),
+    // FL-162: a Frameleaf Cloud job reads its stage, progress and money from the cloud job itself
+    ...(operation.cloudJob && fromCloudMlJob(operation, operation.cloudJob)),
   };
 };
 
@@ -502,6 +645,7 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
       (failed || unfinished || status === MediaOperationStatus.Cancelled),
     canDismiss: !running && !pause.paused,
     browserLocal: false,
+    stage: failed && !running ? 'failed' : mediaOperationStage(operation),
     ...(bulk && {
       bulk: {
         requested,
@@ -568,6 +712,7 @@ export const fromUpload = (upload: UploadAsset): ActivityItem => {
     canRetry: false,
     canDismiss: false,
     browserLocal: true,
+    stage: running ? 'running' : state === UploadState.ERROR ? 'failed' : 'done',
   };
 };
 
@@ -607,6 +752,7 @@ export const fromDownload = (key: string, download: DownloadState): ActivityItem
   canRetry: false,
   canDismiss: false,
   browserLocal: true,
+  stage: download.status === 'preparing' ? 'running' : download.status === 'error' ? 'failed' : 'done',
 });
 
 const BULK_TONE: Record<BulkOperationRecord['status'], ActivityTone> = {
@@ -652,6 +798,12 @@ export const fromBulkOperation = (operation: BulkOperationRecord): ActivityItem 
     canRetry: false,
     canDismiss: !running,
     browserLocal: false,
+    stage: stageOf({
+      running,
+      paused: false,
+      failed: operation.status === 'failed',
+      statusKey: `frameleaf_activity_bulk_${operation.status}`,
+    }),
   };
 };
 
