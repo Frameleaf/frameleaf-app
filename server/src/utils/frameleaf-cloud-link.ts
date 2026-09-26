@@ -155,6 +155,8 @@ export const linkEndpoints = (document: { issuer: string; api: string; endpoints
     token: `${issuer}/token`,
     instances: `${api}/v1/instances`,
     instance: `${api}/v1/instance`,
+    /** FL-185: `GET /v1/discovery` with an instance token, for the per-instance service statuses. */
+    instanceDiscovery: `${api}/v1/discovery`,
     heartbeat: document.endpoints?.heartbeat ?? `${api}/v1/instance/heartbeat`,
     commandAck: (id: string) => `${api}/v1/instance/commands/${encodeURIComponent(id)}/ack`,
     keyNonce: `${api}/v1/instance/keys/nonce`,
@@ -246,6 +248,24 @@ export const heartbeatResponseSchema = z.object({
   pricing: z.unknown().optional(),
 });
 export type HeartbeatResponse = z.infer<typeof heartbeatResponseSchema>;
+
+/**
+ * `GET {api}/v1/discovery` (instance token): only the ML service's status and `cloneSuspected` are read
+ * here (FL-185), to learn whether cloud processing is still `suspended` while check-ins report a
+ * suspected copy.
+ */
+export const instanceServicesSchema = z.object({
+  services: z
+    .object({
+      ml: z
+        .object({ status: z.string().max(32) })
+        .loose()
+        .optional(),
+    })
+    .loose()
+    .default({}),
+  cloneSuspected: z.boolean().optional(),
+});
 
 export const keyNonceSchema = z.object({ nonce: z.string().min(8).max(512) });
 
