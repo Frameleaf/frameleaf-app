@@ -89,7 +89,7 @@ export class SharedLinkService extends BaseService {
     const { id, password } = sharedLink;
 
     const expected = password ? await this.asToken({ id, password }) : null;
-    if (expected && !authTokens.some((token) => safeEqual(token, expected))) {
+    if (expected && authTokens.every((token) => !safeEqual(token, expected))) {
       throw new UnauthorizedException('Password required');
     }
 

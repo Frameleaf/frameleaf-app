@@ -57,12 +57,18 @@ const makeRequest = (overrides: Partial<RateLimitedRequest> = {}) =>
     ...overrides,
   }) as RateLimitedRequest;
 
-const contextFor = (handler: () => void, request: RateLimitedRequest, response = { setHeader: vi.fn() }) =>
-  ({
+const contextFor = (
+  handler: () => void,
+  request: RateLimitedRequest,
+  response?: { setHeader: (...args: unknown[]) => unknown },
+) => {
+  const headers = response ?? { setHeader: vi.fn() };
+  return {
     getType: () => 'http',
     getHandler: () => handler,
-    switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
-  }) as unknown as ExecutionContext;
+    switchToHttp: () => ({ getRequest: () => request, getResponse: () => headers }),
+  } as unknown as ExecutionContext;
+};
 
 /** Redis's fixed-window counters, in memory: `INCR` and `DECR` are atomic, as they are in Redis. */
 const memoryCounters = () => {
@@ -129,7 +135,7 @@ describe(RateLimitGuard.name, () => {
 
     await expect(sut.canActivate(contextFor(TestController.prototype.login, request))).resolves.toBe(true);
 
-    const principalKey = `frameleaf:rate-limit:login:principal:${keyed('email:person@example.com\u0000198.51.100.7')}`;
+    const principalKey = `frameleaf:rate-limit:login:principal:${keyed('email:person@example.com\u{0}198.51.100.7')}`;
     expect(store.hit).toHaveBeenNthCalledWith(1, 'frameleaf:rate-limit:login:ip:198.51.100.7', 600);
     expect(store.hit).toHaveBeenNthCalledWith(2, principalKey, 600);
     expect(request.frameleafRateLimitFailures).toEqual([
@@ -193,7 +199,7 @@ describe(RateLimitGuard.name, () => {
     const shared = makeRequest({ query: { key: 'share-key' } });
     await sut.canActivate(contextFor(TestController.prototype.sharedLinkLogin, shared));
     expect(store.hit).toHaveBeenLastCalledWith(
-      `frameleaf:rate-limit:shared-link-login:principal:${keyed('key:share-key\u0000198.51.100.7')}`,
+      `frameleaf:rate-limit:shared-link-login:principal:${keyed('key:share-key\u{0}198.51.100.7')}`,
       RATE_LIMITS.sharedLinkLogin.windowSeconds,
     );
     expect(shared.frameleafRateLimitFailures).toHaveLength(1);
