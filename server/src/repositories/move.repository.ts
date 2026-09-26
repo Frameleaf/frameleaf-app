@@ -80,12 +80,19 @@ export class MoveRepository {
     return rows;
   }
 
-  /** FL-179: forgets recorded moves that can never finish. */
-  async deleteMoves(ids: string[]): Promise<void> {
-    if (ids.length === 0) {
-      return;
+  /**
+   * FL-179: forgets recorded moves that can never finish, each only while it still names the paths it
+   * was judged by; a record re-targeted since is kept.
+   */
+  async deleteMoves(moves: Array<{ id: string; oldPath: string; newPath: string }>): Promise<void> {
+    for (const { id, oldPath, newPath } of moves) {
+      await this.db
+        .deleteFrom('move_history')
+        .where('id', '=', id)
+        .where('oldPath', '=', oldPath)
+        .where('newPath', '=', newPath)
+        .execute();
     }
-    await this.db.deleteFrom('move_history').where('id', 'in', ids).execute();
   }
 
   async cleanMoveHistory(): Promise<void> {
