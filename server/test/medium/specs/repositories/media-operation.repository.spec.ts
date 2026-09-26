@@ -1828,28 +1828,73 @@ describe(MediaOperationRepository.name, () => {
       await expect(sut.sumCloudDescriptionSpend({ from, to })).resolves.toBeCloseTo(7.5, 6);
     });
 
-    it("adds up the holds of a destination's admitted batches that are not settled yet", async () => {
+    it("adds up the unsettled holds of a destination's unfinished batches and recent finished ones", async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
-      const admittedAt = new Date('2026-09-26T10:00:00.000Z');
-      await batch(sut, user.id, { job: { admittedAt, holdUsd: 0.2 } });
-      await batch(sut, user.id, { job: { admittedAt, holdUsd: 0.3 }, status: MediaOperationStatus.Failed });
-      await batch(sut, user.id, { job: { admittedAt, holdUsd: 9 }, settledUsd: 1 });
-      await batch(sut, user.id, { job: { admittedAt, holdUsd: 4 }, destination: 'elsewhere' });
+      const since = new Date('2026-09-01T00:00:00.000Z');
+      const recent = new Date('2026-09-26T10:00:00.000Z');
+      const old = new Date('2026-08-01T10:00:00.000Z');
+      await batch(sut, user.id, { job: { admittedAt: recent, holdUsd: 0.2 } });
+      await batch(sut, user.id, { job: { admittedAt: recent, holdUsd: 0.3 }, status: MediaOperationStatus.Failed });
+      // unfinished, admitted before the window: still held
+      await batch(sut, user.id, { job: { admittedAt: old, holdUsd: 0.4 } });
+      // finished before the window and never settled: its hold no longer counts
+      await batch(sut, user.id, { job: { admittedAt: old, holdUsd: 50 }, status: MediaOperationStatus.Cancelled });
+      await batch(sut, user.id, { job: { admittedAt: recent, holdUsd: 9 }, settledUsd: 1 });
+      await batch(sut, user.id, { job: { admittedAt: recent, holdUsd: 4 }, destination: 'elsewhere' });
       await batch(sut, user.id, { job: null });
 
-      await expect(sut.sumCloudDescriptionOpenHolds(destinationId)).resolves.toBeCloseTo(0.5, 6);
+      await expect(sut.sumCloudDescriptionOpenHolds(destinationId, since)).resolves.toBeCloseTo(0.9, 6);
     });
 
-    it('tells whether an admitted batch still waits for its settlement', async () => {
+    it('tells whether an admitted batch still waits for its settlement, bounded as the holds are', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
-      const since = new Date(Date.now() - 60_000);
-      await batch(sut, user.id, { remoteJobId: 'job-settled', settledUsd: 1 });
+      const since = new Date('2026-09-01T00:00:00.000Z');
+      const old = new Date('2026-08-01T10:00:00.000Z');
+      await batch(sut, user.id, { job: { admittedAt: new Date(), holdUsd: 1 }, settledUsd: 1 });
+      await batch(sut, user.id, { job: { admittedAt: old, holdUsd: 1 }, status: MediaOperationStatus.Failed });
       await expect(sut.hasUnsettledCloudDescriptionJobs(since)).resolves.toBe(false);
 
-      await batch(sut, user.id, { remoteJobId: 'job-open' });
+      await batch(sut, user.id, { job: { admittedAt: old, holdUsd: 1 } });
       await expect(sut.hasUnsettledCloudDescriptionJobs(since)).resolves.toBe(true);
+    });
+
+    it('lists finished batches whose submission was sent but whose job was never recorded', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const attempted = { idempotencyKey: 'desc-1', attemptedAt: new Date().toISOString() };
+      const pending = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.CloudDescriptionBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+        snapshot: { version: 1 },
+        result: { submission: attempted, job: null },
+      });
+      const running = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.CloudDescriptionBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+        snapshot: { version: 1 },
+        result: { submission: attempted, job: null },
+      });
+      const recorded = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.CloudDescriptionBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+        snapshot: { version: 1 },
+        result: { submission: attempted, job: { jobId: 'job-1' } },
+        remoteJobId: 'job-1',
+      });
+      for (const { id } of [pending, recorded]) {
+        await defaultDatabase
+          .updateTable('media_operation')
+          .set({ status: MediaOperationStatus.Failed })
+          .where('id', '=', id)
+          .execute();
+      }
+
+      const rows = await sut.listCloudDescriptionPendingReleases(10);
+
+      expect(rows.map(({ id }) => id)).toEqual([pending.id]);
+      expect(rows.map(({ id }) => id)).not.toContain(running.id);
     });
 
     it('limits the cleanup list to the kinds asked for before its limit', async () => {

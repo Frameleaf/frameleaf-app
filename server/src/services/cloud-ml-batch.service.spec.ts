@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
@@ -70,6 +71,7 @@ const facts: CloudProbeFacts = {
 };
 const cloud = { ...mlDestinationStub.frameleafCloudConsented, budgetLimitUsd: null, lastProbeCloud: facts };
 
+const admin = { user: { id: 'admin-1', isAdmin: true } } as unknown as AuthDto;
 const ownerA = 'owner-a';
 const ownerB = 'owner-b';
 
@@ -278,6 +280,8 @@ describe(CloudMlBatchService.name, () => {
     mocks.mediaOperation.sumCloudDescriptionOpenHolds.mockResolvedValue(0);
     mocks.mediaOperation.hasUnsettledCloudDescriptionJobs.mockResolvedValue(false);
     mocks.mediaOperation.getManyForWorker.mockResolvedValue([]);
+    mocks.mediaOperation.listCloudDescriptionPendingReleases.mockResolvedValue([]);
+    mocks.mediaOperation.setFinishedResult.mockResolvedValue(true);
     mocks.mediaOperation.getLockedAssetIds.mockResolvedValue(new Set());
     mocks.mediaOperation.getUnreleasedRemoteOperations.mockResolvedValue([]);
     let created = 0;
@@ -312,7 +316,7 @@ describe(CloudMlBatchService.name, () => {
     it('still estimates, and says why nothing can be queued', async () => {
       addAssets(photos(ownerA, 3));
 
-      const estimate = await sut.estimateBackfill(now);
+      const estimate = await sut.estimateBackfill(admin, now);
 
       expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledTimes(1);
       expect(estimate.refusal).toBe(CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED);
@@ -321,7 +325,7 @@ describe(CloudMlBatchService.name, () => {
 
     it('refuses a backfill before any batch row exists', async () => {
       addAssets(photos(ownerA, 3));
-      await sut.estimateBackfill(now);
+      await sut.estimateBackfill(admin, now);
       mocks.database.withLock.mockClear();
 
       await expect(sut.startBackfill({ estimateId: estimates().records[0].id }, now)).rejects.toThrow(
@@ -432,7 +436,7 @@ describe(CloudMlBatchService.name, () => {
     it('refuses a backfill estimate while processing is off', async () => {
       configure({ enabled: false });
 
-      await expect(sut.estimateBackfill(now)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.estimateBackfill(admin, now)).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
     });
 
@@ -450,7 +454,7 @@ describe(CloudMlBatchService.name, () => {
     it("estimates from metered GPU time per owner's batches, keeps the estimate and queues nothing", async () => {
       addAssets([...photos(ownerA, 250), ...photos(ownerB, 3)]);
 
-      const estimate = await sut.estimateBackfill(now);
+      const estimate = await sut.estimateBackfill(admin, now);
 
       // one sealed estimate for a sample of at most ten photos, never a job
       expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledTimes(1);
@@ -495,6 +499,7 @@ describe(CloudMlBatchService.name, () => {
         startupUsd: 0.02,
         photos: 253,
         p90Usd: estimate.p90Usd,
+        createdBy: 'admin-1',
         started: null,
       });
       expect(record.owners[ownerA]).toHaveLength(250);
@@ -505,7 +510,7 @@ describe(CloudMlBatchService.name, () => {
     it('checks consent and admission before anything is asked of the cloud (review P2)', async () => {
       mocks.mlDestination.getAll.mockResolvedValue([{ ...cloud, consentAcknowledgedAt: null }]);
 
-      await expect(sut.estimateBackfill(now)).rejects.toThrow(/processing terms/);
+      await expect(sut.estimateBackfill(admin, now)).rejects.toThrow(/processing terms/);
 
       expect(mocks.frameleafCloud.discovery).not.toHaveBeenCalled();
       expect(mocks.frameleafCloudMl.getCatalog).not.toHaveBeenCalled();
@@ -518,7 +523,7 @@ describe(CloudMlBatchService.name, () => {
         cloud: { ...facts, consentRequiredVersion: '2026-10-01.1' },
       });
 
-      await expect(sut.estimateBackfill(now)).rejects.toThrow(/consent/);
+      await expect(sut.estimateBackfill(admin, now)).rejects.toThrow(/consent/);
       expect(mocks.frameleafCloudMl.getCatalog).not.toHaveBeenCalled();
     });
 
@@ -533,7 +538,7 @@ describe(CloudMlBatchService.name, () => {
       mocks.mediaOperation.getLockedAssetIds.mockResolvedValue(new Set(['a-2']));
       mocks.mediaOperation.getOpenCloudDescriptionAssetIds.mockResolvedValue(new Set(['a-open']));
 
-      const estimate = await sut.estimateBackfill(now);
+      const estimate = await sut.estimateBackfill(admin, now);
 
       expect(estimate.photos).toBe(1);
       expect(mocks.mediaOperation.getLockedAssetIds).toHaveBeenCalledWith(ownerA, ['a-1', 'a-2']);
@@ -552,7 +557,7 @@ describe(CloudMlBatchService.name, () => {
         settingsUrl: null,
       });
 
-      const estimate = await sut.estimateBackfill(now);
+      const estimate = await sut.estimateBackfill(admin, now);
 
       expect(estimate.refusal).toMatch(/^The AI Wallet has 0\.01 USD available/);
     });
@@ -564,9 +569,12 @@ describe(CloudMlBatchService.name, () => {
       mocks.mlDestination.getSpend.mockResolvedValue(0.5);
       mocks.mediaOperation.sumCloudDescriptionOpenHolds.mockResolvedValue(0.49);
 
-      const estimate = await sut.estimateBackfill(now);
+      const estimate = await sut.estimateBackfill(admin, now);
 
-      expect(mocks.mediaOperation.sumCloudDescriptionOpenHolds).toHaveBeenCalledWith(cloud.id);
+      expect(mocks.mediaOperation.sumCloudDescriptionOpenHolds).toHaveBeenCalledWith(
+        cloud.id,
+        new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+      );
       expect(estimate.refusal).toMatch(/has 0\.01 USD left of its 1\.00 USD spending limit/);
     });
 
@@ -586,7 +594,7 @@ describe(CloudMlBatchService.name, () => {
       mocks.mlDestination.getCloudModelChoice.mockResolvedValue('ms_M72B0000');
       addAssets(photos(ownerA, 40));
 
-      const estimate = await sut.estimateBackfill(now);
+      const estimate = await sut.estimateBackfill(admin, now);
 
       expect(estimate.modelId).toBe('ms_M72B0000');
       expect(estimate.guidance).toEqual({
@@ -605,13 +613,13 @@ describe(CloudMlBatchService.name, () => {
         }),
       );
 
-      await expect(sut.estimateBackfill(now)).rejects.toThrow(/choose one in Where each job runs/);
+      await expect(sut.estimateBackfill(admin, now)).rejects.toThrow(/choose one in Where each job runs/);
     });
   });
 
   describe('startBackfill', () => {
     const estimateFirst = async () => {
-      const estimate = await sut.estimateBackfill(now);
+      const estimate = await sut.estimateBackfill(admin, now);
       return estimate.estimateId!;
     };
 
@@ -644,6 +652,20 @@ describe(CloudMlBatchService.name, () => {
       expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
       expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.FrameleafCloudMlBackfill, expect.any(Function));
       expect(estimates().records[0]).toMatchObject({ owners: {}, started: { batches: 3, photos: 253 } });
+    });
+
+    it('takes the backfill lock, then the automatic queue lock, around creating batches (re-check)', async () => {
+      addAssets(photos(ownerA, 3));
+      const estimateId = await estimateFirst();
+      mocks.database.withLock.mockClear();
+
+      await sut.startBackfill({ estimateId }, now);
+
+      const batchLocks = new Set([DatabaseLock.FrameleafCloudMlBackfill, DatabaseLock.FrameleafCloudMlBatchQueue]);
+      expect(mocks.database.withLock.mock.calls.map(([lock]) => lock).filter((lock) => batchLocks.has(lock))).toEqual([
+        DatabaseLock.FrameleafCloudMlBackfill,
+        DatabaseLock.FrameleafCloudMlBatchQueue,
+      ]);
     });
 
     it('answers a second request for the same estimate with the first, queueing nothing more (review P2)', async () => {
@@ -799,6 +821,59 @@ describe(CloudMlBatchService.name, () => {
         KEY_1,
       );
       expect(written()).toMatchObject({ phase: CloudDescriptionPhase.Submitted, job: { jobId: admitted.jobId } });
+    });
+
+    it('checks the photos before a replay, and keeps the attempt when one changed (re-check)', async () => {
+      mocks.mediaOperation.getLockedAssetIds.mockResolvedValue(new Set(['a-2']));
+
+      await sut.step(estimated({ attemptedAt: now.toISOString() }), 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(written().submission).toMatchObject({ idempotencyKey: KEY_1, attemptedAt: now.toISOString() });
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        BATCH_ID,
+        'claim-1',
+        expect.objectContaining({ errorCode: 'cloud_description_photos_changed' }),
+        { retry: false },
+      );
+    });
+
+    it('runs the pre-flight before a replay (re-check)', async () => {
+      mocks.frameleafCloudMl.getWallet.mockResolvedValue({
+        balanceUsd: 0.04,
+        heldUsd: 0,
+        dailyCapUsd: null,
+        spentTodayUsd: 0,
+        topUpUrl: null,
+        autoTopUp: false,
+        settingsUrl: null,
+      });
+
+      await sut.step(estimated({ attemptedAt: now.toISOString() }), 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        BATCH_ID,
+        'claim-1',
+        expect.objectContaining({ errorCode: 'cloud_description_wallet_insufficient' }),
+        { retry: false },
+      );
+    });
+
+    it('keeps an attempted submission when the batch has to wait for tomorrow (re-check)', async () => {
+      configure({ autoDescribe: true, dailyBudgetUsd: 0.5 });
+      mocks.mediaOperation.sumCloudDescriptionSpend.mockResolvedValue(0.49);
+      const batch = estimated({ attemptedAt: now.toISOString() });
+      (batch.snapshot as Record<string, unknown>).origin = 'automatic';
+      (batch.snapshot as Record<string, unknown>).approvedP90Usd = null;
+
+      await sut.step(batch, 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(written()).toMatchObject({
+        phase: CloudDescriptionPhase.Estimated,
+        submission: { idempotencyKey: KEY_1, attemptedAt: now.toISOString() },
+      });
     });
 
     it('estimates again when a replayed attempt created no job (409)', async () => {
@@ -1176,6 +1251,84 @@ describe(CloudMlBatchService.name, () => {
       expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledTimes(1);
       expect(mocks.frameleafCloudMl.deleteJob).toHaveBeenCalledWith(expect.anything(), admitted.jobId);
       expect(mocks.mediaOperation.markRemoteReleased).toHaveBeenCalledWith(BATCH_ID);
+    });
+
+    describe('attempted submissions whose job was never recorded (re-check)', () => {
+      const ended = () =>
+        operation({
+          row: { status: MediaOperationStatus.Failed },
+          result: {
+            ...emptyCloudDescriptionResult(['a-1', 'a-2']),
+            phase: CloudDescriptionPhase.Estimated,
+            estimates: 1,
+            items: inputs,
+            submission: {
+              idempotencyKey: KEY_1,
+              estimate: sealed.estimate,
+              expiresAt: sealed.expiresAt,
+              modelRev: sealed.modelRev,
+              computeSku: sealed.computeSku,
+              p50Usd: 0.021,
+              p90Usd: 0.024,
+              holdUsd: 0.05,
+              startupUsd: 0.02,
+              attemptedAt: '2026-09-26T04:06:00.000Z',
+            },
+          },
+        });
+      const later = new Date('2026-09-26T05:00:00.000Z');
+
+      it('replays the key once the estimate expired, then records, stops and releases the job', async () => {
+        mocks.mediaOperation.listCloudDescriptionPendingReleases.mockResolvedValue([ended()]);
+
+        await sut.runPass(later);
+
+        expect(mocks.frameleafCloudMl.createJob).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ clientRef: `batch-${BATCH_ID}`, estimate: sealed.estimate }),
+          KEY_1,
+        );
+        expect(mocks.mediaOperation.recordRemoteJobId).toHaveBeenCalledWith(BATCH_ID, admitted.jobId);
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), admitted.jobId);
+        expect(mocks.frameleafCloudMl.deleteJob).toHaveBeenCalledWith(expect.anything(), admitted.jobId);
+        expect(mocks.mediaOperation.setFinishedResult).toHaveBeenCalledWith(
+          BATCH_ID,
+          expect.objectContaining({ submission: expect.objectContaining({ attemptedAt: null }) }),
+        );
+      });
+
+      it('clears the marker when the replay shows no job was created (409)', async () => {
+        mocks.mediaOperation.listCloudDescriptionPendingReleases.mockResolvedValue([ended()]);
+        mocks.frameleafCloudMl.createJob.mockRejectedValue(
+          new FrameleafCloudError(MlAdmissionRefusal.ModelMismatch, 409, 'The estimate expired'),
+        );
+
+        await sut.runPass(later);
+
+        expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.setFinishedResult).toHaveBeenCalledWith(
+          BATCH_ID,
+          expect.objectContaining({ submission: expect.objectContaining({ attemptedAt: null }) }),
+        );
+      });
+
+      it('waits while the estimate could still create a job', async () => {
+        mocks.mediaOperation.listCloudDescriptionPendingReleases.mockResolvedValue([ended()]);
+
+        await sut.runPass(now);
+
+        expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.setFinishedResult).not.toHaveBeenCalled();
+      });
+
+      it('replays nothing while the upload gate is closed', async () => {
+        CLOUD_DESCRIPTION_CONTRACT.uploadsPublished = false;
+        mocks.mediaOperation.listCloudDescriptionPendingReleases.mockResolvedValue([ended()]);
+
+        await sut.runPass(later);
+
+        expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      });
     });
 
     it('steps claimed batches under the batch lock', async () => {

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CloudMlCatalogResponseDto,
@@ -18,7 +19,7 @@ import {
 } from 'src/dtos/cloud-ml.dto.js';
 import { MlDestinationResponseDto } from 'src/dtos/ml-destination.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { CloudMlService } from 'src/services/cloud-ml.service.js';
 
@@ -74,8 +75,8 @@ export class CloudMlAdminController {
       'What describing every photo still without a description would cost, from the metered GPU time of the chosen model: a p50–p90 range, a per-photo figure, the start fee per batch and the AI Wallet balance. Nothing is queued.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  estimateDescriptionBackfill(): Promise<CloudMlDescriptionEstimateResponseDto> {
-    return this.batchService.estimateBackfill();
+  estimateDescriptionBackfill(@Auth() auth: AuthDto): Promise<CloudMlDescriptionEstimateResponseDto> {
+    return this.batchService.estimateBackfill(auth);
   }
 
   @Post('destination')
