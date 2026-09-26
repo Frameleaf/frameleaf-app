@@ -242,7 +242,18 @@ describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
 
   it('refuses a model that is not in the catalogue any more', () => {
     expect(refusal({ ...cloud, modelId: 'retired-model' })).toBe(MlAdmissionRefusal.ModelMismatch);
-    expect(refusal({ ...cloud, modelId: 'restore-faithful' })).toBeNull();
+    expect(refusal({ ...cloud, workload: MlWorkload.RestorationFaithful, modelId: 'restore-faithful' })).toBeNull();
+  });
+
+  it('refuses a model whose catalogue mode does not match the workload asked for (FL-181 P1)', () => {
+    // The stub catalogue's `restore-faithful` model is faithful mode: fine for a faithful job, a
+    // mismatch for a creative one, even though the model id itself is still "in the catalogue".
+    expect(refusal({ ...cloud, workload: MlWorkload.RestorationCreative, modelId: 'restore-faithful' })).toBe(
+      MlAdmissionRefusal.ModelMismatch,
+    );
+    expect(refusal({ ...cloud, workload: MlWorkload.RestorationFaithful, modelId: 'restore-faithful' })).toBeNull();
+    // A non-restoration workload never runs this check: it has no mode to mismatch.
+    expect(refusal({ ...cloud, workload: MlWorkload.Enrichment, modelId: 'restore-faithful' })).toBeNull();
   });
 
   it('refuses a cloud job for the local-only nllb-clip, MusicGen-small and Qwen2.5-VL-3B models, even if listed (FL-146)', () => {
