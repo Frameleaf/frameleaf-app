@@ -895,6 +895,12 @@ export type FrameleafInstanceIdentity = {
    * lost). Kept for at most a day; tried when the cloud stops accepting the current key.
    */
   candidate?: { kid: string; keyFile: string; since: string };
+  /**
+   * FL-175: the key the cloud accepted in the last rotation could not be read and was set aside, so
+   * this server still uses its previous key, which the cloud only accepts for a while. The next
+   * check-in rotates again; a finished rotation clears this.
+   */
+  rotationNeeded?: { since: string };
 };
 
 /** FL-159: the cached discovery document (`/.well-known/frameleaf-services`). */

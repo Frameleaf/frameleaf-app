@@ -1,7 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { type KeyObject, createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, chmod, copyFile, link, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import {
+  type FileHandle,
+  access,
+  chmod,
+  copyFile,
+  link,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { v7 as uuidv7 } from 'uuid';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
@@ -11,7 +24,7 @@ import { base64url, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 /** File name of the private key inside the identity directory. */
 export const INSTANCE_KEY_FILE = 'instance-key.pem';
 /** A key being introduced by rotation, before the cloud accepted it. */
-const NEXT_KEY_FILE = 'instance-key.next.pem';
+export const NEXT_KEY_FILE = 'instance-key.next.pem';
 /** The key a rotation replaced, kept until the cloud stops accepting it. */
 export const RETIRING_KEY_FILE = 'instance-key.retiring.pem';
 /** A new key the cloud accepted, about to replace the current one (see `finishRotation`). */
@@ -25,12 +38,23 @@ const CANDIDATE_META_FILE = 'instance-key.candidate.json';
 /** How long a candidate key is kept (the cloud's retire window). */
 export const CANDIDATE_HOURS = 24;
 /** The rotation that retired the current retiring key: `{rotationId, kid, until}`. */
-const RETIRING_META_FILE = 'instance-key.retiring.json';
+export const RETIRING_META_FILE = 'instance-key.retiring.json';
+/**
+ * Written when the key the cloud accepted in a rotation could not be read (FL-175): `{since}`. The
+ * next check-in rotates again while the cloud still accepts the current key; a finished rotation
+ * removes it. See `FrameleafInstanceIdentity.rotationNeeded`.
+ */
+export const ROTATION_NEEDED_FILE = 'instance-key.rotate-needed.json';
+/** A key file that does not parse is renamed to `<file>.corrupt-<time>-<random>` (FL-175). */
+export const SET_ASIDE_MARK = '.corrupt-';
+/** Staging copies `publishNewKey` leaves after a crash; each is a second hard link to the live key. */
+const STAGING_FILE = /^instance-key\.pem\.[\da-f-]{36}\.tmp$/;
 /** `link()` failures where the file system cannot hard-link (SMB/CIFS, FUSE, another device). */
 const NO_HARD_LINK = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV']);
-
-/** Where a key file that does not parse is set aside (FL-175): kept for an operator, never used again. */
-export const SET_ASIDE_SUFFIX = '.corrupt';
+/** File flush failures that only mean the mount cannot flush (some FUSE file systems). */
+const FILE_SYNC_UNSUPPORTED = new Set(['EINVAL', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP']);
+/** Directory open or flush failures that only mean the platform or mount cannot flush a directory. */
+const DIRECTORY_SYNC_UNSUPPORTED = new Set([...FILE_SYNC_UNSUPPORTED, 'EISDIR', 'EPERM', 'EACCES']);
 
 const exists = (path: string) =>
   access(path)
@@ -43,39 +67,12 @@ const ignore = (codes: string[]) => (error: NodeJS.ErrnoException) => {
   }
 };
 
+const readJson = <T>(file: string): Promise<T | null> =>
+  readFile(file, 'utf8')
+    .then((text) => JSON.parse(text) as T)
+    .catch(() => null);
+
 type Ed25519PublicJwk = FrameleafInstanceIdentity['publicJwk'];
-
-/**
- * Create `file` exclusively (O_EXCL, 0600) and flush it to disk before returning, so a key that is
- * handed to anyone (the cloud, a caller) is never lost or cut short by a later power failure.
- */
-const writeKeyExclusive = async (file: string, pem: string | Buffer) => {
-  const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-  try {
-    await handle.writeFile(pem);
-    // a mount that cannot flush (some FUSE file systems) still gets the key; there is nothing more to do
-    await handle.sync().catch(ignore(['EINVAL', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP']));
-  } finally {
-    await handle.close();
-  }
-};
-
-/**
- * Flush a directory's entries (a new or renamed key file) to disk. Best effort: some platforms and
- * mounts cannot open or sync a directory, and the file contents are already flushed.
- */
-const syncDirectory = async (dir: string) => {
-  try {
-    const handle = await open(dir, constants.O_RDONLY);
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    // not supported here; the rename or link itself is still atomic
-  }
-};
 
 const publicJwkOf = (privateKey: KeyObject): Ed25519PublicJwk => {
   const jwk = createPublicKey(privateKey).export({ format: 'jwk' });
@@ -87,19 +84,22 @@ const publicJwkOf = (privateKey: KeyObject): Ed25519PublicJwk => {
 
 /**
  * This server's Frameleaf identity (FL-159 builds the part of FL-154/FL-155 cloud processing needs):
- * one Ed25519 key in a PEM file created with O_EXCL and mode 0600, its RFC 7638 `kid`, and compact
- * EdDSA JWS signing for `private_key_jwt` client assertions. The private key never leaves this
- * repository; callers get the public JWK and signatures only.
+ * one Ed25519 key in a 0600 PEM file, its RFC 7638 `kid`, and compact EdDSA JWS signing for
+ * `private_key_jwt` client assertions. The private key never leaves this repository; callers get the
+ * public JWK and signatures only.
+ *
+ * Every method that touches the files runs under `DatabaseLock.FrameleafIdentity` (the gateway's
+ * `loadInstanceIdentity` and the cloud service), so loads, rotations and recoveries never interleave.
  */
 @Injectable()
 export class InstanceIdentityRepository {
   private cached?: { keyFile: string; privateKey: KeyObject };
   private logger = LoggingRepository.create('InstanceIdentityRepository');
+  private flushSkipped = false;
 
   /**
    * Load the key in `dir`, or create it when there is none. Creation is exclusive (`publishNewKey`),
-   * so two workers racing here end with one key: the loser reads the winner's complete file. Callers
-   * hold `DatabaseLock.FrameleafIdentity`, so loads never interleave with a rotation or its recovery.
+   * so two workers racing here end with one key: the loser reads the winner's complete file.
    */
   async loadOrCreate(
     dir: string,
@@ -118,6 +118,7 @@ export class InstanceIdentityRepository {
     });
     if (current) {
       privateKey = this.currentKeyOf(keyFile, current);
+      await this.removeStaging(dir);
     } else {
       await mkdir(dir, { recursive: true, mode: 0o700 });
       const pair = generateKeyPairSync('ed25519');
@@ -135,6 +136,7 @@ export class InstanceIdentityRepository {
     const publicJwk = publicJwkOf(privateKey);
     const retiring = created ? undefined : await this.retiringOf(dir, now);
     const candidate = created ? undefined : await this.candidateOf(dir, now);
+    const rotationNeeded = created ? undefined : await this.rotationNeededOf(dir);
     return {
       instanceId: !created && existing ? existing.instanceId : uuidv7(),
       kid: ed25519Thumbprint(publicJwk),
@@ -143,13 +145,15 @@ export class InstanceIdentityRepository {
       createdAt: !created && existing ? existing.createdAt : new Date().toISOString(),
       ...(retiring && { retiring }),
       ...(candidate && { candidate }),
+      ...(rotationNeeded && { rotationNeeded }),
     };
   }
 
   /**
-   * The current key, parsed. A current key that does not parse is never replaced or moved (FL-175):
-   * the cloud may know it, and only an operator can tell a cut-short first write from damage to a key
-   * that was in use, so loading stops with an error that says what to do.
+   * The current key, parsed. A current key that does not parse is never replaced or moved here
+   * (FL-175): the cloud may know it, and only an operator can tell a cut-short first write from damage
+   * to a key that was in use, so loading stops with an error that says what to do. (The one exception
+   * is `finishRotation`, when the cloud already accepted a readable successor.)
    */
   private currentKeyOf(keyFile: string, pem: Buffer) {
     try {
@@ -164,35 +168,102 @@ export class InstanceIdentityRepository {
   /**
    * Put a new current key in place without ever exposing a partly written file: it is written and
    * flushed under a unique name, then hard-linked to `keyFile`, which fails with EEXIST when another
-   * worker got there first. Where the file system cannot hard-link, the key is written in place with
-   * O_EXCL instead. Returns whether this call created the key.
+   * worker got there first. Where the file system cannot hard-link, the staged file is renamed into
+   * place after checking that no key appeared meanwhile; a rename would replace one, which only the
+   * identity lock every caller holds rules out. Returns whether this call created the key.
    */
   private async publishNewKey(keyFile: string, pem: string | Buffer) {
     const staging = `${keyFile}.${randomUUID()}.tmp`;
     try {
-      await writeKeyExclusive(staging, pem);
-      await link(staging, keyFile);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code ?? '';
-      if (code === 'EEXIST') {
-        return false;
-      }
-      if (!NO_HARD_LINK.has(code)) {
-        throw error;
-      }
+      await this.writeKeyExclusive(staging, pem);
       try {
-        await writeKeyExclusive(keyFile, pem);
-      } catch (writeError) {
-        if ((writeError as NodeJS.ErrnoException).code === 'EEXIST') {
+        await link(staging, keyFile);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code ?? '';
+        // ENOENT: a loader that found the winner's key already removed this staging copy
+        if (code === 'EEXIST' || (code === 'ENOENT' && (await exists(keyFile)))) {
           return false;
         }
-        throw writeError;
+        if (!NO_HARD_LINK.has(code)) {
+          throw error;
+        }
+        if (await exists(keyFile)) {
+          return false;
+        }
+        await rename(staging, keyFile);
       }
     } finally {
       await rm(staging, { force: true });
     }
-    await syncDirectory(dirname(keyFile));
+    await this.syncDirectory(dirname(keyFile));
     return true;
+  }
+
+  /**
+   * Remove staging copies a crash left behind. Each is a second hard link to (or a copy of) the live
+   * private key, so none is kept longer than needed. Only called once the current key exists.
+   */
+  private async removeStaging(dir: string) {
+    const names = await readdir(dir).catch((): string[] => []);
+    for (const name of names) {
+      if (STAGING_FILE.test(name)) {
+        await rm(join(dir, name), { force: true });
+      }
+    }
+  }
+
+  /**
+   * Create `file` exclusively (O_EXCL, 0600) and flush it to disk. A write or flush that fails removes
+   * the file this call created, so it never leaves a partial key behind. A mount that cannot flush at
+   * all (some FUSE file systems) is logged once and accepted; any other flush error (EIO) is thrown.
+   */
+  private async writeKeyExclusive(file: string, pem: string | Buffer) {
+    const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    let written = false;
+    try {
+      await handle.writeFile(pem);
+      await handle.sync().catch((error: NodeJS.ErrnoException) => {
+        if (!FILE_SYNC_UNSUPPORTED.has(error.code ?? '')) {
+          throw error;
+        }
+        this.flushWasSkipped(file, error.code ?? '');
+      });
+      written = true;
+    } finally {
+      await handle.close();
+      if (!written) {
+        await rm(file, { force: true });
+      }
+    }
+  }
+
+  /**
+   * Flush a directory's entries (a new or renamed key file) to disk. Only the failures that mean the
+   * platform or mount cannot flush a directory are accepted (logged once); an I/O error is thrown.
+   */
+  private async syncDirectory(dir: string) {
+    let handle: FileHandle | undefined;
+    try {
+      handle = await open(dir, constants.O_RDONLY);
+      await handle.sync();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? '';
+      if (!DIRECTORY_SYNC_UNSUPPORTED.has(code)) {
+        throw error;
+      }
+      this.flushWasSkipped(dir, code);
+    } finally {
+      await handle?.close();
+    }
+  }
+
+  private flushWasSkipped(target: string, code: string) {
+    if (!this.flushSkipped) {
+      this.flushSkipped = true;
+      this.logger.warn(
+        `This file system cannot flush ${target} to disk (${code}); a power failure during a key rotation could lose or cut short the new key`,
+      );
+    }
   }
 
   /**
@@ -203,10 +274,22 @@ export class InstanceIdentityRepository {
    * candidate rather than deleted. The key file itself is only ever replaced by an atomic rename.
    */
   private async recoverRotation(dir: string, now: number) {
-    // a proven key the cloud accepted but that no longer parses is set aside, never swapped in: the
-    // current key keeps working while the cloud still accepts it, and the bytes stay for an operator
-    if ((await exists(join(dir, PROVEN_KEY_FILE))) && (await this.kidOrSetAside(join(dir, PROVEN_KEY_FILE)))) {
-      await this.finishRotation(dir, { rotationId: randomUUID(), until: this.hoursFrom(now, RECOVERED_RETIRE_HOURS) });
+    const provenFile = join(dir, PROVEN_KEY_FILE);
+    if (await exists(provenFile)) {
+      const proven = await this.kidOrSetAside(provenFile);
+      if (proven.kid) {
+        await this.finishRotation(dir, {
+          rotationId: randomUUID(),
+          until: this.hoursFrom(now, RECOVERED_RETIRE_HOURS),
+        });
+      } else if (proven.setAside) {
+        // FL-175: the cloud accepted this key, so it is never swapped in unreadable; the current key keeps
+        // working until the cloud stops accepting it, and the next check-in rotates again before then
+        await this.writeSidecar(join(dir, ROTATION_NEEDED_FILE), { since: new Date(now).toISOString() });
+        this.logger.error(
+          `The identity key Frameleaf Cloud accepted in the last rotation cannot be read; it was set aside as ${proven.setAside}. This server keeps its previous key and rotates again at the next check-in.`,
+        );
+      }
     }
     if (await exists(join(dir, NEXT_KEY_FILE))) {
       await this.makeCandidate(dir, now);
@@ -218,26 +301,43 @@ export class InstanceIdentityRepository {
    * key's rotation id, kid and expiry are written first (a sidecar, replaced atomically), so metadata
    * can always be rebuilt for exactly this rotation. The retiring copy is a hard link, or a 0600 copy
    * where the file system cannot link (SMB/CIFS, FUSE, another device).
+   *
+   * Only ever called with a proven key that parses. A current key that does not parse (or is missing)
+   * is then set aside rather than kept as retiring: the cloud already accepted its successor (FL-175).
    */
   private async finishRotation(dir: string, rotation: { rotationId: string; until: string }) {
     const keyFile = join(dir, INSTANCE_KEY_FILE);
     const retiringFile = join(dir, RETIRING_KEY_FILE);
-    const current = this.currentKeyOf(keyFile, await readFile(keyFile));
-    const sidecar = join(dir, RETIRING_META_FILE);
-    await writeFile(`${sidecar}.tmp`, JSON.stringify({ ...rotation, kid: ed25519Thumbprint(publicJwkOf(current)) }), {
-      mode: 0o600,
-    });
-    await rename(`${sidecar}.tmp`, sidecar);
-    await rm(retiringFile, { force: true });
-    await link(keyFile, retiringFile).catch(async (error: NodeJS.ErrnoException) => {
-      if (NO_HARD_LINK.has(error.code ?? '')) {
-        await copyFile(keyFile, retiringFile);
-        await this.restrict(retiringFile);
-        return;
+    const pem = await readFile(keyFile).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') {
+        throw error;
       }
-      ignore(['EEXIST', 'ENOENT'])(error);
+      return null;
     });
+    let currentKid: string | undefined;
+    if (pem) {
+      try {
+        currentKid = ed25519Thumbprint(publicJwkOf(createPrivateKey(pem)));
+      } catch (error) {
+        await this.setAside(keyFile, error);
+      }
+    }
+    if (currentKid) {
+      const sidecar = join(dir, RETIRING_META_FILE);
+      await this.writeSidecar(sidecar, { ...rotation, kid: currentKid });
+      await rm(retiringFile, { force: true });
+      await link(keyFile, retiringFile).catch(async (error: NodeJS.ErrnoException) => {
+        if (NO_HARD_LINK.has(error.code ?? '')) {
+          await copyFile(keyFile, retiringFile);
+          await this.restrict(retiringFile);
+          return;
+        }
+        ignore(['EEXIST', 'ENOENT'])(error);
+      });
+    }
     await rename(join(dir, PROVEN_KEY_FILE), keyFile).catch(ignore(['ENOENT']));
+    await rm(join(dir, ROTATION_NEEDED_FILE), { force: true });
+    await this.syncDirectory(dir);
   }
 
   /** Make a key file owner-only; a mount that refuses chmod (SMB/CIFS, FUSE) only gets a warning. */
@@ -255,7 +355,9 @@ export class InstanceIdentityRepository {
   /**
    * The retiring key's metadata, always rebuilt from disk: its kid from the key file, its rotation
    * id and expiry from the sidecar when that describes this very key. Stale metadata of an older
-   * rotation can therefore never survive a crash between the swap and the metadata save.
+   * rotation can therefore never survive a crash between the swap and the metadata save. The retiring
+   * key never signs again, so one that cannot be read or parsed is left out rather than failing the
+   * load (FL-175).
    */
   private async retiringOf(dir: string, now: number) {
     const retiringFile = join(dir, RETIRING_KEY_FILE);
@@ -263,32 +365,37 @@ export class InstanceIdentityRepository {
       return;
     }
     const sidecarFile = join(dir, RETIRING_META_FILE);
-    // the retiring key is never used to sign again; one that no longer parses must not stop the load
-    const kid = await this.kidOrSetAside(retiringFile, sidecarFile);
+    let kid: string | undefined;
+    try {
+      ({ kid } = await this.kidOrSetAside(retiringFile, sidecarFile));
+    } catch (error) {
+      this.logger.warn(
+        `Could not read ${retiringFile}, the key the last rotation retired; it was left as it is (${error})`,
+      );
+      return;
+    }
     if (!kid) {
       return;
     }
     type Sidecar = { rotationId?: unknown; kid?: unknown; until?: unknown };
-    const sidecar = await readFile(sidecarFile, 'utf8')
-      .then((text) => JSON.parse(text) as Sidecar)
-      .catch((): Sidecar | null => null);
+    const sidecar = await readJson<Sidecar>(sidecarFile);
     if (sidecar?.kid === kid && typeof sidecar.rotationId === 'string' && typeof sidecar.until === 'string') {
       return { kid, keyFile: retiringFile, until: sidecar.until, rotationId: sidecar.rotationId };
     }
     const rebuilt = { rotationId: randomUUID(), kid, until: this.hoursFrom(now, RECOVERED_RETIRE_HOURS) };
-    await writeFile(`${sidecarFile}.tmp`, JSON.stringify(rebuilt), { mode: 0o600 });
-    await rename(`${sidecarFile}.tmp`, sidecarFile);
+    await this.writeSidecar(sidecarFile, rebuilt);
     return { kid, keyFile: retiringFile, until: rebuilt.until, rotationId: rebuilt.rotationId };
   }
 
   /**
    * The in-flight key becomes the candidate; its start time goes in a 0600 sidecar first. A next key
-   * that does not parse was cut short by a crash before `rotate` flushed it, so before the cloud was
-   * ever asked about it (FL-175): it is set aside and the current key stays.
+   * that does not parse was cut short by a crash before `rotate` finished flushing it, so (where the
+   * file system can flush) before the cloud was asked about it (FL-175): it is set aside and the
+   * current key stays.
    */
   private async makeCandidate(dir: string, now: number) {
     const nextFile = join(dir, NEXT_KEY_FILE);
-    const kid = await this.kidOrSetAside(nextFile);
+    const { kid } = await this.kidOrSetAside(nextFile);
     if (!kid) {
       return;
     }
@@ -310,14 +417,12 @@ export class InstanceIdentityRepository {
     }
     // a candidate that no longer parses cannot sign the question to the cloud, so it cannot stay the
     // candidate; it is set aside rather than deleted, since the cloud may hold it (FL-175)
-    const kid = await this.kidOrSetAside(keyFile, metaFile);
+    const { kid } = await this.kidOrSetAside(keyFile, metaFile);
     if (!kid) {
       await rm(metaFile, { force: true });
       return;
     }
-    const meta = await readFile(metaFile, 'utf8')
-      .then((text) => JSON.parse(text) as { kid?: unknown; since?: unknown })
-      .catch(() => null);
+    const meta = await readJson<{ kid?: unknown; since?: unknown }>(metaFile);
     let since = meta?.kid === kid && typeof meta.since === 'string' ? Date.parse(meta.since) : NaN;
     if (Number.isNaN(since)) {
       since = now;
@@ -331,15 +436,25 @@ export class InstanceIdentityRepository {
     return { kid, keyFile, since: new Date(since).toISOString() };
   }
 
+  /** Whether a rotation must be repeated because its accepted key was set aside (FL-175). */
+  private async rotationNeededOf(dir: string) {
+    const marker = await readJson<{ since?: unknown }>(join(dir, ROTATION_NEEDED_FILE));
+    if (!marker) {
+      return;
+    }
+    return { since: typeof marker.since === 'string' ? marker.since : new Date(0).toISOString() };
+  }
+
   /**
-   * The kid of a next, candidate, proven or retiring key (FL-175), or `undefined` when there is none
-   * or its contents are not an Ed25519 private key. Such a file (a write a crash cut short, or damage)
-   * is moved to `<file>.corrupt`, replacing an earlier one, and its sidecar removed, so the current key
-   * keeps working. Nothing is deleted or moved when the file cannot be read at all (permissions, I/O
-   * errors): that error stops the load, because the file may hold a key the cloud knows and the cause
-   * is for an operator to fix. The current key never comes through here (see `currentKeyOf`).
+   * The kid of a next, candidate, proven or retiring key (FL-175): `{kid}` for a usable key, `{}`
+   * when there is no file, and `{setAside}` when its contents are not an Ed25519 private key. Such a
+   * file (a write a crash cut short, or damage) is moved to a unique `<file>.corrupt-…` name and its
+   * sidecar removed, so the current key keeps working. Nothing is deleted or moved when the file
+   * cannot be read at all (permissions, I/O errors): that error is thrown, because the file may hold a
+   * key the cloud knows and the cause is for an operator to fix. The current key never comes through
+   * here (see `currentKeyOf`).
    */
-  private async kidOrSetAside(keyFile: string, sidecar?: string): Promise<string | undefined> {
+  private async kidOrSetAside(keyFile: string, sidecar?: string): Promise<{ kid?: string; setAside?: string }> {
     const pem = await readFile(keyFile).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') {
         throw error;
@@ -347,18 +462,34 @@ export class InstanceIdentityRepository {
       return null;
     });
     if (!pem) {
-      return;
+      return {};
     }
     try {
-      return ed25519Thumbprint(publicJwkOf(createPrivateKey(pem)));
+      return { kid: ed25519Thumbprint(publicJwkOf(createPrivateKey(pem))) };
     } catch (error) {
-      const setAside = `${keyFile}${SET_ASIDE_SUFFIX}`;
-      await rename(keyFile, setAside).catch(ignore(['ENOENT']));
+      const setAside = await this.setAside(keyFile, error);
       if (sidecar) {
         await rm(sidecar, { force: true });
       }
-      this.logger.warn(`Set aside ${keyFile} as ${setAside}: it is not a usable Frameleaf identity key (${error})`);
+      return setAside ? { setAside } : {};
     }
+  }
+
+  /**
+   * Move a key file that does not parse to a unique `<file>.corrupt-<time>-<random>` name, owner-only,
+   * kept for an operator (it may be the only copy of a key the cloud knows). Returns the new path.
+   */
+  private async setAside(file: string, reason: unknown) {
+    const target = `${file}${SET_ASIDE_MARK}${Date.now()}-${randomUUID().slice(0, 8)}`;
+    try {
+      await rename(file, target);
+    } catch (error) {
+      ignore(['ENOENT'])(error as NodeJS.ErrnoException);
+      return;
+    }
+    await this.restrict(target);
+    this.logger.warn(`Set aside ${file} as ${target}: it is not a usable Frameleaf identity key (${reason})`);
+    return target;
   }
 
   private async writeSidecar(file: string, content: Record<string, unknown>) {
@@ -394,10 +525,12 @@ export class InstanceIdentityRepository {
 
   /**
    * Rotate the identity key (FL-155, instance contract "Tokens"). A new key is written next to the
-   * current one (O_EXCL, 0600); `prove` receives its public JWK and a signer that still uses the
-   * current key, and must register the new key with the cloud. Only when it succeeds does the new
-   * key replace the current one; the old key is kept as `instance-key.retiring.pem` until `until`.
-   * When `prove` fails, the new key is removed and nothing changes.
+   * current one (O_EXCL, 0600) and flushed to disk; `prove` receives its public JWK and a signer that
+   * still uses the current key, and must register the new key with the cloud. Only when it succeeds
+   * does the new key replace the current one; the old key is kept as `instance-key.retiring.pem` until
+   * `until`. When `prove` fails, the new key is removed and nothing changes. The caller holds the
+   * identity lock and loaded `identity` under it, so any earlier next key is already the candidate: one
+   * found here is a rotation under way, and this call stops rather than replace it.
    */
   async rotate(
     identity: FrameleafInstanceIdentity,
@@ -418,11 +551,21 @@ export class InstanceIdentityRepository {
     }
     const dir = dirname(identity.keyFile);
     const nextFile = join(dir, NEXT_KEY_FILE);
-    await rm(nextFile, { force: true });
     const pair = generateKeyPairSync('ed25519');
-    // flushed before the cloud hears of it: a next key that does not parse after a crash was never sent
-    await writeKeyExclusive(nextFile, pair.privateKey.export({ format: 'pem', type: 'pkcs8' }));
-    await syncDirectory(dir);
+    try {
+      await this.writeKeyExclusive(nextFile, pair.privateKey.export({ format: 'pem', type: 'pkcs8' }));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        throw new Error(`A key rotation is already under way (${nextFile} exists)`);
+      }
+      throw error;
+    }
+    // flushed before the cloud hears of it: where the file system can flush, a next key that does not
+    // parse after a crash was never sent. A flush that fails outright (EIO) stops the rotation here.
+    await this.syncDirectory(dir).catch(async (error: unknown) => {
+      await rm(nextFile, { force: true });
+      throw error;
+    });
     const publicJwk = publicJwkOf(pair.privateKey);
     const kid = ed25519Thumbprint(publicJwk);
     try {
@@ -482,7 +625,7 @@ export class InstanceIdentityRepository {
     await this.finishRotation(dir, rotation);
     this.cached = { keyFile: identity.keyFile, privateKey };
     const publicJwk = publicJwkOf(privateKey);
-    const { candidate: _candidate, ...rest } = identity;
+    const { candidate: _candidate, rotationNeeded: _rotationNeeded, ...rest } = identity;
     return {
       ...rest,
       kid: ed25519Thumbprint(publicJwk),
@@ -491,12 +634,22 @@ export class InstanceIdentityRepository {
     };
   }
 
-  /** Delete the key a rotation retired, once the cloud no longer accepts it. */
-  async removeRetired(identity: FrameleafInstanceIdentity): Promise<FrameleafInstanceIdentity> {
-    if (identity.retiring) {
-      await rm(identity.retiring.keyFile, { force: true });
+  /**
+   * Delete the key a rotation retired, once the cloud no longer accepts it. `identity` must have been
+   * loaded from `dir` under the identity lock; the key is only removed while the sidecar on disk still
+   * names the same rotation, so a newer rotation's retiring key is never removed by an older decision.
+   */
+  async removeRetired(dir: string, identity: FrameleafInstanceIdentity): Promise<FrameleafInstanceIdentity> {
+    const { retiring, ...rest } = identity;
+    if (!retiring) {
+      return rest;
     }
-    const { retiring: _retiring, ...rest } = identity;
+    const sidecar = await readJson<{ rotationId?: unknown }>(join(dir, RETIRING_META_FILE));
+    if (sidecar?.rotationId !== retiring.rotationId) {
+      return identity;
+    }
+    await rm(join(dir, RETIRING_KEY_FILE), { force: true });
+    await rm(join(dir, RETIRING_META_FILE), { force: true });
     return rest;
   }
 

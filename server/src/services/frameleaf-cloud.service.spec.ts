@@ -1,13 +1,20 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { generateKeyPairSync } from 'node:crypto';
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FrameleafCloudLink } from 'src/types.js';
+import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import { AdminAuditAction, DatabaseLock, JobName, JobStatus, NotificationLevel, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
-import { CANDIDATE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
+import {
+  CANDIDATE_KEY_FILE,
+  InstanceIdentityRepository,
+  PROVEN_KEY_FILE,
+  RETIRING_KEY_FILE,
+  RETIRING_META_FILE,
+  SET_ASIDE_MARK,
+} from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
@@ -26,6 +33,12 @@ describe(FrameleafCloudService.name, () => {
   let metadata: Map<string, unknown>;
   let cloudUrl: string | null;
   let linkToken: string | null;
+  let identityRepository: InstanceIdentityRepository;
+  /** Whether each identity load ran under `DatabaseLock.FrameleafIdentity`. */
+  let identityLoads: boolean[];
+  // like the real lock (an in-process AsyncLock plus a Postgres advisory lock), not re-entrant: taking
+  // a lock already held from inside it would wait forever, so the fake fails the test instead (FL-175)
+  const heldLocks = new AsyncLocalStorage<DatabaseLock[]>();
 
   const storedLink = () => metadata.get(SystemMetadataKey.FrameleafCloudLink) as FrameleafCloudLink | undefined;
   const cloudMlEnabled = () =>
@@ -96,9 +109,19 @@ describe(FrameleafCloudService.name, () => {
     linkToken = null;
     metadata = new Map();
     clearConfigCache();
+    identityRepository = new InstanceIdentityRepository();
+    identityLoads = [];
+    const loadOrCreate = identityRepository.loadOrCreate.bind(identityRepository);
+    vi.spyOn(identityRepository, 'loadOrCreate').mockImplementation((...args) => {
+      const locked = !!heldLocks.getStore()?.includes(DatabaseLock.FrameleafIdentity);
+      identityLoads.push(locked);
+      return locked
+        ? loadOrCreate(...args)
+        : Promise.reject(new Error('The identity was loaded outside DatabaseLock.FrameleafIdentity'));
+    });
     ({ sut, mocks } = newTestService(FrameleafCloudService, {
       frameleafCloud: new FrameleafCloudRepository(LoggingRepository.create()),
-      instanceIdentity: new InstanceIdentityRepository(),
+      instanceIdentity: identityRepository,
     }));
     const baseEnv = mocks.config.getEnv();
     mocks.config.getEnv.mockImplementation(
@@ -128,9 +151,6 @@ describe(FrameleafCloudService.name, () => {
       metadata.set(SystemMetadataKey.SystemConfig, partial);
       return Promise.resolve();
     });
-    // like the real lock (an in-process AsyncLock plus a Postgres advisory lock), not re-entrant: taking
-    // a lock already held from inside it would wait forever, so fail the test instead (FL-175)
-    const heldLocks = new AsyncLocalStorage<DatabaseLock[]>();
     mocks.database.withLock.mockImplementation((lock, callback) => {
       const held = heldLocks.getStore() ?? [];
       if (held.includes(lock)) {
@@ -674,6 +694,79 @@ describe(FrameleafCloudService.name, () => {
       expect(after.kid).toBe(rotate.newJwk.kid);
       expect(after.retiring.kid).toBe(before.kid);
       expect(Date.parse(after.retiring.until) - Date.now()).toBeGreaterThan(23 * 60 * 60 * 1000);
+    });
+
+    it('loads the identity only under the identity lock, without taking it twice (FL-175)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 200,
+        body: { commands: [{ id: 'k1', type: 'key.rotate' }] },
+      }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
+      cloud.on('POST /api/v1/instance/commands/k1/ack', () => ({ status: 200, body: {} }));
+      identityLoads.length = 0;
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(identityLoads.length).toBeGreaterThan(2);
+      expect(identityLoads.every(Boolean)).toBe(true);
+    });
+
+    it('warns the administrators and rotates again when the key the cloud accepted was damaged (FL-175)', async () => {
+      const before = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      // a crash left the accepted key unreadable before it replaced the current one
+      await writeFile(join(identityDir, PROVEN_KEY_FILE), 'damaged', { mode: 0o600 });
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({ dedupeKey: 'frameleaf-cloud:identity-key-damaged' }),
+      );
+      const rotate = cloud.requests.find(({ path }) => path === '/api/v1/instance/keys/rotate')!.json();
+      const after = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(after.kid).toBe(rotate.newJwk.kid);
+      expect(after.kid).not.toBe(before.kid);
+      expect(after.retiring?.kid).toBe(before.kid);
+      expect(after.rotationNeeded).toBeUndefined();
+      const setAside = (await readdir(identityDir)).filter((name) =>
+        name.startsWith(`${PROVEN_KEY_FILE}${SET_ASIDE_MARK}`),
+      );
+      expect(setAside).toHaveLength(1);
+      expect(await readFile(join(identityDir, setAside[0]), 'utf8')).toBe('damaged');
+
+      // done once: the next check-in does not rotate again
+      cloud.requests.length = 0;
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(pathsCalled()).not.toContain('POST /api/v1/instance/keys/rotate');
+    });
+
+    it('removes the retired key only once its window closed, deciding from disk (FL-175)', async () => {
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 200,
+        body: { commands: [{ id: 'k1', type: 'key.rotate' }] },
+      }));
+      cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
+      cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
+      cloud.on('POST /api/v1/instance/commands/k1/ack', () => ({ status: 200, body: {} }));
+      makeDue();
+      await sut.handleHeartbeat();
+      await expect(access(join(identityDir, RETIRING_KEY_FILE))).resolves.toBeUndefined();
+
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      // the window of this very rotation closed; the stored record is out of date on purpose
+      const sidecar = JSON.parse(await readFile(join(identityDir, RETIRING_META_FILE), 'utf8'));
+      await writeFile(
+        join(identityDir, RETIRING_META_FILE),
+        JSON.stringify({ ...sidecar, until: new Date(Date.now() - 1000).toISOString() }),
+      );
+      makeDue();
+      await sut.handleHeartbeat();
+      await expect(access(join(identityDir, RETIRING_KEY_FILE))).rejects.toThrow();
+      expect((metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).retiring).toBeUndefined();
     });
 
     const sutForgetTokens = () =>
