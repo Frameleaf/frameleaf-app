@@ -10,6 +10,7 @@
   import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
   import LicenseSection from '$lib/components/frameleaf/cloud/LicenseSection.svelte';
   import PlanSection from '$lib/components/frameleaf/cloud/PlanSection.svelte';
+  import RemoteAccessSection from '$lib/components/frameleaf/cloud/RemoteAccessSection.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import UserSettingsList from '../UserSettingsList.svelte';
   import DeduplicationSection from './DeduplicationSection.svelte';
@@ -52,6 +53,8 @@
     <PlanSection />
   {:else if section.key === 'cloud-license'}
     <LicenseSection />
+  {:else if section.key === 'cloud-remote'}
+    <RemoteAccessSection />
   {:else if section.key === 'frameleaf-signin'}
     <FrameleafSignInSection />
   {:else if section.key === 'render-workers'}

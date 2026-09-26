@@ -106,13 +106,13 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     sections: ['workers', 'hardware', 'routing', 'queues', 'render-workers', 'nightly-tasks'],
   },
   // FL-154 and FL-159 (handoff §3.1): the template's Frameleaf Cloud area (settings-catalog.mjs:125-131,
-  // 1711-1799), after Compute & jobs in "Your server": Account & link, Plan, Licence and Cloud
-  // processing; remote access and backup join it with their stories. Optional: the server works fully
+  // 1711-1799), after Compute & jobs in "Your server": Account & link, Plan, Licence, Remote access
+  // (FL-161) and Cloud processing; backup joins it with its story. Optional: the server works fully
   // without it.
   {
     id: 'cloud',
     group: 'server',
-    sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-processing'],
+    sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-remote', 'cloud-processing'],
     adminOnly: true,
   },
   // The template's Access & security holds each account's own sign-in (password, PIN, provider),
@@ -446,6 +446,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'cloud-account': 'account_link',
     'cloud-plan': 'licensing',
     'cloud-license': 'licensing',
+    'cloud-remote': 'remote',
     'cloud-processing': 'cloud_services',
   },
   security: {
