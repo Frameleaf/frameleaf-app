@@ -5,11 +5,11 @@ import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js'
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as cloudJobIndexMigration from 'src/fork-schema/migrations/0000000000201-MlWorkloadAccountingCloudJobIndex.js';
-import * as cloudModelChoiceMigration from 'src/schema/migrations/2100000000650-AddMlCloudModelChoice.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { DB } from 'src/schema/index.js';
+import * as cloudModelChoiceMigration from 'src/schema/migrations/2100000000650-AddMlCloudModelChoice.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';

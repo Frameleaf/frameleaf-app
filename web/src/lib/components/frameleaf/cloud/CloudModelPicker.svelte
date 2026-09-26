@@ -133,10 +133,11 @@
 
   onDestroy(() => {
     // A choice made just before the picker closes is still saved.
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      void flush();
+    if (timer === undefined) {
+      return;
     }
+    clearTimeout(timer);
+    void flush();
   });
 </script>
 
