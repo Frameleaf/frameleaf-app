@@ -27,9 +27,13 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
+  CLONE_SUSPECTED_NOTICE,
+  clearMlSuspension,
   identityDirectory,
   loadInstanceIdentity,
   loadInstanceIdentityLocked,
+  readMlSuspension,
+  recordMlSuspension,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudCommand,
@@ -49,6 +53,7 @@ import {
   deviceAuthorizationSchema,
   heartbeatResponseSchema,
   instanceRegistrationSchema,
+  instanceServicesSchema,
   keyNonceSchema,
   linkEndpoints,
   linkRefusalOf,
@@ -106,8 +111,11 @@ export class FrameleafCloudService extends BaseService {
     // a link made against another FRAMELEAF_CLOUD_URL does not count here
     const link = cloudUrl && stored?.cloudUrl === cloudUrl ? stored : null;
     const config = await this.getConfig({ withCache: false });
+    // FL-185: an ML token refused with clone_suspected counts too, before any check-in reports it
+    const mlSuspended =
+      !!cloudUrl && !!link?.instanceId && !!(await readMlSuspension(this.gatewayDeps(), cloudUrl, link.instanceId));
     return {
-      ...this.mapStatus(cloudUrl, identity, link),
+      ...this.mapStatus(cloudUrl, identity, link, mlSuspended),
       signInLinkedAccounts: await this.frameleafAccountRepository.countLinks(),
       signInShowOnLocalLogin: !!config.frameleafCloud.signIn?.showOnLocalLogin,
       signInButtonText: config.frameleafCloud.signIn?.buttonText ?? '',
@@ -118,6 +126,7 @@ export class FrameleafCloudService extends BaseService {
     cloudUrl: string | null,
     identity: FrameleafInstanceIdentity | null,
     link: FrameleafCloudLink | null,
+    mlSuspended = false,
   ): Omit<CloudStatusResponseDto, 'signInLinkedAccounts' | 'signInShowOnLocalLogin' | 'signInButtonText'> {
     const linked = link?.status === 'linked';
     return {
@@ -138,7 +147,7 @@ export class FrameleafCloudService extends BaseService {
       lastError: link?.lastError ?? null,
       heartbeatFields: [...HEARTBEAT_FIELDS],
       heartbeatFailures: link?.heartbeat?.failures ?? 0,
-      cloneSuspected: !!link?.heartbeat?.cloneSuspected,
+      cloneSuspected: !!link?.heartbeat?.cloneSuspected || mlSuspended,
       relinkRequested: !!link?.heartbeat?.relinkRequested,
       linkTokenConfigured: !!this.configRepository.getEnv().frameleafCloud.linkToken,
       remoteAccessEnabled: linked && !!link.desired?.remoteAccess,
@@ -541,6 +550,8 @@ export class FrameleafCloudService extends BaseService {
     };
     await this.saveLink(next, 'link');
     await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlWallet);
+    // FL-185: an ML suspension belongs to the link that ended
+    await clearMlSuspension(this.gatewayDeps());
     await this.removePlanCertificate();
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
       config.frameleafCloud.cloudMl.enabled = false;
@@ -858,16 +869,7 @@ export class FrameleafCloudService extends BaseService {
     if (response.servicesChanged) {
       this.frameleafCloudRepository.forget();
     }
-    if (response.cloneSuspected && !link.heartbeat?.cloneSuspected) {
-      this.notify({
-        level: NotificationLevel.Warning,
-        title: 'Two servers are using this server’s identity',
-        description:
-          'Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity directory. Cloud backup pauses until this is resolved.',
-        dedupeKey: 'frameleaf-cloud:clone-suspected',
-        dedupeDays: 1,
-      });
-    }
+    await this.followCloneSuspicion(cloudUrl, document, link, response);
     for (const notice of response.notices) {
       this.notify({
         level:
@@ -893,6 +895,57 @@ export class FrameleafCloudService extends BaseService {
     await this.removeRetiredKey();
     await this.saveLink(next, 'link');
     return JobStatus.Success;
+  }
+
+  /**
+   * FL-185: what a check-in says about a suspected copy of this server, for cloud processing. A new
+   * `cloneSuspected: true` stops ML token requests like a `clone_suspected` token answer does and tells
+   * the administrators (once, whichever path noticed first). `cloneSuspected: false` resumes them, and
+   * so does `servicesChanged` when `GET /v1/discovery` no longer reports ML `suspended`. A failure here
+   * never fails the check-in; the suspension then stays until the next one.
+   */
+  private async followCloneSuspicion(
+    cloudUrl: string,
+    document: FrameleafDiscoveryDocument,
+    link: FrameleafCloudLink,
+    response: HeartbeatResponse,
+  ) {
+    const instanceId = link.instanceId!;
+    try {
+      const suspended = !!(await readMlSuspension(this.gatewayDeps(), cloudUrl, instanceId));
+      if (!response.cloneSuspected) {
+        if (suspended) {
+          await clearMlSuspension(this.gatewayDeps());
+          this.logger.log('Frameleaf Cloud no longer suspects a copy of this server; cloud processing resumes');
+        }
+        return;
+      }
+      if (!link.heartbeat?.cloneSuspected) {
+        // a new suspicion; one the token endpoint reported first has already told the administrators
+        if (!suspended) {
+          await recordMlSuspension(this.gatewayDeps(), cloudUrl, instanceId);
+          this.notify({ ...CLONE_SUSPECTED_NOTICE });
+        }
+        return;
+      }
+      if (suspended && response.servicesChanged && !(await this.mlStillSuspended(cloudUrl, document, link))) {
+        await clearMlSuspension(this.gatewayDeps());
+        this.logger.log('Frameleaf Cloud no longer suspends cloud processing for this server; it resumes');
+      }
+    } catch (error) {
+      this.logger.warn(`Could not update the cloud processing suspension: ${error}`);
+    }
+  }
+
+  /** Whether `GET /v1/discovery` still reports this server's ML service `suspended` (FL-185). */
+  private async mlStillSuspended(cloudUrl: string, document: FrameleafDiscoveryDocument, link: FrameleafCloudLink) {
+    const { token } = await this.apiToken(cloudUrl, link);
+    const answer = await this.frameleafCloudRepository.requestJson(instanceServicesSchema, {
+      method: 'GET',
+      url: linkEndpoints(document).instanceDiscovery,
+      dpop: token,
+    });
+    return answer.services.ml?.status === 'suspended';
   }
 
   /**
