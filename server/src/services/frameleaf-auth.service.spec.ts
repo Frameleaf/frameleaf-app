@@ -334,7 +334,12 @@ describe(FrameleafAuthService.name, () => {
           return run as never;
         });
         mocks.user.getAdmins.mockImplementation(() =>
-          Promise.resolve(users.values().toArray().filter((user) => user.isAdmin) as never),
+          Promise.resolve(
+            users
+              .values()
+              .toArray()
+              .filter((user) => user.isAdmin) as never,
+          ),
         );
         mocks.user.update.mockImplementation(async (id, change) => {
           // yield between the count and the write, where an unlocked demotion would interleave
