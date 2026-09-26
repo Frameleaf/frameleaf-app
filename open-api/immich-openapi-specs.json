@@ -40242,9 +40242,6 @@
           "faces": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudFacesDto"
           },
-          "models": {
-            "$ref": "#/components/schemas/AdminConfigFrameleafCloudModelsDto"
-          },
           "routing": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudRoutingDto"
           },
@@ -40261,42 +40258,8 @@
           "autoDescribe",
           "enabled",
           "faces",
-          "models",
           "routing",
           "startWith"
-        ],
-        "type": "object"
-      },
-      "AdminConfigFrameleafCloudModelsDto": {
-        "description": "The model slider position per kind of work; empty = the heaviest that runs well here",
-        "properties": {
-          "descriptions": {
-            "maxLength": 200,
-            "type": "string"
-          },
-          "interpolation": {
-            "maxLength": 200,
-            "type": "string"
-          },
-          "restoration": {
-            "maxLength": 200,
-            "type": "string"
-          },
-          "studio": {
-            "maxLength": 200,
-            "type": "string"
-          },
-          "upscale": {
-            "maxLength": 200,
-            "type": "string"
-          }
-        },
-        "required": [
-          "descriptions",
-          "interpolation",
-          "restoration",
-          "studio",
-          "upscale"
         ],
         "type": "object"
       },
@@ -50012,6 +49975,10 @@
           "id": {
             "type": "string"
           },
+          "isDefault": {
+            "description": "Frameleaf Cloud recommends this model for its workload (and restoration mode) in this region; work with no chosen model uses it",
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
@@ -50025,6 +49992,12 @@
             "description": "What one price unit is (for example an image or a video minute)",
             "nullable": true,
             "type": "string"
+          },
+          "rank": {
+            "description": "Position on its workload's ladder, 1 = lightest",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
           },
           "workload": {
             "allOf": [
@@ -50040,9 +50013,11 @@
           "description",
           "fingerprint",
           "id",
+          "isDefault",
           "name",
           "priceUsd",
           "pricingUnit",
+          "rank",
           "workload"
         ],
         "type": "object"
@@ -60592,7 +60567,7 @@
             "type": "string"
           },
           "modelId": {
-            "description": "Frameleaf Cloud only: the catalogue model this workload uses",
+            "description": "Frameleaf Cloud only: the catalogue model SKU this workload uses; omitted keeps the routed model, null uses the catalogue default",
             "maxLength": 200,
             "minLength": 1,
             "nullable": true,

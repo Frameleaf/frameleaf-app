@@ -86,56 +86,37 @@ describe('config visibility', () => {
   });
 });
 
-describe('Frameleaf Cloud local-only models (FL-146)', () => {
-  const withModel = (routing: 'local' | 'both' | 'cloud', model: string) => ({
-    ...defaults,
-    frameleafCloud: {
+describe('Frameleaf Cloud models (FL-146, FL-183, FL-186)', () => {
+  it('has no model setting: the model is the SKU saved on the workload route or the catalogue default', () => {
+    expect(defaults.frameleafCloud.cloudMl).not.toHaveProperty('models');
+    const parsed = AdminConfigSchema.safeParse({
+      ...defaults,
+      frameleafCloud: {
+        ...defaults.frameleafCloud,
+        cloudMl: { ...defaults.frameleafCloud.cloudMl, models: { descriptions: 'Qwen/Qwen2.5-VL-3B-Instruct' } },
+      },
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.frameleafCloud.cloudMl).not.toHaveProperty('models');
+  });
+
+  it('drops the model slider positions an earlier version stored, keeping the rest, without a warning', () => {
+    const stored = {
       cloudMl: {
         ...defaults.frameleafCloud.cloudMl,
-        routing: { ...defaults.frameleafCloud.cloudMl.routing, descriptions: routing },
-        models: { ...defaults.frameleafCloud.cloudMl.models, descriptions: model },
+        enabled: true,
+        routing: { ...defaults.frameleafCloud.cloudMl.routing, descriptions: 'cloud', upscale: 'both' },
+        models: { descriptions: 'Qwen/Qwen2.5-VL-3B-Instruct', upscale: 'realesrgan-x4plus@1' },
+        autoDescribe: { enabled: true, dailyBudgetUsd: 7.5 },
       },
-    },
-  });
-
-  it('refuses Qwen2.5-VL-3B for work allowed on Frameleaf Cloud', () => {
-    for (const routing of ['both', 'cloud'] as const) {
-      for (const model of ['Qwen/Qwen2.5-VL-3B-Instruct', 'llmware/qwen2.5-vl-3b-ov', 'nllb-clip-base-siglip__v1']) {
-        const result = AdminConfigSchema.safeParse(withModel(routing, model));
-        expect(result.success, `${routing} ${model}`).toBe(false);
-        expect(result.error?.issues[0].path).toEqual(['frameleafCloud', 'cloudMl', 'models', 'descriptions']);
-      }
-    }
-  });
-
-  it('keeps it available for work that runs on this server only', () => {
-    expect(AdminConfigSchema.safeParse(withModel('local', 'Qwen/Qwen2.5-VL-3B-Instruct')).success).toBe(true);
-    expect(AdminConfigSchema.safeParse(withModel('cloud', 'qwen3.5-9b@1')).success).toBe(true);
-  });
-
-  it('resets only the local-only model entry of a stored configuration, keeping the rest, and warns', () => {
-    const stored = withModel('cloud', 'Qwen/Qwen2.5-VL-3B-Instruct').frameleafCloud;
-    stored.cloudMl.enabled = true;
-    stored.cloudMl.routing.upscale = 'both';
-    stored.cloudMl.models.upscale = 'realesrgan-x4plus@1';
-    stored.cloudMl.autoDescribe = { enabled: true, dailyBudgetUsd: 7.5 };
+    };
     const warn = vi.fn();
 
     const read = readFrameleafCloudConfig(stored, warn);
 
-    expect(read.cloudMl).toEqual({
-      ...stored.cloudMl,
-      models: { ...stored.cloudMl.models, descriptions: 'qwen3.5-9b@1' },
-    });
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toMatch(/Qwen2\.5-VL-3B-Instruct runs on this server only/);
-  });
-
-  it('gives cloud descriptions their own licensed default, never the local description model', () => {
-    expect(defaults.frameleafCloud.cloudMl.models.descriptions).toBe('qwen3.5-9b@1');
-    expect(defaults.frameleafCloud.cloudMl.models.descriptions).not.toBe(
-      defaults.machineLearning.imageDescription.modelName,
-    );
+    const { models: _models, ...kept } = stored.cloudMl;
+    expect(read.cloudMl).toEqual(kept);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('names the routed model or the catalogue default for cloud work, never a configured name (FL-183)', () => {

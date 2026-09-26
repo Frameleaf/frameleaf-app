@@ -304,6 +304,29 @@ describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
       );
     });
 
+    it('asks for a Studio AI model of its own, since Studio AI never takes a catalogue default (FL-186)', () => {
+      const studioWorkloads = [...cloud.destination.workloads, MlWorkload.StudioAi];
+      const { probe } = withFacts({
+        modelIds: [...facts.modelIds, 'studio-voice'],
+        modelWorkloads: { ...facts.modelWorkloads, 'studio-voice': MlWorkload.StudioAi },
+        // even a mark on a Studio AI model's own cloud workload is never taken as its default
+        defaultModels: { ...facts.defaultModels, transcription: 'studio-voice', tts: 'studio-voice' },
+      });
+      const studio = {
+        ...cloud,
+        destination: { ...cloud.destination, workloads: studioWorkloads },
+        probe: { ...probe, workloads: studioWorkloads },
+        workload: MlWorkload.StudioAi,
+      };
+
+      expect(evaluateAdmission(studio)).toEqual({
+        admitted: false,
+        refusal: MlAdmissionRefusal.ModelMismatch,
+        detail: 'Frameleaf Cloud: choose a Frameleaf Cloud model for Studio AI in Where each job runs',
+      });
+      expect(evaluateAdmission({ ...studio, modelId: 'studio-voice' })).toEqual({ admitted: true });
+    });
+
     it('refuses a default the catalogue no longer lists, or one of the other mode', () => {
       expect(
         refusal({ ...withFacts({ defaultModels: { descriptions: 'gone' } }), workload: MlWorkload.Enrichment }),

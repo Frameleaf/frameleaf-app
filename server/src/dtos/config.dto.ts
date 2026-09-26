@@ -37,7 +37,6 @@ import {
   VideoContainer,
   VideoContainerSchema,
 } from 'src/enum.js';
-import { isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 
 const { Admin, User, Public } = ConfigVisibility;
 
@@ -191,17 +190,9 @@ const frameleafCloudDefaults = {
       interpolation: 'local' as 'local' | 'both' | 'cloud',
     },
     startWith: 'local' as 'local' | 'cloud',
-    // The model slider's saved position per kind of work; empty = the heaviest that runs well here.
-    // Descriptions start at the web catalogue's licensed cloud default (FL-146), never the local
-    // Qwen2.5-VL-3B. This is the slider's own catalogue name and is never sent to Frameleaf Cloud:
-    // cloud jobs name the routed model SKU or the catalogue's marked default (FL-183).
-    models: {
-      descriptions: 'qwen3.5-9b@1',
-      upscale: '',
-      restoration: '',
-      studio: '',
-      interpolation: '',
-    },
+    // FL-186: the Frameleaf Cloud model of each workload is not a setting. It is the catalogue SKU saved
+    // on the workload's route (`ml_workload_route.modelId`), else the catalogue's marked default; a
+    // `models` key saved by an earlier version is dropped when the configuration is read.
     autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
     faces: { enabled: false as const },
   },
@@ -510,9 +501,6 @@ const AdminConfigFrameleafCloudSchema = z
         startWith: z
           .enum(['local', 'cloud'])
           .describe('The destination a job preselects when its kind of work may run in both places'),
-        models: routedRecord(z.string().max(200))
-          .describe('The model slider position per kind of work; empty = the heaviest that runs well here')
-          .meta({ id: 'AdminConfigFrameleafCloudModelsDto' }),
         autoDescribe: z
           .object({
             enabled: configBool.describe('Describe new photos automatically on Frameleaf Cloud'),
@@ -528,47 +516,21 @@ const AdminConfigFrameleafCloudSchema = z
           .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud') })
           .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
       })
-      // FL-146: a local-only model (Qwen2.5-VL-3B, nllb-clip, MusicGen-small) is never the choice for
-      // work allowed on Frameleaf Cloud.
-      .superRefine((cloudMl, context) => {
-        for (const workload of CLOUD_ROUTED_WORKLOADS) {
-          if (cloudMl.routing[workload] !== 'local' && isLocalOnlyModel(cloudMl.models[workload])) {
-            context.addIssue({
-              code: 'custom',
-              path: ['models', workload],
-              message: `${cloudMl.models[workload]} runs on this server only; choose another model or set this work to Local only`,
-            });
-          }
-        }
-      })
       .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
   })
   .meta({ id: 'AdminConfigFrameleafCloudDto' });
 
 /**
  * A stored Frameleaf Cloud configuration read back over the defaults, so a value saved before a
- * field existed (or in an older shape) still yields a complete configuration. Unknown keys are dropped.
- * A model entry naming a local-only model for work allowed on the cloud (FL-146) is reset to its
- * default on its own, with a warning; enabled, routing and budgets are kept. Only a configuration
- * that is still invalid after that falls back to the defaults.
+ * field existed (or in an older shape) still yields a complete configuration. Unknown keys are dropped,
+ * including the `cloudMl.models` slider positions of earlier versions (FL-186). Only a configuration
+ * that is still invalid falls back to the defaults.
  */
 export const readFrameleafCloudConfig = (
   value: unknown,
   warn: (message: string) => void = () => {},
 ): SystemConfig['frameleafCloud'] => {
   const merged = defaultsDeep({}, value ?? {}, frameleafCloudDefaults) as SystemConfig['frameleafCloud'];
-  const cloudMl = merged.cloudMl;
-  if (cloudMl?.models && cloudMl.routing) {
-    for (const workload of CLOUD_ROUTED_WORKLOADS) {
-      const model = cloudMl.models[workload];
-      if (cloudMl.routing[workload] !== 'local' && isLocalOnlyModel(model)) {
-        cloudMl.models[workload] = frameleafCloudDefaults.cloudMl.models[workload];
-        warn(
-          `Frameleaf Cloud: ${model} runs on this server only; the ${workload} model was reset to ${cloudMl.models[workload] || 'the default'}`,
-        );
-      }
-    }
-  }
   const parsed = AdminConfigFrameleafCloudSchema.safeParse(merged);
   if (parsed.success) {
     return parsed.data;
