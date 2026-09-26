@@ -188,6 +188,71 @@ const CloudMlSettlementsResponseSchema = z
   .object({ items: z.array(CloudMlSettlementSchema).describe('Settled charges, newest first (at most 50)') })
   .meta({ id: 'CloudMlSettlementsResponseDto' });
 
+const usd = (description: string) => z.number().meta({ format: 'double' }).describe(description);
+
+const CloudMlDescriptionGuidanceSchema = z
+  .object({
+    minimumBatch: z
+      .int()
+      .describe('The batch size below which the start fee makes up most of the cost with this model'),
+    smallBatches: z.int().describe('How many of the batches are smaller than that'),
+    suggestedModelId: z
+      .string()
+      .nullable()
+      .describe('A model of the 27B/35B class the catalogue offers for small batches, when there is one'),
+    suggestedModelName: z.string().nullable().describe('Its catalogue name'),
+  })
+  .meta({ id: 'CloudMlDescriptionGuidanceDto' });
+
+const CloudMlDescriptionEstimateResponseSchema = z
+  .object({
+    photos: z.int().describe('Photos that would be described'),
+    batches: z.int().describe('Batches they would be sent in; each batch is one cloud job'),
+    truncated: z
+      .boolean()
+      .describe('More photos need a description than one backfill covers; run another afterwards for the rest'),
+    modelId: z.string().describe('The catalogue model SKU the batches would use'),
+    modelName: z.string().describe('Its catalogue name'),
+    p50Usd: usd('Likely cost of every batch together, USD'),
+    p90Usd: usd('Cost at most, in nine cases out of ten, USD'),
+    holdUsd: usd('What the AI Wallet would hold while the batches run, USD'),
+    startupUsd: usd('The start fee each batch pays, USD'),
+    perPhotoP50Usd: usd('Likely GPU time cost per photo, USD'),
+    perPhotoP90Usd: usd('GPU time cost per photo at most, in nine cases out of ten, USD'),
+    basis: z.string().describe("measured: from the model's measured GPU time; modelled: from its expected GPU time"),
+    availableUsd: usd('AI Wallet balance minus holds, USD'),
+    dailyCapUsd: z.number().meta({ format: 'double' }).nullable().describe('The daily AI Wallet limit, USD, or null'),
+    spentTodayUsd: usd('Spent today, USD'),
+    guidance: CloudMlDescriptionGuidanceSchema.nullable().describe(
+      'Set when the model is of the 72B class and some batches are too small for its start fee to pay off',
+    ),
+    refusal: z.string().nullable().describe('Why the backfill cannot start now, or null when it can'),
+    estimateId: z
+      .string()
+      .nullable()
+      .describe(
+        'The estimate the server keeps; queueing the backfill names only this, or null when there is nothing to queue',
+      ),
+    expiresAt: z.string().nullable().describe('Until when the estimate may be queued, or null'),
+  })
+  .meta({ id: 'CloudMlDescriptionEstimateResponseDto' });
+
+const CloudMlDescriptionBatchCreateSchema = z
+  .object({
+    estimateId: z
+      .uuid()
+      .describe('The estimate to queue; its model, photos and prices are read from the server, never sent'),
+  })
+  .meta({ id: 'CloudMlDescriptionBatchCreateDto' });
+
+const CloudMlDescriptionBatchesResponseSchema = z
+  .object({
+    batches: z.int().describe('Batches queued'),
+    photos: z.int().describe('Photos in them'),
+    operationIds: z.array(z.string()).describe('The queued batches; each shows in Activity'),
+  })
+  .meta({ id: 'CloudMlDescriptionBatchesResponseDto' });
+
 export class CloudMlStatusResponseDto extends createZodDto(CloudMlStatusResponseSchema) {}
 export class CloudMlWalletDto extends createZodDto(CloudMlWalletSchema) {}
 export class CloudMlCatalogResponseDto extends createZodDto(CloudMlCatalogResponseSchema) {}
@@ -199,3 +264,6 @@ export class CloudMlDestinationCreateDto extends createZodDto(CloudMlDestination
 export class CloudMlConsentHistoryResponseDto extends createZodDto(CloudMlConsentHistoryResponseSchema) {}
 export class CloudMlWalletUpdateDto extends createZodDto(CloudMlWalletUpdateSchema) {}
 export class CloudMlSettlementsResponseDto extends createZodDto(CloudMlSettlementsResponseSchema) {}
+export class CloudMlDescriptionEstimateResponseDto extends createZodDto(CloudMlDescriptionEstimateResponseSchema) {}
+export class CloudMlDescriptionBatchCreateDto extends createZodDto(CloudMlDescriptionBatchCreateSchema) {}
+export class CloudMlDescriptionBatchesResponseDto extends createZodDto(CloudMlDescriptionBatchesResponseSchema) {}

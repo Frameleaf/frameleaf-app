@@ -31,6 +31,7 @@ import {
   ImmichWorker,
   JobName,
   JobStatus,
+  MlDestinationKind,
   MlWorkload,
   Permission,
   QueueName,
@@ -48,6 +49,7 @@ import { IdentityPostValidator } from 'src/services/identity-post-validator.serv
 import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/services/prompt-assembler.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
+import { CloudDescriptionQueueWriter, cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { enrichmentStaleReason, identityHash } from 'src/utils/enrichment-plan.js';
 import { isLockedRow } from 'src/utils/locked.js';
@@ -57,6 +59,7 @@ import {
   isNsfwHidingEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
+import { cloudRouteAllows } from 'src/utils/ml-destination.js';
 import { upsertTags } from 'src/utils/tag.js';
 import { ensureVideoFrames, withTemporaryFrames } from 'src/utils/video-moment-frames.js';
 
@@ -284,6 +287,11 @@ export class ImageEnrichmentService extends BaseService {
 
   private readonly promptAssembler = new ImageDescriptionPromptAssembler();
   private readonly identityPostValidator = new IdentityPostValidator();
+  /** FL-163: new photos for automatic Frameleaf Cloud batches, written to the queue in batches. */
+  private readonly cloudQueue = new CloudDescriptionQueueWriter(
+    () => ({ databaseRepository: this.databaseRepository, systemMetadataRepository: this.systemMetadataRepository }),
+    (message) => this.logger.warn(message),
+  );
   private _classificationService: ClassificationService | undefined;
 
   private get classificationService(): ClassificationService {
@@ -695,8 +703,17 @@ export class ImageEnrichmentService extends BaseService {
 
   @OnJob({ name: JobName.ImageDescriptionQueueAll, queue: QueueName.ImageDescription })
   async handleQueueImageDescription({ force }: JobOf<JobName.ImageDescriptionQueueAll>): Promise<JobStatus> {
-    const { machineLearning, libraryCare } = await this.getConfig({ withCache: false });
+    const { machineLearning, libraryCare, frameleafCloud } = await this.getConfig({ withCache: false });
     if (!isImageDescriptionEnabled(machineLearning)) {
+      return JobStatus.Skipped;
+    }
+    // FL-163: describing the whole library on Frameleaf Cloud is a backfill, which shows its estimate
+    // before anything is queued; this job never queues it one photo at a time. While cloud processing
+    // is off for descriptions, the photos are queued and each is refused with that reason.
+    if (await cloudDescriptionDestination(this.mlDestinationRepository, null, frameleafCloud.cloudMl)) {
+      this.logger.log(
+        'Descriptions are routed to Frameleaf Cloud; describe the library from Frameleaf Cloud processing, where the estimate is shown first',
+      );
       return JobStatus.Skipped;
     }
 
@@ -975,6 +992,13 @@ export class ImageEnrichmentService extends BaseService {
 
     if (!asset.previewFile) {
       return { status: JobStatus.Skipped, reasonKey: 'no-preview' };
+    }
+
+    // FL-163: the description stage routed (or pinned) to Frameleaf Cloud runs in batches, never one
+    // photo at a time, and nothing is sent from here
+    const cloud = await this.cloudDescriptionDestination(options);
+    if (cloud) {
+      return this.leaveForCloudBatch(asset, config, machineLearning.imageDescription.modelName);
     }
 
     const fingerprintBefore = await this.getSourceFingerprint(id);
@@ -1324,6 +1348,64 @@ export class ImageEnrichmentService extends BaseService {
       return described ?? { status: 'skipped', reasonKey: 'video-frames-unavailable' };
     } finally {
       await rm(folder, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * FL-163: the Frameleaf Cloud destination this description would go to (the one a plan pinned, else
+   * the routed one), or undefined when it goes to this server or a home-network worker. Only the row is
+   * read: nothing is admitted or contacted here.
+   */
+  private cloudDescriptionDestination(options: EnrichmentRunOptions) {
+    if (options.planRun && !options.enrichmentDestinationId) {
+      return Promise.resolve(undefined);
+    }
+    return cloudDescriptionDestination(this.mlDestinationRepository, options.enrichmentDestinationId);
+  }
+
+  /**
+   * FL-163: a description routed to Frameleaf Cloud waits for a batch. With "Describe new photos
+   * automatically" on, a photo joins the automatic queue; otherwise (and for a video, which Frameleaf
+   * Cloud does not describe) it waits for a backfill, which shows its estimate first. While processing
+   * is turned off or descriptions are kept on this server it is refused, and says so: it is not waiting
+   * for anything. It is never described on this server instead.
+   */
+  private async leaveForCloudBatch(
+    asset: { id: string; ownerId: string; type: AssetType },
+    config: SystemConfig,
+    modelName: string,
+  ): Promise<EnrichmentStageResult> {
+    const { cloudMl } = config.frameleafCloud;
+    if (!cloudMl.enabled || !cloudRouteAllows(cloudMl, MlWorkload.Enrichment)) {
+      const error =
+        'Descriptions are routed to Frameleaf Cloud, but Frameleaf Cloud processing is turned off or Where each job runs keeps descriptions on this server. Nothing was sent.';
+      await this.databaseRepository.withAssetMetadataLock(asset.id, async (trx) => {
+        const m = await this.getEnrichmentMetadata(asset.id, trx);
+        m.description = { status: 'failed', modelName, updatedAt: new Date().toISOString(), error };
+        await this.saveEnrichmentMetadata(asset.id, m, trx);
+      });
+      return { status: JobStatus.Failed, reasonKey: 'cloud-turned-off', message: error };
+    }
+    if (asset.type !== AssetType.Image) {
+      return { status: JobStatus.Skipped, reasonKey: 'cloud-photos-only' };
+    }
+    if (cloudMl.autoDescribe.enabled) {
+      await this.cloudQueue.add({ assetId: asset.id, ownerId: asset.ownerId });
+    }
+    return { status: JobStatus.Skipped, reasonKey: 'cloud-batch' };
+  }
+
+  /** FL-163: write the new photos waiting in memory to the automatic queue now. */
+  flushCloudDescriptionQueue(): Promise<void> {
+    return this.cloudQueue.flush();
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  async onShutdownFlushCloudDescriptionQueue() {
+    try {
+      await this.cloudQueue.flush();
+    } catch (error) {
+      this.logger.warn(`The Frameleaf Cloud description queue was not written: ${getErrorMessage(error)}`);
     }
   }
 

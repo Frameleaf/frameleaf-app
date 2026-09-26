@@ -27,6 +27,7 @@ import { SystemConfigService } from 'src/services/system-config.service.js';
 import { DeepPartial } from 'src/types.js';
 import { getConfigRevision } from 'src/utils/config.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -418,6 +419,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   frameleafCloud: {
     signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
+    remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: false },
     cloudMl: {
       enabled: false,
       routing: {
@@ -466,7 +468,6 @@ describe(SystemConfigService.name, () => {
 
   describe('getPublicConfig (FL-158)', () => {
     const secret = 'edge-secret-0123456789';
-    const relay = { 'x-frameleaf-via': 'relay', 'x-frameleaf-via-auth': secret };
 
     beforeEach(() => {
       const env = mockEnvData({});
@@ -495,7 +496,7 @@ describe(SystemConfigService.name, () => {
     });
 
     it('offers only Sign in with Frameleaf to a visitor arriving through remote access', async () => {
-      await expect(sut.getPublicConfig({ headers: relay, clientIp: '203.0.113.9' })).resolves.toMatchObject({
+      await expect(sut.getPublicConfig({ via: 'relay', clientIp: '203.0.113.9' })).resolves.toMatchObject({
         frameleaf: {
           signInAvailable: true,
           signInRequired: true,
@@ -508,20 +509,45 @@ describe(SystemConfigService.name, () => {
     });
 
     it('offers the local address to a remote-access visitor on the home network', async () => {
-      await expect(sut.getPublicConfig({ headers: relay, clientIp: '192.168.1.44' })).resolves.toMatchObject({
+      await expect(sut.getPublicConfig({ via: 'relay', clientIp: '192.168.1.44' })).resolves.toMatchObject({
         frameleaf: { signInRequired: true, sameNetwork: true, localUrl: 'http://192.168.1.10:2283' },
       });
     });
 
-    it('ignores a via header without the edge secret, and is unavailable when not linked', async () => {
-      await expect(
-        sut.getPublicConfig({ headers: { 'x-frameleaf-via': 'relay' }, clientIp: '203.0.113.9' }),
-      ).resolves.toMatchObject({
+    it('treats an arrival the edge worker did not vouch for as home, and is unavailable when not linked', async () => {
+      // FL-161: the via middleware already dropped any client-supplied header; what reaches here is its verdict
+      await expect(sut.getPublicConfig({ via: null, clientIp: '203.0.113.9' })).resolves.toMatchObject({
         frameleaf: { signInRequired: false, via: null, signInAvailable: true, localUrl: null },
       });
       mocks.systemMetadata.get.mockResolvedValue(null as never);
       await expect(sut.getPublicConfig()).resolves.toMatchObject({
         frameleaf: { signInAvailable: false, signInRequired: false },
+      });
+    });
+
+    it('offers the password form away from home once an administrator allowed it (FL-161)', async () => {
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.SystemConfig
+            ? { frameleafCloud: { remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: true } } }
+            : null) as never,
+        ),
+      );
+      await expect(sut.getPublicConfig({ via: 'wan', clientIp: '203.0.113.9' })).resolves.toMatchObject({
+        frameleaf: { signInRequired: false, via: 'wan' },
+      });
+    });
+
+    it('publishes the instance id, public address and sign-in in /.well-known/immich while linked (FL-161)', async () => {
+      await expect(sut.getWellKnown()).resolves.toEqual({
+        api: { endpoint: '/api' },
+        frameleaf: { instanceId: 'instance-1', publicUrl: 'https://r.label.frameleaf-direct.test', signIn: true },
+      });
+
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(sut.getWellKnown()).resolves.toEqual({
+        api: { endpoint: '/api' },
+        frameleaf: { instanceId: null, publicUrl: null, signIn: false },
       });
     });
   });
@@ -783,6 +809,46 @@ describe(SystemConfigService.name, () => {
           oldConfig: defaults,
         }),
       ).resolves.toBeUndefined();
+    });
+
+    it('refuses to allow originals or passwords over remote access on an unlinked server (FL-161)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      for (const remoteAccess of [
+        { allowOriginalsOverRelay: true, allowPasswordOverRelay: false },
+        { allowOriginalsOverRelay: false, allowPasswordOverRelay: true },
+      ]) {
+        await expect(
+          sut.onConfigValidate({
+            newConfig: { ...defaults, frameleafCloud: { ...defaults.frameleafCloud, remoteAccess } },
+            oldConfig: defaults,
+          }),
+        ).rejects.toThrow('Link this server to Frameleaf Cloud before allowing');
+      }
+    });
+
+    it('allows them on a linked server, and always allows turning them off (FL-161)', async () => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        frameleafCloud: { ...env.frameleafCloud, url: 'https://cloud.test' },
+      });
+      mocks.systemMetadata.get.mockResolvedValue({
+        status: 'linked',
+        cloudUrl: 'https://cloud.test',
+        instanceId: 'instance-1',
+      } as never);
+      const open = {
+        ...defaults,
+        frameleafCloud: {
+          ...defaults.frameleafCloud,
+          remoteAccess: { allowOriginalsOverRelay: true, allowPasswordOverRelay: true },
+        },
+      };
+
+      await expect(sut.onConfigValidate({ newConfig: open, oldConfig: defaults })).resolves.toBeUndefined();
+
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(sut.onConfigValidate({ newConfig: defaults, oldConfig: open })).resolves.toBeUndefined();
     });
 
     it('should update the config and emit an event', async () => {
@@ -1599,7 +1665,7 @@ describe(SystemConfigService.name, () => {
         paused: 0,
       });
 
-      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: true });
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: true, cloudBatches: false });
 
       expect(mocks.job.queue).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1650,9 +1716,42 @@ describe(SystemConfigService.name, () => {
         paused: 0,
       });
 
-      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: false });
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: false, cloudBatches: false });
 
       expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('queues nothing and says so while descriptions are routed to Frameleaf Cloud (FL-163)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { imageDescription: { enabled: true } },
+        frameleafCloud: {
+          cloudMl: { enabled: true, routing: { ...defaults.frameleafCloud.cloudMl.routing, descriptions: 'cloud' } },
+        },
+      });
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: false, cloudBatches: true });
+
+      expect(mocks.job.getJobCounts).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('claims no batches for Frameleaf Cloud while its processing is off (FL-163)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { imageDescription: { enabled: true } },
+        frameleafCloud: { cloudMl: { enabled: false } },
+      });
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      mocks.job.getJobCounts.mockResolvedValue({
+        active: 0,
+        completed: 0,
+        failed: 0,
+        delayed: 0,
+        waiting: 0,
+        paused: 0,
+      });
+
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: true, cloudBatches: false });
     });
 
     it('should throw BadRequestException when image description is disabled', async () => {

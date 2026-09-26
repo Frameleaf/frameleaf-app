@@ -45,16 +45,39 @@ export const timelineEditContent = (): string => {
  * this call still running; letting it return normally would read as a save that succeeded for a
  * project the person is no longer looking at. When the mount has changed, the timeline is marked
  * dirty at once, before the content is even compared, and nothing here reports success.
+ *
+ * Factored out from `saveTimeline` so a test can drive the rule against fakes (FL-187): the build's
+ * own `frameleaf-gate-timeline-persistence` plugin (`vite.config.mjs`) sends every import of
+ * `@/features/timeline/stores/timeline-persistence` that is not this file's own to this shim instead
+ * of the engine's module, so a test that tries to mock that specifier ends up replacing this shim,
+ * not the engine underneath it.
  */
-export async function saveTimeline(projectId: string): Promise<void> {
-  if (!persistenceGate.mayStartSave(projectId)) return
-  const before = timelineEditContent()
-  await engineSaveTimeline(projectId)
-  if (!persistenceGate.mayStartSave(projectId)) {
-    useTimelineSettingsStore.getState().markDirty()
+export async function saveTimelineWithDeps(
+  projectId: string,
+  deps: {
+    save: (projectId: string) => Promise<void>
+    contentOf: () => string
+    mayStartSave: (projectId: string) => boolean
+    markDirty: () => void
+  },
+): Promise<void> {
+  if (!deps.mayStartSave(projectId)) return
+  const before = deps.contentOf()
+  await deps.save(projectId)
+  if (!deps.mayStartSave(projectId)) {
+    deps.markDirty()
     return
   }
-  if (timelineEditContent() !== before) useTimelineSettingsStore.getState().markDirty()
+  if (deps.contentOf() !== before) deps.markDirty()
+}
+
+export function saveTimeline(projectId: string): Promise<void> {
+  return saveTimelineWithDeps(projectId, {
+    save: engineSaveTimeline,
+    contentOf: timelineEditContent,
+    mayStartSave: persistenceGate.mayStartSave,
+    markDirty: () => useTimelineSettingsStore.getState().markDirty(),
+  })
 }
 
 export function loadTimeline(

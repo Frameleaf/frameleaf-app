@@ -607,6 +607,14 @@ export class MediaOperationService {
       throw new BadRequestException('Back up again from Settings › Frameleaf Cloud › Cloud backup');
     }
 
+    // FL-163: a Frameleaf Cloud description batch spends the AI Wallet, which only an administrator may
+    // do, and only after a fresh estimate; a photo owner retrying it here would queue that spend again.
+    if (operation.kind === MediaOperationKind.CloudDescriptionBatch) {
+      throw new BadRequestException(
+        'An administrator describes these photos again from Frameleaf Cloud processing, where the estimate comes first',
+      );
+    }
+
     if (operation.kind === MediaOperationKind.ICloudSync) {
       return this.retryICloudSync(auth, operation);
     }

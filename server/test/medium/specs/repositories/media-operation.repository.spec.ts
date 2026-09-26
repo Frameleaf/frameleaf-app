@@ -1757,4 +1757,187 @@ describe(MediaOperationRepository.name, () => {
       expect(changes).toEqual(Array.from({ length: 4 }, () => ({ id: operation.id, ownerId: user.id })));
     });
   });
+
+  describe('Frameleaf Cloud description batches (FL-163)', () => {
+    const destinationId = 'destination-cloud';
+
+    const batch = async (
+      sut: MediaOperationRepository,
+      ownerId: string,
+      options: {
+        status?: MediaOperationStatus;
+        origin?: 'automatic' | 'backfill';
+        assetIds?: string[];
+        job?: { admittedAt: Date; holdUsd: number } | null;
+        settledUsd?: number | null;
+        remoteJobId?: string | null;
+        destination?: string;
+      } = {},
+    ) => {
+      const created = await newOperation(sut, ownerId, {
+        kind: MediaOperationKind.CloudDescriptionBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+        snapshot: {
+          version: 1,
+          origin: options.origin ?? 'automatic',
+          destinationId: options.destination ?? destinationId,
+          assetIds: options.assetIds ?? [],
+        },
+        result: {
+          phase: 'submitted',
+          job: options.job
+            ? { jobId: 'job', holdUsd: options.job.holdUsd, admittedAt: options.job.admittedAt.toISOString() }
+            : null,
+          settledUsd: options.settledUsd ?? null,
+        },
+        remoteJobId: options.remoteJobId ?? null,
+      });
+      if (options.status) {
+        await defaultDatabase
+          .updateTable('media_operation')
+          .set({ status: options.status })
+          .where('id', '=', created.id)
+          .execute();
+      }
+      return created;
+    };
+
+    it('finds the photos of unfinished batches only', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      await batch(sut, user.id, { assetIds: ['a1', 'a2'] });
+      await batch(sut, user.id, { assetIds: ['a3'], status: MediaOperationStatus.Completed });
+      await newOperation(sut, user.id, { snapshot: { assetIds: ['a4'] } });
+
+      await expect(sut.getOpenCloudDescriptionAssetIds()).resolves.toEqual(new Set(['a1', 'a2']));
+    });
+
+    it('sums settled charges, else holds, of batches admitted in the window, by origin', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const from = new Date('2026-09-26T00:00:00.000Z');
+      const to = new Date('2026-09-27T00:00:00.000Z');
+      const today = new Date('2026-09-26T10:00:00.000Z');
+      await batch(sut, user.id, { job: { admittedAt: today, holdUsd: 1 }, settledUsd: 0.3 });
+      await batch(sut, user.id, { job: { admittedAt: today, holdUsd: 0.2 } });
+      await batch(sut, user.id, { job: { admittedAt: new Date('2026-09-25T23:00:00.000Z'), holdUsd: 5 } });
+      await batch(sut, user.id, { origin: 'backfill', job: { admittedAt: today, holdUsd: 7 } });
+      await batch(sut, user.id, { job: null });
+
+      await expect(sut.sumCloudDescriptionSpend({ from, to, origin: 'automatic' })).resolves.toBeCloseTo(0.5, 6);
+      await expect(sut.sumCloudDescriptionSpend({ from, to })).resolves.toBeCloseTo(7.5, 6);
+    });
+
+    it("adds up the unsettled holds of a destination's unfinished batches and recent finished ones", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const since = new Date('2026-09-01T00:00:00.000Z');
+      const recent = new Date('2026-09-26T10:00:00.000Z');
+      const old = new Date('2026-08-01T10:00:00.000Z');
+      await batch(sut, user.id, { job: { admittedAt: recent, holdUsd: 0.2 } });
+      await batch(sut, user.id, { job: { admittedAt: recent, holdUsd: 0.3 }, status: MediaOperationStatus.Failed });
+      // unfinished, admitted before the window: still held
+      await batch(sut, user.id, { job: { admittedAt: old, holdUsd: 0.4 } });
+      // finished before the window and never settled: its hold no longer counts
+      await batch(sut, user.id, { job: { admittedAt: old, holdUsd: 50 }, status: MediaOperationStatus.Cancelled });
+      await batch(sut, user.id, { job: { admittedAt: recent, holdUsd: 9 }, settledUsd: 1 });
+      await batch(sut, user.id, { job: { admittedAt: recent, holdUsd: 4 }, destination: 'elsewhere' });
+      await batch(sut, user.id, { job: null });
+
+      await expect(sut.sumCloudDescriptionOpenHolds(destinationId, since)).resolves.toBeCloseTo(0.9, 6);
+    });
+
+    it('tells whether an admitted batch still waits for its settlement, bounded as the holds are', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const since = new Date('2026-09-01T00:00:00.000Z');
+      const old = new Date('2026-08-01T10:00:00.000Z');
+      await batch(sut, user.id, { job: { admittedAt: new Date(), holdUsd: 1 }, settledUsd: 1 });
+      await batch(sut, user.id, { job: { admittedAt: old, holdUsd: 1 }, status: MediaOperationStatus.Failed });
+      await expect(sut.hasUnsettledCloudDescriptionJobs(since)).resolves.toBe(false);
+
+      await batch(sut, user.id, { job: { admittedAt: old, holdUsd: 1 } });
+      await expect(sut.hasUnsettledCloudDescriptionJobs(since)).resolves.toBe(true);
+    });
+
+    it('lists finished batches whose submission was sent but whose job was never recorded', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const attempted = { idempotencyKey: 'desc-1', attemptedAt: new Date().toISOString() };
+      const pending = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.CloudDescriptionBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+        snapshot: { version: 1 },
+        result: { submission: attempted, job: null },
+      });
+      const running = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.CloudDescriptionBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+        snapshot: { version: 1 },
+        result: { submission: attempted, job: null },
+      });
+      const recorded = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.CloudDescriptionBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+        snapshot: { version: 1 },
+        result: { submission: attempted, job: { jobId: 'job-1' } },
+        remoteJobId: 'job-1',
+      });
+      for (const { id } of [pending, recorded]) {
+        await defaultDatabase
+          .updateTable('media_operation')
+          .set({ status: MediaOperationStatus.Failed })
+          .where('id', '=', id)
+          .execute();
+      }
+
+      const rows = await sut.listCloudDescriptionPendingReleases(10);
+
+      expect(rows.map(({ id }) => id)).toEqual([pending.id]);
+      expect(rows.map(({ id }) => id)).not.toContain(running.id);
+    });
+
+    it('limits the cleanup list to the kinds asked for before its limit', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const other = await newOperation(sut, user.id, { remoteJobId: 'render-1' });
+      const cloud = await batch(sut, user.id, { remoteJobId: 'job-1' });
+      for (const { id } of [other, cloud]) {
+        await defaultDatabase
+          .updateTable('media_operation')
+          .set({ status: MediaOperationStatus.Cancelled })
+          .where('id', '=', id)
+          .execute();
+      }
+
+      const unreleased = await sut.getUnreleasedRemoteOperations(1, [MediaOperationKind.CloudDescriptionBatch]);
+
+      expect(unreleased.map(({ id }) => id)).toEqual([cloud.id]);
+    });
+
+    it('records a remote job without a claim only into an empty handle', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const created = await batch(sut, user.id);
+
+      await expect(sut.recordRemoteJobId(created.id, 'job-1')).resolves.toBe(true);
+      await expect(sut.recordRemoteJobId(created.id, 'job-1')).resolves.toBe(true);
+      await expect(sut.recordRemoteJobId(created.id, 'job-2')).resolves.toBe(false);
+      await expect(sut.getForWorker(created.id)).resolves.toMatchObject({ remoteJobId: 'job-1' });
+    });
+
+    it('reads several jobs for a worker in one query', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const first = await batch(sut, user.id);
+      const second = await batch(sut, user.id);
+
+      const rows = await sut.getManyForWorker([first.id, second.id]);
+
+      expect(rows.map(({ id }) => id).toSorted((a, b) => a.localeCompare(b))).toEqual(
+        [first.id, second.id].toSorted((a, b) => a.localeCompare(b)),
+      );
+      await expect(sut.getManyForWorker([])).resolves.toEqual([]);
+    });
+  });
 });

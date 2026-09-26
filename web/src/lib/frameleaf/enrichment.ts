@@ -92,6 +92,10 @@ const REASON_KEYS: Readonly<Record<string, Translations>> = {
   'model-error': 'frameleaf_enrichment_reason_model_error',
   'stage-error': 'frameleaf_enrichment_reason_model_error',
   'video-frames-unavailable': 'frameleaf_enrichment_reason_no_frames',
+  // FL-163: the description stage routed to Frameleaf Cloud runs in batches
+  'cloud-batch': 'frameleaf_enrichment_reason_cloud_batch',
+  'cloud-photos-only': 'frameleaf_enrichment_reason_cloud_photos_only',
+  'cloud-turned-off': 'frameleaf_enrichment_reason_cloud_turned_off',
 };
 
 /** The message for a stage's reason code; unknown codes get the generic one, never the raw code. */

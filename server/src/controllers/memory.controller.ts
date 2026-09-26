@@ -29,7 +29,7 @@ import {
   MemoryUpdateDto,
 } from 'src/dtos/memory.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { asStreamableFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -171,6 +171,8 @@ export class MemoryController {
 
   @Get('exports/:id/download')
   @Authenticated({ permission: Permission.MemoryRead })
+  // FL-161: an archive of the memory's media
+  @OriginalTransfer()
   @FileResponse()
   @Endpoint({
     summary: 'Download a memory export',

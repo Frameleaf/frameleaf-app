@@ -536,8 +536,12 @@
       return;
     }
     if (command === 'description-requeue') {
-      const { queued } = await triggerImageDescriptionRequeue();
+      const { queued, cloudBatches } = await triggerImageDescriptionRequeue();
       reminderDeferred = false;
+      // FL-163: descriptions routed to Frameleaf Cloud go through batches, estimate first
+      if (cloudBatches) {
+        return $t('frameleaf_jobs_notice_descriptions_cloud_batches');
+      }
       return queued ? undefined : $t('frameleaf_jobs_notice_descriptions_already_queued');
     }
     if (command === 'description-defer') {

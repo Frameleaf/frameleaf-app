@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { SemVer } from 'semver';
 import { ExtraModel, HistoryBuilder } from 'src/decorators.js';
+import { FrameleafViaSchema } from 'src/dtos/config.dto.js';
 import { isoDatetimeToDate } from 'src/validation.js';
 
 const ServerPingResponseSchema = z
@@ -162,6 +163,22 @@ const ServerConfigSchema = z
       .string()
       .describe('Canonical default for the image-description advanced raw prompt template'),
     minFaces: z.int().describe('People min faces server default'),
+    frameleaf: z
+      .object({
+        via: FrameleafViaSchema.nullable().describe(
+          'How the request arrived; null when the edge worker did not vouch for it',
+        ),
+        signInAvailable: z.boolean().describe('Whether Sign in with Frameleaf is available (the server is linked)'),
+        signInRequired: z
+          .boolean()
+          .describe('Whether this request arrived through remote access, where a Frameleaf sign-in is required'),
+        publicUrl: z
+          .string()
+          .nullable()
+          .describe('The address Frameleaf Cloud published for this server, while it is linked'),
+      })
+      .describe('Frameleaf remote access and sign-in, for this request')
+      .meta({ id: 'ServerFrameleafConfigDto' }),
   })
   .meta({ id: 'ServerConfigDto' });
 

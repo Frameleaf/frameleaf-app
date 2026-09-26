@@ -1,5 +1,15 @@
 import { isHttpError } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
+import { revokeSessionView } from '$lib/utils/session-privacy';
+
+/**
+ * FL-161: the server refused a session that is not a Frameleaf sign-in because the request came
+ * through remote access. The person has to sign in again; the login page offers what works there.
+ */
+export const isFrameleafSignInRequired = (error: unknown) =>
+  isHttpError(error) &&
+  error.status === 403 &&
+  (error.data as { code?: unknown } | undefined)?.code === 'frameleaf_sign_in_required';
 
 export function getServerErrorMessage(error: unknown) {
   if (!isHttpError(error)) {
@@ -76,6 +86,11 @@ export function handleError(error: unknown, localizedMessage: string, options?: 
   }
 
   console.error(`[handleError]: ${standardizedError}`, error, standardizedError.stack);
+
+  if (isFrameleafSignInRequired(error)) {
+    revokeSessionView('/auth/logout');
+    return localizedMessage;
+  }
 
   if (unauthorizedHandler && isHttpError(error) && error.status === 401) {
     unauthorizedHandler(() => notifyError(error, localizedMessage, notify));

@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { cloneDeep, get, isEqual, omit, set } from 'lodash-es';
-import type { IncomingHttpHeaders } from 'node:http';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
@@ -46,9 +45,16 @@ import {
   describeConfigChanges,
   readConfigHistory,
 } from 'src/utils/config-history.js';
+import { cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { frameleafVia, isHomeAddress, signInClient } from 'src/utils/frameleaf-sign-in.js';
+import {
+  type FrameleafVia,
+  frameleafPublicUrl,
+  isHomeAddress,
+  isRemoteVia,
+  signInClient,
+} from 'src/utils/frameleaf-sign-in.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { toPlainObject } from 'src/utils/object.js';
@@ -158,18 +164,19 @@ export class SystemConfigService extends BaseService {
   /**
    * FL-158: the public configuration, with how Sign in with Frameleaf applies to this visitor. A
    * visitor arriving through remote access (`relay` or `wan`, vouched for by the edge worker) is
-   * offered only Sign in with Frameleaf; one who is also on the home network is offered the local
-   * address.
+   * offered only Sign in with Frameleaf, unless an administrator allowed password sign-in there
+   * (FL-161); one who is also on the home network is offered the local address.
    */
-  async getPublicConfig(arrival?: { headers: IncomingHttpHeaders; clientIp: string }) {
+  async getPublicConfig(arrival?: { via: FrameleafVia | null; clientIp: string }) {
     const config = await this.getConfig({ withCache: false });
     const env = this.configRepository.getEnv().frameleafCloud;
     const { link, linked } = await readCloudLink({
       configRepository: this.configRepository,
       systemMetadataRepository: this.systemMetadataRepository,
     });
-    const via = frameleafVia(arrival?.headers ?? {}, env.edge.secret);
-    const signInRequired = via === 'relay' || via === 'wan';
+    const via = arrival?.via ?? null;
+    const remote = isRemoteVia(via);
+    const signInRequired = remote && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay;
     const relayOrigin = link?.services?.relayOrigin;
     let relayHost: string | null;
     try {
@@ -177,7 +184,7 @@ export class SystemConfigService extends BaseService {
     } catch {
       relayHost = null;
     }
-    const sameNetwork = signInRequired && !!env.localUrl && isHomeAddress(arrival?.clientIp, env.trustedLanCidrs);
+    const sameNetwork = remote && !!env.localUrl && isHomeAddress(arrival?.clientIp, env.trustedLanCidrs);
     return mapPublicConfig(config, {
       signInAvailable: !!signInClient(link, linked),
       signInRequired,
@@ -187,6 +194,26 @@ export class SystemConfigService extends BaseService {
       localUrl: sameNetwork ? env.localUrl : null,
       sameNetwork,
     });
+  }
+
+  /**
+   * FL-161: `/.well-known/immich`, which apps read to find the API, with what the Frameleaf apps need
+   * to find this server again: its instance id and published address while it is linked, and whether
+   * Sign in with Frameleaf is available.
+   */
+  async getWellKnown() {
+    const { link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    return {
+      api: { endpoint: '/api' },
+      frameleaf: {
+        instanceId: linked ? (link?.instanceId ?? null) : null,
+        publicUrl: linked ? frameleafPublicUrl(link) : null,
+        signIn: !!signInClient(link, linked),
+      },
+    };
   }
 
   getPublicConfigDefaults(): PublicConfigDto {
@@ -250,6 +277,25 @@ export class SystemConfigService extends BaseService {
       const masterUser = await this.userRepository.get(physicalDeduplication.masterUserId, {});
       if (!masterUser || masterUser.deletedAt) {
         throw new Error('Physical deduplication master user must exist and be active.');
+      }
+    }
+
+    // FL-161: what remote access may carry can only be loosened on a linked server, through any
+    // settings path (PUT admin/cloud/remote-access checks the same); turning it back off always works
+    const allow = newConfig.frameleafCloud.remoteAccess;
+    const before = oldConfig.frameleafCloud?.remoteAccess;
+    const loosened =
+      (allow.allowOriginalsOverRelay && !before?.allowOriginalsOverRelay) ||
+      (allow.allowPasswordOverRelay && !before?.allowPasswordOverRelay);
+    if (loosened) {
+      const { linked } = await readCloudLink({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      if (!linked) {
+        throw new Error(
+          'Link this server to Frameleaf Cloud before allowing original downloads or password sign-in over remote access.',
+        );
       }
     }
   }
@@ -581,6 +627,13 @@ export class SystemConfigService extends BaseService {
       throw new BadRequestException('Image description is not enabled');
     }
 
+    // FL-163: while cloud processing is on for descriptions routed to Frameleaf Cloud, they are described
+    // in batches from Frameleaf Cloud processing, where the estimate comes first, and the queue-all job
+    // queues none of them; while it is off, nothing is claimed to go through batches
+    if (await cloudDescriptionDestination(this.mlDestinationRepository, null, oldConfig.frameleafCloud.cloudMl)) {
+      return { queued: false, cloudBatches: true };
+    }
+
     // BullMQ deduplication (set up in job.repository.ts) prevents double-enqueueing
     // the queue-all job. We surface the result to the caller so the UI can react.
     const counts = await this.jobRepository.getJobCounts(QueueName.ImageDescription);
@@ -598,7 +651,7 @@ export class SystemConfigService extends BaseService {
       }
     }
 
-    return { queued: !alreadyInFlight };
+    return { queued: !alreadyInFlight, cloudBatches: false };
   }
 
   /**

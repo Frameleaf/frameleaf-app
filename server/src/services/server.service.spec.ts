@@ -325,6 +325,7 @@ describe(ServerService.name, () => {
         mapLightStyleUrl: 'https://tiles.immich.cloud/v1/style/light.json',
         maintenanceMode: false,
         minFaces: 3,
+        frameleaf: { via: null, signInAvailable: false, signInRequired: false, publicUrl: null },
       });
       expect(defaultImageDescriptionRawPromptTemplate).toContain('{schema}');
       expect(defaultImageDescriptionRawPromptTemplate).toContain('{names}');
@@ -337,6 +338,45 @@ describe(ServerService.name, () => {
       mocks.user.hasAdmin.mockResolvedValue(true);
 
       await expect(sut.getSystemConfig()).resolves.toMatchObject({ isInitialized: true });
+    });
+
+    it('says how a request arrived and what remote access asks of it (FL-161)', async () => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        frameleafCloud: { ...env.frameleafCloud, url: 'https://api.frameleaf.cloud' },
+      });
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.FrameleafCloudLink
+            ? {
+                status: 'linked',
+                cloudUrl: 'https://api.frameleaf.cloud',
+                instanceId: 'instance-1',
+                oidc: { issuer: 'https://id.frameleaf.cloud', clientId: 'instance-1' },
+                services: {
+                  relayOrigin: 'https://r.k3v9.frameleaf-direct.net',
+                  publicUrl: 'https://photos.example.com/',
+                },
+              }
+            : null) as never,
+        ),
+      );
+
+      await expect(sut.getSystemConfig('relay')).resolves.toMatchObject({
+        frameleaf: {
+          via: 'relay',
+          signInAvailable: true,
+          signInRequired: true,
+          publicUrl: 'https://photos.example.com',
+        },
+      });
+      await expect(sut.getSystemConfig('lan')).resolves.toMatchObject({
+        frameleaf: { via: 'lan', signInRequired: false },
+      });
+      await expect(sut.getSystemConfig()).resolves.toMatchObject({
+        frameleaf: { via: null, signInRequired: false },
+      });
     });
 
     it('should be initialized when setup is disabled', async () => {

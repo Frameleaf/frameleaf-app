@@ -619,6 +619,19 @@ describe(MediaOperationService.name, () => {
       });
     });
 
+    it('never lets a photo owner queue Frameleaf Cloud spend again by retrying a description batch (FL-163)', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        operationStub({
+          kind: MediaOperationKind.CloudDescriptionBatch,
+          status: MediaOperationStatus.Failed,
+          snapshot: { version: 1, origin: 'backfill', assetIds: ['a'] },
+        }),
+      );
+
+      await expect(sut.retry(authStub.user1, 'op')).rejects.toThrow(/Frameleaf Cloud processing/);
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
     it('refuses to retry a running job', async () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(operationStub());
 

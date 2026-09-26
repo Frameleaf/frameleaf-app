@@ -170,6 +170,10 @@ export type CloudStatusResponseDto = {
         id: string | null;
         label: string | null;
     } | null;
+    /** Originals, archives and database backups may be downloaded through the relay */
+    allowOriginalsOverRelay: boolean;
+    /** Password sign-in is allowed away from home */
+    allowPasswordOverRelay: boolean;
     /** Frameleaf Cloud saw this server’s identity start from two places */
     cloneSuspected: boolean;
     /** Host of the configured Frameleaf Cloud address */
@@ -377,6 +381,68 @@ export type CloudMlConsentRecordDto = {
 export type CloudMlConsentHistoryResponseDto = {
     records: CloudMlConsentRecordDto[];
 };
+export type CloudMlDescriptionBatchCreateDto = {
+    /** The estimate to queue; its model, photos and prices are read from the server, never sent */
+    estimateId: string;
+};
+export type CloudMlDescriptionBatchesResponseDto = {
+    /** Batches queued */
+    batches: number;
+    /** The queued batches; each shows in Activity */
+    operationIds: string[];
+    /** Photos in them */
+    photos: number;
+};
+export type CloudMlDescriptionGuidanceDto = {
+    /** The batch size below which the start fee makes up most of the cost with this model */
+    minimumBatch: number;
+    /** How many of the batches are smaller than that */
+    smallBatches: number;
+    /** A model of the 27B/35B class the catalogue offers for small batches, when there is one */
+    suggestedModelId: string | null;
+    /** Its catalogue name */
+    suggestedModelName: string | null;
+};
+export type CloudMlDescriptionEstimateResponseDto = {
+    /** AI Wallet balance minus holds, USD */
+    availableUsd: number;
+    /** measured: from the model's measured GPU time; modelled: from its expected GPU time */
+    basis: string;
+    /** Batches they would be sent in; each batch is one cloud job */
+    batches: number;
+    /** The daily AI Wallet limit, USD, or null */
+    dailyCapUsd: number | null;
+    /** The estimate the server keeps; queueing the backfill names only this, or null when there is nothing to queue */
+    estimateId: string | null;
+    /** Until when the estimate may be queued, or null */
+    expiresAt: string | null;
+    /** Set when the model is of the 72B class and some batches are too small for its start fee to pay off */
+    guidance: (CloudMlDescriptionGuidanceDto) | null;
+    /** What the AI Wallet would hold while the batches run, USD */
+    holdUsd: number;
+    /** The catalogue model SKU the batches would use */
+    modelId: string;
+    /** Its catalogue name */
+    modelName: string;
+    /** Likely cost of every batch together, USD */
+    p50Usd: number;
+    /** Cost at most, in nine cases out of ten, USD */
+    p90Usd: number;
+    /** Likely GPU time cost per photo, USD */
+    perPhotoP50Usd: number;
+    /** GPU time cost per photo at most, in nine cases out of ten, USD */
+    perPhotoP90Usd: number;
+    /** Photos that would be described */
+    photos: number;
+    /** Why the backfill cannot start now, or null when it can */
+    refusal: string | null;
+    /** Spent today, USD */
+    spentTodayUsd: number;
+    /** The start fee each batch pays, USD */
+    startupUsd: number;
+    /** More photos need a description than one backfill covers; run another afterwards for the rest */
+    truncated: boolean;
+};
 export type CloudMlDestinationCreateDto = {
     budgetLimitUsd?: number | null;
     name?: string;
@@ -437,6 +503,12 @@ export type CloudPermissionsUpdateDto = {
     allowEntitlementRefresh?: boolean;
     /** Frameleaf Cloud may turn remote access on or off */
     allowRemoteEnable?: boolean;
+};
+export type CloudRemoteAccessUpdateDto = {
+    /** Allow original downloads, archives and database backups through the relay */
+    allowOriginalsOverRelay?: boolean;
+    /** Allow password sign-in away from home */
+    allowPasswordOverRelay?: boolean;
 };
 export type CloudSignInUpdateDto = {
     /** The Sign in with Frameleaf button text */
@@ -562,6 +634,12 @@ export type AdminConfigFrameleafCloudMlDto = {
     /** The destination a job preselects when its kind of work may run in both places */
     startWith: StartWith;
 };
+export type AdminConfigFrameleafRemoteAccessDto = {
+    /** Allow original downloads, archives and database backups over the Frameleaf relay */
+    allowOriginalsOverRelay: boolean;
+    /** Allow password sign-in, and sessions it creates, over remote access */
+    allowPasswordOverRelay: boolean;
+};
 export type AdminConfigFrameleafSignInDto = {
     /** Sign in with Frameleaf button text */
     buttonText: string;
@@ -571,6 +649,7 @@ export type AdminConfigFrameleafSignInDto = {
 export type AdminConfigFrameleafCloudDto = {
     cloudBackup?: AdminConfigFrameleafCloudBackupDto;
     cloudMl: AdminConfigFrameleafCloudMlDto;
+    remoteAccess?: AdminConfigFrameleafRemoteAccessDto;
     signIn?: AdminConfigFrameleafSignInDto;
 };
 export type AdminConfigEnhancedRawImageDto = {
@@ -8032,11 +8111,22 @@ export type ServerAppReleasesResponseDto = {
         url?: string;
     };
 };
+export type ServerFrameleafConfigDto = {
+    /** The address Frameleaf Cloud published for this server, while it is linked */
+    publicUrl: string | null;
+    /** Whether Sign in with Frameleaf is available (the server is linked) */
+    signInAvailable: boolean;
+    /** Whether this request arrived through remote access, where a Frameleaf sign-in is required */
+    signInRequired: boolean;
+    /** How the request arrived; null when the edge worker did not vouch for it */
+    via: (FrameleafVia) | null;
+};
 export type ServerConfigDto = {
     /** Canonical default for the image-description advanced raw prompt template */
     defaultImageDescriptionRawPromptTemplate: string;
     /** External domain URL */
     externalDomain: string;
+    frameleaf: ServerFrameleafConfigDto;
     /** Whether the server has been initialized */
     isInitialized: boolean;
     /** Whether the admin has completed onboarding */
@@ -8270,7 +8360,7 @@ export type SharedLinkResponseDto = {
     key: string;
     /** Display name of the user who created the link, for "Shared by" on the public page */
     owner?: SharedLinkOwnerResponseDto;
-    /** Has password */
+    /** Has password: a fixed mask when the link has one, never the password itself */
     password: string | null;
     /** Show metadata */
     showMetadata: boolean;
@@ -9080,6 +9170,8 @@ export type SyncStreamDto = {
     types: SyncRequestType[];
 };
 export type ImageDescriptionRequeueResponseDto = {
+    /** Descriptions are routed to Frameleaf Cloud, which describes photos in batches from Frameleaf Cloud processing with an estimate first; nothing was queued here */
+    cloudBatches: boolean;
     /** Whether the queue-all job was newly enqueued (false = already in-flight) */
     queued: boolean;
 };
@@ -10686,6 +10778,33 @@ export function getCloudMlConsentHistory(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Describe photos with Frameleaf Cloud
+ */
+export function startCloudMlDescriptionBackfill({ cloudMlDescriptionBatchCreateDto }: {
+    cloudMlDescriptionBatchCreateDto: CloudMlDescriptionBatchCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: CloudMlDescriptionBatchesResponseDto;
+    }>("/admin/cloud/ml/descriptions/batches", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudMlDescriptionBatchCreateDto
+    })));
+}
+/**
+ * Estimate describing photos with Frameleaf Cloud
+ */
+export function estimateCloudMlDescriptionBackfill(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlDescriptionEstimateResponseDto;
+    }>("/admin/cloud/ml/descriptions/estimate", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Add Frameleaf Cloud as a processing destination
  */
 export function createCloudMlDestination({ cloudMlDestinationCreateDto }: {
@@ -10786,6 +10905,21 @@ export function updateCloudPermissions({ cloudPermissionsUpdateDto }: {
         ...opts,
         method: "PUT",
         body: cloudPermissionsUpdateDto
+    })));
+}
+/**
+ * Choose what remote access may carry
+ */
+export function updateCloudRemoteAccess({ cloudRemoteAccessUpdateDto }: {
+    cloudRemoteAccessUpdateDto: CloudRemoteAccessUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/remote-access", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudRemoteAccessUpdateDto
     })));
 }
 /**
@@ -20164,6 +20298,7 @@ export enum MediaOperationKind {
     PreservationReview = "preservation_review",
     PreservationRestore = "preservation_restore",
     StudioExportPublish = "studio_export_publish",
+    CloudDescriptionBatch = "cloud_description_batch",
     CloudBackup = "cloud_backup"
 }
 export enum MediaOperationStatus {
@@ -21432,6 +21567,7 @@ export enum JobName {
     VersionCheck = "VersionCheck",
     FrameleafHeartbeat = "FrameleafHeartbeat",
     FrameleafLicenseRefresh = "FrameleafLicenseRefresh",
+    CloudMlDescriptionBatch = "CloudMlDescriptionBatch",
     OcrQueueAll = "OcrQueueAll",
     Ocr = "Ocr",
     ImageDescriptionQueueAll = "ImageDescriptionQueueAll",

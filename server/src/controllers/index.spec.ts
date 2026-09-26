@@ -14,7 +14,9 @@ import {
   MediaHealthRecoverDto,
   MediaHealthSummaryQueryDto,
 } from 'src/dtos/media-health.dto.js';
+import { MetadataKey } from 'src/enum.js';
 import { AuthenticatedOptions, getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimitRule } from 'src/middleware/rate-limit.guard.js';
 
 const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
   'GET admin/maintenance/status',
@@ -114,6 +116,61 @@ const SHARED_LINK_ROUTES = new Set([
   'POST shared-links/login',
 ]);
 
+/**
+ * FL-161: the routes that send originals, archives or database backups, refused over the relay unless
+ * an administrator allows them. Thumbnails, previews and playback are deliberately not here.
+ */
+const ORIGINAL_TRANSFER_ROUTES = new Set([
+  'GET assets/:id/original',
+  'POST download/archive',
+  'GET admin/database-backups/:filename',
+  'GET preservation/packages/:id/download',
+  // full-resolution masters, bundles, renders and archives, as large as originals
+  'GET assets/:id/edit-versions/:versionId/download',
+  'GET studio/bundles/exports/:id/download',
+  'GET studio/exports/:id/download',
+  'GET memories/exports/:id/download',
+  // the flagged file itself, usually an original
+  'GET admin/integrity/report/:id/file',
+  // can stream a full-resolution edited master or restored result (the viewer's own full-size view
+  // of a chosen restoration falls back to its preview through the relay)
+  'GET assets/:id/develop/revisions/:revisionId/file',
+  'GET assets/:id/restorations/:restorationId/file',
+]);
+
+/**
+ * FL-161: media routes deliberately left available through the relay: what a viewer needs to browse
+ * and play (thumbnails and previews; a full-size view falls back to the preview there), and small
+ * derived files.
+ */
+const RELAY_MEDIA_ROUTES = [
+  'GET assets/:id/thumbnail',
+  'GET assets/:id/video/playback',
+  'GET assets/:id/video/stream/main.m3u8',
+  'GET people/:id/thumbnail',
+  'GET preservation/packages/:id/manifest',
+  'GET users/:id/profile-image',
+];
+
+/** FL-161: the rate-limited sign-in and Frameleaf Cloud routes, by rule. */
+const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
+  'POST auth/login': RATE_LIMITS.login,
+  'POST oauth/callback': RATE_LIMITS.oauthCallback,
+  'POST oauth/link': RATE_LIMITS.oauthCallback,
+  'POST oauth/frameleaf/authorize': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/callback': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/handoff': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/handoff/redeem': RATE_LIMITS.frameleafSignIn,
+  'GET oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  'DELETE oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
+  'PUT admin/license/activate': RATE_LIMITS.licenseActivation,
+  'PUT admin/license/certificate': RATE_LIMITS.licenseActivation,
+  'PUT users/me/license': RATE_LIMITS.licenseActivation,
+  'POST admin/cloud/link': RATE_LIMITS.linkStart,
+};
+
 const isAdminPermission = (permission: AuthenticatedOptions['permission']) =>
   typeof permission === 'string' && permission.startsWith('admin');
 
@@ -142,6 +199,11 @@ const getRoutes = () => {
         label: `${Controller.name}.${name} (${method} /${path})`,
         path,
         auth: getAuthenticatedOptions(reflector, handler),
+        originalTransfer: reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, handler) === true,
+        remoteSignInExempt: reflector.get<boolean | undefined>(MetadataKey.RemoteSignInExempt, handler) === true,
+        homeNetworkOnly:
+          reflector.getAllAndOverride<boolean | undefined>(MetadataKey.HomeNetworkOnly, [handler, Controller]) === true,
+        rateLimit: reflector.get<RateLimitRule | undefined>(MetadataKey.RateLimit, handler),
       };
     });
   });
@@ -175,6 +237,38 @@ describe('controllers', () => {
       .map((route) => route.id);
 
     expect(new Set(adminRoutes)).toEqual(ADMIN_ROUTES);
+  });
+
+  it('should mark exactly the original, archive and backup downloads as refused over the relay (FL-161)', () => {
+    const marked = routes.filter((route) => route.originalTransfer).map((route) => route.id);
+
+    expect(new Set(marked)).toEqual(ORIGINAL_TRANSFER_ROUTES);
+    for (const id of RELAY_MEDIA_ROUTES) {
+      expect(routes.find((route) => route.id === id)).toMatchObject({
+        originalTransfer: false,
+        homeNetworkOnly: false,
+      });
+    }
+  });
+
+  it('should let only signing out skip the remote sign-in rule (FL-161)', () => {
+    expect(routes.filter((route) => route.remoteSignInExempt).map((route) => route.id)).toEqual(['POST auth/logout']);
+  });
+
+  it('should keep the whole render-worker API, original inputs included, on the home network (FL-161)', () => {
+    const workerRoutes = routes.filter((route) => route.path.startsWith('render-workers/'));
+
+    expect(workerRoutes.map((route) => route.id)).toContain('GET render-workers/operations/:id/inputs/:grant');
+    expect(workerRoutes.filter((route) => !route.homeNetworkOnly)).toEqual([]);
+    expect(routes.filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))).toEqual([]);
+  });
+
+  it('should rate limit sign-in, licence activation and link start (FL-161)', () => {
+    const limited = Object.fromEntries(
+      routes.filter((route) => route.rateLimit).map((route) => [route.id, route.rateLimit]),
+    );
+
+    expect(limited).toEqual(RATE_LIMITED_ROUTES);
   });
 
   it('should require admin access for routes with an admin permission', () => {

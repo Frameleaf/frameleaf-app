@@ -248,6 +248,20 @@ export class SharedLinkRepository {
     return this.getSharedLinks(id);
   }
 
+  /**
+   * FL-161: replace a link's plaintext password with its hash, only while it still holds exactly that
+   * plaintext, so two first unlocks at once (or an edit meanwhile) never overwrite each other.
+   */
+  async replaceLegacyPassword(id: string, legacy: string, hashed: string): Promise<boolean> {
+    const result = await this.db
+      .updateTable('shared_link')
+      .set({ password: hashed })
+      .where('shared_link.id', '=', id)
+      .where('shared_link.password', '=', legacy)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
+
   async remove(id: string): Promise<void> {
     await this.db.deleteFrom('shared_link').where('shared_link.id', '=', id).execute();
   }

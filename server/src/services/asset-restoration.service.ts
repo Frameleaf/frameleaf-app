@@ -540,11 +540,16 @@ export class AssetRestorationService {
    * (web/src/lib/frameleaf/playback-revision.svelte.ts).
    *
    * `view` is what the caller serves: video playback, or a photo's preview or full-size view.
+   *
+   * FL-161: through the relay a full-size restored result is as large as an original. The caller says
+   * whether full-size files may be sent (`fullSizeAllowed`, false through the relay unless an
+   * administrator allowed originals there); when not, the restored preview is served instead.
    */
   async getPlaybackChoice(
     auth: AuthDto,
     assetId: string,
     view: 'video' | 'preview' | 'fullsize',
+    fullSizeAllowed = true,
   ): Promise<{ file: ImmichFileResponse | null; revalidate: boolean }> {
     if (auth.sharedLink) {
       return { file: null, revalidate: false };
@@ -558,7 +563,8 @@ export class AssetRestorationService {
       return { file: null, revalidate: false };
     }
     const current = restored.find((row) => row.isCurrent);
-    const path = current && (view === 'preview' ? current.resultPreviewPath : current.resultPath);
+    const served = view === 'fullsize' && !fullSizeAllowed ? 'preview' : view;
+    const path = current && (served === 'preview' ? current.resultPreviewPath : current.resultPath);
     if (!path) {
       return { file: null, revalidate: true };
     }
