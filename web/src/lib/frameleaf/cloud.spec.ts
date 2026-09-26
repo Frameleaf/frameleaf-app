@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   CLOUD_BACKUP_PRICING,
   cloudBackupMonthlyUsd,
@@ -13,16 +15,62 @@ import {
   validateProductKey,
 } from '$lib/frameleaf/cloud';
 
+// Fixtures ported from frameleaf-cloud (FL-182, decision #40): the Luhn mod 32 check symbol, see
+// server/test/fixtures/frameleaf-cloud-contracts/licence/check-symbol/SOURCE.md.
+const checkSymbolFixture = <T>(name: string): T =>
+  JSON.parse(
+    readFileSync(
+      resolve(process.cwd(), '..', 'server/test/fixtures/frameleaf-cloud-contracts/licence/check-symbol', name),
+      'utf8',
+    ),
+  ) as T;
+
 describe('Frameleaf Cloud helpers', () => {
   describe('validateProductKey (FL-171)', () => {
-    // Vectors minted with the cloud's reference `license-key.mjs` (frameleaf-cloud design prototype).
-    it.each([
-      ['FL-S8NL-49G8-J58U', 'server', 'J58U'],
-      ['FL-SWFD-8798-BKMA', 'server', 'BKMA'],
-      ['FL-IC8Q-BT2Q-8ELH', 'individual', '8ELH'],
-      ['fl i54y fdex cmsf', 'individual', 'CMSF'],
-    ])('accepts %s', (input, kind, last4) => {
-      expect(validateProductKey(input)).toEqual({ valid: true, key: normalizeProductKey(input), kind, last4 });
+    const valid = checkSymbolFixture<{
+      keys: Array<{ key: string; kind: 'server' | 'individual'; last4: string }>;
+      pair: { body: string; server: string; individual: string };
+    }>('valid.json');
+    const substitutions = checkSymbolFixture<{ reason: string; substitutions: Array<{ input: string }> }>(
+      'substitutions.json',
+    );
+    const transpositions = checkSymbolFixture<{ reason: string; transpositions: Array<{ input: string }> }>(
+      'transpositions.json',
+    );
+    const upstream = checkSymbolFixture<{ reason: string; inputs: string[] }>('upstream.json');
+    const normalise = checkSymbolFixture<{ cases: Array<{ input: string; key: string }> }>('normalise.json');
+
+    it.each(valid.keys)('accepts $key', ({ key, kind, last4 }) => {
+      expect(validateProductKey(key)).toEqual({ valid: true, key, kind, last4 });
+    });
+
+    it('gives the same body a different check symbol for each kind', () => {
+      expect(validateProductKey(valid.pair.server)).toMatchObject({ valid: true, kind: 'server' });
+      expect(validateProductKey(valid.pair.individual)).toMatchObject({ valid: true, kind: 'individual' });
+    });
+
+    it('normalises lower case, missing hyphens and stray spaces before checking', () => {
+      for (const { input, key } of normalise.cases) {
+        expect(validateProductKey(input)).toMatchObject({ valid: true, key });
+      }
+    });
+
+    it('refuses every single-symbol substitution of a valid key', () => {
+      for (const { input } of substitutions.substitutions) {
+        expect(validateProductKey(input)).toMatchObject({ valid: false, reason: substitutions.reason });
+      }
+    });
+
+    it('refuses every adjacent transposition of a valid key', () => {
+      for (const { input } of transpositions.transpositions) {
+        expect(validateProductKey(input)).toMatchObject({ valid: false, reason: transpositions.reason });
+      }
+    });
+
+    it('refuses upstream product keys as upstream, not as a typo', () => {
+      for (const input of upstream.inputs) {
+        expect(validateProductKey(input)).toMatchObject({ valid: false, reason: upstream.reason });
+      }
     });
 
     it.each([
@@ -31,8 +79,6 @@ describe('Frameleaf Cloud helpers', () => {
       ['FL-X8NL-49G8-J58U', 'kind'],
       ['FL-S8NL-49G8-J58O', 'symbols'],
       ['FL-S8NL-49G8-J581', 'symbols'],
-      ['FL-S8NL-49G8-J58V', 'check'],
-      ['FL-S8NM-49G8-J58U', 'check'],
       ['IMCL-0KEY-AAAA-BBBB-CCCC', 'upstream'],
       ['IMSV-0KEY-AAAA-BBBB-CCCC', 'upstream'],
     ])('refuses %j (%s)', (input, reason) => {

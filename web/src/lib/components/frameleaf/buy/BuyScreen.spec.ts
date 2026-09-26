@@ -144,7 +144,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
 
   it('gives the discount for a personal supporter key and says so without calling the server licensed', async () => {
     authManager.setUser(
-      user({ license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T00:00:00.000Z' } }),
+      user({ license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' } }),
     );
     render(BuyScreen);
     expect(await screen.findByText('$7.99')).toBeInTheDocument();
@@ -174,23 +174,23 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
   it('activates an individual key through the personal endpoint and shows the activated card', async () => {
     sdkMock.setUserLicense.mockResolvedValue({} as never);
     sdkMock.getMyUser.mockResolvedValue(
-      user({ license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T00:00:00.000Z' } }),
+      user({ license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' } }),
     );
-    render(BuyScreen, { pendingKey: 'FL-IC8Q-BT2Q-8ELH' });
+    render(BuyScreen, { pendingKey: 'FL-IC8Q-BT2Q-8EL6' });
 
-    expect(await screen.findByLabelText('Product key')).toHaveValue('FL-IC8Q-BT2Q-8ELH');
+    expect(await screen.findByLabelText('Product key')).toHaveValue('FL-IC8Q-BT2Q-8EL6');
     expect(screen.getByText('Individual key recognised')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
 
     await waitFor(() =>
-      expect(sdkMock.setUserLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-IC8Q-BT2Q-8ELH' } }),
+      expect(sdkMock.setUserLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-IC8Q-BT2Q-8EL6' } }),
     );
     expect(await screen.findByText('Thank you, Taylor')).toBeInTheDocument();
-    expect(screen.getByText(/ends in 8ELH/)).toBeInTheDocument();
+    expect(screen.getByText(/ends in 8EL6/)).toBeInTheDocument();
   });
 
   it('sends a server key to the administrator endpoint, and refuses it for anyone else', async () => {
-    render(BuyScreen, { pendingKey: 'FL-S8NL-49G8-J58U' });
+    render(BuyScreen, { pendingKey: 'FL-S8NL-49G8-J583' });
     await fireEvent.click(await screen.findByRole('button', { name: 'Activate' }));
     expect(await screen.findByText(/Ask an administrator/)).toBeInTheDocument();
     expect(sdkMock.activateLicense).not.toHaveBeenCalled();
@@ -205,7 +205,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
         state: LicenseState.Active,
         kind: 'server',
         source: 'key',
-        keyHint: 'J58U',
+        keyHint: 'J583',
         activatedAt: '2026-09-25T00:00:00.000Z',
         expiresAt: null,
         graceUntil: null,
@@ -214,14 +214,14 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     });
     sdkMock.activateLicense.mockResolvedValue(active);
     sdkMock.removeLicenseKey.mockResolvedValue(licenseStatus());
-    render(BuyScreen, { pendingKey: 'FL-S8NL-49G8-J58U' });
+    render(BuyScreen, { pendingKey: 'FL-S8NL-49G8-J583' });
 
     expect(await screen.findByRole('group', { name: 'Add AI credit' })).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
     await waitFor(() =>
-      expect(sdkMock.activateLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-S8NL-49G8-J58U' } }),
+      expect(sdkMock.activateLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-S8NL-49G8-J583' } }),
     );
-    expect(await screen.findByText(/ends in J58U/)).toBeInTheDocument();
+    expect(await screen.findByText(/ends in J583/)).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Remove key' }));
     expect(screen.getByText('Remove this key from this server?')).toBeInTheDocument();
@@ -231,7 +231,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
 
   it('hides the badge when "Hide the supporter badge" is turned on', async () => {
     authManager.setUser(
-      user({ license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T00:00:00.000Z' } }),
+      user({ license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' } }),
     );
     sdkMock.updateMyPreferences.mockResolvedValue({ purchase: { showSupportBadge: false } } as never);
     render(BuyScreen);
