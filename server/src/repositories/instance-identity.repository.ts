@@ -20,6 +20,7 @@ import { v7 as uuidv7 } from 'uuid';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { base64url, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { type FrameleafKeySigner, jwsSigningInput } from 'src/utils/frameleaf-dpop.js';
 
 /** File name of the private key inside the identity directory. */
 export const INSTANCE_KEY_FILE = 'instance-key.pem';
@@ -48,6 +49,11 @@ export const RETIRING_META_FILE = 'instance-key.retiring.json';
 export const ROTATION_NEEDED_FILE = 'instance-key.rotate-needed.json';
 /** A key file that does not parse is renamed to `<file>.corrupt-<time>-<random>` (FL-175). */
 export const SET_ASIDE_MARK = '.corrupt-';
+/**
+ * A candidate key an in-flight next key replaces is renamed to `<file>.superseded-<time>-<random>`
+ * (FL-178 review of FL-175): the cloud may hold it, so it is kept for an operator, never overwritten.
+ */
+export const SUPERSEDED_MARK = '.superseded-';
 /** Staging copies `publishNewKey` leaves after a crash; each is a second hard link to the live key. */
 const STAGING_FILE = /^instance-key\.pem\.[\da-f-]{36}\.tmp$/;
 /** `link()` failures where the file system cannot hard-link (SMB/CIFS, FUSE, another device). */
@@ -412,7 +418,8 @@ export class InstanceIdentityRepository {
    * The in-flight key becomes the candidate; its start time goes in a 0600 sidecar first. A next key
    * that does not parse was cut short by a crash before `rotate` finished flushing it, so (where the
    * file system can flush) before the cloud was asked about it (FL-175): it is set aside and the
-   * current key stays.
+   * current key stays. A candidate already here is never overwritten: it is moved to a unique
+   * `<file>.superseded-…` name first (FL-178).
    */
   private async makeCandidate(dir: string, now: number) {
     const nextFile = join(dir, NEXT_KEY_FILE);
@@ -420,8 +427,18 @@ export class InstanceIdentityRepository {
     if (!kid) {
       return;
     }
+    const candidateFile = join(dir, CANDIDATE_KEY_FILE);
+    if (await exists(candidateFile)) {
+      // an earlier candidate is still here: the cloud may hold it, so the rename below must not replace
+      // it. It is moved to a unique name first and kept for an operator; the newer key is the candidate.
+      await this.setAside(
+        candidateFile,
+        'an earlier candidate key the cloud may hold, replaced by a newer key from an interrupted rotation; kept for an operator',
+        { mark: SUPERSEDED_MARK },
+      );
+    }
     await this.writeSidecar(join(dir, CANDIDATE_META_FILE), { kid, since: new Date(now).toISOString() });
-    await rename(nextFile, join(dir, CANDIDATE_KEY_FILE));
+    await rename(nextFile, candidateFile);
   }
 
   /**
@@ -546,9 +563,10 @@ export class InstanceIdentityRepository {
   /**
    * Move a key file that does not parse to a unique `<file>.corrupt-<time>-<random>` name, owner-only,
    * kept for an operator (it may be the only copy of a key the cloud knows). Returns the new path.
+   * `mark` names another reason, such as a candidate a newer one replaced (`SUPERSEDED_MARK`).
    */
-  private async setAside(file: string, reason: unknown) {
-    const target = `${file}${SET_ASIDE_MARK}${Date.now()}-${randomUUID().slice(0, 8)}`;
+  private async setAside(file: string, reason: unknown, { mark = SET_ASIDE_MARK }: { mark?: string } = {}) {
+    const target = `${file}${mark}${Date.now()}-${randomUUID().slice(0, 8)}`;
     try {
       await rename(file, target);
     } catch (error) {
@@ -556,7 +574,11 @@ export class InstanceIdentityRepository {
       return;
     }
     await this.restrict(target);
-    this.logger.warn(`Set aside ${file} as ${target}: it is not a usable Frameleaf identity key (${reason})`);
+    this.logger.warn(
+      mark === SET_ASIDE_MARK
+        ? `Set aside ${file} as ${target}: it is not a usable Frameleaf identity key (${reason})`
+        : `Set aside ${file} as ${target}: ${reason}`,
+    );
     return target;
   }
 
@@ -677,14 +699,43 @@ export class InstanceIdentityRepository {
     return rest;
   }
 
-  /** A signer that uses the candidate key, to ask the cloud whether it holds it. */
-  async candidateSigner(identity: FrameleafInstanceIdentity) {
+  /**
+   * A signer bound to the candidate key, to ask the cloud whether it holds it. The only way a token is
+   * ever minted with a key other than the current one (FC-19: a rotation proved by a retiring key is
+   * refused once the active key was used), so only `resolveCandidate` in the cloud service calls it.
+   */
+  async candidateSigner(identity: FrameleafInstanceIdentity): Promise<FrameleafKeySigner> {
     const candidate = identity.candidate;
     if (!candidate) {
       throw new Error('There is no candidate key');
     }
-    const privateKey = createPrivateKey(await readFile(candidate.keyFile));
-    return (payload: Record<string, unknown>) => this.signWith(privateKey, candidate.kid, payload);
+    const signer = this.signerOf(createPrivateKey(await readFile(candidate.keyFile)));
+    if (signer.kid !== candidate.kid) {
+      throw new Error('The candidate key changed while it was being read');
+    }
+    return signer;
+  }
+
+  /**
+   * A signer bound to the current key as last loaded by `loadOrCreate` (FL-178). It keeps that key
+   * even when a rotation replaces the current one meanwhile, so a token's client assertion and every
+   * DPoP proof for it are always signed by one key. During a recovery after a damaged key (FL-175)
+   * this is the previous key, which the cloud sees as retiring.
+   */
+  currentSigner(): FrameleafKeySigner {
+    if (!this.cached) {
+      throw new Error('The Frameleaf identity key is not loaded');
+    }
+    return this.signerOf(this.cached.privateKey);
+  }
+
+  private signerOf(privateKey: KeyObject): FrameleafKeySigner {
+    const publicJwk = publicJwkOf(privateKey);
+    return {
+      kid: ed25519Thumbprint(publicJwk),
+      publicJwk,
+      sign: (header, payload) => this.jws(privateKey, header, payload),
+    };
   }
 
   private async swapIn(
@@ -737,27 +788,24 @@ export class InstanceIdentityRepository {
   /**
    * FL-177: a compact EdDSA JWS that carries its own public key in the header (`jwk`, RFC 7515
    * section 4.1.3) beside `kid`, its RFC 7638 thumbprint, for a receiver that holds no key for this
-   * server yet (a licence activation from a server that was never linked). The header key is derived
-   * from the loaded private key, so it always matches the signature.
+   * server yet (a licence activation from a server that was never linked). Signed by `signer` (by
+   * default the current key), so a caller that also names the key elsewhere, such as a fingerprint's
+   * `jkt`, takes both from the same key snapshot (FL-177 review); the header key always matches the
+   * signature.
    */
-  signJwsWithPublicKey(payload: Record<string, unknown>, type = 'JWT'): string {
-    if (!this.cached) {
-      throw new Error('The Frameleaf identity key is not loaded');
-    }
-    const jwk = publicJwkOf(this.cached.privateKey);
-    return this.signWith(this.cached.privateKey, ed25519Thumbprint(jwk), payload, type, jwk);
+  signJwsWithPublicKey(
+    payload: Record<string, unknown>,
+    { signer = this.currentSigner(), type = 'JWT' }: { signer?: FrameleafKeySigner; type?: string } = {},
+  ): string {
+    return signer.sign({ alg: 'EdDSA', typ: type, kid: signer.kid, jwk: signer.publicJwk }, payload);
   }
 
-  private signWith(
-    privateKey: KeyObject,
-    kid: string,
-    payload: Record<string, unknown>,
-    type = 'JWT',
-    jwk?: Ed25519PublicJwk,
-  ) {
-    const header = base64url(JSON.stringify({ alg: 'EdDSA', typ: type, kid, ...(jwk && { jwk }) }));
-    const body = base64url(JSON.stringify(payload));
-    const signature = sign(null, Buffer.from(`${header}.${body}`), privateKey);
-    return `${header}.${body}.${base64url(signature)}`;
+  private signWith(privateKey: KeyObject, kid: string, payload: Record<string, unknown>, type = 'JWT') {
+    return this.jws(privateKey, { alg: 'EdDSA', typ: type, kid }, payload);
+  }
+
+  private jws(privateKey: KeyObject, header: Record<string, unknown>, payload: Record<string, unknown>) {
+    const input = jwsSigningInput(header, payload);
+    return `${input}.${base64url(sign(null, Buffer.from(input), privateKey))}`;
   }
 }

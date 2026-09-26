@@ -18,12 +18,30 @@ import {
   refusalFromCloudError,
   tokenResponseSchema,
 } from 'src/utils/frameleaf-cloud.js';
+import {
+  BoundTokenRefusedError,
+  DPOP_NONCE_HEADER,
+  FrameleafInstanceToken,
+  FrameleafKeySigner,
+  boundTokenProblem,
+  createDpopProof,
+  isNonceChallenge,
+  isUsableNonce,
+  signClientAssertion,
+} from 'src/utils/frameleaf-dpop.js';
 
 export type FrameleafCloudRequest = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   /** Absolute URL; always built from the configured cloud address or from discovery. */
   url: string;
+  /** A plain bearer credential (the link token, the initial access token); never an instance token. */
   bearer?: string;
+  /**
+   * RFC 9449 (FL-178): an instance token and the key it is bound to, sent as `Authorization: DPoP`
+   * with a proof carrying `ath`; or a key alone, for a proof without `ath` (the token request, and
+   * registering the key being linked).
+   */
+  dpop?: { signer: FrameleafKeySigner; accessToken?: string };
   body?: unknown;
   form?: Record<string, string>;
   /** FL-177: a body sent as it is, for example a compact JWS as `application/jose`. */
@@ -31,7 +49,18 @@ export type FrameleafCloudRequest = {
   headers?: Record<string, string>;
 };
 
-export type FrameleafClientAssertionSigner = (claims: Record<string, unknown>) => string;
+/**
+ * One answer: whether it was a DPoP nonce challenge, the nonce the proof carried, and the usable
+ * `DPoP-Nonce` the answer itself carried (the retry uses that one, not whatever a parallel call
+ * stored for the origin meanwhile).
+ */
+type Exchange = {
+  response: Response;
+  text: string;
+  nonceChallenge: boolean;
+  nonceUsed?: string;
+  nonceReceived?: string;
+};
 
 /**
  * The HTTP side of Frameleaf Cloud (FL-159; the part of FL-155's `frameleaf-cloud.repository.ts`
@@ -45,7 +74,13 @@ export type FrameleafClientAssertionSigner = (claims: Record<string, unknown>) =
 @Injectable()
 export class FrameleafCloudRepository {
   private discoveryCache?: { cloudUrl: string; document: FrameleafDiscoveryDocument; validUntil: number };
+  /** Instance tokens by instance, resource and the thumbprint of the key they are bound to. */
   private tokenCache = new Map<string, { token: string; expiresAt: number }>();
+  /**
+   * The last DPoP nonce each origin sent (RFC 9449 section 8), replaced whenever an answer carries a
+   * new one. Nonces are not credentials, so `forget` keeps them.
+   */
+  private nonces = new Map<string, string>();
 
   constructor(private logger: LoggingRepository) {
     this.logger.setContext(FrameleafCloudRepository.name);
@@ -76,50 +111,70 @@ export class FrameleafCloudRepository {
   }
 
   /**
-   * A short-lived access token for `resource`, from the `client_credentials` grant with a
-   * `private_key_jwt` client assertion (EdDSA, `iss = sub = client_id = instanceId`,
-   * `aud = <issuer>/token`, `jti`, at most five minutes). Cached until shortly before expiry;
-   * nothing is persisted.
+   * A short-lived DPoP-bound access token for `resource` (FL-159, FL-178): the `client_credentials`
+   * grant with a `private_key_jwt` client assertion (EdDSA, `iss = sub = client_id = instanceId`,
+   * `aud = <issuer>/token`, `jti`, at most five minutes) and a DPoP proof (no `ath`), both signed by
+   * `signer`'s key. The answer must be a `DPoP` token bound to that key (`cnf.jkt`, and
+   * `frameleaf_kid` when present). A `use_dpop_nonce` answer is retried once with the nonce it sent
+   * and a fresh assertion. Cached per key until shortly before expiry; nothing is persisted.
    */
   async accessToken(
     document: FrameleafDiscoveryDocument,
     instanceId: string,
     resource: string,
-    signAssertion: FrameleafClientAssertionSigner,
+    signer: FrameleafKeySigner,
     now = Date.now(),
-  ): Promise<string> {
-    const cacheKey = `${instanceId} ${resource}`;
+  ): Promise<FrameleafInstanceToken> {
+    const cacheKey = `${instanceId} ${resource} ${signer.kid}`;
     const cached = this.tokenCache.get(cacheKey);
     if (cached && cached.expiresAt - FRAMELEAF_CLOUD_TOKEN_REFRESH_MARGIN_MS > now) {
-      return cached.token;
+      return { accessToken: cached.token, signer };
     }
     const tokenEndpoint = `${document.issuer.replace(/\/+$/, '')}/token`;
-    const issuedAt = Math.floor(now / 1000);
-    const assertion = signAssertion({
-      iss: instanceId,
-      sub: instanceId,
-      aud: tokenEndpoint,
-      jti: randomUUID(),
-      iat: issuedAt,
-      exp: issuedAt + FRAMELEAF_CLOUD_ASSERTION_TTL_SECONDS,
+    const response = await this.exchangeJson(tokenResponseSchema, () => {
+      const issuedAt = Math.floor(now / 1000);
+      return {
+        method: 'POST',
+        url: tokenEndpoint,
+        dpop: { signer },
+        form: {
+          grant_type: 'client_credentials',
+          client_id: instanceId,
+          client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+          // a new jti for every attempt: the one a nonce challenge refused may count as used
+          client_assertion: signClientAssertion(signer, {
+            iss: instanceId,
+            sub: instanceId,
+            aud: tokenEndpoint,
+            jti: randomUUID(),
+            iat: issuedAt,
+            exp: issuedAt + FRAMELEAF_CLOUD_ASSERTION_TTL_SECONDS,
+          }),
+          resource,
+          scope: 'instance',
+        },
+      };
     });
-    const response = await this.requestJson(tokenResponseSchema, {
-      method: 'POST',
-      url: tokenEndpoint,
-      form: {
-        grant_type: 'client_credentials',
-        client_id: instanceId,
-        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
-        client_assertion: assertion,
-        resource,
-        scope: 'instance',
-      },
-    });
+    // only here, after the answer parsed as a token response, is a refusal the marker that the cloud
+    // issued a token for this key (`BoundTokenRefusedError`)
+    const problem = boundTokenProblem(response, signer);
+    if (problem) {
+      throw new BoundTokenRefusedError(problem);
+    }
+    // a token minted with another key of this server (one a rotation replaced) is never used again
+    for (const key of this.tokenCache.keys()) {
+      if (key.startsWith(`${instanceId} ${resource} `)) {
+        this.tokenCache.delete(key);
+      }
+    }
     this.tokenCache.set(cacheKey, { token: response.access_token, expiresAt: now + response.expires_in * 1000 });
-    return response.access_token;
+    return { accessToken: response.access_token, signer };
   }
 
-  /** Forget cached tokens and discovery, for example after the link changed or a 401. */
+  /**
+   * Forget cached tokens and discovery, for example after the link changed, a key rotation (tokens are
+   * bound to the key that minted them) or a 401 that refused a token.
+   */
   forget() {
     this.discoveryCache = undefined;
     this.tokenCache.clear();
@@ -146,41 +201,25 @@ export class FrameleafCloudRepository {
   }
 
   /** One JSON request: bounded, no redirects, validated against `schema`. */
-  async requestJson<T extends z.ZodType>(schema: T, request: FrameleafCloudRequest): Promise<z.infer<T>> {
-    const headers: Record<string, string> = { Accept: 'application/json', ...request.headers };
-    let body: string | undefined;
-    if (request.raw) {
-      headers['Content-Type'] = request.raw.contentType;
-      body = request.raw.body;
-    } else if (request.form) {
-      headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      body = new URLSearchParams(request.form).toString();
-    } else if (request.body !== undefined) {
-      headers['Content-Type'] = 'application/json';
-      body = JSON.stringify(request.body);
-    }
-    if (request.bearer) {
-      headers.Authorization = `Bearer ${request.bearer}`;
-    }
+  requestJson<T extends z.ZodType>(schema: T, request: FrameleafCloudRequest): Promise<z.infer<T>> {
+    return this.exchangeJson(schema, () => request);
+  }
 
-    let response: Response;
-    try {
-      response = await fetch(request.url, {
-        method: request.method ?? 'GET',
-        headers,
-        body,
-        redirect: 'error',
-        signal: AbortSignal.timeout(FRAMELEAF_CLOUD_TIMEOUT_MS),
-      });
-    } catch (error) {
-      throw new FrameleafCloudError(
-        MlAdmissionRefusal.CloudUnavailable,
-        null,
-        `Frameleaf Cloud did not answer: ${error instanceof Error ? error.message : String(error)}`,
-      );
+  /**
+   * `requestJson` for a request built by `build`, which is called again for the one retry a DPoP
+   * nonce challenge gets (FL-178), so a retried request can carry fresh one-time values. Each attempt
+   * signs a fresh proof with the origin's latest nonce.
+   */
+  private async exchangeJson<T extends z.ZodType>(schema: T, build: () => FrameleafCloudRequest): Promise<z.infer<T>> {
+    let request = build();
+    let exchange = await this.exchange(request);
+    // retried once, and only when the challenge itself brought a nonce this attempt did not already use
+    const nonce = exchange.nonceReceived;
+    if (request.dpop && exchange.nonceChallenge && nonce && nonce !== exchange.nonceUsed) {
+      request = build();
+      exchange = await this.exchange(request, nonce);
     }
-
-    const text = await this.readBounded(response);
+    const { response, text } = exchange;
     if (!response.ok) {
       let envelope = null;
       let oauth = null;
@@ -194,7 +233,8 @@ export class FrameleafCloudRepository {
         // an unreadable body carries no envelope; the status decides the refusal
       }
       const refusal = refusalFromCloudError(response.status, envelope);
-      if (response.status === 401) {
+      // a nonce challenge says nothing about the token, so it never costs the cached tokens (FL-178)
+      if (response.status === 401 && !exchange.nonceChallenge) {
         this.tokenCache.clear();
       }
       throw new FrameleafCloudError(
@@ -227,6 +267,80 @@ export class FrameleafCloudRepository {
       );
     }
     return parsed.data;
+  }
+
+  /**
+   * One HTTP exchange. With `dpop`, a proof by its key goes in the `DPoP` header (with `nonce`, else
+   * the origin's latest nonce, and `ath` when a token is presented as `Authorization: DPoP <token>`).
+   * Any `DPoP-Nonce` the answer carries replaces the origin's nonce.
+   */
+  private async exchange(request: FrameleafCloudRequest, nonce?: string): Promise<Exchange> {
+    const method = request.method ?? 'GET';
+    const origin = new URL(request.url).origin;
+    const headers: Record<string, string> = { Accept: 'application/json', ...request.headers };
+    let body: string | undefined;
+    if (request.raw) {
+      headers['Content-Type'] = request.raw.contentType;
+      body = request.raw.body;
+    } else if (request.form) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      body = new URLSearchParams(request.form).toString();
+    } else if (request.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(request.body);
+    }
+    if (request.bearer && request.dpop?.accessToken) {
+      throw new Error('A Frameleaf Cloud request carries either a bearer credential or a DPoP token, not both');
+    }
+    if (request.bearer) {
+      headers.Authorization = `Bearer ${request.bearer}`;
+    }
+    let nonceUsed: string | undefined;
+    if (request.dpop) {
+      nonceUsed = nonce ?? this.nonces.get(origin);
+      const { signer, accessToken } = request.dpop;
+      headers.DPoP = createDpopProof(signer, { htm: method, htu: request.url, nonce: nonceUsed, accessToken });
+      if (accessToken) {
+        headers.Authorization = `DPoP ${accessToken}`;
+      }
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(request.url, {
+        method,
+        headers,
+        body,
+        redirect: 'error',
+        signal: AbortSignal.timeout(FRAMELEAF_CLOUD_TIMEOUT_MS),
+      });
+    } catch (error) {
+      throw new FrameleafCloudError(
+        MlAdmissionRefusal.CloudUnavailable,
+        null,
+        `Frameleaf Cloud did not answer: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    const answered = response.headers.get(DPOP_NONCE_HEADER);
+    const nonceReceived = isUsableNonce(answered) ? answered : undefined;
+    if (nonceReceived) {
+      this.nonces.set(origin, nonceReceived);
+    }
+    const text = await this.readBounded(response);
+    let nonceChallenge = false;
+    if (!response.ok) {
+      let code: string | undefined;
+      try {
+        const parsed = JSON.parse(text) as { code?: unknown; error?: unknown } | null;
+        const value = parsed?.code ?? parsed?.error;
+        code = typeof value === 'string' ? value : undefined;
+      } catch {
+        // no readable body; the WWW-Authenticate header may still carry the challenge
+      }
+      nonceChallenge = isNonceChallenge(response.status, code, response.headers.get('www-authenticate'));
+    }
+    return { response, text, nonceChallenge, nonceUsed, nonceReceived };
   }
 
   private async readBounded(response: Response): Promise<string> {

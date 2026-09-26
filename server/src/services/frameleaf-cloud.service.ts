@@ -64,6 +64,7 @@ import {
   cloudErrorCode,
   storeAddress,
 } from 'src/utils/frameleaf-cloud.js';
+import { BoundTokenRefusedError, USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
@@ -341,13 +342,18 @@ export class FrameleafCloudService extends BaseService {
    * `instanceId` (as-built decision #4); Frameleaf Cloud registers the Sign in with Frameleaf client
    * itself, so this server never runs dynamic client registration and sends no redirect URIs
    * (decisions #7–#9). A refusal the contract names comes back in words an administrator can act on
-   * (`LINK_REFUSAL_MESSAGES`).
+   * (`LINK_REFUSAL_MESSAGES`). The registration carries a DPoP proof (no `ath`) signed by the key being
+   * linked, which is the key it registers (FL-178); the cloud checks it, and any nonce challenge,
+   * before it consumes the link token, so the one nonce retry sends the same link token.
    */
   async completeLink(
     cloudUrl: string,
     source: { linkToken: string; actorId?: string } | { headlessToken: string },
   ): Promise<FrameleafCloudLink> {
-    const identity = await loadInstanceIdentity(this.gatewayDeps());
+    const { instanceId } = await loadInstanceIdentity(this.gatewayDeps());
+    // one key for the proof and the registered public key, even if a rotation swapped it meanwhile
+    const signer = this.instanceIdentityRepository.currentSigner();
+    const identity = { instanceId, kid: signer.kid, publicJwk: signer.publicJwk };
     const document = await this.discover(cloudUrl);
     const endpoints = linkEndpoints(document);
     const previous = await this.readLink(cloudUrl);
@@ -359,6 +365,7 @@ export class FrameleafCloudService extends BaseService {
       registration = await this.frameleafCloudRepository.requestJson(instanceRegistrationSchema, {
         method: 'POST',
         url: endpoints.instances,
+        dpop: { signer },
         ...('linkToken' in source
           ? { bearer: source.linkToken }
           : { headers: { 'X-Frameleaf-Link-Token': source.headlessToken } }),
@@ -451,11 +458,11 @@ export class FrameleafCloudService extends BaseService {
     if (link.status === 'linked' && link.instanceId) {
       // tell the cloud when it is reachable; the local unlink happens either way
       try {
-        const { document, bearer } = await this.apiToken(cloudUrl, link);
+        const { document, token } = await this.apiToken(cloudUrl, link);
         await this.frameleafCloudRepository.requestJson(z.unknown(), {
           method: 'DELETE',
           url: linkEndpoints(document).instance,
-          bearer,
+          dpop: token,
         });
       } catch (error) {
         this.logger.warn(`Frameleaf Cloud was not told about the unlink: ${error}`);
@@ -762,25 +769,35 @@ export class FrameleafCloudService extends BaseService {
   private async checkIn(cloudUrl: string, link: FrameleafCloudLink): Promise<JobStatus> {
     let response: HeartbeatResponse;
     let document: FrameleafDiscoveryDocument;
+    let tokenKid: string | undefined;
     try {
-      const token = await this.apiToken(cloudUrl, link);
-      document = token.document;
+      const api = await this.apiToken(cloudUrl, link);
+      document = api.document;
+      tokenKid = api.token.signer.kid;
       response = await this.frameleafCloudRepository.requestJson(heartbeatResponseSchema, {
         method: 'POST',
         url: linkEndpoints(document).heartbeat,
-        bearer: token.bearer,
+        dpop: api.token,
         body: await this.buildHeartbeatPayload(link),
       });
     } catch (error) {
       if (cloudErrorCode(error) === CloudErrorCode.KeyRetired) {
-        // FL-177 (FC-19): the token was minted with a key the cloud retired or revoked. A candidate
-        // key the cloud may hold after a lost rotation answer is tried first; otherwise only a new
-        // link helps, which the administrators are asked for. The link itself is not revoked.
-        if (link.heartbeat?.relinkRequested || link.heartbeat?.keyRecovery?.closed) {
-          // already waiting for a new link: no candidate lock, no discovery, no repeated warning
+        // FL-177 (FC-19): the token was minted with a key the cloud retired or revoked. The link itself
+        // is not revoked; only a new link helps unless the key the cloud holds is here after all.
+        if (tokenKid && (await this.keyChangedSince(tokenKid))) {
+          // FL-178: the token's key was replaced by another worker meanwhile, so this says nothing about
+          // the current key; the next check-in mints a token with it
           await this.recordHeartbeatFailure(link, error);
           return JobStatus.Failed;
         }
+        if (link.heartbeat?.relinkReason === 'key' || link.heartbeat?.keyRecovery?.closed) {
+          // this path already asked for a new link: no candidate lock, no discovery, no repeated warning.
+          // A relink the cloud commanded earlier does not skip the candidate, which may still be the key
+          // it holds (FL-177 review)
+          await this.recordHeartbeatFailure(link, error);
+          return JobStatus.Failed;
+        }
+        // a candidate key the cloud may hold after a lost rotation answer is tried first
         const recovered = await this.tryCandidateKey(cloudUrl, link);
         const current = (await this.readLink(cloudUrl)) ?? link;
         let next = current;
@@ -795,7 +812,7 @@ export class FrameleafCloudService extends BaseService {
       }
       if (this.isRevocation(error)) {
         // a rotation whose answer was lost may have left the cloud holding the candidate key; only
-        // invalid_client can mean that, an explicit instance-revoked never does
+        // invalid_client can mean that, an explicit instance-revoked never does (key_retired is above)
         if (this.isInvalidClient(error) && (await this.tryCandidateKey(cloudUrl, link))) {
           // this check-in still failed: count it, so repeated failures still reach the administrators
           await this.recordHeartbeatFailure((await this.readLink(cloudUrl)) ?? link, error);
@@ -819,6 +836,10 @@ export class FrameleafCloudService extends BaseService {
     }
 
     const now = Date.now();
+    // FL-178: this check-in succeeded, so the cloud accepts the current key again: a relink the
+    // key_retired path asked for is no longer needed. A relink the cloud commanded, or one after a
+    // closed key recovery, stays until the server is linked again.
+    const keyRelinkResolved = link.heartbeat?.relinkReason === 'key' && !link.heartbeat.keyRecovery?.closed;
     let next: FrameleafCloudLink = {
       ...link,
       lastContactAt: new Date(now).toISOString(),
@@ -831,6 +852,7 @@ export class FrameleafCloudService extends BaseService {
         lastFailureAt: undefined,
         cloneSuspected: response.cloneSuspected,
         nextAt: this.after(now, nextHeartbeatDelay(response.nextHeartbeatSec)),
+        ...(keyRelinkResolved && { relinkRequested: undefined, relinkReason: undefined }),
       },
     };
     if (response.servicesChanged) {
@@ -937,6 +959,15 @@ export class FrameleafCloudService extends BaseService {
     return error instanceof FrameleafCloudError && (error.oauth?.error ?? cloudErrorCode(error)) === 'invalid_client';
   }
 
+  /**
+   * The token endpoint issued a parsed token response this server refused (FL-178). Only
+   * `BoundTokenRefusedError` means that: any other failure with a 2xx status (HTML from a captive
+   * portal, invalid JSON, an oversized body) says nothing about whether the cloud checked the key.
+   */
+  private isIssuedButRefused(error: unknown): boolean {
+    return error instanceof BoundTokenRefusedError;
+  }
+
   // ------------------------------------------------------------------ commands (FL-155)
 
   private async runCommand(
@@ -970,11 +1001,11 @@ export class FrameleafCloudService extends BaseService {
       `Frameleaf Cloud command ${command.type} (${command.id}): ${result}${detail ? ` — ${detail}` : ''}`,
     );
     try {
-      const { bearer } = await this.apiToken(cloudUrl, next);
+      const { token } = await this.apiToken(cloudUrl, next);
       await this.frameleafCloudRepository.requestJson(z.unknown(), {
         method: 'POST',
         url: linkEndpoints(document).commandAck(command.id),
-        bearer,
+        dpop: token,
         body: { result, detail: detail ?? null },
       });
     } catch (error) {
@@ -1008,7 +1039,7 @@ export class FrameleafCloudService extends BaseService {
         return link;
       }
       case CloudCommandType.KeyRotate: {
-        await this.rotateKey(cloudUrl, document, link);
+        await this.rotateOnCommand(cloudUrl, document, link);
         return link;
       }
       case CloudCommandType.Relink: {
@@ -1018,8 +1049,31 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
+   * A rotation the cloud asked for (`key.rotate`). A candidate key an earlier rotation left (its answer
+   * was lost) may be what the cloud holds, so it is resolved first, exactly as a recovery does (FL-178
+   * review of FL-175), and before any nonce is fetched: promoted when the cloud holds it (the new key
+   * the command asked for), discarded when refused, and with no clear answer the command fails and
+   * the candidate stays for the next check-in. Only then does a new rotation start.
+   */
+  private async rotateOnCommand(cloudUrl: string, document: FrameleafDiscoveryDocument, link: FrameleafCloudLink) {
+    const candidate = await this.resolveCandidate(cloudUrl, link, () => KEY_RETIRE_HOURS);
+    if (candidate === 'accepted') {
+      return;
+    }
+    if (candidate === 'unknown') {
+      throw new Error(
+        'a key from an earlier rotation is still waiting for Frameleaf Cloud’s answer; the next check-in asks again',
+      );
+    }
+    await this.rotateKey(cloudUrl, document, link);
+  }
+
+  /**
    * Ask the administrators to link this server again: on the cloud's `relink` command, or when every
-   * instance route answers 401 `key_retired` (FL-177). Nothing on this server is removed.
+   * instance route answers 401 `key_retired` (FL-177). Nothing on this server is removed. `relinkReason`
+   * records why. A commanded relink always wins and stays until the server is linked again; a `key`
+   * reason lets later `key_retired` check-ins stay quiet, and a later check-in that succeeds clears it
+   * (FL-178), so a passing `key_retired` leaves no stale relink request behind.
    */
   private requireRelink(link: FrameleafCloudLink, why: 'command' | 'key'): FrameleafCloudLink {
     this.notify({
@@ -1035,7 +1089,12 @@ export class FrameleafCloudService extends BaseService {
     });
     return {
       ...link,
-      heartbeat: { ...link.heartbeat, failures: link.heartbeat?.failures ?? 0, relinkRequested: true },
+      heartbeat: {
+        ...link.heartbeat,
+        failures: link.heartbeat?.failures ?? 0,
+        relinkRequested: true,
+        relinkReason: why === 'command' || link.heartbeat?.relinkReason === 'command' ? 'command' : 'key',
+      },
     };
   }
 
@@ -1130,6 +1189,16 @@ export class FrameleafCloudService extends BaseService {
     }
   }
 
+  /** Whether the current identity key is no longer `kid` (another worker rotated meanwhile). */
+  private async keyChangedSince(kid: string) {
+    try {
+      return (await loadInstanceIdentity(this.gatewayDeps())).kid !== kid;
+    } catch (error) {
+      this.logger.warn(`Could not read the identity key state: ${error}`);
+      return false;
+    }
+  }
+
   /** Whether a recovery after a key that could not be read is still open (FL-175). */
   private async keyRecoveryOpen() {
     try {
@@ -1178,7 +1247,8 @@ export class FrameleafCloudService extends BaseService {
     if (code === 'rate-limited' || error.status === 429) {
       return 'rate-limited';
     }
-    if (code || error.status !== 401) {
+    // a DPoP nonce challenge (FL-178) the one retry did not satisfy is not a rotation nonce refusal
+    if (code || error.status !== 401 || error.oauth?.error === USE_DPOP_NONCE) {
       return null;
     }
     if (/nonce/i.test(`${error.oauth?.error ?? ''} ${error.message}`)) {
@@ -1252,10 +1322,10 @@ export class FrameleafCloudService extends BaseService {
     recovery?: { until: string },
   ) {
     const endpoints = linkEndpoints(document);
-    const { bearer } = await this.apiToken(cloudUrl, link);
+    const { token } = await this.apiToken(cloudUrl, link);
     const { nonce } = await this.frameleafCloudRepository.requestJson(keyNonceSchema, {
       url: endpoints.keyNonce,
-      bearer,
+      dpop: token,
     });
     // under the identity lock, so no other worker loads the key while it is being swapped; the swap
     // itself survives a crash (InstanceIdentityRepository.recoverRotation). The identity is loaded
@@ -1266,6 +1336,10 @@ export class FrameleafCloudService extends BaseService {
         // another worker finished the recovery meanwhile
         return;
       }
+      if (identity.kid !== token.signer.kid) {
+        // FC-19 needs the proof, the token's assertion and its DPoP proofs from one key (FL-178)
+        throw new Error('The identity key changed while this rotation was being prepared; it is tried again later');
+      }
       const now = Date.now();
       const retireHours = recovery ? this.hoursUntil(recovery.until) : KEY_RETIRE_HOURS;
       const rotated = await this.instanceIdentityRepository.rotate(
@@ -1274,7 +1348,7 @@ export class FrameleafCloudService extends BaseService {
           await this.frameleafCloudRepository.requestJson(z.unknown(), {
             method: 'POST',
             url: endpoints.keyRotate,
-            bearer,
+            dpop: token,
             body: { newJwk, proof: signWithCurrent({ nonce, jkt: newJwk.kid }) },
           });
         },
@@ -1324,10 +1398,26 @@ export class FrameleafCloudService extends BaseService {
       try {
         const document = await this.discover(cloudUrl);
         const signer = await this.instanceIdentityRepository.candidateSigner(identity);
-        await this.frameleafCloudRepository.accessToken(document, instanceId, document.api, signer);
+        try {
+          await this.frameleafCloudRepository.accessToken(document, instanceId, document.api, signer);
+        } catch (error) {
+          // FL-178: the token endpoint answered success but this server refused the token it issued (not
+          // DPoP-bound, bound to another key, or unreadable). The cloud only issues a token after checking
+          // the client assertion against a key it holds for this server, so it holds the candidate: that
+          // counts as accepted. Promoting keeps the current key as retiring, so nothing is lost, while
+          // treating it as unclear would ask again every check-in until the candidate expired with the
+          // only key the cloud may still accept.
+          if (!this.isIssuedButRefused(error)) {
+            throw error;
+          }
+          this.logger.warn(
+            `Frameleaf Cloud accepted the candidate identity key, but its token was not usable: ${error}`,
+          );
+        }
       } catch (error) {
         this.frameleafCloudRepository.forget();
-        if (!this.isRevocation(error)) {
+        // key_retired (FC-19): the cloud retired or revoked this key, which is a refusal too
+        if (!this.isRevocation(error) && cloudErrorCode(error) !== CloudErrorCode.KeyRetired) {
           // no clear answer: keep the candidate (at most a day) and ask again at the next check-in
           return 'unknown';
         }
@@ -1422,17 +1512,25 @@ export class FrameleafCloudService extends BaseService {
     return this.frameleafCloudRepository.discovery(cloudUrl);
   }
 
-  /** An access token for the cloud API, minted with this server's key. */
+  /**
+   * A DPoP-bound access token for the cloud API (FL-178), minted with this server's current key, which
+   * then signs every call's proof: during a recovery after a damaged key (FL-175) that is the previous
+   * key, for the cloud the retiring one. Never a candidate or next key; only `resolveCandidate` mints
+   * with a candidate, deliberately (FC-19 refuses a retiring key's rotation once the active key was used).
+   */
   private async apiToken(cloudUrl: string, link: FrameleafCloudLink) {
     if (!link.instanceId) {
       throw new BadRequestException('This server is not linked');
     }
     const document = await this.discover(cloudUrl);
-    const identity = await loadInstanceIdentity(this.gatewayDeps());
-    const bearer = await this.frameleafCloudRepository.accessToken(document, link.instanceId, document.api, (claims) =>
-      this.instanceIdentityRepository.signJws(identity.kid, claims),
+    await loadInstanceIdentity(this.gatewayDeps());
+    const token = await this.frameleafCloudRepository.accessToken(
+      document,
+      link.instanceId,
+      document.api,
+      this.instanceIdentityRepository.currentSigner(),
     );
-    return { document, bearer };
+    return { document, token };
   }
 
   private gatewayDeps() {
