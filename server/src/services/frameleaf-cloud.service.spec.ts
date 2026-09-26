@@ -640,7 +640,7 @@ describe(FrameleafCloudService.name, () => {
       const restarted = (metadata.get(SystemMetadataKey.FrameleafBoot) as { bootId: string }).bootId;
       expect(restarted).not.toBe(boot.bootId);
       await sut.checkInNow();
-      const last = cloud.requests.filter(({ path }) => path === '/api/v1/instance/heartbeat').at(-1)!;
+      const last = cloud.requests.findLast(({ path }) => path === '/api/v1/instance/heartbeat')!;
       expect(last.json().bootId).toBe(restarted);
     });
 

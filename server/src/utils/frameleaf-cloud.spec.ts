@@ -292,15 +292,15 @@ describe('error envelope (FL-177, as-built decisions #15–#18)', () => {
 describe('gateway amounts and usage (FL-177, as-built decisions #21, #22 and #24)', () => {
   it('reads *Usd fields as decimal dollars, to whole micro-USD', () => {
     const wallet = walletResponseSchema.parse({
-      balanceUsd: 12.345_678,
+      balanceUsd: 12.345678,
       heldUsd: 0.1 + 0.2,
       dailyCapUsd: 20,
-      spentTodayUsd: 1.000_000_4,
+      spentTodayUsd: 1.0000004,
       topUpUrl: 'https://account.frameleaf.cloud/wallet/top-up',
       settingsUrl: 'https://account.frameleaf.cloud/wallet',
     });
     expect(wallet).toMatchObject({
-      balanceUsd: 12.345_678,
+      balanceUsd: 12.345678,
       heldUsd: 0.3,
       dailyCapUsd: 20,
       spentTodayUsd: 1,

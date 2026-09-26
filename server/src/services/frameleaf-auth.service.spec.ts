@@ -334,7 +334,7 @@ describe(FrameleafAuthService.name, () => {
           return run as never;
         });
         mocks.user.getAdmins.mockImplementation(() =>
-          Promise.resolve([...users.values()].filter((user) => user.isAdmin) as never),
+          Promise.resolve(users.values().toArray().filter((user) => user.isAdmin) as never),
         );
         mocks.user.update.mockImplementation(async (id, change) => {
           // yield between the count and the write, where an unlocked demotion would interleave
@@ -347,7 +347,12 @@ describe(FrameleafAuthService.name, () => {
           (sut as unknown as { applyRole: (user: unknown, role: 'user') => Promise<unknown> }).applyRole(user, 'user');
 
         await Promise.all([applyRole(first), applyRole(second)]);
-        expect([...users.values()].filter((user) => user.isAdmin)).toHaveLength(1);
+        expect(
+          users
+            .values()
+            .toArray()
+            .filter((user) => user.isAdmin),
+        ).toHaveLength(1);
         expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.FrameleafRoleChange, expect.any(Function));
       });
 

@@ -156,7 +156,7 @@ describe('filledJustifiedLayout', () => {
  * open and the next month carries it on; the rows must come out exactly as one flow over everything.
  */
 describe('justifiedFlow', () => {
-  const ratios = Array.from({ length: 41 }, (_, index) => 0.5 + ((index * 0.618_034) % 2.5));
+  const ratios = Array.from({ length: 41 }, (_, index) => 0.5 + ((index * 0.618034) % 2.5));
 
   it('matches justifiedRows when the last row is closed', () => {
     expect(justifiedFlow(ratios, options()).rows).toEqual(justifiedRows(ratios, options()));
