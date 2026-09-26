@@ -34,8 +34,23 @@ export const discoverySchema = z.object({
   ml: z.record(z.string().min(1).max(16), z.url({ protocol: /^https?$/ })),
   /** FL-155: named instance endpoints (`heartbeat`, `commands`, …); absent ones follow `api`. */
   endpoints: z.record(z.string().min(1).max(64), z.url({ protocol: /^https?$/ })).optional(),
+  /**
+   * FL-177 (as-built decision #29): the account site's store, `/store?product=<id>`. Checked on its
+   * own (`storeAddress`); a bad value is dropped and never fails discovery.
+   */
+  store: z
+    .url({ protocol: /^https?$/ })
+    .optional()
+    .catch(() => undefined),
 });
 export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
+
+/**
+ * The store address discovery names, when it passes the same address rule as every other cloud
+ * address (`cloudAddressProblem`), without a trailing slash; otherwise null.
+ */
+export const storeAddress = (cloudUrl: string, store: string | null | undefined): string | null =>
+  store && !cloudAddressProblem(cloudUrl, 'discovery store', store) ? store.replace(/\/+$/, '') : null;
 
 /**
  * Why a discovery document must not be used, or null. The token issuer, the API and every regional

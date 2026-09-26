@@ -68,6 +68,13 @@ export class FrameleafCloudRepository {
     return document;
   }
 
+  /** The discovery document this process holds for `cloudUrl` and still may use, without any call. */
+  peekDiscovery(cloudUrl: string, now = Date.now()): FrameleafDiscoveryDocument | null {
+    return this.discoveryCache?.cloudUrl === cloudUrl && this.discoveryCache.validUntil > now
+      ? this.discoveryCache.document
+      : null;
+  }
+
   /**
    * A short-lived access token for `resource`, from the `client_credentials` grant with a
    * `private_key_jwt` client assertion (EdDSA, `iss = sub = client_id = instanceId`,

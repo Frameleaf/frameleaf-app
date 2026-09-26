@@ -799,6 +799,8 @@ export type FrameleafCloudLink = {
   };
   /** FL-155: service descriptors the cloud returned when the server registered. */
   services?: Record<string, unknown>;
+  /** FL-177: the account site's store from discovery, as last seen when linking or checking in. */
+  store?: string;
   /**
    * FL-155: desired state of cloud-connected features the cloud may change by command. Unlink and
    * revoke set every flag false; the features that read them never turn on without a link.

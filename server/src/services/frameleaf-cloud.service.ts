@@ -62,6 +62,7 @@ import {
   FrameleafDiscoveryDocument,
   cloudAddressProblem,
   cloudErrorCode,
+  storeAddress,
 } from 'src/utils/frameleaf-cloud.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import { handlePromiseError } from 'src/utils/misc.js';
@@ -420,6 +421,7 @@ export class FrameleafCloudService extends BaseService {
         storageLabelClaim: oidc.storageLabelClaim,
       },
       services: registration.services,
+      store: storeAddress(cloudUrl, document.store) ?? undefined,
       desired: { remoteAccess: false, cloudBackup: false },
       heartbeat: { failures: 0, nextAt: this.after(Date.now(), nextHeartbeatDelay(null)) },
       usedLinkTokens: previous?.usedLinkTokens,
@@ -815,6 +817,8 @@ export class FrameleafCloudService extends BaseService {
     let next: FrameleafCloudLink = {
       ...link,
       lastContactAt: new Date(now).toISOString(),
+      // FL-177: the store discovery names now (none when it stops naming one)
+      store: storeAddress(cloudUrl, document.store) ?? undefined,
       lastError: undefined,
       heartbeat: {
         ...link.heartbeat,

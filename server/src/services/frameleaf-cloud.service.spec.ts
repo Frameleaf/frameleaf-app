@@ -655,6 +655,22 @@ describe(FrameleafCloudService.name, () => {
       await expect(access(join(identityDir, ROTATION_NEEDED_FILE))).rejects.toThrow();
     });
 
+    it('records the store discovery names, and forgets it when discovery stops naming it (FL-177)', async () => {
+      const original = cloud.discovery;
+      cloud.discovery = () => ({ ...original(), store: `${cloud.url}/account/store` });
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      sutForgetTokens();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.store).toBe(`${cloud.url}/account/store`);
+
+      cloud.discovery = original;
+      sutForgetTokens();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.store).toBeUndefined();
+    });
+
     it('treats invalid_token as a token to mint again, never as a revoke (FL-177)', async () => {
       cloud.on('POST /api/v1/instance/heartbeat', () => ({
         status: 401,

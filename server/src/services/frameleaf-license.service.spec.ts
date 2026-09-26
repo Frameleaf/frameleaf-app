@@ -392,6 +392,40 @@ describe(FrameleafLicenseService.name, () => {
       fetchSpy.mockRestore();
     });
 
+    it('uses the store discovery names, as the link recorded it, still without an outbound call (FL-177)', async () => {
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        status: 'linked',
+        cloudUrl,
+        instanceId: instanceId(),
+        store: `${cloud.url}/account/store/`,
+      });
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const products = await sut.getProducts();
+      expect(products.storeUrl).toBe(`${cloud.url}/account/store`);
+      expect(products.products[0].storeUrl).toBe(`${cloud.url}/account/store?product=cloud-monthly`);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    });
+
+    it('uses the store of discovery this process already holds', async () => {
+      const original = cloud.discovery;
+      cloud.discovery = () => ({ ...original(), store: `${cloud.url}/shop` });
+      await (
+        sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository }
+      ).frameleafCloudRepository.discovery(cloud.url);
+      await expect(sut.getProducts()).resolves.toMatchObject({ storeUrl: `${cloud.url}/shop` });
+    });
+
+    it('never links to a store outside the configured cloud; it falls back to FRAMELEAF_CLOUD_URL/store', async () => {
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        status: 'linked',
+        cloudUrl,
+        instanceId: instanceId(),
+        store: 'https://store.elsewhere.test/store',
+      });
+      await expect(sut.getProducts()).resolves.toMatchObject({ storeUrl: `${cloud.url}/store` });
+    });
+
     it('has no store link when Frameleaf Cloud is not set up', async () => {
       cloudUrl = null;
       const products = await sut.getProducts();
