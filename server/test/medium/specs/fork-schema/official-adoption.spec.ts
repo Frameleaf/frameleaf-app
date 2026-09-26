@@ -298,8 +298,9 @@ describe('official-origin adoption into a full Frameleaf library', () => {
       SELECT "clusterGroupId"::text AS "clusterGroupId" FROM public."user" WHERE id = ${userId}::uuid
     `.execute(db);
     expect(user.rows[0]?.clusterGroupId).toEqual(expect.any(String));
+    // ClusterGroups drops person.id: a person is keyed by owner and person group (its former id).
     const person = await sql<{ personGroupId: string }>`
-      SELECT "personGroupId"::text AS "personGroupId" FROM public.person WHERE id = ${personId}::uuid
+      SELECT "personGroupId"::text AS "personGroupId" FROM public.person WHERE "ownerId" = ${userId}::uuid
     `.execute(db);
     expect(person.rows).toEqual([{ personGroupId: personId }]);
     const definition = await sql<{ count: number }>`
@@ -379,7 +380,7 @@ describe('official-origin adoption into a full Frameleaf library', () => {
       after: { lockedFaceThumbnails: 0, lockedAlbumCovers: 0, lockedSharedSpaceCovers: 0, lockedPetCovers: 0 },
     });
     const featured = await sql<{ faceAssetId: string | null }>`
-      SELECT "faceAssetId"::text AS "faceAssetId" FROM public.person WHERE id = ${personId}::uuid
+      SELECT "faceAssetId"::text AS "faceAssetId" FROM public.person WHERE "personGroupId" = ${personId}::uuid
     `.execute(db);
     expect(featured.rows).toEqual([{ faceAssetId: null }]);
     const cover = await sql<{ albumThumbnailAssetId: string | null }>`
