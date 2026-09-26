@@ -1,0 +1,13 @@
+{
+  "jobId": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+  "status": "admitted",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "computeSku": "cs_KGECTVQ0",
+  "hold": {
+    "amountUsd": 0.203251,
+    "ceilingUsd": 0.223577,
+    "minimumUsd": 0.2
+  },
+  "createdAt": "2026-09-26T04:01:00.000Z"
+}

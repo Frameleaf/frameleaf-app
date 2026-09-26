@@ -1,0 +1,8 @@
+{
+  "version": "2026-09-26.1",
+  "features": {
+    "identityNames": false,
+    "medicalSignals": false,
+    "ocrAddon": true
+  }
+}

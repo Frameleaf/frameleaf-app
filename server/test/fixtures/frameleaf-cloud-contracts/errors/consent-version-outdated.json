@@ -1,0 +1,10 @@
+{
+  "code": "consent-version-outdated",
+  "message": "The Frameleaf Cloud AI disclosure has changed. Confirm the new version on your server before sending jobs.",
+  "retryable": false,
+  "refusal": "consent-version-outdated",
+  "data": {
+    "requiredVersion": "2026-09-26.1"
+  },
+  "requestId": "req_01J8ZK3M4N5P6Q7R"
+}
