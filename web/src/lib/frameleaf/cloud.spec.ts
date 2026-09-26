@@ -3,6 +3,7 @@ import {
   CLOUD_BACKUP_PRICING,
   cloudBackupMonthlyUsd,
   cloudPlanPrice,
+  discountPercent,
   formatCountdown,
   formatUsd,
   normalizeProductKey,
@@ -51,17 +52,29 @@ describe('Frameleaf Cloud helpers', () => {
       expect(formatUsd(60, 2)).toBe('$60.00');
     });
 
-    it('takes 20 % off plans on a licensed server only', () => {
-      expect(cloudPlanPrice(6, false)).toBe(6);
-      expect(cloudPlanPrice(6, true)).toBe(4.8);
-      expect(cloudPlanPrice(60, true)).toBe(48);
+    it('takes the published share off plans, and nothing without one', () => {
+      expect(cloudPlanPrice(9.99, 0)).toBe(9.99);
+      expect(cloudPlanPrice(9.99, 0.2)).toBe(7.99);
+      expect(cloudPlanPrice(99.9, 0.2)).toBe(79.92);
+      expect(cloudPlanPrice(9.99, 0.25)).toBe(7.49);
+      expect(cloudPlanPrice(99.9, 0.25)).toBe(74.93);
+      expect(discountPercent(0.2)).toBe('20%');
+      expect(discountPercent(0.25)).toBe('25%');
     });
 
-    it('prices cloud backup per TB per month with a one-TB minimum', () => {
-      expect(CLOUD_BACKUP_PRICING).toEqual({ usdPerTbMonth: 7.99, minimumTb: 1 });
-      expect(cloudBackupMonthlyUsd(0)).toBe(7.99);
-      expect(cloudBackupMonthlyUsd(0.4)).toBe(7.99);
+    it('includes 1 TB of cloud backup with a plan and sells more in 1 TB blocks', () => {
+      expect(CLOUD_BACKUP_PRICING).toEqual({ includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 });
+      expect(cloudBackupMonthlyUsd(0)).toBe(0);
+      expect(cloudBackupMonthlyUsd(1)).toBe(0);
+      expect(cloudBackupMonthlyUsd(1.4)).toBe(9.99);
       expect(cloudBackupMonthlyUsd(2.5)).toBe(19.98);
+    });
+
+    it('does not charge another block for floating-point noise', () => {
+      expect(cloudBackupMonthlyUsd(2)).toBe(9.99);
+      expect(cloudBackupMonthlyUsd(2.000_000_000_000_000_4)).toBe(9.99);
+      expect(cloudBackupMonthlyUsd(1.000_000_000_000_000_2)).toBe(0);
+      expect(cloudBackupMonthlyUsd(2.001)).toBe(19.98);
     });
   });
 

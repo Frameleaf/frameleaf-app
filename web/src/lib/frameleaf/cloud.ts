@@ -9,9 +9,6 @@
 
 // ------------------------------------------------------------------ prices
 
-/** Plans cost this much less on a licensed server. Never applied to AI credit (FL-156). */
-export const LICENSED_DISCOUNT = 0.2;
-
 /** Formats an amount as US dollars, whatever the viewer's language (owner decision, FL-146). */
 export const formatUsd = (amount: number, digits?: number) =>
   new Intl.NumberFormat('en-US', {
@@ -21,9 +18,8 @@ export const formatUsd = (amount: number, digits?: number) =>
     maximumFractionDigits: digits ?? 2,
   }).format(amount);
 
-/** A plan price after the licensed-server discount (plans only, never AI credit). */
 /**
- * FL-156: why plan prices are 20 % lower for this viewer, or null. An activated server key (the
+ * FL-156: why plan prices are lower for this viewer, or null. An activated server key (the
  * server's supporter entitlement) or the viewer's own individual supporter key counts; the server
  * reason wins when both apply. AI credit is never discounted, whatever this says.
  */
@@ -31,19 +27,31 @@ export type LicensedDiscount = 'server' | 'personal' | null;
 export const licensedDiscount = (input: { serverLicensed: boolean; personalKey: boolean }): LicensedDiscount =>
   input.serverLicensed ? 'server' : input.personalKey ? 'personal' : null;
 
-export const cloudPlanPrice = (price: number, licensed: boolean) =>
-  licensed ? Math.round(price * (1 - LICENSED_DISCOUNT) * 100) / 100 : price;
+/**
+ * A plan price after the licensed-server discount. `share` is the `licensedDiscount` from
+ * `GET license/products` (what Frameleaf Cloud last published) for a viewer who gets the discount,
+ * else 0. Plans only: never AI credit or extra backup blocks.
+ */
+export const cloudPlanPrice = (price: number, share: number) =>
+  share > 0 ? Math.round(price * (1 - share) * 100) / 100 : price;
+
+/** A discount share as the percentage shown in copy, for example "20%" for 0.2. */
+export const discountPercent = (share: number) => `${Math.round(share * 100)}%`;
 
 /**
- * Cloud backup pricing (owner decision on FL-146, 2026-09-25): usage based at this rate per TB per
- * month, nothing included in a plan, with a one-TB minimum and proration. Kept in this one constant
- * so a price change is a one-line edit.
+ * Cloud backup pricing, matching the prices Frameleaf Cloud records (owner decision, 2026-09-25):
+ * every plan includes 1 TB, and more storage is sold in 1 TB blocks at this rate per TB a month. Kept
+ * in this one constant so a price change is a one-line edit.
  */
-export const CLOUD_BACKUP_PRICING = Object.freeze({ usdPerTbMonth: 7.99, minimumTb: 1 });
+export const CLOUD_BACKUP_PRICING = Object.freeze({ includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 });
 
-/** The monthly backup charge for `storedTb` terabytes: rate × max(minimum, stored). */
-export const cloudBackupMonthlyUsd = (storedTb: number) =>
-  Math.round(CLOUD_BACKUP_PRICING.usdPerTbMonth * Math.max(CLOUD_BACKUP_PRICING.minimumTb, storedTb) * 100) / 100;
+/** The monthly charge for backup beyond what a plan includes: whole blocks over the included TB. */
+export const cloudBackupMonthlyUsd = (storedTb: number) => {
+  const { includedTb, blockTb, usdPerTbMonth } = CLOUD_BACKUP_PRICING;
+  // a sum like 2.0000000000000004 TB is 2 TB: floating-point noise never starts another block
+  const blocks = Math.max(0, Math.ceil(Math.max(0, storedTb - includedTb) / blockTb - 1e-9));
+  return Math.round(blocks * blockTb * usdPerTbMonth * 100) / 100;
+};
 
 // ------------------------------------------------------------------ licence keys (FL-171)
 

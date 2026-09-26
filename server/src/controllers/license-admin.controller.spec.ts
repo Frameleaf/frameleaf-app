@@ -52,7 +52,7 @@ describe(LicenseController.name, () => {
   });
 
   it('serves the prices to any signed-in account', async () => {
-    service.getProducts.mockReturnValue({ currency: 'USD' } as never);
+    service.getProducts.mockResolvedValue({ currency: 'USD' } as never);
     const { status, body } = await request(ctx.getHttpServer()).get('/license/products');
     expect(ctx.authenticate).toHaveBeenCalled();
     expect(status).toBe(200);

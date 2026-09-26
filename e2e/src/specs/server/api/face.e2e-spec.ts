@@ -261,10 +261,11 @@ describe('/faces (FL-38 corrections)', () => {
     ]);
 
     // back to the original: both faces sit inside the crop rectangle, in 400x300 pixels
-    await request(app)
-      .put(`/assets/${asset.id}/edits`)
-      .set('Authorization', `Bearer ${admin.accessToken}`)
-      .send({ edits: [] });
+    // `PUT` needs at least one edit (AssetEditsCreateSchema `.min(1)`); removing them all is `DELETE`
+    const removed = await request(app)
+      .delete(`/assets/${asset.id}/edits`)
+      .set('Authorization', `Bearer ${admin.accessToken}`);
+    expect(removed.status).toBe(204);
     const { body: original } = await listFaces(admin.accessToken, asset.id);
     for (const row of original) {
       expect(row).toEqual(expect.objectContaining({ imageWidth: 400, imageHeight: 300 }));
