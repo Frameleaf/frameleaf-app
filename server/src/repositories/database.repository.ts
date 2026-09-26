@@ -786,6 +786,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
         )::int AS "invalidCount"
       FROM public.asset asset
       LEFT JOIN immich_fork.asset_checksum checksum ON checksum."assetId" = asset.id
+        AND asset."checksumAlgorithm" <> 'sha1-path'
         AND checksum.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
     `.execute(runner);
     const mappingResult = await sql<{

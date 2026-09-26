@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import {
   AssetFileType,
   AssetStatus,
@@ -1363,8 +1364,11 @@ export class MediaHealthRepository {
             WHERE id = ${previousForkId}::uuid AND "canonicalAssetId" = ${asset.id}::uuid`.execute(trx);
         }
       }
+      // FL-69: an external original keeps its path checksum, so its digests stay Library Care's own (an
+      // external scan's), never a managed copy that sync, upload checks or restores could count
+      const evidenceSource = external ? EXTERNAL_SCAN_CHECKSUM : 'recovery';
       await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
-        VALUES (${asset.id}::uuid, ${input.sha1}, ${input.sha256}, ${input.sizeInBytes}, ARRAY[${recoveredPath}]::text[], 1, '{"source":"recovery"}'::jsonb, now(), now())
+        VALUES (${asset.id}::uuid, ${input.sha1}, ${input.sha256}, ${input.sizeInBytes}, ARRAY[${recoveredPath}]::text[], 1, jsonb_build_object('source', ${evidenceSource}::text), now(), now())
         ON CONFLICT ("assetId") DO UPDATE SET sha1=EXCLUDED.sha1, sha256=EXCLUDED.sha256, "sizeInBytes"=EXCLUDED."sizeInBytes",
           "verifiedPaths"=EXCLUDED."verifiedPaths", evidence=EXCLUDED.evidence, "verifiedAt"=now(), "updatedAt"=now()`.execute(
         trx,
