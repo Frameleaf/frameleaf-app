@@ -101,6 +101,110 @@ test.describe('Timeline', () => {
   /** Assets deep enough in the library that showing one always scrolls the timeline. */
   const deepAssets = () => assets.slice(100);
 
+  /**
+   * FL-143: scroll down the library and check that every row on screen is full — a row runs on from
+   * one month into the next, so only the library's last row may end short — and that at least one
+   * row holds the end of one month and the start of the next.
+   */
+  const expectRowsRunOn = async (page: Page) => {
+    const lastId = assets.at(-1)!.id;
+    let crossing = 0;
+    let checked = 0;
+    for (let step = 0; step < 12 && (crossing === 0 || step < 4); step++) {
+      await expect.poll(() => flowUtils.skeletonsOnScreen(page)).toBe(0);
+      const rows = await flowUtils.rowsOnScreen(page);
+      const right = Math.max(...rows.map((row) => row.at(-1)!.right));
+      for (const row of rows.filter((candidate) => !candidate.some(({ id }) => id === lastId))) {
+        expect(row.at(-1)!.right).toBeGreaterThan(right - 2);
+        checked++;
+        if (new Set(row.map(({ id }) => getYearMonth(assets, id))).size > 1) {
+          crossing++;
+        }
+      }
+      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, scroller.clientHeight * 0.75));
+    }
+    expect(checked).toBeGreaterThan(0);
+    // At least one row holds the end of one month and the start of the next.
+    expect(crossing).toBeGreaterThan(0);
+  };
+
+  /**
+   * FL-143: land in a month with the month above it held back, then let that month load. Nothing on
+   * screen may move; once that stretch has been scrolled away, the month above ends in a full row.
+   */
+  const expectNothingMovesWhenTheMonthAboveLoads = async (page: Page, open: () => Promise<void>) => {
+    // The month the scrubber lands on, deep enough that the month above it is not loaded from the
+    // top of the library, and the month above it, whose bucket is held back until released.
+    const index = yearMonths.findIndex(
+      (yearMonth, position) =>
+        position >= 2 &&
+        assets.indexOf(assetsInMonth(yearMonths[position - 1])[0]) >= 150 &&
+        assetsInMonth(yearMonth).length >= 10,
+    );
+    expect(index).toBeGreaterThan(0);
+    const target = yearMonths[index];
+    const above = yearMonths[index - 1];
+    const heldBucket = padYearMonth(above);
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let requested = false;
+    await page.route('**/api/timeline/bucket?*', async (route, request) => {
+      if (new URL(request.url()).searchParams.get('timeBucket')?.startsWith(heldBucket)) {
+        requested = true;
+        await released;
+      }
+      await route.fallback();
+    });
+
+    await open();
+    await scrubberUtils.clickMonth(page, target);
+    await expect
+      .poll(() => thumbnailUtils.someInViewport(page, (assetId) => getYearMonth(assets, assetId) === target))
+      .toBe(true);
+    // The scrubber lands inside the month; move up until the month above comes near enough to load.
+    for (let step = 0; step < 60 && !requested; step++) {
+      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, -200));
+      await page.waitForTimeout(100);
+    }
+    expect(requested).toBe(true);
+    await expect
+      .poll(() => thumbnailUtils.someInViewport(page, (assetId) => getYearMonth(assets, assetId) === target))
+      .toBe(true);
+    // Past the moment rows that load together may still join up: what is on screen has settled.
+    await page.waitForTimeout(800);
+    const before = await flowUtils.placesOnScreen(page);
+    expect(Object.keys(before).length).toBeGreaterThan(0);
+
+    release();
+    const lastAbove = assetsInMonth(above).at(-1)!;
+    await expect(thumbnailUtils.withAssetId(page, lastAbove.id)).toHaveCount(1);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const after = await flowUtils.placesOnScreen(page);
+    for (const [id, place] of Object.entries(before)) {
+      expect(after[id], id).toBeDefined();
+      expect(Math.abs(after[id].top - place.top), id).toBeLessThanOrEqual(1);
+      expect(Math.abs(after[id].left - place.left), id).toBeLessThanOrEqual(1);
+      expect(Math.abs(after[id].width - place.width), id).toBeLessThanOrEqual(1);
+    }
+
+    // Once that stretch is off screen the rows run on: the month above ends in a full row.
+    await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollTo({ top: 0 }));
+    await expect.poll(() => timelineUtils.locator(page).evaluate((scroller) => scroller.scrollTop)).toBe(0);
+    await scrubberUtils.clickMonth(page, target);
+    await thumbnailUtils.expectTimelineHasOnScreenAssets(page);
+    for (let step = 0; step < 60 && (await thumbnailUtils.withAssetId(page, lastAbove.id).count()) === 0; step++) {
+      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, -200));
+      await page.waitForTimeout(100);
+    }
+    await thumbnailUtils.withAssetId(page, lastAbove.id).scrollIntoViewIfNeeded();
+    await expect.poll(() => flowUtils.skeletonsOnScreen(page)).toBe(0);
+    const rows = await flowUtils.rowsOnScreen(page);
+    const right = Math.max(...rows.map((row) => row.at(-1)!.right));
+    const boundaryRow = rows.find((row) => row.some(({ id }) => id === lastAbove.id));
+    expect(boundaryRow).toBeDefined();
+    expect(boundaryRow!.at(-1)!.right).toBeGreaterThan(right - 2);
+  };
+
   const trashFromSelection = async (page: Page, assetId: string) => {
     await thumbnailUtils.ensureSelected(page, assetId);
     const deleteRequest = pageRoutePromise(page, '**/api/assets', async (route, request) => {
@@ -756,99 +860,14 @@ test.describe('Timeline', () => {
     test('All lays the library out as one flow: rows run on across month boundaries', async ({ page }) => {
       await openTimeline(page);
       await groupingUtils.choose(page, 'All');
-      const lastId = assets.at(-1)!.id;
-      let crossing = 0;
-      let checked = 0;
-      for (let step = 0; step < 12 && (crossing === 0 || step < 4); step++) {
-        await expect.poll(() => flowUtils.skeletonsOnScreen(page)).toBe(0);
-        const rows = await flowUtils.rowsOnScreen(page);
-        const right = Math.max(...rows.map((row) => row.at(-1)!.right));
-        for (const row of rows.filter((candidate) => !candidate.some(({ id }) => id === lastId))) {
-          expect(row.at(-1)!.right).toBeGreaterThan(right - 2);
-          checked++;
-          if (new Set(row.map(({ id }) => getYearMonth(assets, id))).size > 1) {
-            crossing++;
-          }
-        }
-        await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, scroller.clientHeight * 0.75));
-      }
-      expect(checked).toBeGreaterThan(0);
-      // At least one row holds the end of one month and the start of the next.
-      expect(crossing).toBeGreaterThan(0);
+      await expectRowsRunOn(page);
     });
 
     test('All: a month loading above what is on screen does not move it', async ({ page }) => {
-      // The month the scrubber lands on, deep enough that the month above it is not loaded from the
-      // top of the library, and the month above it, whose bucket is held back until released.
-      const index = yearMonths.findIndex(
-        (yearMonth, position) =>
-          position >= 2 &&
-          assets.indexOf(assetsInMonth(yearMonths[position - 1])[0]) >= 150 &&
-          assetsInMonth(yearMonth).length >= 10,
-      );
-      expect(index).toBeGreaterThan(0);
-      const target = yearMonths[index];
-      const above = yearMonths[index - 1];
-      const heldBucket = padYearMonth(above);
-      let release!: () => void;
-      const released = new Promise<void>((resolve) => (release = resolve));
-      let requested = false;
-      await page.route('**/api/timeline/bucket?*', async (route, request) => {
-        if (new URL(request.url()).searchParams.get('timeBucket')?.startsWith(heldBucket)) {
-          requested = true;
-          await released;
-        }
-        await route.fallback();
+      await expectNothingMovesWhenTheMonthAboveLoads(page, async () => {
+        await openTimeline(page);
+        await groupingUtils.choose(page, 'All');
       });
-
-      await openTimeline(page);
-      await groupingUtils.choose(page, 'All');
-      await scrubberUtils.clickMonth(page, target);
-      await expect
-        .poll(() => thumbnailUtils.someInViewport(page, (assetId) => getYearMonth(assets, assetId) === target))
-        .toBe(true);
-      // The scrubber lands inside the month; move up until the month above comes near enough to load.
-      for (let step = 0; step < 60 && !requested; step++) {
-        await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, -200));
-        await page.waitForTimeout(100);
-      }
-      expect(requested).toBe(true);
-      await expect
-        .poll(() => thumbnailUtils.someInViewport(page, (assetId) => getYearMonth(assets, assetId) === target))
-        .toBe(true);
-      // Past the moment rows that load together may still join up: what is on screen has settled.
-      await page.waitForTimeout(800);
-      const before = await flowUtils.placesOnScreen(page);
-      expect(Object.keys(before).length).toBeGreaterThan(0);
-
-      release();
-      const lastAbove = assetsInMonth(above).at(-1)!;
-      await expect(thumbnailUtils.withAssetId(page, lastAbove.id)).toHaveCount(1);
-      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      const after = await flowUtils.placesOnScreen(page);
-      for (const [id, place] of Object.entries(before)) {
-        expect(after[id], id).toBeDefined();
-        expect(Math.abs(after[id].top - place.top), id).toBeLessThanOrEqual(1);
-        expect(Math.abs(after[id].left - place.left), id).toBeLessThanOrEqual(1);
-        expect(Math.abs(after[id].width - place.width), id).toBeLessThanOrEqual(1);
-      }
-
-      // Once that stretch is off screen the rows run on: the month above ends in a full row.
-      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollTo({ top: 0 }));
-      await expect.poll(() => timelineUtils.locator(page).evaluate((scroller) => scroller.scrollTop)).toBe(0);
-      await scrubberUtils.clickMonth(page, target);
-      await thumbnailUtils.expectTimelineHasOnScreenAssets(page);
-      for (let step = 0; step < 60 && (await thumbnailUtils.withAssetId(page, lastAbove.id).count()) === 0; step++) {
-        await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, -200));
-        await page.waitForTimeout(100);
-      }
-      await thumbnailUtils.withAssetId(page, lastAbove.id).scrollIntoViewIfNeeded();
-      await expect.poll(() => flowUtils.skeletonsOnScreen(page)).toBe(0);
-      const rows = await flowUtils.rowsOnScreen(page);
-      const right = Math.max(...rows.map((row) => row.at(-1)!.right));
-      const boundaryRow = rows.find((row) => row.some(({ id }) => id === lastAbove.id));
-      expect(boundaryRow).toBeDefined();
-      expect(boundaryRow!.at(-1)!.right).toBeGreaterThan(right - 2);
     });
 
     test('Ctrl+wheel steps the grouping coarser and finer', async ({ page }) => {
@@ -924,6 +943,29 @@ test.describe('Timeline', () => {
       const settled = await tileWidth(page, assets[0].id);
       await page.keyboard.press('Control+Minus');
       expect(await tileWidth(page, assets[0].id)).toBe(settled);
+    });
+
+    /**
+     * FL-143: the template's Browse and Work are one `.media-grid` over everything, so a month that
+     * ends part-way along a row is followed straight on by the next month's cells.
+     */
+    test('Browse lays the library out as one grid: rows run on across month boundaries', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await expect(timelineUtils.layoutButton(page, 'Browse')).toHaveAttribute('aria-pressed', 'true');
+      await expectRowsRunOn(page);
+    });
+
+    test('Work lays the library out as one grid: rows run on across month boundaries', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await timelineUtils.setLayout(page, 'Work');
+      await expectRowsRunOn(page);
+    });
+
+    test('Browse: a month loading above what is on screen does not move it', async ({ page }) => {
+      await expectNothingMovesWhenTheMonthAboveLoads(page, async () => {
+        await pageUtils.openPhotosPage(page);
+        await expect(timelineUtils.layoutButton(page, 'Browse')).toHaveAttribute('aria-pressed', 'true');
+      });
     });
 
     test('Work offers a file-name toggle remembered on this device', async ({ page }) => {

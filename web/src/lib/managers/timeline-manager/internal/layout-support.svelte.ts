@@ -33,15 +33,12 @@ export function updateGeometry(timelineManager: TimelineManager, month: Timeline
 
 export function layoutTimelineMonth(timelineManager: TimelineManager, month: TimelineMonth, noDefer: boolean = false) {
   if (timelineManager.continuousGroups) {
-    // Years and All: the month is laid out as part of its group's flow (FL-143).
+    // Years and All, and the Browse and Work grids: the month is laid out as part of one flow that
+    // runs on across months (FL-143).
     requestFlowLayout(timelineManager, month);
     return;
   }
   leaveFlow(month);
-  if (timelineManager.cells) {
-    layoutCellMonth(timelineManager, month);
-    return;
-  }
   if (timelineManager.grouping !== 'days') {
     layoutGroupedMonth(timelineManager, month);
     return;
@@ -109,24 +106,6 @@ function layoutGroupedMonth(timelineManager: TimelineManager, month: TimelineMon
     timelineManager.justifiedLayoutOptions,
   );
   placeMonthFlow(month, geometry);
-}
-
-/**
- * Browse and Work (FL-33): the month is one grid of equal cells — square in Browse, 3:2 with a
- * caption row in Work — as the template's `.media-grid` lays out the library. Like the grouped
- * flow, the days stay the data model and each holds its share of the month's positions.
- *
- * Months are laid out one at a time (they load one at a time), so a month that ends part-way
- * along a row leaves the rest of that row empty, where the template's single grid runs on.
- */
-function layoutCellMonth(timelineManager: TimelineManager, month: TimelineMonth) {
-  const count = month.timelineDays.reduce((total, day) => total + day.viewerAssets.length, 0);
-  const grid = cellGrid(count, timelineManager.viewportWidth, timelineManager.cells!);
-  placeMonthFlow(month, {
-    containerWidth: grid.width,
-    containerHeight: grid.height,
-    getPosition: (index) => grid.position(index),
-  });
 }
 
 type MonthFlow = {
