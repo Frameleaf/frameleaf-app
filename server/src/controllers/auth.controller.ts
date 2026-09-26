@@ -18,7 +18,7 @@ import {
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
 import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
-import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, GetLoginDetails, RemoteSignInExempt } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
 import { respondWithCookie, respondWithoutCookie } from 'src/utils/response.js';
@@ -90,6 +90,8 @@ export class AuthController {
 
   @Post('logout')
   @Authenticated()
+  // FL-161: a session that is not a Frameleaf sign-in can still sign out through remote access
+  @RemoteSignInExempt()
   @HttpCode(HttpStatus.OK)
   @Endpoint({
     summary: 'Logout',

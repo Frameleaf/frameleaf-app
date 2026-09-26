@@ -1,5 +1,6 @@
 import { DatabaseLock } from 'src/enum.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { sharedLinkPasswordProblem } from 'src/repositories/fork-handoff.repository.js';
 import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
 import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 
@@ -41,7 +42,7 @@ const setup = () => {
     activateAfterReturnReconciliation: vi.fn().mockResolvedValue(activeReport),
     applyIsolatedFrameleafMigrations: vi.fn().mockResolvedValue({ applied: [], pending: [], skipped: null }),
     archiveAndDeleteOrphans: vi.fn().mockResolvedValue({ archived: 0, deleted: 0 }),
-    countPasswordProtectedSharedLinks: vi.fn().mockResolvedValue(0),
+    countPasswordProtectedSharedLinks: vi.fn().mockResolvedValue({ hashed: 0, plaintext: 0 }),
     getPreparedOfficialHandoffCheckpoint: vi.fn().mockResolvedValue(checkpoint),
     prepareOfficialHandoffCheckpoint: vi.fn().mockResolvedValue(checkpoint),
     getReturnEvidence: vi.fn().mockResolvedValue(returnEvidence),
@@ -71,27 +72,48 @@ describe(ForkHandoffService.name, () => {
     expect(migrationMocks.reconcileAfterOfficialReturn).not.toHaveBeenCalled();
   });
 
-  it('refuses the handoff while password-protected shared links are not acknowledged (FL-161)', async () => {
+  it('refuses the preflight while hashed shared-link passwords are not acknowledged (FL-161)', async () => {
     const { databaseMocks, sut } = setup();
-    databaseMocks.countPasswordProtectedSharedLinks.mockResolvedValue(3);
+    databaseMocks.countPasswordProtectedSharedLinks.mockResolvedValue({ hashed: 3, plaintext: 1 });
 
-    await expect(sut.prepareOfficial()).rejects.toThrow(
+    const preflight = sut.sharedLinkPasswordPreflight();
+    await expect(preflight).rejects.toThrow(
       '3 password-protected shared link(s) will stay locked on the official server',
     );
-    expect(databaseMocks.prepareOfficialHandoffCheckpoint).not.toHaveBeenCalled();
+    await expect(preflight).rejects.toThrow('1 other link(s) still hold a password the official server can check');
 
-    await expect(sut.prepareOfficial({ acknowledgeSharedLinkPasswords: true })).resolves.toEqual(checkpoint);
     await expect(sut.sharedLinkPasswordPreflight({ acknowledgeSharedLinkPasswords: true })).resolves.toEqual({
-      passwordProtectedLinks: 3,
+      hashed: 3,
+      plaintext: 1,
     });
   });
 
-  it('needs no acknowledgement without password-protected shared links (FL-161)', async () => {
+  it('needs no acknowledgement for links whose passwords the official server can still check (FL-161)', async () => {
+    const { databaseMocks, sut } = setup();
+    databaseMocks.countPasswordProtectedSharedLinks.mockResolvedValue({ hashed: 0, plaintext: 2 });
+
+    await expect(sut.sharedLinkPasswordPreflight()).resolves.toEqual({ hashed: 0, plaintext: 2 });
+  });
+
+  it('passes the acknowledgement to the checkpoint transaction, which counts again (FL-161)', async () => {
     const { databaseMocks, sut } = setup();
 
-    await expect(sut.sharedLinkPasswordPreflight()).resolves.toEqual({ passwordProtectedLinks: 0 });
     await expect(sut.prepareOfficial()).resolves.toEqual(checkpoint);
-    expect(databaseMocks.countPasswordProtectedSharedLinks).toHaveBeenCalled();
+    expect(databaseMocks.prepareOfficialHandoffCheckpoint).toHaveBeenCalledWith({
+      acknowledgeSharedLinkPasswords: false,
+    });
+    await sut.prepareOfficial({ acknowledgeSharedLinkPasswords: true });
+    expect(databaseMocks.prepareOfficialHandoffCheckpoint).toHaveBeenLastCalledWith({
+      acknowledgeSharedLinkPasswords: true,
+    });
+  });
+
+  it('words the refusal by what stays locked (FL-161)', () => {
+    expect(sharedLinkPasswordProblem({ hashed: 0, plaintext: 4 }, false)).toBeNull();
+    expect(sharedLinkPasswordProblem({ hashed: 2, plaintext: 0 }, true)).toBeNull();
+    const problem = sharedLinkPasswordProblem({ hashed: 2, plaintext: 0 }, false);
+    expect(problem).toContain('2 password-protected shared link(s) will stay locked');
+    expect(problem).not.toContain('other link(s)');
   });
 
   it('validates return evidence before archiving, reconciliation, and final activation', async () => {

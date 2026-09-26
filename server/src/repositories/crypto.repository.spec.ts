@@ -1,8 +1,9 @@
 import { createHmac } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CryptoRepository, SERVER_HMAC_KEY_FILE } from 'src/repositories/crypto.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 describe(CryptoRepository.name, () => {
   let sut: CryptoRepository;
@@ -103,12 +104,32 @@ describe(CryptoRepository.name, () => {
       await expect(sut.serverKeyedHash(directory, 'rate-limit', 'link-1')).resolves.not.toBe(first);
     });
 
-    it('refuses a damaged key instead of replacing it', async () => {
+    it('replaces a key of the wrong length atomically, says that unlocks reset, and leaves no temporary file', async () => {
       const directory = join(tmpDir, 'damaged');
       mkdirSync(directory);
       writeFileSync(join(directory, SERVER_HMAC_KEY_FILE), Buffer.alloc(40));
+      const warn = vi.spyOn(LoggingRepository.prototype, 'warn').mockImplementation(() => {});
 
-      await expect(sut.serverKeyedHash(directory, 'rate-limit', 'x')).rejects.toThrow('is damaged');
+      const value = await sut.serverKeyedHash(directory, 'rate-limit', 'x');
+
+      const key = readFileSync(join(directory, SERVER_HMAC_KEY_FILE));
+      expect(key).toHaveLength(32);
+      expect(statSync(join(directory, SERVER_HMAC_KEY_FILE)).mode & 0o777).toBe(0o600);
+      expect(value).toBe(createHmac('sha256', key).update('rate-limit\0x').digest('base64url'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('unlocked with their password again'));
+      expect(readdirSync(directory)).toEqual([SERVER_HMAC_KEY_FILE]);
+      warn.mockRestore();
+    });
+
+    it('uses the key another process created first', async () => {
+      const directory = join(tmpDir, 'shared');
+      const [first, second] = await Promise.all([
+        new CryptoRepository().serverKeyedHash(directory, 'rate-limit', 'x'),
+        new CryptoRepository().serverKeyedHash(directory, 'rate-limit', 'x'),
+      ]);
+
+      expect(first).toBe(second);
+      expect(readdirSync(directory)).toEqual([SERVER_HMAC_KEY_FILE]);
     });
   });
 });

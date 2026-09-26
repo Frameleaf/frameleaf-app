@@ -12,11 +12,12 @@ import { ImmichEnvironment } from 'src/enum.js';
 import {
   RATE_LIMITS,
   REMOTE_ACCESS_CEILING,
+  REMOTE_MEDIA_CEILING,
   RateLimitFailureInterceptor,
   RateLimitGuard,
   RateLimited,
   type RateLimitedRequest,
-  RemoteCeilingExempt,
+  RemoteMediaCeiling,
   rateLimitAddress,
   rateLimitChecks,
 } from 'src/middleware/rate-limit.guard.js';
@@ -35,7 +36,7 @@ class TestController {
   @RateLimited(RATE_LIMITS.linkStart)
   linkStart() {}
 
-  @RemoteCeilingExempt()
+  @RemoteMediaCeiling()
   thumbnail() {}
 
   unlimited() {}
@@ -63,10 +64,32 @@ const contextFor = (handler: () => void, request: RateLimitedRequest, response =
     switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
   }) as unknown as ExecutionContext;
 
+/** Redis's fixed-window counters, in memory: `INCR` and `DECR` are atomic, as they are in Redis. */
+const memoryCounters = () => {
+  const counters = new Map<string, number>();
+  return {
+    counters,
+    hit: vi.fn((key: string, windowSeconds: number) => {
+      const count = (counters.get(key) ?? 0) + 1;
+      counters.set(key, count);
+      return Promise.resolve({ count, resetSeconds: windowSeconds });
+    }),
+    release: vi.fn((key: string) => {
+      const count = (counters.get(key) ?? 0) - 1;
+      if (count <= 0) {
+        counters.delete(key);
+      } else {
+        counters.set(key, count);
+      }
+      return Promise.resolve();
+    }),
+  };
+};
+
 describe(RateLimitGuard.name, () => {
   let sut: RateLimitGuard;
-  let hit: ReturnType<typeof vi.fn>;
-  let peek: ReturnType<typeof vi.fn>;
+  let interceptor: RateLimitFailureInterceptor;
+  let store: ReturnType<typeof memoryCounters>;
   let configRepository: ReturnType<typeof newConfigRepositoryMock>;
   let cryptoRepository: ReturnType<typeof newCryptoRepositoryMock>;
   const logger = { setContext: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -75,42 +98,47 @@ describe(RateLimitGuard.name, () => {
     new RateLimitGuard(
       logger as unknown as LoggingRepository,
       new Reflector(),
-      { hit, peek } as unknown as RateLimitRepository,
+      store as unknown as RateLimitRepository,
       configRepository as never,
       cryptoRepository as never,
     );
 
+  /** One login through the guard and the failure interceptor, as the API runs it. */
+  const signIn = async (request: RateLimitedRequest, correct: boolean) => {
+    await sut.canActivate(contextFor(TestController.prototype.login, request));
+    const handler = {
+      handle: () => (correct ? of({ accessToken: 't' }) : throwError(() => new UnauthorizedException())),
+    } as CallHandler;
+    return lastValueFrom(interceptor.intercept(contextFor(TestController.prototype.login, request), handler));
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
-    hit = vi.fn().mockResolvedValue({ count: 1, resetSeconds: 600 });
-    peek = vi.fn().mockResolvedValue({ count: 0, resetSeconds: 1 });
+    store = memoryCounters();
     configRepository = newConfigRepositoryMock();
     cryptoRepository = newCryptoRepositoryMock();
     sut = create();
+    interceptor = new RateLimitFailureInterceptor(
+      logger as unknown as LoggingRepository,
+      store as unknown as RateLimitRepository,
+    );
   });
 
-  it('counts login per address, and reads the failures of the email as a keyed hash', async () => {
+  it('counts login per address and the attempt per email and address, as a keyed hash', async () => {
     const request = makeRequest({ body: { email: ' Person@Example.com ', password: 'x' } });
 
     await expect(sut.canActivate(contextFor(TestController.prototype.login, request))).resolves.toBe(true);
 
-    expect(hit).toHaveBeenCalledOnce();
-    expect(hit).toHaveBeenCalledWith('frameleaf:rate-limit:login:ip:198.51.100.7', 600);
-    const principalKey = `frameleaf:rate-limit:login:principal:${keyed('email:person@example.com')}`;
-    expect(peek).toHaveBeenCalledWith(principalKey);
-    expect(cryptoRepository.serverKeyedHash).toHaveBeenCalledWith(
-      expect.any(String),
-      'rate-limit',
-      'email:person@example.com',
-    );
-    // the request itself does not count against the email; only a failure will
+    const principalKey = `frameleaf:rate-limit:login:principal:${keyed('email:person@example.com\u0000198.51.100.7')}`;
+    expect(store.hit).toHaveBeenNthCalledWith(1, 'frameleaf:rate-limit:login:ip:198.51.100.7', 600);
+    expect(store.hit).toHaveBeenNthCalledWith(2, principalKey, 600);
     expect(request.frameleafRateLimitFailures).toEqual([
       { key: principalKey, limit: RATE_LIMITS.login.principalLimit, windowSeconds: 600, counts: 'failures' },
     ]);
   });
 
   it('answers 429 with Retry-After once the address goes over its limit', async () => {
-    hit.mockResolvedValueOnce({ count: RATE_LIMITS.login.limit + 1, resetSeconds: 321 });
+    store.hit.mockResolvedValueOnce({ count: RATE_LIMITS.login.limit + 1, resetSeconds: 321 });
     const response = { setHeader: vi.fn() };
 
     const result = sut.canActivate(contextFor(TestController.prototype.login, makeRequest(), response));
@@ -121,35 +149,59 @@ describe(RateLimitGuard.name, () => {
     expect(response.setHeader).toHaveBeenCalledWith('Retry-After', '321');
   });
 
-  it('answers 429 once an email has used up its failures, from any address', async () => {
-    peek.mockResolvedValueOnce({ count: RATE_LIMITS.login.principalLimit, resetSeconds: 60 });
-    const response = { setHeader: vi.fn() };
-    const request = makeRequest({ ip: '203.0.113.50', body: { email: 'person@example.com' } });
+  it('stops the wrong passwords for one email from one address, and never counts correct ones', async () => {
+    const request = () => makeRequest({ ip: '203.0.113.50', body: { email: 'person@example.com' } });
 
-    await expect(sut.canActivate(contextFor(TestController.prototype.login, request, response))).rejects.toMatchObject({
-      status: HttpStatus.TOO_MANY_REQUESTS,
-    });
-    expect(response.setHeader).toHaveBeenCalledWith('Retry-After', '60');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await expect(signIn(request(), true)).resolves.toEqual({ accessToken: 't' });
+    }
+    for (let attempt = 0; attempt < RATE_LIMITS.login.principalLimit; attempt++) {
+      await expect(signIn(request(), false)).rejects.toBeInstanceOf(UnauthorizedException);
+    }
+    await expect(signIn(request(), true)).rejects.toMatchObject({ status: HttpStatus.TOO_MANY_REQUESTS });
   });
 
-  it('lets the last attempt below the failure limit through', async () => {
-    peek.mockResolvedValueOnce({ count: RATE_LIMITS.login.principalLimit - 1, resetSeconds: 60 });
-    hit.mockResolvedValueOnce({ count: RATE_LIMITS.login.limit, resetSeconds: 1 });
-    const request = makeRequest({ body: { email: 'person@example.com' } });
+  it('never lets a stranger lock someone out of a home sign-in', async () => {
+    const stranger = () => makeRequest({ ip: '203.0.113.50', body: { email: 'person@example.com' } });
+    for (let attempt = 0; attempt < RATE_LIMITS.login.principalLimit + 5; attempt++) {
+      await signIn(stranger(), false).catch(() => null);
+    }
+    await expect(signIn(stranger(), true)).rejects.toMatchObject({ status: HttpStatus.TOO_MANY_REQUESTS });
 
-    await expect(sut.canActivate(contextFor(TestController.prototype.login, request))).resolves.toBe(true);
+    const home = makeRequest({ ip: '192.168.1.20', body: { email: 'person@example.com' } });
+    await expect(signIn(home, true)).resolves.toEqual({ accessToken: 't' });
   });
 
-  it('counts a shared link by its key (failures) and an admin action by the credential presented', async () => {
+  it('refuses parallel wrong passwords beyond the limit before any of them is checked', async () => {
+    const attempts = RATE_LIMITS.login.principalLimit + 5;
+    const results = await Promise.allSettled(
+      Array.from({ length: attempts }, () =>
+        sut.canActivate(
+          contextFor(
+            TestController.prototype.login,
+            makeRequest({ ip: '203.0.113.50', body: { email: 'person@example.com' } }),
+          ),
+        ),
+      ),
+    );
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(RATE_LIMITS.login.principalLimit);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(5);
+  });
+
+  it('counts a shared link by its key and address and an admin action by the credential presented', async () => {
     const shared = makeRequest({ query: { key: 'share-key' } });
     await sut.canActivate(contextFor(TestController.prototype.sharedLinkLogin, shared));
-    expect(peek).toHaveBeenCalledWith(`frameleaf:rate-limit:shared-link-login:principal:${keyed('key:share-key')}`);
+    expect(store.hit).toHaveBeenLastCalledWith(
+      `frameleaf:rate-limit:shared-link-login:principal:${keyed('key:share-key\u0000198.51.100.7')}`,
+      RATE_LIMITS.sharedLinkLogin.windowSeconds,
+    );
     expect(shared.frameleafRateLimitFailures).toHaveLength(1);
 
     await sut.canActivate(
       contextFor(TestController.prototype.linkStart, makeRequest({ headers: { authorization: 'Bearer token-1' } })),
     );
-    expect(hit).toHaveBeenLastCalledWith(
+    expect(store.hit).toHaveBeenLastCalledWith(
       `frameleaf:rate-limit:link-start:principal:${keyed('credential:token-1')}`,
       RATE_LIMITS.linkStart.windowSeconds,
     );
@@ -158,14 +210,13 @@ describe(RateLimitGuard.name, () => {
   it('counts only the address when the request names no principal', async () => {
     await sut.canActivate(contextFor(TestController.prototype.linkStart, makeRequest()));
 
-    expect(hit).toHaveBeenCalledTimes(1);
-    expect(hit).toHaveBeenCalledWith('frameleaf:rate-limit:link-start:ip:198.51.100.7', 3600);
-    expect(peek).not.toHaveBeenCalled();
+    expect(store.hit).toHaveBeenCalledTimes(1);
+    expect(store.hit).toHaveBeenCalledWith('frameleaf:rate-limit:link-start:ip:198.51.100.7', 3600);
   });
 
   it('leaves an unmarked route from the home network alone', async () => {
     await expect(sut.canActivate(contextFor(TestController.prototype.unlimited, makeRequest()))).resolves.toBe(true);
-    expect(hit).not.toHaveBeenCalled();
+    expect(store.hit).not.toHaveBeenCalled();
   });
 
   it.each(['relay', 'wan'] as const)('applies the remote-access ceiling to every %s request', async (via) => {
@@ -175,30 +226,42 @@ describe(RateLimitGuard.name, () => {
     });
 
     await expect(sut.canActivate(contextFor(TestController.prototype.unlimited, request))).resolves.toBe(true);
-    expect(hit).toHaveBeenCalledWith(
+    expect(store.hit).toHaveBeenCalledWith(
       'frameleaf:rate-limit:remote-access:ip:203.0.113.9',
       REMOTE_ACCESS_CEILING.windowSeconds,
     );
 
-    hit.mockResolvedValueOnce({ count: REMOTE_ACCESS_CEILING.limit + 1, resetSeconds: 12 });
+    store.hit.mockResolvedValueOnce({ count: REMOTE_ACCESS_CEILING.limit + 1, resetSeconds: 12 });
     await expect(sut.canActivate(contextFor(TestController.prototype.unlimited, request))).rejects.toMatchObject({
       status: HttpStatus.TOO_MANY_REQUESTS,
     });
   });
 
-  it('leaves thumbnails and previews out of the remote-access ceiling', async () => {
-    const request = makeRequest({ frameleafVia: 'relay' });
+  it('counts thumbnails and previews against the higher media ceiling, not the general one', async () => {
+    const request = makeRequest({
+      frameleafVia: 'relay',
+      frameleafForwarded: { for: '203.0.113.9', proto: null, host: null },
+    });
+
     await expect(sut.canActivate(contextFor(TestController.prototype.thumbnail, request))).resolves.toBe(true);
-    expect(hit).not.toHaveBeenCalled();
+    expect(store.hit).toHaveBeenCalledOnce();
+    expect(store.hit).toHaveBeenCalledWith('frameleaf:rate-limit:remote-media:ip:203.0.113.9', 60);
+    expect(REMOTE_MEDIA_CEILING.limit).toBeGreaterThan(REMOTE_ACCESS_CEILING.limit);
+
+    store.hit.mockResolvedValueOnce({ count: REMOTE_MEDIA_CEILING.limit + 1, resetSeconds: 5 });
+    await expect(sut.canActivate(contextFor(TestController.prototype.thumbnail, request))).rejects.toMatchObject({
+      status: HttpStatus.TOO_MANY_REQUESTS,
+    });
   });
 
   it('does not apply the ceiling at home', async () => {
     await sut.canActivate(contextFor(TestController.prototype.unlimited, makeRequest({ frameleafVia: 'lan' })));
-    expect(hit).not.toHaveBeenCalled();
+    await sut.canActivate(contextFor(TestController.prototype.thumbnail, makeRequest({ frameleafVia: 'lan' })));
+    expect(store.hit).not.toHaveBeenCalled();
   });
 
   it('refuses a remote request with Retry-After when the counters are unavailable, and lets a home request through', async () => {
-    hit.mockRejectedValue(new Error('Connection is closed.'));
+    store.hit.mockRejectedValue(new Error('Connection is closed.'));
     const response = { setHeader: vi.fn() };
 
     await expect(
@@ -224,26 +287,29 @@ describe(RateLimitGuard.name, () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('IMMICH_ENV=testing'));
 
     await sut.canActivate(contextFor(TestController.prototype.login, makeRequest()));
-    expect(hit).not.toHaveBeenCalled();
+    expect(store.hit).not.toHaveBeenCalled();
 
     await sut.canActivate(contextFor(TestController.prototype.login, makeRequest({ frameleafVia: 'relay' })));
-    expect(hit).toHaveBeenCalledTimes(1);
-    expect(hit).toHaveBeenCalledWith(expect.stringContaining(':remote-access:'), REMOTE_ACCESS_CEILING.windowSeconds);
+    expect(store.hit).toHaveBeenCalledTimes(1);
+    expect(store.hit).toHaveBeenCalledWith(
+      expect.stringContaining(':remote-access:'),
+      REMOTE_ACCESS_CEILING.windowSeconds,
+    );
   });
 
   it('ignores anything but HTTP', async () => {
     const context = { getType: () => 'ws' } as unknown as ExecutionContext;
     await expect(sut.canActivate(context)).resolves.toBe(true);
-    expect(hit).not.toHaveBeenCalled();
+    expect(store.hit).not.toHaveBeenCalled();
   });
 });
 
 describe(RateLimitFailureInterceptor.name, () => {
-  const hit = vi.fn();
+  const release = vi.fn();
   const logger = { setContext: vi.fn(), warn: vi.fn() };
   const sut = new RateLimitFailureInterceptor(
     logger as unknown as LoggingRepository,
-    { hit } as unknown as RateLimitRepository,
+    { release } as unknown as RateLimitRepository,
   );
   const failures = [
     { key: 'frameleaf:rate-limit:login:principal:x', limit: 10, windowSeconds: 600, counts: 'failures' as const },
@@ -253,11 +319,11 @@ describe(RateLimitFailureInterceptor.name, () => {
   const handler = (result: () => ReturnType<CallHandler['handle']>) => ({ handle: result }) as CallHandler;
 
   beforeEach(() => {
-    hit.mockReset();
-    hit.mockResolvedValue({ count: 1, resetSeconds: 600 });
+    release.mockReset();
+    release.mockResolvedValue(undefined);
   });
 
-  it('counts a wrong password (401) against the email, then passes the error on', async () => {
+  it('keeps a wrong password (401) counted and passes the error on', async () => {
     const error = new UnauthorizedException('Incorrect email or password');
     await expect(
       lastValueFrom(
@@ -267,10 +333,10 @@ describe(RateLimitFailureInterceptor.name, () => {
         ),
       ),
     ).rejects.toBe(error);
-    expect(hit).toHaveBeenCalledWith('frameleaf:rate-limit:login:principal:x', 600);
+    expect(release).not.toHaveBeenCalled();
   });
 
-  it('never counts a successful sign-in or another error', async () => {
+  it('gives back a successful sign-in and any other error', async () => {
     await expect(
       lastValueFrom(
         sut.intercept(
@@ -283,11 +349,12 @@ describe(RateLimitFailureInterceptor.name, () => {
       lastValueFrom(
         sut.intercept(
           contextWith({ frameleafRateLimitFailures: failures }),
-          handler(() => throwError(() => new HttpException('Too many', 429))),
+          handler(() => throwError(() => new HttpException('Bad request', 400))),
         ),
       ),
     ).rejects.toBeInstanceOf(HttpException);
-    expect(hit).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(2);
+    expect(release).toHaveBeenCalledWith('frameleaf:rate-limit:login:principal:x');
   });
 
   it('leaves requests without failure-counted checks alone', async () => {
@@ -300,20 +367,19 @@ describe(RateLimitFailureInterceptor.name, () => {
         ),
       ),
     ).rejects.toBe(error);
-    expect(hit).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
   });
 
-  it('still reports the wrong password when the failure cannot be counted', async () => {
-    hit.mockRejectedValue(new Error('Connection is closed.'));
-    const error = new UnauthorizedException();
+  it('still answers when the attempt cannot be given back', async () => {
+    release.mockRejectedValue(new Error('Connection is closed.'));
     await expect(
       lastValueFrom(
         sut.intercept(
           contextWith({ frameleafRateLimitFailures: failures }),
-          handler(() => throwError(() => error)),
+          handler(() => of('ok')),
         ),
       ),
-    ).rejects.toBe(error);
+    ).resolves.toBe('ok');
     expect(logger.warn).toHaveBeenCalled();
   });
 });
@@ -343,7 +409,7 @@ describe(rateLimitChecks.name, () => {
     });
 
     const checks = await rateLimitChecks(request, RATE_LIMITS.linkStart, {
-      ceiling: true,
+      media: false,
       keyOf: (principal) => Promise.resolve(principal),
     });
     expect(checks.map(({ key }) => key)).toEqual([

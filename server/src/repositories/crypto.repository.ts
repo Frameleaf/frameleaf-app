@@ -3,46 +3,78 @@ import { compareSync, hash } from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { createHash, createHmac, createPublicKey, createVerify, randomBytes, randomUUID } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
-import { mkdir, open, readFile } from 'node:fs/promises';
+import { link, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 /** FL-161: the per-server keyed-hash secret, in the identity directory next to the instance key. */
 export const SERVER_HMAC_KEY_FILE = 'server-hmac.key';
 const SERVER_HMAC_KEY_BYTES = 32;
 
+/** A new key in a temporary file beside `file` (O_EXCL, 0600, flushed), ready to be linked or renamed. */
+const writeServerHmacKeyFile = async (file: string) => {
+  const temporary = `${file}.${randomBytes(6).toString('hex')}.tmp`;
+  const key = randomBytes(SERVER_HMAC_KEY_BYTES);
+  const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+  try {
+    await handle.writeFile(key);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  return { temporary, key };
+};
+
+const readServerHmacKey = async (file: string): Promise<Buffer | null> => {
+  try {
+    return await readFile(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+};
+
 /**
- * Read the per-server key, creating it once (O_EXCL, 0600, flushed) when it does not exist. A key
- * another process is still writing is read again shortly; a key of any other length is an error.
+ * Read the per-server key, creating it when it does not exist. A key only ever appears whole: it is
+ * written to a temporary file and linked into place (which fails if another process created one
+ * first, whose key is then used). A key of the wrong length is replaced the same way, by an atomic
+ * rename, and `onReset` is told, because every token made with the old key stops matching.
  */
-const loadServerHmacKey = async (directory: string): Promise<Buffer> => {
+const loadServerHmacKey = async (directory: string, onReset: (file: string) => void): Promise<Buffer> => {
   const file = join(directory, SERVER_HMAC_KEY_FILE);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  try {
-    const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    const key = randomBytes(SERVER_HMAC_KEY_BYTES);
-    try {
-      await handle.writeFile(key);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    return key;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-      throw error;
-    }
+  const existing = await readServerHmacKey(file);
+  if (existing?.length === SERVER_HMAC_KEY_BYTES) {
+    return existing;
   }
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const key = await readFile(file);
-    if (key.length === SERVER_HMAC_KEY_BYTES) {
+  const { temporary, key } = await writeServerHmacKeyFile(file);
+  try {
+    if (existing) {
+      await rename(temporary, file);
+      onReset(file);
       return key;
     }
-    if (key.length > SERVER_HMAC_KEY_BYTES) {
-      break;
+    try {
+      await link(temporary, file);
+      return key;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+        throw error;
+      }
     }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // another process created it meanwhile: use its key
+    const created = await readServerHmacKey(file);
+    if (created?.length === SERVER_HMAC_KEY_BYTES) {
+      return created;
+    }
+    throw new Error(`The server key ${file} could not be read back`);
+  } finally {
+    await unlink(temporary).catch(() => {
+      // renamed into place, or already gone
+    });
   }
-  throw new Error(`The server key ${file} is damaged; remove it to create a new one`);
 };
 
 @Injectable()
@@ -138,13 +170,19 @@ export class CryptoRepository {
 
   /**
    * FL-161: an HMAC-SHA256 (base64url) of `value` under this server's own key, which lives in
-   * `directory` (the identity directory) and never in the database, so a database backup alone
-   * cannot produce one. `purpose` separates the uses of the key.
+   * `directory` (the identity directory), not in the database: a database dump, or someone who can
+   * read the database, cannot produce one on their own. The identity directory sits on the media
+   * volume, where database backups are written too, so a copy of that whole volume carries the key as
+   * well and must be protected like the server itself. `purpose` separates the uses of the key.
    */
   async serverKeyedHash(directory: string, purpose: string, value: string): Promise<string> {
     let key = this.serverHmacKeys.get(directory);
     if (!key) {
-      key = loadServerHmacKey(directory);
+      key = loadServerHmacKey(directory, (file) =>
+        LoggingRepository.create(CryptoRepository.name).warn(
+          `The server key ${file} was damaged and has been replaced. Shared links must be unlocked with their password again, and sign-in rate-limit counters start over.`,
+        ),
+      );
       this.serverHmacKeys.set(directory, key);
       // a failure is not remembered: the next call tries again
       void key.catch(() => this.serverHmacKeys.delete(directory));

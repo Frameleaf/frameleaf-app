@@ -2,7 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { DatabaseLock } from 'src/enum.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
-import { OfficialHandoffCheckpoint, ReconciliationReport } from 'src/repositories/fork-handoff.repository.js';
+import {
+  OfficialHandoffCheckpoint,
+  ReconciliationReport,
+  SharedLinkPasswordCounts,
+  sharedLinkPasswordProblem,
+} from 'src/repositories/fork-handoff.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 
@@ -18,31 +23,30 @@ export class ForkHandoffService {
   ) {}
 
   /**
-   * FL-161: the handoff preflight for password-protected shared links. Their passwords are stored as
-   * bcrypt hashes the official server cannot compare, so those links stay locked (they never open
-   * without a password) until each password is set again on the official server. The handoff goes
-   * ahead only once the operator acknowledged that.
+   * FL-161: the handoff preflight for password-protected shared links. Passwords stored as bcrypt
+   * hashes cannot be checked by the official server, so those links stay locked there (they never open
+   * without a password) until each password is set again on the official server; links still holding
+   * a plaintext password keep working and are only counted. The handoff goes ahead only once the
+   * operator acknowledged the locked ones. `prepareOfficial` checks the same again inside the
+   * checkpoint's own transaction.
    */
   async sharedLinkPasswordPreflight(
     options: { acknowledgeSharedLinkPasswords?: boolean } = {},
-  ): Promise<{ passwordProtectedLinks: number }> {
-    const passwordProtectedLinks = await this.databaseRepository.countPasswordProtectedSharedLinks();
-    if (passwordProtectedLinks > 0 && !options.acknowledgeSharedLinkPasswords) {
-      throw new Error(
-        `${passwordProtectedLinks} password-protected shared link(s) will stay locked on the official server: ` +
-          'their passwords are stored as hashes it cannot check. After the handoff, set a new password on each ' +
-          'of those links in the official app. Run prepare-official again with --acknowledge-shared-link-passwords ' +
-          'to continue.',
-      );
+  ): Promise<SharedLinkPasswordCounts> {
+    const counts = await this.databaseRepository.countPasswordProtectedSharedLinks();
+    const problem = sharedLinkPasswordProblem(counts, options.acknowledgeSharedLinkPasswords === true);
+    if (problem) {
+      throw new Error(problem);
     }
-    return { passwordProtectedLinks };
+    return counts;
   }
 
   async prepareOfficial(
     options: { acknowledgeSharedLinkPasswords?: boolean } = {},
   ): Promise<OfficialHandoffCheckpoint> {
-    await this.sharedLinkPasswordPreflight(options);
-    return this.databaseRepository.prepareOfficialHandoffCheckpoint();
+    return this.databaseRepository.prepareOfficialHandoffCheckpoint({
+      acknowledgeSharedLinkPasswords: options.acknowledgeSharedLinkPasswords === true,
+    });
   }
 
   async prepareFork(options: { batchSize: number }, hooks: ForkHandoffHooks = {}): Promise<ReconciliationReport> {

@@ -2163,6 +2163,19 @@ describe(AuthService.name, () => {
         await signInRequired(sut.authenticate(sessionRequest(via)));
       });
 
+      it('lets any valid session sign out over the relay', async () => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+
+        await expect(
+          sut.authenticate({
+            ...sessionRequest('relay'),
+            metadata: { ...sessionRequest('relay').metadata, uri: '/api/auth/logout', remoteSignInExempt: true },
+          }),
+        ).resolves.toMatchObject({ user });
+        expect(mocks.frameleafAccount.getSession).not.toHaveBeenCalled();
+      });
+
       it('accepts a password session over the relay when an administrator allowed passwords there', async () => {
         mocks.session.getByToken.mockResolvedValue(sessionRow());
         mocks.frameleafAccount.getSession.mockResolvedValue(undefined);

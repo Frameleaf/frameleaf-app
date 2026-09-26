@@ -11,7 +11,7 @@ describe('fork handoff CLI', () => {
     };
     const service = {
       prepareOfficial: vi.fn().mockResolvedValue(checkpoint),
-      sharedLinkPasswordPreflight: vi.fn().mockResolvedValue({ passwordProtectedLinks: 0 }),
+      sharedLinkPasswordPreflight: vi.fn().mockResolvedValue({ hashed: 0, plaintext: 0 }),
     } as unknown as ForkHandoffService;
     const command = new ForkHandoffPrepareOfficialCommand(service);
     const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -39,7 +39,7 @@ describe('fork handoff CLI', () => {
   it('continues with --acknowledge-shared-link-passwords and says how many links stay locked (FL-161)', async () => {
     const service = {
       prepareOfficial: vi.fn().mockResolvedValue({ id: 'checkpoint-1' }),
-      sharedLinkPasswordPreflight: vi.fn().mockResolvedValue({ passwordProtectedLinks: 2 }),
+      sharedLinkPasswordPreflight: vi.fn().mockResolvedValue({ hashed: 2, plaintext: 1 }),
     } as unknown as ForkHandoffService;
     const command = new ForkHandoffPrepareOfficialCommand(service);
     const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -49,6 +49,9 @@ describe('fork handoff CLI', () => {
 
     expect(service.prepareOfficial).toHaveBeenCalledWith({ acknowledgeSharedLinkPasswords: true });
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('2 password-protected shared link(s) stay locked'));
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining('1 other password-protected shared link(s) keep working'),
+    );
     expect(output).toHaveBeenCalledWith('{"id":"checkpoint-1"}\n');
   });
 

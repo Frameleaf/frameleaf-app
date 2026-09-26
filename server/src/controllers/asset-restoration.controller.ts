@@ -27,7 +27,7 @@ import {
   AssetRestorationSelectDto,
 } from 'src/dtos/asset-restoration.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -161,6 +161,8 @@ export class AssetRestorationController {
   @Get(':id/restorations/:restorationId/file')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetEditGet })
+  // FL-161: can stream the full-resolution restored result
+  @OriginalTransfer()
   @Endpoint({
     summary: 'View a restoration file',
     description: 'Streams the preview input, the restored preview, the full result or its playback rendition.',

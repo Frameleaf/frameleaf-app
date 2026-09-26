@@ -178,14 +178,17 @@ immich-admin fork-schema-cutover apply \
 immich-admin fork-handoff prepare-official
 ```
 
-`prepare-official` first counts the password-protected shared links. Frameleaf
-stores their passwords as bcrypt hashes, which the official server cannot check,
-so each of those links stays locked on the official server (it never opens
-without a password) until you set its password again in the official app. With
-any such link, `prepare-official` stops and says how many; run it again as
+`prepare-official` first counts the password-protected shared links, inside the
+same read-only transaction that prepares the checkpoint. Frameleaf stores their
+passwords as bcrypt hashes, which the official server cannot check, so each of
+those links stays locked on the official server (it never opens without a
+password) until you set its password again in the official app. With any such
+link, `prepare-official` stops and says how many; run it again as
 `immich-admin fork-handoff prepare-official --acknowledge-shared-link-passwords`
 once you have planned to reset those passwords. It then prints the number on
-standard error. After the return, the passwords you set on the official server
+standard error. Links whose password was set on the official server and not yet
+used in Frameleaf still hold that password as it was typed; they keep working
+on the official server, need no acknowledgement and are counted separately. After the return, the passwords you set on the official server
 keep working in Frameleaf: a plaintext password is hashed on its first correct
 use.
 

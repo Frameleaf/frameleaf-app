@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { isIP } from 'node:net';
-import { Observable, catchError, from, mergeMap, throwError } from 'rxjs';
+import { Observable, catchError, from, map, mergeMap, throwError } from 'rxjs';
 import type { Request, Response } from 'express';
 import type { FrameleafRequest } from 'src/middleware/frameleaf-via.middleware.js';
 import { ImmichCookie, ImmichEnvironment, ImmichHeader, ImmichQuery, MetadataKey } from 'src/enum.js';
@@ -30,13 +30,17 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  *   names one, per principal: the email of a password login, the shared link being unlocked, or the
  *   session or API key presented. The principal is counted as an HMAC under this server's own key
  *   (`CryptoRepository.serverKeyedHash`); it never reaches Redis in clear or as a plain hash.
- * - For a password login and a shared-link unlock the principal counts only failed attempts (401,
- *   counted by `RateLimitFailureInterceptor`), so a stranger's wrong passwords from many addresses
- *   lock only the attempts, and a person who signs in correctly never uses up the limit.
+ * - For a password login and a shared-link unlock the principal counts failed attempts per email (or
+ *   link) *and* client address, so a stranger's wrong passwords from elsewhere never lock anyone out
+ *   of their own address, at home or away. Each attempt is counted up front, atomically (`INCR`), so
+ *   parallel attempts cannot all slip in before a failure is recorded; `RateLimitFailureInterceptor`
+ *   gives the attempt back (`DECR`) when it did not fail with 401, so a correct password never uses
+ *   up the limit.
  * - Every request the edge worker vouched for as `relay` or `wan` also counts toward
- *   `REMOTE_ACCESS_CEILING` for its address, except thumbnails and previews
- *   (`@RemoteCeilingExempt()`), which a timeline requests by the hundred. The edge worker must send
- *   `X-Forwarded-For`, or every remote visitor shares the loopback address's counter.
+ *   `REMOTE_ACCESS_CEILING` for its address; thumbnails and previews (`@RemoteMediaCeiling()`),
+ *   which a timeline requests by the hundred, count toward the higher `REMOTE_MEDIA_CEILING`
+ *   instead. The edge worker must send `X-Forwarded-For`, or every remote visitor shares the loopback
+ *   address's counter.
  * - The client address is Express's `request.ip`: behind a reverse proxy on an address outside the
  *   private ranges (for example a Tailscale `100.64.0.0/10` address), set `IMMICH_TRUSTED_PROXIES`,
  *   or every visitor shares the proxy's counter.
@@ -118,13 +122,15 @@ export const RATE_LIMITS = Object.freeze({
 
 /** Every request arriving through the relay or a direct connection from outside, per client address. */
 export const REMOTE_ACCESS_CEILING = Object.freeze({ bucket: 'remote-access', limit: 1200, windowSeconds: MINUTE });
+/** Thumbnails and previews arriving through remote access, per client address (shared links included). */
+export const REMOTE_MEDIA_CEILING = Object.freeze({ bucket: 'remote-media', limit: 6000, windowSeconds: MINUTE });
 
 export const RATE_LIMIT_KEY_PREFIX = 'frameleaf:rate-limit';
 
 export const RateLimited = (rule: RateLimitRule): MethodDecorator => SetMetadata(MetadataKey.RateLimit, rule);
 
-/** Leaves a route (thumbnails and previews) out of the remote-access ceiling; its own limits still apply. */
-export const RemoteCeilingExempt = (): MethodDecorator => SetMetadata(MetadataKey.RemoteCeilingExempt, true);
+/** Counts a route (thumbnails and previews) against the higher remote-access media ceiling instead. */
+export const RemoteMediaCeiling = (): MethodDecorator => SetMetadata(MetadataKey.RemoteMediaCeiling, true);
 
 /** Seconds a client is asked to wait when the counters are unavailable. */
 export const COUNTERS_UNAVAILABLE_RETRY_AFTER = 30;
@@ -213,7 +219,7 @@ export type RateLimitCheck = {
   key: string;
   limit: number;
   windowSeconds: number;
-  /** `failures`: only read here; a failed attempt is counted afterwards. */
+  /** `failures`: counted up front like a request, and given back unless the attempt failed with 401. */
   counts: 'requests' | 'failures';
 };
 
@@ -224,15 +230,16 @@ export type RateLimitCheck = {
 export const rateLimitChecks = async (
   request: FrameleafRequest,
   rule: RateLimitRule | undefined,
-  options: { ceiling: boolean; keyOf: (principal: string) => Promise<string> },
+  options: { media: boolean; keyOf: (principal: string) => Promise<string> },
 ): Promise<RateLimitCheck[]> => {
   const address = rateLimitAddress(request.frameleafForwarded?.for ?? request.ip ?? request.socket?.remoteAddress);
   const checks: RateLimitCheck[] = [];
-  if (options.ceiling && isRemoteVia(request.frameleafVia)) {
+  if (isRemoteVia(request.frameleafVia)) {
+    const ceiling = options.media ? REMOTE_MEDIA_CEILING : REMOTE_ACCESS_CEILING;
     checks.push({
-      key: `${RATE_LIMIT_KEY_PREFIX}:${REMOTE_ACCESS_CEILING.bucket}:ip:${address}`,
-      limit: REMOTE_ACCESS_CEILING.limit,
-      windowSeconds: REMOTE_ACCESS_CEILING.windowSeconds,
+      key: `${RATE_LIMIT_KEY_PREFIX}:${ceiling.bucket}:ip:${address}`,
+      limit: ceiling.limit,
+      windowSeconds: ceiling.windowSeconds,
       counts: 'requests',
     });
   }
@@ -247,11 +254,14 @@ export const rateLimitChecks = async (
   });
   const principal = rule.principal && rateLimitPrincipal(request, rule.principal);
   if (principal && rule.principalLimit) {
+    const counts = rule.principalCounts ?? 'requests';
+    // failures are counted per principal and address, so nobody elsewhere can use them up
+    const counted = counts === 'failures' ? `${principal}\0${address}` : principal;
     checks.push({
-      key: `${RATE_LIMIT_KEY_PREFIX}:${rule.bucket}:principal:${await options.keyOf(principal)}`,
+      key: `${RATE_LIMIT_KEY_PREFIX}:${rule.bucket}:principal:${await options.keyOf(counted)}`,
       limit: rule.principalLimit,
       windowSeconds: rule.windowSeconds,
-      counts: rule.principalCounts ?? 'requests',
+      counts,
     });
   }
   return checks;
@@ -310,7 +320,7 @@ export class RateLimitGuard implements CanActivate {
     const rule = this.testing()
       ? undefined
       : this.reflector.get<RateLimitRule | undefined>(MetadataKey.RateLimit, handler);
-    const ceiling = !this.reflector.get<boolean | undefined>(MetadataKey.RemoteCeilingExempt, handler);
+    const media = this.reflector.get<boolean | undefined>(MetadataKey.RemoteMediaCeiling, handler) === true;
     const remote = isRemoteVia(request.frameleafVia);
 
     const unavailable = (error: unknown): null => {
@@ -324,7 +334,7 @@ export class RateLimitGuard implements CanActivate {
     };
 
     const checks = await rateLimitChecks(request, rule, {
-      ceiling,
+      media,
       keyOf: (principal) =>
         this.cryptoRepository.serverKeyedHash(identityDirectory(this.configRepository), 'rate-limit', principal),
     }).catch(unavailable);
@@ -334,20 +344,15 @@ export class RateLimitGuard implements CanActivate {
 
     const failures: RateLimitCheck[] = [];
     for (const check of checks) {
-      const counted = check.counts === 'failures';
-      const hit = await (
-        counted
-          ? this.rateLimitRepository.peek(check.key)
-          : this.rateLimitRepository.hit(check.key, check.windowSeconds)
-      ).catch(unavailable);
+      // every counter, failure counters included, counts this attempt atomically before it runs
+      const hit = await this.rateLimitRepository.hit(check.key, check.windowSeconds).catch(unavailable);
       if (!hit) {
         return true;
       }
-      // a request counter includes this request; a failure counter only the failures so far
-      if (counted ? hit.count >= check.limit : hit.count > check.limit) {
+      if (hit.count > check.limit) {
         throw tooManyRequests(http.getResponse<Response>(), hit.resetSeconds);
       }
-      if (counted) {
+      if (check.counts === 'failures') {
         failures.push(check);
       }
     }
@@ -359,8 +364,9 @@ export class RateLimitGuard implements CanActivate {
 }
 
 /**
- * Counts a failed attempt (401) against the failure-counted principal checks the guard left on the
- * request: a wrong password for an email, a wrong password for a shared link.
+ * Settles the failure-counted checks the guard counted up front: an attempt that failed with 401 (a
+ * wrong password for an email or a shared link) stays counted; any other outcome, a correct password
+ * above all, is given back.
  */
 @Injectable()
 export class RateLimitFailureInterceptor implements NestInterceptor {
@@ -380,21 +386,22 @@ export class RateLimitFailureInterceptor implements NestInterceptor {
       return next.handle();
     }
     return next.handle().pipe(
+      mergeMap((value) => from(this.release(checks)).pipe(map(() => value))),
       catchError((error: unknown) => {
-        if (!(error instanceof HttpException) || error.getStatus() !== HttpStatus.UNAUTHORIZED) {
+        if (error instanceof HttpException && error.getStatus() === HttpStatus.UNAUTHORIZED) {
           return throwError(() => error);
         }
-        return from(this.countFailure(checks)).pipe(mergeMap(() => throwError(() => error)));
+        return from(this.release(checks)).pipe(mergeMap(() => throwError(() => error)));
       }),
     );
   }
 
-  async countFailure(checks: RateLimitCheck[]) {
+  async release(checks: RateLimitCheck[]) {
     for (const check of checks) {
       try {
-        await this.rateLimitRepository.hit(check.key, check.windowSeconds);
+        await this.rateLimitRepository.release(check.key);
       } catch (error) {
-        this.logger.warn(`A failed attempt could not be counted: ${error}`);
+        this.logger.warn(`An attempt could not be given back to its counter: ${error}`);
       }
     }
   }
