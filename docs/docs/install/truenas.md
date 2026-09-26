@@ -94,7 +94,7 @@ Select the **Machine Learning Image Type** based on the hardware you have. More 
 
 Keep the **Log Level** to the default `Log` value.
 
-Leave **Hugging Face Endpoint** blank. (This is used to download ML models from a different source.)
+Leave **Hugging Face Endpoint** blank to download models from the Frameleaf model mirror. If you set it, it is used as the model source unless `MACHINE_LEARNING_MODEL_SOURCE_URL` is set; see [environment variables](/install/environment-variables#machine-learning).
 
 Set **Database Storage Type** to the type of storage (**HDD** or **SSD**) that the pool where the **pgData** dataset is located uses.
 

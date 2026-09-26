@@ -460,7 +460,7 @@
       "covers": [
         "ml:insightface:*"
       ],
-      "source": "Hugging Face cards immich-app/<model> (license: other, insightface) linking the InsightFace python-package licence section"
+      "source": "Hugging Face cards immich-app/<model> (license: other, insightface) linking the InsightFace python-package licence section; the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/<model>)"
     },
     {
       "status": "looked-up",

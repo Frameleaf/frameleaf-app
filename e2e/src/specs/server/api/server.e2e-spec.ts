@@ -170,8 +170,8 @@ describe('/server', () => {
         publicUsers: true,
         isOnboarded: false,
         maintenanceMode: false,
-        mapDarkStyleUrl: 'https://tiles.immich.cloud/v1/style/dark.json',
-        mapLightStyleUrl: 'https://tiles.immich.cloud/v1/style/light.json',
+        mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
+        mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         minFaces: 3,
         frameleaf: { via: null, signInAvailable: false, signInRequired: false, publicUrl: null },
       });

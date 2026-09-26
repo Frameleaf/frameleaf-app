@@ -236,7 +236,7 @@
     "map_enable_description": "אפשר תכונות מפה",
     "map_gps_settings": "הגדרות מפה & GPS",
     "map_gps_settings_description": "ניהול הגדרות מפה & GPS (קידוד גאוגרפי הפוך)",
-    "map_implications": "תכונת המפה מסתמכת על שירות אריח חיצוני (tiles.immich.cloud)",
+    "map_implications": "תכונת המפה מסתמכת על שירות אריח חיצוני (tiles.frameleaf.cloud)",
     "map_light_style": "עיצוב בהיר",
     "map_manage_reverse_geocoding_settings": "ניהול הגדרות <link>קידוד גאוגרפי הפוך</link>",
     "map_reverse_geocoding": "קידוד גיאוגרפי הפוך",

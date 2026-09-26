@@ -237,7 +237,7 @@
     "map_enable_description": "Cumasaigh gnéithe léarscáile",
     "map_gps_settings": "Socruithe Léarscáile & GPS",
     "map_gps_settings_description": "Bainistigh Socruithe Léarscáile & GPS (Geochódú Droim ar Ais)",
-    "map_implications": "Braitheann an ghné léarscáile ar sheirbhís tíleanna seachtrach (tiles.immich.cloud)",
+    "map_implications": "Braitheann an ghné léarscáile ar sheirbhís tíleanna seachtrach (tiles.frameleaf.cloud)",
     "map_light_style": "Stíl éadrom",
     "map_manage_reverse_geocoding_settings": "Bainistigh socruithe <link>Geochódú Droim ar Ais</link>",
     "map_reverse_geocoding": "Geochódú Droim ar Ais",

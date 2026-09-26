@@ -203,7 +203,7 @@
     "map_enable_description": "Chartefunktion aktiviere",
     "map_gps_settings": "Charte- & GPS-Iistellige",
     "map_gps_settings_description": "Charte- & GPS-Iistellige verwalte",
-    "map_implications": "D’Chartefunktion bruucht en externe Tile-Service (tiles.immich.cloud)",
+    "map_implications": "D’Chartefunktion bruucht en externe Tile-Service (tiles.frameleaf.cloud)",
     "map_light_style": "Helle Stil",
     "map_manage_reverse_geocoding_settings": "Iistellige für d’<link>umgekehrti Geokodierig</link> verwalte",
     "map_reverse_geocoding": "Umkherti Geokodierig",

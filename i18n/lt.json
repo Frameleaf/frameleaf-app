@@ -236,7 +236,7 @@
     "map_enable_description": "Įgalinti žemėlapio funkcijas",
     "map_gps_settings": "Žemėlapio ir GPS nustatymai",
     "map_gps_settings_description": "Tvarkyti žemėlapio ir GPS (atvirkštinio geokodavimo) nustatymus",
-    "map_implications": "Žemėlapio funkcija naudojasi išorine plytelių paslauga (tiles.immich.cloud)",
+    "map_implications": "Žemėlapio funkcija naudojasi išorine plytelių paslauga (tiles.frameleaf.cloud)",
     "map_light_style": "Šviesioji tema",
     "map_manage_reverse_geocoding_settings": "Tvarkyti <link>atvirkštinio geokodavimo</link> nustatymus",
     "map_reverse_geocoding": "Atvirkštinis geokodavimas",

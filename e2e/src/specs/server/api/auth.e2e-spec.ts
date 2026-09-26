@@ -49,7 +49,7 @@ describe('/auth', () => {
       // FL-80: registration is only offered while the server has no administrator.
       const { status, body } = await request(app)
         .post('/auth/admin-sign-up')
-        .send({ ...signupDto.admin, email: 'second-admin@immich.cloud' });
+        .send({ ...signupDto.admin, email: 'second-admin@example.com' });
       expect(status).toBe(400);
       expect(body).toEqual(errorDto.badRequest('Admin setup is not available'));
     });

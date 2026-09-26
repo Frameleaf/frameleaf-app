@@ -28,6 +28,7 @@ docker image prune
 ## Frameleaf upgrade notes
 
 - **Index on generated file paths.** The first start after upgrading builds an index on the paths of generated files (`asset_file_path_frameleaf_idx`). The server is ready once it is built, and saving generated files waits until then, so on a large library that start takes longer than usual. Let it finish; nothing else is needed.
+- **Model downloads.** Smart search and face recognition models now download from the Frameleaf model mirror (`https://models.frameleaf.cloud`, `frameleaf/<model>`). If you already set `HF_ENDPOINT` to a mirror of your own, it is still used; `MACHINE_LEARNING_MODEL_SOURCE_URL` takes precedence over both. The order is `MACHINE_LEARNING_MODEL_SOURCE_URL`, then `HF_ENDPOINT`, then the Frameleaf mirror, and the machine learning log names the source at startup. A mirror must serve the models under the `frameleaf` organisation. See [environment variables](/install/environment-variables#machine-learning).
 - **After a certified handoff.** A database after the cutover does not receive new Frameleaf database changes. Frameleaf keeps working without them: workflows run as before, but a run interrupted by a worker restart starts again from its first step, and moving files is slower.
 
 ## Versioning Policy

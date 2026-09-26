@@ -236,7 +236,7 @@
     "map_enable_description": "Enable map features",
     "map_gps_settings": "Map & GPS Settings",
     "map_gps_settings_description": "Manage Map & GPS (Reverse Geocoding) Settings",
-    "map_implications": "The map feature relies on an external tile service (tiles.immich.cloud)",
+    "map_implications": "The map feature relies on an external tile service (tiles.frameleaf.cloud)",
     "map_light_style": "Light style",
     "map_manage_reverse_geocoding_settings": "Manage <link>Reverse Geocoding</link> settings",
     "map_reverse_geocoding": "Reverse Geocoding",

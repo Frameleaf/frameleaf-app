@@ -237,7 +237,7 @@
     "map_enable_description": "Aktivizo veçoritë e hartës",
     "map_gps_settings": "Cilësimet e Hartës dhe GPS-it",
     "map_gps_settings_description": "Menaxho Cilësimet e Hartës dhe GPS-it (Gjeokodimi i Anasjelltë)",
-    "map_implications": "Funksioni i hartës mbështetet në një shërbim të jashtëm me pllaka (tiles.immich.cloud)",
+    "map_implications": "Funksioni i hartës mbështetet në një shërbim të jashtëm me pllaka (tiles.frameleaf.cloud)",
     "map_light_style": "Stil i lehtë",
     "map_manage_reverse_geocoding_settings": "Menaxho cilësimet e <link>Gjeokodimit të kundërt</link>",
     "map_reverse_geocoding": "Gjeokodimi i kundërt",

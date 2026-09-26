@@ -105,12 +105,9 @@ test("the allowlist covers only the About attribution and its named exceptions",
       frameleaf_about_attribution:
         "Built on <upstream>Immich</upstream>, the open-source photo library (<licence>AGPL-3.0</licence>).",
       frameleaf_other: "Built on <upstream>Immich</upstream>",
-      admin: {
-        map_implications: "The map uses tiles.immich.cloud",
-        other: "The map uses tiles.immich.cloud",
-      },
+      admin: { map_implications: "The map uses tiles.immich.cloud" },
     }).map(({ key }) => key),
-    ["frameleaf_other", "admin.other"],
+    ["frameleaf_other", "admin.map_implications"],
   );
   const about = '<a href="https://github.com/immich-app/immich">x</a>';
   assert.deepEqual(

@@ -239,7 +239,7 @@
     "map_enable_description": "啟用地圖功能",
     "map_gps_settings": "地圖與 GPS 設定",
     "map_gps_settings_description": "管理地圖與 GPS（反向地理編碼）設定",
-    "map_implications": "地圖功能仰賴外部圖磚服務（tiles.immich.cloud）",
+    "map_implications": "地圖功能仰賴外部圖磚服務（tiles.frameleaf.cloud）",
     "map_light_style": "淺色樣式",
     "map_manage_reverse_geocoding_settings": "管理 <link>逆向地理編碼</link> 設定",
     "map_reverse_geocoding": "反向地理編碼",

@@ -130,6 +130,8 @@ Only the **Qwen2.5-VL**, **Qwen3-VL**, **Phi-3/3.5-vision**, and **Florence-2** 
 
 On OpenVINO, the 3B/7B Qwen entries resolve transparently to pre-quantized int4 builds (`llmware/qwen2.5-vl-Nb-ov`). The 32B, 72B, and Qwen3-VL 30B-A3B entries are CUDA only — there is no OpenVINO alias.
 
+The same description models, with Florence-2 base and large, are the white and green stops of the descriptions slider in **Where each job runs** and on the Cloud processing **Models** card. The slider colours each one by the last Hardware & GPU check and changes the same description model setting, saved with the settings bar. A model the machine-learning container doesn't have yet downloads the first time a job uses it. See [Hardware acceleration → Model licences and Frameleaf Cloud](/features/ml-hardware-acceleration#model-licences-and-frameleaf-cloud).
+
 ### Fallback model behavior
 
 The dropdown also exposes a **fallback model** field. Florence-2 is the typical choice for local CUDA setups, since it's small enough to fit alongside other models on the same GPU.

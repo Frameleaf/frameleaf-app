@@ -237,7 +237,7 @@
     "map_enable_description": "Bật tính năng bản đồ",
     "map_gps_settings": "Bản đồ & GPS",
     "map_gps_settings_description": "Quản lý cài đặt Bản đồ & GPS (Mã hóa địa lý ngược)",
-    "map_implications": "Tính năng bản đồ phụ thuộc vào dịch vụ thẻ bản đồ bên ngoài (tiles.immich.cloud)",
+    "map_implications": "Tính năng bản đồ phụ thuộc vào dịch vụ thẻ bản đồ bên ngoài (tiles.frameleaf.cloud)",
     "map_light_style": "Giao diện sáng",
     "map_manage_reverse_geocoding_settings": "Quản lý cài đặt <link>Mã hóa địa lý ngược</link>",
     "map_reverse_geocoding": "Mã hóa Địa lý Ngược (Reverse Geocoding)",

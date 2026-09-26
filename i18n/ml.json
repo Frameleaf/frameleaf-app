@@ -237,7 +237,7 @@
     "map_enable_description": "മാപ്പ് ഫീച്ചറുകൾ പ്രവർത്തനക്ഷമമാക്കുക",
     "map_gps_settings": "മാപ്പ് & GPS ക്രമീകരണങ്ങൾ",
     "map_gps_settings_description": "മാപ്പ് & GPS (റിവേഴ്സ് ജിയോകോഡിംഗ്) ക്രമീകരണങ്ങൾ കൈകാര്യം ചെയ്യുക",
-    "map_implications": "മാപ്പ് ഫീച്ചർ ഒരു ബാഹ്യ ടൈൽ സേവനത്തെ (tiles.immich.cloud) ആശ്രയിച്ചിരിക്കുന്നു",
+    "map_implications": "മാപ്പ് ഫീച്ചർ ഒരു ബാഹ്യ ടൈൽ സേവനത്തെ (tiles.frameleaf.cloud) ആശ്രയിച്ചിരിക്കുന്നു",
     "map_light_style": "ലൈറ്റ് സ്റ്റൈൽ",
     "map_manage_reverse_geocoding_settings": "<link>റിവേഴ്സ് ജിയോകോഡിംഗ്</link> ക്രമീകരണങ്ങൾ കൈകാര്യം ചെയ്യുക",
     "map_reverse_geocoding": "റിവേഴ്സ് ജിയോകോഡിംഗ്",

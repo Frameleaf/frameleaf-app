@@ -207,7 +207,7 @@ test.describe('Detail Panel', () => {
 
     test("names the owner of a partner's item", async ({ context, page }) => {
       const partner = await utils.userSetup(admin.accessToken, {
-        email: 'owner-line@immich.cloud',
+        email: 'owner-line@example.com',
         name: 'Avery Partner',
         password: 'password',
       });

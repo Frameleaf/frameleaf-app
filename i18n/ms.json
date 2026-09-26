@@ -192,7 +192,7 @@
     "map_enable_description": "Aktifkan ciri peta",
     "map_gps_settings": "Tetapan Peta & GPS",
     "map_gps_settings_description": "Urus Tetapan Peta & GPS (Geokod Terbalik)",
-    "map_implications": "Ciri peta bergantung pada perkhidmatan jubin luaran (tiles.immich.cloud)",
+    "map_implications": "Ciri peta bergantung pada perkhidmatan jubin luaran (tiles.frameleaf.cloud)",
     "map_light_style": "Tema terang",
     "map_manage_reverse_geocoding_settings": "Urus tetapan <link>Penentuan Alamat Songsang</link>",
     "map_reverse_geocoding": "Geokoding Sonsang",

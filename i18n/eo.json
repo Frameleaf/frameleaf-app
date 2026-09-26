@@ -239,7 +239,7 @@
     "map_enable_description": "Ŝalti map-funkciojn",
     "map_gps_settings": "Agordaĵoj pri mapoj kaj GPS",
     "map_gps_settings_description": "Administri agordojn pri mapoj kaj GPS",
-    "map_implications": "Montri mapojn dependas de ekstera servo (tiles.immich.cloud)",
+    "map_implications": "Montri mapojn dependas de ekstera servo (tiles.frameleaf.cloud)",
     "map_light_style": "Hela stilo",
     "map_manage_reverse_geocoding_settings": "Administri agordojn pri <link>inversa geo-kodigo</link>",
     "map_reverse_geocoding": "Inversa geo-kodigo",

@@ -239,7 +239,7 @@
     "map_enable_description": "Активиране на картата",
     "map_gps_settings": "Настройки на картата и GPS",
     "map_gps_settings_description": "Управление на настройките на картата и GPS (обратно геокодиране)",
-    "map_implications": "Функцията за карта разчита на външна услуга (tiles.immich.cloud)",
+    "map_implications": "Функцията за карта разчита на външна услуга (tiles.frameleaf.cloud)",
     "map_light_style": "Светъл стил",
     "map_manage_reverse_geocoding_settings": "Управление на настройките за <link>обратно геокодиране</link>",
     "map_reverse_geocoding": "Обратно геокодиране",

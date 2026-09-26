@@ -237,7 +237,7 @@
     "map_enable_description": "Activează funcțiile hărții",
     "map_gps_settings": "Setări hartă & GPS",
     "map_gps_settings_description": "Gestionare setări Hartă & GPS (localizare inversă)",
-    "map_implications": "Caracteristica hărții se bazează pe un serviciu extern de planșe (tiles.immich.cloud)",
+    "map_implications": "Caracteristica hărții se bazează pe un serviciu extern de planșe (tiles.frameleaf.cloud)",
     "map_light_style": "Mod luminos",
     "map_manage_reverse_geocoding_settings": "Gestionare setări <link>Localizare Inversă</link>",
     "map_reverse_geocoding": "Localizare inversă",

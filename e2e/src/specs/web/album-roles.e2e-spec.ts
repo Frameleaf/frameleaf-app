@@ -33,12 +33,12 @@ test.describe('Album roles', () => {
     owner = await utils.adminSetup();
     editor = await utils.userSetup(owner.accessToken, {
       name: 'Eddie Editor',
-      email: 'editor@immich.cloud',
+      email: 'editor@example.com',
       password: 'password',
     });
     viewer = await utils.userSetup(owner.accessToken, {
       name: 'Vera Viewer',
-      email: 'viewer@immich.cloud',
+      email: 'viewer@example.com',
       password: 'password',
     });
     await Promise.all([onboard(editor), onboard(viewer)]);

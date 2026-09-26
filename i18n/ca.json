@@ -239,7 +239,7 @@
     "map_enable_description": "Activa les funcionalitats del mapa",
     "map_gps_settings": "Configuració del mapa i del GPS",
     "map_gps_settings_description": "Gestioneu els paràmetres del mapa i del GPS (geocodificació inversa)",
-    "map_implications": "La funció del mapa depèn del servei extern de tesel·les (tiles.immich.cloud)",
+    "map_implications": "La funció del mapa depèn del servei extern de tesel·les (tiles.frameleaf.cloud)",
     "map_light_style": "Estil clar",
     "map_manage_reverse_geocoding_settings": "Gestioneu els paràmetres de la <link>geocodificació inversa</link>",
     "map_reverse_geocoding": "Geocodificació inversa",
