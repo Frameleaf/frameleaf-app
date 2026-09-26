@@ -42,6 +42,7 @@ const setup = async (visibility = AssetVisibility.Timeline) => {
     real: [AccessRepository, AssetRepository, DatabaseRepository, ConfigRepository, PersonRepository, UserRepository],
     // detection is routed to an ML destination (FL-110, after PR127); the mock routes it to a healthy local one
     mock: [
+      EventRepository,
       JobRepository,
       LoggingRepository,
       AssetJobRepository,
@@ -52,6 +53,8 @@ const setup = async (visibility = AssetVisibility.Timeline) => {
     ],
   });
   Object.assign(sut, { db: database });
+  // FL-90: marking an asset sensitive moves it to Locked, which announces AssetLocked.
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
   const { user } = await ctx.newUser();
   // `Locked` seeds a timeline asset with an `asset_lock` record (the stored visibility is never locked)
   const { asset } = await ctx.newAsset({ ownerId: user.id, visibility });
