@@ -1,5 +1,16 @@
-import { createPublicKey, generateKeyPairSync, randomBytes, verify } from 'node:crypto';
-import { access, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { createPublicKey, generateKeyPairSync, randomBytes, randomUUID, verify } from 'node:crypto';
+import {
+  type FileHandle,
+  access,
+  link,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,22 +18,32 @@ import {
   CANDIDATE_KEY_FILE,
   INSTANCE_KEY_FILE,
   InstanceIdentityRepository,
+  NEXT_KEY_FILE,
   PROVEN_KEY_FILE,
   RETIRING_KEY_FILE,
-  SET_ASIDE_SUFFIX,
+  RETIRING_META_FILE,
+  ROTATION_NEEDED_FILE,
+  SET_ASIDE_MARK,
 } from 'src/repositories/instance-identity.repository.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 
 const decode = (part: string) => JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
 
 /**
- * A `link()` that can fail like it does on SMB/CIFS or FUSE media mounts, and a `readFile()` of one
- * named file that can fail like an unreadable (EACCES) or vanished (ENOENT) file.
+ * A `link()` that can fail like it does on SMB/CIFS or FUSE media mounts, a `readFile()` of one named
+ * file that can fail like an unreadable (EACCES) or vanished (ENOENT) file, file handles that record
+ * every flush (and can fail one, or cut a write short with ENOSPC).
  */
 const fsControl = vi.hoisted(() => ({
   linkError: null as string | null,
   chmodError: null as string | null,
   readError: null as { file: string; code: string } | null,
+  /** A write to a path containing this is cut short and fails with ENOSPC. */
+  writeError: null as string | null,
+  /** Paths whose handle was flushed, in order. */
+  synced: [] as string[],
+  /** Flush failures by path. */
+  syncErrors: {} as Record<string, string>,
 }));
 vi.mock('node:fs/promises', async (original) => {
   const actual = await original<typeof import('node:fs/promises')>();
@@ -40,6 +61,26 @@ vi.mock('node:fs/promises', async (original) => {
       fsControl.readError && path.endsWith(`/${fsControl.readError.file}`)
         ? Promise.reject(Object.assign(new Error('read refused'), { code: fsControl.readError.code }))
         : Reflect.apply(actual.readFile, undefined, [path, ...rest]),
+    open: async (path: string, ...rest: unknown[]) => {
+      const handle: FileHandle = await Reflect.apply(actual.open, undefined, [path, ...rest]);
+      const write = handle.writeFile.bind(handle);
+      const sync = handle.sync.bind(handle);
+      if (fsControl.writeError && path.includes(fsControl.writeError)) {
+        handle.writeFile = async (data: string | Uint8Array): Promise<void> => {
+          await write(data.slice(0, 20));
+          throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+        };
+      }
+      handle.sync = async () => {
+        fsControl.synced.push(path);
+        const code = fsControl.syncErrors[path];
+        if (code) {
+          throw Object.assign(new Error('flush failed'), { code });
+        }
+        await sync();
+      };
+      return handle;
+    },
   };
 });
 
@@ -52,8 +93,15 @@ describe(InstanceIdentityRepository.name, () => {
 
   afterEach(async () => {
     fsControl.readError = null;
+    fsControl.writeError = null;
+    fsControl.synced = [];
+    fsControl.syncErrors = {};
     await rm(dir, { recursive: true, force: true });
   });
+
+  /** Where `file` was set aside (FL-175): unique `<file>.corrupt-…` names. */
+  const setAsideOf = async (file: string) =>
+    (await readdir(dir)).filter((name) => name.startsWith(`${file}${SET_ASIDE_MARK}`)).map((name) => join(dir, name));
 
   it('computes the RFC 7638 thumbprint of an Ed25519 key (RFC 8037 appendix A.3 vector)', () => {
     expect(ed25519Thumbprint({ kty: 'OKP', crv: 'Ed25519', x: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo' })).toBe(
@@ -85,7 +133,34 @@ describe(InstanceIdentityRepository.name, () => {
     expect(await readdir(dir)).toEqual([INSTANCE_KEY_FILE]);
   });
 
-  it('creates the key in place where the file system cannot hard-link (EPERM)', async () => {
+  it('never leaves a partial key when writing the first key fails (ENOSPC), with or without hard links', async () => {
+    for (const linkError of [null, 'EPERM']) {
+      fsControl.linkError = linkError;
+      fsControl.writeError = `${INSTANCE_KEY_FILE}.`;
+      try {
+        await expect(new InstanceIdentityRepository().loadOrCreate(dir, null)).rejects.toMatchObject({
+          code: 'ENOSPC',
+        });
+      } finally {
+        fsControl.linkError = null;
+        fsControl.writeError = null;
+      }
+      expect(await readdir(dir)).toEqual([]);
+    }
+    await expect(new InstanceIdentityRepository().loadOrCreate(dir, null)).resolves.toHaveProperty('kid');
+  });
+
+  it('removes staging copies a crash left, which are second links to the private key', async () => {
+    const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+    const staging = `${identity.keyFile}.${randomUUID()}.tmp`;
+    await link(identity.keyFile, staging);
+    await writeFile(join(dir, 'unrelated.txt'), 'kept');
+    await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+    await expect(access(staging)).rejects.toThrow();
+    expect((await readdir(dir)).toSorted()).toEqual([INSTANCE_KEY_FILE, 'unrelated.txt']);
+  });
+
+  it('creates the key by rename where the file system cannot hard-link (EPERM)', async () => {
     fsControl.linkError = 'EPERM';
     try {
       const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
@@ -188,7 +263,8 @@ describe(InstanceIdentityRepository.name, () => {
       expect(again.candidate).toBeUndefined();
       await expect(access(join(dir, 'instance-key.next.pem'))).rejects.toThrow();
       // set aside for an operator, not left where the next load would trip over it again
-      const setAside = join(dir, `instance-key.next.pem${SET_ASIDE_SUFFIX}`);
+      const [setAside, ...others] = await setAsideOf(NEXT_KEY_FILE);
+      expect(others).toEqual([]);
       expect(await readFile(setAside, 'utf8')).toBe(partial);
       expect((await stat(setAside)).mode & 0o777).toBe(0o600);
       await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
@@ -225,7 +301,8 @@ describe(InstanceIdentityRepository.name, () => {
       expect(again.candidate).toBeUndefined();
       await expect(access(join(dir, CANDIDATE_KEY_FILE))).rejects.toThrow();
       await expect(access(join(dir, 'instance-key.candidate.json'))).rejects.toThrow();
-      expect(await readFile(join(dir, `${CANDIDATE_KEY_FILE}${SET_ASIDE_SUFFIX}`))).toEqual(garbage);
+      const [setAside] = await setAsideOf(CANDIDATE_KEY_FILE);
+      expect(await readFile(setAside)).toEqual(garbage);
       // the next load is clean
       await expect(new InstanceIdentityRepository().loadOrCreate(dir, identity)).resolves.not.toHaveProperty(
         'candidate',
@@ -242,7 +319,7 @@ describe(InstanceIdentityRepository.name, () => {
       const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
       expect(again.kid).toBe(identity.kid);
       expect(again.candidate).toBeUndefined();
-      await expect(access(join(dir, `instance-key.next.pem${SET_ASIDE_SUFFIX}`))).rejects.toThrow();
+      await expect(setAsideOf(NEXT_KEY_FILE)).resolves.toEqual([]);
       await expect(access(join(dir, 'instance-key.candidate.json'))).rejects.toThrow();
     });
 
@@ -257,7 +334,7 @@ describe(InstanceIdentityRepository.name, () => {
         });
         fsControl.readError = null;
         expect(await readFile(join(dir, file), 'utf8')).toBe(pem);
-        await expect(access(join(dir, `${file}${SET_ASIDE_SUFFIX}`))).rejects.toThrow();
+        await expect(setAsideOf(file)).resolves.toEqual([]);
         await rm(join(dir, file));
       }
       expect(await readFile(identity.keyFile, 'utf8')).toContain('BEGIN PRIVATE KEY');
@@ -272,19 +349,63 @@ describe(InstanceIdentityRepository.name, () => {
           'is not a readable private key',
         );
         expect(await readFile(identity.keyFile, 'utf8')).toBe(content);
-        await expect(access(`${identity.keyFile}${SET_ASIDE_SUFFIX}`)).rejects.toThrow();
+        await expect(setAsideOf(INSTANCE_KEY_FILE)).resolves.toEqual([]);
       }
     });
 
-    it('keeps the current key when a proven key no longer parses (FL-175)', async () => {
-      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
-      await writeFile(join(dir, PROVEN_KEY_FILE), newPem().slice(0, 60), { mode: 0o600 });
+    it('keeps the current key when a proven key no longer parses, and asks for a new rotation (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const damaged = newPem().slice(0, 60);
+      await writeFile(join(dir, PROVEN_KEY_FILE), damaged, { mode: 0o644 });
 
-      const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+      const start = Date.now();
+      const again = await repository.loadOrCreate(dir, identity, start);
       expect(again.kid).toBe(identity.kid);
       expect(again.retiring).toBeUndefined();
+      expect(again.rotationNeeded).toEqual({ since: new Date(start).toISOString() });
       await expect(access(join(dir, PROVEN_KEY_FILE))).rejects.toThrow();
-      await expect(access(join(dir, `${PROVEN_KEY_FILE}${SET_ASIDE_SUFFIX}`))).resolves.toBeUndefined();
+      const [setAside] = await setAsideOf(PROVEN_KEY_FILE);
+      expect(await readFile(setAside, 'utf8')).toBe(damaged);
+      expect((await stat(setAside)).mode & 0o777).toBe(0o600);
+      // still asked for on every load until a rotation finishes
+      await expect(repository.loadOrCreate(dir, again, start + 1000)).resolves.toMatchObject({
+        rotationNeeded: { since: new Date(start).toISOString() },
+      });
+
+      const rotated = await repository.rotate(again, () => Promise.resolve(), 24);
+      expect(rotated.rotationNeeded).toBeUndefined();
+      await expect(access(join(dir, ROTATION_NEEDED_FILE))).rejects.toThrow();
+      await expect(repository.loadOrCreate(dir, rotated)).resolves.not.toHaveProperty('rotationNeeded');
+    });
+
+    it('swaps in a readable proven key over a current key that does not parse (FL-175)', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      const proven = generateKeyPairSync('ed25519').privateKey;
+      await writeFile(join(dir, PROVEN_KEY_FILE), proven.export({ format: 'pem', type: 'pkcs8' }), { mode: 0o600 });
+      await writeFile(identity.keyFile, 'damaged', { mode: 0o600 });
+
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+      const jwk = createPublicKey(proven).export({ format: 'jwk' });
+      expect(again.kid).toBe(ed25519Thumbprint({ kty: 'OKP', crv: 'Ed25519', x: jwk.x! }));
+      expect(again.retiring).toBeUndefined();
+      await expect(access(join(dir, PROVEN_KEY_FILE))).rejects.toThrow();
+      const [setAside] = await setAsideOf(INSTANCE_KEY_FILE);
+      expect(await readFile(setAside, 'utf8')).toBe('damaged');
+    });
+
+    it('gives every set-aside file its own name', async () => {
+      const identity = await new InstanceIdentityRepository().loadOrCreate(dir, null);
+      for (const partial of ['-----BEGIN', '-----BEGIN PRIVATE']) {
+        await writeFile(join(dir, NEXT_KEY_FILE), partial, { mode: 0o600 });
+        await new InstanceIdentityRepository().loadOrCreate(dir, identity);
+      }
+      const setAside = await setAsideOf(NEXT_KEY_FILE);
+      expect(setAside).toHaveLength(2);
+      expect((await Promise.all(setAside.map((file) => readFile(file, 'utf8')))).toSorted()).toEqual([
+        '-----BEGIN',
+        '-----BEGIN PRIVATE',
+      ]);
     });
 
     it('sets aside a retiring key that no longer parses instead of failing the load (FL-175)', async () => {
@@ -299,17 +420,48 @@ describe(InstanceIdentityRepository.name, () => {
       expect(again.kid).toBe(rotated.kid);
       expect(again.retiring).toBeUndefined();
       await expect(access(join(dir, 'instance-key.retiring.json'))).rejects.toThrow();
-      await expect(access(join(dir, `${RETIRING_KEY_FILE}${SET_ASIDE_SUFFIX}`))).resolves.toBeUndefined();
+      await expect(setAsideOf(RETIRING_KEY_FILE)).resolves.toHaveLength(1);
     });
 
-    it('has the whole new key on disk before the cloud is asked to register it (FL-175)', async () => {
+    it('leaves out a retiring key that cannot be read, without failing the load (FL-175)', async () => {
       const repository = new InstanceIdentityRepository();
       const identity = await repository.loadOrCreate(dir, null);
+      const rotated = await repository.rotate(identity, () => Promise.resolve(), 24);
+      fsControl.readError = { file: RETIRING_KEY_FILE, code: 'EACCES' };
+
+      const again = await new InstanceIdentityRepository().loadOrCreate(dir, rotated);
+      expect(again.kid).toBe(rotated.kid);
+      expect(again.retiring).toBeUndefined();
+      fsControl.readError = null;
+      await expect(access(join(dir, RETIRING_KEY_FILE))).resolves.toBeUndefined();
+      await expect(access(join(dir, RETIRING_META_FILE))).resolves.toBeUndefined();
+      await expect(setAsideOf(RETIRING_KEY_FILE)).resolves.toEqual([]);
+    });
+
+    it('removes a retired key only while its sidecar names the same rotation (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const rotated = await repository.rotate(identity, () => Promise.resolve(), 24);
+      const stale = { ...rotated, retiring: { ...rotated.retiring!, rotationId: randomUUID() } };
+      await expect(repository.removeRetired(dir, stale)).resolves.toEqual(stale);
+      await expect(access(join(dir, RETIRING_KEY_FILE))).resolves.toBeUndefined();
+
+      await expect(repository.removeRetired(dir, rotated)).resolves.not.toHaveProperty('retiring');
+      await expect(access(join(dir, RETIRING_KEY_FILE))).rejects.toThrow();
+      await expect(access(join(dir, RETIRING_META_FILE))).rejects.toThrow();
+    });
+
+    it('has the whole new key flushed to disk before the cloud is asked to register it (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const nextFile = join(dir, NEXT_KEY_FILE);
       const seen: string[] = [];
+      let flushed: string[] = [];
       await repository.rotate(
         identity,
         async (newJwk) => {
-          const pem = await readFile(join(dir, 'instance-key.next.pem'));
+          flushed = [...fsControl.synced];
+          const pem = await readFile(nextFile);
           const jwk = createPublicKey(pem).export({ format: 'jwk' });
           seen.push(ed25519Thumbprint({ kty: 'OKP', crv: 'Ed25519', x: jwk.x! }), newJwk.kid);
         },
@@ -317,6 +469,50 @@ describe(InstanceIdentityRepository.name, () => {
       );
       expect(seen).toHaveLength(2);
       expect(seen[0]).toBe(seen[1]);
+      // the key file itself, then the directory holding its name
+      expect(flushed.indexOf(nextFile)).toBeGreaterThanOrEqual(0);
+      expect(flushed.lastIndexOf(dir)).toBeGreaterThan(flushed.indexOf(nextFile));
+    });
+
+    it('stops a rotation before the cloud hears of it when the flush fails (EIO) (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const prove = vi.fn(() => Promise.resolve());
+      fsControl.syncErrors = { [dir]: 'EIO' };
+      await expect(repository.rotate(identity, prove, 24)).rejects.toMatchObject({ code: 'EIO' });
+      fsControl.syncErrors = { [join(dir, NEXT_KEY_FILE)]: 'EIO' };
+      await expect(repository.rotate(identity, prove, 24)).rejects.toMatchObject({ code: 'EIO' });
+      expect(prove).not.toHaveBeenCalled();
+      await expect(access(join(dir, NEXT_KEY_FILE))).rejects.toThrow();
+    });
+
+    it('rotates on a mount that cannot flush, logging that once (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const warn = vi.spyOn((repository as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn');
+      const identity = await repository.loadOrCreate(dir, null);
+      fsControl.syncErrors = { [dir]: 'EINVAL', [join(dir, NEXT_KEY_FILE)]: 'ENOTSUP' };
+      const first = await repository.rotate(identity, () => Promise.resolve(), 24);
+      await repository.rotate(first, () => Promise.resolve(), 24);
+      expect(warn.mock.calls.filter(([message]) => String(message).includes('cannot flush'))).toHaveLength(1);
+    });
+
+    it('removes a next key whose write fails, before the cloud hears of it (ENOSPC) (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const prove = vi.fn(() => Promise.resolve());
+      fsControl.writeError = NEXT_KEY_FILE;
+      await expect(repository.rotate(identity, prove, 24)).rejects.toMatchObject({ code: 'ENOSPC' });
+      expect(prove).not.toHaveBeenCalled();
+      await expect(access(join(dir, NEXT_KEY_FILE))).rejects.toThrow();
+    });
+
+    it('does not replace a next key of a rotation already under way (FL-175)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      const pem = newPem();
+      await writeFile(join(dir, NEXT_KEY_FILE), pem, { mode: 0o600 });
+      await expect(repository.rotate(identity, () => Promise.resolve(), 24)).rejects.toThrow('already under way');
+      expect(await readFile(join(dir, NEXT_KEY_FILE), 'utf8')).toBe(pem);
     });
 
     it('falls back to a 0600 copy when the file system cannot hard-link (EPERM)', async () => {
