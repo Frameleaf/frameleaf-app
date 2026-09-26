@@ -16,5 +16,6 @@ If you find that you've been logged out, you can:
 - Open the server logs and look for the 🚧 maintenance mode message followed by a login address
 
 The login address uses the server's external domain (**Administration → Settings → Server**) or, for a server linked to Frameleaf Cloud, its public URL. When the server has neither, it prints only the path (`/maintenance?token=…`); open that path on the address you normally use to reach Frameleaf.
+
 - Run the enable maintenance mode [administration command](./server-commands.md) again, this will give you a new URL to login with.
 - Run the disable maintenance mode [administration command](./server-commands.md) then re-enter through system settings.
