@@ -1,21 +1,16 @@
 # Translations
 
-:::tip
-You can request a new language [here](https://hosted.weblate.org/new-lang/immich/immich/).
-:::
+Frameleaf translations are managed through pull requests to the `i18n/en.json` file in the [Frameleaf repository](https://github.com/Frameleaf/frameleaf-app).
 
-## Weblate
+## Contributing translations
 
-[Weblate](https://weblate.org/) is a "libre software web-based continuous localization system". Immich localization efforts are managed on their [hosted platform](https://hosted.weblate.org/projects/immich/immich/).
+To contribute a new translation or update an existing one:
+
+1. Fork the [Frameleaf repository](https://github.com/Frameleaf/frameleaf-app)
+2. Create a new branch for your translation
+3. Edit the translation file in `i18n/en.json` (or create a new language file if needed)
+4. Submit a pull request with your changes
 
 ## International message format
 
 Plurals, numbers, dates and other locale specific message formats can be handled by using the [ICU message format](https://unicode-org.github.io/icu/userguide/format_parse/messages/). Internally, this is handled by the [intl-messageformat](https://www.npmjs.com/package/intl-messageformat) library. Their [documentation](https://formatjs.io/docs/intl-messageformat/) includes common, editable examples via a "live editor" feature, which can be useful to test and debug message formats.
-
-## Progress
-
-Immich currently supports the following languages:
-
-<a href="https://hosted.weblate.org/engage/immich/">
-<img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="Translation status" />
-</a>
