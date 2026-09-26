@@ -34,7 +34,7 @@ describe('Set up your account (FL-176)', () => {
 
   it('shows every section on the dark stage and counts what is done', async () => {
     const { container } = render(AccountSetupTool);
-    expect(container.querySelector('section.frs-tool-root')?.getAttribute('data-theme')).toBe('dark');
+    expect(container.querySelector<HTMLElement>('section.frs-tool-root')?.dataset.theme).toBe('dark');
     expect(screen.getByRole('heading', { name: 'Set up your account' })).toBeInTheDocument();
     for (const title of ['Profile', 'Appearance', 'Privacy and notifications', 'The mobile app']) {
       expect(screen.getByRole('heading', { name: title })).toBeInTheDocument();
@@ -45,7 +45,7 @@ describe('Set up your account (FL-176)', () => {
 
     await fireEvent.click(screen.getByRole('switch', { name: 'Memories' }));
     const privacy = container.querySelector('[data-section="privacy"]')!;
-    await fireEvent.click(privacy.querySelector('footer button')!);
+    await fireEvent.click(privacy.querySelector(':scope footer button')!);
     await waitFor(() =>
       expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
         userPreferencesUpdateDto: {

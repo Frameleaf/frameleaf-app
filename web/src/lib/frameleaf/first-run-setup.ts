@@ -236,7 +236,7 @@ export const validateStep = (state: SetupState, stepId: SetupStepId, context: Se
   if (stepId === 'library' && context.storageWritable === false) {
     errors.storage = 'frameleaf_setup_error_storage';
   }
-  if (stepId === 'admin-sign-in' && !choices.signedIn && !String(secrets.password ?? '').trim()) {
+  if (stepId === 'admin-sign-in' && !choices.signedIn && !(secrets.password ?? '').trim()) {
     errors.password = 'frameleaf_setup_error_sign_in';
   }
   return { ok: Object.keys(errors).length === 0, errors };
@@ -301,7 +301,7 @@ export const toProgress = (state: SetupState): FrameleafSetupProgressDto => {
     version: 1,
     step: flowSteps(state.flow)[state.step].id,
     reached: state.reached,
-    choices: { ...choices, ...(restore ? { restore } : {}) } as FrameleafSetupProgressDto['choices'],
+    choices: { ...choices, ...(restore && { restore }) } as FrameleafSetupProgressDto['choices'],
   };
 };
 
@@ -327,9 +327,9 @@ export const parseSetup = (raw: unknown, flow: SetupFlow, context: SetupContext 
   const indexOf = (value: unknown) => {
     if (typeof value === 'string') {
       const found = steps.findIndex((entry) => entry.id === value);
-      return found < 0 ? 0 : found;
+      return found === -1 ? 0 : found;
     }
-    return Number.isInteger(value) ? Math.min(last, Math.max(0, value as number)) : 0;
+    return Number.isSafeInteger(value) ? Math.min(last, Math.max(0, value as number)) : 0;
   };
   const choices = isRecord(source.choices) ? source.choices : {};
   const defaults = base.choices;
@@ -398,7 +398,9 @@ export const resumeSetup = (
 };
 
 type KeyValueStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
-const browserStorage = (): KeyValueStore | undefined => globalThis.localStorage;
+// Absent during server rendering, where a bare `localStorage` would throw.
+const browserStorage = (): KeyValueStore | undefined =>
+  typeof localStorage === 'undefined' ? undefined : localStorage;
 
 /** This browser's copy, used before an administrator exists (and as a fallback). */
 export const loadLocalSetup = (flow: SetupFlow, storage = browserStorage()) => {
@@ -427,7 +429,7 @@ export const clearLocalSetup = (storage = browserStorage()) => {
 // ----------------------------------------------------------- estimates
 
 export const TB = 1e12;
-export const formatTb = (bytes: number) => `${(Math.max(0, Number(bytes) || 0) / TB).toFixed(1)} TB`;
+export const formatTb = (bytes: number) => `${(Math.max(0, bytes || 0) / TB).toFixed(1)} TB`;
 
 /** Items an hour this hardware indexes at the recommended tier. */
 export const itemsPerHour = (gpu: boolean, embeddingMs?: number | null) =>
@@ -437,7 +439,7 @@ export const itemsPerHour = (gpu: boolean, embeddingMs?: number | null) =>
 export const reindexHours = (items: number, tierId: ModelTier, perHour: number) => {
   const tier = modelTiers.find((entry) => entry.id === tierId) ?? modelTiers[1];
   const rate = Math.max(1, perHour * tier.speed);
-  return Math.max(1, Math.round(Math.max(0, Number(items) || 0) / rate));
+  return Math.max(1, Math.round(Math.max(0, items || 0) / rate));
 };
 
 export const tierForModel = (modelName: string | undefined): ModelTier | null =>
@@ -520,8 +522,8 @@ export const parseAccountTool = (raw: unknown): AccountToolState | null => {
   if (!isRecord(source) || source.version !== 1) {
     return null;
   }
-  const ids = accountToolSections.map((entry) => entry.id);
-  const done = Array.isArray(source.done) ? source.done.filter((id): id is AccountSectionId => ids.includes(id)) : [];
+  const ids = new Set<unknown>(accountToolSections.map((entry) => entry.id));
+  const done = Array.isArray(source.done) ? source.done.filter((id): id is AccountSectionId => ids.has(id)) : [];
   return { version: 1, done: [...new Set(done)] };
 };
 const accountKey = (userId: string) => `${ACCOUNT_SETUP_KEY}:${userId}`;

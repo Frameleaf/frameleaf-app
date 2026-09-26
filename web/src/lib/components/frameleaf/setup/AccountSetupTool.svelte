@@ -54,7 +54,7 @@
   // The saved language may be a regional tag (en-US) the language files don't have; match its base.
   const codes = langs.map((entry) => convertBCP47(entry.code));
   let language = $state(
-    codes.find((code) => code === $lang) ?? codes.find((code) => code === $lang.split('-')[0]) ?? 'en',
+    codes.find((code) => code === $lang) ?? codes.find((code) => code === $lang.split('-', 1)[0]) ?? 'en',
   );
   let albums = $state(preferences.emailNotifications.albumUpdate);
   let email = $state(preferences.emailNotifications.enabled);
@@ -99,10 +99,11 @@
 
   const saveProfile = () =>
     save('profile', async () => {
-      if (name.trim() && name.trim() !== user.name) {
-        await updateMyUser({ userUpdateMeDto: { name: name.trim() } });
-        await authManager.load();
+      if (!name.trim() || name.trim() === user.name) {
+        return;
       }
+      await updateMyUser({ userUpdateMeDto: { name: name.trim() } });
+      await authManager.load();
     });
   const saveAppearance = () =>
     save('appearance', async () => {
