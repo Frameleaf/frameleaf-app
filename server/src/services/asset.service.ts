@@ -690,14 +690,15 @@ export class AssetService extends BaseService {
 
     // delete the motion if it is not used by another asset
     await this.afterAssetRemoval(id, 'queue the deletion of its motion part', async () => {
-      if (asset.livePhotoVideoId) {
-        const count = await this.assetRepository.getLivePhotoCount(asset.livePhotoVideoId);
-        if (count === 0) {
-          await this.jobRepository.queue({
-            name: JobName.AssetDelete,
-            data: { id: asset.livePhotoVideoId, deleteOnDisk },
-          });
-        }
+      if (!asset.livePhotoVideoId) {
+        return;
+      }
+      const count = await this.assetRepository.getLivePhotoCount(asset.livePhotoVideoId);
+      if (count === 0) {
+        await this.jobRepository.queue({
+          name: JobName.AssetDelete,
+          data: { id: asset.livePhotoVideoId, deleteOnDisk },
+        });
       }
     });
 
