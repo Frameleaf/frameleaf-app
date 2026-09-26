@@ -403,9 +403,10 @@ export const settlePricing = (
  * object Frameleaf Cloud publishes:
  *
  * - One that is missing or fails validation changes nothing.
- * - One no newer than the pricing in force (the last good one, else the bundle) is ignored, as is
- *   one no newer than a pending one.
- * - One whose `effectiveFrom` has passed becomes current; a later one waits as `pending`.
+ * - One older than the pricing in force (the last good one, else the bundle) is ignored.
+ * - One already in force is authoritative: it becomes (or stays) current and clears any pending
+ *   pricing, so the cloud withdraws a pending change by publishing the current one again.
+ * - One still to come waits as `pending`, replacing a pending one only when it is newer.
  */
 export const acceptPublishedPricing = (
   raw: unknown,
@@ -418,16 +419,16 @@ export const acceptPublishedPricing = (
     return state;
   }
   const published = parsed.data;
-  if (comparePricing(published, state.current ?? BUNDLED_PRICING) <= 0) {
+  const inForce = state.current ?? BUNDLED_PRICING;
+  const order = comparePricing(published, inForce);
+  if (order < 0) {
     return state;
   }
   if (Date.parse(published.effectiveFrom) <= now) {
-    // a pending pricing still later than this one keeps waiting
-    return state.pending && comparePricing(state.pending, published) > 0
-      ? { current: published, pending: state.pending }
-      : { current: published };
+    // the same version republished keeps the stored copy (null while the bundle is in force)
+    return { current: order === 0 ? state.current : published };
   }
-  if (state.pending && comparePricing(published, state.pending) <= 0) {
+  if (order === 0 || (state.pending && comparePricing(published, state.pending) <= 0)) {
     return state;
   }
   return { current: state.current, pending: published };
