@@ -414,6 +414,26 @@ describe(AssetService.name, () => {
         expect(fileDeletes(ctx).at(-1)).toEqual([thumbnailPath, asset.originalPath]);
       });
 
+      it('has committed the removal before the deletion is announced', async () => {
+        const { sut, ctx } = setup(forkDatabase);
+        ctx.getMock(JobRepository).queue.mockResolvedValue();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+        const seenWhenAnnounced: unknown[] = [];
+        ctx.getMock(EventRepository).emit.mockImplementation(async (event) => {
+          if (event === 'AssetDelete') {
+            // read on another connection: only a committed removal is visible here
+            seenWhenAnnounced.push(
+              await forkDatabase.selectFrom('asset').select('id').where('id', '=', asset.id).executeTakeFirst(),
+            );
+          }
+        });
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        expect(seenWhenAnnounced).toEqual([undefined]);
+      });
+
       it('has queued the files when a step after the removal fails', async () => {
         const { sut, ctx } = setup(forkDatabase);
         const queue = ctx.getMock(JobRepository).queue;
