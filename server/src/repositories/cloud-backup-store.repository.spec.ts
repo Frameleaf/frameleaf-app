@@ -478,7 +478,7 @@ describe(CloudBackupStoreRepository.name, () => {
   it('never puts the bucket key or the secret in an error message', async () => {
     s3.failures = [403];
 
-    const error = await sut.get(connection, 'o/abc', bucketKey).catch((error_: unknown) => error_ as Error);
+    const error = (await sut.get(connection, 'o/abc', bucketKey).catch((error_: unknown) => error_)) as Error;
 
     expect(error.message).not.toContain(bucketKey.toString('base64'));
     expect(error.message).not.toContain(connection.secretAccessKey);
