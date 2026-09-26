@@ -849,9 +849,16 @@
     const scrolled = target ? await scrollToAssetId(target) : false;
     if (scrolled && target) {
       // Months measured as the grid shows again can still move the asset for a few frames: keep it
-      // in view until the height stops changing.
+      // in view until the height stops changing. The months around it load in waves, and in a flow
+      // that runs on across months (FL-143) each one that loads lays the rows out again, so keep it
+      // there until those months have loaded too, not only while the height changes frame to frame.
+      const monthsLoading = () => timelineManager.months.some((month) => month.isInOrNearViewport && !month.isLoaded);
       let lastHeight = -1;
-      for (let attempt = 0; attempt < 30 && timelineManager.totalViewerHeight !== lastHeight; attempt++) {
+      for (
+        let attempt = 0;
+        attempt < 30 && (timelineManager.totalViewerHeight !== lastHeight || monthsLoading());
+        attempt++
+      ) {
         lastHeight = timelineManager.totalViewerHeight;
         await nextFrame();
         await nextFrame();
