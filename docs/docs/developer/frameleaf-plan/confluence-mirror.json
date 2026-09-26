@@ -427,17 +427,18 @@
       "version": 2
     },
     {
-      "bytes": 15200,
+      "bytes": 16189,
       "category": "features",
       "id": "61440280",
       "source": "docs/docs/features/fork-privacy-suite.md",
-      "sourceSha256": "3a8c44cdedd7bc145f2f1098a0d20b641ebb9185fff226ae31e02dea96f66980",
+      "sourceCommit": "4c696b02046a16548eba610d410a1d0a9ccba386",
+      "sourceSha256": "b0f7b51742f49526404eb084e748d43753e81d4c765d98879cd7897d33045787",
       "title": "Feature Reference \u2014 Fork Privacy Suite",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Fork+Privacy+Suite",
-      "verification": "FL-159 Confluence page read back at version 5 with source hash 3a8c44cd and 15200 bytes in the header; compared with version 4 (which matched source bdec0d0d apart from the usual Confluence link rewrites and markdown normalization), the only differences are the header and the three Telemetry and Automatic Reporting lines that now say Frameleaf Cloud / every machine-learning image; no RunPod reference remains on the page.",
+      "verification": "FL-192 Confluence page read back at version 6 with source hash b0f7b517, 16189 bytes and commit 4c696b0204 on master/frameleaf-implementation in the header, with the source-at-commit backlink and FL-192 and FL-159 links; the live version 5 was unchanged since its FL-159 read-back, and compared with it the only differences are the header, the version-check line (off by default, Frameleaf's release feed only) and the new list of where each download comes from under Telemetry and Automatic Reporting; the Confluence links are kept.",
       "verified": true,
-      "verifiedAt": "2026-09-25T16:27:29.416Z",
-      "version": 5
+      "verifiedAt": "2026-09-26T16:22:10.000Z",
+      "version": 6
     },
     {
       "bytes": 3750,
