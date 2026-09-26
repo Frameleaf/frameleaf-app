@@ -275,13 +275,46 @@ export const nextRefreshAt = (claims: FrameleafLicenseClaims, random = Math.rand
 /** Key symbols: no I, O, 0 or 1. The kind symbol (S or I) sits outside this alphabet. */
 export const KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-/** The mod-32 check symbol over the 11 symbols after `FL-` (frameleaf-cloud `license-key.mjs`). */
-export const keyCheckSymbol = (body: string) => {
-  let sum = body.codePointAt(0) ?? 0;
-  for (let index = 1; index < body.length; index++) {
-    sum += (KEY_ALPHABET.indexOf(body[index]) + 1) * (index + 1);
+/** The kind symbol's value in the check: `S` is its alphabet index (16); `I` has the fixed value 8. */
+const KEY_KIND_VALUES: Record<string, number> = { S: 16, I: 8 };
+
+const KEY_CHECK_MODULUS = 32;
+
+/** Symbols to values for the check: the kind first (S 16, I 8), then alphabet indexes. */
+const keySymbolValues = (symbols: string): number[] => {
+  const kind = KEY_KIND_VALUES[symbols[0]];
+  if (kind === undefined) {
+    throw new Error('a licence key starts with S or I');
   }
-  return KEY_ALPHABET[sum % 32];
+  return [kind, ...[...symbols.slice(1)].map((symbol) => KEY_ALPHABET.indexOf(symbol))];
+};
+
+/**
+ * Luhn mod 32 sum: walking from the rightmost value leftwards, every second value is doubled,
+ * starting with the rightmost when `doubleRightmost` (generation) or with the one left of it
+ * (validation, where the rightmost is the check). A doubled value v counts as
+ * `Math.floor(2v / 32) + (2v % 32)`.
+ */
+const luhnSum = (values: readonly number[], doubleRightmost: boolean): number => {
+  let sum = 0;
+  let double = doubleRightmost;
+  for (let index = values.length - 1; index >= 0; index--) {
+    const value = values[index];
+    sum += double ? Math.floor((2 * value) / KEY_CHECK_MODULUS) + ((2 * value) % KEY_CHECK_MODULUS) : value;
+    double = !double;
+  }
+  return sum;
+};
+
+/**
+ * The check-symbol algorithm, Luhn mod 32 (as-built decision #40; frameleaf-cloud
+ * `packages/contracts/src/licence/key-format.ts`, `licenseKeyCheckSymbol`): over the 11 values of
+ * the kind and the ten body symbols, check = (32 − (sum mod 32)) mod 32, mapped back to the
+ * alphabet. It catches every single-symbol substitution and most adjacent transpositions.
+ */
+export const keyCheckSymbol = (body: string) => {
+  const sum = luhnSum(keySymbolValues(body), true);
+  return KEY_ALPHABET[(KEY_CHECK_MODULUS - (sum % KEY_CHECK_MODULUS)) % KEY_CHECK_MODULUS];
 };
 
 export type LicenseKeyCheck =
@@ -291,7 +324,9 @@ export type LicenseKeyCheck =
 /** `FL-KXXX-XXXX-XXXX` with K = S (server) or I (individual) and a mod-32 check symbol. */
 export const checkLicenseKey = (input: string): LicenseKeyCheck => {
   const key = input.trim().toUpperCase();
-  if (/^IM(CL|SV)-/.test(key)) {
+  // upstream product keys are detected on the symbols alone, whatever separators surround them
+  const compact = key.replaceAll(/[^A-Z0-9]/g, '');
+  if (compact.startsWith('IMCL') || compact.startsWith('IMSV')) {
     return { valid: false, reason: 'upstream' };
   }
   if (!/^FL-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(key)) {

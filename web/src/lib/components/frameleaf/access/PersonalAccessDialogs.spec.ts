@@ -149,15 +149,15 @@ describe('SupporterSection (FL-157)', () => {
   });
 
   it('activates a personal FL-I key in the request body only', async () => {
-    sdkMock.setUserLicense.mockResolvedValue({ kind: 'individual', keyHint: '8ELH', activatedAt: new Date() } as never);
-    sdkMock.getMyUser.mockResolvedValue(user({ kind: 'individual', keyHint: '8ELH', activatedAt: new Date() }));
+    sdkMock.setUserLicense.mockResolvedValue({ kind: 'individual', keyHint: '8EL6', activatedAt: new Date() } as never);
+    sdkMock.getMyUser.mockResolvedValue(user({ kind: 'individual', keyHint: '8EL6', activatedAt: new Date() }));
     render(SupporterSection);
 
-    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'FL-IC8Q-BT2Q-8ELH');
+    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'FL-IC8Q-BT2Q-8EL6');
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_buy_activate' }));
 
     await waitFor(() =>
-      expect(sdkMock.setUserLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-IC8Q-BT2Q-8ELH' } }),
+      expect(sdkMock.setUserLicense).toHaveBeenCalledWith({ licenseActivateDto: { key: 'FL-IC8Q-BT2Q-8EL6' } }),
     );
     expect(sdkMock.activateLicense).not.toHaveBeenCalled();
   });
@@ -165,7 +165,7 @@ describe('SupporterSection (FL-157)', () => {
   it('refuses a server key and an upstream key before sending anything', async () => {
     render(SupporterSection);
 
-    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'FL-S8NL-49G8-J58U');
+    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'FL-S8NL-49G8-J583');
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_buy_activate' }));
     expect(await screen.findByText('frameleaf_buy_server_key_elsewhere')).toBeInTheDocument();
 
@@ -177,7 +177,7 @@ describe('SupporterSection (FL-157)', () => {
 
   it('shows the activated key with the badge switch, and hides the badge with the right sense', async () => {
     vi.spyOn(authManager, 'user', 'get').mockReturnValue(
-      user({ kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T00:00:00.000Z' }),
+      user({ kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' }),
     );
     sdkMock.updateMyPreferences.mockResolvedValue(preferences);
     render(SupporterSection);
