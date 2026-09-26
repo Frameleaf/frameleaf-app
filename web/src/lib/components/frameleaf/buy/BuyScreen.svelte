@@ -92,7 +92,7 @@
 
   const discount = $derived(licensedDiscount({ serverLicensed: serverSupporter, personalKey: !!personal }));
   // the share Frameleaf Cloud published (license/products), for a viewer who gets the discount
-  const share = $derived(discount !== null ? (products?.licensedDiscount ?? 0) : 0);
+  const share = $derived(discount === null ? 0 : (products?.licensedDiscount ?? 0));
   const pct = $derived(discountPercent(products?.licensedDiscount ?? 0));
 
   const load = async () => {

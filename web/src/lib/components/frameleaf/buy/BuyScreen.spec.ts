@@ -137,8 +137,8 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     expect(await screen.findByText('$7.49')).toBeInTheDocument();
     expect(screen.getByText('$74.93')).toBeInTheDocument();
     expect(screen.getByText(/plan prices are 25% lower/)).toBeInTheDocument();
-    // supporter keys and extra backup keep their prices
-    expect(screen.getByText('$100')).toBeInTheDocument();
+    // extra backup keeps its price; a licensed server sees its thank-you card in place of the supporter
+    // key cards, as in the prototype (AuthScreens.jsx, `state.activated`)
     expect(screen.getByText(/More storage is \$9\.99\/month/)).toBeInTheDocument();
   });
 

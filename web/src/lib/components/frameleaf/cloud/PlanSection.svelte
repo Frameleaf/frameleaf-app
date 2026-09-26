@@ -59,7 +59,7 @@
     licensedDiscount({ serverLicensed: !!license?.entitlements.supporter, personalKey: !!authManager.user.license }),
   );
   const offered = $derived(products?.licensedDiscount ?? 0);
-  const share = $derived(discount !== null ? offered : 0);
+  const share = $derived(discount === null ? 0 : offered);
   const linked = $derived(!!license?.linked);
   const plans = $derived(products?.products.filter((product) => product.kind === 'plan') ?? []);
   const pct = $derived(discountPercent(offered));
