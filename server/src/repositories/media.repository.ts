@@ -210,8 +210,9 @@ export class MediaRepository {
   /**
    * FL-163: the copy of a photo that may leave this server for Frameleaf Cloud. The preview is decoded and
    * written again as a JPEG; sharp keeps no EXIF, XMP or IPTC unless asked to (`keepExif`,
-   * `withMetadata`), so the capture location, camera, dates and every other tag stay here. Only the
-   * sRGB colour profile is kept, so colours read the same.
+   * `withMetadata`), so the capture location, camera, dates and every other tag stay here. Colours are
+   * converted to sRGB and only the sRGB profile is embedded: the preview's own ICC profile is not kept,
+   * because it could identify the device and a description model reads sRGB anyway.
    */
   async writeCloudUpload(input: string, output: string): Promise<void> {
     await sharp(input, { failOn: 'error', limitInputPixels: false })

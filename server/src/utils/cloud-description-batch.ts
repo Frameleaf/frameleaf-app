@@ -1,7 +1,8 @@
 import type { DatabaseRepository } from 'src/repositories/database.repository.js';
+import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import type { CloudCatalogEntry, CloudConsentFeatures, CloudEstimate } from 'src/utils/frameleaf-cloud.js';
-import { DatabaseLock, MlAdmissionRefusal, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, MlAdmissionRefusal, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
 
 /**
  * Frameleaf Cloud description batches (FL-163, `CLD-203`). The constants are documented for
@@ -37,8 +38,28 @@ export const CLOUD_DESCRIPTION_PRICE_TOLERANCE = 1.2;
 export const CLOUD_DESCRIPTION_DEADLINE_SECONDS = 24 * 60 * 60;
 /** How often, at most, a pass reads the usage report to settle finished batches. */
 export const CLOUD_DESCRIPTION_SETTLE_INTERVAL_MS = 15 * 60_000;
-/** The batch jobs a pass reads to add up today's automatic spend and find photos already in a batch. */
-export const CLOUD_DESCRIPTION_RECENT_BATCHES = 1000;
+/** How long a backfill estimate may be accepted; after it, the backfill is estimated again. */
+export const CLOUD_DESCRIPTION_ESTIMATE_TTL_MS = 30 * 60_000;
+/** Backfill estimates kept at once; an older one has to be made again. */
+export const CLOUD_DESCRIPTION_ESTIMATES_KEPT = 3;
+/** The automatic queue is written once this many new photos wait in memory... */
+export const CLOUD_DESCRIPTION_QUEUE_FLUSH_SIZE = 100;
+/** ...or this long after the first of them arrived. */
+export const CLOUD_DESCRIPTION_QUEUE_FLUSH_MS = 5000;
+
+/**
+ * FL-163 review P1: whether Frameleaf Cloud's published contract lets this server upload a batch's
+ * photos and read its results. Until it does, no cloud job is ever created: a backfill is refused, new
+ * photos are not batched, and a batch stops before `POST /v2/jobs` (estimates, which are free, still
+ * run). The job broker's upload and result contract is FC-39 and is not published yet. Flip this in the
+ * change that implements that contract (uploads, `progress` and `result`), never because `POST /v2/jobs`
+ * stopped answering 503 `capacity`. It is an object only so specs can exercise the submit path.
+ */
+export const CLOUD_DESCRIPTION_CONTRACT: { uploadsPublished: boolean } = { uploadsPublished: false };
+
+/** Why nothing is sent while the contract has no uploads (see `CLOUD_DESCRIPTION_CONTRACT`). */
+export const CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED =
+  'Frameleaf Cloud does not accept description uploads from this server yet, so no description job is created. Nothing was sent.';
 /**
  * The `request` every description batch sends: the length only. Prompts stay in the cloud (API
  * protection measure 2), so no name, face or other text from this server is ever part of it.
@@ -104,6 +125,12 @@ export type CloudDescriptionResult = {
     p90Usd: number;
     holdUsd: number;
     startupUsd: number;
+    /**
+     * When `POST /v2/jobs` was first sent with this key and estimate, recorded before it is sent. A
+     * batch that finds it set replays the same key and body before estimating again, so a crash after
+     * the job was created never creates a second one or leaves the first unwatched.
+     */
+    attemptedAt?: string | null;
   } | null;
   /** How many estimates this batch has asked for; part of each idempotency key. */
   estimates: number;
@@ -118,6 +145,28 @@ export type CloudDescriptionResult = {
   settledUsd: number | null;
   /** The last refusal a step met while waiting (for example 503 `capacity`), shown in the batch. */
   waiting: { refusal: string; detail: string; at: string } | null;
+};
+
+/**
+ * A backfill estimate as the server keeps it (FL-163 review P1): what was shown to the administrator,
+ * with the photos it covers per owner. `POST admin/cloud/ml/descriptions/batches` takes only its id and
+ * queues from this record, so nothing the browser sends can change the model, the photos or the
+ * price. Once started it keeps only what the answer repeats, so a second request is answered the same.
+ */
+export type CloudDescriptionEstimateRecord = {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  modelSku: string;
+  perPhotoP50Usd: number;
+  perPhotoP90Usd: number;
+  startupUsd: number;
+  photos: number;
+  /** The p90 of every batch together, USD: the most the queued batches may be approved at. */
+  p90Usd: number;
+  /** The photos the estimate covers, per owner. Emptied once the backfill started. */
+  owners: Record<string, string[]>;
+  started: { at: string; batches: number; photos: number; operationIds: string[] } | null;
 };
 
 export const emptyCloudDescriptionResult = (assetIds: readonly string[]): CloudDescriptionResult => ({
@@ -340,32 +389,123 @@ export const CLOUD_DESCRIPTION_TRANSIENT_REFUSALS: ReadonlySet<MlAdmissionRefusa
   MlAdmissionRefusal.QuotaExceeded,
 ]);
 
+/** The start of the server's calendar day `date` falls on. */
+export const serverDayStart = (date: Date): Date =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+
+type QueueDeps = {
+  databaseRepository: Pick<DatabaseRepository, 'withLock'>;
+  systemMetadataRepository: Pick<SystemMetadataRepository, 'get' | 'set'>;
+};
+
+type QueueItem = { assetId: string; ownerId: string; queuedAt: string };
+
 /**
- * Add a photo to the automatic description queue (FL-163), once. False when the queue is full
- * (`CLOUD_DESCRIPTION_QUEUE_MAX`): the photo then waits for a backfill, which shows its estimate first.
+ * Add photos to the automatic description queue (FL-163) in one read-modify-write under its lock; a
+ * photo already waiting keeps its place. Returns how many could not be added because the queue is full
+ * (`CLOUD_DESCRIPTION_QUEUE_MAX`): those wait for a backfill, which shows its estimate first.
  */
-export const queueCloudDescription = (
-  deps: {
-    databaseRepository: Pick<DatabaseRepository, 'withLock'>;
-    systemMetadataRepository: Pick<SystemMetadataRepository, 'get' | 'set'>;
-  },
-  item: { assetId: string; ownerId: string },
-  now = new Date(),
-): Promise<boolean> =>
+export const queueCloudDescriptions = (deps: QueueDeps, items: readonly QueueItem[]): Promise<number> =>
   deps.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlBatchQueue, async () => {
     const queue = (await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudDescriptionQueue)) ?? {
       items: [],
       lastBatchAt: {},
     };
-    if (queue.items.some(({ assetId }) => assetId === item.assetId)) {
-      return true;
+    const waiting = new Set(queue.items.map(({ assetId }) => assetId));
+    const added: QueueItem[] = [];
+    let full = 0;
+    for (const item of items) {
+      if (waiting.has(item.assetId)) {
+        continue;
+      }
+      if (queue.items.length + added.length >= CLOUD_DESCRIPTION_QUEUE_MAX) {
+        full++;
+        continue;
+      }
+      waiting.add(item.assetId);
+      added.push(item);
     }
-    if (queue.items.length >= CLOUD_DESCRIPTION_QUEUE_MAX) {
-      return false;
+    if (added.length > 0) {
+      await deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudDescriptionQueue, {
+        ...queue,
+        items: [...queue.items, ...added],
+      });
     }
-    await deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudDescriptionQueue, {
-      ...queue,
-      items: [...queue.items, { assetId: item.assetId, ownerId: item.ownerId, queuedAt: now.toISOString() }],
-    });
-    return true;
+    return full;
   });
+
+/**
+ * FL-163 review P2: the automatic queue is written in batches, not once per photo. New photos wait in
+ * memory and are written together once `CLOUD_DESCRIPTION_QUEUE_FLUSH_SIZE` wait or
+ * `CLOUD_DESCRIPTION_QUEUE_FLUSH_MS` after the first arrived, and on shutdown. A photo lost from memory
+ * by a crash is not described automatically; it still has no description, so the next backfill finds
+ * it. Nothing is ever sent from here.
+ */
+export class CloudDescriptionQueueWriter {
+  private pending = new Map<string, QueueItem>();
+  private timer?: ReturnType<typeof setTimeout>;
+  private writing: Promise<void> = Promise.resolve();
+
+  constructor(
+    private deps: () => QueueDeps,
+    private warn: (message: string) => void,
+  ) {}
+
+  add(item: { assetId: string; ownerId: string }, now = new Date()): Promise<void> {
+    if (!this.pending.has(item.assetId)) {
+      this.pending.set(item.assetId, { assetId: item.assetId, ownerId: item.ownerId, queuedAt: now.toISOString() });
+    }
+    if (this.pending.size >= CLOUD_DESCRIPTION_QUEUE_FLUSH_SIZE) {
+      return this.flush();
+    }
+    if (!this.timer) {
+      this.timer = setTimeout(() => {
+        this.flush().catch((error) => this.warn(`The Frameleaf Cloud description queue was not written: ${error}`));
+      }, CLOUD_DESCRIPTION_QUEUE_FLUSH_MS);
+      this.timer.unref?.();
+    }
+    return Promise.resolve();
+  }
+
+  /** Write every waiting photo now, after any write already under way. */
+  flush(): Promise<void> {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    const items = [...this.pending.values()];
+    this.pending.clear();
+    // a write that failed was already reported to its caller; it never stops the next one
+    this.writing = this.writing
+      .catch(() => {})
+      .then(async () => {
+        if (items.length === 0) {
+          return;
+        }
+        const full = await queueCloudDescriptions(this.deps(), items);
+        if (full > 0) {
+          this.warn(`The Frameleaf Cloud description queue is full; ${full} new photos wait for a backfill`);
+        }
+      });
+    return this.writing;
+  }
+}
+
+/**
+ * FL-163: the Frameleaf Cloud destination descriptions go to: the one named (a plan's pinned
+ * destination), else the routed one; undefined when they go to this server or a home-network worker.
+ * Only rows are read; nothing is admitted or contacted.
+ */
+export const cloudDescriptionDestination = async (
+  repository: Pick<MlDestinationRepository, 'getRoute' | 'getById'>,
+  destinationId?: string | null,
+): Promise<MlDestinationRow | undefined> => {
+  const id = destinationId ?? (await repository.getRoute(MlWorkload.Enrichment))?.destinationId;
+  if (!id) {
+    return;
+  }
+  const destination = await repository.getById(id);
+  if (destination?.kind === MlDestinationKind.FrameleafCloud) {
+    return destination;
+  }
+};

@@ -2382,7 +2382,7 @@ describe(ImageEnrichmentService.name, () => {
 
   describe('Frameleaf Cloud description batches (FL-163)', () => {
     const cloud = mlDestinationStub.frameleafCloudConsented;
-    const configure = (autoDescribe: boolean) =>
+    const configure = (autoDescribe: boolean, settings: { enabled?: boolean; descriptions?: string } = {}) =>
       mocks.systemMetadata.get.mockImplementation((key) =>
         Promise.resolve(
           (key === SystemMetadataKey.SystemConfig
@@ -2395,8 +2395,11 @@ describe(ImageEnrichmentService.name, () => {
                 frameleafCloud: {
                   cloudMl: {
                     ...defaults.frameleafCloud.cloudMl,
-                    enabled: true,
-                    routing: { ...defaults.frameleafCloud.cloudMl.routing, descriptions: 'cloud' },
+                    enabled: settings.enabled ?? true,
+                    routing: {
+                      ...defaults.frameleafCloud.cloudMl.routing,
+                      descriptions: settings.descriptions ?? 'cloud',
+                    },
                     autoDescribe: { enabled: autoDescribe, dailyBudgetUsd: 2 },
                   },
                 },
@@ -2434,6 +2437,9 @@ describe(ImageEnrichmentService.name, () => {
       configure(true);
 
       await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+      // new photos are written to the queue in batches, not one read-modify-write each
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      await sut.flushCloudDescriptionQueue();
 
       expect(mocks.database.withLock).toHaveBeenCalledWith(
         DatabaseLock.FrameleafCloudMlBatchQueue,
@@ -2443,6 +2449,35 @@ describe(ImageEnrichmentService.name, () => {
         items: [{ assetId, ownerId, queuedAt: expect.any(String) }],
         lastBatchAt: {},
       });
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['processing is turned off', { enabled: false }],
+      ['descriptions are kept on this server', { descriptions: 'local' }],
+    ])('refuses, rather than waits, while %s (review P2)', async (_label, settings) => {
+      configure(true, settings);
+
+      const result = await sut.describeAsset(assetId);
+
+      expect(result).toEqual(expect.objectContaining({ status: JobStatus.Failed, reasonKey: 'cloud-turned-off' }));
+      expect(mocks.asset.upsertMetadata).toHaveBeenCalledWith(
+        assetId,
+        [
+          expect.objectContaining({
+            key: AssetMetadataKey.MlEnrichment,
+            value: expect.objectContaining({
+              description: expect.objectContaining({
+                status: 'failed',
+                error: expect.stringMatching(/Nothing was sent/),
+              }),
+            }),
+          }),
+        ],
+        undefined,
+      );
+      await sut.flushCloudDescriptionQueue();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
       expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
     });
 

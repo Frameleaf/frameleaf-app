@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { SystemConfig } from 'src/config.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -29,22 +31,25 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { cloudRouteAllows } from 'src/services/cloud-ml.service.js';
 import {
   CLOUD_DESCRIPTION_AUTO_MAX_WAIT_MS,
   CLOUD_DESCRIPTION_AUTO_MIN_BATCH,
   CLOUD_DESCRIPTION_BACKFILL_MAX,
+  CLOUD_DESCRIPTION_CONTRACT,
   CLOUD_DESCRIPTION_DEADLINE_SECONDS,
+  CLOUD_DESCRIPTION_ESTIMATES_KEPT,
+  CLOUD_DESCRIPTION_ESTIMATE_TTL_MS,
   CLOUD_DESCRIPTION_LEASE_MS,
   CLOUD_DESCRIPTION_PASS_CRON,
   CLOUD_DESCRIPTION_POLL_MS,
   CLOUD_DESCRIPTION_PRICE_TOLERANCE,
-  CLOUD_DESCRIPTION_RECENT_BATCHES,
   CLOUD_DESCRIPTION_REQUEST,
   CLOUD_DESCRIPTION_SAMPLE_SIZE,
   CLOUD_DESCRIPTION_SETTLE_INTERVAL_MS,
   CLOUD_DESCRIPTION_STEPS_PER_PASS,
   CLOUD_DESCRIPTION_TRANSIENT_REFUSALS,
+  CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED,
+  CloudDescriptionEstimateRecord,
   CloudDescriptionItem,
   CloudDescriptionOrigin,
   CloudDescriptionPhase,
@@ -60,6 +65,7 @@ import {
   parseCloudDescriptionSnapshot,
   projectCloudDescriptionCost,
   serverDay,
+  serverDayStart,
 } from 'src/utils/cloud-description-batch.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
@@ -79,9 +85,18 @@ import {
   ML_BUDGET_WINDOW_DAYS,
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
+  cloudRouteAllows,
+  hasRequiredConsent,
+  selectMlDestination,
 } from 'src/utils/ml-destination.js';
 
+type CloudMlSettings = SystemConfig['frameleafCloud']['cloudMl'];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+const micros = (value: number) => Math.round(value * 1_000_000) / 1_000_000;
 
 /** Why a step stopped: the refusal it met and whether waiting can help. */
 class BatchRefusal extends Error {
@@ -125,6 +140,14 @@ const batchRefusalOf = (error: unknown): BatchRefusal | null => {
   );
 };
 
+/** Descriptions may go to Frameleaf Cloud: processing is on and descriptions are Both or Cloud only. */
+const descriptionsOnCloud = (cloudMl: Pick<CloudMlSettings, 'enabled' | 'routing'>) =>
+  cloudMl.enabled && cloudRouteAllows(cloudMl, MlWorkload.Enrichment);
+
+/** Why queued batches stop when the kill switch is off (FL-163 review P1). */
+const TURNED_OFF =
+  'Frameleaf Cloud processing is turned off, or Where each job runs keeps descriptions on this server. The batch stopped and nothing more is sent.';
+
 /** One claimed batch in hand. */
 type BatchRun = {
   operation: MediaOperation;
@@ -142,15 +165,19 @@ const total = (run: BatchRun) => run.snapshot.assetIds.length;
  * - When the description stage is routed to the Frameleaf Cloud destination, photos are never sent
  *   one by one. A batch is a `media_operation` of kind `cloud_description_batch`: one owner's photos
  *   (at most `CLOUD_DESCRIPTION_BATCH_SIZE`), sent as one cloud job with the model's `packKey`.
- * - A backfill (`POST admin/cloud/ml/descriptions/estimate`, then `…/batches`) shows its estimate from
- *   metered GPU time before anything is queued, and refuses when the wallet cannot cover it.
+ * - A backfill (`POST admin/cloud/ml/descriptions/estimate`, then `…/batches` with only the estimate's
+ *   id) shows its estimate from metered GPU time before anything is queued, and queues exactly what
+ *   the server kept for that estimate.
  * - "Describe new photos automatically" (`frameleafCloud.cloudMl.autoDescribe`, off by default)
  *   batches new photos under `DatabaseLock.FrameleafCloudMlBatch` within its daily budget, counted per
  *   calendar day in the server's time zone; a spent budget stops new batches until the next day and
  *   tells administrators once.
  * - Every batch is estimated (sealed estimate), checked against the wallet, the daily cap, the
- *   destination's budget and its approval, then submitted with one idempotency key per estimate, read
- *   until its job ends, released (`DELETE /v2/jobs/{id}`) and settled into `ml_workload_accounting`.
+ *   destination's budget with its open holds and its approval, then submitted with one idempotency
+ *   key per estimate, read until its job ends, released (`DELETE /v2/jobs/{id}`) and settled into
+ *   `ml_workload_accounting`.
+ * - No cloud job is created until the contract publishes uploads (`CLOUD_DESCRIPTION_CONTRACT`).
+ * - Turning processing off, or keeping descriptions on this server, stops every batch.
  * - Every failure fails closed: a batch is never moved to this server or to another destination.
  *   Locked media never leaves the server, and the uploaded copy carries no EXIF or location.
  */
@@ -179,12 +206,12 @@ export class CloudMlBatchService extends BaseService {
   /**
    * One pass: automatic batching of new photos (when turned on), the release of cloud jobs whose batch
    * was cancelled or failed while nobody held it, then the next step of up to
-   * `CLOUD_DESCRIPTION_STEPS_PER_PASS` batches, then settlement.
+   * `CLOUD_DESCRIPTION_STEPS_PER_PASS` batches (each stops if processing was turned off), then
+   * settlement.
    */
   async runPass(now = new Date()): Promise<void> {
-    const { frameleafCloud } = await this.getConfig({ withCache: false });
-    const { cloudMl } = frameleafCloud;
-    if (cloudMl.enabled && cloudMl.autoDescribe.enabled) {
+    const cloudMl = await this.cloudMlSettings();
+    if (descriptionsOnCloud(cloudMl) && cloudMl.autoDescribe.enabled) {
       try {
         await this.batchNewPhotos(now, cloudMl.autoDescribe.dailyBudgetUsd);
       } catch (error) {
@@ -214,7 +241,7 @@ export class CloudMlBatchService extends BaseService {
       }
     }
 
-    await this.settle(now, finished);
+    await this.settle(now, finished, cloudMl.enabled);
   }
 
   /* ------------------------------------------------------------------ */
@@ -223,12 +250,13 @@ export class CloudMlBatchService extends BaseService {
 
   /**
    * `POST admin/cloud/ml/descriptions/estimate`: what describing every photo still without a
-   * description would cost on Frameleaf Cloud, before anything is queued. The cost is scaled from a
-   * sealed estimate of a few of the photos (the cloud's measured GPU time for this model), so it is
-   * GPU time at the model's rate plus one start fee per batch, shown as a p50–p90 range with a
-   * per-photo figure and the wallet balance. Nothing is sent but those few photos' digests.
+   * description would cost on Frameleaf Cloud, before anything is queued. Admission, consent included,
+   * is checked first. The cost is scaled from a sealed estimate of a few of the photos (the cloud's
+   * measured GPU time for this model), so it is GPU time at the model's rate plus one start fee per
+   * batch, shown as a p50–p90 range with a per-photo figure and the wallet balance. The server keeps
+   * the estimate, with the photos it covers, under the id it answers with.
    */
-  async estimateBackfill(): Promise<CloudMlDescriptionEstimateResponseDto> {
+  async estimateBackfill(now = new Date()): Promise<CloudMlDescriptionEstimateResponseDto> {
     const { gateway, destination } = await this.requireCloud();
     const { model, offered } = await this.resolveModel(gateway);
     const { candidates, truncated } = await this.collectCandidates(CLOUD_DESCRIPTION_BACKFILL_MAX);
@@ -254,6 +282,8 @@ export class CloudMlBatchService extends BaseService {
       spentTodayUsd: wallet.spentTodayUsd,
       guidance: null,
       refusal: null,
+      estimateId: null,
+      expiresAt: null,
     };
     if (batches.length === 0) {
       return empty;
@@ -267,6 +297,26 @@ export class CloudMlBatchService extends BaseService {
       batches.map(({ assetIds }) => assetIds.length),
       offered,
     );
+    const spentInWindowUsd = await this.spentInWindow(destination.id, now);
+
+    const owners: Record<string, string[]> = {};
+    for (const { assetId, ownerId } of candidates) {
+      (owners[ownerId] ??= []).push(assetId);
+    }
+    const record: CloudDescriptionEstimateRecord = {
+      id: this.cryptoRepository.randomUUID(),
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + CLOUD_DESCRIPTION_ESTIMATE_TTL_MS).toISOString(),
+      modelSku: model.sku,
+      perPhotoP50Usd: projection.perPhotoP50Usd,
+      perPhotoP90Usd: projection.perPhotoP90Usd,
+      startupUsd: projection.startupUsd,
+      photos: projection.photos,
+      p90Usd: projection.p90Usd,
+      owners,
+      started: null,
+    };
+    await this.keepEstimate(record, now);
 
     return {
       ...empty,
@@ -280,62 +330,138 @@ export class CloudMlBatchService extends BaseService {
       perPhotoP90Usd: projection.perPhotoP90Usd,
       basis: projection.basis,
       guidance,
-      refusal: this.spendingRefusal(
-        destination,
-        wallet,
-        availableUsd,
-        projection.p90Usd,
-        projection.batches[0].holdUsd,
-      ),
+      refusal: CLOUD_DESCRIPTION_CONTRACT.uploadsPublished
+        ? this.spendingRefusal(
+            destination,
+            wallet,
+            availableUsd,
+            projection.p90Usd,
+            projection.batches[0].holdUsd,
+            spentInWindowUsd,
+          )
+        : CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED,
+      estimateId: record.id,
+      expiresAt: record.expiresAt,
     };
   }
 
   /**
-   * `POST admin/cloud/ml/descriptions/batches`: queue the backfill that was estimated. The model and
-   * the per-photo p90 the administrator saw are sent back: the model must still be the one the
-   * estimate was for, and the photos found now may not cost more than what was shown (a library that
-   * grew since is estimated again). Each batch carries the p90 it was approved at, and is not sent if
-   * its own sealed estimate comes in higher by more than `CLOUD_DESCRIPTION_PRICE_TOLERANCE`.
+   * `POST admin/cloud/ml/descriptions/batches`: queue the backfill of a kept estimate. Only its id is
+   * read from the request: the model, the photos, the per-photo p90 and the ceiling come from the
+   * record the server kept, so nothing the browser sends can raise what is approved. Photos that are
+   * Locked, gone or already in an unfinished batch now are left out. One request at a time, and a
+   * second request for the same estimate is answered with what the first queued.
    */
-  async startBackfill(dto: CloudMlDescriptionBatchCreateDto): Promise<CloudMlDescriptionBatchesResponseDto> {
-    const { gateway, destination } = await this.requireCloud();
-    const { model } = await this.resolveModel(gateway);
-    if (model.sku !== dto.modelId) {
-      throw new BadRequestException('The description model changed since the estimate; estimate again');
+  async startBackfill(
+    dto: CloudMlDescriptionBatchCreateDto,
+    now = new Date(),
+  ): Promise<CloudMlDescriptionBatchesResponseDto> {
+    if (!CLOUD_DESCRIPTION_CONTRACT.uploadsPublished) {
+      throw new BadRequestException(CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED);
     }
-    const { candidates } = await this.collectCandidates(CLOUD_DESCRIPTION_BACKFILL_MAX);
-    const batches = groupCloudDescriptionBatches(candidates);
-    if (batches.length === 0) {
-      return { batches: 0, photos: 0, operationIds: [] };
-    }
-    const approvals = batches.map(({ assetIds }) => dto.startupUsd + assetIds.length * dto.perPhotoP90Usd);
-    const approvedTotal = approvals.reduce((sum, value) => sum + value, 0);
-    if (approvedTotal > dto.maxTotalUsd * 1.05) {
-      throw new BadRequestException('More photos need a description than when the estimate was made; estimate again');
-    }
-    const wallet = await this.callCloud(() => this.frameleafCloudMlRepository.getWallet(gateway));
-    const availableUsd = Math.max(0, wallet.balanceUsd - wallet.heldUsd);
-    const refusal = this.spendingRefusal(destination, wallet, availableUsd, approvedTotal, approvals[0]);
-    if (refusal) {
-      throw new BadRequestException(refusal);
-    }
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlBackfill, async () => {
+      const store = (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudDescriptionEstimates)) ?? {
+        records: [],
+      };
+      const record = store.records.find(({ id }) => id === dto.estimateId);
+      if (!record) {
+        throw new BadRequestException('This estimate is not known any more; estimate again');
+      }
+      if (record.started) {
+        const { batches, photos, operationIds } = record.started;
+        return { batches, photos, operationIds };
+      }
+      if (Date.parse(record.expiresAt) <= now.getTime()) {
+        throw new BadRequestException('This estimate expired; estimate again');
+      }
 
-    const created = await this.createBatches('backfill', destination, model.sku, batches, approvals);
-    await this.jobRepository.queue({ name: JobName.CloudMlDescriptionBatch, data: {} });
-    return {
-      batches: created.length,
-      photos: batches.reduce((sum, { assetIds }) => sum + assetIds.length, 0),
-      operationIds: created,
-    };
+      const { gateway, destination } = await this.requireCloud();
+      const { model } = await this.resolveModel(gateway);
+      if (model.sku !== record.modelSku) {
+        throw new BadRequestException('The description model changed since the estimate; estimate again');
+      }
+
+      const open = await this.mediaOperationRepository.getOpenCloudDescriptionAssetIds();
+      const items = Object.entries(record.owners).flatMap(([ownerId, assetIds]) =>
+        assetIds.filter((assetId) => !open.has(assetId)).map((assetId) => ({ assetId, ownerId })),
+      );
+      const batches = groupCloudDescriptionBatches(await this.describable(items));
+      const approvals = batches.map(({ assetIds }) =>
+        micros(record.startupUsd + assetIds.length * record.perPhotoP90Usd),
+      );
+      const approvedTotal = micros(approvals.reduce((sum, value) => sum + value, 0));
+      // a subset of the estimated photos never costs more than the estimate's ceiling; checked anyway
+      if (approvedTotal > record.p90Usd + 1e-6) {
+        throw new BadRequestException('These photos would cost more than the estimate; estimate again');
+      }
+
+      let operationIds: string[] = [];
+      if (batches.length > 0) {
+        const wallet = await this.callCloud(() => this.frameleafCloudMlRepository.getWallet(gateway));
+        const refusal = this.spendingRefusal(
+          destination,
+          wallet,
+          Math.max(0, wallet.balanceUsd - wallet.heldUsd),
+          approvedTotal,
+          approvals[0],
+          await this.spentInWindow(destination.id, now),
+        );
+        if (refusal) {
+          throw new BadRequestException(refusal);
+        }
+        operationIds = await this.createBatches('backfill', destination, record.modelSku, batches, approvals);
+      }
+
+      const started = {
+        at: now.toISOString(),
+        batches: operationIds.length,
+        photos: batches.reduce((sum, { assetIds }) => sum + assetIds.length, 0),
+        operationIds,
+      };
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudDescriptionEstimates, {
+        records: store.records.map((entry) => (entry.id === record.id ? { ...entry, owners: {}, started } : entry)),
+      });
+      if (operationIds.length > 0) {
+        await this.jobRepository.queue({ name: JobName.CloudMlDescriptionBatch, data: {} });
+      }
+      return { batches: started.batches, photos: started.photos, operationIds };
+    });
   }
 
-  /** Why a backfill of this cost cannot start now, in words an administrator can act on; null when it can. */
+  /**
+   * Keep an estimate for queueing. Unstarted estimates expire after `CLOUD_DESCRIPTION_ESTIMATE_TTL_MS`
+   * and at most `CLOUD_DESCRIPTION_ESTIMATES_KEPT` are kept (they hold their photo ids); a started one
+   * keeps only its answer, for a day, so a repeated request is answered the same.
+   */
+  private async keepEstimate(record: CloudDescriptionEstimateRecord, now: Date) {
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlBackfill, async () => {
+      const store = (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudDescriptionEstimates)) ?? {
+        records: [],
+      };
+      const started = store.records.filter(
+        (entry) => entry.started && now.getTime() - Date.parse(entry.started.at) < DAY_MS,
+      );
+      const waiting = store.records
+        .filter((entry) => !entry.started && Date.parse(entry.expiresAt) > now.getTime())
+        .slice(-(CLOUD_DESCRIPTION_ESTIMATES_KEPT - 1));
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudDescriptionEstimates, {
+        records: [...started, ...waiting, record],
+      });
+    });
+  }
+
+  /**
+   * Why a backfill of this cost cannot start now, in words an administrator can act on; null when it
+   * can. The destination's budget counts what was already spent in its window and what running
+   * batches hold.
+   */
   private spendingRefusal(
     destination: MlDestinationRow,
     wallet: { dailyCapUsd: number | null; spentTodayUsd: number },
     availableUsd: number,
     p90Usd: number,
     firstHoldUsd: number,
+    spentInWindowUsd: number,
   ): string | null {
     if (availableUsd < p90Usd) {
       return `The AI Wallet has ${availableUsd.toFixed(2)} USD available and these descriptions may cost up to ${p90Usd.toFixed(2)} USD. Add credit first.`;
@@ -343,10 +469,20 @@ export class CloudMlBatchService extends BaseService {
     if (wallet.dailyCapUsd !== null && wallet.spentTodayUsd + firstHoldUsd > wallet.dailyCapUsd) {
       return `Today's AI Wallet limit of ${wallet.dailyCapUsd.toFixed(2)} USD leaves too little for the first batch. Try again tomorrow or raise the limit in your Frameleaf account.`;
     }
-    if (destination.budgetLimitUsd !== null && p90Usd > destination.budgetLimitUsd) {
-      return `${destination.name} has a spending limit of ${destination.budgetLimitUsd.toFixed(2)} USD, below what these descriptions may cost.`;
+    if (destination.budgetLimitUsd !== null && spentInWindowUsd + p90Usd > destination.budgetLimitUsd) {
+      return `${destination.name} has ${Math.max(0, destination.budgetLimitUsd - spentInWindowUsd).toFixed(2)} USD left of its ${destination.budgetLimitUsd.toFixed(2)} USD spending limit, less than these descriptions may cost.`;
     }
     return null;
+  }
+
+  /** The destination's spend in its budget window, with what running description batches hold. */
+  private async spentInWindow(destinationId: string, now: Date): Promise<number> {
+    const since = new Date(now.getTime() - ML_BUDGET_WINDOW_DAYS * DAY_MS);
+    const [spent, held] = await Promise.all([
+      this.mlDestinationRepository.getSpend(destinationId, since),
+      this.mediaOperationRepository.sumCloudDescriptionOpenHolds(destinationId),
+    ]);
+    return spent + held;
   }
 
   /* ------------------------------------------------------------------ */
@@ -356,15 +492,15 @@ export class CloudMlBatchService extends BaseService {
   /**
    * Batch the new photos waiting in the automatic queue: an owner's photos become batches once there
    * are `CLOUD_DESCRIPTION_AUTO_MIN_BATCH` of them, or once the oldest has waited
-   * `CLOUD_DESCRIPTION_AUTO_MAX_WAIT_MS`. Nothing new is batched once today's automatic spend reached
-   * the daily budget; administrators are told once that day, and batching resumes the next day.
+   * `CLOUD_DESCRIPTION_AUTO_MAX_WAIT_MS`. Nothing is batched while the contract has no uploads, and
+   * nothing new once today's automatic spend reached the daily budget; administrators are told once
+   * that day, and batching resumes the next day.
    */
   async batchNewPhotos(now: Date, dailyBudgetUsd: number): Promise<void> {
-    const recent = await this.mediaOperationRepository.listRecentOfKind(
-      MediaOperationKind.CloudDescriptionBatch,
-      CLOUD_DESCRIPTION_RECENT_BATCHES,
-    );
-    if (this.automaticSpentToday(recent, now) >= dailyBudgetUsd) {
+    if (!CLOUD_DESCRIPTION_CONTRACT.uploadsPublished) {
+      return;
+    }
+    if ((await this.automaticSpentToday(now)) >= dailyBudgetUsd) {
       await this.budgetSpent(now, dailyBudgetUsd);
       return;
     }
@@ -400,7 +536,7 @@ export class CloudMlBatchService extends BaseService {
       }
 
       const taken = new Set(ready.flat().map(({ assetId }) => assetId));
-      const inBatches = this.assetsInOpenBatches(recent);
+      const inBatches = await this.mediaOperationRepository.getOpenCloudDescriptionAssetIds();
       const describable = await this.describable(ready.flat().filter(({ assetId }) => !inBatches.has(assetId)));
       const batches = groupCloudDescriptionBatches(describable);
       await this.createBatches(
@@ -422,24 +558,15 @@ export class CloudMlBatchService extends BaseService {
   }
 
   /**
-   * What automatic batches admitted today (the server's calendar day) cost: the settled charge once
-   * known, else what the wallet holds for them. A batch that has not been admitted costs nothing yet.
+   * What automatic batches admitted on the server's calendar day of `now` cost: each settled charge
+   * once known, else what the wallet holds for it (one SQL sum over every such batch).
    */
-  private automaticSpentToday(recent: MediaOperation[], now: Date): number {
-    const today = serverDay(now);
-    let spent = 0;
-    for (const operation of recent) {
-      const snapshot = operation.snapshot as Partial<CloudDescriptionSnapshot> | null;
-      if (snapshot?.origin !== 'automatic') {
-        continue;
-      }
-      const result = parseCloudDescriptionResult(operation.result, []);
-      if (!result.job || serverDay(new Date(result.job.admittedAt)) !== today) {
-        continue;
-      }
-      spent += result.settledUsd ?? result.job.holdUsd;
-    }
-    return spent;
+  private automaticSpentToday(now: Date): Promise<number> {
+    return this.mediaOperationRepository.sumCloudDescriptionSpend({
+      origin: 'automatic',
+      from: serverDayStart(now),
+      to: nextServerDay(now),
+    });
   }
 
   /** Tell administrators once a day that automatic descriptions stopped for the day. */
@@ -506,7 +633,7 @@ export class CloudMlBatchService extends BaseService {
 
   /**
    * The next step of one claimed batch. Returns true when its cloud job ended in this step, so the
-   * pass settles right away.
+   * pass settles right away. A batch stops here when processing was turned off.
    */
   async step(operation: MediaOperation, claimToken: string, now: Date): Promise<boolean> {
     let snapshot: CloudDescriptionSnapshot;
@@ -528,6 +655,11 @@ export class CloudMlBatchService extends BaseService {
       result: parseCloudDescriptionResult(operation.result, snapshot.assetIds),
       now,
     };
+
+    if (!descriptionsOnCloud(await this.cloudMlSettings())) {
+      await this.stopTurnedOff(run);
+      return false;
+    }
 
     const resolution = await resolveCloudGateway(this.gatewayDeps());
     if (resolution.state !== CloudConnectionState.Ready) {
@@ -555,7 +687,7 @@ export class CloudMlBatchService extends BaseService {
           return false;
         }
         case CloudDescriptionPhase.Estimated: {
-          await this.submit(run, gateway);
+          await this.resume(run, gateway);
           return false;
         }
         case CloudDescriptionPhase.Submitted: {
@@ -580,6 +712,27 @@ export class CloudMlBatchService extends BaseService {
       await this.refuse(run, refusal);
       return false;
     }
+  }
+
+  /**
+   * The kill switch: processing turned off, or descriptions kept on this server. A cloud job the batch
+   * started is cancelled and released (the cleanup pass retries when the cloud cannot be reached), and
+   * the batch fails with the reason. Nothing is submitted.
+   */
+  private async stopTurnedOff(run: BatchRun) {
+    const job = run.result.job;
+    if (job) {
+      const resolution = await resolveCloudGateway(this.gatewayDeps());
+      if (resolution.state === CloudConnectionState.Ready) {
+        await this.release(resolution.gateway, run.operation.id, job.jobId, true);
+      }
+    }
+    await this.mediaOperationRepository.fail(
+      run.operation.id,
+      run.claimToken,
+      { error: TURNED_OFF, errorCode: 'cloud_description_turned_off' },
+      { retry: false },
+    );
   }
 
   /**
@@ -608,21 +761,9 @@ export class CloudMlBatchService extends BaseService {
       return;
     }
 
-    // admission: consent, entitlement, wallet, daily cap and the model, from a live check; the job is
-    // refused in place, never moved to another destination
-    const selection = await this.selectMlDestination({
-      workload: MlWorkload.Enrichment,
-      destinationId: snapshot.destinationId,
-      jobId: operation.id,
-      jobName: JobName.CloudMlDescriptionBatch,
-    });
-    if (selection.kind !== MlDestinationKind.FrameleafCloud) {
-      throw new BatchRefusal(
-        'cloud_description_not_cloud',
-        'The destination this batch was made for is not Frameleaf Cloud any more; nothing was sent',
-        false,
-      );
-    }
+    // admission: the kill switch, consent, entitlement, wallet, daily cap and the model, from a live
+    // check; the job is refused in place, never moved to another destination
+    await this.admitBatch(run);
     const destination = await this.mlDestinationRepository.getById(snapshot.destinationId);
 
     const estimate = await this.frameleafCloudMlRepository.createEstimate(gateway, {
@@ -647,15 +788,82 @@ export class CloudMlBatchService extends BaseService {
         p90Usd: estimate.cost.p90,
         holdUsd: estimate.cost.hold,
         startupUsd: estimate.cost.startup,
+        attemptedAt: null,
       },
       waiting: null,
     };
 
-    await this.preflight(run, gateway, estimate, destination ?? null);
+    await this.preflight(run, gateway, { p90Usd: estimate.cost.p90, holdUsd: estimate.cost.hold }, destination ?? null);
     if (!(await this.save(run))) {
       return;
     }
     await this.submit(run, gateway);
+  }
+
+  /**
+   * A batch that was estimated earlier (a retry after 503 `capacity`, a lost claim). A submission that
+   * was already sent is replayed first with its own key and body, so a job created before a crash is
+   * adopted, never duplicated. Otherwise everything is checked again before anything is sent: the
+   * photos (Locked, deleted, no longer a photo: the batch is estimated again without them), admission
+   * and the full pre-flight.
+   */
+  private async resume(run: BatchRun, gateway: CloudMlGateway) {
+    const submission = run.result.submission;
+    if (!submission) {
+      await this.reestimate(run);
+      return;
+    }
+    if (submission.attemptedAt) {
+      await this.submit(run, gateway);
+      return;
+    }
+    if (await this.inputsChanged(run)) {
+      await this.reestimate(run);
+      return;
+    }
+    await this.admitBatch(run);
+    const destination = await this.mlDestinationRepository.getById(run.snapshot.destinationId);
+    await this.preflight(run, gateway, { p90Usd: submission.p90Usd, holdUsd: submission.holdUsd }, destination ?? null);
+    await this.submit(run, gateway);
+  }
+
+  /** Whether a photo the batch would send is Locked, gone or no longer a photo of its owner now. */
+  private async inputsChanged(run: BatchRun): Promise<boolean> {
+    const sent = run.result.items.filter((item) => !item.refused);
+    const locked = await this.mediaOperationRepository.getLockedAssetIds(
+      run.operation.ownerId,
+      sent.map(({ assetId }) => assetId),
+    );
+    for (const { assetId } of sent) {
+      if (locked.has(assetId)) {
+        return true;
+      }
+      const asset = await this.assetJobRepository.getForImageEnrichment(assetId);
+      if (
+        !asset ||
+        asset.ownerId !== run.operation.ownerId ||
+        asset.deletedAt ||
+        asset.status !== AssetStatus.Active ||
+        asset.type !== AssetType.Image ||
+        !asset.previewFile
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Admission for this batch's destination, with the kill switch; never another destination. */
+  private async admitBatch(run: BatchRun): Promise<MlSelection> {
+    const selection = await this.admit(run.snapshot.destinationId, run.operation.id);
+    if (selection.kind !== MlDestinationKind.FrameleafCloud) {
+      throw new BatchRefusal(
+        'cloud_description_not_cloud',
+        'The destination this batch was made for is not Frameleaf Cloud any more; nothing was sent',
+        false,
+      );
+    }
+    return selection;
   }
 
   private async prepareItem(
@@ -695,26 +903,24 @@ export class CloudMlBatchService extends BaseService {
   }
 
   /**
-   * The checks every batch passes before it is submitted (hold ≤ balance): the AI Wallet can hold the
-   * estimate, the account's daily cap and the destination's budget leave room for it, a backfill batch
-   * is not estimated above what was approved, and an automatic batch fits today's budget. An automatic
-   * batch that does not fit today waits for tomorrow; anything else is refused and nothing is sent.
+   * The checks every batch passes before it is submitted (hold ≤ balance), run again whenever a batch
+   * resumes: the AI Wallet can hold the estimate, the account's daily cap and the destination's
+   * budget (with what running batches hold) leave room for it, a backfill batch is not estimated
+   * above what was approved, and an automatic batch fits today's budget. An automatic batch that does
+   * not fit today waits for tomorrow; anything else is refused and nothing is sent.
    */
   private async preflight(
     run: BatchRun,
     gateway: CloudMlGateway,
-    estimate: CloudEstimate,
+    cost: { p90Usd: number; holdUsd: number },
     destination: MlDestinationRow | null,
   ) {
     const { snapshot, now } = run;
-    const hold = estimate.cost.hold;
-    if (
-      snapshot.approvedP90Usd !== null &&
-      estimate.cost.p90 > snapshot.approvedP90Usd * CLOUD_DESCRIPTION_PRICE_TOLERANCE
-    ) {
+    const hold = cost.holdUsd;
+    if (snapshot.approvedP90Usd !== null && cost.p90Usd > snapshot.approvedP90Usd * CLOUD_DESCRIPTION_PRICE_TOLERANCE) {
       throw new BatchRefusal(
         'cloud_description_estimate_increased',
-        `Frameleaf Cloud now estimates this batch at up to ${estimate.cost.p90.toFixed(2)} USD, above the ${snapshot.approvedP90Usd.toFixed(2)} USD it was approved at. Nothing was sent; estimate again.`,
+        `Frameleaf Cloud now estimates this batch at up to ${cost.p90Usd.toFixed(2)} USD, above the ${snapshot.approvedP90Usd.toFixed(2)} USD it was approved at. Nothing was sent; estimate again.`,
         false,
       );
     }
@@ -739,8 +945,7 @@ export class CloudMlBatchService extends BaseService {
       );
     }
     if (destination && destination.budgetLimitUsd !== null) {
-      const since = new Date(now.getTime() - ML_BUDGET_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-      const spent = await this.mlDestinationRepository.getSpend(destination.id, since);
+      const spent = await this.spentInWindow(destination.id, now);
       if (spent + hold > destination.budgetLimitUsd) {
         throw new BatchRefusal(
           'cloud_description_budget_exceeded',
@@ -750,17 +955,8 @@ export class CloudMlBatchService extends BaseService {
       }
     }
     if (automatic) {
-      const { frameleafCloud } = await this.getConfig({ withCache: false });
-      const budget = frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd;
-      const recent = await this.mediaOperationRepository.listRecentOfKind(
-        MediaOperationKind.CloudDescriptionBatch,
-        CLOUD_DESCRIPTION_RECENT_BATCHES,
-      );
-      const spent = this.automaticSpentToday(
-        recent.filter(({ id }) => id !== run.operation.id),
-        now,
-      );
-      if (spent + hold > budget) {
+      const budget = (await this.cloudMlSettings()).autoDescribe.dailyBudgetUsd;
+      if ((await this.automaticSpentToday(now)) + hold > budget) {
         await this.budgetSpent(now, budget);
         throw new WaitUntil(
           nextServerDay(now),
@@ -772,15 +968,29 @@ export class CloudMlBatchService extends BaseService {
 
   /**
    * Submit the estimated batch: one cloud job for all its photos, with its pack key and the
-   * submission's idempotency key, so a retry after a lost answer is answered with the same admission
-   * rather than a second job. An expired or spent estimate is asked for again under a new key.
+   * submission's idempotency key. Nothing is sent while the contract has no uploads. The attempt is
+   * recorded before `POST /v2/jobs`, so a retry after a lost answer or a crash replays the same key and
+   * body and is answered with the same admission rather than a second job. An expired, spent or
+   * mismatched estimate is asked for again under a new key.
    */
   private async submit(run: BatchRun, gateway: CloudMlGateway) {
+    if (!CLOUD_DESCRIPTION_CONTRACT.uploadsPublished) {
+      throw new BatchRefusal('cloud_description_uploads_unpublished', CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED, false);
+    }
     const { operation, snapshot, now } = run;
     const submission = run.result.submission;
-    if (!submission || !estimateUsable({ expiresAt: submission.expiresAt }, now.getTime())) {
+    if (
+      !submission ||
+      (!submission.attemptedAt && !estimateUsable({ expiresAt: submission.expiresAt }, now.getTime()))
+    ) {
       await this.reestimate(run);
       return;
+    }
+    if (!submission.attemptedAt) {
+      run.result = { ...run.result, submission: { ...submission, attemptedAt: now.toISOString() } };
+      if (!(await this.save(run))) {
+        return;
+      }
     }
     const inputs = run.result.items.filter((item) => !item.refused);
 
@@ -802,7 +1012,7 @@ export class CloudMlBatchService extends BaseService {
         submission.idempotencyKey,
       );
     } catch (error) {
-      // a spent, expired or mismatched estimate (409) is estimated again under a new key
+      // a spent, expired or mismatched estimate (409) created no job under this key: estimate again
       if (
         error instanceof FrameleafCloudError &&
         error.refusal === MlAdmissionRefusal.ModelMismatch &&
@@ -815,14 +1025,16 @@ export class CloudMlBatchService extends BaseService {
     }
 
     if (!(await this.mediaOperationRepository.setRemoteJobId(operation.id, run.claimToken, admitted.jobId))) {
-      // nobody would watch this job: stop it rather than leave it holding the wallet
+      // the claim is gone: keep the job's id on the row first, so the cleanup pass can always find it,
+      // then stop it rather than leave it holding the wallet unwatched
       this.logger.warn(`Description batch ${operation.id}: claim lost after its job ${admitted.jobId} was admitted`);
+      await this.mediaOperationRepository.recordRemoteJobId(operation.id, admitted.jobId);
       await this.release(gateway, operation.id, admitted.jobId, true);
       return;
     }
     const bytesSent = inputs.reduce((sum, item) => sum + (item.bytes ?? 0), 0);
-    // the settlement finds this row by its cloud job id (`applySettlements`)
-    await this.mlDestinationRepository.recordAccounting({
+    // one row per cloud job, which its settlement fills (`applySettlements`); a replay adds none
+    await this.mlDestinationRepository.recordCloudJobAccounting({
       destinationId: snapshot.destinationId,
       destinationKind: MlDestinationKind.FrameleafCloud,
       workload: MlWorkload.Enrichment,
@@ -984,9 +1196,9 @@ export class CloudMlBatchService extends BaseService {
    * waiting batch is immediate). Until the cloud confirms, the batch stays on the list.
    */
   private async releaseAbandoned() {
-    const unreleased = (await this.mediaOperationRepository.getUnreleasedRemoteOperations(100)).filter(
-      ({ kind }) => kind === MediaOperationKind.CloudDescriptionBatch,
-    );
+    const unreleased = await this.mediaOperationRepository.getUnreleasedRemoteOperations(100, [
+      MediaOperationKind.CloudDescriptionBatch,
+    ]);
     if (unreleased.length === 0) {
       return;
     }
@@ -1082,10 +1294,15 @@ export class CloudMlBatchService extends BaseService {
   /**
    * Apply Frameleaf Cloud's settlements (`GET /v2/usage`) to `ml_workload_accounting` and to the batches
    * they belong to (found by `clientRef`), with each photo's share of the charge. Runs right after a
-   * batch's job ended, else at most every `CLOUD_DESCRIPTION_SETTLE_INTERVAL_MS`.
+   * batch's job ended, else at most every `CLOUD_DESCRIPTION_SETTLE_INTERVAL_MS`. With processing turned
+   * off the cloud is only asked while an admitted batch still waits for its settlement.
    */
-  async settle(now: Date, force: boolean): Promise<void> {
+  async settle(now: Date, force: boolean, enabled = true): Promise<void> {
     if (!force && now.getTime() - this.lastSettledAt < CLOUD_DESCRIPTION_SETTLE_INTERVAL_MS) {
+      return;
+    }
+    const since = new Date(now.getTime() - ML_BUDGET_WINDOW_DAYS * DAY_MS);
+    if (!enabled && !(await this.mediaOperationRepository.hasUnsettledCloudDescriptionJobs(since))) {
       return;
     }
     const resolution = await resolveCloudGateway(this.gatewayDeps());
@@ -1095,10 +1312,7 @@ export class CloudMlBatchService extends BaseService {
     this.lastSettledAt = now.getTime();
     let usage: CloudUsage;
     try {
-      usage = await this.frameleafCloudMlRepository.getUsage(
-        resolution.gateway,
-        new Date(now.getTime() - ML_BUDGET_WINDOW_DAYS * 24 * 60 * 60 * 1000),
-      );
+      usage = await this.frameleafCloudMlRepository.getUsage(resolution.gateway, since);
     } catch (error) {
       this.logger.warn(`Frameleaf Cloud settlements were not read: ${errorMessage(error)}`);
       return;
@@ -1106,14 +1320,18 @@ export class CloudMlBatchService extends BaseService {
     await this.mlDestinationRepository.applySettlements(
       usage.items.map((item) => ({ cloudJobId: item.jobId, costUsd: item.settledUsd, credits: item.credits })),
     );
+
+    const byOperation = new Map<string, (typeof usage.items)[number]>();
     for (const item of usage.items) {
-      const operationId = item.clientRef?.startsWith('batch-') ? item.clientRef.slice('batch-'.length) : null;
-      if (!operationId) {
-        continue;
+      if (item.clientRef?.startsWith('batch-')) {
+        byOperation.set(item.clientRef.slice('batch-'.length), item);
       }
-      const operation = await this.mediaOperationRepository.getForWorker(operationId);
+    }
+    const operations = await this.mediaOperationRepository.getManyForWorker([...byOperation.keys()]);
+    for (const operation of operations) {
+      const item = byOperation.get(operation.id);
       if (
-        !operation ||
+        !item ||
         operation.kind !== MediaOperationKind.CloudDescriptionBatch ||
         operation.remoteJobId !== item.jobId ||
         !TERMINAL_MEDIA_OPERATION_STATUSES.includes(operation.status as MediaOperationStatus)
@@ -1126,7 +1344,7 @@ export class CloudMlBatchService extends BaseService {
         continue;
       }
       const sent = result.items.filter((entry) => !entry.refused);
-      const share = sent.length > 0 ? Math.round((item.settledUsd / sent.length) * 1_000_000) / 1_000_000 : 0;
+      const share = sent.length > 0 ? micros(item.settledUsd / sent.length) : 0;
       await this.mediaOperationRepository.setFinishedResult(operation.id, {
         ...result,
         settledUsd: item.settledUsd,
@@ -1139,26 +1357,56 @@ export class CloudMlBatchService extends BaseService {
   /* Internals                                                           */
   /* ------------------------------------------------------------------ */
 
+  /** The saved Frameleaf Cloud processing settings, read fresh (the kill switch must never be stale). */
+  private async cloudMlSettings(): Promise<CloudMlSettings> {
+    const { frameleafCloud } = await this.getConfig({ withCache: false });
+    return frameleafCloud.cloudMl;
+  }
+
+  /** Admission with the kill switch: processing on and descriptions allowed, then consent and the rest. */
+  private admit(destinationId: string, jobId: string | null): Promise<MlSelection> {
+    return selectMlDestination(
+      {
+        mlDestinationRepository: this.mlDestinationRepository,
+        machineLearningRepository: this.machineLearningRepository,
+        cloudMlSettings: () => this.cloudMlSettings(),
+      },
+      { workload: MlWorkload.Enrichment, destinationId, jobId, jobName: JobName.CloudMlDescriptionBatch },
+    );
+  }
+
   /**
-   * The Frameleaf Cloud destination the description stage may use, and a ready gateway. Descriptions
-   * must be allowed on Frameleaf Cloud (Both or Cloud only in Where each job runs) and processing on.
+   * The Frameleaf Cloud destination a backfill uses, admitted, and a ready gateway. Descriptions must be
+   * allowed on Frameleaf Cloud (Both or Cloud only in Where each job runs) with processing on, and the
+   * recorded consent and admission come before anything else is asked of the cloud.
    */
   private async requireCloud(): Promise<{ gateway: CloudMlGateway; destination: MlDestinationRow }> {
-    const { frameleafCloud } = await this.getConfig({ withCache: false });
-    if (!frameleafCloud.cloudMl.enabled || !cloudRouteAllows(frameleafCloud.cloudMl, MlWorkload.Enrichment)) {
+    if (!descriptionsOnCloud(await this.cloudMlSettings())) {
       throw new BadRequestException(
         'Turn on Frameleaf Cloud processing and allow descriptions on it in Where each job runs first',
       );
-    }
-    const resolution = await resolveCloudGateway(this.gatewayDeps());
-    if (resolution.state !== CloudConnectionState.Ready) {
-      throw new BadRequestException(resolution.detail);
     }
     const destination = (await this.mlDestinationRepository.getAll()).find(
       (row) => row.kind === MlDestinationKind.FrameleafCloud,
     );
     if (!destination) {
       throw new BadRequestException('Add Frameleaf Cloud as a processing destination first');
+    }
+    if (!hasRequiredConsent(destination)) {
+      throw new BadRequestException('Review and accept the Frameleaf Cloud processing terms first');
+    }
+    try {
+      await this.admit(destination.id, null);
+    } catch (error) {
+      const refusal = batchRefusalOf(error);
+      if (refusal) {
+        throw new BadRequestException(refusal.message);
+      }
+      throw error;
+    }
+    const resolution = await resolveCloudGateway(this.gatewayDeps());
+    if (resolution.state !== CloudConnectionState.Ready) {
+      throw new BadRequestException(resolution.detail);
     }
     return { gateway: resolution.gateway, destination };
   }
@@ -1167,10 +1415,12 @@ export class CloudMlBatchService extends BaseService {
   private async routedCloudDestination(): Promise<MlDestinationRow | undefined> {
     const route = await this.mlDestinationRepository.getRoute(MlWorkload.Enrichment);
     if (!route) {
-      return undefined;
+      return;
     }
     const destination = await this.mlDestinationRepository.getById(route.destinationId);
-    return destination?.kind === MlDestinationKind.FrameleafCloud ? destination : undefined;
+    if (destination?.kind === MlDestinationKind.FrameleafCloud) {
+      return destination;
+    }
   }
 
   /**
@@ -1204,11 +1454,7 @@ export class CloudMlBatchService extends BaseService {
   private async collectCandidates(
     limit: number,
   ): Promise<{ candidates: Array<{ assetId: string; ownerId: string }>; truncated: boolean }> {
-    const recent = await this.mediaOperationRepository.listRecentOfKind(
-      MediaOperationKind.CloudDescriptionBatch,
-      CLOUD_DESCRIPTION_RECENT_BATCHES,
-    );
-    const inBatches = this.assetsInOpenBatches(recent);
+    const inBatches = await this.mediaOperationRepository.getOpenCloudDescriptionAssetIds();
     const found: Array<{ assetId: string; ownerId: string }> = [];
     let truncated = false;
     for await (const { id } of this.assetJobRepository.streamForImageDescriptionJob(false)) {
@@ -1234,7 +1480,7 @@ export class CloudMlBatchService extends BaseService {
     return { candidates: await this.withoutLocked(found), truncated };
   }
 
-  /** The queued photos that are still photos with a preview and not Locked. */
+  /** The queued photos that are still photos of the same owner, with a preview, and not Locked. */
   private async describable(
     items: ReadonlyArray<{ assetId: string; ownerId: string }>,
   ): Promise<Array<{ assetId: string; ownerId: string }>> {
@@ -1276,20 +1522,6 @@ export class CloudMlBatchService extends BaseService {
     return items.filter(({ assetId }) => !locked.has(assetId));
   }
 
-  private assetsInOpenBatches(recent: MediaOperation[]): Set<string> {
-    const ids = new Set<string>();
-    for (const operation of recent) {
-      if (TERMINAL_MEDIA_OPERATION_STATUSES.includes(operation.status as MediaOperationStatus)) {
-        continue;
-      }
-      const assetIds = (operation.snapshot as Partial<CloudDescriptionSnapshot> | null)?.assetIds ?? [];
-      for (const id of assetIds) {
-        ids.add(id);
-      }
-    }
-    return ids;
-  }
-
   /** A sealed estimate for a few photos, from which a backfill's cost is scaled. The copies are removed at once. */
   private async estimateSample(
     gateway: CloudMlGateway,
@@ -1313,7 +1545,15 @@ export class CloudMlBatchService extends BaseService {
     if (inputs.length === 0) {
       throw new BadRequestException('None of the photos could be prepared for an estimate');
     }
-    const estimate = await this.callCloud(() =>
+    return { estimate: await this.sealSample(gateway, modelSku, inputs), photos: inputs.length };
+  }
+
+  private sealSample(
+    gateway: CloudMlGateway,
+    modelSku: string,
+    inputs: CloudDescriptionItem[],
+  ): Promise<CloudEstimate> {
+    return this.callCloud(() =>
       this.frameleafCloudMlRepository.createEstimate(gateway, {
         workload: 'descriptions',
         modelSku,
@@ -1321,7 +1561,6 @@ export class CloudMlBatchService extends BaseService {
         request: { ...CLOUD_DESCRIPTION_REQUEST },
       }),
     );
-    return { estimate, photos: inputs.length };
   }
 
   private async callCloud<T>(call: () => Promise<T>): Promise<T> {
