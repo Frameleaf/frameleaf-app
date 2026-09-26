@@ -8,24 +8,11 @@ sidebar_position: 70
 This is a community contribution and not officially supported by Frameleaf, but included here for convenience.
 :::
 
-Frameleaf can easily be installed and updated on Unraid via:
-
-1. Community made template on the Unraid Community Apps
-2. [Docker Compose Manager](https://forums.unraid.net/topic/114415-plugin-docker-compose-manager/) plugin from the Unraid Community Apps
-
-## Community Applications Template
+Frameleaf installs on Unraid with the [Docker Compose Manager](https://forums.unraid.net/topic/114415-plugin-docker-compose-manager/) plugin from the Unraid Community Apps.
 
 :::info
-
-- The Unraid template uses a community made image of the upstream server and is not officially supported by Frameleaf
-
+The Unraid Community Apps templates use community images of other software, not Frameleaf. Use the Docker Compose method below.
 :::
-
-In order to install the upstream server from the Unraid CA, you will need an existing Redis and PostgreSQL 14 container, If you do not already have Redis or PostgreSQL you can install them from the Unraid CA, just make sure you choose PostgreSQL **14**.
-
-Once you have Redis and PostgreSQL running, search the Unraid CA for the upstream server's templates, choose either of the templates listed and fill out the example variables.
-
-For more information about setting up the community image see [here](https://github.com/imagegenius/docker-immich#application-setup)
 
 ## Docker-Compose Method
 

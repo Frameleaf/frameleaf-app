@@ -10,7 +10,7 @@ Frameleaf has a command line interface (CLI) that allows you to perform certain 
 More features are planned for the future.
 
 :::tip Google Photos Takeout
-If you are looking to import your Google Photos takeout, we recommend this community maintained tool [immich-go](https://github.com/simulot/immich-go)
+To import a Google Photos Takeout export, use [Import Google Photos](/features/google-photos-import) in Frameleaf.
 :::
 
 ## Requirements
