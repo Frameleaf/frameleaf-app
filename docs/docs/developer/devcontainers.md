@@ -89,7 +89,7 @@ source ~/.bashrc
 ### Step 3: Launch the Dev Container
 
 :::tip
-Frameleaf development makes extensive use of specialized base images for its docker-compose based development. For this reason, you won't be able to use VSCode's **_Clone Repository in a Container Volume_** command.
+Frameleaf development builds its own server base, including the media libraries, from `server/Dockerfile.dev` and the sources in `server/base-image` for its docker-compose based development. For this reason, you won't be able to use VSCode's **_Clone Repository in a Container Volume_** command.
 :::
 
 #### Using VS Code UI:

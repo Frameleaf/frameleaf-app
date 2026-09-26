@@ -14,6 +14,7 @@ const {
   chooseTag,
   verifyImage,
   createBundle,
+  verifyDependencyImages,
   checkedResponse,
   hash,
   Registry,
@@ -773,4 +774,189 @@ test("manual dispatch rejects existing fresh or reused same-SHA candidates befor
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+// FL-191: the database and CLI images are published separately, so promotion must prove they exist.
+async function dependencyRoot(databaseImage) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "frameleaf-deps-"));
+  await fs.mkdir(path.join(root, "docker"));
+  await fs.mkdir(path.join(root, "server/src/fork-schema"), {
+    recursive: true,
+  });
+  for (const name of INSTALL_FILES) {
+    const text = name.startsWith("docker-compose")
+      ? [
+          "services:",
+          "  immich-server:",
+          "    image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}",
+          "  redis:",
+          `    image: docker.io/valkey/valkey:9@${digest(7)}`,
+          "  database:",
+          `    image: ${databaseImage}`,
+          "",
+        ].join("\n")
+      : name === "example.env"
+        ? "IMMICH_VERSION=release\n"
+        : "services: {}\n";
+    await fs.writeFile(path.join(root, "docker", name), text);
+  }
+  await fs.writeFile(
+    path.join(root, "server/src/fork-schema/supported-versions.json"),
+    "{}",
+  );
+  return root;
+}
+const database =
+  "ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0";
+const published = (entries) => ({
+  read: async (image, reference) => {
+    const found = entries[`${image}:${reference}`];
+    if (!found)
+      throw Object.assign(new Error("Remote request failed (404)"), {
+        status: 404,
+      });
+    return { digest: found, json: {}, size: 1 };
+  },
+});
+
+test("promotion refuses a bundle whose database or CLI image is not published", async () => {
+  const root = await dependencyRoot(database);
+  try {
+    await assert.rejects(
+      verifyDependencyImages(
+        published({ "frameleaf-cli:latest": digest(2) }),
+        root,
+      ),
+      /frameleaf-postgres:14-vectorchord0\.4\.3-pgvectors0\.2\.0 is not published/,
+    );
+    await assert.rejects(
+      verifyDependencyImages(
+        published({
+          "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+        }),
+        root,
+      ),
+      /frameleaf-cli:latest is not published/,
+    );
+    const resolved = await verifyDependencyImages(
+      published({
+        "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+        "frameleaf-cli:latest": digest(2),
+      }),
+      root,
+    );
+    assert.equal(resolved.get(database), digest(1));
+    // The bundle pins the verified digest; the source Compose file is left as written.
+    const dir = path.join(root, "bundle");
+    await createBundle(dir, root, "frameleaf-v3.1.0-1", {}, resolved);
+    for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
+      const bundled = await fs.readFile(path.join(dir, name), "utf8");
+      assert(bundled.includes(`image: ${database}@${digest(1)}\n`), name);
+    }
+    await assert.rejects(
+      createBundle(
+        path.join(root, "unverified"),
+        root,
+        "frameleaf-v3.1.0-1",
+        {},
+      ),
+      /was not verified and pinned by digest/,
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("promotion rejects stale pins, upstream images and unpinned third-party images", async () => {
+  for (const [image, pattern] of [
+    [`${database}@${digest(3)}`, /no longer resolves to the pinned digest/],
+    [
+      // Built from parts so the repository-wide upstream-image guard does not match this test.
+      ["ghcr.io", "immich-app", "postgres:14-vectorchord0.4.3"].join("/"),
+      /must not pull upstream images/,
+    ],
+    ["docker.io/library/postgres:14", /must be digest-pinned/],
+    ["ghcr.io/frameleaf/unknown-image:1", /not a known Frameleaf dependency/],
+    // A release-version placeholder never exempts an upstream or third-party image.
+    [
+      [
+        "ghcr.io",
+        "immich-app",
+        "immich-server:${IMMICH_VERSION:-release}",
+      ].join("/"),
+      /must not pull upstream images/,
+    ],
+    [
+      "docker.io/example/server:${IMMICH_VERSION:-release}",
+      /only the Frameleaf server and ML images may follow the release version/,
+    ],
+    [
+      "ghcr.io/frameleaf/frameleaf-postgres:${IMMICH_VERSION:-release}",
+      /only the Frameleaf server and ML images may follow the release version/,
+    ],
+  ]) {
+    const root = await dependencyRoot(image);
+    try {
+      await assert.rejects(
+        verifyDependencyImages(
+          published({
+            "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+            "frameleaf-cli:latest": digest(2),
+          }),
+          root,
+        ),
+        pattern,
+        image,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("promotion names private, missing and transient dependency failures separately", async () => {
+  const root = await dependencyRoot(database);
+  const failing = (status, message = "Remote request failed") => ({
+    read: async (image, reference, kind, options) => {
+      assert.deepEqual(options, { anonymous: true });
+      if (image === "frameleaf-cli") return { digest: digest(2), json: {} };
+      throw Object.assign(new Error(message), status ? { status } : {});
+    },
+  });
+  try {
+    for (const [registry, pattern] of [
+      [failing(401), /is not public \(anonymous registry status 401\)/],
+      [failing(403), /is not public \(anonymous registry status 403\)/],
+      [failing(404), /is not published \(registry status 404\)/],
+      [failing(503), /Transient registry failure reading .*status 503/],
+      [
+        failing(undefined, "fetch failed"),
+        /Transient registry failure .*fetch failed/,
+      ],
+    ])
+      await assert.rejects(verifyDependencyImages(registry, root), pattern);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("dependency reads use an anonymous registry token, as an installation would", async (t) => {
+  const body = JSON.stringify({ schemaVersion: 2 });
+  const tokenRequests = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    if (String(url).startsWith("https://ghcr.io/token?")) {
+      tokenRequests.push(init.headers);
+      return new Response(JSON.stringify({ token: "anonymous-token" }));
+    }
+    assert.equal(init.headers.Authorization, "Bearer anonymous-token");
+    return new Response(body, {
+      headers: { "docker-content-digest": hash(body) },
+    });
+  });
+  const client = new Registry({ GITHUB_TOKEN: "job-token", GITHUB_ACTOR: "x" });
+  await client.read("frameleaf-postgres", "latest", "manifests", {
+    anonymous: true,
+  });
+  assert.equal(tokenRequests.length, 1);
+  assert.equal(tokenRequests[0].Authorization, undefined);
 });
