@@ -286,14 +286,8 @@ export type CloudMlConsentHistoryResponseDto = {
     records: CloudMlConsentRecordDto[];
 };
 export type CloudMlDescriptionBatchCreateDto = {
-    /** The p90 total the administrator accepted, USD */
-    maxTotalUsd: number;
-    /** The catalogue model SKU the estimate was for */
-    modelId: string;
-    /** The per-photo p90 the estimate showed, USD */
-    perPhotoP90Usd: number;
-    /** The start fee per batch the estimate showed, USD */
-    startupUsd: number;
+    /** The estimate to queue; its model, photos and prices are read from the server, never sent */
+    estimateId: string;
 };
 export type CloudMlDescriptionBatchesResponseDto = {
     /** Batches queued */
@@ -322,6 +316,10 @@ export type CloudMlDescriptionEstimateResponseDto = {
     batches: number;
     /** The daily AI Wallet limit, USD, or null */
     dailyCapUsd: number | null;
+    /** The estimate the server keeps; queueing the backfill names only this, or null when there is nothing to queue */
+    estimateId: string | null;
+    /** Until when the estimate may be queued, or null */
+    expiresAt: string | null;
     /** Set when the model is of the 72B class and some batches are too small for its start fee to pay off */
     guidance: (CloudMlDescriptionGuidanceDto) | null;
     /** What the AI Wallet would hold while the batches run, USD */
@@ -9023,6 +9021,8 @@ export type SyncStreamDto = {
     types: SyncRequestType[];
 };
 export type ImageDescriptionRequeueResponseDto = {
+    /** Descriptions are routed to Frameleaf Cloud, which describes photos in batches from Frameleaf Cloud processing with an estimate first; nothing was queued here */
+    cloudBatches: boolean;
     /** Whether the queue-all job was newly enqueued (false = already in-flight) */
     queued: boolean;
 };

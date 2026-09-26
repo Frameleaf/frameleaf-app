@@ -2,8 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import {
   CLOUD_DESCRIPTION_BATCH_SIZE,
+  CLOUD_DESCRIPTION_CONTRACT,
+  CLOUD_DESCRIPTION_QUEUE_FLUSH_MS,
+  CLOUD_DESCRIPTION_QUEUE_FLUSH_SIZE,
   CLOUD_DESCRIPTION_QUEUE_MAX,
+  CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED,
   CloudDescriptionPhase,
+  CloudDescriptionQueueWriter,
   cloudDescriptionIdempotencyKey,
   cloudDescriptionPackKey,
   emptyCloudDescriptionResult,
@@ -13,7 +18,7 @@ import {
   parseCloudDescriptionResult,
   parseCloudDescriptionSnapshot,
   projectCloudDescriptionCost,
-  queueCloudDescription,
+  queueCloudDescriptions,
   serverDay,
 } from 'src/utils/cloud-description-batch.js';
 import {
@@ -180,7 +185,14 @@ describe('cloud description batches (FL-163)', () => {
     });
   });
 
-  describe('queueCloudDescription', () => {
+  describe('the upload gate', () => {
+    it('keeps job creation closed until the FC-39 upload and result contract is implemented', () => {
+      expect(CLOUD_DESCRIPTION_CONTRACT.uploadsPublished).toBe(false);
+      expect(CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED).toMatch(/no description job is created/);
+    });
+  });
+
+  describe('the automatic queue (review P2)', () => {
     const deps = (initial: unknown) => {
       let stored = initial;
       return {
@@ -192,41 +204,80 @@ describe('cloud description batches (FL-163)', () => {
             return Promise.resolve();
           }),
         },
-        stored: () => stored,
+        stored: () => stored as { items: Array<{ assetId: string }> } | null,
       };
     };
+    const item = (assetId: string) => ({ assetId, ownerId: 'o', queuedAt: '2026-09-26T10:00:00.000Z' });
 
-    it('adds a photo once, under the queue lock', async () => {
-      const repositories = deps(null);
-      const now = new Date('2026-09-26T10:00:00.000Z');
+    it('adds many photos in one write under the queue lock, each once', async () => {
+      const repositories = deps({ items: [item('a')], lastBatchAt: {} });
 
-      await expect(queueCloudDescription(repositories as never, { assetId: 'a', ownerId: 'o' }, now)).resolves.toBe(
-        true,
-      );
-      await expect(queueCloudDescription(repositories as never, { assetId: 'a', ownerId: 'o' }, now)).resolves.toBe(
-        true,
-      );
+      await expect(queueCloudDescriptions(repositories as never, [item('a'), item('b'), item('c')])).resolves.toBe(0);
 
       expect(repositories.databaseRepository.withLock).toHaveBeenCalledWith(
         DatabaseLock.FrameleafCloudMlBatchQueue,
         expect.any(Function),
       );
-      expect(repositories.stored()).toEqual({
-        items: [{ assetId: 'a', ownerId: 'o', queuedAt: '2026-09-26T10:00:00.000Z' }],
-        lastBatchAt: {},
-      });
+      expect(repositories.systemMetadataRepository.set).toHaveBeenCalledTimes(1);
+      expect(repositories.stored()?.items.map(({ assetId }) => assetId)).toEqual(['a', 'b', 'c']);
     });
 
-    it('refuses a photo once the queue is full', async () => {
-      const items = Array.from({ length: CLOUD_DESCRIPTION_QUEUE_MAX }, (_, index) => ({
-        assetId: `a${index}`,
-        ownerId: 'o',
-        queuedAt: '2026-09-26T10:00:00.000Z',
-      }));
+    it('counts the photos a full queue cannot take, and writes nothing for them', async () => {
+      const items = Array.from({ length: CLOUD_DESCRIPTION_QUEUE_MAX }, (_, index) => item(`a${index}`));
       const repositories = deps({ items, lastBatchAt: {} });
 
-      await expect(queueCloudDescription(repositories as never, { assetId: 'new', ownerId: 'o' })).resolves.toBe(false);
+      await expect(queueCloudDescriptions(repositories as never, [item('new-1'), item('new-2')])).resolves.toBe(2);
       expect(repositories.systemMetadataRepository.set).not.toHaveBeenCalled();
+    });
+
+    it('writes new photos once per batch of 100, not once per photo', async () => {
+      const repositories = deps(null);
+      const writer = new CloudDescriptionQueueWriter(() => repositories as never, vi.fn());
+
+      for (let index = 0; index < CLOUD_DESCRIPTION_QUEUE_FLUSH_SIZE; index++) {
+        await writer.add({ assetId: `a${index}`, ownerId: 'o' });
+      }
+
+      expect(repositories.systemMetadataRepository.set).toHaveBeenCalledTimes(1);
+      expect(repositories.stored()?.items).toHaveLength(CLOUD_DESCRIPTION_QUEUE_FLUSH_SIZE);
+    });
+
+    it('writes fewer photos a few seconds after the first arrived, or when flushed', async () => {
+      vi.useFakeTimers();
+      try {
+        const repositories = deps(null);
+        const writer = new CloudDescriptionQueueWriter(() => repositories as never, vi.fn());
+
+        await writer.add({ assetId: 'a', ownerId: 'o' });
+        await writer.add({ assetId: 'a', ownerId: 'o' });
+        expect(repositories.systemMetadataRepository.set).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(CLOUD_DESCRIPTION_QUEUE_FLUSH_MS);
+        // nothing more waits: this only waits for the write the timer started
+        await writer.flush();
+        expect(repositories.systemMetadataRepository.set).toHaveBeenCalledTimes(1);
+        expect(repositories.stored()?.items.map(({ assetId }) => assetId)).toEqual(['a']);
+
+        await writer.add({ assetId: 'b', ownerId: 'o' });
+        await writer.flush();
+        expect(repositories.stored()?.items.map(({ assetId }) => assetId)).toEqual(['a', 'b']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('reports a failed write and still writes the next batch', async () => {
+      const repositories = deps(null);
+      const warn = vi.fn();
+      repositories.systemMetadataRepository.set.mockRejectedValueOnce(new Error('database away'));
+      const writer = new CloudDescriptionQueueWriter(() => repositories as never, warn);
+
+      await writer.add({ assetId: 'a', ownerId: 'o' });
+      await expect(writer.flush()).rejects.toThrow('database away');
+      await writer.add({ assetId: 'b', ownerId: 'o' });
+      await writer.flush();
+
+      expect(repositories.stored()?.items.map(({ assetId }) => assetId)).toEqual(['b']);
     });
   });
 });

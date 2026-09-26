@@ -52,21 +52,21 @@ describe(CloudMlAdminController.name, () => {
     expect(batchService.startBackfill).not.toHaveBeenCalled();
   });
 
-  it('queues the estimated backfill with what the administrator accepted (FL-163)', async () => {
+  it('queues a kept estimate by its id alone (FL-163)', async () => {
     batchService.startBackfill.mockResolvedValue({ batches: 1, photos: 3, operationIds: ['op-1'] });
-    const accepted = { modelId: 'ms_K6WT70CS', perPhotoP90Usd: 0.002, startupUsd: 0.02, maxTotalUsd: 0.026 };
+    const estimateId = '5f0c6f8e-2b1a-4c3d-9e8f-1a2b3c4d5e6f';
     const { status, body } = await request(ctx.getHttpServer())
       .post('/admin/cloud/ml/descriptions/batches')
-      .send(accepted);
+      .send({ estimateId });
     expect(status).toBe(201);
     expect(body).toEqual({ batches: 1, photos: 3, operationIds: ['op-1'] });
-    expect(batchService.startBackfill).toHaveBeenCalledWith(accepted);
+    expect(batchService.startBackfill).toHaveBeenCalledWith({ estimateId });
   });
 
-  it('refuses a backfill without an accepted total (FL-163)', async () => {
+  it('refuses a backfill that names prices instead of a kept estimate (FL-163 review)', async () => {
     const { status } = await request(ctx.getHttpServer())
       .post('/admin/cloud/ml/descriptions/batches')
-      .send({ modelId: 'ms_K6WT70CS', perPhotoP90Usd: 0.002, startupUsd: 0.02 });
+      .send({ modelId: 'ms_K6WT70CS', perPhotoP90Usd: 0.002, startupUsd: 0.02, maxTotalUsd: 100 });
     expect(status).toBe(400);
     expect(batchService.startBackfill).not.toHaveBeenCalled();
   });

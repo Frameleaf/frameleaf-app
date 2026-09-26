@@ -50154,39 +50154,15 @@
       },
       "CloudMlDescriptionBatchCreateDto": {
         "properties": {
-          "maxTotalUsd": {
-            "description": "The p90 total the administrator accepted, USD",
-            "format": "double",
-            "maximum": 100000,
-            "minimum": 0,
-            "type": "number"
-          },
-          "modelId": {
-            "description": "The catalogue model SKU the estimate was for",
-            "maxLength": 200,
-            "minLength": 1,
+          "estimateId": {
+            "description": "The estimate to queue; its model, photos and prices are read from the server, never sent",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
-          },
-          "perPhotoP90Usd": {
-            "description": "The per-photo p90 the estimate showed, USD",
-            "format": "double",
-            "maximum": 100,
-            "minimum": 0,
-            "type": "number"
-          },
-          "startupUsd": {
-            "description": "The start fee per batch the estimate showed, USD",
-            "format": "double",
-            "maximum": 100,
-            "minimum": 0,
-            "type": "number"
           }
         },
         "required": [
-          "maxTotalUsd",
-          "modelId",
-          "perPhotoP90Usd",
-          "startupUsd"
+          "estimateId"
         ],
         "type": "object"
       },
@@ -50241,6 +50217,16 @@
             "format": "double",
             "nullable": true,
             "type": "number"
+          },
+          "estimateId": {
+            "description": "The estimate the server keeps; queueing the backfill names only this, or null when there is nothing to queue",
+            "nullable": true,
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "Until when the estimate may be queued, or null",
+            "nullable": true,
+            "type": "string"
           },
           "guidance": {
             "allOf": [
@@ -50315,6 +50301,8 @@
           "basis",
           "batches",
           "dailyCapUsd",
+          "estimateId",
+          "expiresAt",
           "guidance",
           "holdUsd",
           "modelId",
@@ -55060,12 +55048,17 @@
       },
       "ImageDescriptionRequeueResponseDto": {
         "properties": {
+          "cloudBatches": {
+            "description": "Descriptions are routed to Frameleaf Cloud, which describes photos in batches from Frameleaf Cloud processing with an estimate first; nothing was queued here",
+            "type": "boolean"
+          },
           "queued": {
             "description": "Whether the queue-all job was newly enqueued (false = already in-flight)",
             "type": "boolean"
           }
         },
         "required": [
+          "cloudBatches",
           "queued"
         ],
         "type": "object"

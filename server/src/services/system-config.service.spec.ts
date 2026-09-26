@@ -27,6 +27,7 @@ import { SystemConfigService } from 'src/services/system-config.service.js';
 import { DeepPartial } from 'src/types.js';
 import { getConfigRevision } from 'src/utils/config.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -1539,7 +1540,7 @@ describe(SystemConfigService.name, () => {
         paused: 0,
       });
 
-      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: true });
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: true, cloudBatches: false });
 
       expect(mocks.job.queue).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1590,8 +1591,20 @@ describe(SystemConfigService.name, () => {
         paused: 0,
       });
 
-      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: false });
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: false, cloudBatches: false });
 
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('queues nothing and says so while descriptions are routed to Frameleaf Cloud (FL-163)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { imageDescription: { enabled: true } },
+      });
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+
+      await expect(sut.triggerDescriptionRequeue()).resolves.toEqual({ queued: false, cloudBatches: true });
+
+      expect(mocks.job.getJobCounts).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
