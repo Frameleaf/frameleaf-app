@@ -166,7 +166,15 @@ export class WorkflowService extends BaseService {
     }
     await this.jobRepository.queue({
       name: JobName.WorkflowAssetTrigger,
-      data: { workflowId: id, assetId: run.triggerDataId, runId, attempt: (run.attempt ?? 0) + 1, manual: true },
+      // FL-179: its own execution id, so the retry runs every step again, whatever an earlier attempt completed
+      data: {
+        workflowId: id,
+        assetId: run.triggerDataId,
+        runId,
+        attempt: (run.attempt ?? 0) + 1,
+        manual: true,
+        executionId: crypto.randomUUID(),
+      },
     });
   }
 

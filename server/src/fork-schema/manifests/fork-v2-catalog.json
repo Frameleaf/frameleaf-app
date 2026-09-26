@@ -6927,6 +6927,26 @@
     {
       "definition": "uuid|not null|immich_uuid_v7()||",
       "identity": "public.workflow.updateId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.workflow_run_step.createdAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_run_step.executionId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.workflow_run_step.halted"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_run_step.stepId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_run_step.workflowId"
     }
   ],
   "constraints": [
@@ -9117,6 +9137,14 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.workflow.workflow_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"executionId\", \"stepId\")",
+      "identity": "public.workflow_run_step.workflow_run_step_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.workflow_run_step.workflow_run_step_workflowId_fkey"
     }
   ],
   "enums": [
@@ -12901,6 +12929,14 @@
     {
       "definition": "CREATE UNIQUE INDEX workflow_pkey ON public.workflow USING btree (id)",
       "identity": "public.workflow.workflow_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX workflow_run_step_pkey ON public.workflow_run_step USING btree (\"executionId\", \"stepId\")",
+      "identity": "public.workflow_run_step.workflow_run_step_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"workflow_run_step_workflowId_idx\" ON public.workflow_run_step USING btree (\"workflowId\")",
+      "identity": "public.workflow_run_step.workflow_run_step_workflowId_idx"
     }
   ],
   "migrationOverrides": [
@@ -13784,6 +13820,10 @@
     {
       "definition": "table",
       "identity": "public.workflow_log_detail"
+    },
+    {
+      "definition": "table",
+      "identity": "public.workflow_run_step"
     },
     {
       "definition": "table",
