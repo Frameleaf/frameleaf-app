@@ -45,15 +45,15 @@
     >
       {#snippet descriptionSnippet()}
         <p class="pb-2 text-sm immich-form-label">
-          <FormatMessage key="admin.machine_learning_clip_model_description">
-            {#snippet children({ message })}
-              {#if clipModelsDocs}
+          {#if clipModelsDocs}
+            <FormatMessage key="admin.machine_learning_clip_model_description">
+              {#snippet children({ message })}
                 <a target="_blank" rel="noreferrer" href={clipModelsDocs}><u>{message}</u></a>
-              {:else}
-                {message}
-              {/if}
-            {/snippet}
-          </FormatMessage>
+              {/snippet}
+            </FormatMessage>
+          {:else}
+            {$t('admin.machine_learning_clip_model_description_unlinked')}
+          {/if}
         </p>
       {/snippet}
     </SettingField>

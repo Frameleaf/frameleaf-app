@@ -27,7 +27,7 @@ from immich_ml.models import get_model_deps
 from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.transforms import decode_pil
 
-from .config import PreloadModelData, log, settings
+from .config import PreloadModelData, log, model_source, settings
 from .hardware_report import container_report
 from .models.cache import ModelCache
 from .schemas import (
@@ -57,6 +57,8 @@ last_called: float | None = None
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     global thread_pool
+    source_url, source_setting = model_source()
+    log.info(f"Downloading Frameleaf models from {source_url} ({source_setting}).")
     log.info(
         (
             "Created in-memory cache with unloading "

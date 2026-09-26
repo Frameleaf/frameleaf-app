@@ -156,3 +156,52 @@ def test_hub_downloads_remain_available(tmp_path: Path) -> None:
         from huggingface_hub.utils._http import default_client_factory
 
         set_client_factory(default_client_factory)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_token"),
+    [
+        ("https://huggingface.co", None),
+        ("https://models.frameleaf.cloud", False),
+        ("https://hub-mirror.example.com", False),
+        ("https://huggingface.co.example.com", False),
+    ],
+)
+def test_hugging_face_token_only_goes_to_hugging_face(
+    source: str, expected_token: bool | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from immich_ml.config import settings
+    from immich_ml.models.clip.textual import OpenClipTextualEncoder
+
+    monkeypatch.setenv("HF_TOKEN", "hugging-face-token-must-stay-home")
+    monkeypatch.delenv("HF_ENDPOINT", raising=False)
+    monkeypatch.setattr(settings, "model_source_url", source)
+    monkeypatch.setattr(settings, "model_source_token", None)
+    with patch("immich_ml.models.base.snapshot_download") as download:
+        OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache").download()
+
+    assert download.call_args.kwargs["token"] is expected_token
+
+
+def test_disabled_token_sends_no_authorization(monkeypatch: pytest.MonkeyPatch) -> None:
+    from huggingface_hub.utils import build_hf_headers
+
+    monkeypatch.setenv("HF_TOKEN", "hugging-face-token-must-stay-home")
+    assert "authorization" not in {key.lower() for key in build_hf_headers(token=False)}
+
+
+def test_model_source_token_goes_only_to_its_source_and_is_never_shown(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import SecretStr
+
+    from immich_ml.config import settings
+    from immich_ml.models.clip.textual import OpenClipTextualEncoder
+
+    monkeypatch.setenv("HF_TOKEN", "hugging-face-token-must-stay-home")
+    monkeypatch.setattr(settings, "model_source_url", "https://hub-mirror.example.com")
+    monkeypatch.setattr(settings, "model_source_token", SecretStr("mirror-token"))
+    with patch("immich_ml.models.base.snapshot_download") as download:
+        OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache").download()
+
+    assert download.call_args.kwargs["token"] == "mirror-token"
+    assert "mirror-token" not in repr(settings)
+    assert "mirror-token" not in str(settings)

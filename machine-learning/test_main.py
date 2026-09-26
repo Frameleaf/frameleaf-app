@@ -23,7 +23,7 @@ from PIL import Image
 from pytest import MonkeyPatch
 from pytest_mock import MockerFixture
 
-from immich_ml.config import MaxBatchSize, Settings, log, settings
+from immich_ml.config import MaxBatchSize, Settings, log, model_source, settings
 from immich_ml.main import load, preload_models
 from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.cache import ModelCache
@@ -53,6 +53,12 @@ class FakeLock:
 
 
 class TestBase:
+    @pytest.fixture(autouse=True)
+    def default_model_source(self, monkeypatch: MonkeyPatch, mocker: MockerFixture) -> None:
+        monkeypatch.delenv("HF_ENDPOINT", raising=False)
+        mocker.patch.object(settings, "model_source_url", None)
+        mocker.patch.object(settings, "model_source_token", None)
+
     def test_sets_default_worker_timeout(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.delenv("DEVICE", raising=False)
         monkeypatch.delenv("MACHINE_LEARNING_WORKER_TIMEOUT", raising=False)
@@ -213,8 +219,33 @@ class TestBase:
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.armnn", "*.rknn"],
             endpoint="https://models.example.com",
-            token=None,
+            token=False,
         )
+
+    def test_download_keeps_hf_endpoint_when_model_source_is_unset(
+        self, snapshot_download: mock.Mock, monkeypatch: MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HF_ENDPOINT", "https://hub-mirror.example.com/")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        assert snapshot_download.call_args.kwargs["endpoint"] == "https://hub-mirror.example.com"
+        assert snapshot_download.call_args.kwargs["token"] is False
+        assert model_source() == ("https://hub-mirror.example.com", "HF_ENDPOINT")
+
+    def test_model_source_url_takes_precedence_over_hf_endpoint(
+        self, snapshot_download: mock.Mock, monkeypatch: MonkeyPatch, mocker: MockerFixture
+    ) -> None:
+        monkeypatch.setenv("HF_ENDPOINT", "https://hub-mirror.example.com")
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        assert snapshot_download.call_args.kwargs["endpoint"] == "https://models.example.com"
+        assert model_source() == ("https://models.example.com", "MACHINE_LEARNING_MODEL_SOURCE_URL")
+
+    def test_model_source_defaults_to_the_frameleaf_mirror(self) -> None:
+        assert model_source() == ("https://models.frameleaf.cloud", "default")
 
     @pytest.mark.parametrize("status", [401, 404])
     def test_download_names_missing_model_and_model_source(
