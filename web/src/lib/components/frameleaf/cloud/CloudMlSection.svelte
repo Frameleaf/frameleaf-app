@@ -11,6 +11,7 @@
    *   GPU rate list, the Frameleaf Cloud model per model group (FL-186: from the cloud's catalogue,
    *   saved apart from the routes), and a job estimate with its admission;
    * - automatic descriptions of new photos with a daily budget;
+   * - describing the library in batches, estimate first (FL-163, CloudDescriptionBackfill);
    * - recent cloud jobs with their GPU time and settled cost.
    *
    * Every figure comes from the server; amounts are USD for everyone. The enable toggle and automatic
@@ -18,6 +19,7 @@
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import CloudDescriptionBackfill from '$lib/components/frameleaf/cloud/CloudDescriptionBackfill.svelte';
   import CloudMlConsentDialog from '$lib/components/frameleaf/cloud/CloudMlConsentDialog.svelte';
   import CloudMlWalletCard from '$lib/components/frameleaf/cloud/CloudMlWalletCard.svelte';
   import CloudRouteModels from '$lib/components/frameleaf/cloud/CloudRouteModels.svelte';
@@ -130,6 +132,14 @@
       : { key: 'admin.frameleaf_cloud_ml_status_review', tone: 'warning' };
   };
   const headerStatus = $derived(statusFor());
+  // FL-163: the saved settings, not the draft, decide what the server accepts for a backfill
+  const backfillAvailable = $derived(
+    ready &&
+      consentCurrent &&
+      !!status?.destination &&
+      !!baseline?.enabled &&
+      baseline.routing.descriptions !== 'local',
+  );
 
   /** Turning on needs the current terms first; turning off needs nothing. Saved with the settings bar. */
   const setEnabled = (value: boolean) => {
@@ -426,6 +436,8 @@
       <SettingActions keys={['frameleafCloud']} disabled={configDisabled} />
     </section>
   {/if}
+
+  <CloudDescriptionBackfill available={backfillAvailable} />
 
   <section class="fc-card fl-continuous-corners" aria-labelledby="fc-jobs-title">
     <div class="fc-card-title">
