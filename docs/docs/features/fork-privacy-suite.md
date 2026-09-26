@@ -1,12 +1,12 @@
 # Fork Privacy Suite
 
-This page explains what is different in AJ Taylor's maintained Immich fork and how to roll it out safely in a home lab.
+This page explains what is different in Frameleaf compared with the upstream project, and how to roll it out safely in a home lab.
 
-The fork is downstream-only. The upstream `immich-app/immich` project did not accept this feature set, so these changes are maintained in this fork instead. The fork is kept up to date with the upstream Immich project while preserving the privacy and image-enrichment features described here.
+Frameleaf is downstream-only. The upstream project did not accept this feature set, so these changes are maintained in Frameleaf instead. Frameleaf is kept up to date with the upstream project while preserving the privacy and image-enrichment features described here.
 
 ## Who This Fork Is For
 
-Use this fork if you want Immich to help with one or more of these jobs:
+Use Frameleaf if you want it to help with one or more of these jobs:
 
 - Generate searchable AI descriptions and tags for photos.
 - Detect likely NSFW images and review the result before hiding anything.
@@ -108,11 +108,11 @@ Mobile multi-select surfaces include actions to mark selected owned remote asset
 
 ### Physical Deduplication
 
-Physical deduplication is an optional admin feature for families or households where several Immich users upload the same original photos or videos. When it is enabled, Immich can keep each user's library record separate while storing only one physical copy of an exact file on disk.
+Physical deduplication is an optional admin feature for families or households where several Frameleaf users upload the same original photos or videos. When it is enabled, Frameleaf can keep each user's library record separate while storing only one physical copy of an exact file on disk.
 
 This is different from partner sharing. Partner sharing exposes another user's assets through sharing rules. Physical deduplication does not share library ownership, albums, favorites, descriptions, tags, permissions, or visibility. It only lets eligible duplicate files point at the same stored bytes.
 
-The feature is disabled by default and requires a master account. The master account is the canonical storage owner: when another user uploads an exact copy that already exists in the master account, the non-master user's asset can reference the master copy's physical file. If no matching master copy exists, Immich stores the upload normally.
+The feature is disabled by default and requires a master account. The master account is the canonical storage owner: when another user uploads an exact copy that already exists in the master account, the non-master user's asset can reference the master copy's physical file. If no matching master copy exists, Frameleaf stores the upload normally.
 
 Eligible shared files are:
 
@@ -122,7 +122,7 @@ Eligible shared files are:
 - fullsize generated files;
 - encoded videos.
 
-Immich does not share these files:
+Frameleaf does not share these files:
 
 - sidecars;
 - edited thumbnails, previews, or fullsize files;
@@ -135,9 +135,9 @@ The original asset rows remain separate. Each user still has their own asset id,
 
 Start slowly. Do not enable automatic hiding until you have reviewed classifier behavior on your own library.
 
-1. Make a backup and confirm your normal Immich backup plan works. DO NOT SKIP THIS.
-2. Deploy the fork using the fork's server, web, and machine-learning images or build outputs. Do not mix upstream Immich containers with fork-only server or web code.
-3. Open `Administration > Settings > Machine Learning Settings`. I have tested this fork on v3.0 and above and did not identify any issues using my existing Immich deployment.
+1. Make a backup and confirm your normal Frameleaf backup plan works. DO NOT SKIP THIS.
+2. Deploy the fork using the fork's server, web, and machine-learning images or build outputs. Do not mix upstream containers with fork-only server or web code.
+3. Open `Administration > Settings > Machine Learning Settings`. I have tested this fork on v3.0 and above and did not identify any issues using my existing upstream deployment.
 4. Choose the image-enrichment hardware profile that matches your server:
    - `Auto-detect` for most users;
    - `Intel iGPU (OpenVINO)` for Intel integrated graphics;
@@ -167,9 +167,9 @@ Physical deduplication changes how files are referenced on disk, so treat it lik
 9. Mark the plan reviewed; the server checks it against the library again. Then apply it by typing `APPLY` and the plan's name. Anything that changed since the preview is refused, and only the reviewed copies are applied.
 10. Follow the job on the page or in Activity until it finishes. See [Physical deduplication](./physical-deduplication.md) for every check it makes.
 
-New uploads are handled automatically after the feature is enabled. A non-master user's upload is still checked for duplicates inside that same user's library. Cross-user matches are not rejected at upload time; after Immich computes the checksum, it reuses a master physical file only when the master account already has an exact upload-managed match with the same checksum and size.
+New uploads are handled automatically after the feature is enabled. A non-master user's upload is still checked for duplicates inside that same user's library. Cross-user matches are not rejected at upload time; after Frameleaf computes the checksum, it reuses a master physical file only when the master account already has an exact upload-managed match with the same checksum and size.
 
-If the master account does not have a matching file, the upload remains independent. If the uploading user is the master account, Immich stores the file normally and records it as a possible canonical file for future non-master duplicates.
+If the master account does not have a matching file, the upload remains independent. If the uploading user is the master account, Frameleaf stores the file normally and records it as a possible canonical file for future non-master duplicates.
 
 ## Physical Deduplication Safety Notes
 
@@ -210,12 +210,12 @@ For NSFW discovery, prefer improving the dedicated NSFW classifier before relyin
 - Do not treat generated tags as a security boundary.
 - Expect first backfills to take time on large libraries.
 - Watch machine-learning container logs during early setup, especially when testing GPU acceleration.
-- Keep the fork updated so you continue receiving upstream Immich fixes and improvements.
-- Before switching to official Immich, follow the certified handoff procedure. Official Immich does not enforce fork privacy filters, so fork-hidden assets can become visible while the official image is running.
+- Keep the fork updated so you continue receiving upstream fixes and improvements.
+- Before switching to the official upstream server, follow the certified handoff procedure. The official upstream server does not enforce fork privacy filters, so fork-hidden assets can become visible while the official image is running.
 
 ## More Detailed Docs
 
-- [Switching Between the Fork and Official Immich](switching-between-fork-and-official.md)
+- [Switching between Frameleaf and the upstream server](switching-between-fork-and-official.md)
 - [Image Enrichment](image-enrichment.md)
 - [Hardware-Accelerated Machine Learning](ml-hardware-acceleration.md)
 - [Administration: System Settings](../administration/system-settings.md)

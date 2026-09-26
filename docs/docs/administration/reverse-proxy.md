@@ -1,18 +1,18 @@
 # Reverse Proxy
 
-Users can deploy a custom reverse proxy that forwards requests to Immich. This way, the reverse proxy can handle TLS termination, load balancing, or other advanced features. All reverse proxies between Immich and the user must forward all headers and set the `Host`, `X-Real-IP`, `X-Forwarded-Proto` and `X-Forwarded-For` headers to their appropriate values. Additionally, your reverse proxy should allow for big enough uploads. By following these practices, you ensure that all custom reverse proxies are fully compatible with Immich.
+Users can deploy a custom reverse proxy that forwards requests to Frameleaf. This way, the reverse proxy can handle TLS termination, load balancing, or other advanced features. All reverse proxies between Frameleaf and the user must forward all headers and set the `Host`, `X-Real-IP`, `X-Forwarded-Proto` and `X-Forwarded-For` headers to their appropriate values. Additionally, your reverse proxy should allow for big enough uploads. By following these practices, you ensure that all custom reverse proxies are fully compatible with Frameleaf.
 
 :::caution
-Immich does not support being served on a sub-path such as `location /immich {`. It has to be served on the root path of a (sub)domain.
+Frameleaf does not support being served on a sub-path such as `location /immich {`. It has to be served on the root path of a (sub)domain.
 :::
 
 :::info
-If your reverse proxy uses the [Let's Encrypt](https://letsencrypt.org/) [http-01 challenge](https://letsencrypt.org/docs/challenge-types/#http-01-challenge), you may want to verify that the Immich well-known endpoint (`/.well-known/immich`) gets correctly routed to Immich, otherwise it will likely be routed elsewhere and the mobile app may run into connection issues.
+If your reverse proxy uses the [Let's Encrypt](https://letsencrypt.org/) [http-01 challenge](https://letsencrypt.org/docs/challenge-types/#http-01-challenge), you may want to verify that the Frameleaf well-known endpoint (`/.well-known/immich`) gets correctly routed to Frameleaf, otherwise it will likely be routed elsewhere and the mobile app may run into connection issues.
 :::
 
 ### Nginx example config
 
-Below is an example config for nginx. Make sure to set `public_url` to the front-facing URL of your instance, and `backend_url` to the path of the Immich server.
+Below is an example config for nginx. Make sure to set `public_url` to the front-facing URL of your instance, and `backend_url` to the path of the Frameleaf server.
 
 ```nginx
 server {

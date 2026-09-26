@@ -1,10 +1,10 @@
-# The Immich CLI
+# The Frameleaf CLI
 
-Immich has a command line interface (CLI) that allows you to perform certain actions from the command line.
+Frameleaf has a command line interface (CLI) that allows you to perform certain actions from the command line.
 
 ## Features
 
-- Upload photos and videos to Immich
+- Upload photos and videos to Frameleaf
 - Check server version
 
 More features are planned for the future.
@@ -57,14 +57,14 @@ docker run -it -v "$(pwd)":/import:ro -e IMMICH_INSTANCE_URL=https://your-immich
 $ immich
 Usage: immich [options] [command]
 
-Command line interface for Immich
+Command line interface for Frameleaf
 
 Options:
   -V, --version                       output the version number
   -d, --config-directory <directory>  Configuration directory where auth.yml will be stored (default: "~/.config/immich/", env:
                                       IMMICH_CONFIG_DIR)
-  -u, --url [url]                     Immich server URL (env: IMMICH_INSTANCE_URL)
-  -k, --key [key]                     Immich API key (env: IMMICH_API_KEY)
+  -u, --url [url]                     Frameleaf server URL (env: IMMICH_INSTANCE_URL)
+  -k, --key [key]                     Frameleaf API key (env: IMMICH_API_KEY)
   -h, --help                          display help for command
 
 Commands:
@@ -116,7 +116,7 @@ Note that the above options can read from environment variables as well.
 
 ## Quick Start
 
-You begin by authenticating to your Immich server. For instance:
+You begin by authenticating to your Frameleaf server. For instance:
 
 ```bash
 # immich login [url] [key]
@@ -125,7 +125,7 @@ immich login http://192.168.1.216:2283/api HFEJ38DNSDUEG
 
 This will store your credentials in a `auth.yml` file in the configuration directory which defaults to `~/.config/immich/`. The directory can be set with the `-d` option or the environment variable `IMMICH_CONFIG_DIR`. Please keep the file secure, either by performing the logout command after you are done, or deleting it manually.
 
-Once you are authenticated, you can upload assets to your Immich server.
+Once you are authenticated, you can upload assets to your Frameleaf server.
 
 ```bash
 immich upload file1.jpg file2.jpg
@@ -143,7 +143,7 @@ If you are unsure what will happen, you can use the `--dry-run` option to see wh
 immich upload --dry-run --recursive directory/
 ```
 
-By default, the upload command will hash the files before uploading them. This is to avoid uploading the same file multiple times. If you are sure that the files are unique, you can skip this step by passing the `--skip-hash` option. Note that Immich always performs its own deduplication through hashing, so this is merely a performance consideration. If you have good bandwidth it might be faster to skip hashing.
+By default, the upload command will hash the files before uploading them. This is to avoid uploading the same file multiple times. If you are sure that the files are unique, you can skip this step by passing the `--skip-hash` option. Note that Frameleaf always performs its own deduplication through hashing, so this is merely a performance consideration. If you have good bandwidth it might be faster to skip hashing.
 
 ```bash
 immich upload --skip-hash --recursive directory/

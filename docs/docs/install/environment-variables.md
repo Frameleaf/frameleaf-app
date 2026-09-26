@@ -6,7 +6,7 @@ sidebar_position: 90
 
 :::caution
 
-To change environment variables, you must recreate the Immich containers.
+To change environment variables, you must recreate the Frameleaf containers.
 Just restarting the containers does not replace the environment within the container!
 
 In order to recreate the container using docker compose, run `docker compose up -d`.
@@ -39,7 +39,7 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 | `IMMICH_CONFIG_FILE`                | Path to config file                                                                                                                                                  |                              | server                   | api, microservices |
 | `IMMICH_HELMET_FILE`                | Path to a json file with [helmet](https://www.npmjs.com/package/helmet) options. Set to `false` to disable. Set to `true` to use `server/helmet.json`<sup>\*3</sup>. |           `false`            | server                   | api                |
 | `NO_COLOR`                          | Set to `true` to disable color-coded log output                                                                                                                      |           `false`            | server, machine learning |                    |
-| `CPU_CORES`                         | Number of cores available to the Immich server                                                                                                                       | auto-detected CPU core count | server                   |                    |
+| `CPU_CORES`                         | Number of cores available to the Frameleaf server                                                                                                                    | auto-detected CPU core count | server                   |                    |
 | `IMMICH_API_METRICS_PORT`           | Unused: metrics are permanently disabled                                                                                                                             |            `8081`            | server                   | api                |
 | `IMMICH_MICROSERVICES_METRICS_PORT` | Unused: metrics are permanently disabled                                                                                                                             |            `8082`            | server                   | microservices      |
 | `IMMICH_PROCESS_INVALID_IMAGES`     | When `true`, generate thumbnails for invalid images                                                                                                                  |                              | server                   | microservices      |
@@ -51,7 +51,7 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 \*1: `TZ` should be set to a `TZ identifier` from [this list][tz-list]. For example, `TZ="Etc/UTC"`.
 `TZ` is used by `exiftool` as a fallback in case the timezone cannot be determined from the image metadata. It is also used for logfile timestamps and cron job execution.
 
-\*2: This path is where the Immich code looks for the files, which is internal to the docker container. Setting it to a path on your host will certainly break things, you should use the `UPLOAD_LOCATION` variable instead.
+\*2: This path is where the Frameleaf code looks for the files, which is internal to the docker container. Setting it to a path on your host will certainly break things, you should use the `UPLOAD_LOCATION` variable instead.
 
 \*3: The [default configuration](https://helmetjs.github.io/#content-security-policy) sets `upgrade-insecure-requests`, which tells the browser to upgrade all requests to HTTPS. This breaks on HTTP-only deployments. If you cannot use HTTPS, you should use a custom helmet config file with `"upgrade-insecure-requests": null`.
 
@@ -142,11 +142,11 @@ Information on the current workers can be found [here](/administration/jobs-work
 
 \*2: If not provided, the appropriate extension to use is auto-detected at startup by inspecting the database. When multiple extensions are installed, the order of preference is VectorChord, pgvector.
 
-\*3: Uses either [`postgresql.ssd.conf`](https://github.com/immich-app/base-images/blob/main/postgres/postgresql.ssd.conf) or [`postgresql.hdd.conf`](https://github.com/immich-app/base-images/blob/main/postgres/postgresql.hdd.conf) which mainly controls the Postgres `effective_io_concurrency` setting to allow for concurrenct IO on SSDs and sequential IO on HDDs.
+\*3: Uses either `postgresql.ssd.conf` or `postgresql.hdd.conf` from the database image, which mainly controls the Postgres `effective_io_concurrency` setting to allow for concurrent IO on SSDs and sequential IO on HDDs.
 
 :::info
 
-All `DB_` variables must be provided to all Immich workers, including `api` and `microservices`.
+All `DB_` variables must be provided to all Frameleaf workers, including `api` and `microservices`.
 
 `DB_URL` must be in the format `postgresql://immichdbusername:immichdbpassword@postgreshost:postgresport/immichdatabasename`.
 You can require SSL by adding `?sslmode=require` to the end of the `DB_URL` string, or require SSL and skip certificate verification by adding `?sslmode=require&uselibpqcompat=true`. This allows both immich and `pg_dumpall` (the utility used for database backups) to [properly connect](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string#tcp-connections) to your database.
@@ -168,7 +168,7 @@ When `DB_URL` is defined, the `DB_HOSTNAME`, `DB_PORT`, `DB_USERNAME`, `DB_PASSW
 | `REDIS_DBINDEX`  | Redis DB index |   `0`   | server     |
 
 :::info
-All `REDIS_` variables must be provided to all Immich workers, including `api` and `microservices`.
+All `REDIS_` variables must be provided to all Frameleaf workers, including `api` and `microservices`.
 
 `REDIS_URL` must start with `ioredis://` and then include a `base64` encoded JSON string for the configuration.
 More information can be found in the upstream [ioredis] documentation.
@@ -237,7 +237,7 @@ Redis (Sentinel) URL example JSON before encoding:
 
 \*2: Since each process duplicates models in memory, changing this is not recommended unless you have abundant memory to go around.
 
-\*3: For scenarios like HPA in K8S. https://github.com/immich-app/immich/discussions/12064
+\*3: For scenarios like HPA in K8S.
 
 \*4: Using multiple GPUs requires `MACHINE_LEARNING_WORKERS` to be set greater than 1. A single device is assigned to each worker in round-robin priority.
 

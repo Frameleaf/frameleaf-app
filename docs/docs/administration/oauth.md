@@ -1,6 +1,6 @@
 # OAuth Authentication
 
-This page contains details about using OAuth in Immich.
+This page contains details about using OAuth in Frameleaf.
 
 :::tip
 Unable to set `app.immich:///oauth-callback` as a valid redirect URI? See [Mobile Redirect URI](#mobile-redirect-uri) for an alternative solution.
@@ -8,7 +8,7 @@ Unable to set `app.immich:///oauth-callback` as a valid redirect URI? See [Mobil
 
 ## Overview
 
-Immich supports 3rd party authentication via [OpenID Connect][oidc] (OIDC), an identity layer built on top of OAuth2. OIDC is supported by most identity providers, including:
+Frameleaf supports 3rd party authentication via [OpenID Connect][oidc] (OIDC), an identity layer built on top of OAuth2. OIDC is supported by most identity providers, including:
 
 - [Authentik](https://integrations.goauthentik.io/media/immich/)
 - [Authelia](https://www.authelia.com/integration/openid-connect/immich/)
@@ -18,7 +18,7 @@ Immich supports 3rd party authentication via [OpenID Connect][oidc] (OIDC), an i
 
 ## Prerequisites
 
-Before enabling OAuth in Immich, a new client application needs to be configured in the 3rd-party authentication server. While the specifics of this setup vary from provider to provider, the general approach should be the same.
+Before enabling OAuth in Frameleaf, a new client application needs to be configured in the 3rd-party authentication server. While the specifics of this setup vary from provider to provider, the general approach should be the same.
 
 1. Create a new (Client) Application
    1. The **Provider** type should be `OpenID Connect` or `OAuth2`
@@ -33,7 +33,7 @@ Before enabling OAuth in Immich, a new client application needs to be configured
    - `http://DOMAIN:PORT/auth/login` - for logging in with OAuth from the Web Client
    - `http://DOMAIN:PORT/user-settings` - for manually linking OAuth in the Web Client
 
-   Redirect URIs should contain all the domains you will be using to access Immich. Some examples include:
+   Redirect URIs should contain all the domains you will be using to access Frameleaf. Some examples include:
 
    Mobile
    - `app.immich:///oauth-callback` (You **MUST** include this for iOS and Android mobile apps to work properly)
@@ -64,7 +64,7 @@ Some providers (for example Microsoft Entra ID) do not send `email_verified`. Wi
 
 ## Enable OAuth
 
-Once you have a new OAuth client application configured, Immich can be configured using the Administration Settings page, available on the web (Administration -> Settings).
+Once you have a new OAuth client application configured, Frameleaf can be configured using the Administration Settings page, available on the web (Administration -> Settings).
 
 | Setting                                              | Type    | Default              | Description                                                                                                                                                 |
 | ---------------------------------------------------- | ------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -105,7 +105,7 @@ The `.well-known/openid-configuration` part of the url is optional and will be a
 ## Auto Launch
 
 When Auto Launch is enabled, the login page will automatically redirect the user to the OAuth authorization url, to login with OAuth. To access the login screen again, use the browser's back button, or navigate directly to `/auth/login?autoLaunch=0`.
-Auto Launch can also be enabled on a per-request basis by navigating to `/auth/login?autoLaunch=1`, this can be useful in situations where Immich is called from e.g. Nextcloud using the _External sites_ app and the _oidc_ app so as to enable users to directly interact with a logged-in instance of Immich.
+Auto Launch can also be enabled on a per-request basis by navigating to `/auth/login?autoLaunch=1`, this can be useful in situations where Frameleaf is called from e.g. Nextcloud using the _External sites_ app and the _oidc_ app so as to enable users to directly interact with a logged-in instance of Frameleaf.
 
 ## Mobile Redirect URI
 
@@ -118,17 +118,17 @@ The redirect URI for the mobile app is `app.immich:///oauth-callback`, which is 
 With these steps in place, you should be able to use OAuth from the [Mobile App](/features/mobile-app.mdx) without a custom scheme redirect URI.
 
 ::info
-Immich has a route (`/api/oauth/mobile-redirect`) that is already configured to forward requests to `app.immich:///oauth-callback`, and can be used for step 1.
+Frameleaf has a route (`/api/oauth/mobile-redirect`) that is already configured to forward requests to `app.immich:///oauth-callback`, and can be used for step 1.
 :::
 
 ### Frameleaf mobile app
 
-The Frameleaf mobile app signs in with its own callback, `frameleaf-auth:///oauth-callback`, so it can be installed beside the Immich app without either app opening for the other's sign-in. Without the override, register `frameleaf-auth:///oauth-callback` as a redirect URI with your provider.
+The Frameleaf mobile app signs in with its own callback, `frameleaf-auth:///oauth-callback`, so it can be installed beside the upstream mobile app without either app opening for the other's sign-in. Without the override, register `frameleaf-auth:///oauth-callback` as a redirect URI with your provider.
 
 When the `Mobile Redirect URI Override` is enabled, the Frameleaf app is sent to `/api/oauth/frameleaf-mobile-redirect` on the same server, which forwards to `frameleaf-auth:///oauth-callback`. In that case:
 
-1. The override must be this server's `/api/oauth/mobile-redirect` address (for example `https://example.immich.app/api/oauth/mobile-redirect`). Any other override cannot be matched to a Frameleaf address, and Frameleaf app sign-in is refused with an error.
-2. Register a **second** redirect URI with your provider: the same address ending in `/api/oauth/frameleaf-mobile-redirect` (for example `https://example.immich.app/api/oauth/frameleaf-mobile-redirect`).
+1. The override must be this server's `/api/oauth/mobile-redirect` address (for example `https://photos.example.com/api/oauth/mobile-redirect`). Any other override cannot be matched to a Frameleaf address, and Frameleaf app sign-in is refused with an error.
+2. Register a **second** redirect URI with your provider: the same address ending in `/api/oauth/frameleaf-mobile-redirect` (for example `https://photos.example.com/api/oauth/frameleaf-mobile-redirect`).
 
 Administration → Settings → Authentication lists both apps' callbacks for the current configuration under **Mobile app callbacks**. For what does and does not carry over between the two apps, see [Moving to the Frameleaf app](./frameleaf-app-transition.md).
 
@@ -141,7 +141,7 @@ Administration → Settings → Authentication lists both apps' callbacks for th
 
 Here's an example of OAuth configured for Authelia:
 
-This assumes there exist an attribute `immichquota` in the user schema, which is used to set the user's storage quota in Immich.
+This assumes there exist an attribute `immichquota` in the user schema, which is used to set the user's storage quota in Frameleaf.
 The configuration concerning the quota is optional.
 
 ```yaml
@@ -171,15 +171,15 @@ identity_providers:
 
     clients:
       - client_id: 'immich'
-        client_name: 'Immich'
+        client_name: 'Frameleaf'
         # https://www.authelia.com/integration/openid-connect/frequently-asked-questions/#how-do-i-generate-a-client-identifier-or-client-secret
         client_secret: '$pbkdf2-sha512$310000$c8p78n7pUMln0jzvd4aK4Q$JNRBzwAo0ek5qKn50cFzzvE9RXV88h1wJn5KGiHrD0YKtZaR/nCb2CJPOsKaPK0hjf.9yHxzQGZziziccp6Yng'
         public: false
         require_pkce: true
         pkce_challenge_method: 'S256'
         redirect_uris:
-          - 'https://example.immich.app/auth/login'
-          - 'https://example.immich.app/user-settings'
+          - 'https://photos.example.com/auth/login'
+          - 'https://photos.example.com/user-settings'
           - 'app.immich:///oauth-callback'
         scopes:
           - 'openid'
@@ -196,7 +196,7 @@ identity_providers:
         token_endpoint_auth_method: 'client_secret_post'
 ```
 
-Configuration of OAuth in Immich System Settings
+Configuration of OAuth in Frameleaf System Settings
 
 | Setting                            | Value                                                               |
 | ---------------------------------- | ------------------------------------------------------------------- |
@@ -230,7 +230,7 @@ Configuration of Authorised redirect URIs (Authentik OAuth2/OpenID Provider)
 
 <img src={require('./img/authentik-redirect-uris-example.webp').default} width='70%' title="Authentik authorised redirect URIs" />
 
-Configuration of OAuth in Immich System Settings
+Configuration of OAuth in Frameleaf System Settings
 
 | Setting                      | Value                                                               |
 | ---------------------------- | ------------------------------------------------------------------- |
@@ -261,7 +261,7 @@ Configuration of Authorised redirect URIs (Google Console)
 
 <img src={require('./img/google-redirect-uris-example.webp').default} width='50%' title="Google authorised redirect URIs" />
 
-Configuration of OAuth in Immich System Settings
+Configuration of OAuth in Frameleaf System Settings
 
 | Setting                      | Value                                                                        |
 | ---------------------------- | ---------------------------------------------------------------------------- |
@@ -277,7 +277,7 @@ Configuration of OAuth in Immich System Settings
 | Auto Register                | Enabled (optional)                                                           |
 | Auto Launch                  | Enabled                                                                      |
 | Mobile Redirect URI Override | Enabled (required)                                                           |
-| Mobile Redirect URI          | `https://example.immich.app/api/oauth/mobile-redirect`                       |
+| Mobile Redirect URI          | `https://photos.example.com/api/oauth/mobile-redirect`                       |
 
 </details>
 
@@ -294,7 +294,7 @@ Create your immich client on your Keycloak Realm.
 <img src={require('./img/keycloak-access-settings.webp').default} width='100%' title="Keycloak Client Access Settings" />
 <img src={require('./img/keycloak-capability-config.webp').default} width='100%' title="Keycloak Client Capability Configuration" />
 
-Configuration of OAuth in Immich System Settings
+Configuration of OAuth in Frameleaf System Settings
 
 | Setting                      | Value                                                 |
 | ---------------------------- | ----------------------------------------------------- |

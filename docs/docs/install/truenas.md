@@ -8,22 +8,20 @@ import TabItem from '@theme/TabItem';
 # TrueNAS [Community]
 
 :::note
-This is a community contribution and not officially supported by the Immich team, but included here for convenience.
-
-Community support can be found in the dedicated channel on the [Discord Server](https://discord.immich.app/).
+This is a community contribution and not officially supported by Frameleaf, but included here for convenience. The TrueNAS community app runs the upstream server images, not Frameleaf's.
 
 **Please report app issues to the corresponding [GitHub Repository](https://github.com/truenas/apps/tree/master/trains/community/immich).**
 :::
 
 :::warning
-This guide covers the installation of Immich on TrueNAS Community Edition 24.10.2.2 (Electric Eel) and later.
+This guide covers the installation of the app on TrueNAS Community Edition 24.10.2.2 (Electric Eel) and later.
 
-We recommend keeping TrueNAS Community Edition and Immich relatively up to date with the latest versions to avoid any issues.
+We recommend keeping TrueNAS Community Edition and the app relatively up to date with the latest versions to avoid any issues.
 
-If you are using an older version of TrueNAS, we ask that you upgrade to the latest version before installing Immich. Check the [TrueNAS Community Edition Release Notes](https://www.truenas.com/docs/softwarereleases/) for more information on breaking changes, new features, and how to upgrade your system.
+If you are using an older version of TrueNAS, we ask that you upgrade to the latest version before installing the app. Check the [TrueNAS Community Edition Release Notes](https://www.truenas.com/docs/softwarereleases/) for more information on breaking changes, new features, and how to upgrade your system.
 :::
 
-Immich can easily be installed on TrueNAS Community Edition via the **Community** train application.
+The app can easily be installed on TrueNAS Community Edition via the **Community** train application.
 Consider reviewing the TrueNAS [Apps resources](https://apps.truenas.com/getting-started/) if you have not previously configured applications on your system.
 
 ## First Steps
@@ -32,13 +30,13 @@ Consider reviewing the TrueNAS [Apps resources](https://apps.truenas.com/getting
 
 Before beginning app installation, [create the datasets](https://www.truenas.com/docs/scale/scaletutorials/storage/datasets/datasetsscale/) to use in the **Storage Configuration** section during installation.
 
-In TrueNAS, Immich requires 2 datasets for the application to function correctly: `data` and `pgData`. You can set the datasets to any names to match your naming conventions or preferences.
+In TrueNAS, the app requires 2 datasets for the application to function correctly: `data` and `pgData`. You can set the datasets to any names to match your naming conventions or preferences.
 You can organize these as one parent with two child datasets, for example `/mnt/tank/immich/data` and `/mnt/tank/immich/pgData`.
 
 <img
 src={require('./img/truenas/truenas00.webp').default}
 width="40%"
-alt="Immich App Widget"
+alt="App widget in the TrueNAS catalog"
 className="border rounded-xl"
 />
 
@@ -46,42 +44,42 @@ className="border rounded-xl"
 
 The **pgData** dataset must be owned by the user `netdata` (UID 999) for Postgres to start.
 
-The `data` dataset must have given the **_modify_** permission to the user who will run Immich.
+The `data` dataset must have given the **_modify_** permission to the user who will run the app.
 
-Since TrueNAS Community Edition 24.10.2.2 and later, Immich can be run as any user and group, the default user being `apps` (UID 568) and the default group being `apps` (GID 568). This user, either `apps` or another user you choose, must have **_modify_** permissions on the **data** dataset.
+Since TrueNAS Community Edition 24.10.2.2 and later, the app can be run as any user and group, the default user being `apps` (UID 568) and the default group being `apps` (GID 568). This user, either `apps` or another user you choose, must have **_modify_** permissions on the **data** dataset.
 
 For an easy setup:
 
 - Create the parent dataset `immich` keeping the default **Generic** preset.
-- Select `Dataset Preset` **Apps** instead of **Generic** when creating the `data` dataset. This will automatically give the correct permissions to the dataset. If you want to use another user for Immich, you can keep the **Generic** preset, but you will need to give the **_modify_** permission to that other user.
-- For the `pgData` dataset, you can keep the default preset **Generic** as permissions can be set during the installation of the Immich app (See [Storage Configuration](#storage-configuration) section).
+- Select `Dataset Preset` **Apps** instead of **Generic** when creating the `data` dataset. This will automatically give the correct permissions to the dataset. If you want to use another user for the app, you can keep the **Generic** preset, but you will need to give the **_modify_** permission to that other user.
+- For the `pgData` dataset, you can keep the default preset **Generic** as permissions can be set during the installation of the app (See [Storage Configuration](#storage-configuration) section).
   :::
 
 :::tip
-To improve performance, Immich recommends using SSDs for the database. If you have a pool made of SSDs, you can create the `pgData` dataset on that pool.
+To improve performance, we recommend using SSDs for the database. If you have a pool made of SSDs, you can create the `pgData` dataset on that pool.
 
-Thumbnails can also be stored on the SSDs for faster access. This is an advanced option and not required for Immich to run. More information on how you can use multiple datasets to manage Immich storage in a finer-grained manner can be found in the [Additional Storage: Multiple Datasets for Immich Storage](#additional-storage-advanced-users) section below.
+Thumbnails can also be stored on the SSDs for faster access. This is an advanced option and not required for the app to run. More information on how you can use multiple datasets to manage app storage in a finer-grained manner can be found in the [Additional Storage: Multiple Datasets for App Storage](#additional-storage-advanced-users) section below.
 :::
 
 :::warning
 If you just created the datasets using the **Apps** preset, you can skip this warning section.
 
-If the **data** dataset uses ACL it must have [ACL mode](https://www.truenas.com/docs/scale/scaletutorials/datasets/permissionsscale/) set to `Passthrough` if you plan on using a [storage template](/administration/storage-template.mdx) and the dataset is configured for network sharing (its ACL type is set to `SMB/NFSv4`). When the template is applied and files need to be moved from **upload** to **library** (internal folder created by Immich within the **data** dataset), Immich performs `chmod` internally and must be allowed to execute the command. [More info.](https://github.com/immich-app/immich/pull/13017)
+If the **data** dataset uses ACL it must have [ACL mode](https://www.truenas.com/docs/scale/scaletutorials/datasets/permissionsscale/) set to `Passthrough` if you plan on using a [storage template](/administration/storage-template.mdx) and the dataset is configured for network sharing (its ACL type is set to `SMB/NFSv4`). When the template is applied and files need to be moved from **upload** to **library** (internal folder created by the server within the **data** dataset), the server performs `chmod` internally and must be allowed to execute the command.
 
 To change or verify the ACL mode, go to the **Datasets** screen, select the **library** dataset, click on the **Edit** button next to **Dataset Details**, then click on the **Advanced Options** tab, scroll down to the **ACL Mode** section, and select `Passthrough` from the dropdown menu. Click **Save** to apply the changes. If the option is greyed out, set the **ACL Type** to `SMB/NFSv4` first, then you can change the **ACL Mode** to `Passthrough`.
 :::
 
-## Installing the Immich Application
+## Installing the app
 
-To install the **Immich** application, go to **Apps**, click **Discover Apps**, and either begin typing Immich into the search field or scroll down to locate the **Immich** application widget.
+To install the application, go to **Apps**, click **Discover Apps**, and either search for the upstream server's application (listed under the upstream project's name) or scroll down to locate its application widget.
 
 <div style={{ marginBottom: '2rem', border: '1px solid #ccc', padding: '1rem', borderRadius: '8px' }}>
 
-Click on the widget to open the **Immich** application details screen.
+Click on the widget to open the application details screen.
 <img
 src={require('./img/truenas/truenas01.webp').default}
 width="50%"
-alt="Immich App Widget"
+alt="App widget in the TrueNAS catalog"
 className="border rounded-xl"
 />
 
@@ -89,11 +87,11 @@ className="border rounded-xl"
 
 <div style={{ marginBottom: '2rem', border: '1px solid #ccc', padding: '1rem', borderRadius: '8px' }}>
 
-Click **Install** to open the Immich application configuration screen.
+Click **Install** to open the application configuration screen.
 <img
 src={require('./img/truenas/truenas02.webp').default}
 width="100%"
-alt="Immich App Details Screen"
+alt="App Details Screen"
 className="border rounded-xl"
 />
 
@@ -107,16 +105,16 @@ To find specific fields, click in the **Search Input Fields** search field, scro
 <img
 src={require('./img/truenas/truenas03.webp').default}
 width="100%"
-alt="Install Immich Screen"
+alt="Install App Screen"
 className="border rounded-xl mb-4"
 />
 
 Keep the default value or enter a name in the **Application Name** field.  
 Change it if you’re deploying a second instance.
 
-Immich version within TrueNAS catalog (Different from Immich release version).
+App version within the TrueNAS catalog (different from the server release version).
 
-### Immich Configuration
+### App configuration
 
 <img
 src={require('./img/truenas/truenas04.webp').default}
@@ -127,7 +125,7 @@ className="border rounded-xl mb-4"
 
 The **Timezone** is set to the system default, which usually matches your local timezone. You can change it to another timezone if you prefer.
 
-**Enable Machine Learning** is enabled by default. It allows Immich to use machine learning features such as face recognition, image search, and smart duplicate detection. Untick this option if you do not want to use these features.
+**Enable Machine Learning** is enabled by default. It allows the server to use machine learning features such as face recognition, image search, and smart duplicate detection. Untick this option if you do not want to use these features.
 
 Select the **Machine Learning Image Type** based on the hardware you have. More details here: [Hardware-Accelerated Machine Learning](/features/ml-hardware-acceleration.md)
 
@@ -159,7 +157,7 @@ These are used to add custom configuration options or to enable specific feature
 More information on available environment variables can be found in the **[environment variables documentation](/install/environment-variables/)**.
 
 :::info
-Some environment variables are not available for the TrueNAS Community Edition app as they can be configured through GUI options in the [Edit Immich screen](#edit-app-settings).
+Some environment variables are not available for the TrueNAS Community Edition app as they can be configured through GUI options in the [app's Edit screen](#edit-app-settings).
 
 Some examples are: `IMMICH_VERSION`, `UPLOAD_LOCATION`, `DB_DATA_LOCATION`, `TZ`, `IMMICH_LOG_LEVEL`, `DB_PASSWORD`, `REDIS_PASSWORD`.
 :::
@@ -168,7 +166,7 @@ Some examples are: `IMMICH_VERSION`, `UPLOAD_LOCATION`, `DB_DATA_LOCATION`, `TZ`
 
 ### User and Group Configuration
 
-Application in TrueNAS runs as a specific user and group. Immich uses the default user `apps` (UID 568) and the default group `apps` (GID 568).
+Application in TrueNAS runs as a specific user and group. The app uses the default user `apps` (UID 568) and the default group `apps` (GID 568).
 
 <img
 src={require('./img/truenas/truenas06.webp').default}
@@ -182,7 +180,7 @@ className="border rounded-xl"
 - **Group ID**: Keep the default value `apps` (GID 568) or define a different one if needed.
 
 :::warning
-If you change the user or group, make sure that the datasets you created for Immich data storage have the correct permissions set for that user and group as specified in the [Setting up Storage Datasets](#setting-up-storage-datasets) section above.
+If you change the user or group, make sure that the datasets you created for app data storage have the correct permissions set for that user and group as specified in the [Setting up Storage Datasets](#setting-up-storage-datasets) section above.
 :::
 
 ### Network Configuration
@@ -194,7 +192,7 @@ alt="Networking Settings"
 className="border rounded-xl"
 />
 
-- **Port Bind Mode**: This lets you expose the port to the host system, allowing you to access Immich from outside the TrueNAS system. Keep the default **_Publish port on the host for external access_** value unless you have a specific reason to change it.
+- **Port Bind Mode**: This lets you expose the port to the host system, allowing you to access the app from outside the TrueNAS system. Keep the default **_Publish port on the host for external access_** value unless you have a specific reason to change it.
 
 - **Port Number**: Keep the default port `30041` or enter a custom port number.
 
@@ -206,7 +204,7 @@ className="border rounded-xl"
 The default setting for datasets is **ixVolume (dataset created automatically by the system)**. This is not recommended as this results in your data being harder to access manually and can result in data loss if you delete the immich app. It is also harder to manage snapshots and replication tasks. It is recommended to use the **Host Path (Path that already exists on the system)** option instead.
 :::
 
-The storage configuration section allows you to set up the storage locations for Immich data. You can select the datasets created in the previous step.
+The storage configuration section allows you to set up the storage locations for app data. You can select the datasets created in the previous step.
 
 <img
 src={require('./img/truenas/truenas08.webp').default}
@@ -215,7 +213,7 @@ alt="Configure Storage Volumes"
 className="border rounded-xl"
 />
 
-For the Data Storage, select **Host Path (Path that already exists on the system)** and then select the dataset you created for Immich data storage, for example, `data`.
+For the Data Storage, select **Host Path (Path that already exists on the system)** and then select the dataset you created for app data storage, for example, `data`.
 
 The Machine Learning cache can be left with default _Temporary_
 
@@ -232,7 +230,7 @@ Once **Host Path** is selected, a checkbox appears with **_Automatic Permissions
 <summary>External Libraries</summary>
 
 :::danger Advanced Users Only
-This feature should only be used by advanced users. If this is your first time installing Immich, then DO NOT mount an external library until you have a working setup.
+This feature should only be used by advanced users. If this is your first time installing the app, then DO NOT mount an external library until you have a working setup.
 :::
 
 <img
@@ -244,12 +242,12 @@ className="border rounded-xl"
 
 You may configure [external libraries](/features/libraries) by mounting them using **Additional Storage**.
 
-The dataset that contains your external library files must at least give **read** access to the user running Immich (Default: `apps` (UID 568), `apps` (GID 568)).
-If you want to be able to delete files or edit metadata in the external library using Immich, you will need to give the **modify** permission to the user running Immich.
+The dataset that contains your external library files must at least give **read** access to the user running the app (Default: `apps` (UID 568), `apps` (GID 568)).
+If you want to be able to delete files or edit metadata in the external library from the web interface, you will need to give the **modify** permission to the user running the app.
 
-- **Mount Path** is the location you will need to copy and paste into the external library settings within Immich.
+- **Mount Path** is the location you will need to copy and paste into the external library settings in the web interface.
 - **Host Path** is the location on the TrueNAS Community Edition server where your external library is located.
-- **Read Only** is a checkbox that you can tick if you want to prevent Immich from modifying the files in the external library. This is useful if you want to use Immich to view and search your external library without modifying it.
+- **Read Only** is a checkbox that you can tick if you want to prevent the server from modifying the files in the external library. This is useful if you want to use the app to view and search your external library without modifying it.
 
 :::warning
 Each mount path MUST be something unique and should NOT be your library or upload location or a Linux directory like `/lib`.
@@ -260,18 +258,18 @@ A general recommendation is to mount any external libraries to a path beginning 
 </details>
 
 <details>
-<summary>Multiple Datasets for Immich Storage</summary>
+<summary>Multiple Datasets for App Storage</summary>
 
 :::danger Advanced Users Only
 This feature should only be used by advanced users.
 :::
 
-Immich can use multiple datasets for its storage, allowing you to manage your data more granularly, similar to the old storage configuration. This is useful if you want to separate your data into different datasets for performance or organizational reasons. There is a general guide for this [here](/guides/custom-locations), but read on for the TrueNAS guide.
+The server can use multiple datasets for its storage, allowing you to manage your data more granularly, similar to the old storage configuration. This is useful if you want to separate your data into different datasets for performance or organizational reasons. There is a general guide for this [here](/guides/custom-locations), but read on for the TrueNAS guide.
 
-Each additional dataset has to give the permission **_modify_** to the user who will run Immich (Default: `apps` (UID 568), `apps` (GID 568))
+Each additional dataset has to give the permission **_modify_** to the user who will run the app (Default: `apps` (UID 568), `apps` (GID 568))
 As described in the [Setting up Storage Datasets](#setting-up-storage-datasets) section above, you have to create the datasets with the **Apps** preset to ensure the correct permissions are set, or you can set the permissions manually after creating the datasets.
 
-Immich uses 6 folders for its storage: `library`, `upload`, `thumbs`, `profile`, `encoded-video`, and `backups`. You can create a dataset for each of these folders or only for some of them.
+The server uses 6 folders for its storage: `library`, `upload`, `thumbs`, `profile`, `encoded-video`, and `backups`. You can create a dataset for each of these folders or only for some of them.
 
 To mount these datasets:
 
@@ -279,21 +277,21 @@ To mount these datasets:
 2. Select **Type** as **Host Path (Path that already exists on the system)**.
 3. Enter the **Mount Path** with `/data/<folder-name>`. The `<folder-name>` is the name of the folder you want to mount, for example, `library`, `upload`, `thumbs`, `profile`, `encoded-video`, or `backups`.
    :::danger Important
-   You have to write the full path, including `/data/`, as Immich expects the data to be in that location.  
-   If you do not include this path, Immich will not be able to find the data and will not write the data to the location you specified.
+   You have to write the full path, including `/data/`, as the server expects the data to be in that location.  
+   If you do not include this path, the server will not be able to find the data and will not write the data to the location you specified.
    :::
 4. Select the **Host Path** as the dataset you created for that folder, for example, `/mnt/tank/immich/library`, `/mnt/tank/immich/upload`, etc.
 
 <img
 src={require('./img/truenas/truenas10.webp').default}
 width="40%"
-alt="Use Multiple Datasets for Immich Storage with Additional Storage"
+alt="Use Multiple Datasets for App Storage with Additional Storage"
 className="border rounded-xl"
 />
 
 </details>
 
-<!-- A section for Labels could be added, but I don't think it is needed as they are of no use for Immich. -->
+<!-- A section for Labels could be added, but I don't think it is needed as they are of no use for this app. -->
 
 ### Resources Configuration
 
@@ -303,11 +301,11 @@ width="40%"
 className="border rounded-xl"
 />
 
-- **CPU**: Depending on your system resources, you can keep the default value of `2` threads or specify a different number. Immich recommends at least `8` threads.
+- **CPU**: Depending on your system resources, you can keep the default value of `2` threads or specify a different number. We recommend at least `8` threads.
 
-- **Memory**: Limit in MB of RAM. Immich recommends at least 6000 MB (6GB). If you selected **Enable Machine Learning** in **Immich Configuration**, you should probably set this above 8000 MB.
+- **Memory**: Limit in MB of RAM. We recommend at least 6000 MB (6GB). If you selected **Enable Machine Learning** in the [app configuration](#app-configuration), you should probably set this above 8000 MB.
 
-Both **CPU** and **Memory** are limits, not reservations. This means that Immich can use up to the specified amount of CPU threads and RAM, but it will not reserve that amount of resources at all times. The system will allocate resources as needed, and Immich will use less than the specified amount most of the time.
+Both **CPU** and **Memory** are limits, not reservations. This means that the app can use up to the specified amount of CPU threads and RAM, but it will not reserve that amount of resources at all times. The system will allocate resources as needed, and the app will use less than the specified amount most of the time.
 
 - Enable **GPU Configuration** options if you have a GPU or CPU with integrated graphics that you will use for [Hardware Transcoding](/features/hardware-transcoding) and/or [Hardware-Accelerated Machine Learning](/features/ml-hardware-acceleration.md).
 
@@ -317,19 +315,19 @@ More details here: [GPU Passthrough Docs for TrueNAS Apps](https://apps.truenas.
 ### Install
 
 Finally, click **Install**.
-The system opens the **Installed Applications** screen with the Immich app in the **Deploying** state.
+The system opens the **Installed Applications** screen with the app in the **Deploying** state.
 When the installation completes, it changes to **Running**.
 
 <img
 src={require('./img/truenas/truenas12.webp').default}
 width="100%"
-alt="Immich Installed"
+alt="App Installed"
 className="border rounded-xl"
 />
 
-Click **Web Portal** on the **Application Info** widget, or go to the URL `http://<your-truenas-ip>:30041` in your web browser to open the Immich web interface. This will show you the onboarding process to set up your first user account, which will be an administrator account.
+Click **Web Portal** on the **Application Info** widget, or go to the URL `http://<your-truenas-ip>:30041` in your web browser to open the web interface. This will show you the onboarding process to set up your first user account, which will be an administrator account.
 
-After that, you can start using Immich to upload and manage your photos and videos.
+After that, you can start using the app to upload and manage your photos and videos.
 
 :::tip
 For more information on how to use the application once installed, please refer to the [Post Install](/install/post-install.mdx) guide.
@@ -337,12 +335,12 @@ For more information on how to use the application once installed, please refer 
 
 ## Edit App Settings
 
-- Go to the **Installed Applications** screen and select Immich from the list of installed applications.
-- Click **Edit** on the **Application Info** widget to open the **Edit Immich** screen.
+- Go to the **Installed Applications** screen and select the app from the list of installed applications.
+- Click **Edit** on the **Application Info** widget to open the app's **Edit** screen.
 - Change any settings you would like to change.
   - The settings on the edit screen are the same as on the install screen.
 - Click **Update** at the very bottom of the page to save changes.
-  - TrueNAS automatically updates, recreates, and redeploys the Immich container with the updated settings.
+  - TrueNAS automatically updates, recreates, and redeploys the app's container with the updated settings.
 
 ## Updating the App
 
@@ -353,7 +351,7 @@ Make sure to read the general [upgrade instructions](/install/upgrading.md).
 When updates become available, TrueNAS alerts and provides easy updates.
 To update the app to the latest version:
 
-- Go to the **Installed Applications** screen and select Immich from the list of installed applications.
+- Go to the **Installed Applications** screen and select the app from the list of installed applications.
 - Click **Update** on the **Application Info** widget from the **Installed Applications** screen.
 - This opens an update window with some options
   - You may select an Image update too.
@@ -364,26 +362,26 @@ To update the app to the latest version:
 ## Migration
 
 :::danger
-Perform a backup of your Immich data before proceeding with the migration steps below. This is crucial to prevent any data loss if something goes wrong during the migration process.
+Perform a backup of your app data before proceeding with the migration steps below. This is crucial to prevent any data loss if something goes wrong during the migration process.
 
-The migration should also be performed when the Immich app is not running to ensure no data is being written while you are copying the data.
+The migration should also be performed when the app is not running to ensure no data is being written while you are copying the data.
 :::
 
 ### Migration from Old Storage Configuration
 
-There are two ways to migrate from the old storage configuration to the new one, depending on whether you want to keep the old multiple datasets or if you want to move to a double dataset configuration with a single dataset for Immich data storage and a single dataset for Postgres data storage.
+There are two ways to migrate from the old storage configuration to the new one, depending on whether you want to keep the old multiple datasets or if you want to move to a double dataset configuration with a single dataset for app data storage and a single dataset for Postgres data storage.
 
 :::note Old TrueNAS Versions Permissions
-If you were using an older version of TrueNAS (before 24.10.2.2), the datasets, except the one for **pgData** had only to be owned by the `root` user (UID 0). You might have to add the **modify** permission to the `apps` user (UID 568) or the user you want to run Immich as, to all of them, except **pgData**. The steps to add or change ACL permissions are described in the [TrueNAS documentation](https://www.truenas.com/docs/scale/scaletutorials/datasets/permissionsscale/).
+If you were using an older version of TrueNAS (before 24.10.2.2), the datasets, except the one for **pgData** had only to be owned by the `root` user (UID 0). You might have to add the **modify** permission to the `apps` user (UID 568) or the user you want to run the app as, to all of them, except **pgData**. The steps to add or change ACL permissions are described in the [TrueNAS documentation](https://www.truenas.com/docs/scale/scaletutorials/datasets/permissionsscale/).
 :::
 
 <Tabs groupId="truenas-migration-tabs">
   <TabItem value="migrate-new-dataset" label="Migrate data to a new dataset (recommended)" default>
 
-To migrate from the old storage configuration to the new one, you will need to create a new dataset for the Immich data storage and copy the data from the old datasets to the new ones. The steps are as follows:
+To migrate from the old storage configuration to the new one, you will need to create a new dataset for the app data storage and copy the data from the old datasets to the new ones. The steps are as follows:
 
-1. **Stop the Immich app** from the TrueNAS web interface to ensure no data is being written while you are copying the data.
-2. **Create a new dataset** for the Immich data storage, for example, `data`. As described in the [Setting up Storage Datasets](#setting-up-storage-datasets) section above, create the dataset with the **Apps** preset to ensure the correct permissions are set.
+1. **Stop the app** from the TrueNAS web interface to ensure no data is being written while you are copying the data.
+2. **Create a new dataset** for the app data storage, for example, `data`. As described in the [Setting up Storage Datasets](#setting-up-storage-datasets) section above, create the dataset with the **Apps** preset to ensure the correct permissions are set.
 3. **Copy the data** from the old datasets to the new dataset. We advise using the `rsync` command to copy the data, as it will preserve the permissions and ownership of the files. The following commands are examples:
 
 ```bash
@@ -398,7 +396,7 @@ sudo rsync -av /mnt/tank/immich/backups/ /mnt/tank/immich/data/backups/
 Make sure to replace `/mnt/tank/immich/` with the correct path to your old datasets and `/mnt/tank/immich/data/` with the correct path to your new dataset.
 
 :::tip
-If you were using **ixVolume (dataset created automatically by the system)** for some of Immich data storage, the path to the data should be `/mnt/.ix-apps/app_mounts/immich/`. You have to use this path instead of `/mnt/tank/immich/` in the `rsync` command above, for example:
+If you were using **ixVolume (dataset created automatically by the system)** for some of the app data storage, the path to the data should be `/mnt/.ix-apps/app_mounts/immich/`. You have to use this path instead of `/mnt/tank/immich/` in the `rsync` command above, for example:
 
 ```bash
 sudo rsync -av /mnt/.ix-apps/app_mounts/immich/library/ /mnt/tank/immich/data/library/
@@ -421,7 +419,7 @@ sudo rsync -av /mnt/.ix-apps/app_mounts/immich/pgData/ /mnt/tank/immich/pgData/
 :::
 
 :::warning
-Make sure that for each folder, the `.immich` file is copied as well, as it contains important metadata for Immich. If for some reason the `.immich` file is not copied, you can copy it manually with the `rsync` command, for example:
+Make sure that for each folder, the `.immich` file is copied as well, as it contains important metadata for the server. If for some reason the `.immich` file is not copied, you can copy it manually with the `rsync` command, for example:
 
 ```bash
 sudo rsync -av /mnt/tank/immich/library/.immich /mnt/tank/immich/data/library/
@@ -431,22 +429,22 @@ Replace `library` with the name of the folder where you are copying the file.
 :::
 
 4. **Update the permissions** as the permissions of the data that have been copied has been preserved, to ensure that the `apps` user (UID 568) has the correct permissions on all the copied data. If you just created the dataset with the **Apps** preset, from the TrueNAS web interface, go to the **Datasets** screen, select the **data** dataset, click on the **Edit** button next to **Permissions**, tick the "Apply permissions recursively" checkbox, and click **Save**. This will apply the correct permissions to all the copied data.
-5. **Update the Immich app** to use the new dataset:
-   - Go to the **Installed Applications** screen and select Immich from the list of installed applications.
+5. **Update the app** to use the new dataset:
+   - Go to the **Installed Applications** screen and select the app from the list of installed applications.
    - Click **Edit** on the **Application Info** widget.
    - In the **Storage Configuration** section, untick the **Use Old Storage Configuration (Deprecated)** checkbox.
-   - For the **Data Storage**, select **Host Path (Path that already exists on the system)** and then select the new dataset you created for Immich data storage, for example, `data`.
+   - For the **Data Storage**, select **Host Path (Path that already exists on the system)** and then select the new dataset you created for app data storage, for example, `data`.
    - For the **Postgres Data Storage**, verify that it is still set to the dataset you created for Postgres data storage, for example, `pgData`.
    - Click **Update** at the bottom of the page to save changes.
 
-6. **Start the Immich app** from the TrueNAS web interface.
+6. **Start the app** from the TrueNAS web interface.
 
-This will recreate the Immich container with the new storage configuration and start the app.
+This will recreate the app's container with the new storage configuration and start the app.
 
-If everything went well, you should now be able to access Immich with the new storage configuration. You can verify that the data has been copied correctly by checking the Immich web interface and ensuring that all your photos and videos are still available. You may delete the old datasets, if you no longer need them, using the TrueNAS web interface.
+If everything went well, you should now be able to access the app with the new storage configuration. You can verify that the data has been copied correctly by checking the web interface and ensuring that all your photos and videos are still available. You may delete the old datasets, if you no longer need them, using the TrueNAS web interface.
 
 :::tip
-If you were using **ixVolume (dataset created automatically by the system)** or folders for Immich data storage, you can delete the old datasets using the following commands:
+If you were using **ixVolume (dataset created automatically by the system)** or folders for app data storage, you can delete the old datasets using the following commands:
 
 ```bash
 sudo rm -r /mnt/.ix-apps/app_mounts/immich/*
@@ -459,24 +457,24 @@ sudo rm -r /mnt/.ix-apps/app_mounts/immich/*
 
 To migrate from the old storage configuration to the new one without creating new datasets.
 
-1. **Stop the Immich app** from the TrueNAS web interface to ensure no data is being written while you are updating the app.
-2. **Update the datasets permissions**: Ensure that the datasets used for Immich data storage (`library`, `upload`, `thumbs`, `profile`, `video`, `backups`) have the correct permissions set for the user who will run Immich. The user should have **_modify_** permissions on these datasets. The default user for Immich is `apps` (UID 568) and the default group is `apps` (GID 568). If you are using a different user, make sure to set the permissions accordingly. You can do this from the TrueNAS web interface by going to the **Datasets** screen, selecting each dataset, clicking on the **Edit** button next to **Permissions**, and adding the user with **_modify_** permissions.
-3. **Update the Immich app** to use the existing datasets:
-   - Go to the **Installed Applications** screen and select Immich from the list of installed applications.
+1. **Stop the app** from the TrueNAS web interface to ensure no data is being written while you are updating the app.
+2. **Update the datasets permissions**: Ensure that the datasets used for app data storage (`library`, `upload`, `thumbs`, `profile`, `video`, `backups`) have the correct permissions set for the user who will run the app. The user should have **_modify_** permissions on these datasets. The default user for the app is `apps` (UID 568) and the default group is `apps` (GID 568). If you are using a different user, make sure to set the permissions accordingly. You can do this from the TrueNAS web interface by going to the **Datasets** screen, selecting each dataset, clicking on the **Edit** button next to **Permissions**, and adding the user with **_modify_** permissions.
+3. **Update the app** to use the existing datasets:
+   - Go to the **Installed Applications** screen and select the app from the list of installed applications.
    - Click **Edit** on the **Application Info** widget.
    - In the **Storage Configuration** section, untick the **Use Old Storage Configuration (Deprecated)** checkbox.
-   - For the **Data Storage**, you can keep the **ixVolume (dataset created automatically by the system)** as no data will be directly written to it. We recommend selecting **Host Path (Path that already exists on the system)** and then select a **new** dataset you created for Immich data storage, for example, `data`.
+   - For the **Data Storage**, you can keep the **ixVolume (dataset created automatically by the system)** as no data will be directly written to it. We recommend selecting **Host Path (Path that already exists on the system)** and then select a **new** dataset you created for app data storage, for example, `data`.
    - For the **Postgres Data Storage**, keep **Host Path (Path that already exists on the system)** and then select the existing dataset you used for Postgres data storage, for example, `pgData`.
-   - Following the instructions in the [Multiple Datasets for Immich Storage](#additional-storage-advanced-users) section, you can add, **for each old dataset**, a new Additional Storage with the following settings:
+   - Following the instructions in the [Multiple Datasets for App Storage](#additional-storage-advanced-users) section, you can add, **for each old dataset**, a new Additional Storage with the following settings:
      - **Type**: `Host Path (Path that already exists on the system)`
      - **Mount Path**: `/data/<folder-name>` (e.g. `/data/library`)
      - **Host Path**: `/mnt/<your-pool-name>/<dataset-name>` (e.g. `/mnt/tank/immich/library`)
        :::danger Ensure using the correct paths names
-       Make sure to replace `<folder-name>` with the actual name of the folder used by Immich: `library`, `upload`, `thumbs`, `profile`, `encoded-video`, and `backups`. Also, replace `<your-pool-name>` and `<dataset-name>` with the actual names of your pool and dataset.
+       Make sure to replace `<folder-name>` with the actual name of the folder used by the server: `library`, `upload`, `thumbs`, `profile`, `encoded-video`, and `backups`. Also, replace `<your-pool-name>` and `<dataset-name>` with the actual names of your pool and dataset.
        :::
-     - **Read Only**: Keep it unticked as Immich needs to write to these datasets.
+     - **Read Only**: Keep it unticked as the server needs to write to these datasets.
    - Click **Update** at the bottom of the page to save changes.
-4. **Start the Immich app** from the TrueNAS web interface. This will recreate the Immich container with the new storage configuration and start the app. If everything went well, you should now be able to access Immich with the new storage configuration. You can verify that the data is still available by checking the Immich web interface and ensuring that all your photos and videos are still accessible.
+4. **Start the app** from the TrueNAS web interface. This will recreate the app's container with the new storage configuration and start the app. If everything went well, you should now be able to access the app with the new storage configuration. You can verify that the data is still available by checking the web interface and ensuring that all your photos and videos are still accessible.
 
   </TabItem>
 </Tabs>
