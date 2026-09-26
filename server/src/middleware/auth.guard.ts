@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   SetMetadata,
   applyDecorators,
@@ -14,6 +15,7 @@ import { ApiCustomExtension, ImmichQuery, MetadataKey, Permission } from 'src/en
 import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService, LoginDetails } from 'src/services/auth.service.js';
+import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 
 type AdminRoute = { admin?: true };
@@ -71,6 +73,13 @@ export const Authenticated = (options: AuthenticatedOptions = {}): MethodDecorat
  */
 export const OriginalTransfer = (): MethodDecorator => SetMetadata(MetadataKey.OriginalTransfer, true);
 
+/**
+ * FL-161: marks a route, or a whole controller, for machines on the home network only, such as the
+ * render workers' API (including the original inputs they read). Any request that arrived through
+ * remote access (`relay` or `wan`) is refused, public routes included, whatever the settings say.
+ */
+export const HomeNetworkOnly = (): MethodDecorator & ClassDecorator => SetMetadata(MetadataKey.HomeNetworkOnly, true);
+
 export const Auth = createParamDecorator((data, context: ExecutionContext): AuthDto => {
   return context.switchToHttp().getRequest<AuthenticatedRequest>().user;
 });
@@ -116,6 +125,22 @@ export class AuthGuard implements CanActivate {
     const options = getAuthenticatedOptions(this.reflector, context.getHandler());
     if (!options) {
       throw new Error(`Route ${context.getHandler().name} does not declare @Authenticated()`);
+    }
+
+    if (
+      this.reflector.getAllAndOverride<boolean | undefined>(MetadataKey.HomeNetworkOnly, [
+        context.getHandler(),
+        context.getClass(),
+      ]) &&
+      isRemoteVia(requestVia(context.switchToHttp().getRequest<Request>()))
+    ) {
+      this.logger.warn(`Refused a home-network route over remote access: ${context.getHandler().name}`);
+      throw new ForbiddenException({
+        message: 'This is only available on the home network',
+        error: 'Forbidden',
+        statusCode: 403,
+        code: 'frameleaf_home_network_only',
+      });
     }
 
     if (options.setup) {

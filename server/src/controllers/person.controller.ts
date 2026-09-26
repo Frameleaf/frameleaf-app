@@ -38,6 +38,7 @@ import {
 } from 'src/dtos/person.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { RemoteCeilingExempt } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonService } from 'src/services/person.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -240,6 +241,8 @@ export class PersonController {
   @Get(':id/thumbnail')
   @FileResponse()
   @Authenticated({ permission: Permission.PersonRead })
+  // FL-161: shown by the dozen on the people pages; outside the remote-access ceiling
+  @RemoteCeilingExempt()
   @Endpoint({
     summary: 'Get person thumbnail',
     description: 'Retrieve the thumbnail file for a person.',

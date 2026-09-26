@@ -267,6 +267,25 @@ export class SystemConfigService extends BaseService {
         throw new Error('Physical deduplication master user must exist and be active.');
       }
     }
+
+    // FL-161: what remote access may carry can only be loosened on a linked server, through any
+    // settings path (PUT admin/cloud/remote-access checks the same); turning it back off always works
+    const allow = newConfig.frameleafCloud.remoteAccess;
+    const before = oldConfig.frameleafCloud?.remoteAccess;
+    const loosened =
+      (allow.allowOriginalsOverRelay && !before?.allowOriginalsOverRelay) ||
+      (allow.allowPasswordOverRelay && !before?.allowPasswordOverRelay);
+    if (loosened) {
+      const { linked } = await readCloudLink({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      if (!linked) {
+        throw new Error(
+          'Link this server to Frameleaf Cloud before allowing original downloads or password sign-in over remote access.',
+        );
+      }
+    }
   }
 
   /** FL-66: the saved settings with the revision the settings editor sends back on save. */

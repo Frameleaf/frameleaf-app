@@ -213,6 +213,14 @@ export const frameleafVia = (headers: IncomingHttpHeaders, edgeSecret: string | 
   return expected.length === given.length && timingSafeEqual(expected, given) ? (via as FrameleafVia) : null;
 };
 
+/**
+ * FL-161: whether a request claims an arrival (either via header). A claim without the edge worker's
+ * secret is refused, never treated as a request from home.
+ */
+export const claimsFrameleafVia = (headers: IncomingHttpHeaders): boolean =>
+  header(headers, ImmichHeader.FrameleafVia) !== undefined ||
+  header(headers, ImmichHeader.FrameleafViaAuth) !== undefined;
+
 /** Whether an address is on the home network: private ranges plus FRAMELEAF_TRUSTED_LAN_CIDRS. */
 export const isHomeAddress = (address: string | undefined, trustedLanCidrs: string[]): boolean => {
   const ip = address?.replace(/^::ffff:/, '');

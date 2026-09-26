@@ -37,6 +37,8 @@ import { ApiTag, CacheControl, ImmichHeader, Permission, RouteKey } from 'src/en
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
 import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor, getFiles } from 'src/middleware/file-upload.interceptor.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { RemoteCeilingExempt } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type AssetMediaRedirectResponse, AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
@@ -117,6 +119,8 @@ export class AssetMediaController {
   @Get(':id/edit-versions/:versionId/download')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetDownload })
+  // FL-161: a full-resolution master, as large as an original
+  @OriginalTransfer()
   @Endpoint({
     summary: 'Download a video version master',
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
@@ -152,6 +156,8 @@ export class AssetMediaController {
   @Get(':id/thumbnail')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetView, sharedLink: true })
+  // FL-161: a timeline asks for these by the hundred; they stay outside the remote-access ceiling
+  @RemoteCeilingExempt()
   @Endpoint({
     summary: 'View asset thumbnail',
     description:
@@ -178,9 +184,11 @@ export class AssetMediaController {
 
     const view =
       dto.size === AssetMediaSize.FULLSIZE ? 'fullsize' : dto.size === AssetMediaSize.PREVIEW ? 'preview' : null;
+    // FL-161: through the relay a full-size view falls back to the preview rather than the original
+    const via = requestVia(req);
     const viewThumbnailRes = view
-      ? await this.withPlaybackChoice(auth, id, view, () => this.service.viewThumbnail(auth, id, dto))
-      : await this.service.viewThumbnail(auth, id, dto);
+      ? await this.withPlaybackChoice(auth, id, view, () => this.service.viewThumbnail(auth, id, dto, via))
+      : await this.service.viewThumbnail(auth, id, dto, via);
 
     if (viewThumbnailRes instanceof ImmichFileResponse) {
       await sendFile(res, next, () => Promise.resolve(viewThumbnailRes), this.logger);

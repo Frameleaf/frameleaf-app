@@ -35,6 +35,7 @@ import { HumanReadableSize } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   type FrameleafVia,
+  claimsFrameleafVia,
   frameleafLogoutUrl,
   frameleafOAuthConfig,
   frameleafVia,
@@ -520,6 +521,13 @@ export class AuthService extends BaseService {
    */
   async authenticateWebsocket(headers: IncomingHttpHeaders): Promise<{ auth: AuthDto; via: FrameleafVia | null }> {
     const via = frameleafVia(headers, this.configRepository.getEnv().frameleafCloud.edge.secret);
+    if (!via && claimsFrameleafVia(headers)) {
+      // like the via middleware: an arrival claim the edge worker did not vouch for is never home
+      this.logger.warn('Refused a websocket that claims a Frameleaf arrival without the edge secret');
+      throw new ForbiddenException(
+        'This request claims to come through Frameleaf remote access, but the claim could not be verified',
+      );
+    }
     const origin = Array.isArray(headers.origin) ? headers.origin[0] : headers.origin;
     if (origin !== undefined && !this.configRepository.isDev()) {
       const config = await this.getConfig({ withCache: true });

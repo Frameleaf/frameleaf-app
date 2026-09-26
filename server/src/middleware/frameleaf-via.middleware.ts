@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { IncomingHttpHeaders } from 'node:http';
 import { ImmichHeader } from 'src/enum.js';
-import { type FrameleafVia, frameleafVia } from 'src/utils/frameleaf-sign-in.js';
+import { type FrameleafVia, claimsFrameleafVia, frameleafVia } from 'src/utils/frameleaf-sign-in.js';
 
 /**
  * FL-161 (instance contract "Via-header contract"): how a request reached this server.
@@ -9,11 +9,21 @@ import { type FrameleafVia, frameleafVia } from 'src/utils/frameleaf-sign-in.js'
  * The edge worker proxies remote-access traffic to the API over loopback and marks each request with
  * `X-Frameleaf-Via` (`lan`, `wan` or `relay`), the visitor's `X-Forwarded-*` values and
  * `X-Frameleaf-Via-Auth`, the per-boot `FRAMELEAF_EDGE_SECRET` the supervisor handed to both
- * workers. Only a request carrying that secret is vouched for; a missing or wrong secret, or no
- * secret configured, leaves the request unmarked (`frameleafVia: null`), exactly like a request that
- * never went through the edge worker. Every `X-Frameleaf-*` header a client sent is then dropped, so
- * nothing later in the request can read a claim the edge worker did not make.
+ * workers. Only a request carrying that secret is vouched for. A request that claims an arrival
+ * (`X-Frameleaf-Via` or `X-Frameleaf-Via-Auth`) without the right secret is refused with 403
+ * `frameleaf_via_unverified` and never treated as a home request: a misconfigured edge worker fails
+ * closed instead of letting remote visitors in as if they were at home. A request with neither header
+ * never went through the edge worker and is unmarked (`frameleafVia: null`). Every other
+ * `X-Frameleaf-*` header a client sent is then dropped, so nothing later in the request can read a
+ * claim the edge worker did not make; the one exception is `x-frameleaf-worker-session`, the render
+ * worker's session credential, which this server issued and checks where it is used.
+ *
+ * A split deployment that runs the edge worker in another container than the API must set
+ * `FRAMELEAF_EDGE_SECRET` explicitly and give both the same value; otherwise each generates its own.
  */
+
+/** The error code of a request that claims an arrival the edge worker did not vouch for. */
+export const FRAMELEAF_VIA_UNVERIFIED = 'frameleaf_via_unverified';
 
 /**
  * Headers in the `X-Frameleaf-` namespace that clients legitimately send: credentials this server
@@ -77,8 +87,16 @@ export const stripFrameleafHeaders = (headers: IncomingHttpHeaders) => {
 
 /** Registered right after `cookieParser()`, before any route, guard or server-side render. */
 export const frameleafViaMiddleware =
-  (edgeSecret: string | null) => (request: Request, _response: Response, next: NextFunction) => {
+  (edgeSecret: string | null) => (request: Request, response: Response, next: NextFunction) => {
     const arrival = readFrameleafArrival(request.headers, edgeSecret);
+    if (!arrival.via && claimsFrameleafVia(request.headers)) {
+      response.status(403).json({
+        message: 'This request claims to come through Frameleaf remote access, but the claim could not be verified',
+        statusCode: 403,
+        code: FRAMELEAF_VIA_UNVERIFIED,
+      });
+      return;
+    }
     stripFrameleafHeaders(request.headers);
     const marked = request as FrameleafRequest;
     marked.frameleafVia = arrival.via;

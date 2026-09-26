@@ -3,6 +3,7 @@ import { hasPendingSessionUnlocks, sessionAccess } from '$lib/frameleaf/session-
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
+import { isFrameleafSignInRequired } from '$lib/utils/handle-error';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 
 export type SessionPrivacyStatus = 'pending' | 'ready' | 'error';
@@ -13,9 +14,7 @@ export type SessionPrivacyStatus = 'pending' | 'ready' | 'error';
  * access. Either way the person has to sign in again, and the login page offers what works here.
  */
 const isAuthenticationGone = (error: unknown) =>
-  isHttpError(error) &&
-  (error.status === 401 ||
-    (error.status === 403 && (error.data as { code?: unknown } | undefined)?.code === 'frameleaf_sign_in_required'));
+  (isHttpError(error) && error.status === 401) || isFrameleafSignInRequired(error);
 
 /**
  * What re-checking the preloaded route data found: `'replaced'` means the caller already left the
