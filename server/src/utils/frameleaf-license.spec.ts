@@ -314,6 +314,26 @@ describe('published pricing', () => {
     expect(acceptPublishedPricing(first, kept, NOW_MS)).toEqual(kept);
   });
 
+  it('clears a pending pricing when the cloud publishes the one in force again, so it never applies', () => {
+    const future = pricing('2026-11-01.1', 30, '2026-11-01T00:00:00Z');
+    const pending = acceptPublishedPricing(future, { current: published }, NOW_MS);
+    expect(pending).toEqual({ current: published, pending: future });
+
+    const withdrawn = acceptPublishedPricing(published, pending, NOW_MS);
+    expect(withdrawn).toEqual({ current: published });
+    expect(effectivePricing(withdrawn, Date.parse('2026-11-02T00:00:00Z')).licensedDiscountPercent).toBe(25);
+  });
+
+  it('clears a pending pricing when a newer one comes into force, and when the bundle is republished', () => {
+    const future = pricing('2026-11-01.1', 30, '2026-11-01T00:00:00Z');
+    const now = pricing('2026-10-05.1', 10, '2026-10-05T00:00:00Z');
+    const pending = acceptPublishedPricing(future, lastGood, NOW_MS);
+    expect(acceptPublishedPricing(now, pending, NOW_MS)).toEqual({ current: now });
+
+    const fromBundle = acceptPublishedPricing(future, null, NOW_MS);
+    expect(acceptPublishedPricing(BUNDLED_PRICING, fromBundle, NOW_MS)).toEqual({ current: null });
+  });
+
   it('ignores a pricing older than the one in force', () => {
     const current = { current: published };
     expect(acceptPublishedPricing(pricing('2026-10-01.1', 40, '2026-10-01T00:00:00Z'), current, NOW_MS)).toEqual(
@@ -322,7 +342,7 @@ describe('published pricing', () => {
     expect(acceptPublishedPricing(pricing('2026-10-03.1', 40, '2026-09-30T00:00:00Z'), current, NOW_MS)).toEqual(
       current,
     );
-    expect(acceptPublishedPricing(published, current, NOW_MS)).toEqual(current);
+    expect(acceptPublishedPricing({ ...published }, current, NOW_MS)).toEqual(current);
     // nor one older than the bundle when nothing was published yet
     expect(acceptPublishedPricing(pricing('2026-09-24.1', 40, '2026-09-24T00:00:00Z'), null, NOW_MS)).toEqual({
       current: null,
