@@ -235,8 +235,11 @@ test.describe('Sign-in lifecycle', () => {
 
   test('sends an existing library admin through setup once, moving focus to each step', async ({ context, page }) => {
     // FL-176: an administrator whose server hasn't finished Frameleaf setup is sent to it from any
-    // page; each step's heading takes focus, and Alt+ArrowLeft goes back.
-    const admin = await utils.adminSetup({ onboarding: false });
+    // page; each step's heading takes focus, and Alt+ArrowLeft goes back. A second account makes
+    // this an existing library: one account with nothing uploaded reads as a new server.
+    await utils.resetDatabase();
+    admin = await utils.adminSetup({ onboarding: false });
+    await createUser('existing-library');
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/photos');
     await expect(page).toHaveURL('/auth/onboarding');
