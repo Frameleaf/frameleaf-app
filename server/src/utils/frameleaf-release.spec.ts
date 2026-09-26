@@ -36,6 +36,15 @@ describe('parseFrameleafFeedRelease', () => {
     );
   });
 
+  it('accepts build metadata', () => {
+    expect(parseFrameleafFeedRelease({ ...feedRelease, version: '3.2.1+build.5' }, ReleaseChannel.Stable)).toEqual(
+      expect.objectContaining({ version: '3.2.1' }),
+    );
+    expect(
+      parseFrameleafFeedRelease({ ...feedRelease, version: '3.3.0-rc.1+sha.abc' }, ReleaseChannel.ReleaseCandidate),
+    ).toEqual(expect.objectContaining({ version: '3.3.0-rc.1' }));
+  });
+
   it('accepts a prerelease only on the beta channel', () => {
     const candidate = { ...feedRelease, version: '3.3.0-rc.1', tag: 'frameleaf-v3.3.0-rc.1-2' };
     expect(parseFrameleafFeedRelease(candidate, ReleaseChannel.ReleaseCandidate)?.version).toBe('3.3.0-rc.1');
@@ -45,6 +54,8 @@ describe('parseFrameleafFeedRelease', () => {
   it.each([
     ['a leading "v"', { ...feedRelease, version: 'v3.2.1' }],
     ['a version that is not semver', { ...feedRelease, version: '3.2' }],
+    ['surrounding spaces', { ...feedRelease, version: ' 3.2.1' }],
+    ['an "=" prefix', { ...feedRelease, version: '=3.2.1' }],
     ['a missing version', { ...feedRelease, version: undefined }],
     ['a list', [feedRelease]],
     ['no body', null],

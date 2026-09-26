@@ -37,13 +37,18 @@ export const parseFrameleafFeedRelease = (body: unknown, channel: ReleaseChannel
     return;
   }
   const { version, publishedAt } = body as Partial<FrameleafFeedRelease>;
-  if (typeof version !== 'string' || valid(version) !== version) {
+  // Strict semver without a leading "v" or surrounding spaces; build metadata is accepted and dropped.
+  if (typeof version !== 'string' || !/^\d/.test(version) || version !== version.trim()) {
     return;
   }
-  if (channel === ReleaseChannel.Stable && new SemVer(version).prerelease.length > 0) {
+  const normalized = valid(version);
+  if (!normalized) {
     return;
   }
-  return { version, publishedAt: typeof publishedAt === 'string' ? publishedAt : '' };
+  if (channel === ReleaseChannel.Stable && new SemVer(normalized).prerelease.length > 0) {
+    return;
+  }
+  return { version: normalized, publishedAt: typeof publishedAt === 'string' ? publishedAt : '' };
 };
 
 const TAG = /^frameleaf-v(\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?)-(\d+)$/;
