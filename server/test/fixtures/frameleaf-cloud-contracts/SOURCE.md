@@ -58,6 +58,15 @@ tested against what the cloud publishes (FL-177).
 - FC-70 release feed: `releases/latest-stable.json` and `releases/latest-beta.json` are byte-identical to
   `origin/main` at `86adf20ee0f403859abf225c1a14531214a465c1` (Frameleaf/frameleaf-cloud#43). The contract is
   `packages/contracts/src/releases/latest.ts`; `server/src/utils/frameleaf-release.ts` reads them (FL-192).
+- FL-162 (cloud restoration and Smooth motion jobs): byte-identical to `origin/main` at
+  `39488a50b176ea0778ee138d202bc8eda8376a70` (FC-39 broker, FC-42 job storage and FC-43 `JobView.cost`, all
+  merged): `ml/job-{queued,running,completed,failed,settled-budget}.json`,
+  `ml/rejected/job-view-{cost-above-hold,cost-lines-mismatch,cost-not-charged-total,cost-provider-details,provider-details,unknown-status}.json`,
+  every file of `ml/storage/` and `ml/storage/rejected/`, and `errors/{inputs-missing,job-active,job-ended,upload-closed}.json`.
+  Every other `ml/` and `errors/` file this app already copied was compared with that commit and is unchanged. The
+  contracts are `packages/contracts/src/ml/{jobs,storage,gateway}.ts`; `server/src/utils/frameleaf-cloud.ts`
+  (`jobViewSchema`, `jobCostSchema`, `uploadTargetSchema`, `jobResultSchema`, and `jobAdmittedSchema.uploads`) reads
+  them.
 
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
 above.

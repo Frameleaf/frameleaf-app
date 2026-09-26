@@ -653,9 +653,103 @@ export type CloudJobCreateRequest = z.infer<typeof jobCreateRequestSchema>;
  */
 export const IDEMPOTENCY_KEY_PATTERN = /^[\w-]{8,100}$/;
 
+/* ------------------------------------------------------------------ */
+/* Ephemeral job storage (FC-42, `packages/contracts/src/ml/storage.ts`) */
+/* ------------------------------------------------------------------ */
+
+/** FC-42: every multipart part but the last is exactly this long (8 MiB). */
+export const CLOUD_UPLOAD_PART_BYTES = 8_388_608;
+
+/** FC-42: inputs up to this size are uploaded with one presigned PUT (`inline`); larger ones in parts. */
+export const CLOUD_UPLOAD_INLINE_MAX_BYTES = 1_048_576;
+
+const sha256HexSchema = z.string().regex(/^[\da-f]{64}$/);
+const storageContentTypeSchema = z.string().regex(/^[a-z]+\/[\d+.a-z-]{1,100}$/);
+/** A presigned storage address. Where it may point is checked again before use (`cloudAddressProblem`). */
+const storageUrlSchema = z.url({ protocol: /^https?$/ }).max(4096);
+
+/**
+ * FC-42 `StorageHeaders`: the signed content type and the job's storage encryption headers, which
+ * every request to one of the job's presigned addresses sends exactly as given. They are secrets for
+ * the job's lifetime: never logged and never stored beyond the job.
+ */
+export const storageHeadersSchema = z
+  .record(z.string().regex(/^[\da-z-]{1,64}$/), z.string().max(200))
+  .refine((headers) => Object.keys(headers).length <= 10, 'at most 10 headers');
+export type CloudStorageHeaders = z.infer<typeof storageHeadersSchema>;
+
+const presignedPartSchema = z.strictObject({
+  partNumber: z.number().int().min(1).max(10_000),
+  url: storageUrlSchema,
+  bytes: z.number().int().min(1).max(CLOUD_UPLOAD_PART_BYTES),
+});
+
+/**
+ * FC-42 `UploadTarget`: where and how one input is uploaded. Exactly the target its `method` names is
+ * set; inline uploads are at most 1 MiB; a multipart target's parts add up to the input's size.
+ */
+export const uploadTargetSchema = z
+  .strictObject({
+    inputId: z.string().regex(/^[\w-]{1,64}$/),
+    bytes: z.number().int().min(1),
+    contentType: storageContentTypeSchema,
+    sha256: sha256HexSchema,
+    method: z.enum(['inline', 'multipart']),
+    headers: storageHeadersSchema,
+    inline: z.strictObject({ url: storageUrlSchema, method: z.literal('PUT') }).nullable(),
+    multipart: z
+      .strictObject({
+        partBytes: z.literal(CLOUD_UPLOAD_PART_BYTES),
+        parts: z.array(presignedPartSchema).min(1).max(10_000),
+        completeUrl: storageUrlSchema,
+      })
+      .nullable(),
+    uploaded: z.boolean(),
+    expiresAt: gatewayTimestamp(),
+  })
+  .superRefine((target, context) => {
+    if ((target.method === 'inline') !== (target.inline !== null)) {
+      context.addIssue({ code: 'custom', path: ['method'], message: 'exactly the target of `method` is set' });
+    }
+    if ((target.method === 'multipart') !== (target.multipart !== null)) {
+      context.addIssue({ code: 'custom', path: ['method'], message: 'exactly the target of `method` is set' });
+    }
+    if (target.method === 'inline' && target.bytes > CLOUD_UPLOAD_INLINE_MAX_BYTES) {
+      context.addIssue({ code: 'custom', path: ['inline'], message: 'inline uploads are at most 1 MiB' });
+    }
+    if (target.multipart) {
+      const total = target.multipart.parts.reduce((sum, part) => sum + part.bytes, 0);
+      if (total !== target.bytes) {
+        context.addIssue({
+          code: 'custom',
+          path: ['multipart', 'parts'],
+          message: "the parts add up to the input's size",
+        });
+      }
+    }
+  });
+export type CloudUploadTarget = z.infer<typeof uploadTargetSchema>;
+
+/** `GET /v2/jobs/{id}/uploads` (FC-42 `UploadTargetsResponse`). */
+export const uploadTargetsResponseSchema = z.strictObject({
+  jobId: z.uuid(),
+  uploads: z.array(uploadTargetSchema).max(1000),
+});
+
+/** FC-42 `OutputDownload`: one output, fetched with a presigned GET and verified against `sha256`. */
+export const outputDownloadSchema = z.strictObject({
+  outputId: z.string().regex(/^[\w-]{1,80}$/),
+  url: storageUrlSchema,
+  sha256: sha256HexSchema,
+  bytes: z.number().int().min(0),
+  contentType: storageContentTypeSchema,
+});
+export type CloudOutputDownload = z.infer<typeof outputDownloadSchema>;
+
 /**
  * `POST /v2/jobs` answer up to admission (FC-34 `JobAdmitted`): the sealed estimate is spent and the
- * wallet holds `hold.amountUsd`. Uploads and every later state belong to the broker (FC-39).
+ * wallet holds `hold.amountUsd`. FC-42 added `uploads`, where each input goes, once the region has
+ * job storage; `GET /v2/jobs/{id}/uploads` answers the same targets.
  */
 export const jobAdmittedSchema = z.strictObject({
   jobId: z.uuid(),
@@ -665,6 +759,7 @@ export const jobAdmittedSchema = z.strictObject({
   computeSku: computeSkuSchema,
   hold: z.strictObject({ amountUsd: gatewayUsd(), ceilingUsd: gatewayUsd(), minimumUsd: gatewayUsd() }),
   createdAt: gatewayTimestamp(),
+  uploads: z.array(uploadTargetSchema).max(1000).optional(),
 });
 export type CloudJobAdmitted = z.infer<typeof jobAdmittedSchema>;
 
@@ -723,6 +818,138 @@ export const jobStatusSchema = z
     }
   });
 export type CloudJobStatus = z.infer<typeof jobStatusSchema>;
+
+/** FC-39 `FINAL_JOB_STATES`: the job never moves again, and its hold is released or settled. */
+export const FINAL_CLOUD_JOB_STATUSES = ['completed', 'failed', 'cancelled', 'cancelled_budget', 'expired'] as const;
+export type CloudJobStatusValue = (typeof CLOUD_JOB_STATUSES)[number];
+
+export const isFinalCloudJobStatus = (status: CloudJobStatusValue): boolean =>
+  (FINAL_CLOUD_JOB_STATUSES as readonly string[]).includes(status);
+
+/**
+ * FC-39 `JobErrorCode`: why a job ended without completing, with fixed customer copy. Every code but
+ * `cancelled` and `budget-exceeded` released the hold in full; `input-sha256-mismatch` pays at most
+ * the minimum (one start fee).
+ */
+export const CLOUD_JOB_ERROR_CODES = [
+  'worker-unavailable',
+  'worker-lost',
+  'time-limit',
+  'deadline-exceeded',
+  'upload-expired',
+  'queue-expired',
+  'budget-exceeded',
+  'cancelled',
+  'internal',
+  'input-sha256-mismatch',
+] as const;
+export type CloudJobErrorCode = (typeof CLOUD_JOB_ERROR_CODES)[number];
+
+export const jobErrorSchema = z.strictObject({
+  code: z.enum(CLOUD_JOB_ERROR_CODES),
+  message: z.string().min(1).max(300),
+  retryable: z.boolean(),
+});
+export type CloudJobError = z.infer<typeof jobErrorSchema>;
+
+/** FC-39 `JobProgress`: `done` of `total` in `unit` (segments for chunked video). */
+export const jobProgressSchema = z.strictObject({
+  done: z.number().int().min(0),
+  total: z.number().int().min(0),
+  unit: z.enum(['items', 'seconds', 'segments']),
+  etaSeconds: z.number().int().min(0).nullable(),
+});
+export type CloudJobProgress = z.infer<typeof jobProgressSchema>;
+
+/** FC-39 `JobCharges`: metered so far (never above the hold), the hold and its ceiling. */
+export const jobChargesSchema = z.strictObject({
+  meteredUsd: gatewayUsd(),
+  holdUsd: gatewayUsd(),
+  ceilingUsd: gatewayUsd(),
+});
+export type CloudJobCharges = z.infer<typeof jobChargesSchema>;
+
+const jobCostLineSchema = z.strictObject({
+  kind: z.enum(['start_fees', 'gpu_time', 'minimum_charge', 'covered_by_frameleaf', 'refund']),
+  label: z.string().min(1).max(80),
+  sign: z.enum(['charge', 'credit']),
+  quantity: z.number().int().min(0).nullable(),
+  unit: z.enum(['starts', 'seconds']).nullable(),
+  amountUsd: gatewayUsd(),
+});
+export type CloudJobCostLine = z.infer<typeof jobCostLineSchema>;
+
+const toMicros = (usd: number) => Math.round(usd * MICROS_PER_USD);
+
+/**
+ * FC-43 `JobCost`: what a settled job cost. The charge lines minus the credit lines equal `totalUsd`
+ * to the micro-USD, the total is never above the hold, and only a charged job has a total. Anything
+ * else is refused, so a malformed settlement is never recorded as a charge.
+ */
+export const jobCostSchema = z
+  .strictObject({
+    outcome: z.enum(['charged', 'not_charged', 'refunded']),
+    totalUsd: gatewayUsd(),
+    heldUsd: gatewayUsd(),
+    releasedUsd: gatewayUsd(),
+    lines: z.array(jobCostLineSchema).max(5),
+    note: z.string().min(1).max(300),
+    settledAt: gatewayTimestamp(),
+  })
+  .superRefine((cost, context) => {
+    const sum = cost.lines.reduce(
+      (total, line) => total + (line.sign === 'charge' ? 1 : -1) * toMicros(line.amountUsd),
+      0,
+    );
+    if (sum !== toMicros(cost.totalUsd)) {
+      context.addIssue({ code: 'custom', path: ['lines'], message: "lines don't add up to totalUsd" });
+    }
+    if (toMicros(cost.totalUsd) > toMicros(cost.heldUsd)) {
+      context.addIssue({ code: 'custom', path: ['totalUsd'], message: 'totalUsd is above heldUsd' });
+    }
+    if (cost.outcome !== 'charged' && cost.totalUsd !== 0) {
+      context.addIssue({ code: 'custom', path: ['totalUsd'], message: 'only a charged job has a total' });
+    }
+  });
+export type CloudJobCost = z.infer<typeof jobCostSchema>;
+
+/**
+ * FC-42 `JobResult`: the outputs of a completed job (or the completed outputs of one stopped at its
+ * hold), until the job is acknowledged. Every GET sends `headers` exactly and checks `sha256`.
+ */
+export const jobResultSchema = z.strictObject({
+  outputs: z.array(outputDownloadSchema).max(5000),
+  headers: storageHeadersSchema,
+  expiresAt: gatewayTimestamp(),
+  modelSku: modelSkuSchema,
+  modelRev: modelRevSchema,
+});
+export type CloudJobResult = z.infer<typeof jobResultSchema>;
+
+/**
+ * `GET /v2/jobs/{id}`, `POST /v2/jobs/{id}/start` and `POST /v2/jobs/{id}/cancel` (FC-39 `JobView`,
+ * FC-43 `cost`). Strict, as the contract is: SKUs only, `run` exactly its four fields, no provider,
+ * worker or GPU detail. The answer carries an `ETag` (304 on a match) and `Retry-After` while the job
+ * waits.
+ */
+export const jobViewSchema = z.strictObject({
+  jobId: z.uuid(),
+  status: z.enum(CLOUD_JOB_STATUSES),
+  modelSku: modelSkuSchema,
+  modelRev: modelRevSchema,
+  computeSku: computeSkuSchema,
+  clientRef: z.string().max(200).nullable(),
+  progress: jobProgressSchema.nullable(),
+  run: jobRunSchema,
+  charges: jobChargesSchema,
+  cost: jobCostSchema.nullable().optional(),
+  result: jobResultSchema.nullable(),
+  error: jobErrorSchema.nullable(),
+  purgeAfter: gatewayTimestamp().nullable(),
+  createdAt: gatewayTimestamp(),
+  updatedAt: gatewayTimestamp(),
+});
+export type CloudJobView = z.infer<typeof jobViewSchema>;
 
 /**
  * A body this server is about to send to the ML gateway, checked against the contract first. One the

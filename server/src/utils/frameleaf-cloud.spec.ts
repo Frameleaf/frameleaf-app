@@ -3,6 +3,7 @@ import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
 import { hardwareSchema } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import {
   CLOUD_MODEL_GROUPS,
+  CLOUD_UPLOAD_PART_BYTES,
   CLOUD_WORKLOAD_IDS,
   CONSENT_VERSION_PATTERN,
   CloudErrorCode,
@@ -33,18 +34,23 @@ import {
   estimateResponseSchema,
   estimateUsable,
   isEntitled,
+  isFinalCloudJobStatus,
   isGatewayCloneSuspected,
   isLocalOnlyModel,
   jobAdmittedSchema,
   jobCreateRequestSchema,
+  jobResultSchema,
   jobRunSchema,
   jobStatusSchema,
+  jobViewSchema,
   knownWorkloads,
   offeredCatalogModels,
   refusalFromCloudError,
   stepUpUrl,
   storeAddress,
   studioAiCloudWorkloadId,
+  uploadTargetSchema,
+  uploadTargetsResponseSchema,
   usageItemSchema,
   usageSchema,
   walletResponseSchema,
@@ -1091,5 +1097,103 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
         expect(cloudWorkloadIdFor(workload), name).toBe(body.workload);
       }
     });
+  });
+});
+
+describe('Frameleaf Cloud job views, storage and cost (FL-162, FC-39, FC-42, FC-43)', () => {
+  const REJECTED_JOB_VIEWS = [
+    'job-view-cost-above-hold.json',
+    'job-view-cost-lines-mismatch.json',
+    'job-view-cost-not-charged-total.json',
+    'job-view-cost-provider-details.json',
+    'job-view-provider-details.json',
+    'job-view-unknown-status.json',
+  ];
+  const REJECTED_STORAGE = [
+    'upload-target-both-methods.json',
+    'upload-target-inline-too-large.json',
+    'upload-target-parts-dont-add-up.json',
+  ];
+
+  const JOB_VIEWS = [
+    'job-queued.json',
+    'job-running.json',
+    'job-completed.json',
+    'job-failed.json',
+    'job-settled-budget.json',
+  ];
+
+  it.each(JOB_VIEWS)('reads %s field for field as a job view', (name) => {
+    const fixture = cloudContractFixture<Record<string, unknown>>(`ml/${name}`);
+    expect(jobViewSchema.parse(fixture)).toEqual(fixture);
+  });
+
+  it.each(REJECTED_JOB_VIEWS)('refuses the rejected %s job view', (name) => {
+    expect(jobViewSchema.safeParse(cloudContractFixture(`ml/rejected/${name}`)).success).toBe(false);
+  });
+
+  it('reads the settled cost of a completed job: charge lines that add up to the total, within the hold', () => {
+    const view = jobViewSchema.parse(cloudContractFixture('ml/job-completed.json'));
+    expect(view.cost).toMatchObject({ outcome: 'charged', totalUsd: 0.2026, heldUsd: 0.203251, releasedUsd: 0.000651 });
+    expect(view.cost?.lines.map((line) => line.kind)).toEqual(['start_fees', 'gpu_time']);
+    expect(view.run).toEqual({ startedAt: '2026-09-26T04:02:10.000Z', meteredSeconds: 2, workers: 1, startFees: 1 });
+  });
+
+  it('reads a provider failure as nothing charged, with its fixed error code', () => {
+    const view = jobViewSchema.parse(cloudContractFixture('ml/job-failed.json'));
+    expect(view.status).toBe('failed');
+    expect(isFinalCloudJobStatus(view.status)).toBe(true);
+    expect(view.cost).toMatchObject({ outcome: 'not_charged', totalUsd: 0, releasedUsd: 0.203251 });
+    expect(view.error).toMatchObject({ code: 'worker-unavailable', retryable: true });
+  });
+
+  it('reads a job stopped at its hold: charged at most the hold, the rest covered by Frameleaf Cloud', () => {
+    const view = jobViewSchema.parse(cloudContractFixture('ml/job-settled-budget.json'));
+    expect(view.status).toBe('cancelled_budget');
+    expect(view.cost?.totalUsd).toBe(view.cost?.heldUsd);
+    expect(view.cost?.lines.find((line) => line.sign === 'credit')).toMatchObject({ kind: 'covered_by_frameleaf' });
+    expect(view.error?.code).toBe('budget-exceeded');
+  });
+
+  it('keeps waiting on the states that are not final', () => {
+    for (const status of ['admitted', 'awaiting_upload', 'queued', 'starting', 'running'] as const) {
+      expect(isFinalCloudJobStatus(status), status).toBe(false);
+    }
+  });
+
+  it('reads the outputs of a completed job with the storage headers every download sends', () => {
+    const view = jobViewSchema.parse(cloudContractFixture('ml/storage/job-completed-result.json'));
+    expect(view.result?.outputs.map((output) => output.outputId)).toEqual(['a1', 'a2']);
+    expect(Object.keys(view.result?.headers ?? {})).toContain('x-amz-server-side-encryption-customer-key');
+    const noHeaders = cloudContractFixture<unknown>('ml/storage/rejected/job-result-no-headers.json');
+    expect(jobResultSchema.safeParse(noHeaders).success).toBe(false);
+  });
+
+  it('reads an input that failed its SHA-256 as a failure that pays at most the minimum', () => {
+    const view = jobViewSchema.parse(cloudContractFixture('ml/storage/job-failed-sha256.json'));
+    expect(view.error?.code).toBe('input-sha256-mismatch');
+  });
+
+  it('reads the upload targets an admission answers with, inline and multipart', () => {
+    const admitted = jobAdmittedSchema.parse(cloudContractFixture('ml/storage/job-admitted-uploads.json'));
+    expect(admitted.uploads?.map((upload) => upload.method)).toEqual(['inline', 'multipart']);
+    const targets = uploadTargetsResponseSchema.parse(cloudContractFixture('ml/storage/upload-targets.json'));
+    const multipart = targets.uploads.find((upload) => upload.method === 'multipart');
+    expect(multipart?.multipart?.partBytes).toBe(CLOUD_UPLOAD_PART_BYTES);
+    expect(multipart?.multipart?.parts.reduce((sum, part) => sum + part.bytes, 0)).toBe(multipart?.bytes);
+    expect(uploadTargetSchema.parse(cloudContractFixture('ml/storage/upload-target-refreshed.json'))).toMatchObject({
+      inputId: 'a1',
+      method: 'inline',
+      uploaded: false,
+    });
+  });
+
+  it.each(REJECTED_STORAGE)('refuses the rejected %s upload target', (name) => {
+    expect(uploadTargetSchema.safeParse(cloudContractFixture(`ml/storage/rejected/${name}`)).success).toBe(false);
+  });
+
+  it('refuses a job view whose cost lines do not add up, even when every line is well formed', () => {
+    const view = cloudContractFixture<{ cost: { totalUsd: number } }>('ml/job-completed.json');
+    expect(jobViewSchema.safeParse({ ...view, cost: { ...view.cost, totalUsd: 0.2027 } }).success).toBe(false);
   });
 });
