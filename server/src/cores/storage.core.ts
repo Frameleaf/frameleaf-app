@@ -413,7 +413,7 @@ export class StorageCore {
     try {
       await this.storageRepository.unlink(source);
     } catch (error: any) {
-      this.logger.warn(`Unable to delete old file, it will now no longer be tracked by Immich: ${error.message}`);
+      this.logger.warn(`Unable to delete old file, it will now no longer be tracked by Frameleaf: ${error.message}`);
     }
   }
 

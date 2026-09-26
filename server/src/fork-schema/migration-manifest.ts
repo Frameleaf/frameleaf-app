@@ -114,7 +114,7 @@ export function classifyMigration(name: string): 'upstream' | 'legacy-fork' | 'u
 
 export function assertSupportedUpstream(version: string): void {
   if (supportedVersions.ranges.every((range) => !semver.satisfies(version, range))) {
-    throw new Error(`Unsupported official Immich database version: ${version}`);
+    throw new Error(`Unsupported official upstream database version: ${version}`);
   }
 }
 

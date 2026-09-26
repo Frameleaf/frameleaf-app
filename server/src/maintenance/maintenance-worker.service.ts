@@ -255,7 +255,7 @@ export class MaintenanceWorkerService {
       this.secret,
     );
 
-    this.logger.log(`\n\n🚧 Immich is in maintenance mode, you can log in using the following URL:\n${url}\n`);
+    this.logger.log(`\n\n🚧 Frameleaf is in maintenance mode, you can log in using the following URL:\n${url}\n`);
   }
 
   async authenticate(headers: IncomingHttpHeaders): Promise<MaintenanceAuthDto> {

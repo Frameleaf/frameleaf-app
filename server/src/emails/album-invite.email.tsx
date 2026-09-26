@@ -75,7 +75,7 @@ export const AlbumInviteEmail = ({
 };
 
 AlbumInviteEmail.PreviewProps = {
-  baseUrl: 'https://demo.immich.app',
+  baseUrl: 'https://photos.example.com',
   albumName: 'Trip to Europe',
   albumId: 'b63f6dae-e1c9-401b-9a85-9dbbf5612539',
   senderName: 'Owner User',

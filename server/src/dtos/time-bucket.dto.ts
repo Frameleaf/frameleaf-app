@@ -39,7 +39,7 @@ const TimeBucketQueryBaseSchema = z
     ),
     suppressedOnly: stringToBool.optional().describe('Return only suppressed content. Requires an elevated session.'),
     orderBy: AssetOrderBySchema.optional().describe(
-      'Date to group and order assets by (takenAt for date taken, createdAt for date added to Immich)',
+      'Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf)',
     ),
     visibility: AssetVisibilitySchema.optional().describe(
       'Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)',
@@ -141,7 +141,7 @@ const TimeBucketAssetResponseSchema = z
       .describe('Array of BlurHash strings for generating asset previews (base64 encoded)'),
     createdAt: z
       .array(z.string())
-      .describe('Array of UTC timestamps when each asset was originally uploaded to Immich'),
+      .describe('Array of UTC timestamps when each asset was originally uploaded to Frameleaf'),
     fileCreatedAt: z.array(z.string()).describe('Array of file creation timestamps in UTC'),
     localOffsetHours: z
       .array(z.number().meta({ format: 'double' }))
