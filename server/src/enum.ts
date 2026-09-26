@@ -2625,6 +2625,11 @@ export enum AdminAuditAction {
   CloudRevoked = 'cloud-revoked',
   /** FL-155: what Frameleaf Cloud may ask this server to do changed; `detail` lists the toggles now on. */
   CloudPermissionsChanged = 'cloud-permissions-changed',
+  /**
+   * FL-175: this server rotated its identity key again after the key the cloud accepted could not be
+   * read; `detail` is `rotated`, `retrying` or `window-closed`. It runs whatever the permissions are.
+   */
+  CloudKeyRecoveryRotation = 'cloud-key-recovery-rotation',
   /** FL-156: a licence key or file was activated; `detail` is the key hint or `file`. */
   LicenseActivated = 'license-activated',
   /** FL-156: the licence was removed from this server. */

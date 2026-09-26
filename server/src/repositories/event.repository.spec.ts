@@ -62,12 +62,10 @@ describe(EventRepository.name, () => {
 
   describe('AssetDelete (FL-169)', () => {
     it('runs every handler though an earlier one throws, and logs the failure', async () => {
-      const revoke = vi.fn(async () => {});
-      const cleanup = vi.fn(async () => {});
+      const revoke = vi.fn(() => Promise.resolve());
+      const cleanup = vi.fn(() => Promise.resolve());
       const { sut, logger } = setup('AssetDelete', [
-        vi.fn(async () => {
-          throw new Error('move history unavailable');
-        }),
+        vi.fn(() => Promise.reject(new Error('move history unavailable'))),
         revoke,
         cleanup,
       ]);
@@ -84,13 +82,8 @@ describe(EventRepository.name, () => {
   });
 
   it('still stops other events at the first failure and rethrows it', async () => {
-    const next = vi.fn(async () => {});
-    const { sut } = setup('AssetTrash', [
-      vi.fn(async () => {
-        throw new Error('handler failed');
-      }),
-      next,
-    ]);
+    const next = vi.fn(() => Promise.resolve());
+    const { sut } = setup('AssetTrash', [vi.fn(() => Promise.reject(new Error('handler failed'))), next]);
 
     await expect(sut.emit('AssetTrash', { assetId: 'asset-1', userId: 'user-1' })).rejects.toThrow('handler failed');
 
