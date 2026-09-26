@@ -242,93 +242,168 @@ export class StorageCore {
     }
 
     const source = move.oldPath;
-    // how the file reached `newPath`: renamed in place, or copied (the source is removed on commit)
-    let moved: 'renamed' | 'copied' | undefined;
-    const rename = async (): Promise<boolean> => {
-      if (source === newPath) {
-        return true;
-      }
-      try {
-        this.logger.debug(`Attempting to rename file: ${source} => ${newPath}`);
-        await this.storageRepository.rename(source, newPath);
-        moved = 'renamed';
-        return true;
-      } catch (error: any) {
-        if (error.code !== 'EXDEV') {
-          this.logger.warn(
-            `Unable to complete move. Error renaming file with code ${error.code} and message: ${error.message}`,
-          );
-          return false;
-        }
-        this.logger.debug(`Unable to rename file. Falling back to copy, verify and delete`);
-        await this.storageRepository.copyFile(source, newPath);
-
-        if (!(await this.verifyNewPathContentsMatchesExpected(source, newPath, assetInfo))) {
-          this.logger.warn(`Skipping move due to file size mismatch`);
-          await this.storageRepository.unlink(newPath);
-          return false;
-        }
-
-        const { atime, mtime } = await this.storageRepository.stat(source);
-        await this.storageRepository.utimes(newPath, atime, mtime);
-        moved = 'copied';
-        return true;
-      }
-    };
-    // a copy's source goes once the new path is saved
-    const finish = async () => {
-      if (moved !== 'copied') {
-        return;
-      }
-      try {
-        await this.storageRepository.unlink(source);
-      } catch (error: any) {
-        this.logger.warn(`Unable to delete old file, it will now no longer be tracked by Immich: ${error.message}`);
-      }
-    };
-    // the new path could not be saved: the file goes back to where the rows still name it
-    const undo = async () => {
-      try {
-        if (moved === 'renamed') {
-          await this.storageRepository.rename(newPath, source);
-        } else if (moved === 'copied') {
-          await this.storageRepository.unlink(newPath);
-        }
-      } catch (error: any) {
-        this.logger.warn(`Unable to undo the move of ${source} to ${newPath}; the recorded move finishes it: ${error}`);
-      }
-    };
 
     if (!ASSET_MOVE_PATH_TYPES.has(pathType)) {
-      if (!(await rename())) {
+      if (source !== newPath && !(await this.moveAcrossFilesystems(source, newPath, assetInfo))) {
         return false;
       }
-      await finish();
       await this.savePath(pathType, entityId, newPath, ownerId);
       await this.moveRepository.delete(move.id);
       return true;
     }
 
     // FL-179: an asset's file is moved and its new path saved as one unit, under the path locks and the
-    // asset's row lock, so the move cannot race the asset's removal. The move stays recorded until the
-    // new path is saved, so one interrupted in between is finished next time.
-    const result = await this.assetRepository.moveFile(
-      {
-        moveId: move.id,
-        assetId: entityId,
-        pathType: pathType as AssetMovePathType,
-        from: oldPath,
-        source,
-        to: newPath,
+    // asset's row lock, so the move cannot race the asset's removal. Only a rename runs in that unit; a
+    // move across filesystems is copied and verified first, beside the new path, and then renamed. The
+    // move stays recorded until the new path is saved, so one interrupted in between is finished next time.
+    const request = {
+      moveId: move.id,
+      assetId: entityId,
+      pathType: pathType as AssetMovePathType,
+      from: oldPath,
+      source,
+      to: newPath,
+    };
+    // what the filesystem side did, set from inside the move's transaction
+    const state = { crossDevice: false, placed: false };
+    let result = await this.assetRepository.moveFile(request, {
+      rename: async () => {
+        if (source === newPath) {
+          return true;
+        }
+        const renamed = await this.rename(source, newPath);
+        state.crossDevice = renamed === 'cross-device';
+        return renamed === 'renamed';
       },
-      { rename, finish, undo },
-    );
+      undo: () => (source === newPath ? Promise.resolve() : this.undoRename(newPath, source)),
+      finish: () => Promise.resolve(),
+    });
+
+    if (result === 'failed' && state.crossDevice) {
+      const staged = await this.stageCopy(source, newPath, assetInfo);
+      if (!staged) {
+        return false;
+      }
+      try {
+        result = await this.assetRepository.moveFile(request, {
+          rename: async () => {
+            state.placed = (await this.rename(staged, newPath)) === 'renamed';
+            return state.placed;
+          },
+          // the source is untouched until the new path is saved
+          undo: async () => {
+            state.placed = false;
+            await this.undoRename(newPath, staged);
+          },
+          finish: () => this.removeSource(source),
+        });
+      } finally {
+        if (!state.placed) {
+          await this.removeStaged(staged);
+        }
+      }
+    }
+
     if (result === 'removed') {
       this.logger.log(`Skipped moving ${oldPath}: asset ${entityId} was removed`);
     } else if (result === 'changed') {
       this.logger.log(`Skipped moving ${oldPath}: asset ${entityId} no longer uses it`);
+    } else if (result === 'deferred') {
+      this.logger.log(`Deferred moving ${oldPath}: its shared file records cannot change now`);
     }
     return result === 'moved';
+  }
+
+  /** Renames in place; a move to another filesystem is reported rather than attempted. */
+  private async rename(from: string, to: string): Promise<'renamed' | 'cross-device' | 'failed'> {
+    try {
+      this.logger.debug(`Attempting to rename file: ${from} => ${to}`);
+      await this.storageRepository.rename(from, to);
+      return 'renamed';
+    } catch (error: any) {
+      if (error.code === 'EXDEV') {
+        return 'cross-device';
+      }
+      this.logger.warn(
+        `Unable to complete move. Error renaming file with code ${error.code} and message: ${error.message}`,
+      );
+      return 'failed';
+    }
+  }
+
+  /** Puts a renamed file back where the rows still name it. Never throws. */
+  private async undoRename(from: string, to: string) {
+    try {
+      await this.storageRepository.rename(from, to);
+    } catch (error: any) {
+      this.logger.warn(`Unable to move ${from} back to ${to}; the recorded move finishes it: ${error}`);
+    }
+  }
+
+  /**
+   * Copies a file to a temporary name beside `to` (so the final step is a rename on one filesystem)
+   * and verifies the copy. Returns the temporary path, or nothing when the copy failed or did not
+   * match, having removed it.
+   */
+  private async stageCopy(
+    source: string,
+    to: string,
+    assetInfo?: { sizeInBytes: number; checksum: Buffer },
+  ): Promise<string | undefined> {
+    this.logger.debug(`Unable to rename file. Falling back to copy, verify and delete`);
+    const staged = `${to}.${this.cryptoRepository.randomUUID()}.moving`;
+    try {
+      await this.storageRepository.copyFile(source, staged);
+      if (!(await this.verifyNewPathContentsMatchesExpected(source, staged, assetInfo))) {
+        this.logger.warn(`Skipping move due to file size mismatch`);
+        await this.removeStaged(staged);
+        return;
+      }
+      const { atime, mtime } = await this.storageRepository.stat(source);
+      await this.storageRepository.utimes(staged, atime, mtime);
+      return staged;
+    } catch (error: any) {
+      this.logger.warn(`Unable to copy ${source} for its move: ${error}`);
+      await this.removeStaged(staged);
+    }
+  }
+
+  private async removeStaged(staged: string) {
+    try {
+      await this.storageRepository.unlink(staged);
+    } catch (error: any) {
+      this.logger.warn(`Unable to remove the temporary copy ${staged}: ${error}`);
+    }
+  }
+
+  private async removeSource(source: string) {
+    try {
+      await this.storageRepository.unlink(source);
+    } catch (error: any) {
+      this.logger.warn(`Unable to delete old file, it will now no longer be tracked by Immich: ${error.message}`);
+    }
+  }
+
+  /** A move that is not an asset's (a person's thumbnail): rename, or copy, verify and delete. */
+  private async moveAcrossFilesystems(
+    source: string,
+    to: string,
+    assetInfo?: { sizeInBytes: number; checksum: Buffer },
+  ): Promise<boolean> {
+    const renamed = await this.rename(source, to);
+    if (renamed !== 'cross-device') {
+      return renamed === 'renamed';
+    }
+    const staged = await this.stageCopy(source, to, assetInfo);
+    if (!staged) {
+      return false;
+    }
+    if ((await this.rename(staged, to)) !== 'renamed') {
+      await this.removeStaged(staged);
+      return false;
+    }
+    await this.removeSource(source);
+    return true;
   }
 
   private async verifyNewPathContentsMatchesExpected(
