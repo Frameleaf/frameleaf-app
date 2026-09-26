@@ -50,12 +50,17 @@ describe(AssetService.name, () => {
     ({ sut, mocks } = newTestService(AssetService));
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
-    mocks.asset.remove.mockImplementation((asset) =>
-      Promise.resolve({
+    // the file cleanup is queued inside the removal's transaction, as the repository does
+    mocks.asset.remove.mockImplementation(async (asset, release) => {
+      const removed = {
         originalPath: (asset as unknown as { originalPath: string }).originalPath,
         reservationTemporaryPath: null,
-      }),
-    );
+      };
+      if (release) {
+        await release.queue(release.files(removed));
+      }
+      return removed;
+    });
   });
 
   describe('getStatistics', () => {
@@ -1057,7 +1062,10 @@ describe(AssetService.name, () => {
           },
         ],
       ]);
-      expect(mocks.asset.remove).toHaveBeenCalledWith(getForAssetDeletion(asset));
+      expect(mocks.asset.remove).toHaveBeenCalledWith(getForAssetDeletion(asset), {
+        files: expect.any(Function),
+        queue: expect.any(Function),
+      });
     });
 
     it('never deletes the original or sidecar of an external library item (FL-78)', async () => {
@@ -1130,9 +1138,10 @@ describe(AssetService.name, () => {
         deleteOnDisk: true,
       });
 
+      // the file cleanup is queued with the removal (FL-169), the motion part after it
       expect(mocks.job.queue.mock.calls).toEqual([
-        [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
         [{ name: JobName.FileDelete, data: { files: [asset.originalPath] } }],
+        [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
       ]);
     });
 
@@ -1186,6 +1195,80 @@ describe(AssetService.name, () => {
       await expect(sut.handleAssetDeletion({ id: motion.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.remove).toHaveBeenCalled();
+    });
+
+    describe('when a step fails (FL-169)', () => {
+      it('queues the file cleanup inside the removal, so a failure to queue it keeps the asset', async () => {
+        const asset = AssetFactory.from()
+          .file({ type: AssetFileType.Thumbnail })
+          .exif({ fileSizeInByte: 5000 })
+          .build();
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        mocks.job.queue.mockRejectedValue(new Error('redis unavailable'));
+        // the repository runs the queue inside its transaction and rolls the removal back when it throws
+        let committed = false;
+        mocks.asset.remove.mockImplementation(async (_asset, release) => {
+          await release!.queue(release!.files({ originalPath: asset.originalPath, reservationTemporaryPath: null }));
+          committed = true;
+          return { originalPath: asset.originalPath, reservationTemporaryPath: null };
+        });
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow(
+          'redis unavailable',
+        );
+
+        expect(committed).toBe(false);
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [...asset.files.map(({ path }) => path), asset.originalPath] },
+        });
+        expect(mocks.user.updateUsage).not.toHaveBeenCalled();
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetDelete', expect.anything());
+      });
+
+      it('still succeeds, with its files queued, when announcing the deletion fails after the row is gone', async () => {
+        const motionAsset = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden }).build();
+        const asset = AssetFactory.from({ livePhotoVideoId: motionAsset.id }).exif({ fileSizeInByte: 5000 }).build();
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+        mocks.event.emit.mockRejectedValue(new Error('listener failed'));
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.job.queue.mock.calls).toEqual([
+          [{ name: JobName.FileDelete, data: { files: [asset.originalPath] } }],
+          [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
+        ]);
+        expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, -5000);
+      });
+
+      it('announces the deletion and releases the motion part though the usage update fails', async () => {
+        const motionAsset = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden }).build();
+        const asset = AssetFactory.create({ livePhotoVideoId: motionAsset.id });
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+        mocks.user.updateUsage.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.event.emit).toHaveBeenCalledWith('AssetDelete', { assetId: asset.id, userId: asset.ownerId });
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.AssetDelete,
+          data: { id: motionAsset.id, deleteOnDisk: true },
+        });
+      });
+
+      it('does not fail the job when the motion part cannot be queued after the row is gone', async () => {
+        const asset = AssetFactory.create({ livePhotoVideoId: newUuid() });
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        mocks.asset.getLivePhotoCount.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.job.queue.mock.calls).toEqual([
+          [{ name: JobName.FileDelete, data: { files: [asset.originalPath] } }],
+        ]);
+      });
     });
 
     it('should fail if asset could not be found', async () => {
