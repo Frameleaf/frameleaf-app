@@ -1,7 +1,7 @@
 /**
  * The local (white and green) stops of the model pickers (FL-189; prototype ModelSlider.jsx and
  * gpu-model-catalog.mjs `bandFor`). A local stop is a real choice: it writes the model setting of
- * that kind of work, and the ML container downloads the named model from Hugging Face the first time
+ * that kind of work, and the ML container downloads the named model the first time
  * a job uses it. Only names the setting already accepts are offered, the same ones the Machine
  * learning settings list (`DESCRIPTION_MODEL_PROFILES` and `FALLBACK_MODEL_PROFILES`), so a stop
  * never names a model the container cannot fetch or load.
@@ -19,7 +19,7 @@ import { workerFromHardware, type RoutedWorkload } from '$lib/frameleaf/cloud-ml
 import type { DetectedGpu, RouteMode } from '$lib/frameleaf/gpu-model-catalog';
 
 export type LocalModel = {
-  /** The name the setting takes; the ML container downloads it from Hugging Face on first use. */
+  /** The name the setting takes; the ML container downloads it the first time a job uses it. */
   value: string;
   name: string;
   /** The stop's short label. */
