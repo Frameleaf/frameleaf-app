@@ -197,7 +197,8 @@ const CloudBackupManifestsResponseSchema = z
 const CloudBackupManifestItemSchema = z
   .object({
     assetId: z.string(),
-    name: z.string().describe('The original’s file name when it was backed up'),
+    name: z.string().describe('The original’s file name when it was backed up; empty for a Locked item'),
+    locked: z.boolean().describe('A Locked item: never named in this list'),
     ownerId: z.string().nullable(),
     ownerName: z.string().nullable(),
     files: z.int(),

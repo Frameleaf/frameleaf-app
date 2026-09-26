@@ -247,8 +247,9 @@ describe(CloudBackupService.name, () => {
       currentTime: vi.fn().mockResolvedValue('2026-09-26T02:59:00.123456+00:00'),
       pruneUnseen: vi.fn().mockResolvedValue(0),
       setManifestDatabase: vi.fn().mockResolvedValue(undefined),
-      getLatestManifestDatabaseKey: vi.fn().mockResolvedValue(null),
       getKeptDatabaseKeys: vi.fn().mockResolvedValue(new Set()),
+      getManifestKeys: vi.fn().mockResolvedValue(new Set()),
+      adoptManifests: vi.fn().mockResolvedValue(0),
       listKeptManifests: vi.fn().mockResolvedValue([]),
       markManifests: vi.fn().mockResolvedValue(0),
       forget: vi.fn().mockResolvedValue(undefined),
@@ -860,7 +861,7 @@ describe(CloudBackupService.name, () => {
       expect(store.uploadFile).not.toHaveBeenCalled();
     });
 
-    it('keeps the newest seven dumps and the dump of every kept backup', async () => {
+    it('never removes a database dump: only the clean-up, which reads the kept manifests, does (FL-164)', async () => {
       const older = Array.from({ length: 9 }, (_, i) => `db/cloud-backup-immich-db-backup-2026090${i}.sql.gz`);
       store.listAll = vi
         .fn()
@@ -871,14 +872,53 @@ describe(CloudBackupService.name, () => {
               )
             : Promise.resolve(0),
         );
-      index.getKeptDatabaseKeys.mockResolvedValue(new Set([older[0]]));
 
       await sut.run(operationOf(), 'claim-1');
 
-      const deleted = store.delete.mock.calls.map(([, name]) => name as string);
-      // the current dump and the six newest earlier ones stay; the oldest stays because a kept manifest names
-      // it; every other dump goes
-      expect(deleted.toSorted()).toEqual([older[1], older[2]]);
+      expect(operations.complete).toHaveBeenCalled();
+      expect(store.delete).not.toHaveBeenCalled();
+    });
+
+    it('records backups found in the bucket that this server has no record of (FL-164)', async () => {
+      const earlier = 'm/20260920T030000Z.json.gz';
+      store.listAll = vi
+        .fn()
+        .mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
+          prefix === 'm/'
+            ? onPage([{ key: earlier, size: 1, etag: null }]).then(() => 1)
+            : Promise.resolve(0),
+        );
+      store.get = vi.fn().mockResolvedValue(
+        gzipSync(
+          JSON.stringify({
+            format: 'frameleaf-backup-manifest',
+            version: 1,
+            instanceId: 'instance-1',
+            createdAt: '2026-09-20T03:00:00.000Z',
+            database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
+            assets: {
+              'asset-1': {
+                owner: 'owner-1',
+                files: [{ role: 'original', path: '/data/a.jpg', sha256: SHA_A, size: 100, mtime: null }],
+              },
+            },
+            profiles: {},
+          }),
+        ),
+      );
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(index.adoptManifests).toHaveBeenCalledWith(ref, [
+        {
+          key: earlier,
+          createdAt: new Date('2026-09-20T03:00:00.000Z'),
+          databaseKey: dumpKey,
+          assetCount: 1,
+          fileCount: 1,
+          bytes: 100,
+        },
+      ]);
     });
 
     it('trusts a recorded checksum only when it was verified at the original path', async () => {
@@ -1122,7 +1162,20 @@ describe(CloudBackupService.name, () => {
       );
     });
 
+    /** A schedule far from the fixed "now" below, so the quiet hour before a backup never interferes. */
+    const farSchedule = () => ({
+      frameleafCloud: {
+        cloudBackup: { ...enabledConfig().frameleafCloud.cloudBackup, schedule: { cronExpression: '0 0 1 1 *' } },
+      },
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it('queues the monthly full check first, then a weekly sample, and nothing in between', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-06-15T12:00:00.000Z') });
+      metadata[SystemMetadataKey.SystemConfig] = farSchedule();
       await expect(sut.handleVerifyCheck()).resolves.toBe(JobStatus.Success);
       expect(operations.createExclusive).toHaveBeenLastCalledWith(
         expect.objectContaining({ snapshot: expect.objectContaining({ task: 'verify', depth: 'full' }) }),
@@ -1149,6 +1202,46 @@ describe(CloudBackupService.name, () => {
       });
       await expect(sut.handleVerifyCheck()).resolves.toBe(JobStatus.Skipped);
       expect(operations.createExclusive).toHaveBeenCalledTimes(2);
+    });
+
+    it('waits a day after a failed check, and starts none in the hour before the scheduled backup', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-06-15T12:00:00.000Z') });
+      metadata[SystemMetadataKey.SystemConfig] = farSchedule();
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        lastVerify: { at: new Date(Date.now() - 60 * 60 * 1000).toISOString(), status: 'failed' },
+      });
+      await expect(sut.handleVerifyCheck()).resolves.toBe(JobStatus.Skipped);
+
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = {
+        frameleafCloud: {
+          cloudBackup: { ...enabledConfig().frameleafCloud.cloudBackup, schedule: { cronExpression: '*/30 * * * *' } },
+        },
+      };
+      await expect(sut.handleVerifyCheck()).resolves.toBe(JobStatus.Skipped);
+      expect(operations.createExclusive).not.toHaveBeenCalled();
+    });
+
+    it('starts a scheduled run that found a check holding the bucket once the check has ended', async () => {
+      const snapshot = { version: 1, bucketRef: ref, keyFingerprint: fingerprint, task: 'verify' };
+      const check = () => operationOf({ id: 'check-1', snapshot });
+      operations.createExclusive.mockResolvedValueOnce({
+        active: { id: 'check-1', ownerId: 'admin-1', fingerprint: null },
+      });
+      operations.getOfKind.mockResolvedValueOnce(check());
+
+      await expect(sut.handleSchedule()).resolves.toBe(JobStatus.Success);
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ scheduledRunDueAt: expect.any(String) });
+
+      // the check ends (here, it cannot open the bucket and fails); the run it held up is queued then
+      await sut.run(check(), 'claim-1');
+
+      expect(operations.createExclusive).toHaveBeenLastCalledWith(
+        expect.objectContaining({ snapshot: expect.objectContaining({ task: 'backup', scheduled: true }) }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).not.toHaveProperty('scheduledRunDueAt');
     });
   });
 
@@ -1489,6 +1582,17 @@ describe(CloudBackupService.name, () => {
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
         lastRestore: { operationId: 'restore-1', scope: 'files', status: 'completed', files: 1 },
       });
+    });
+
+    it('records a restore cancelled at its end as cancelled, never as completed', async () => {
+      operations.setBulkResult.mockResolvedValue({ ...running, cancelRequestedAt: new Date() });
+
+      await sut.run(restoreOperation('asset', ['asset-1']), 'claim-1');
+
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith('restore-1', 'claim-1', { released: false });
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRestore: { status: 'cancelled' } });
     });
 
     it('stops with a report when an object does not match its checksum', async () => {

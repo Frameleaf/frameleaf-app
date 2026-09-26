@@ -924,6 +924,8 @@ export type FrameleafCloudBackup = {
   escrow?: { storedAt: string };
   /** FL-164: how the last restore from this bucket ended. */
   lastRestore?: FrameleafCloudBackupRestore;
+  /** FL-164: a scheduled run found the bucket busy; it starts when the operation holding it ends. */
+  scheduledRunDueAt?: string;
 };
 
 /** FL-164: one restore from a manifest. Counts are files; `databaseFile` is the dump's name in `<media>/backups`. */

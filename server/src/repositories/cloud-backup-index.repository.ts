@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { isLocked } from 'src/utils/locked.js';
 
 export type CloudBackupIndexedObject = { sha256: string; size: number; etag: string | null };
 
@@ -53,6 +54,18 @@ export type CloudBackupLibraryAsset = {
   originalPath: string;
   ownerId: string;
   isExternal: boolean;
+  /** Locked (an `asset_lock` record): its name is never shown in a restore list. */
+  locked: boolean;
+};
+
+/** FL-164: a manifest found in the bucket, as recorded when this server had no record of it. */
+export type CloudBackupAdoptedManifest = {
+  key: string;
+  createdAt: Date;
+  databaseKey: string | null;
+  assetCount: number;
+  fileCount: number;
+  bytes: number;
 };
 
 /** FL-164: a kept manifest as the restore picker and retention read it. */
@@ -216,21 +229,6 @@ export class CloudBackupIndexRepository {
     await this.db.updateTable('cloud_backup_manifest').set({ databaseKey }).where('id', '=', id).execute();
   }
 
-  /** The database dump the newest complete manifest of this bucket names, if any. */
-  @GenerateSql({ params: [DummyValue.STRING] })
-  async getLatestManifestDatabaseKey(bucket: string): Promise<string | null> {
-    const row = await this.db
-      .selectFrom('cloud_backup_manifest')
-      .select('databaseKey')
-      .where('bucket', '=', bucket)
-      .where('status', '=', 'complete')
-      .where('databaseKey', 'is not', null)
-      .orderBy('createdAt', 'desc')
-      .limit(1)
-      .executeTakeFirst();
-    return row?.databaseKey ?? null;
-  }
-
   /**
    * FL-164: the database dumps named by this bucket's manifests that are still kept (complete, or complete
    * and degraded by a verification), so no kept manifest ever loses its dump to pruning.
@@ -245,6 +243,67 @@ export class CloudBackupIndexRepository {
       .where('databaseKey', 'is not', null)
       .execute();
     return new Set(rows.map(({ databaseKey }) => databaseKey!));
+  }
+
+  /** FL-164: which of these manifest keys this server has a record of, in any state. */
+  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
+  async getManifestKeys(bucket: string, keys: string[]): Promise<Set<string>> {
+    if (keys.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('cloud_backup_manifest')
+      .select('key')
+      .where('bucket', '=', bucket)
+      .where('key', 'in', [...new Set(keys)])
+      .execute();
+    return new Set(rows.map(({ key }) => key));
+  }
+
+  /**
+   * FL-164: record manifests found in the bucket that this server has no record of (a bucket claimed
+   * again, or a database restored from before them) as complete, so they can be listed and restored from.
+   * A key already recorded, in any state, is left as it is.
+   */
+  @GenerateSql({
+    params: [
+      DummyValue.STRING,
+      [
+        {
+          key: DummyValue.STRING,
+          createdAt: DummyValue.DATE,
+          databaseKey: DummyValue.STRING,
+          assetCount: DummyValue.NUMBER,
+          fileCount: DummyValue.NUMBER,
+          bytes: DummyValue.NUMBER,
+        },
+      ],
+    ],
+  })
+  async adoptManifests(bucket: string, manifests: CloudBackupAdoptedManifest[]): Promise<number> {
+    const known = await this.getManifestKeys(bucket, manifests.map(({ key }) => key));
+    const fresh = manifests.filter(({ key }) => !known.has(key));
+    if (fresh.length === 0) {
+      return 0;
+    }
+    await this.db
+      .insertInto('cloud_backup_manifest')
+      .values(
+        fresh.map((manifest) => ({
+          bucket,
+          key: manifest.key,
+          databaseKey: manifest.databaseKey,
+          operationId: null,
+          createdAt: manifest.createdAt,
+          finishedAt: manifest.createdAt,
+          assetCount: manifest.assetCount,
+          fileCount: manifest.fileCount,
+          bytes: manifest.bytes,
+          status: 'complete',
+        })),
+      )
+      .execute();
+    return fresh.length;
   }
 
   /** FL-164: this bucket's kept manifests, newest first: what a restore can be made from. */
@@ -318,6 +377,7 @@ export class CloudBackupIndexRepository {
     const rows = await this.db
       .selectFrom('asset')
       .select(['id', 'status', 'deletedAt', 'originalFileName', 'originalPath', 'ownerId', 'isExternal'])
+      .select(isLocked('asset').as('locked'))
       .where('id', '=', sql<string>`any(${[...new Set(assetIds)]}::uuid[])`)
       .where('status', 'in', [AssetStatus.Active, AssetStatus.Trashed])
       .execute();
@@ -330,6 +390,7 @@ export class CloudBackupIndexRepository {
           originalPath: row.originalPath,
           ownerId: row.ownerId,
           isExternal: row.isExternal,
+          locked: !!row.locked,
         },
       ]),
     );
