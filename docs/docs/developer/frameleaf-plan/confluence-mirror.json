@@ -1035,19 +1035,19 @@
       "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 88495,
+      "bytes": 92011,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "98428d8bdb0a2b725003493fa86287f081caf8b908952b72833531cc1c1ea129",
+      "sourceSha256": "dbb6cf519786ea8712aca155aa708d55d48b6e5c813984b63322cc4c6d964c0e",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 11,
+      "version": 12,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "74a731a215aef13f071b96db6a4b6030d8994e3f",
-      "sourceState": "committed-fl-181-fl-182-workload-ids-licence-key-merged-2026-09-26",
-      "readbackResult": "Markdown read-back of version 11 begins with the header carrying SHA-256 98428d8b, 88495 bytes, commit 74a731a215 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-181 commits 9990204e06 and 4cc520230d merged in 2b17345e33 and the FL-182 commit e81592111e merged in 74a731a215, the source-at-commit backlink, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the Workload IDs on the wire (FC-66, FL-181) entry and the Luhn mod 32 licence-key check symbol (FL-182, decision #40), except one normalized space at a nested-backtick boundary and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text. Version 10 (FL-181 alone, SHA-256 cc751026 at 2b17345e33) was published and read back first and is superseded by version 11.",
-      "readbackAt": "2026-09-26T06:33:00.000Z"
+      "sourceCommit": "0a65d682f30579a6640938b8ba0395e418a7f198",
+      "sourceState": "committed-fl-185-clone-suspicion-licence-refresh-merged-2026-09-26",
+      "readbackResult": "Markdown read-back of version 12 begins with the header carrying SHA-256 dbb6cf51, 92011 bytes, commit 0a65d682f3 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-185 commits 529944ca65, 9f89a5f4ef and bab3934e91 merged in 0a65d682f3, the source-at-commit backlink, FL-185, FL-182, FL-181, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the Clone suspicion and ML tokens (FL-185) entry and the FL-185 licence refresh contract under License certificate, except one normalized space at a nested-backtick boundary and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
+      "readbackAt": "2026-09-26T07:53:10.000Z"
     }
   ],
   "spaceId": "61374475",
