@@ -73,6 +73,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Test certification restart handling
         run: node --test scripts/test-fork-roundtrip.test.mjs
+      # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
+      # Deploy workflow on fork/main); without it the server base compiles from source on every run.
+      - name: Login to owned GHCR namespace for the build cache
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Run real official-container certification lane
         run: pnpm --filter immich-e2e test:fork-roundtrip
       - name: Capture container evidence

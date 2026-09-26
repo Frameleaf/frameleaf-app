@@ -67,6 +67,10 @@ services:
     build:
       context: ..
       dockerfile: server/Dockerfile
+      cache_from:
+        # Frameleaf's own build cache from the Deploy workflow; a missing cache only makes the build slower.
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-amd64-cpu-prod
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-arm64-cpu-prod
       args:
         BUILD_ID: fork-roundtrip
         BUILD_IMAGE: fork-roundtrip
