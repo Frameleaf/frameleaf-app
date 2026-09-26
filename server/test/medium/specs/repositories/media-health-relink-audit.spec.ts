@@ -237,6 +237,40 @@ describe('Media health transactional relink audit', () => {
       'found',
     );
   });
+  // FL-69: a new install stays in the legacy phase until the fork backfill runs; Library Care still relinks
+  it('relinks an external original in the legacy phase, writing only the legacy finding', async () => {
+    const input = await arrange();
+    await sql`UPDATE immich_fork.state SET phase='legacy'`.execute(db);
+    expect(await sut.relinkExternalAsset(input)).toBe(true);
+    expect(
+      await db.selectFrom('asset').select('originalPath').where('id', '=', input.assetId).executeTakeFirst(),
+    ).toEqual({ originalPath: input.originalPath });
+    const status = async (schema: string) =>
+      (
+        await sql<{
+          status: string;
+        }>`SELECT status FROM ${sql.id(schema, 'asset_health')} WHERE id=${input.healthId}::uuid`.execute(db)
+      ).rows[0].status;
+    expect(await status('public')).toBe('relinked');
+    expect(await status('immich_fork')).toBe('found');
+  });
+  it('relinks a managed original in the legacy phase without writing the fork physical mapping', async () => {
+    const { expectedLibraryId: _, ...input } = await arrange(false);
+    await sql`UPDATE immich_fork.state SET phase='legacy'`.execute(db);
+    expect(await sut.relinkManagedAsset(input)).toBe(true);
+    expect(
+      (await sql<{ path: string }>`SELECT path FROM public.physical_file WHERE path=${input.originalPath}`.execute(db))
+        .rows,
+    ).toEqual([{ path: input.originalPath }]);
+    for (const table of ['physical_file', 'asset_physical_file']) {
+      expect((await sql`SELECT 1 FROM ${sql.id('immich_fork', table)}`.execute(db)).rows).toEqual([]);
+    }
+  });
+  it.each(['inactive', 'failed'])('refuses a relink in the %s phase', async (phase) => {
+    const input = await arrange();
+    await sql`UPDATE immich_fork.state SET phase=${phase}`.execute(db);
+    expect(await sut.relinkExternalAsset(input)).toBe(false);
+  });
   it.each(['dual-write', 'active'])(
     'reuses a SHA-1 physical row without replacing its metadata in %s',
     async (phase) => {
