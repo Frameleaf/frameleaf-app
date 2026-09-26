@@ -218,6 +218,9 @@ const frameleafCloudDefaults = {
     // default; a `models` key saved by an earlier version is dropped when the configuration is read.
     autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
     faces: { enabled: false as const },
+    // FL-162 owner decision (2026-09-26): administrators may always spend the AI Wallet; anyone else
+    // only once an administrator allows them here, each with an optional monthly limit in USD.
+    spenders: [] as Array<{ userId: string; monthlyCapUsd: number | null }>,
   },
   // FL-160: cloud backup is off until an administrator sets it up (Settings › Frameleaf Cloud › Cloud
   // backup), which claims the bucket. The bucket key is never part of the configuration: it is a 0600
@@ -587,6 +590,26 @@ const AdminConfigFrameleafCloudSchema = z
         faces: z
           .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud') })
           .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
+        spenders: z
+          .array(
+            z
+              .object({
+                userId: z.uuidv4().describe('A person allowed to confirm Frameleaf Cloud jobs'),
+                monthlyCapUsd: z
+                  .number()
+                  .min(0)
+                  .max(100_000)
+                  .meta({ format: 'double' })
+                  .nullable()
+                  .describe('Their monthly limit, USD: settled charges plus the holds of running jobs; null for none'),
+              })
+              .meta({ id: 'AdminConfigFrameleafCloudSpenderDto' }),
+          )
+          .max(1000)
+          .refine((spenders) => new Set(spenders.map((spender) => spender.userId)).size === spenders.length, {
+            message: 'Each person can be allowed once',
+          })
+          .describe('People besides administrators who may spend the AI Wallet, each with an optional monthly limit'),
       })
       .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
     cloudBackup: z

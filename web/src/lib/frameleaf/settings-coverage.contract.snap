@@ -295,6 +295,9 @@
       "cloud"
     ]
   },
+  "frameleafCloud.cloudMl.spenders": {
+    "type": "array"
+  },
   "frameleafCloud.cloudMl.startWith": {
     "type": "string",
     "enum": [

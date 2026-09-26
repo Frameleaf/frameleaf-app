@@ -441,6 +441,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       startWith: 'local',
       autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
       faces: { enabled: false },
+      spenders: [],
     },
     cloudBackup: {
       enabled: false,
