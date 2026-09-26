@@ -11,7 +11,7 @@ import { InstanceIdentityRepository } from 'src/repositories/instance-identity.r
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafLicenseService, IDENTITY_KEY_MISMATCH_MESSAGE } from 'src/services/frameleaf-license.service.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
-import { FakeCloud, FakeCloudRequest, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
+import { FakeCloud, FakeCloudRequest, startFakeCloud, tokenAnswer, tokenNameOf } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { makeLicenseSigner, signLicenseCertificate } from 'test/fixtures/frameleaf-license.fixture.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -45,11 +45,13 @@ describe(FrameleafLicenseService.name, () => {
 
   /**
    * FL-177 (as-built decision #28): an unlinked server's activation travels as a compact JWS signed by
-   * its identity key (`kid` = the `jkt`), bound to the activation address and short-lived.
+   * its identity key (`kid` = the `jkt`), bound to the activation address and short-lived. It is not
+   * a DPoP request: no token and no `DPoP` header (FL-178).
    */
   const signedActivation = async (request: FakeCloudRequest) => {
     expect(request.headers['content-type']).toBe('application/jose');
     expect(request.headers.authorization).toBeUndefined();
+    expect(request.headers.dpop).toBeUndefined();
     const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as {
       kid: string;
       publicJwk: Record<string, string>;
@@ -69,8 +71,7 @@ describe(FrameleafLicenseService.name, () => {
     return payload as Record<string, any>;
   };
 
-  const serveToken = () =>
-    cloud.on('POST /id/token', () => ({ status: 200, body: { access_token: 'api-token', expires_in: 600 } }));
+  const serveToken = () => cloud.on('POST /id/token', (request) => tokenAnswer(request));
 
   beforeEach(async () => {
     cloud = await startFakeCloud();
@@ -187,10 +188,20 @@ describe(FrameleafLicenseService.name, () => {
       }));
       await sut.activate(authStub.admin, { key: SERVER_KEY });
       const request = cloud.requests.find(({ path }) => path === '/api/v1/licenses/activate')!;
-      expect(request.headers.authorization).toBe('Bearer api-token');
-      // a linked server sends the plain JSON body; its token already proves who it is
+      // FL-178: a DPoP-bound instance token and a proof by the identity key (checked by the fake cloud)
+      expect(tokenNameOf(request)).toBe('api-token');
+      expect(request.dpop).toMatchObject({
+        claims: { htm: 'POST', htu: `${cloud.url}/api/v1/licenses/activate`, ath: expect.any(String) },
+      });
+      // a linked server sends the plain JSON body; its token already proves who it is, and the
+      // fingerprint names the key the token is bound to
       expect(request.headers['content-type']).toBe('application/json');
-      expect(request.json()).toMatchObject({ key: SERVER_KEY, fingerprint: { instanceId: instanceId() } });
+      const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string };
+      expect(request.dpop!.jkt).toBe(identity.kid);
+      expect(request.json()).toMatchObject({
+        key: SERVER_KEY,
+        fingerprint: { instanceId: instanceId(), jkt: identity.kid },
+      });
     });
 
     it('never activates without the identity key’s signature when not linked (FL-177)', async () => {
@@ -328,9 +339,9 @@ describe(FrameleafLicenseService.name, () => {
         body: { certificates: [certificate({ jti: 'jti-2' })] },
       }));
       const status = await sut.refreshNow();
-      expect(cloud.requests.find(({ path }) => path === '/api/v1/licenses/refresh')?.headers.authorization).toBe(
-        'Bearer api-token',
-      );
+      const refresh = cloud.requests.find(({ path }) => path === '/api/v1/licenses/refresh')!;
+      expect(tokenNameOf(refresh)).toBe('api-token');
+      expect(refresh.dpop?.claims.ath).toEqual(expect.any(String));
       expect(status).toMatchObject({ state: 'active', plan: { source: 'account' }, refresh: { lastError: null } });
       expect(store()?.plan?.claims.jti).toBe('jti-2');
     });

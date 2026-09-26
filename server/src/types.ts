@@ -814,6 +814,11 @@ export type FrameleafCloudLink = {
     cloneSuspected?: boolean;
     relinkRequested?: boolean;
     /**
+     * FL-177/FL-178: why the relink was asked for. `key` (every instance route answered `key_retired`)
+     * lets later `key_retired` check-ins stay quiet; a relink the cloud commanded does not.
+     */
+    relinkReason?: 'command' | 'key';
+    /**
      * FL-175: the recovery rotation after a damaged key. `nextAttemptAt` spaces retries (at least 20
      * minutes, or the cloud's Retry-After); `closed` means the previous key's window closed and the
      * server must be linked again.
