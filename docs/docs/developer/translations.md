@@ -1,15 +1,12 @@
 # Translations
 
-Frameleaf translations are managed through pull requests to the `i18n/en.json` file in the [Frameleaf repository](https://github.com/Frameleaf/frameleaf-app).
+Frameleaf translations are contributed by pull request to the [Frameleaf repository](https://github.com/Frameleaf/frameleaf-app). English (`i18n/en.json`) is the source; every other language has its own file in `i18n/`, named by its language code.
 
 ## Contributing translations
 
-To contribute a new translation or update an existing one:
-
-1. Fork the [Frameleaf repository](https://github.com/Frameleaf/frameleaf-app)
-2. Create a new branch for your translation
-3. Edit the translation file in `i18n/en.json` (or create a new language file if needed)
-4. Submit a pull request with your changes
+1. Copy the repository to your GitHub account and create a branch for your translation.
+2. Add or update the file for your language in `i18n/`, using the keys from `i18n/en.json`. Keys missing from your file fall back to English.
+3. Open a pull request against the repository describing the language and what changed.
 
 ## International message format
 
