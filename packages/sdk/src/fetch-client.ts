@@ -96,6 +96,8 @@ export type CloudStatusResponseDto = {
     lastContactAt: string | null;
     /** The last link or check-in problem, in plain words */
     lastError: string | null;
+    /** Why Frameleaf Cloud refused the last link attempt, while unlinked; null when it gave no such reason */
+    linkRefusal: (CloudLinkRefusal) | null;
     linkResult: (CloudLinkResult) | null;
     /** FRAMELEAF_LINK_TOKEN is set */
     linkTokenConfigured: boolean;
@@ -225,6 +227,8 @@ export type CloudMlWalletDto = {
     dailyCapUsd: number | null;
     /** Held by running jobs, USD */
     heldUsd: number;
+    /** Where the account owner raises the daily cap or turns on automatic top-up, when Frameleaf Cloud named it; this server can only lower the cap or turn automatic top-up off */
+    settingsUrl: string | null;
     /** Spent today, USD */
     spentTodayUsd: number;
     /** Where to add credit; only when Frameleaf Cloud returned one */
@@ -284,6 +288,8 @@ export type CloudMlDestinationCreateDto = {
 export type CloudMlSettlementDto = {
     /** The job id Frameleaf Cloud settled */
     cloudJobId: string;
+    /** The compute SKU the job ran on, when reported */
+    computeSku: string | null;
     /** The settled charge, USD */
     costUsd: number;
     /** Credits the charge used, when reported */
@@ -295,8 +301,8 @@ export type CloudMlSettlementDto = {
     gpuSeconds: number | null;
     /** The server job that sent the work, when recorded */
     jobName: string | null;
-    /** The catalogue model the job used, when reported */
-    modelId: string | null;
+    /** The catalogue model SKU the job used, when reported */
+    modelSku: string | null;
     /** The request finished successfully */
     succeeded: boolean;
     /** Workers the job ran on (each paid a start fee), when reported */
@@ -428,10 +434,6 @@ export type AdminConfigFrameleafCloudMlDto = {
 export type AdminConfigFrameleafSignInDto = {
     /** Sign in with Frameleaf button text */
     buttonText: string;
-    /** Frameleaf client secret (write-only; empty preserves the existing secret) */
-    clientSecret: string;
-    /** Read-only indicator that a client secret is stored. Set by the server; ignored on write. */
-    clientSecretConfigured?: boolean;
     /** Show Sign in with Frameleaf on the local sign-in page too */
     showOnLocalLogin: boolean;
 };
@@ -19492,6 +19494,12 @@ export enum CloudHeartbeatField {
     Permissions = "permissions",
     LicenseKid = "licenseKid"
 }
+export enum CloudLinkRefusal {
+    InstanceLimit = "instance-limit",
+    ServerRefused = "server-refused",
+    InstanceIdTaken = "instance-id-taken",
+    KeyAlreadyLinked = "key-already-linked"
+}
 export enum CloudLinkResult {
     Pending = "pending",
     Approved = "approved",
@@ -19528,7 +19536,8 @@ export enum MlAdmissionRefusal {
     WalletInsufficient = "wallet-insufficient",
     QuotaExceeded = "quota-exceeded",
     ModelMismatch = "model-mismatch",
-    InsufficientMemory = "insufficient-memory"
+    InsufficientMemory = "insufficient-memory",
+    RequestInvalid = "request-invalid"
 }
 export enum MlWorkload {
     Face = "face",
@@ -19664,8 +19673,7 @@ export enum ClassificationRuleAction {
 }
 export enum ConfigCredential {
     SmtpPassword = "smtp-password",
-    OauthClientSecret = "oauth-client-secret",
-    FrameleafOidcClientSecret = "frameleaf-oidc-client-secret"
+    OauthClientSecret = "oauth-client-secret"
 }
 export enum SystemConfigHistoryCredentialChange {
     Replaced = "replaced",
@@ -20857,7 +20865,8 @@ export enum PetRecognitionUnavailableReason {
     ConsentVersionOutdated = "consent-version-outdated",
     WalletInsufficient = "wallet-insufficient",
     QuotaExceeded = "quota-exceeded",
-    ModelMismatch = "model-mismatch"
+    ModelMismatch = "model-mismatch",
+    RequestInvalid = "request-invalid"
 }
 export enum PetRecognitionRunStatus {
     Queued = "queued",

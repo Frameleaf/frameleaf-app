@@ -25,6 +25,8 @@ export type FrameleafCloudRequest = {
   bearer?: string;
   body?: unknown;
   form?: Record<string, string>;
+  /** FL-177: a body sent as it is, for example a compact JWS as `application/jose`. */
+  raw?: { contentType: string; body: string };
   headers?: Record<string, string>;
 };
 
@@ -139,7 +141,10 @@ export class FrameleafCloudRepository {
   async requestJson<T extends z.ZodType>(schema: T, request: FrameleafCloudRequest): Promise<z.infer<T>> {
     const headers: Record<string, string> = { Accept: 'application/json', ...request.headers };
     let body: string | undefined;
-    if (request.form) {
+    if (request.raw) {
+      headers['Content-Type'] = request.raw.contentType;
+      body = request.raw.body;
+    } else if (request.form) {
       headers['Content-Type'] = 'application/x-www-form-urlencoded';
       body = new URLSearchParams(request.form).toString();
     } else if (request.body !== undefined) {

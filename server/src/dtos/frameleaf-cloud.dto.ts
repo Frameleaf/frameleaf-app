@@ -5,7 +5,7 @@ import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
 /**
  * Linking this server to a Frameleaf account (FL-154 status, FL-155 link lifecycle). Customer copy
  * says "Frameleaf Cloud"; nothing here names a GPU provider. No secret ever appears in a response:
- * the device code, link tokens and the initial access token stay on the server or are never kept.
+ * the device code and link tokens stay on the server or are never kept.
  */
 
 export const CloudLinkStateSchema = z
@@ -19,6 +19,13 @@ export const CloudLinkResultSchema = z
   .enum(['pending', 'approved', 'denied', 'expired'])
   .describe('How the current or last device authorization stands')
   .meta({ id: 'CloudLinkResult' });
+
+export const CloudLinkRefusalSchema = z
+  .enum(['instance-limit', 'server-refused', 'instance-id-taken', 'key-already-linked'])
+  .describe(
+    'Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: another server is registered with this server’s ID; key-already-linked: this server’s key is already linked (a copied identity directory)',
+  )
+  .meta({ id: 'CloudLinkRefusal' });
 
 export const CloudPermissionsSchema = z
   .object({
@@ -58,6 +65,9 @@ const CloudStatusResponseSchema = z
     lastContactAt: z.string().nullable(),
     pending: CloudLinkPendingSchema.nullable(),
     linkResult: CloudLinkResultSchema.nullable(),
+    linkRefusal: CloudLinkRefusalSchema.nullable().describe(
+      'Why Frameleaf Cloud refused the last link attempt, while unlinked; null when it gave no such reason',
+    ),
     permissions: CloudPermissionsSchema,
     revoked: z.object({ at: z.string(), reason: z.string() }).nullable(),
     lastError: z.string().nullable().describe('The last link or check-in problem, in plain words'),

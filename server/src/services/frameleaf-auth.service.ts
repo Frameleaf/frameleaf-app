@@ -116,8 +116,8 @@ export class FrameleafAuthService extends BaseService {
       });
       await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
     }
-    if (link?.autoRegistered && role && user.isAdmin !== (role === 'admin')) {
-      user = await this.userRepository.update(user.id, { isAdmin: role === 'admin' });
+    if (role && user.isAdmin !== (role === 'admin')) {
+      user = await this.applyRole(user, role);
     }
     await this.frameleafAccountRepository.touchLink(user.id, { email, emailVerified: true, role });
 
@@ -296,18 +296,44 @@ export class FrameleafAuthService extends BaseService {
     }
   }
 
-  private async config() {
-    const systemConfig = await this.getConfig({ withCache: false });
-    return frameleafOAuthConfig(
+  /**
+   * FL-177 (as-built decision #32): `frameleaf_role` is applied on every sign-in, to every linked
+   * account, so a person the cloud demotes loses administration here at their next sign-in. The one
+   * exception keeps the server manageable: the last administrator is never demoted this way; the
+   * change is logged for the administrators to settle by hand.
+   */
+  private async applyRole(user: UserAdmin, role: 'admin' | 'user'): Promise<UserAdmin> {
+    if (role === 'user') {
+      const admins = await this.userRepository.getAdmins();
+      if (admins.every((admin) => admin.id === user.id)) {
+        this.logger.warn(
+          `Frameleaf asked for ${user.email} to stop administering this server, but they are its only administrator; they stay one`,
+        );
+        return user;
+      }
+    }
+    const updated = await this.userRepository.update(user.id, { isAdmin: role === 'admin' });
+    // the change comes from Frameleaf Cloud, not from a person on this server
+    await this.recordAdminEvents([
       {
-        configRepository: this.configRepository,
-        databaseRepository: this.databaseRepository,
-        systemMetadataRepository: this.systemMetadataRepository,
-        instanceIdentityRepository: this.instanceIdentityRepository,
-        frameleafCloudRepository: this.frameleafCloudRepository,
+        userId: updated.id,
+        actorId: null,
+        action: role === 'admin' ? AdminAuditAction.AdminGranted : AdminAuditAction.AdminRevoked,
+        subject: updated.name,
+        detail: 'frameleaf_role',
       },
-      systemConfig,
-    );
+    ]);
+    return updated;
+  }
+
+  private async config() {
+    return frameleafOAuthConfig({
+      configRepository: this.configRepository,
+      databaseRepository: this.databaseRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+      instanceIdentityRepository: this.instanceIdentityRepository,
+      frameleafCloudRepository: this.frameleafCloudRepository,
+    });
   }
 
   private async requireConfig() {
