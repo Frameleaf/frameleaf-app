@@ -1,10 +1,11 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { generateKeyPairSync } from 'node:crypto';
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink } from 'src/types.js';
-import { AdminAuditAction, JobName, JobStatus, NotificationLevel, SystemMetadataKey } from 'src/enum.js';
+import { AdminAuditAction, DatabaseLock, JobName, JobStatus, NotificationLevel, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { CANDIDATE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -127,7 +128,16 @@ describe(FrameleafCloudService.name, () => {
       metadata.set(SystemMetadataKey.SystemConfig, partial);
       return Promise.resolve();
     });
-    mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+    // like the real lock (an in-process AsyncLock plus a Postgres advisory lock), not re-entrant: taking
+    // a lock already held from inside it would wait forever, so fail the test instead (FL-175)
+    const heldLocks = new AsyncLocalStorage<DatabaseLock[]>();
+    mocks.database.withLock.mockImplementation((lock, callback) => {
+      const held = heldLocks.getStore() ?? [];
+      if (held.includes(lock)) {
+        return Promise.reject(new Error(`withLock(${DatabaseLock[lock]}) taken again inside itself would deadlock`));
+      }
+      return heldLocks.run([...held, lock], callback) as never;
+    });
     mocks.user.getAdmins.mockResolvedValue([admin] as never);
     mocks.event.emit.mockResolvedValue(undefined as never);
     mocks.storage.stat.mockResolvedValue({} as never);
