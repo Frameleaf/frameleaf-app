@@ -1,5 +1,10 @@
 import { Mocked, vitest } from 'vitest';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
+import {
+  AssetFileMove,
+  AssetFileMoveOperations,
+  AssetFileMoveResult,
+  AssetRepository,
+} from 'src/repositories/asset.repository.js';
 import { RepositoryInterface } from 'src/types.js';
 
 export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetRepository>> => {
@@ -28,6 +33,16 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     deleteAll: vitest.fn(),
     update: vitest.fn(),
     remove: vitest.fn(),
+    // FL-179: the move runs its filesystem side in the repository's transaction, as the repository does
+    moveFile: vitest.fn(
+      async (_move: AssetFileMove, { rename, finish }: AssetFileMoveOperations): Promise<AssetFileMoveResult> => {
+        if (!(await rename())) {
+          return 'failed';
+        }
+        await finish();
+        return 'moved';
+      },
+    ),
     findLivePhotoMatch: vitest.fn(),
     getStatistics: vitest.fn(),
     getCalendarHeatmap: vitest.fn(),

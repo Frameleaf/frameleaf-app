@@ -27,6 +27,7 @@ import {
   AssetMetadataKey,
   AssetOrder,
   AssetOrderBy,
+  AssetPathType,
   AssetStatus,
   AssetType,
   AssetVisibility,
@@ -38,7 +39,8 @@ import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
-import { lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { canWriteFork, lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { PHYSICAL_FILE_HANDOFF_REFUSAL, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table.js';
@@ -106,6 +108,53 @@ export type RemovedAsset = {
   /** Outputs of its restorations and develop revisions, whose rows go with it. */
   derivedPaths: string[];
   videoEditPaths?: string[];
+  /**
+   * Storage moves of its files that were recorded but never committed (FL-179). The file can be at
+   * either path, so both are released: a move that renamed the file and then failed to save the new
+   * path leaves it where no row of the asset names it.
+   */
+  pendingMoves: AssetPendingMove[];
+};
+
+export type AssetMovePathType = AssetPathType | AssetFileType;
+
+export type AssetPendingMove = { pathType: AssetMovePathType; oldPath: string; newPath: string };
+
+/** The path types whose moves `moveFile` commits: the asset's original and its own unedited files. */
+export const ASSET_MOVE_PATH_TYPES: ReadonlySet<string> = new Set<string>([
+  ...Object.values(AssetPathType),
+  ...Object.values(AssetFileType),
+]);
+
+/** One storage move of an asset's file, recorded in `move_history` before it starts (FL-179). */
+export type AssetFileMove = {
+  /** The `move_history` row that records the move until it commits. */
+  moveId: string;
+  assetId: string;
+  pathType: AssetMovePathType;
+  /** Where the asset's row records the file when the move starts. */
+  from: string;
+  /** Where the file is: `from`, or where an earlier attempt that never committed left it. */
+  source: string;
+  to: string;
+};
+
+/**
+ * - `moved`: the file is at `to` and every row that named it says so.
+ * - `failed`: the file could not be moved; nothing changed and the move stays recorded.
+ * - `removed`: the asset no longer exists; nothing was moved.
+ * - `changed`: the asset's row names another path now; nothing was moved.
+ */
+export type AssetFileMoveResult = 'moved' | 'failed' | 'removed' | 'changed';
+
+/** The filesystem side of a move, run by `moveFile` while it holds the move's locks. */
+export type AssetFileMoveOperations = {
+  /** Puts the file at `to` (a copy keeps its source until `finish`); false when it could not, changing nothing. */
+  rename: () => Promise<boolean>;
+  /** Removes what is left at `source` once the new path is saved. Must not throw. */
+  finish: () => Promise<void>;
+  /** Leaves the file only at `source` again after the new path could not be saved. Must not throw. */
+  undo: () => Promise<void>;
 };
 
 /** The file cleanup `remove` queues inside its transaction (FL-169). */
@@ -1390,6 +1439,11 @@ export class AssetRepository {
    * cleanup is already queued. FileDelete takes the same path locks, so it cannot count references
    * before this transaction ends: after a commit the removed rows no longer protect the files, and
    * after a rollback they still do. Files another asset still references are kept either way.
+   *
+   * FL-179: the asset's stack is dissolved, or given a new primary, in the same transaction, so a
+   * removal that rolls back leaves the stack as it was. Locks are taken as paths, then the stack row,
+   * then the asset row: path writers lock paths before rows, and stack writers change the stack before
+   * its members.
    */
   async remove(asset: { id: string }, release?: AssetFileRelease): Promise<RemovedAsset | undefined> {
     return this.db.transaction().execute(async (tx) => {
@@ -1398,6 +1452,13 @@ export class AssetRepository {
         for (const path of [...new Set(paths)].filter((path) => !lockedPaths.has(path)).toSorted()) {
           await lockFilePath(tx, path);
           lockedPaths.add(path);
+        }
+      };
+      const lockedStacks = new Set<string>();
+      const lockStack = async (stackId: string | null | undefined) => {
+        if (stackId && !lockedStacks.has(stackId)) {
+          await tx.selectFrom('stack').select('id').where('id', '=', asUuid(stackId)).forUpdate().execute();
+          lockedStacks.add(stackId);
         }
       };
 
@@ -1410,9 +1471,18 @@ export class AssetRepository {
         }
       }
 
+      // The stack is read again under the asset's row lock; one it joined in between is locked then.
+      await lockStack(await this.getStackId(tx, asset.id));
+
       const lockedAsset = await this.readRemovedPaths(tx, asset.id, true);
       if (!lockedAsset) {
         return;
+      }
+      const stackId = await this.getStackId(tx, asset.id);
+      if (stackId) {
+        await lockStack(stackId);
+        // before the row goes: the stack's primary cannot name a removed asset
+        await this.leaveStack(tx, asset.id, stackId);
       }
       const videoEditPaths = await this.deleteVideoEditVersions([asset.id], tx);
       // only a removal that releases their files takes the develop revisions (they have no foreign key)
@@ -1421,6 +1491,12 @@ export class AssetRepository {
       await this.forkEnrichment.delete([asset.id], tx);
       await this.smartAlbums.deleteAssets([asset.id], tx);
       await this.deleteForkDerivedResults([asset.id], tx);
+      // FL-179: a recorded move that never committed is released with the asset (see `pendingMoves`)
+      await tx
+        .deleteFrom('move_history')
+        .where('entityId', '=', asUuid(asset.id))
+        .where('pathType', 'in', [...ASSET_MOVE_PATH_TYPES] as AssetMovePathType[])
+        .execute();
       await tx.deleteFrom('asset').where('id', '=', asUuid(asset.id)).execute();
       // the version and develop paths are the ones actually deleted, not the ones read beforehand
       const removed: RemovedAsset = {
@@ -1430,6 +1506,7 @@ export class AssetRepository {
         videoDuplicateFramePaths: lockedAsset.videoDuplicateFramePaths,
         derivedPaths: [...new Set([...lockedAsset.restorationPaths, ...developPaths])],
         ...(videoEditPaths.length > 0 && { videoEditPaths }),
+        pendingMoves: lockedAsset.pendingMoves,
       };
 
       if (release) {
@@ -1440,6 +1517,140 @@ export class AssetRepository {
 
       return removed;
     });
+  }
+
+  /**
+   * Commits one storage move of an asset's file (FL-179): the rename and the new path are one unit,
+   * so a move cannot race the asset's removal and leave the file where no row names it.
+   *
+   * In one transaction, the path lock of every path involved is taken in sorted order, then the asset
+   * row lock: the order the removal and every other path writer use. A removal therefore sees the
+   * file either at its old path or, once this commits, at its new one. Only while the asset still
+   * names `from` is the file renamed, and then every row that named `from` is pointed at `to`: the
+   * asset (or its file row), and a shared physical file with the rows of the assets that share it.
+   * The `move_history` row is deleted with them.
+   *
+   * The move stays recorded until then. If the new path cannot be saved the file is put back; if the
+   * process stops in between, the next move of the asset finds the recorded move and finishes it, and
+   * a removal releases the file at either path.
+   */
+  async moveFile(move: AssetFileMove, operations: AssetFileMoveOperations): Promise<AssetFileMoveResult> {
+    return this.db.transaction().execute(async (tx) => {
+      // Physical file rows are Frameleaf's own and refused while a handoff holds the schema (FL-44). The
+      // guard comes before any lock, as in `withPathLock`; a file shared since the first read is guarded then.
+      let guarded = false;
+      const guard = async () => {
+        if (!guarded) {
+          await lockPublicForkWrites(tx, PHYSICAL_FILE_HANDOFF_REFUSAL);
+          guarded = true;
+        }
+      };
+      const unlocked = await this.readMovedFile(tx, move, false);
+      if (unlocked?.physicalFileId) {
+        await guard();
+      }
+
+      for (const path of [...new Set([move.from, move.source, move.to])].toSorted()) {
+        await lockFilePath(tx, path);
+      }
+
+      const current = await this.readMovedFile(tx, move, true);
+      if (!current) {
+        await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();
+        return 'removed';
+      }
+      if (current.path !== move.from) {
+        // Another writer changed the file. Unless an earlier attempt left the file elsewhere, the
+        // recorded move is dropped.
+        if (move.source === move.from) {
+          await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();
+        }
+        return 'changed';
+      }
+      if (current.physicalFileId) {
+        await guard();
+      }
+
+      if (!(await operations.rename())) {
+        return 'failed';
+      }
+
+      try {
+        await this.saveMovedPath(tx, move, current.physicalFileId);
+        await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();
+      } catch (error) {
+        // still holding the locks, so nothing has counted the file at its new path yet
+        await operations.undo();
+        throw error;
+      }
+      await operations.finish();
+      return 'moved';
+    });
+  }
+
+  /** The path the asset's row records for a moved file, and the physical file it shares, if any. */
+  private async readMovedFile(
+    tx: Kysely<DB>,
+    move: AssetFileMove,
+    lock: boolean,
+  ): Promise<{ path: string | null; physicalFileId: string | null } | undefined> {
+    const asset = await tx
+      .selectFrom('asset')
+      .select(['id', 'originalPath', 'physicalOriginalFileId'])
+      .where('id', '=', asUuid(move.assetId))
+      .$if(lock, (qb) => qb.forUpdate())
+      .executeTakeFirst();
+    if (!asset) {
+      return;
+    }
+    if (move.pathType === AssetPathType.Original) {
+      return { path: asset.originalPath, physicalFileId: asset.physicalOriginalFileId };
+    }
+
+    const file = await tx
+      .selectFrom('asset_file')
+      .select(['path', 'physicalFileId'])
+      .where('assetId', '=', asUuid(move.assetId))
+      .where('type', '=', move.pathType as AssetFileType)
+      .where('isEdited', '=', false)
+      .executeTakeFirst();
+    return { path: file?.path ?? null, physicalFileId: file?.physicalFileId ?? null };
+  }
+
+  private async saveMovedPath(tx: Kysely<DB>, move: AssetFileMove, physicalFileId: string | null): Promise<void> {
+    await (move.pathType === AssetPathType.Original
+      ? tx.updateTable('asset').set({ originalPath: move.to }).where('id', '=', asUuid(move.assetId)).execute()
+      : tx
+          .updateTable('asset_file')
+          .set({ path: move.to })
+          .where('assetId', '=', asUuid(move.assetId))
+          .where('type', '=', move.pathType as AssetFileType)
+          .where('isEdited', '=', false)
+          .execute());
+
+    if (!physicalFileId) {
+      return;
+    }
+    // a shared file is one file on disk: its physical row and every asset sharing it follow the move
+    await tx
+      .updateTable('physical_file')
+      .set({ path: move.to })
+      .where('id', '=', asUuid(physicalFileId))
+      .where('path', '=', move.from)
+      .execute();
+    await (move.pathType === AssetPathType.Original
+      ? tx
+          .updateTable('asset')
+          .set({ originalPath: move.to })
+          .where('physicalOriginalFileId', '=', asUuid(physicalFileId))
+          .where('originalPath', '=', move.from)
+          .execute()
+      : tx
+          .updateTable('asset_file')
+          .set({ path: move.to })
+          .where('physicalFileId', '=', asUuid(physicalFileId))
+          .where('path', '=', move.from)
+          .execute());
   }
 
   /**
@@ -1484,6 +1695,12 @@ export class AssetRepository {
       .execute();
     const developPaths = await this.getReleasableDevelopPaths(id, tx);
     const videoEditPaths = await this.getReleasableVideoEditPaths([id], tx);
+    const pendingMoves = await tx
+      .selectFrom('move_history')
+      .select(['pathType', 'oldPath', 'newPath'])
+      .where('entityId', '=', asUuid(id))
+      .where('pathType', 'in', [...ASSET_MOVE_PATH_TYPES] as AssetMovePathType[])
+      .execute();
 
     const restorationPaths = restorations
       .flatMap((restoration) => [
@@ -1501,16 +1718,57 @@ export class AssetRepository {
       restorationPaths,
       derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? [])])],
       ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),
+      pendingMoves: pendingMoves.map((move) => ({ ...move, pathType: move.pathType as AssetMovePathType })),
     };
+  }
+
+  private async getStackId(tx: Kysely<DB>, id: string): Promise<string | null | undefined> {
+    const row = await tx.selectFrom('asset').select('stackId').where('id', '=', asUuid(id)).executeTakeFirst();
+    return row?.stackId;
+  }
+
+  /**
+   * Takes a removed asset out of its stack, with the stack row locked (FL-179). A stack left with fewer
+   * than two members is dissolved; one whose primary is removed gets another member as its primary.
+   * Members are the stack's timeline assets that are not deleted, as the trash's stack view counts them.
+   */
+  private async leaveStack(tx: Kysely<DB>, id: string, stackId: string): Promise<void> {
+    const stack = await tx
+      .selectFrom('stack')
+      .select(['id', 'primaryAssetId'])
+      .where('id', '=', asUuid(stackId))
+      .executeTakeFirst();
+    if (!stack) {
+      return;
+    }
+
+    const others = await tx
+      .selectFrom('asset')
+      .select('id')
+      .where('stackId', '=', asUuid(stackId))
+      .where('id', '!=', asUuid(stack.primaryAssetId))
+      .where('id', '!=', asUuid(id))
+      .where('visibility', '=', sql.val(AssetVisibility.Timeline))
+      .where('status', '!=', sql.val(AssetStatus.Deleted))
+      .execute();
+
+    // the primary stays unless it is the asset being removed
+    const remaining = others.length + (stack.primaryAssetId === id ? 0 : 1);
+    if (remaining < 2) {
+      await tx.deleteFrom('stack').where('id', '=', asUuid(stackId)).execute();
+    } else if (stack.primaryAssetId === id) {
+      await tx.updateTable('stack').set({ primaryAssetId: others[0].id }).where('id', '=', asUuid(stackId)).execute();
+    }
   }
 
   /**
    * The outputs of the asset's develop revisions, when the revisions can be deleted with it now. The
-   * revisions have no foreign key to the asset, so the removal deletes them itself (FL-169); while
-   * fork writes are disabled the AssetDelete listener still cleans them up later.
+   * revisions have no foreign key to the asset, so the removal deletes them itself (FL-169). Like the
+   * video versions, they are left alone while fork writes are disabled or a handoff or return
+   * reconciliation runs (FL-179), and the AssetDelete listener cleans them up later.
    */
   private async getReleasableDevelopPaths(id: string, db: Kysely<DB>): Promise<string[] | undefined> {
-    if (!isForkWriteEnabled(await getForkSchemaPhase(db))) {
+    if (!(await canWriteFork(db))) {
       return;
     }
     const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
@@ -1520,7 +1778,7 @@ export class AssetRepository {
   }
 
   private async deleteDevelopRevisions(id: string, db: Kysely<DB>): Promise<string[]> {
-    if (!isForkWriteEnabled(await getForkSchemaPhase(db))) {
+    if (!(await canWriteFork(db))) {
       return [];
     }
     const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`

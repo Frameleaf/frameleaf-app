@@ -36,6 +36,7 @@ import {
   AssetFileType,
   AssetLockReason,
   AssetMetadataKey,
+  AssetPathType,
   AssetStatus,
   AssetType,
   AssetVisibility,
@@ -616,28 +617,8 @@ export class AssetService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    if (asset.stack) {
-      // asset.stack.assets only includes timeline visible assets and excludes the primary asset
-      const remainingStackAssetIds = asset.stack.assets.map((a) => a.id).filter((assetId) => assetId !== id);
-
-      // the primary survives unless it is the asset being deleted
-      let remainingCount = remainingStackAssetIds.length;
-      if (asset.stack.primaryAssetId !== id) {
-        remainingCount++;
-      }
-
-      if (remainingCount < 2) {
-        // 0 or 1 asset would remain: dissolve the stack so it does not linger as a single-asset stack
-        await this.stackRepository.delete(asset.stack.id);
-      } else if (asset.stack.primaryAssetId === id) {
-        // the primary is being deleted but others remain: promote a new primary
-        await this.stackRepository.update(asset.stack.id, {
-          id: asset.stack.id,
-          primaryAssetId: remainingStackAssetIds[0],
-        });
-      }
-    }
-
+    // FL-179: the removal also dissolves the asset's stack, or promotes a new primary, in its own
+    // transaction, so a removal that rolls back leaves the stack as it was.
     // FL-169: the file cleanup is queued inside the removal's transaction, from the files read there
     // under the asset's row lock. If it cannot be queued the row stays and a retry runs the whole
     // deletion again; once the row is gone, its files are queued. The job names the asset, so a job
@@ -663,8 +644,17 @@ export class AssetService extends BaseService {
         // FL-78: an external library item only references its original, which stays in the library's
         // folder whatever happens to the item; its sidecar there is the owner's too. Generated files
         // above are Frameleaf's own and go either way.
-        if (deleteOnDisk && !asset.isOffline && !asset.libraryId) {
+        const ownsOriginal = deleteOnDisk && !asset.isOffline && !asset.libraryId;
+        if (ownsOriginal) {
           files.push(assetFiles.sidecarFile?.path, removed.originalPath, removed.reservationTemporaryPath ?? undefined);
+        }
+
+        // FL-179: a storage move that never committed can have left the file at either of its paths
+        for (const move of removed.pendingMoves) {
+          const isOwnersFile = move.pathType === AssetPathType.Original || move.pathType === AssetFileType.Sidecar;
+          if (ownsOriginal || !isOwnersFile) {
+            files.push(move.oldPath, move.newPath);
+          }
         }
 
         // a path can be named twice (a version file that is also a generated file); delete it once

@@ -9,9 +9,8 @@ import {
   PersonPathType,
   RawExtractedFormat,
   StorageFolder,
-  UserPathType,
 } from 'src/enum.js';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ASSET_MOVE_PATH_TYPES, AssetMovePathType, AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -195,10 +194,14 @@ export class StorageCore {
     }
   }
 
-  async moveFile(request: MoveRequest) {
+  /** Whether the file is at `newPath` and recorded there when this returns. */
+  async moveFile(request: MoveRequest): Promise<boolean> {
     const { entityId, ownerId, pathType, oldPath, newPath, assetInfo } = request;
-    if (!oldPath || oldPath === newPath) {
-      return;
+    if (!oldPath) {
+      return false;
+    }
+    if (oldPath === newPath) {
+      return true;
     }
 
     this.ensureFolders(newPath);
@@ -212,7 +215,7 @@ export class StorageCore {
       const actualPath = isOldPathExists ? move.oldPath : newPathCheck;
       if (!actualPath) {
         this.logger.warn('Unable to complete move. File does not exist at either location.');
-        return;
+        return false;
       }
 
       const isFileAtNewLocation = actualPath === move.newPath;
@@ -225,7 +228,7 @@ export class StorageCore {
         this.logger.fatal(
           `Skipping move as file verification failed, old file is missing and new file is different to what was expected`,
         );
-        return;
+        return false;
       }
 
       move = await this.moveRepository.update(move.id, { id: move.id, oldPath: actualPath, newPath });
@@ -235,42 +238,97 @@ export class StorageCore {
 
     if (pathType === AssetPathType.Original && !assetInfo) {
       this.logger.warn(`Unable to complete move. Missing asset info for ${entityId}`);
-      return;
+      return false;
     }
 
-    if (move.oldPath !== newPath) {
+    const source = move.oldPath;
+    // how the file reached `newPath`: renamed in place, or copied (the source is removed on commit)
+    let moved: 'renamed' | 'copied' | undefined;
+    const rename = async (): Promise<boolean> => {
+      if (source === newPath) {
+        return true;
+      }
       try {
-        this.logger.debug(`Attempting to rename file: ${move.oldPath} => ${newPath}`);
-        await this.storageRepository.rename(move.oldPath, newPath);
+        this.logger.debug(`Attempting to rename file: ${source} => ${newPath}`);
+        await this.storageRepository.rename(source, newPath);
+        moved = 'renamed';
+        return true;
       } catch (error: any) {
         if (error.code !== 'EXDEV') {
           this.logger.warn(
             `Unable to complete move. Error renaming file with code ${error.code} and message: ${error.message}`,
           );
-          return;
+          return false;
         }
         this.logger.debug(`Unable to rename file. Falling back to copy, verify and delete`);
-        await this.storageRepository.copyFile(move.oldPath, newPath);
+        await this.storageRepository.copyFile(source, newPath);
 
-        if (!(await this.verifyNewPathContentsMatchesExpected(move.oldPath, newPath, assetInfo))) {
+        if (!(await this.verifyNewPathContentsMatchesExpected(source, newPath, assetInfo))) {
           this.logger.warn(`Skipping move due to file size mismatch`);
           await this.storageRepository.unlink(newPath);
-          return;
+          return false;
         }
 
-        const { atime, mtime } = await this.storageRepository.stat(move.oldPath);
+        const { atime, mtime } = await this.storageRepository.stat(source);
         await this.storageRepository.utimes(newPath, atime, mtime);
-
-        try {
-          await this.storageRepository.unlink(move.oldPath);
-        } catch (error: any) {
-          this.logger.warn(`Unable to delete old file, it will now no longer be tracked by Immich: ${error.message}`);
-        }
+        moved = 'copied';
+        return true;
       }
+    };
+    // a copy's source goes once the new path is saved
+    const finish = async () => {
+      if (moved !== 'copied') {
+        return;
+      }
+      try {
+        await this.storageRepository.unlink(source);
+      } catch (error: any) {
+        this.logger.warn(`Unable to delete old file, it will now no longer be tracked by Immich: ${error.message}`);
+      }
+    };
+    // the new path could not be saved: the file goes back to where the rows still name it
+    const undo = async () => {
+      try {
+        if (moved === 'renamed') {
+          await this.storageRepository.rename(newPath, source);
+        } else if (moved === 'copied') {
+          await this.storageRepository.unlink(newPath);
+        }
+      } catch (error: any) {
+        this.logger.warn(`Unable to undo the move of ${source} to ${newPath}; the recorded move finishes it: ${error}`);
+      }
+    };
+
+    if (!ASSET_MOVE_PATH_TYPES.has(pathType)) {
+      if (!(await rename())) {
+        return false;
+      }
+      await finish();
+      await this.savePath(pathType, entityId, newPath, ownerId);
+      await this.moveRepository.delete(move.id);
+      return true;
     }
 
-    await this.savePath(pathType, entityId, newPath, ownerId);
-    await this.moveRepository.delete(move.id);
+    // FL-179: an asset's file is moved and its new path saved as one unit, under the path locks and the
+    // asset's row lock, so the move cannot race the asset's removal. The move stays recorded until the
+    // new path is saved, so one interrupted in between is finished next time.
+    const result = await this.assetRepository.moveFile(
+      {
+        moveId: move.id,
+        assetId: entityId,
+        pathType: pathType as AssetMovePathType,
+        from: oldPath,
+        source,
+        to: newPath,
+      },
+      { rename, finish, undo },
+    );
+    if (result === 'removed') {
+      this.logger.log(`Skipped moving ${oldPath}: asset ${entityId} was removed`);
+    } else if (result === 'changed') {
+      this.logger.log(`Skipped moving ${oldPath}: asset ${entityId} no longer uses it`);
+    }
+    return result === 'moved';
   }
 
   private async verifyNewPathContentsMatchesExpected(
@@ -324,21 +382,9 @@ export class StorageCore {
     return { dri, mali };
   }
 
+  /** Saves a moved file that is not an asset's; an asset's is saved by `AssetRepository.moveFile`. */
   private savePath(pathType: PathType, id: string, newPath: string, ownerId?: string) {
     switch (pathType) {
-      case AssetPathType.Original: {
-        return this.assetRepository.update({ id, originalPath: newPath });
-      }
-
-      case AssetFileType.FullSize:
-      case AssetFileType.EncodedVideo:
-      case AssetFileType.Thumbnail:
-      case AssetFileType.Preview:
-      case AssetFileType.Sidecar:
-      case AssetPathType.EncodedVideo: {
-        return this.assetRepository.upsertFile({ assetId: id, type: pathType as AssetFileType, path: newPath });
-      }
-
       case PersonPathType.Face: {
         if (!ownerId) {
           this.logger.warn('Unable to save person path without an owner');
@@ -348,7 +394,7 @@ export class StorageCore {
         return this.personRepository.update({ ownerId, personGroupId: id, thumbnailPath: newPath });
       }
 
-      case UserPathType.Profile: {
+      default: {
         this.logger.warn('Unexpected path type:', pathType);
         return;
       }

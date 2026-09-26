@@ -4,10 +4,12 @@ import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   AssetMetadataKey,
+  AssetPathType,
   AssetStatus,
   AssetVisibility,
   JobName,
   JobStatus,
+  PhysicalFileType,
   SharedLinkType,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -559,6 +561,365 @@ describe(AssetService.name, () => {
             new PhysicalFileRepository(forkDatabase).deleteUnreferencedPath(file, unlink, { removedAssetId: asset.id }),
           ).resolves.toEqual({ deleted: true, references: 0 });
         }
+      });
+
+      describe('stacks, handoffs and storage moves (FL-179)', () => {
+        const recordMove = async (assetId: string, oldPath: string, newPath: string) => {
+          const { id } = await forkDatabase
+            .insertInto('move_history')
+            .values({ entityId: assetId, pathType: AssetPathType.Original, oldPath, newPath })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          return id;
+        };
+
+        const movesOf = (assetId: string) =>
+          forkDatabase.selectFrom('move_history').select('id').where('entityId', '=', assetId).execute();
+
+        /** Waits until another transaction is queued behind an advisory (path) lock. */
+        const waitForPathLockWaiter = async () => {
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const { rows } = await sql<{ waiting: number }>`
+              SELECT count(*)::int AS waiting FROM pg_locks
+              WHERE locktype = 'advisory' AND NOT granted
+                AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            `.execute(forkDatabase);
+            if (rows[0].waiting > 0) {
+              return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          throw new Error('nothing waited for a path lock');
+        };
+
+        const noop = async () => {};
+
+        it('leaves the stack as it was when the removal rolls back, and changes it when the retry commits', async () => {
+          const { sut, ctx } = setup(forkDatabase);
+          const queue = ctx.getMock(JobRepository).queue;
+          const { user } = await ctx.newUser();
+          const { asset: primary } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+          const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, other.id]);
+          queue.mockImplementation(async (job) => {
+            if (job.name === JobName.FileDelete) {
+              throw new Error('commit failed');
+            }
+          });
+
+          await expect(sut.handleAssetDeletion({ id: primary.id, deleteOnDisk: true })).rejects.toThrow(
+            'commit failed',
+          );
+
+          await expect(ctx.get(StackRepository).getById(stack.id)).resolves.toMatchObject({
+            primaryAssetId: primary.id,
+          });
+          await expect(ctx.get(AssetRepository).getById(other.id)).resolves.toMatchObject({ stackId: stack.id });
+
+          queue.mockResolvedValue();
+          await expect(sut.handleAssetDeletion({ id: primary.id, deleteOnDisk: true })).resolves.toBe(
+            JobStatus.Success,
+          );
+
+          await expect(ctx.get(StackRepository).getById(stack.id)).resolves.toBeUndefined();
+          await expect(ctx.get(AssetRepository).getById(other.id)).resolves.toMatchObject({ stackId: null });
+        });
+
+        it('dissolves the stack when a member leaves only the primary', async () => {
+          const { sut, ctx } = setup(forkDatabase);
+          ctx.getMock(JobRepository).queue.mockResolvedValue();
+          const { user } = await ctx.newUser();
+          const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
+          const { asset: member } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, member.id]);
+
+          await expect(sut.handleAssetDeletion({ id: member.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+          await expect(ctx.get(StackRepository).getById(stack.id)).resolves.toBeUndefined();
+        });
+
+        it('keeps the stack and its primary when a member leaves two others', async () => {
+          const { sut, ctx } = setup(forkDatabase);
+          ctx.getMock(JobRepository).queue.mockResolvedValue();
+          const { user } = await ctx.newUser();
+          const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
+          const { asset: member } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+          const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, member.id, other.id]);
+
+          await expect(sut.handleAssetDeletion({ id: member.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+          await expect(ctx.get(StackRepository).getById(stack.id)).resolves.toMatchObject({
+            primaryAssetId: primary.id,
+          });
+        });
+
+        it('keeps develop revisions while a handoff runs, for the listener to clean up later', async () => {
+          const { sut, ctx } = setup(forkDatabase);
+          ctx.getMock(JobRepository).queue.mockResolvedValue();
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const developPath = await addDevelopRevision(asset.id, user.id);
+
+          await sql`
+            INSERT INTO immich_fork.migration_audit (name, phase, status)
+            VALUES ('official-handoff-preparation', 'active', 'running')
+          `.execute(forkDatabase);
+          try {
+            await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(
+              JobStatus.Success,
+            );
+          } finally {
+            await sql`
+              DELETE FROM immich_fork.migration_audit
+              WHERE name = 'official-handoff-preparation' AND status = 'running'
+            `.execute(forkDatabase);
+          }
+
+          await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toBeUndefined();
+          expect(fileDeletes(ctx).flat()).not.toContain(developPath);
+          const revisions = await sql`
+            SELECT 1 FROM immich_fork.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid
+          `.execute(forkDatabase);
+          expect(revisions.rows).toHaveLength(1);
+        });
+
+        it('releases a file a storage move left at its new path, and forgets the move', async () => {
+          const { sut, ctx } = setup(forkDatabase);
+          ctx.getMock(JobRepository).queue.mockResolvedValue();
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const movedPath = `/data/library/${asset.id}-moved.jpg`;
+          await recordMove(asset.id, asset.originalPath, movedPath);
+
+          await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+          expect(fileDeletes(ctx)).toEqual([[asset.originalPath, movedPath]]);
+          await expect(movesOf(asset.id)).resolves.toEqual([]);
+        });
+
+        it('renames the file and saves its new path as one unit', async () => {
+          const { ctx } = setup(forkDatabase);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const to = `/data/library/${asset.id}-template.jpg`;
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+          const operations = { rename: vi.fn(async () => true), finish: vi.fn(noop), undo: vi.fn(noop) };
+
+          await expect(
+            ctx.get(AssetRepository).moveFile(
+              {
+                moveId,
+                assetId: asset.id,
+                pathType: AssetPathType.Original,
+                from: asset.originalPath,
+                source: asset.originalPath,
+                to,
+              },
+              operations,
+            ),
+          ).resolves.toBe('moved');
+
+          await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ originalPath: to });
+          await expect(movesOf(asset.id)).resolves.toEqual([]);
+          expect(operations.rename).toHaveBeenCalledOnce();
+          expect(operations.finish).toHaveBeenCalledOnce();
+          expect(operations.undo).not.toHaveBeenCalled();
+        });
+
+        it('moves nothing once the asset is removed, or when it names another file', async () => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset: removed } = await ctx.newAsset({ ownerId: user.id });
+          const { asset: changed } = await ctx.newAsset({ ownerId: user.id });
+          const removedMove = await recordMove(removed.id, removed.originalPath, `/data/library/${removed.id}-t.jpg`);
+          const changedMove = await recordMove(
+            changed.id,
+            '/data/library/earlier.jpg',
+            `/data/library/${changed.id}-t.jpg`,
+          );
+          await repository.remove({ id: removed.id });
+          const rename = vi.fn(async () => true);
+
+          await expect(
+            repository.moveFile(
+              {
+                moveId: removedMove,
+                assetId: removed.id,
+                pathType: AssetPathType.Original,
+                from: removed.originalPath,
+                source: removed.originalPath,
+                to: `/data/library/${removed.id}-t.jpg`,
+              },
+              { rename, finish: noop, undo: noop },
+            ),
+          ).resolves.toBe('removed');
+          await expect(
+            repository.moveFile(
+              {
+                moveId: changedMove,
+                assetId: changed.id,
+                pathType: AssetPathType.Original,
+                from: '/data/library/earlier.jpg',
+                source: '/data/library/earlier.jpg',
+                to: `/data/library/${changed.id}-t.jpg`,
+              },
+              { rename, finish: noop, undo: noop },
+            ),
+          ).resolves.toBe('changed');
+
+          expect(rename).not.toHaveBeenCalled();
+          await expect(repository.getById(changed.id)).resolves.toMatchObject({ originalPath: changed.originalPath });
+          await expect(movesOf(removed.id)).resolves.toEqual([]);
+          await expect(movesOf(changed.id)).resolves.toEqual([]);
+        });
+
+        const addPhysicalOriginal = async (path: string, canonicalAssetId: string | null) => {
+          const { id } = await forkDatabase
+            .insertInto('physical_file')
+            .values({
+              canonicalAssetId,
+              checksum: randomBytes(20),
+              path,
+              sizeInBytes: 100,
+              type: PhysicalFileType.Original,
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          return id;
+        };
+
+        it('points every asset sharing the moved file at its new path', async () => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { asset: sharer } = await ctx.newAsset({ ownerId: user.id, originalPath: asset.originalPath });
+          const physicalId = await addPhysicalOriginal(asset.originalPath, asset.id);
+          await forkDatabase
+            .updateTable('asset')
+            .set({ physicalOriginalFileId: physicalId })
+            .where('id', 'in', [asset.id, sharer.id])
+            .execute();
+          const to = `/data/library/${asset.id}-shared.jpg`;
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+
+          await expect(
+            repository.moveFile(
+              {
+                moveId,
+                assetId: asset.id,
+                pathType: AssetPathType.Original,
+                from: asset.originalPath,
+                source: asset.originalPath,
+                to,
+              },
+              { rename: async () => true, finish: noop, undo: noop },
+            ),
+          ).resolves.toBe('moved');
+
+          await expect(repository.getById(sharer.id)).resolves.toMatchObject({ originalPath: to });
+          const physical = await forkDatabase
+            .selectFrom('physical_file')
+            .select('path')
+            .where('id', '=', physicalId)
+            .executeTakeFirstOrThrow();
+          expect(physical.path).toBe(to);
+        });
+
+        it('puts the file back and keeps the recorded move when the new path cannot be saved', async () => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const to = `/data/library/${asset.id}-taken.jpg`;
+          const physicalId = await addPhysicalOriginal(asset.originalPath, asset.id);
+          await forkDatabase
+            .updateTable('asset')
+            .set({ physicalOriginalFileId: physicalId })
+            .where('id', '=', asset.id)
+            .execute();
+          // another physical file already has the new path, so saving it fails
+          await addPhysicalOriginal(to, null);
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+          const operations = { rename: vi.fn(async () => true), finish: vi.fn(noop), undo: vi.fn(noop) };
+
+          await expect(
+            repository.moveFile(
+              {
+                moveId,
+                assetId: asset.id,
+                pathType: AssetPathType.Original,
+                from: asset.originalPath,
+                source: asset.originalPath,
+                to,
+              },
+              operations,
+            ),
+          ).rejects.toThrow();
+
+          expect(operations.undo).toHaveBeenCalledOnce();
+          expect(operations.finish).not.toHaveBeenCalled();
+          await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: asset.originalPath });
+          await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
+        });
+
+        it('makes a removal that starts during a move wait for it, and see the file at its new path', async () => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+          const to = `/data/library/${asset.id}-racing.jpg`;
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+          let renameStarted!: () => void;
+          const started = new Promise<void>((resolve) => (renameStarted = resolve));
+          let allowRename!: () => void;
+          const allowed = new Promise<void>((resolve) => (allowRename = resolve));
+
+          const moving = repository.moveFile(
+            {
+              moveId,
+              assetId: asset.id,
+              pathType: AssetPathType.Original,
+              from: asset.originalPath,
+              source: asset.originalPath,
+              to,
+            },
+            {
+              rename: async () => {
+                renameStarted();
+                await allowed;
+                return true;
+              },
+              finish: noop,
+              undo: noop,
+            },
+          );
+          await started;
+
+          const queued: string[][] = [];
+          const removing = repository.remove(
+            { id: asset.id },
+            {
+              files: (removed) => [
+                removed.originalPath,
+                ...removed.pendingMoves.flatMap((move) => [move.oldPath, move.newPath]),
+              ],
+              queue: async (files) => {
+                queued.push(files);
+              },
+            },
+          );
+          // the removal waits on the move's path locks
+          await waitForPathLockWaiter();
+          allowRename();
+
+          await expect(moving).resolves.toBe('moved');
+          await expect(removing).resolves.toMatchObject({ originalPath: to, pendingMoves: [] });
+          expect(queued).toEqual([[to]]);
+          await expect(repository.getById(asset.id)).resolves.toBeUndefined();
+        });
       });
     });
   });
